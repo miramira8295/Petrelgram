@@ -62,6 +62,8 @@ const VIDEO_DECODER_SOFTWARE: number = 1;
 const VIDEO_DECODER_HARDWARE: number = 2;
 // ijk 在这个倍速及以上只解关键帧（与 fork 的 KEY_ONLY_PLAYBACK_RATE 对应，那边取 3.9）。
 const HOLD_KEY_ONLY_SPEED: number = 4;
+// 华为视频风格：全屏播放且无交互时，控制栏自动隐藏的等待时长。
+const CONTROLS_AUTO_HIDE_MS: number = 3500;
 
 @Component
 export struct StreamingVideoPlayer {
@@ -75,7 +77,7 @@ export struct StreamingVideoPlayer {
   @Prop posterPath: string = '';
   @Prop @Watch('onControlsChanged') showControls: boolean = true;
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
-  @Prop landscape: boolean = false;
+  @Prop @Watch('onLandscapeChanged') landscape: boolean = false;
   // Embed mode: mounted directly in a chat bubble instead of the fullscreen
   // viewer. No control bar / gestures / speed / rotate — just poster +
   // surface + buffering hint. See build() and onPlayingChanged() below.
@@ -156,6 +158,7 @@ export struct StreamingVideoPlayer {
   private progressSeekUntil: number = 0;
   private seekFeedbackTimer: number = -1;
   private speedFeedbackTimer: number = -1;
+  private autoHideTimer: number = -1;
   private retryTimer: number = -1;
   // 出错后已自动重试的次数。进会话第一次点播放大概率失败、手动"刷新"就好
   // （issue #127）——多半是文件刚开始下载 ijk 就去开的竞态。这种一次性的失败
@@ -202,6 +205,8 @@ export struct StreamingVideoPlayer {
   @State seekFeedbackVisible: boolean = false;
   @State speedFeedbackVisible: boolean = false;
   @State speedFeedbackText: string = '';
+  private gestureSeekActive: boolean = false;
+  private gestureSeekStartMs: number = 0;
 
   aboutToAppear(): void {
     this.active = true;
@@ -287,6 +292,25 @@ export struct StreamingVideoPlayer {
     }, STATUS_DELAY_MS);
   }
 
+  private speedIdleTimer: number = -1;
+
+  private syncViewerDownloadSpeed(speed: number): void {
+    if (this.speedIdleTimer !== -1) {
+      clearTimeout(this.speedIdleTimer);
+      this.speedIdleTimer = -1;
+    }
+    this.downloadSpeed = speed;
+    if (!this.embedded) {
+      AppStorage.setOrCreate<number>('viewerVideoDownloadSpeed', speed);
+    }
+    if (speed > 0 && this.active) {
+      this.speedIdleTimer = setTimeout((): void => {
+        this.speedIdleTimer = -1;
+        this.syncViewerDownloadSpeed(0);
+      }, 1500);
+    }
+  }
+
   private resetReusedUi(): void {
     this.status = str('player_buffering_dots');
     this.armStatusDelay();
@@ -295,7 +319,7 @@ export struct StreamingVideoPlayer {
     this.isPrepared = false;
     this.videoVisible = false;
     this.bufferedPercent = 0;
-    this.downloadSpeed = 0;
+    this.syncViewerDownloadSpeed(0);
     this.lastBufferedBytes = 0;
     this.lastSpeedSampleMs = 0;
     this.currentTimeMs = 0;
@@ -307,6 +331,7 @@ export struct StreamingVideoPlayer {
     this.videoRotationDeg = 0;
     this.seekFeedbackVisible = false;
     this.speedFeedbackVisible = false;
+    this.gestureSeekActive = false;
   }
 
   // 播放状态变化时同步"视频后台播放"保活。开关关闭时不挂任务，**并且**由
@@ -320,6 +345,7 @@ export struct StreamingVideoPlayer {
     this.onPlayStateChanged(this.isPlaying);
     this.syncScreenAwake();
     this.syncAudioFocus();
+    this.syncAutoHideControls();
     if (this.embedded) {
       mediaPlaybackKeepAlive.release('video');
       return;
@@ -332,6 +358,28 @@ export struct StreamingVideoPlayer {
       return;
     }
     mediaPlaybackKeepAlive.release('video');
+  }
+
+  private clearAutoHideControls(): void {
+    if (this.autoHideTimer !== -1) {
+      clearTimeout(this.autoHideTimer);
+      this.autoHideTimer = -1;
+    }
+  }
+
+  private syncAutoHideControls(): void {
+    this.clearAutoHideControls();
+    if (!this.active || this.embedded || this.liveMode || !this.showControls ||
+        !this.isPlaying || this.dragging || this.hasError || this.isCompleted) {
+      return;
+    }
+    this.autoHideTimer = setTimeout((): void => {
+      this.autoHideTimer = -1;
+      if (this.active && !this.embedded && !this.liveMode && this.showControls &&
+          this.isPlaying && !this.dragging && !this.hasError && !this.isCompleted) {
+        this.onBackgroundTap();
+      }
+    }, CONTROLS_AUTO_HIDE_MS);
   }
 
   // Pause when a headset (wired or Bluetooth) disconnects, per platform convention.
@@ -372,6 +420,7 @@ export struct StreamingVideoPlayer {
   private release(): void {
     this.stopHold(false);
     this.holdRewind.reset();
+    this.clearAutoHideControls();
     this.cleanupAudioDeviceListener();
     this.stopProgressPolling();
     this.progressSeekUntil = 0;
@@ -402,6 +451,7 @@ export struct StreamingVideoPlayer {
       this.progressUnsub();
       this.progressUnsub = null;
     }
+    this.syncViewerDownloadSpeed(0);
     if (this.player !== null) {
       this.onStatsSource(null);
       const p = this.player;
@@ -472,7 +522,7 @@ export struct StreamingVideoPlayer {
     this.status = str('player_preparing');
     this.armStatusDelay();
     this.bufferedPercent = this.localPath !== '' ? 100 : 0;
-    this.downloadSpeed = 0;
+    this.syncViewerDownloadSpeed(0);
     this.lastBufferedBytes = 0;
     this.lastSpeedSampleMs = 0;
     this.setupAudioDeviceListener();
@@ -482,23 +532,29 @@ export struct StreamingVideoPlayer {
       if (sourceUrl === '') {
         session = new VideoStreamSession(getTdClient(), this.fileId, this.fileSize);
         this.session = session;
-        this.progressUnsub = session.subscribeProgress((buffered: number, total: number): void => {
-          this.bufferedPercent = total > 0 ? Math.min(100, Math.floor((buffered / total) * 100)) : 0;
-          // Throughput from the buffered-byte delta between samples (>=400ms apart
-          // to smooth out bursty TDLib updates). Fully-downloaded → 0 (hidden).
+        this.progressUnsub = session.subscribeProgress((_buffered: number, total: number): void => {
+          const ranges = session !== null ? session.bufferedRangesFlat() : [];
+          let totalDownloaded = 0;
+          for (let i = 0; i + 1 < ranges.length; i += 2) {
+            totalDownloaded += ranges[i + 1] - ranges[i];
+          }
+          this.bufferedPercent = total > 0 ? Math.min(100, Math.floor((totalDownloaded / total) * 100)) : 0;
+          // Throughput from the total downloaded-byte delta across all ranges (>=400ms
+          // apart to smooth out bursty TDLib updates). Fully-downloaded → 0 (hidden).
           const now = Date.now();
-          if (total > 0 && buffered >= total) {
-            this.downloadSpeed = 0;
+          if (total > 0 && totalDownloaded >= total) {
+            this.syncViewerDownloadSpeed(0);
           } else if (this.lastSpeedSampleMs === 0) {
             this.lastSpeedSampleMs = now;
-            this.lastBufferedBytes = buffered;
+            this.lastBufferedBytes = totalDownloaded;
           } else {
             const dtMs = now - this.lastSpeedSampleMs;
-            if (dtMs >= 400) {
-              const dBytes = buffered - this.lastBufferedBytes;
-              this.downloadSpeed = dBytes > 0 ? (dBytes / dtMs) * 1000 : 0;
+            const dBytes = totalDownloaded - this.lastBufferedBytes;
+            if (dBytes > 0 && dtMs >= 400) {
+              const effectiveDtMs = Math.min(dtMs, 1200);
+              this.syncViewerDownloadSpeed((dBytes / effectiveDtMs) * 1000);
               this.lastSpeedSampleMs = now;
-              this.lastBufferedBytes = buffered;
+              this.lastBufferedBytes = totalDownloaded;
             }
           }
         });
@@ -977,6 +1033,7 @@ export struct StreamingVideoPlayer {
   // play/pause state, so an inspection seek never unexpectedly starts audio.
   private seekBy(deltaMs: number): void {
     this.stopHold();
+    this.syncAutoHideControls();
     if (this.player === null || !this.isPrepared || this.durationMs <= 0 || this.hasError) {
       return;
     }
@@ -1039,6 +1096,7 @@ export struct StreamingVideoPlayer {
     if (mode === SliderChangeMode.Begin || mode === SliderChangeMode.Moving) {
       this.dragging = true;
       this.dragValueMs = value;
+      this.clearAutoHideControls();
       return;
     }
     this.dragging = false;
@@ -1046,9 +1104,11 @@ export struct StreamingVideoPlayer {
     if (this.player !== null) {
       this.seekPlayerTo(value);
     }
+    this.syncAutoHideControls();
   }
 
   private cycleSpeed(): void {
+    this.syncAutoHideControls();
     const nextIdx: number = (this.speedIdx + 1) % SPEEDS.length;
     let applied: boolean = true;
     if (this.player !== null && this.isPrepared) {
@@ -1076,6 +1136,7 @@ export struct StreamingVideoPlayer {
       !this.active || !this.appIsForeground || !this.isPrepared || this.hasError || this.dragging) {
       return;
     }
+    this.clearAutoHideControls();
     if (forward) {
       this.startHoldSpeed();
     } else if (this.durationMs > 0) {
@@ -1086,6 +1147,7 @@ export struct StreamingVideoPlayer {
   private stopHold(allowResume: boolean = true): void {
     this.stopHoldRewind(allowResume);
     this.stopHoldSpeed(allowResume);
+    this.syncAutoHideControls();
   }
 
   private holdRewind: HoldRewindState = new HoldRewindState();
@@ -1096,10 +1158,14 @@ export struct StreamingVideoPlayer {
     if (this.player === null) {
       return;
     }
-    this.holdRewind.seekStarted(Date.now());
+    const now = Date.now();
+    if (this.lastSpeedSampleMs > 0 && now - this.lastSpeedSampleMs > 1200) {
+      this.lastSpeedSampleMs = now;
+    }
+    this.holdRewind.seekStarted(now);
     // Don't overwrite an optimistic seek/resume position with the old native
     // position when playback or control visibility changes before completion.
-    this.progressSeekUntil = Date.now() + 5000;
+    this.progressSeekUntil = now + 5000;
     this.player.seekTo(`${Math.max(0, Math.floor(positionMs))}`);
     this.onPositionChanged(Math.max(0, Math.floor(positionMs)));
   }
@@ -1282,6 +1348,7 @@ export struct StreamingVideoPlayer {
   private onControlsChanged(): void {
     this.syncProgressPolling();
     if (this.showControls) { this.refreshProgress(); }
+    this.syncAutoHideControls();
   }
 
   private syncProgressPolling(): void {
@@ -1301,7 +1368,7 @@ export struct StreamingVideoPlayer {
     // Metadata comes from prepared/size events. Playback state comes from
     // start/pause/completion/error paths; neither needs repeated native reads.
     if (this.downloadSpeed > 0 && this.lastSpeedSampleMs > 0 && Date.now() - this.lastSpeedSampleMs > 1200) {
-      this.downloadSpeed = 0;
+      this.syncViewerDownloadSpeed(0);
     }
   }
 
@@ -1383,6 +1450,61 @@ export struct StreamingVideoPlayer {
     return this.posterPath.startsWith('/') ? `file://${this.posterPath}` : this.posterPath;
   }
 
+  onLandscapeChanged(): void {
+    if (!this.landscape && this.gestureSeekActive) {
+      this.gestureSeekActive = false;
+      this.dragging = false;
+    }
+  }
+
+  private onVideoSurfacePanStart(): void {
+    if (!this.landscape || this.embedded || this.liveMode) {
+      return;
+    }
+    this.stopHold();
+    this.clearAutoHideControls();
+    if (this.player === null || !this.isPrepared || this.durationMs <= 0 || this.hasError) {
+      this.gestureSeekActive = false;
+      return;
+    }
+    this.refreshProgress();
+    this.gestureSeekActive = true;
+    this.gestureSeekStartMs = this.dragging ? this.dragValueMs : this.currentTimeMs;
+    this.dragging = true;
+    this.dragValueMs = this.gestureSeekStartMs;
+  }
+
+  private onVideoSurfacePanUpdate(event: GestureEvent): void {
+    if (!this.landscape || this.embedded || this.liveMode) {
+      return;
+    }
+    if (!this.gestureSeekActive || this.durationMs <= 0) {
+      return;
+    }
+    const spanMs: number = Math.min(this.durationMs, Math.max(30000, Math.min(90000, this.durationMs)));
+    const deltaMs: number = (event.offsetX / Math.max(1, this.viewportWidth)) * spanMs;
+    this.dragValueMs = Math.max(0, Math.min(this.durationMs, Math.round(this.gestureSeekStartMs + deltaMs)));
+  }
+
+  private onVideoSurfacePanEnd(): void {
+    if (!this.landscape || this.embedded || this.liveMode) {
+      return;
+    }
+    if (this.gestureSeekActive) {
+      this.gestureSeekActive = false;
+      const target: number = this.dragValueMs;
+      this.dragging = false;
+      this.currentTimeMs = target;
+      if (this.player !== null && this.isPrepared && !this.hasError) {
+        this.seekPlayerTo(target);
+        if (target < this.durationMs) {
+          this.isCompleted = false;
+        }
+      }
+    }
+    this.syncAutoHideControls();
+  }
+
   @Styles
   controlNormalStyle() {
     .opacity(1)
@@ -1407,7 +1529,39 @@ export struct StreamingVideoPlayer {
         .height('100%')
         .backgroundColor(Color.Transparent)
         .onClick((): void => { this.onBackgroundTap(); });
+    } else if (this.landscape) {
+      // 全屏（横屏）下 Swiper 翻页已禁用，画面单指左右横滑直接拖动播放进度。
+      Column()
+        .width('50%')
+        .height('100%')
+        .backgroundColor(Color.Transparent)
+        .accessibilityText(forward
+          ? $r('app.string.player_hold_forward') : $r('app.string.player_hold_back'))
+        .gesture(
+          GestureGroup(GestureMode.Exclusive,
+            LongPressGesture({ fingers: 1, repeat: false, duration: LONG_PRESS_SEEK_MS })
+              .onAction((): void => { this.startHold(forward); })
+              .onActionEnd((): void => { this.stopHold(); })
+              .onActionCancel((): void => { this.stopHold(); }),
+            TapGesture({ count: 2, fingers: 1 })
+              .onAction((): void => { this.seekBy(forward ? QUICK_SEEK_MS : -QUICK_SEEK_MS); }),
+            TapGesture({ count: 1, fingers: 1 })
+              .onAction((): void => { this.onBackgroundTap(); })
+          )
+        )
+        .priorityGesture(
+          PanGesture({
+            fingers: 1,
+            distance: 10,
+            direction: PanDirection.Horizontal
+          })
+            .onActionStart((): void => { this.onVideoSurfacePanStart(); })
+            .onActionUpdate((event: GestureEvent): void => { this.onVideoSurfacePanUpdate(event); })
+            .onActionEnd((): void => { this.onVideoSurfacePanEnd(); })
+            .onActionCancel((): void => { this.onVideoSurfacePanEnd(); })
+        );
     } else {
+      // 竖屏下不挂横向 PanGesture，左右滑动留给外层 Swiper 切换上下一条媒体。
       Column()
         .width('50%')
         .height('100%')
@@ -1435,53 +1589,53 @@ export struct StreamingVideoPlayer {
   @Builder
   seekFeedback() {
     Row() {
-      Column({ space: 3 }) {
+      Row({ space: 6 }) {
         if (this.seekFeedbackSide < 0) {
           SymbolGlyph($r('sys.symbol.gobackward_15'))
-            .fontSize(36).fontColor([Color.White]);
+            .fontSize(18).fontColor([Color.White]);
         } else {
           SymbolGlyph($r('sys.symbol.goforward_15'))
-            .fontSize(36).fontColor([Color.White]);
+            .fontSize(18).fontColor([Color.White]);
         }
         Text(this.seekFeedbackText(this.seekFeedbackSide))
-          .fontSize(12)
+          .fontSize(13)
           .fontColor(Color.White)
           .fontWeight(FontWeight.Medium);
       }
-      .width(96)
-      .height(96)
-      .justifyContent(FlexAlign.Center)
-      .backgroundColor('#66000000')
-      .borderRadius(48)
+      .height(38)
+      .padding({ left: 14, right: 14 })
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor('#78000000')
+      .borderRadius(19)
       .opacity(this.seekFeedbackVisible && this.seekFeedbackSide < 0 ? 1 : 0)
       .scale({
-        x: this.seekFeedbackVisible && this.seekFeedbackSide < 0 ? 1 : 0.82,
-        y: this.seekFeedbackVisible && this.seekFeedbackSide < 0 ? 1 : 0.82
+        x: this.seekFeedbackVisible && this.seekFeedbackSide < 0 ? 1 : 0.88,
+        y: this.seekFeedbackVisible && this.seekFeedbackSide < 0 ? 1 : 0.88
       })
       .hitTestBehavior(HitTestMode.None);
       Blank().layoutWeight(1);
-      Column({ space: 3 }) {
+      Row({ space: 6 }) {
         if (this.seekFeedbackSide < 0) {
           SymbolGlyph($r('sys.symbol.gobackward_15'))
-            .fontSize(36).fontColor([Color.White]);
+            .fontSize(18).fontColor([Color.White]);
         } else {
           SymbolGlyph($r('sys.symbol.goforward_15'))
-            .fontSize(36).fontColor([Color.White]);
+            .fontSize(18).fontColor([Color.White]);
         }
         Text(this.seekFeedbackText(this.seekFeedbackSide))
-          .fontSize(12)
+          .fontSize(13)
           .fontColor(Color.White)
           .fontWeight(FontWeight.Medium);
       }
-      .width(96)
-      .height(96)
-      .justifyContent(FlexAlign.Center)
-      .backgroundColor('#66000000')
-      .borderRadius(48)
+      .height(38)
+      .padding({ left: 14, right: 14 })
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor('#78000000')
+      .borderRadius(19)
       .opacity(this.seekFeedbackVisible && this.seekFeedbackSide > 0 ? 1 : 0)
       .scale({
-        x: this.seekFeedbackVisible && this.seekFeedbackSide > 0 ? 1 : 0.82,
-        y: this.seekFeedbackVisible && this.seekFeedbackSide > 0 ? 1 : 0.82
+        x: this.seekFeedbackVisible && this.seekFeedbackSide > 0 ? 1 : 0.88,
+        y: this.seekFeedbackVisible && this.seekFeedbackSide > 0 ? 1 : 0.88
       })
       .hitTestBehavior(HitTestMode.None);
     }
@@ -1498,9 +1652,9 @@ export struct StreamingVideoPlayer {
         .fontColor([CONTROL_ACCENT]);
     }
     .width(width)
-    .height(34)
+    .height(32)
     .justifyContent(FlexAlign.Center)
-    .borderRadius(17)
+    .borderRadius(16)
     .stateStyles({
       normal: this.controlNormalStyle,
       pressed: this.controlPressedStyle
@@ -1513,15 +1667,16 @@ export struct StreamingVideoPlayer {
   speedControl() {
     Row() {
       Text(SPEED_LABELS[this.speedIdx])
-        .fontSize(15)
+        .fontSize(12)
         .fontColor(CONTROL_ACCENT)
-        .fontWeight(FontWeight.Bold);
+        .fontWeight(FontWeight.Medium);
     }
-    .width(48)
-    .height(36)
+    .constraintSize({ minWidth: 36 })
+    .height(28)
+    .padding({ left: 7, right: 7 })
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.speedIdx === DEFAULT_SPEED_IDX ? Color.Transparent : $r('app.color.selected_pill'))
-    .borderRadius(18)
+    .borderRadius(14)
     .stateStyles({
       normal: this.controlNormalStyle,
       pressed: this.controlPressedStyle
@@ -1534,20 +1689,20 @@ export struct StreamingVideoPlayer {
   @Builder
   playControl() {
     Stack() {
-      Circle({ width: 42, height: 42 }).fill('#00000000');
+      Circle({ width: 34, height: 34 }).fill('#00000000');
       if (this.isPlaying) {
-        Row({ space: 5 }) {
-          Column().width(4).height(16).borderRadius(2).backgroundColor(CONTROL_ACCENT);
-          Column().width(4).height(16).borderRadius(2).backgroundColor(CONTROL_ACCENT);
+        Row({ space: 4 }) {
+          Column().width(3.5).height(14).borderRadius(1.75).backgroundColor(CONTROL_ACCENT);
+          Column().width(3.5).height(14).borderRadius(1.75).backgroundColor(CONTROL_ACCENT);
         }
-        .width(18).height(18)
+        .width(16).height(16)
         .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center);
       } else {
-        SymbolGlyph($r('sys.symbol.play_fill')).fontSize(22).fontColor([CONTROL_ACCENT]).margin({ left: 2 });
+        SymbolGlyph($r('sys.symbol.play_fill')).fontSize(18).fontColor([CONTROL_ACCENT]).margin({ left: 1.5 });
       }
     }
-    .width(56).height(42)
-    .borderRadius(21)
+    .width(34).height(34)
+    .borderRadius(17)
     .stateStyles({
       normal: this.controlNormalStyle,
       pressed: this.controlPressedStyle
@@ -1715,6 +1870,27 @@ export struct StreamingVideoPlayer {
         })
         .hitTestBehavior(HitTestMode.None);
       }
+      if (this.dragging && !this.embedded) {
+        Row({ space: 4 }) {
+          Text(formatMs(this.dragValueMs))
+            .fontSize(15)
+            .fontColor(Color.White)
+            .fontWeight(FontWeight.Bold);
+          Text('/')
+            .fontSize(13)
+            .fontColor(CONTROL_TEXT_SOFT);
+          Text(formatMs(this.durationMs))
+            .fontSize(15)
+            .fontColor(CONTROL_TEXT_SOFT)
+            .fontWeight(FontWeight.Medium);
+        }
+        .height(38)
+        .padding({ left: 16, right: 16 })
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor('#78000000')
+        .borderRadius(19)
+        .hitTestBehavior(HitTestMode.None);
+      }
       // `!this.liveMode`：这一块既没有 !embedded 也没有 showControls 守卫（对比
       // 下面的控制栏），而实况正是靠关掉 showControls 给左下角那枚胶囊让位的。
       // 不挡的话播完那一刻中央一个「重播」、左下角一个播放键，两个入口同时在场。
@@ -1726,39 +1902,9 @@ export struct StreamingVideoPlayer {
           }
           .width('100%')
           .layoutWeight(1);
-          Column({ space: 10 }) {
-            Row() {
-              // Live download speed on the left (mirrors the play control on the
-              // right), so the centered play button stays centered.
-              Row({ space: 3 }) {
-                if (this.downloadSpeed > 0) {
-                  SymbolGlyph($r('sys.symbol.arrow_down')).fontSize(12).fontColor([CONTROL_TEXT_SOFT]);
-                  Text(formatSpeed(this.downloadSpeed))
-                    .fontSize(11).fontColor(CONTROL_TEXT_SOFT).fontWeight(FontWeight.Medium);
-                }
-              }
-              .layoutWeight(1)
-              .justifyContent(FlexAlign.Start)
-              .alignItems(VerticalAlign.Center);
+          Column({ space: 6 }) {
+            Row({ space: 5 }) {
               this.playControl();
-              Row({ space: 8 }) {
-                this.speedControl();
-                this.symbolControl(
-                  this.landscape
-                    ? 'sys.symbol.rectangle_portrait_rotate'
-                    : 'sys.symbol.rectangle_rotate',
-                  40,
-                  25,
-                  () => {
-                    this.onOrientationChange(!this.landscape);
-                  }
-                );
-              }
-              .layoutWeight(1)
-              .justifyContent(FlexAlign.End)
-              .alignItems(VerticalAlign.Center);
-            }.width('100%').alignItems(VerticalAlign.Center);
-            Row({ space: 8 }) {
               Text(formatMs(this.dragging ? this.dragValueMs : this.currentTimeMs))
                 .fontSize(11).fontColor(CONTROL_TEXT_SOFT).fontWeight(FontWeight.Medium);
               // Alignment.Start = left edge, vertically centered. With Center the
@@ -1766,43 +1912,59 @@ export struct StreamingVideoPlayer {
               // grow outward from the middle instead of filling left-to-right.
               Stack() {
                 Row()
-                  .width('100%').height(4).borderRadius(2).backgroundColor(CONTROL_TRACK_SOFT);
+                  .width('100%').height(3).borderRadius(1.5).backgroundColor(CONTROL_TRACK_SOFT);
                 // Downloaded/buffered span — grey, behind the played fill.
                 Row()
                   .width(`${Math.max(0, Math.min(100, this.bufferedPercent))}%`)
-                  .height(4).borderRadius(2).backgroundColor(CONTROL_TRACK_SOFT_FILL);
+                  .height(3).borderRadius(1.5).backgroundColor(CONTROL_TRACK_SOFT_FILL);
                 Row()
                   .width(this.durationMs > 0
                     ? `${Math.max(0, Math.min(100, ((this.dragging ? this.dragValueMs : this.currentTimeMs) / this.durationMs) * 100))}%`
                     : '0%')
-                  .height(4).borderRadius(2).backgroundColor(CONTROL_TRACK);
+                  .height(3).borderRadius(1.5).backgroundColor(CONTROL_TRACK);
                 Slider({
                   value: this.dragging ? this.dragValueMs : this.currentTimeMs,
                   min: 0, max: this.durationMs > 0 ? this.durationMs : 1, step: 1
                 })
                   .width('100%')
                   .trackColor('#00000000').selectedColor('#00000000').blockColor(CONTROL_ACCENT)
-                  .blockSize({ width: 16, height: 16 })
+                  .blockSize({ width: 12, height: 12 })
                   .onChange((value: number, mode: SliderChangeMode) => { this.onSeekChange(value, mode); });
               }
               .layoutWeight(1)
               .height(20)
               .align(Alignment.Start);
-              Text(formatMs(this.durationMs)).fontSize(11).fontColor(CONTROL_TEXT_SOFT).fontWeight(FontWeight.Medium);
-            }.width('100%').alignItems(VerticalAlign.Center);
+              Text(formatMs(this.durationMs))
+                .fontSize(11).fontColor(CONTROL_TEXT_SOFT).fontWeight(FontWeight.Medium);
+              this.speedControl();
+              this.symbolControl(
+                this.landscape
+                  ? 'sys.symbol.rectangle_portrait_rotate'
+                  : 'sys.symbol.rectangle_rotate',
+                30,
+                18,
+                () => {
+                  this.syncAutoHideControls();
+                  this.onOrientationChange(!this.landscape);
+                }
+              );
+            }
+            .width('100%')
+            .height(44)
+            .padding({ left: 8, right: 8 })
+            .alignItems(VerticalAlign.Center)
+            // 控制条和查看器顶栏是同一层东西，走同一档材质（见 overlayMaterial
+            // 的 'viewer'：底永远是黑的，不跟随主题）。
+            .backgroundColor(overlayGlassFill('viewer', CONTROL_BAR_BG))
+            .backdropBlur(overlayBackdropBlur('viewer'))
+            .attributeModifier(materialModifier('viewer'))
+            .borderRadius(22);
           }
           .margin({
             left: 12,
             right: 12,
-            bottom: Math.max(14, this.bottomSafe + 8)
+            bottom: Math.max(12, this.bottomSafe + 6)
           })
-          .padding({ left: 14, right: 14, top: 12, bottom: 12 })
-          // 控制条和查看器顶栏是同一层东西，走同一档材质（见 overlayMaterial
-          // 的 'viewer'：底永远是黑的，不跟随主题）。
-          .backgroundColor(overlayGlassFill('viewer', CONTROL_BAR_BG))
-          .backdropBlur(overlayBackdropBlur('viewer'))
-          .attributeModifier(materialModifier('viewer'))
-          .borderRadius(18)
           .transition(TransitionEffect.OPACITY
             .combine(TransitionEffect.translate({ y: 10 }))
             .animation({ duration: 180, curve: Curve.EaseOut }));

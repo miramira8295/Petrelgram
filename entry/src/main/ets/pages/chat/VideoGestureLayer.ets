@@ -38,7 +38,7 @@ const HUD_KIND_VOLUME: string = 'volume';
 
 // 控制条大致高度，手势区要让出来。宁可多让一点：让少了会和进度条抢，
 // 让多了只是手势区小一圈。
-const CONTROL_BAR_RESERVE_VP: number = 96;
+const CONTROL_BAR_RESERVE_VP: number = 64;
 
 @Component
 export struct VideoGestureLayer {
