@@ -24,6 +24,11 @@ export function markPlayedOnce(key: string): void {
   played.add(key);
 }
 
+// Explicit replay only invalidates this message's result, never other dice.
+export function forgetPlayedOnce(key: string): void {
+  played.delete(key);
+}
+
 export function resetPlayedOnceForTest(): void {
   played.clear();
 }

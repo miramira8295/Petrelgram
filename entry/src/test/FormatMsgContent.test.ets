@@ -543,10 +543,43 @@ export default function formatMsgContentTest() {
       expect(r.contentType).assertEqual('video');
       expect(r.videoFileId).assertEqual(80);
       expect(r.photoFileId).assertEqual(81);
-      expect(r.photoWidth).assertEqual(320);
-      expect(r.photoHeight).assertEqual(180);
+      expect(r.photoWidth).assertEqual(1920);
+      expect(r.photoHeight).assertEqual(1080);
       expect(r.videoDuration).assertEqual(75);
       expect(r.text).assertEqual('caption');
+    });
+    it('video_150px_poster_does_not_replace_source_resolution', 0, () => {
+      const r = formatMsgContent(videoMsg(80, 81, 300, 150));
+      expect(r.photoWidth).assertEqual(1920); expect(r.photoHeight).assertEqual(1080);
+      expect(r.photoFileId).assertEqual(81); expect(r.videoFileId).assertEqual(80);
+    });
+    it('portrait_video_uses_source_aspect_even_when_poster_is_square', 0, () => {
+      const m = videoMsg(80, 81, 150, 150);
+      const video = (m['content'] as TdObject)['video'] as TdObject;
+      video['width'] = 1080; video['height'] = 1920;
+      const r = formatMsgContent(m);
+      expect(r.photoWidth).assertEqual(1080); expect(r.photoHeight).assertEqual(1920);
+    });
+    it('missing_source_geometry_falls_back_to_whole_poster_pair', 0, () => {
+      const m = videoMsg(80, 81, 320, 180);
+      const video = (m['content'] as TdObject)['video'] as TdObject;
+      video['height'] = 0;
+      const r = formatMsgContent(m);
+      expect(r.photoWidth).assertEqual(320); expect(r.photoHeight).assertEqual(180);
+    });
+    it('invalid_source_geometry_does_not_mix_or_publish_non_finite_values', 0, () => {
+      const m = videoMsg(80, 81, 320, 180);
+      const video = (m['content'] as TdObject)['video'] as TdObject;
+      video['width'] = Number.NaN; video['height'] = Number.POSITIVE_INFINITY;
+      const r = formatMsgContent(m);
+      expect(r.photoWidth).assertEqual(320); expect(r.photoHeight).assertEqual(180);
+    });
+    it('invalid_source_and_poster_geometry_remain_unknown', 0, () => {
+      const m = videoMsg(80, 81, 320, 0);
+      const video = (m['content'] as TdObject)['video'] as TdObject;
+      video['width'] = 0; video['height'] = 0;
+      const r = formatMsgContent(m);
+      expect(r.photoWidth).assertEqual(0); expect(r.photoHeight).assertEqual(0);
     });
     it('video_zero_size_thumbnail_uses_source_geometry', 0, () => {
       const r = formatMsgContent(videoMsg(90, 91, 0, 0));
@@ -560,8 +593,8 @@ export default function formatMsgContentTest() {
       expect(r.videoFileId).assertEqual(100);
       expect(r.videoFileSize).assertEqual(8192);
       expect(r.photoFileId).assertEqual(101);
-      expect(r.photoWidth).assertEqual(240);
-      expect(r.photoHeight).assertEqual(135);
+      expect(r.photoWidth).assertEqual(480);
+      expect(r.photoHeight).assertEqual(270);
       expect(r.videoDuration).assertEqual(4);
       expect(r.videoMimeType).assertEqual('video/mp4');
       expect(r.videoFileName).assertEqual('loop.mp4');
@@ -846,8 +879,8 @@ export default function formatMsgContentTest() {
 
       const parsed = formatMsgContent(msg);
       expect(parsed.photoFileId).assertEqual(777);
-      expect(parsed.photoWidth).assertEqual(240);
-      expect(parsed.photoHeight).assertEqual(320);
+      expect(parsed.photoWidth).assertEqual(1440);
+      expect(parsed.photoHeight).assertEqual(1920);
     });
 
     it('视频缩略图：文件放在 thumbnail.photo 里也认得出来', 0, () => {

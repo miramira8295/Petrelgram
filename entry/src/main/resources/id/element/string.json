@@ -10829,6 +10829,10 @@
       "value": "Kontak yang sering dihubungi"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "Terbaru"
+    },
+    {
       "name": "gs_recent",
       "value": "Akses terbaru"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "Coba proksi tersimpan berikutnya saat proksi saat ini tetap tidak tersedia"
+      "value": "Jika koneksi terus gagal, beralih otomatis antara proksi tersimpan dan koneksi langsung"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "Tambahkan setidaknya dua proksi untuk mengaktifkan pergantian otomatis"
+      "value": "Tambahkan setidaknya satu proksi untuk mengaktifkan peralihan otomatis"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "Tampilkan pesan disematkan"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "Kecepatan maksimum saat ditahan"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "Tahan sisi kanan video untuk mempercepat bertahap hingga batas ini. Lepaskan untuk kembali ke kecepatan awal. Streaming dibatasi hingga 8×."
+    },
+    {
+      "name": "vf_minimize",
+      "value": "Pemutar mini"
+    },
+    {
+      "name": "vf_resize",
+      "value": "Ubah ukuran pemutar mini"
+    },
+    {
+      "name": "vf_play",
+      "value": "Putar"
+    },
+    {
+      "name": "vf_pause",
+      "value": "Jeda"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "Hapus daftar obrolan terbaru"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "Hapus daftar obrolan terbaru akun ini? Obrolan dan pesan tidak dihapus. Obrolan akan muncul lagi saat dibuka kembali."
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "Hapus dari obrolan terbaru"
+    },
+    {
+      "name": "gs_objects",
+      "value": "Pengguna / Grup / Kanal"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "Pilih kanal"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "Cari nama atau @username"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "Cari isi pesan"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "Cari aplikasi atau @username"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "Bergabung"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "Belum bergabung"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "Nama kanal cocok"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "Nama grup cocok"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "Nama tampilan cocok"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "Username cocok"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "Isi pesan cocok"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "Nama file cocok"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "Semua"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "Pribadi"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "Pengguna"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "Semua kanal"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "Hasil publik"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "Obrolan yang ada"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "Hasil aplikasi"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "Persempit pencarian atau masukkan @username yang tepat. Pencarian nama publik tidak mendukung halaman lanjutan."
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "Cari nama dan username, termasuk grup dan kanal publik yang belum diikuti."
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "Cari isi pesan, termasuk obrolan yang diarsipkan."
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "Cari isi pesan hanya di “%s”."
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "Cari tugas unduhan dan file yang diunduh berdasarkan nama."
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "Pramuat video otomatis"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "Buffer video obrolan lebih awal. Menonaktifkannya tidak memengaruhi pemutaran atau unduhan manual."
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "Sembunyikan pesan tersemat secara default"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "Tampilkan atau sembunyikan lewat menu setiap obrolan"
     }
   ]
 }

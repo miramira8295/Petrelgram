@@ -3,7 +3,7 @@ import { pasteboard } from '@kit.BasicServicesKit';
 import { TdError, TdObject } from '../../tdkit/TdTypes';
 import { getConnectionState, getTdClient } from '../../tdkit/Globals';
 import {
-  ProxyEntry, PROXY_SOCKS5, PROXY_MTPROTO, PROXY_HTTP,
+  ProxyEntry, PROXY_SOCKS5, PROXY_MTPROTO, PROXY_HTTP, PROXY_HTTPS,
   proxyTypeLabel, listProxies, addProxy, editProxy, enableProxy, disableProxy,
   removeProxy, pingProxy, testProxy, getProxyShareLink
 } from '../../store/ProxyApi';
@@ -57,11 +57,11 @@ interface TypeOption {
 const TYPES: TypeOption[] = [
   { label: 'SOCKS5', value: PROXY_SOCKS5 },
   { label: 'MTProto', value: PROXY_MTPROTO },
-  { label: 'HTTP', value: PROXY_HTTP }
+  { label: 'HTTP', value: PROXY_HTTP },
+  { label: 'HTTPS', value: PROXY_HTTPS }
 ];
 
-// Proxy settings are backed only by TDLib. The UI serializes mutations and
-// reconciles uncertain results, while TDLib remains the owner of networking.
+// Proxy settings use native TDLib IDs; HTTPS transport is supplied by the TLS relay.
 // 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
 // 本模块并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router
 // 页和 NavDestination。形状与 PowerUsagePageBuilder 一致。
@@ -314,7 +314,7 @@ export struct ProxyPage {
   }
 
   private autoSwitchAvailable(): boolean {
-    return this.proxies.length >= 2;
+    return this.proxies.length >= 1;
   }
 
   private autoSwitchSubtitle(): ResourceStr {
@@ -753,7 +753,7 @@ export struct ProxyPage {
   }
 
   private copyShareLink(entry: ProxyEntry): void {
-    if (entry.type === PROXY_HTTP || this.actionKey !== '') { return; }
+    if ((entry.type === PROXY_HTTP || entry.type === PROXY_HTTPS) || this.actionKey !== '') { return; }
     this.actionKey = `share_${entry.id}`;
     getProxyShareLink(entry.id).then((url: string): void => {
       if (!this.active) { return; }
@@ -978,19 +978,19 @@ export struct ProxyPage {
 
   private typeTint(type: string): string {
     if (type === PROXY_MTPROTO) { return '#9B6BEA'; }
-    if (type === PROXY_HTTP) { return '#FF9500'; }
+    if (type === PROXY_HTTP || type === PROXY_HTTPS) { return '#FF9500'; }
     return '#3478F6';
   }
 
   private typeIconBackground(type: string): string {
     if (type === PROXY_MTPROTO) { return '#1F9B6BEA'; }
-    if (type === PROXY_HTTP) { return '#1FFF9500'; }
+    if (type === PROXY_HTTP || type === PROXY_HTTPS) { return '#1FFF9500'; }
     return '#1F3478F6';
   }
 
   private typeBadgeBackground(type: string): string {
     if (type === PROXY_MTPROTO) { return '#169B6BEA'; }
-    if (type === PROXY_HTTP) { return '#16FF9500'; }
+    if (type === PROXY_HTTP || type === PROXY_HTTPS) { return '#16FF9500'; }
     return '#163478F6';
   }
 
@@ -1145,7 +1145,7 @@ export struct ProxyPage {
     Menu() {
       MenuItem({ content: $r('app.string.px_edit') }).onClick((): void => this.openEdit(entry));
       MenuItem({ content: $r('app.string.px_test') }).onClick((): void => this.retryPing(entry));
-      if (entry.type !== PROXY_HTTP) {
+      if (entry.type !== PROXY_HTTP && entry.type !== PROXY_HTTPS) {
         MenuItem({ content: $r('app.string.px_copy_link') }).onClick((): void => this.copyShareLink(entry));
       }
       MenuItem({

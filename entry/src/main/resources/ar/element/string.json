@@ -10829,6 +10829,10 @@
       "value": "جهات الاتصال المتكررة"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "الأخيرة"
+    },
+    {
       "name": "gs_recent",
       "value": "الزيارات الأخيرة"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "جرّب الوكيل المحفوظ التالي عند استمرار تعذر الوصول إلى الوكيل الحالي"
+      "value": "عند استمرار فشل الاتصال، التبديل تلقائيًا بين الوكلاء المحفوظين والاتصال المباشر"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "أضف وكيلين على الأقل لتمكين التبديل التلقائي"
+      "value": "أضف وكيلاً واحدًا على الأقل لتفعيل التبديل التلقائي"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "إظهار الرسائل المثبتة"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "أقصى سرعة عند الضغط المطوّل"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "اضغط مطولًا على الجانب الأيمن للفيديو لزيادة السرعة تدريجيًا حتى هذا الحد. ارفع إصبعك لاستعادة السرعة الأصلية. البث محدود بسرعة 8×."
+    },
+    {
+      "name": "vf_minimize",
+      "value": "مشغّل مصغّر"
+    },
+    {
+      "name": "vf_resize",
+      "value": "تغيير حجم المشغّل المصغّر"
+    },
+    {
+      "name": "vf_play",
+      "value": "تشغيل"
+    },
+    {
+      "name": "vf_pause",
+      "value": "إيقاف مؤقت"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "مسح المحادثات الأخيرة"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "هل تريد مسح المحادثات الأخيرة لهذا الحساب؟ لن تُحذف المحادثات أو الرسائل. ستظهر المحادثات مجددًا عند إعادة فتحها."
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "إزالة من المحادثات الأخيرة"
+    },
+    {
+      "name": "gs_objects",
+      "value": "مستخدمون / مجموعات / قنوات"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "اختر قناة"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "ابحث عن اسم أو @username"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "ابحث في محتوى الرسائل"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "ابحث عن تطبيق أو @username"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "منضم"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "غير منضم"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "تطابق اسم القناة"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "تطابق اسم المجموعة"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "تطابق الاسم المعروض"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "تطابق اسم المستخدم"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "تطابق محتوى الرسالة"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "تطابق اسم الملف"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "الكل"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "خاصة"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "مستخدمون"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "كل القنوات"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "نتائج عامة"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "محادثات موجودة"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "نتائج التطبيقات"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "حدد كلمات البحث أو أدخل @username دقيقًا. البحث العام بالأسماء لا يدعم صفحات إضافية."
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "ابحث بالأسماء وأسماء المستخدمين، بما فيها المجموعات والقنوات العامة التي لم تنضم إليها."
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "ابحث في محتوى الرسائل، بما فيها المحادثات المؤرشفة."
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "البحث في محتوى الرسائل داخل «%s» فقط."
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "ابحث عن مهام التنزيل والملفات المنزلة بالاسم."
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "تحميل الفيديو مسبقًا تلقائيًا"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "تخزين فيديوهات الدردشة مؤقتًا مسبقًا. لا يؤثر إيقافه على التشغيل أو التنزيل اليدوي."
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "إخفاء الرسائل المثبتة افتراضيًا"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "يمكن إظهارها أو إخفاؤها من قائمة كل محادثة"
     }
   ]
 }

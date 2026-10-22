@@ -1,3 +1,4 @@
+import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationIconOptions,
   HdsNavigationMenuItemOptions,
@@ -250,7 +251,7 @@ export struct HdsSubDestination {
     // 三个转发。默认值是空操作 / 返回 false，见上面 Prop 声明处的说明。
     .onShown((): void => { this.onShown(); })
     .onHidden((): void => { this.onHidden(); })
-    .onBackPressed((): boolean => { return this.onBackPressed(); })
+    .onBackPressed((): boolean => { return collapseFloatingVideo() || this.onBackPressed(); })
     .width('100%').height('100%')
     .backgroundColor(this.pageBackground);
   }

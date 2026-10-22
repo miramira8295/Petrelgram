@@ -50,6 +50,7 @@ export interface VideoPrefetchHost {
   fileClaimed: (fileId: number) => boolean;
   network: () => string;
   powerSaving: () => boolean;
+  subscribeEnabled?: (listener: (enabled: boolean) => void) => () => void;
 }
 
 // 头块是 synchronous 请求，蜂窝下 20MB 可能要下一阵子；超时只是本地不再等应答，
@@ -74,6 +75,10 @@ export class VideoHeadPrefetcher {
   private chainSeq: Map<number, number> = new Map();
   // 超过并发上限的排队（FIFO、不重复）。
   private queue: number[] = [];
+  private enabled: boolean = true;
+  private unsubscribeEnabled: (() => void) | null = null;
+  // suspend 保留 TDLib 请求；关开关时这些未被用户认领的请求也必须停止。
+  private ownedFiles: Set<number> = new Set();
   private suspended: boolean = false;
   private disposed: boolean = false;
   private skipLogged: boolean = false;
@@ -81,6 +86,26 @@ export class VideoHeadPrefetcher {
   bind(host: VideoPrefetchHost, dwellMs: number = VIDEO_PREFETCH_DWELL_MS): void {
     this.host = host;
     this.dwellMs = Math.max(0, dwellMs);
+    this.unsubscribeEnabled?.();
+    this.unsubscribeEnabled = host.subscribeEnabled?.((enabled: boolean): void => this.setEnabled(enabled)) ?? null;
+  }
+
+  setEnabled(enabled: boolean): void {
+    if (this.disposed || this.enabled === enabled) { return; }
+    this.enabled = enabled;
+    if (!enabled) {
+      this.clearDwellTimers();
+      this.queue = [];
+      const files: number[] = Array.from(this.ownedFiles);
+      this.active.clear();
+      this.ownedFiles.clear();
+      for (const fileId of files) {
+        this.bumpSeq(fileId);
+        this.cancelUnlessClaimed(fileId);
+      }
+    } else if (!this.suspended) {
+      this.resume();
+    }
   }
 
   activeCount(): number {
@@ -115,7 +140,7 @@ export class VideoHeadPrefetcher {
       this.refs.set(ref.fileId, holders);
     }
     holders.add(key);
-    if (this.suspended) {
+    if (this.suspended || !this.enabled) {
       return;
     }
     if (this.dwellMs === 0) {
@@ -191,7 +216,10 @@ export class VideoHeadPrefetcher {
   // 页面销毁：没被认领的在途预取取消掉（这里没有查看器要保护）。
   dispose(): void {
     this.clearDwellTimers();
-    const inflight: number[] = Array.from(this.active);
+    const inflight: number[] = Array.from(this.ownedFiles);
+    this.unsubscribeEnabled?.();
+    this.unsubscribeEnabled = null;
+    this.ownedFiles.clear();
     this.suspend();
     for (const fileId of inflight) {
       this.cancelUnlessClaimed(fileId);
@@ -213,7 +241,7 @@ export class VideoHeadPrefetcher {
   }
 
   private tryStart(ref: VideoRef): void {
-    if (this.host === null || this.active.has(ref.fileId) || this.queue.indexOf(ref.fileId) >= 0) {
+    if (!this.enabled || this.suspended || this.host === null || this.active.has(ref.fileId) || this.queue.indexOf(ref.fileId) >= 0) {
       return;
     }
     const reason: string = prefetchRefusalReason({
@@ -241,6 +269,7 @@ export class VideoHeadPrefetcher {
       return;
     }
     this.active.add(ref.fileId);
+    this.ownedFiles.add(ref.fileId);
     const seq: number = this.bumpSeq(ref.fileId);
     const ranges: VideoPrefetchRange[] = prefetchRanges(ref.fileSize);
     this.issueRange(ref.fileId, ranges, 0, seq);
@@ -248,7 +277,7 @@ export class VideoHeadPrefetcher {
 
   // 一块一块发：同一文件 TDLib 只保留一组 offset/limit，并发发就是互相顶掉。
   private issueRange(fileId: number, ranges: VideoPrefetchRange[], index: number, seq: number): void {
-    if (this.host === null || index >= ranges.length) {
+    if (!this.enabled || this.host === null || index >= ranges.length) {
       return;
     }
     const r: VideoPrefetchRange = ranges[index];
@@ -266,6 +295,8 @@ export class VideoHeadPrefetcher {
       }
       if (index + 1 < ranges.length) {
         this.issueRange(fileId, ranges, index + 1, seq);
+      } else {
+        this.ownedFiles.delete(fileId);
       }
     }).catch((e: TdError): void => {
       logW(`VideoHeadPrefetcher.downloadFile ${fileId}@${r.offset}+${r.limit} failed: ${e.message}`);
@@ -281,6 +312,7 @@ export class VideoHeadPrefetcher {
       return;
     }
     this.active.delete(fileId);
+    this.ownedFiles.delete(fileId);
     this.bumpSeq(fileId);
     if (cancel) {
       this.cancelUnlessClaimed(fileId);
@@ -300,7 +332,7 @@ export class VideoHeadPrefetcher {
   }
 
   private pumpQueue(): void {
-    if (this.host === null || this.suspended) {
+    if (!this.enabled || this.host === null || this.suspended) {
       return;
     }
     while (this.active.size < MAX_CONCURRENT_VIDEO_PREFETCH && this.queue.length > 0) {

@@ -1,9 +1,10 @@
+import { HOLD_SPEED_LIMIT_OPTIONS, HOLD_SPEED_LIMIT_DEFAULT, normalizeHoldSpeedLimit } from '../../util/holdSpeedLimit';
 import { router } from '@kit.ArkUI';
 import { HdsSubDestination } from '../common/HdsSubDestination';
 import {
-  setBoolean, setNumber,
+  setBoolean, setNumber, KEY_VIDEO_AUTO_PRELOAD,
   KEY_POWER_AUTOPLAY_VIDEO, KEY_POWER_AUTOPLAY_GIF, KEY_AUTOPLAY_MUTED,
-  KEY_AUTOPLAY_MAX_MB, AUTOPLAY_MAX_MB_OPTIONS,
+  KEY_AUTOPLAY_MAX_MB, AUTOPLAY_MAX_MB_OPTIONS, KEY_HOLD_SPEED_LIMIT,
   KEY_BG_PLAY_MUSIC, KEY_BG_PLAY_VOICE, KEY_BG_PLAY_VIDEO, KEY_BG_PLAY_LIVE
 } from '../../store/AppSettings';
 import {
@@ -15,9 +16,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 
 const CARD_RADIUS: number = 14;
 
-// 「媒体」设置页：自动播放（视频/GIF，视频开启时展开静音播放）与后台播放
-// （音乐/语音/视频/直播）两个分组。取代原来分散在缓存设置页里的播放段落
-// 与独立的后台播放设置页。
+// 「媒体」设置页：长按播放速度、自动播放与后台播放。
 // 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
 // 并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router 页和
 // NavDestination。形状与试点的 PowerUsagePageBuilder 一致。
@@ -32,10 +31,12 @@ export struct MediaSettingsPage {
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   private pageScroller: Scroller = new Scroller();
+  @StorageProp(KEY_VIDEO_AUTO_PRELOAD) videoAutoPreload: boolean = true;
   @StorageProp(KEY_POWER_AUTOPLAY_VIDEO) autoplayVideo: boolean = true;
   @StorageProp(KEY_POWER_AUTOPLAY_GIF) autoplayGif: boolean = true;
   @StorageProp(KEY_AUTOPLAY_MUTED) autoplayMuted: boolean = true;
   @StorageProp(KEY_AUTOPLAY_MAX_MB) autoplayMaxMb: number = 0;
+  @StorageProp(KEY_HOLD_SPEED_LIMIT) holdSpeedLimit: number = HOLD_SPEED_LIMIT_DEFAULT;
   @StorageProp(KEY_BG_PLAY_MUSIC) bgMusic: boolean = true;
   @StorageProp(KEY_BG_PLAY_VOICE) bgVoice: boolean = true;
   @StorageProp(KEY_BG_PLAY_VIDEO) bgVideo: boolean = false;
@@ -90,6 +91,25 @@ export struct MediaSettingsPage {
   }
 
   @Builder
+  holdSpeedCard() {
+    Column({ space: 8 }) {
+      Row({ space: 12 }) {
+        Text(str('ms_hold_speed_limit')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+        Select(HOLD_SPEED_LIMIT_OPTIONS.map((speed: number): SelectOption => ({ value: `${speed}×` })))
+          .selected(HOLD_SPEED_LIMIT_OPTIONS.indexOf(normalizeHoldSpeedLimit(this.holdSpeedLimit)))
+          .value(`${normalizeHoldSpeedLimit(this.holdSpeedLimit)}×`)
+          .fontColor(COLOR_PRIMARY)
+          .onSelect((index: number): void => {
+            const speed = HOLD_SPEED_LIMIT_OPTIONS[index];
+            if (speed !== undefined) { setNumber(KEY_HOLD_SPEED_LIMIT, speed); }
+          });
+      }.width('100%');
+      Text(str('ms_hold_speed_limit_sub')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+        .width('100%');
+    }.width('100%').padding(14).backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+  }
+
+  @Builder
   autoplayCard() {
     Column() {
       this.toggleRow(str('power_autoplay_video'), '', this.autoplayVideo,
@@ -101,6 +121,9 @@ export struct MediaSettingsPage {
         Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 14 });
         this.autoplaySizeRow();
       }
+      Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 14 });
+      this.toggleRow(str('ms_video_auto_preload'), str('ms_video_auto_preload_sub'), this.videoAutoPreload,
+        (next: boolean): void => setBoolean(KEY_VIDEO_AUTO_PRELOAD, next));
       Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 14 });
       this.toggleRow(str('power_autoplay_gif'), '', this.autoplayGif,
         (next: boolean): void => setBoolean(KEY_POWER_AUTOPLAY_GIF, next));
@@ -137,6 +160,7 @@ export struct MediaSettingsPage {
     }) {
       Scroll(this.pageScroller) {
         Column({ space: 12 }) {
+          this.holdSpeedCard();
           Text(str('ms_autoplay_group')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
             .width('100%').padding({ left: 4, top: 4 });
           this.autoplayCard();

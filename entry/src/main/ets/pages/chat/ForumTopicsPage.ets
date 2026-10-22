@@ -1,3 +1,4 @@
+import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { promptAction } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
@@ -424,6 +425,7 @@ export struct ForumTopicsPage {
     }
     // 本页自绘标题栏（返回键 + 群名 + 话题数那一条），不要 HDS 的。
     .hideTitleBar(true)
+    .onBackPressed((): boolean => collapseFloatingVideo())
     .onReady((ctx: NavDestinationContext): void => {
       this.navStack = ctx.pathStack;
       this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;

@@ -43,6 +43,7 @@ export struct TgsStickerView {
   @Param layerPaths: string[] = [];
   // 只播一次的动画的身份（骰子），播过的再出现直接定格最后一帧。'' = 不记。
   @Param playKey: string = '';
+  @Param replayToken: number = 0;
   @Param thumbPath: string = '';
   @Param boxWidth: number = 160;
   @Param boxHeight: number = 160;
@@ -77,7 +78,7 @@ export struct TgsStickerView {
   // value.
   private loadSeq: number = 0;
 
-  @Monitor('tgsPath')
+  @Monitor('tgsPath', 'replayToken')
   onTgsPathChanged(): void {
     this.loadSeq++;
     this.stopAnim();
@@ -335,6 +336,7 @@ export struct TgsStickerView {
           tgsPath: this.tgsPath,
           layerPaths: this.layerPaths,
           playKey: this.playKey,
+          replayToken: this.replayToken,
           thumbPath: this.thumbPath,
           boxWidth: this.boxWidth,
           boxHeight: this.boxHeight,

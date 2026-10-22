@@ -1,3 +1,6 @@
+import { searchSegments, SearchSegment, searchHit, searchExcerpt } from '../../util/searchPresentation';
+import { DownloadDeleteEffects } from '../../util/downloadDeleteEffects';
+import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
 import { CachedImage } from '../common/CachedImage';
 import { formatDuration } from '../../store/StorageApi';
 import { formatFileSize } from '../../util/formatFileSize';
@@ -33,6 +36,12 @@ const BUTTON_SIZE: number = 34;
 @ReusableV2
 @ComponentV2
 export struct DownloadCenterRow {
+  @Require @Param deleteEffects: DownloadDeleteEffects;
+  @Require @Param listIndex: number;
+  @Local private leaving: number = 0;
+  private unsubDelete: (() => void) | null = null;
+  private attachedDeleteKey: string = '';
+  @Param query: string = '';
   @Require @Param row: DcRowVM;
   @Param batch: boolean = false;
   @Event onAction: (itemId: string, action: string) => void = (_itemId: string, _action: string): void => {};
@@ -44,10 +53,12 @@ export struct DownloadCenterRow {
   private attachedPath: string = '';
 
   aboutToAppear(): void {
+    this.attachDelete();
     this.attachPoster();
   }
 
   aboutToDisappear(): void {
+    this.detachDelete();
     this.detachPoster();
   }
 
@@ -57,18 +68,40 @@ export struct DownloadCenterRow {
   // 报的：「滑到底部之外再回来就没有缩略图了，刚滑进屏幕内的也没有」——行被复用时
   // 既不重挂订阅、也不再发抽帧请求。
   aboutToRecycle(): void {
+    this.detachDelete();
     this.detachPoster();
   }
 
   aboutToReuse(): void {
+    this.attachDelete();
     // @Param 已是新值；@Local poster 已被框架重置。按新路径重新播种 + 订阅。
     this.attachPoster();
   }
 
   // 复用换行、以及同一个 VM 原地改 path，都要重挂。
-  @Monitor('row', 'row.path')
+  @Monitor('row', 'row.path', 'listIndex')
   onRowChanged(): void {
+    this.attachDelete();
     this.attachPoster();
+  }
+
+  private attachDelete(): void {
+    const key = `${this.listIndex}:${this.row.itemId}`;
+    const channel = this.deleteEffects.channel(this.listIndex);
+    const rowKey = this.deleteEffects.rowKey(this.row.itemId);
+    if (this.unsubDelete !== null && this.attachedDeleteKey === key) {
+      this.leaving = channel.value(rowKey);
+      return;
+    }
+    this.detachDelete();
+    this.attachedDeleteKey = key;
+    this.unsubDelete = channel.subscribe(rowKey, (strength: number): void => { this.leaving = strength; });
+  }
+
+  private detachDelete(): void {
+    this.unsubDelete?.();
+    this.unsubDelete = null;
+    this.attachedDeleteKey = '';
   }
 
   private attachPoster(): void {
@@ -219,182 +252,196 @@ export struct DownloadCenterRow {
   }
 
   build() {
-    Column() {
-      Row({ space: 11 }) {
-        if (this.batch) {
-          Row() {
-            if (this.row.selected) {
-              SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontWeight(FontWeight.Bold).fontColor([Color.White]);
-            }
-          }
-          .width(22).height(22).borderRadius(11)
-          .backgroundColor(this.row.selected ? COLOR_PRIMARY : Color.Transparent)
-          .borderWidth(this.row.selected ? 0 : 1.5)
-          .borderColor(COLOR_TEXT_SECONDARY)
-          .justifyContent(FlexAlign.Center)
-          .onClick((): void => { this.act(DC_ACTION_SELECT); });
-        }
-        if (this.row.kind === DC_KIND_PHOTO && this.row.path !== '') {
-          CachedImage({ path: this.row.path, boxWidth: 44, boxHeight: 44, radius: 12, fit: ImageFit.Cover });
-        } else if (this.poster !== '') {
-          Stack() {
-            CachedImage({ path: this.poster, boxWidth: 44, boxHeight: 44, radius: 12, fit: ImageFit.Cover });
-            SymbolGlyph($r('sys.symbol.play_fill')).fontSize(14).fontColor([Color.White]);
-          }
-          .width(44).height(44);
-        } else {
-          Row() {
-            SymbolGlyph(this.kindIcon()).fontSize(22).fontColor([this.tint()]);
-          }
-          .width(44).height(44).borderRadius(12)
-          .backgroundColor(this.tintSoft())
-          .justifyContent(FlexAlign.Center);
-        }
-        Column() {
-          Text(this.title())
-            .width('100%')
-            .fontSize(14.5).fontWeight(600).fontColor(COLOR_TEXT_PRIMARY)
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-          if (this.done()) {
-            Row({ space: 6 }) {
-              Text(this.row.savedLocal ? $r('app.string.dc_badge_saved_local') : $r('app.string.dc_badge_cache_only'))
-                .fontSize(10.5).fontWeight(600)
-                .fontColor(this.row.savedLocal ? $r('app.color.dc_ok') : $r('app.color.dc_warn'))
-                .backgroundColor(this.row.savedLocal ? $r('app.color.dc_ok_soft') : $r('app.color.dc_warn_soft'))
-                .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-                .borderRadius(5)
-                .flexShrink(0);
-              Text(this.metaText())
-                .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-                .layoutWeight(1);
-            }
-            .width('100%')
-            .margin({ top: 4 });
-          } else {
-            if (this.metaText() !== '') {
-              Text(this.metaText())
-                .width('100%')
-                .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-                .margin({ top: 3 });
-            }
-            if (this.showBar()) {
-              Stack({ alignContent: Alignment.Start }) {
-                Row()
-                  .width(`${this.percent()}%`)
-                  .height('100%')
-                  .borderRadius(2)
-                  .backgroundColor(this.row.state === DC_STATE_DOWNLOADING ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY);
+    DissolveDeleteEffect({
+      instanceKey: 'download-' + this.listIndex,
+      rowId: this.deleteEffects.rowKey(this.row.itemId), leaving: this.leaving,
+      channel: this.deleteEffects.channel(this.listIndex)
+    }) {
+      Column() {
+        Row({ space: 11 }) {
+          if (this.batch) {
+            Row() {
+              if (this.row.selected) {
+                SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontWeight(FontWeight.Bold).fontColor([Color.White]);
               }
-              .width('100%').height(4).borderRadius(2).clip(true)
-              .backgroundColor($r('app.color.dc_chip'))
-              .margin({ top: 8 });
             }
-            Text(this.subText())
+            .width(22).height(22).borderRadius(11)
+            .backgroundColor(this.row.selected ? COLOR_PRIMARY : Color.Transparent)
+            .borderWidth(this.row.selected ? 0 : 1.5)
+            .borderColor(COLOR_TEXT_SECONDARY)
+            .justifyContent(FlexAlign.Center)
+            .onClick((): void => { this.act(DC_ACTION_SELECT); });
+          }
+          if (this.row.kind === DC_KIND_PHOTO && this.row.path !== '') {
+            CachedImage({ path: this.row.path, boxWidth: 44, boxHeight: 44, radius: 12, fit: ImageFit.Cover });
+          } else if (this.poster !== '') {
+            Stack() {
+              CachedImage({ path: this.poster, boxWidth: 44, boxHeight: 44, radius: 12, fit: ImageFit.Cover });
+              SymbolGlyph($r('sys.symbol.play_fill')).fontSize(14).fontColor([Color.White]);
+            }
+            .width(44).height(44);
+          } else {
+            Row() {
+              SymbolGlyph(this.kindIcon()).fontSize(22).fontColor([this.tint()]);
+            }
+            .width(44).height(44).borderRadius(12)
+            .backgroundColor(this.tintSoft())
+            .justifyContent(FlexAlign.Center);
+          }
+          Column() {
+            Text() {
+              ForEach(searchSegments(searchExcerpt(this.title(), this.query), this.row.name === '' ? '' : this.query), (part: SearchSegment) => {
+                Span(part.text).fontColor(part.hit ? COLOR_PRIMARY : COLOR_TEXT_PRIMARY)
+                  .fontWeight(part.hit ? FontWeight.Bold : FontWeight.Normal);
+              }, (part: SearchSegment, index: number): string => `${index}:${part.text}`);
+            }
               .width('100%')
-              .fontSize(12).fontWeight(this.row.state === DC_STATE_FAILED ? 600 : 500)
-              .fontColor(this.subColor())
-              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-              .margin({ top: 6 });
-          }
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start);
-        Row({ space: 6 }) {
-          if (this.row.state === DC_STATE_DOWNLOADING) {
-            Button({ type: ButtonType.Circle }) {
-              SymbolGlyph($r('sys.symbol.pause')).fontSize(15).fontColor([COLOR_PRIMARY]);
+              .fontSize(14.5).fontWeight(600).fontColor(COLOR_TEXT_PRIMARY)
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+            if (searchHit(this.row.name, this.query)) {
+              Text($r('app.string.gs_hit_filename')).fontSize(11).fontColor(COLOR_PRIMARY);
             }
-            .width(BUTTON_SIZE).height(BUTTON_SIZE)
-            .backgroundColor($r('app.color.dc_chip'))
-            .accessibilityText($r('app.string.dc_action_pause'))
-            .onClick((): void => { this.act(DC_ACTION_PAUSE); });
+            if (this.done()) {
+              Row({ space: 6 }) {
+                Text(this.row.savedLocal ? $r('app.string.dc_badge_saved_local') : $r('app.string.dc_badge_cache_only'))
+                  .fontSize(10.5).fontWeight(600)
+                  .fontColor(this.row.savedLocal ? $r('app.color.dc_ok') : $r('app.color.dc_warn'))
+                  .backgroundColor(this.row.savedLocal ? $r('app.color.dc_ok_soft') : $r('app.color.dc_warn_soft'))
+                  .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                  .borderRadius(5)
+                  .flexShrink(0);
+                Text(this.metaText())
+                  .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .layoutWeight(1);
+              }
+              .width('100%')
+              .margin({ top: 4 });
+            } else {
+              if (this.metaText() !== '') {
+                Text(this.metaText())
+                  .width('100%')
+                  .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .margin({ top: 3 });
+              }
+              if (this.showBar()) {
+                Stack({ alignContent: Alignment.Start }) {
+                  Row()
+                    .width(`${this.percent()}%`)
+                    .height('100%')
+                    .borderRadius(2)
+                    .backgroundColor(this.row.state === DC_STATE_DOWNLOADING ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY);
+                }
+                .width('100%').height(4).borderRadius(2).clip(true)
+                .backgroundColor($r('app.color.dc_chip'))
+                .margin({ top: 8 });
+              }
+              Text(this.subText())
+                .width('100%')
+                .fontSize(12).fontWeight(this.row.state === DC_STATE_FAILED ? 600 : 500)
+                .fontColor(this.subColor())
+                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                .margin({ top: 6 });
+            }
           }
-          if (this.row.state === DC_STATE_WAITING_WIFI) {
-            Button($r('app.string.dc_allow_cellular_short'))
-              .height(BUTTON_SIZE)
-              .padding({ left: 12, right: 12 })
-              .fontSize(12.5).fontWeight(600)
-              .fontColor(COLOR_PRIMARY)
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start);
+          Row({ space: 6 }) {
+            if (this.row.state === DC_STATE_DOWNLOADING) {
+              Button({ type: ButtonType.Circle }) {
+                SymbolGlyph($r('sys.symbol.pause')).fontSize(15).fontColor([COLOR_PRIMARY]);
+              }
+              .width(BUTTON_SIZE).height(BUTTON_SIZE)
+              .backgroundColor($r('app.color.dc_chip'))
+              .accessibilityText($r('app.string.dc_action_pause'))
+              .onClick((): void => { this.act(DC_ACTION_PAUSE); });
+            }
+            if (this.row.state === DC_STATE_WAITING_WIFI) {
+              Button($r('app.string.dc_allow_cellular_short'))
+                .height(BUTTON_SIZE)
+                .padding({ left: 12, right: 12 })
+                .fontSize(12.5).fontWeight(600)
+                .fontColor(COLOR_PRIMARY)
+                .backgroundColor(accentSoft())
+                .accessibilityText($r('app.string.dc_allow_cellular'))
+                .onClick((): void => { this.act(DC_ACTION_ALLOW_CELLULAR); });
+            }
+            if (this.row.state === DC_STATE_PAUSED || this.row.state === DC_STATE_PARTIAL) {
+              Button({ type: ButtonType.Circle }) {
+                SymbolGlyph($r('sys.symbol.play_fill')).fontSize(15).fontColor([COLOR_PRIMARY]);
+              }
+              .width(BUTTON_SIZE).height(BUTTON_SIZE)
               .backgroundColor(accentSoft())
-              .accessibilityText($r('app.string.dc_allow_cellular'))
-              .onClick((): void => { this.act(DC_ACTION_ALLOW_CELLULAR); });
-          }
-          if (this.row.state === DC_STATE_PAUSED || this.row.state === DC_STATE_PARTIAL) {
-            Button({ type: ButtonType.Circle }) {
-              SymbolGlyph($r('sys.symbol.play_fill')).fontSize(15).fontColor([COLOR_PRIMARY]);
+              .accessibilityText($r('app.string.dc_action_resume'))
+              .onClick((): void => { this.act(DC_ACTION_RESUME); });
             }
-            .width(BUTTON_SIZE).height(BUTTON_SIZE)
-            .backgroundColor(accentSoft())
-            .accessibilityText($r('app.string.dc_action_resume'))
-            .onClick((): void => { this.act(DC_ACTION_RESUME); });
-          }
-          if (this.row.state === DC_STATE_FAILED) {
-            Button({ type: ButtonType.Circle }) {
-              SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(15).fontColor([$r('app.color.dc_err')]);
+            if (this.row.state === DC_STATE_FAILED) {
+              Button({ type: ButtonType.Circle }) {
+                SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(15).fontColor([$r('app.color.dc_err')]);
+              }
+              .width(BUTTON_SIZE).height(BUTTON_SIZE)
+              .backgroundColor($r('app.color.dc_err_soft'))
+              .accessibilityText($r('app.string.dc_action_retry'))
+              .onClick((): void => { this.act(DC_ACTION_RETRY); });
             }
-            .width(BUTTON_SIZE).height(BUTTON_SIZE)
-            .backgroundColor($r('app.color.dc_err_soft'))
-            .accessibilityText($r('app.string.dc_action_retry'))
-            .onClick((): void => { this.act(DC_ACTION_RETRY); });
-          }
-          if (!this.done()) {
-            Button({ type: ButtonType.Circle }) {
-              SymbolGlyph($r('sys.symbol.xmark')).fontSize(13).fontColor([COLOR_TEXT_SECONDARY]);
+            if (!this.done()) {
+              Button({ type: ButtonType.Circle }) {
+                SymbolGlyph($r('sys.symbol.xmark')).fontSize(13).fontColor([COLOR_TEXT_SECONDARY]);
+              }
+              .width(BUTTON_SIZE).height(BUTTON_SIZE)
+              .backgroundColor($r('app.color.dc_chip'))
+              .accessibilityText($r('app.string.dc_action_cancel'))
+              .onClick((): void => { this.act(DC_ACTION_CANCEL); });
             }
-            .width(BUTTON_SIZE).height(BUTTON_SIZE)
-            .backgroundColor($r('app.color.dc_chip'))
-            .accessibilityText($r('app.string.dc_action_cancel'))
-            .onClick((): void => { this.act(DC_ACTION_CANCEL); });
-          }
-          if (this.done() && !this.row.savedLocal) {
-            Button({ type: ButtonType.Circle }) {
-              SymbolGlyph($r('sys.symbol.square_and_arrow_down')).fontSize(15).fontColor([Color.White]);
+            if (this.done() && !this.row.savedLocal) {
+              Button({ type: ButtonType.Circle }) {
+                SymbolGlyph($r('sys.symbol.square_and_arrow_down')).fontSize(15).fontColor([Color.White]);
+              }
+              .width(BUTTON_SIZE).height(BUTTON_SIZE)
+              .backgroundColor(COLOR_PRIMARY)
+              .accessibilityText($r('app.string.dc_action_save'))
+              .onClick((): void => { this.act(DC_ACTION_SAVE); });
             }
-            .width(BUTTON_SIZE).height(BUTTON_SIZE)
-            .backgroundColor(COLOR_PRIMARY)
-            .accessibilityText($r('app.string.dc_action_save'))
-            .onClick((): void => { this.act(DC_ACTION_SAVE); });
-          }
-          if (this.done() && this.row.savedLocal) {
-            Button({ type: ButtonType.Circle }) {
-              SymbolGlyph($r('sys.symbol.arrow_up_right')).fontSize(14).fontColor([COLOR_PRIMARY]);
+            if (this.done() && this.row.savedLocal) {
+              Button({ type: ButtonType.Circle }) {
+                SymbolGlyph($r('sys.symbol.arrow_up_right')).fontSize(14).fontColor([COLOR_PRIMARY]);
+              }
+              .width(BUTTON_SIZE).height(BUTTON_SIZE)
+              .backgroundColor($r('app.color.dc_chip'))
+              .accessibilityText($r('app.string.dc_action_open'))
+              .onClick((): void => { this.act(DC_ACTION_OPEN); });
             }
-            .width(BUTTON_SIZE).height(BUTTON_SIZE)
-            .backgroundColor($r('app.color.dc_chip'))
-            .accessibilityText($r('app.string.dc_action_open'))
-            .onClick((): void => { this.act(DC_ACTION_OPEN); });
-          }
-          if (this.done()) {
-            Button({ type: ButtonType.Circle }) {
-              SymbolGlyph($r('sys.symbol.trash')).fontSize(14).fontColor([COLOR_TEXT_SECONDARY]);
+            if (this.done()) {
+              Button({ type: ButtonType.Circle }) {
+                SymbolGlyph($r('sys.symbol.trash')).fontSize(14).fontColor([COLOR_TEXT_SECONDARY]);
+              }
+              .width(BUTTON_SIZE).height(BUTTON_SIZE)
+              .backgroundColor($r('app.color.dc_chip'))
+              .accessibilityText($r('app.string.dc_delete_cache'))
+              .onClick((): void => { this.act(DC_ACTION_DELETE); });
             }
-            .width(BUTTON_SIZE).height(BUTTON_SIZE)
-            .backgroundColor($r('app.color.dc_chip'))
-            .accessibilityText($r('app.string.dc_delete_cache'))
-            .onClick((): void => { this.act(DC_ACTION_DELETE); });
           }
+          .flexShrink(0);
         }
-        .flexShrink(0);
+        .width('100%')
+        .padding({ left: 14, right: 14, top: 12, bottom: 12 })
+        .alignItems(VerticalAlign.Center);
+        if (!this.row.last) {
+          Divider().strokeWidth(HAIRLINE).color($r('app.color.dc_line'));
+        }
       }
       .width('100%')
-      .padding({ left: 14, right: 14, top: 12, bottom: 12 })
-      .alignItems(VerticalAlign.Center);
-      if (!this.row.last) {
-        Divider().strokeWidth(HAIRLINE).color($r('app.color.dc_line'));
-      }
+      .backgroundColor(COLOR_SURFACE)
+      .borderWidth({
+        left: HAIRLINE, right: HAIRLINE, top: this.row.first ? HAIRLINE : 0, bottom: this.row.last ? HAIRLINE : 0
+      })
+      .borderColor($r('app.color.dc_line'))
+      .borderRadius({
+        topLeft: this.row.first ? ROW_RADIUS : 0, topRight: this.row.first ? ROW_RADIUS : 0,
+        bottomLeft: this.row.last ? ROW_RADIUS : 0, bottomRight: this.row.last ? ROW_RADIUS : 0
+      })
+      .clip(true);
     }
-    .width('100%')
-    .backgroundColor(COLOR_SURFACE)
-    .borderWidth({
-      left: HAIRLINE, right: HAIRLINE, top: this.row.first ? HAIRLINE : 0, bottom: this.row.last ? HAIRLINE : 0
-    })
-    .borderColor($r('app.color.dc_line'))
-    .borderRadius({
-      topLeft: this.row.first ? ROW_RADIUS : 0, topRight: this.row.first ? ROW_RADIUS : 0,
-      bottomLeft: this.row.last ? ROW_RADIUS : 0, bottomRight: this.row.last ? ROW_RADIUS : 0
-    })
-    .clip(true);
   }
 }

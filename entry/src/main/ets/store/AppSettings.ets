@@ -1,3 +1,6 @@
+import { KEY_HIDE_PINNED_DEFAULT, pinnedVisibilityDefaults } from '../util/pinnedVisibilityState';
+import { KEY_VIDEO_AUTO_PRELOAD, publishVideoPreload } from '../util/videoPreloadSetting';
+import { HOLD_SPEED_LIMIT_DEFAULT, normalizeHoldSpeedLimit } from '../util/holdSpeedLimit';
 import { preferences } from '@kit.ArkData';
 import { EXT_LINK_DEFAULT } from '../util/externalLinkPolicy';
 import { mirrorChatEnvKey, seedChatEnvFromStorage } from '../util/chatEnvMirror';
@@ -28,6 +31,9 @@ import {
   BUBBLE_GLASS_ON_DEFAULT,
   SURFACE_GLASS_LEVEL_DEFAULT, SURFACE_GLASS_ON_DEFAULT
 } from '../util/surfaceGlass';
+
+export { KEY_HIDE_PINNED_DEFAULT } from '../util/pinnedVisibilityState';
+export { KEY_VIDEO_AUTO_PRELOAD } from '../util/videoPreloadSetting';
 
 // User settings that outlive the process. Each one is mirrored into AppStorage
 // so any component can bind it with @StorageProp and re-render on change, while
@@ -155,6 +161,7 @@ export function patternStrengthKey(forDark: boolean): string {
 export const KEY_AUTOPLAY_MUTED: string = 'autoplayMuted';
 // 自动播放的视频大小上限（MB，0 = 不限，#226）。超过的不自动播，点开照常看。
 export const KEY_AUTOPLAY_MAX_MB: string = 'autoplayMaxMb';
+export const KEY_HOLD_SPEED_LIMIT: string = 'holdSpeedLimit';
 export const AUTOPLAY_MAX_MB_OPTIONS: number[] = [0, 10, 20, 50, 100];
 export const POWER_THRESHOLD_DEFAULT: number = 10;
 
@@ -414,6 +421,7 @@ export const KEY_VIEWER_CONTINUOUS_HOP: string = 'viewerContinuousHop';
 export const KEY_MUSIC_CENTER_ON: string = 'musicCenterOn';
 
 const DATA_BOOLEAN_TRUE_DEFAULTS: string[] = [
+  KEY_VIDEO_AUTO_PRELOAD,
   KEY_BG_CACHE_WIFI_ONLY,
   KEY_CRASH_UPLOAD,
   KEY_VIEWER_CONTINUOUS_HOP,
@@ -433,6 +441,7 @@ const DATA_BOOLEAN_TRUE_DEFAULTS: string[] = [
 export const KEY_FORCE_SINGLE_COLUMN: string = 'forceSingleColumn';
 
 const DATA_BOOLEAN_FALSE_DEFAULTS: string[] = [
+  KEY_HIDE_PINNED_DEFAULT,
   KEY_STATUS_FOLLOW_TITLE,
   KEY_ROW_SWIPE_ACTIONS,
   KEY_WEBPUSH_ENABLED,
@@ -619,6 +628,8 @@ export async function initSettings(context: common.Context): Promise<void> {
     }
     AppStorage.setOrCreate(KEY_AUTOPLAY_MUTED, await s.get(KEY_AUTOPLAY_MUTED, true) as boolean);
     AppStorage.setOrCreate(KEY_AUTOPLAY_MAX_MB, await s.get(KEY_AUTOPLAY_MAX_MB, 0) as number);
+    AppStorage.setOrCreate(KEY_HOLD_SPEED_LIMIT,
+      normalizeHoldSpeedLimit(await s.get(KEY_HOLD_SPEED_LIMIT, HOLD_SPEED_LIMIT_DEFAULT) as number));
     for (const key of DATA_STRING_KEYS) {
       AppStorage.setOrCreate(key, await s.get(key, '') as string);
     }
@@ -644,6 +655,7 @@ export async function initSettings(context: common.Context): Promise<void> {
   } catch (e) {
     logE(`AppSettings.initSettings failed: ${e}`);
     // Defaults still populate AppStorage so the UI works without persistence.
+    AppStorage.setOrCreate(KEY_HOLD_SPEED_LIMIT, HOLD_SPEED_LIMIT_DEFAULT);
     AppStorage.setOrCreate(KEY_TEXT_SIZE, TEXT_SIZE_DEFAULT);
     AppStorage.setOrCreate(KEY_SPLIT_NAV_WIDTH, 0);
     AppStorage.setOrCreate(KEY_BUBBLE_RADIUS, RADIUS_DEFAULT);
@@ -699,6 +711,7 @@ export async function initSettings(context: common.Context): Promise<void> {
     beginBatteryMonitoring();
   }
   // P4 批 0：启动期上面那批 setOrCreate 先于双写接线，收尾整体播种一次镜像。
+  pinnedVisibilityDefaults.hidden = AppStorage.get<boolean>(KEY_HIDE_PINNED_DEFAULT) ?? false;
   seedChatEnvFromStorage();
 }
 
@@ -714,6 +727,7 @@ function persist(key: string, value: preferences.ValueType): void {
 }
 
 export function setNumber(key: string, value: number): void {
+  if (key === KEY_HOLD_SPEED_LIMIT) { value = normalizeHoldSpeedLimit(value); }
   AppStorage.setOrCreate(key, value);
   mirrorChatEnvKey(key, value);
   persist(key, value);
@@ -723,6 +737,7 @@ export function setNumber(key: string, value: number): void {
 }
 
 export function setBoolean(key: string, value: boolean): void {
+  if (key === KEY_HIDE_PINNED_DEFAULT) { pinnedVisibilityDefaults.hidden = value; }
   if (key === KEY_CRASH_UPLOAD) {
     // 崩溃上报的开关额外落一个标记文件。扩展进程读不到 AppStorage、也不能
     // import 这个模块（会把 ArkUI 依赖拖进那个没有 ArkUI 的进程），标记文件
@@ -732,6 +747,9 @@ export function setBoolean(key: string, value: boolean): void {
   AppStorage.setOrCreate(key, value);
   mirrorChatEnvKey(key, value);
   persist(key, value);
+  if (key === KEY_VIDEO_AUTO_PRELOAD) {
+    publishVideoPreload(value);
+  }
 }
 
 export function setString(key: string, value: string): void {

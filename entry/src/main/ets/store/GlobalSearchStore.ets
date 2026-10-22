@@ -1,3 +1,5 @@
+import { SearchIdentity, activeSearchUsernames } from '../util/searchPresentation';
+import { recentChatHistory } from '../services/RecentChatHistoryService';
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { formatUserStatus } from '../util/formatUserStatus';
@@ -8,6 +10,7 @@ import { logE } from '../util/log';
 const DL_PRIORITY: number = 1;
 
 export interface SearchRow {
+  identity?: SearchIdentity;
   chatId: number;
   userId: number; // >0 for app (bot) rows — open via createPrivateChat
   title: string;
@@ -23,11 +26,16 @@ type Bucket = 'top' | 'recent' | 'opened' | 'results' | 'joined' | 'similar' | '
 // Backing store for the global search page: frequent contacts (getTopChats),
 // recently opened chats, and name-based chat search (local + public).
 export class GlobalSearchStore {
+  private localResultIds: Set<number> = new Set();
+  private identities: Map<number, SearchIdentity> = new Map();
   private client: TdClient;
   private listeners: Listener[] = [];
   private unsubs: Array<() => void> = [];
   private fileApply: Map<number, (path: string) => void> = new Map();
   private searchSeq: number = 0;
+  private openedSeq: number = 0;
+  private recentSeq: number = 0;
+  private closed: boolean = false;
   private joinedResolvePending: number = 0;
   private similarResolvePending: number = 0;
 
@@ -78,6 +86,11 @@ export class GlobalSearchStore {
   }
 
   open(): void {
+    this.closed = false;
+    this.unsubs.push(recentChatHistory(this.client).subscribe((): void => {
+      this.applyOpenedVisibility();
+      this.loadRecentlyOpened();
+    }));
     this.unsubs.push(this.client.onUpdate('updateFile', (u: TdObject) => {
       const f = u['file'] as TdObject | undefined;
       if (f !== undefined) {
@@ -255,7 +268,8 @@ export class GlobalSearchStore {
         ? {
           chatId: r.chatId, userId: r.userId, title,
           initials: title.length > 0 ? title.substring(0, 1).toUpperCase() : '?',
-          avatarPath: r.avatarPath, subtitle, isChannel: false
+          avatarPath: r.avatarPath, subtitle, isChannel: false,
+          identity: { kind: 'user', usernames: activeSearchUsernames(user), existing: false }
         } : r);
       this.notify();
       const photo = user['profile_photo'] as TdObject | undefined;
@@ -265,7 +279,7 @@ export class GlobalSearchStore {
         this.apps = this.apps.map((r: SearchRow): SearchRow => r.userId === userId
           ? {
             chatId: r.chatId, userId: r.userId, title: r.title, initials: r.initials,
-            avatarPath: p, subtitle: r.subtitle, isChannel: false
+            avatarPath: p, subtitle: r.subtitle, isChannel: false, identity: r.identity
           } : r);
         this.notify();
       });
@@ -277,6 +291,9 @@ export class GlobalSearchStore {
   }
 
   close(): void {
+    this.closed = true;
+    this.searchSeq++;
+    this.openedSeq++;
     for (const un of this.unsubs) {
       un();
     }
@@ -321,19 +338,22 @@ export class GlobalSearchStore {
   }
 
   private loadRecent(): void {
+    const seq = ++this.recentSeq;
     this.recentLoaded = false;
     this.recentFailed = false;
     this.notify();
     // Empty searchChats returns the "recently found" list used by Telegram's
     // global-search landing. It is the same data source clearRecentlyFoundChats
-    // clears; getRecentlyOpenedChats is a different, non-clearable history.
+    // clears; getRecentlyOpenedChats has a separate local presentation history.
     const req: TdRequest = { '@type': 'searchChats' };
     req['query'] = '';
     req['limit'] = 20;
     this.client.send(req).then((res: TdObject) => {
+      if (this.closed || seq !== this.recentSeq) { return; }
       this.recentLoaded = true;
       this.fillBucket('recent', (res['chat_ids'] as number[] | undefined) ?? []);
     }).catch((e: TdError) => {
+      if (this.closed || seq !== this.recentSeq) { return; }
       this.recentLoaded = true;
       this.recentFailed = true;
       this.notify();
@@ -342,15 +362,18 @@ export class GlobalSearchStore {
   }
 
   private loadRecentlyOpened(): void {
+    const seq = ++this.openedSeq;
     this.openedLoaded = false;
     this.openedFailed = false;
     this.notify();
     const req: TdRequest = { '@type': 'getRecentlyOpenedChats' };
     req['limit'] = 30;
     this.client.send(req).then((res: TdObject) => {
+      if (this.closed || seq !== this.openedSeq) { return; }
       this.openedLoaded = true;
-      this.fillBucket('opened', (res['chat_ids'] as number[] | undefined) ?? []);
+      this.fillBucket('opened', recentChatHistory(this.client).filter((res['chat_ids'] as number[] | undefined) ?? []));
     }).catch((e: TdError) => {
+      if (this.closed || seq !== this.openedSeq) { return; }
       this.openedLoaded = true;
       this.openedFailed = true;
       this.notify();
@@ -358,16 +381,47 @@ export class GlobalSearchStore {
     });
   }
 
-  clearRecent(): Promise<void> {
-    const previous = [...this.recent];
-    this.recent = [];
+  private applyOpenedVisibility(): void {
+    const visible = recentChatHistory(this.client).filter(this.recentlyOpened.map((row: SearchRow): number => row.chatId));
+    this.recentlyOpened = this.recentlyOpened.filter((row: SearchRow): boolean => visible.indexOf(row.chatId) >= 0);
     this.notify();
-    const req: TdRequest = { '@type': 'clearRecentlyFoundChats' };
-    return this.client.send(req).then((): void => {}).catch((e: TdError) => {
-      this.recent = previous;
+  }
+
+  clearOpened(): void {
+    if (this.closed) { return; }
+    recentChatHistory(this.client).clear();
+  }
+
+  removeOpened(chatId: number): void {
+    if (this.closed) { return; }
+    recentChatHistory(this.client).remove(chatId);
+  }
+
+  removeRecent(chatId: number): Promise<void> {
+    if (this.closed || chatId === 0) { return Promise.resolve(); }
+    const req: TdRequest = { '@type': 'removeRecentlyFoundChat' };
+    req['chat_id'] = chatId;
+    // 等服务端成功再移除，失败保留原行；并发删除不会通过整表回滚互相覆盖。
+    return this.client.send(req).then((): void => {
+      if (this.closed) { return; }
+      this.recentSeq++;
+      this.recentLoaded = true;
+      this.recentFailed = false;
+      this.recent = this.recent.filter((row: SearchRow): boolean => row.chatId !== chatId);
       this.notify();
-      logE(`GlobalSearchStore.clearRecentlyFoundChats failed: ${e.message}`);
-      return Promise.reject(e);
+    });
+  }
+
+  clearRecent(): Promise<void> {
+    if (this.closed) { return Promise.resolve(); }
+    const req: TdRequest = { '@type': 'clearRecentlyFoundChats' };
+    return this.client.send(req).then((): void => {
+      if (this.closed) { return; }
+      this.recentSeq++;
+      this.recentLoaded = true;
+      this.recentFailed = false;
+      this.recent = [];
+      this.notify();
     });
   }
 
@@ -412,7 +466,7 @@ export class GlobalSearchStore {
   }
 
   // Name search: local known chats first, then public usernames; merged, deduped.
-  searchChats(query: string): void {
+  searchChats(query: string, typeFilter: string = ''): void {
     const q = query.trim();
     const seq = ++this.searchSeq;
     if (q === '') {
@@ -422,6 +476,7 @@ export class GlobalSearchStore {
       this.notify();
       return;
     }
+    this.results = [];
     this.searching = true;
     this.searchFailed = false;
     this.notify();
@@ -430,11 +485,16 @@ export class GlobalSearchStore {
     local['limit'] = 20;
     const pub: TdRequest = { '@type': 'searchPublicChats' };
     pub['query'] = q;
+    if (typeFilter === 'channel' || typeFilter === 'bot') {
+      const filter: TdObject = { '@type': typeFilter === 'channel' ? 'searchChatTypeFilterChannel' : 'searchChatTypeFilterBot' };
+      local['type_filter'] = filter; pub['type_filter'] = filter;
+    }
     this.client.send(local).then((localRes: TdObject) => {
       if (seq !== this.searchSeq) {
         return;
       }
       const ids = (localRes['chat_ids'] as number[] | undefined) ?? [];
+      this.localResultIds = new Set(ids);
       this.client.send(pub).then((pubRes: TdObject) => {
         if (seq !== this.searchSeq) {
           return;
@@ -482,6 +542,7 @@ export class GlobalSearchStore {
   }
 
   private setBucket(bucket: Bucket, rows: SearchRow[]): void {
+    rows.forEach((row: SearchRow): void => { row.identity = this.identities.get(row.chatId); });
     if (bucket === 'top') {
       this.topUsers = rows;
     } else if (bucket === 'recent') {
@@ -523,9 +584,11 @@ export class GlobalSearchStore {
   }
 
   private resolveChat(bucket: Bucket, chatId: number): void {
+    const seq = this.searchSeq;
     const req: TdRequest = { '@type': 'getChat' };
     req['chat_id'] = chatId;
     this.client.send(req).then((chat: TdObject) => {
+      if (this.closed || (bucket === 'results' && seq !== this.searchSeq)) { return; }
       const rawTitle = (chat['title'] as string | undefined) ?? '';
       // 和自己的私聊就是「我的收藏」。TDLib 对它没有任何特殊标记（标题是自己的
       // 昵称，见 issue #8），只能按 chatId === selfId 认。
@@ -536,6 +599,13 @@ export class GlobalSearchStore {
       const typeName = type !== undefined ? ((type['@type'] as string | undefined) ?? '') : '';
       const isChannel = typeName === 'chatTypeSupergroup'
         && (((type as TdObject)['is_channel'] as boolean | undefined) ?? false);
+      this.identities.set(chatId, { kind: isChannel ? 'channel' :
+        (typeName === 'chatTypeBasicGroup' || typeName === 'chatTypeSupergroup' ? 'group' : 'user'),
+        usernames: [], existing: bucket === 'results' ? this.localResultIds.has(chatId) :
+          ((chat['positions'] as TdObject[] | undefined) ?? []).length > 0 });
+      if (typeName === 'chatTypeSupergroup') {
+        this.resolveSearchSupergroup(bucket, chatId, (type!['supergroup_id'] as number) ?? 0);
+      }
       let subtitle = '';
       if (typeName === 'chatTypeSupergroup') {
         subtitle = isChannel ? str('gn_channel') : str('gn_group');
@@ -563,10 +633,25 @@ export class GlobalSearchStore {
         }));
       });
     }).catch((e: TdError) => {
+      if (this.closed || (bucket === 'results' && seq !== this.searchSeq)) { return; }
       this.setBucket(bucket, this.getBucket(bucket).filter((r: SearchRow) => r.chatId !== chatId));
       this.notify();
       logE(`GlobalSearchStore.getChat(${chatId}) failed: ${e.message}`);
     });
+  }
+
+  private resolveSearchSupergroup(bucket: Bucket, chatId: number, id: number): void {
+    const req: TdRequest = { '@type': 'getSupergroup' }; req['supergroup_id'] = id;
+    const identity = this.identities.get(chatId);
+    this.client.send(req).then((group: TdObject): void => {
+      if (this.closed || identity === undefined || this.identities.get(chatId) !== identity) { return; }
+      identity.usernames = activeSearchUsernames(group);
+      const status = group['status'] as TdObject | undefined;
+      const kind = status?.['@type'] as string | undefined;
+      identity.joined = kind === 'chatMemberStatusMember' || kind === 'chatMemberStatusAdministrator' ||
+        ((kind === 'chatMemberStatusCreator' || kind === 'chatMemberStatusRestricted') && status?.['is_member'] === true);
+      this.patch(bucket, chatId, (row: SearchRow): SearchRow => row);
+    }).catch((): void => {});
   }
 
   // Private chat subtitle: 机器人 for bots, otherwise the last-seen status.
@@ -576,10 +661,12 @@ export class GlobalSearchStore {
     this.client.send(req).then((user: TdObject) => {
       const type = user['type'] as TdObject | undefined;
       const isBot = type !== undefined && ((type['@type'] as string | undefined) ?? '') === 'userTypeBot';
+      const identity = this.identities.get(chatId);
+      if (identity !== undefined) { identity.usernames = activeSearchUsernames(user); identity.isBot = isBot; }
       const subtitle = isBot ? str('fe_bots')
         : formatUserStatus(user['status'] as TdObject | undefined, Math.floor(Date.now() / 1000));
       this.patch(bucket, chatId, (r: SearchRow): SearchRow => ({
-        chatId: r.chatId, userId: r.userId, title: r.title, initials: r.initials,
+        chatId: r.chatId, userId: userId, title: r.title, initials: r.initials,
         avatarPath: r.avatarPath, subtitle, isChannel: r.isChannel
       }));
     }).catch((e: TdError) => {

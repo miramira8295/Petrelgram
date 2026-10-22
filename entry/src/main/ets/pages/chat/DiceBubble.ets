@@ -1,3 +1,4 @@
+import { promptAction } from '@kit.ArkUI';
 import { COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { TgsStickerView } from './TgsStickerView';
 import { str } from '../../util/strings';
@@ -17,6 +18,49 @@ export struct DiceBubble {
   @Param layerPaths: string[] = [];
   // 这条骰子消息的身份（会话:消息 id）。结果动画只摇一次，见 util/stickerPlayedOnce。
   @Param playKey: string = '';
+  @Event canInteract: () => boolean = (): boolean => true;
+  @Event onSendSame: (emoji: string) => void = (_emoji: string): void => {};
+  @Local private replayToken: number = 0;
+  private menuGeneration: number = 0;
+  private menuOpen: boolean = false;
+
+  aboutToDisappear(): void { this.menuGeneration++; this.menuOpen = false; }
+  aboutToRecycle(): void { this.menuGeneration++; this.menuOpen = false; }
+
+  @Monitor('playKey')
+  onMessageChanged(): void {
+    this.menuGeneration++;
+    this.menuOpen = false;
+    this.replayToken = 0;
+  }
+
+  private async showActions(): Promise<void> {
+    if (!this.canInteract() || this.menuOpen) { return; }
+    const identity = this.playKey;
+    const emoji = this.safeEmoji();
+    const generation = ++this.menuGeneration;
+    const canReplay = this.hasFinalState && (this.slotLayersReady() || this.stickerPath !== '');
+    const options: promptAction.ActionMenuOptions = {
+      buttons: canReplay
+        ? [{ text: str('player_replay'), color: COLOR_TEXT_SECONDARY as string },
+          { text: `${str('send')} ${emoji}`, color: COLOR_TEXT_SECONDARY as string }]
+        : [{ text: `${str('send')} ${emoji}`, color: COLOR_TEXT_SECONDARY as string }]
+    };
+    this.menuOpen = true;
+    try {
+      const result = await this.getUIContext().getPromptAction().showActionMenu(options);
+      if (generation !== this.menuGeneration || identity !== this.playKey || !this.canInteract()) { return; }
+      if (canReplay && result.index === 0) {
+        this.replayToken++;
+      } else if (result.index === (canReplay ? 1 : 0)) {
+        this.onSendSame(emoji);
+      }
+    } catch (_) {
+      // Dismissing the menu is not an action.
+    } finally {
+      if (generation === this.menuGeneration) { this.menuOpen = false; }
+    }
+  }
 
   private safeEmoji(): string {
     return this.emoji.trim() !== '' ? this.emoji : '🎲';
@@ -39,6 +83,7 @@ export struct DiceBubble {
         TgsStickerView({
           tgsPath: this.layerPaths[0],
           layerPaths: this.layerPaths,
+          replayToken: this.replayToken,
           playKey: this.resultPlayKey(this.layerPaths.join('|')),
           boxWidth: 150,
           boxHeight: 150,
@@ -49,6 +94,7 @@ export struct DiceBubble {
       } else if (this.stickerPath !== '') {
         TgsStickerView({
           tgsPath: this.stickerPath,
+          replayToken: this.replayToken,
           playKey: this.resultPlayKey(this.stickerPath),
           boxWidth: 150,
           boxHeight: 150,
@@ -67,6 +113,7 @@ export struct DiceBubble {
         .width(150).height(150);
       }
     }
+    .onClick((): void => { this.showActions(); })
     .padding({ right: 24, bottom: 8 })
     .alignItems(HorizontalAlign.Start)
     .accessibilityText(this.value > 0

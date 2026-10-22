@@ -10829,6 +10829,10 @@
       "value": "Häufige Kontakte"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "Zuletzt"
+    },
+    {
       "name": "gs_recent",
       "value": "Zuletzt besucht"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "Nächsten gespeicherten Proxy versuchen, wenn der aktuelle nicht verfügbar bleibt"
+      "value": "Bei anhaltenden Verbindungsproblemen automatisch zwischen gespeicherten Proxys und einer Direktverbindung wechseln"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "Mindestens zwei Proxys für den automatischen Wechsel hinzufügen"
+      "value": "Mindestens einen Proxy hinzufügen, um automatisch zu wechseln"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "Angeheftete Nachrichten anzeigen"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "Maximales Tempo beim Gedrückthalten"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "Rechte Videoseite gedrückt halten, um schrittweise dieses Limit zu erreichen. Loslassen stellt das ursprüngliche Tempo wieder her. Streaming: maximal 8×."
+    },
+    {
+      "name": "vf_minimize",
+      "value": "Miniplayer"
+    },
+    {
+      "name": "vf_resize",
+      "value": "Miniplayer-Größe ändern"
+    },
+    {
+      "name": "vf_play",
+      "value": "Wiedergabe"
+    },
+    {
+      "name": "vf_pause",
+      "value": "Pause"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "Letzte Chats leeren"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "Letzte Chats für dieses Konto leeren? Chats und Nachrichten bleiben erhalten. Beim erneuten Öffnen erscheinen Chats wieder."
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "Aus letzten Chats entfernen"
+    },
+    {
+      "name": "gs_objects",
+      "value": "Nutzer / Gruppen / Kanäle"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "Kanal auswählen"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "Name oder @Nutzername suchen"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "Nachrichteninhalt suchen"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "App-Name oder @Nutzername suchen"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "Beigetreten"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "Nicht beigetreten"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "Kanalname passt"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "Gruppenname passt"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "Anzeigename passt"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "Nutzername passt"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "Nachrichteninhalt passt"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "Dateiname passt"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "Alle"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "Privat"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "Nutzer"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "Alle Kanäle"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "Öffentliche Suchergebnisse"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "Bestehende Chats"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "App-Suchergebnisse"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "Suche eingrenzen oder genauen @Nutzernamen eingeben. Die öffentliche Namenssuche bietet keine weiteren Seiten."
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "Namen und Nutzernamen suchen, einschließlich öffentlicher Gruppen und Kanäle ohne Mitgliedschaft."
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "Nachrichteninhalte einschließlich archivierter Chats durchsuchen."
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "Nur Nachrichteninhalte in „%s“ durchsuchen."
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "Downloads und heruntergeladene Dateien nach Namen suchen."
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "Videos automatisch vorladen"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "Chatvideos vorab puffern. Das Ausschalten beeinflusst weder Wiedergabe noch manuelle Downloads."
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "Angeheftete Nachrichten standardmäßig ausblenden"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "Im Menü jedes Chats einzeln ein- oder ausblenden"
     }
   ]
 }

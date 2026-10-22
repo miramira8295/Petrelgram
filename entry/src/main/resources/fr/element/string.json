@@ -10829,6 +10829,10 @@
       "value": "Contacts fréquents"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "Récents"
+    },
+    {
       "name": "gs_recent",
       "value": "Visites récentes"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "Essayer le proxy enregistré suivant si le proxy actuel reste indisponible"
+      "value": "En cas d’échecs de connexion persistants, alterner automatiquement entre les proxys enregistrés et la connexion directe"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "Ajoutez au moins deux proxys pour activer le changement automatique"
+      "value": "Ajoutez au moins un proxy pour activer le basculement automatique"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "Afficher les messages épinglés"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "Vitesse maximale par appui long"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "Maintenez le côté droit de la vidéo pour accélérer progressivement. Relâchez pour retrouver la vitesse initiale. Streaming limité à 8×."
+    },
+    {
+      "name": "vf_minimize",
+      "value": "Mini-lecteur"
+    },
+    {
+      "name": "vf_resize",
+      "value": "Redimensionner le mini-lecteur"
+    },
+    {
+      "name": "vf_play",
+      "value": "Lire"
+    },
+    {
+      "name": "vf_pause",
+      "value": "Pause"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "Effacer les discussions récentes"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "Effacer les discussions récentes de ce compte ? Les discussions et les messages seront conservés. Les discussions réapparaîtront à leur réouverture."
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "Retirer des discussions récentes"
+    },
+    {
+      "name": "gs_objects",
+      "value": "Utilisateurs / Groupes / Chaînes"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "Choisir une chaîne"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "Rechercher un nom ou @identifiant"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "Rechercher dans les messages"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "Rechercher une appli ou @identifiant"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "Membre"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "Non membre"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "Nom de chaîne correspondant"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "Nom de groupe correspondant"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "Nom affiché correspondant"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "Identifiant correspondant"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "Contenu correspondant"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "Nom de fichier correspondant"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "Tout"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "Privés"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "Utilisateurs"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "Toutes les chaînes"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "Résultats publics"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "Discussions existantes"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "Applications trouvées"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "Précisez la recherche ou saisissez un @identifiant exact. La recherche de noms publics ne permet pas de pagination."
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "Recherchez des noms et identifiants, y compris les groupes et chaînes publics non rejoints."
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "Recherchez dans les messages, y compris les discussions archivées."
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "Rechercher uniquement dans les messages de « %s »."
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "Recherchez les téléchargements et fichiers téléchargés par nom."
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "Précharger automatiquement les vidéos"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "Met les vidéos du chat en mémoire tampon à l’avance. La désactivation ne modifie pas la lecture ni les téléchargements manuels."
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "Masquer les messages épinglés par défaut"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "Affichez ou masquez-les dans le menu de chaque discussion"
     }
   ]
 }

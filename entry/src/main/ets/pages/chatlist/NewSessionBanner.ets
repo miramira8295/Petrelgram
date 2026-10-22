@@ -1,21 +1,14 @@
-import { getSessionSecurityStore } from '../../tdkit/Globals';
 import { navigateToSetting } from '../../util/settingsNav';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { str } from '../../util/strings';
 
-// 隔离罕见的安全状态刷新，不让整张会话列表依赖待确认设备计数。
+// 提示与文件夹栏共用 HDS 标题栏背板，高度由标题栏统一预留。
+export const NEW_SESSION_BAR_HEIGHT: number = 64;
 @Component
 export struct NewSessionBanner {
-  @State private count: number = 0;
+  @Prop count: number = 0;
   @StorageProp(LANGUAGE_EPOCH) private languageEpoch: number = 0;
-  private off: (() => void) | null = null;
-
-  aboutToAppear(): void {
-    this.off = getSessionSecurityStore().subscribe((count: number): void => { this.count = count; });
-  }
-  aboutToDisappear(): void { this.off?.(); this.off = null; }
-
   build() {
     if (this.count > 0) {
       Row({ space: 10 }) {
@@ -29,7 +22,7 @@ export struct NewSessionBanner {
         SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(14).fontColor([COLOR_TEXT_SECONDARY]);
       }
       .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 12 })
-      .backgroundColor($r('app.color.surface')).flexShrink(0)
+      .height(NEW_SESSION_BAR_HEIGHT).flexShrink(0)
       .accessibilityGroup(true)
       .onClick((): void => { navigateToSetting('ActiveSessionsPage'); });
     }

@@ -10829,6 +10829,10 @@
       "value": "よく連絡する人"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "最近"
+    },
+    {
       "name": "gs_recent",
       "value": "最近の履歴"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "現在のプロキシに接続できない状態が続くと、次の保存済みプロキシを試します"
+      "value": "接続に失敗し続ける場合、保存済みプロキシと直接接続を順に自動で切り替えます"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "自動切り替えを有効にするには2つ以上のプロキシを追加してください"
+      "value": "自動切り替えにはプロキシを1つ以上追加してください"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "固定メッセージを表示"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "長押し時の最大速度"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "動画の右側を長押しすると、この上限まで段階的に加速します。離すと元の速度に戻ります。ストリーミングは最大8倍です。"
+    },
+    {
+      "name": "vf_minimize",
+      "value": "ミニプレーヤー"
+    },
+    {
+      "name": "vf_resize",
+      "value": "ミニプレーヤーのサイズ変更"
+    },
+    {
+      "name": "vf_play",
+      "value": "再生"
+    },
+    {
+      "name": "vf_pause",
+      "value": "一時停止"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "最近のチャットをクリア"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "このアカウントの最近のチャット履歴をクリアしますか？チャットやメッセージは削除されません。再び開くと履歴に表示されます。"
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "最近のチャットから削除"
+    },
+    {
+      "name": "gs_objects",
+      "value": "ユーザー/グループ/チャンネル"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "チャンネルを選択"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "名前または @ユーザー名を検索"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "メッセージ本文を検索"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "アプリ名または @ユーザー名を検索"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "参加済み"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "未参加"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "チャンネル名が一致"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "グループ名が一致"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "表示名が一致"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "ユーザー名が一致"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "本文が一致"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "ファイル名が一致"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "すべて"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "個人チャット"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "ユーザー"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "すべてのチャンネル"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "公開検索結果"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "既存のチャット"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "アプリの検索結果"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "検索語を絞るか正確な @ユーザー名を入力してください。公開名検索はページ送りに対応していません。"
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "名前やユーザー名を検索します。未参加の公開グループやチャンネルも含みます。"
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "アーカイブ済みチャットを含むメッセージ本文を検索します。"
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "「%s」のメッセージ本文のみを検索します。"
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "ダウンロードタスクとダウンロード済みファイルを名前で検索します。"
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "動画を自動で先読み"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "チャットの動画を事前にバッファリングします。オフにしても再生や手動ダウンロードには影響しません。"
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "ピン留めメッセージを標準で非表示"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "各チャットのメニューで個別に表示・非表示を設定"
     }
   ]
 }

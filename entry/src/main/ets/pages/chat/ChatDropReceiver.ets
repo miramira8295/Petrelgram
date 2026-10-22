@@ -1,3 +1,5 @@
+import { getActiveTdAccountSlot } from '../../tdkit/Globals';
+import { isSameChatMessageDrag, isSameChatMessageDragExtra } from '../../util/messageDragOrigin';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { logI, logE } from '../../util/log';
 import { common } from '@kit.AbilityKit';
@@ -30,7 +32,12 @@ export class ChatDropReceiver {
   }
 
   receive(event: DragEvent, context: common.Context, ui: UIContext, host: ShareArrivalHost,
-    active: () => boolean, target: string): void {
+    active: () => boolean, target: string, chatId: number, extraParams?: string): void {
+    const account: string = getActiveTdAccountSlot();
+    if (isSameChatMessageDragExtra(extraParams, account, chatId)) {
+      event.setResult(DragResult.DRAG_CANCELED);
+      return;
+    }
     if (this.pending || !active()) { event.setResult(DragResult.DRAG_FAILED); return; }
     const generation = ++this.generation;
     const current = (): boolean => generation === this.generation && active();
@@ -41,7 +48,12 @@ export class ChatDropReceiver {
     this.pending = true;
     let retained = false;
     const cleanup = (): void => { fs.rmdir(directory).catch((): void => {}); };
-    const load = (): Promise<SharedPayload> => new Promise<SharedPayload>((resolve, reject): void => {
+    const decode = (data: udc.UnifiedData): Promise<SharedPayload | null> => {
+      // Also check the UDMF marker after deferred or system-mediated delivery.
+      if (isSameChatMessageDrag(data.properties.tag ?? '', account, chatId)) { return Promise.resolve(null); }
+      return decodeDrop(data, directory, current);
+    };
+    const load = (): Promise<SharedPayload | null> => new Promise<SharedPayload | null>((resolve, reject): void => {
       let settled = false;
       let loadingKey = '';
       let timer = -1;
@@ -64,7 +76,7 @@ export class ChatDropReceiver {
       if (immediate !== null) {
         settled = true; clearTimeout(timer); this.abort = null;
         logI('[Drop] reading event payload');
-        decodeDrop(immediate, directory, current).then(resolve).catch(reject);
+        decode(immediate).then(resolve).catch(reject);
         return;
       }
       try {
@@ -79,7 +91,7 @@ export class ChatDropReceiver {
             if (!current() || progress.progress < 0) { fail(); return; }
             if (progress.progress !== 100 || data === null) { return; }
             settled = true; clearTimeout(timer); this.abort = null;
-            decodeDrop(data, directory, current).then(resolve).catch(reject);
+            decode(data).then(resolve).catch(reject);
           }
         });
       } catch (error) { logE(`[Drop] deferred start failed code=${(error as BusinessError).code ?? 0}`); fail(); }

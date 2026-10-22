@@ -1,3 +1,4 @@
+import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { HdsNavDestination } from '@kit.UIDesignKit';
 import { DirectMessagesTopicRow, DirectMessagesTopicStore } from '../../store/DirectMessagesTopicStore';
 import { getTdClient } from '../../tdkit/Globals';
@@ -272,6 +273,7 @@ export struct DirectMessagesTopicsPage {
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
     }
     .hideTitleBar(true)
+    .onBackPressed((): boolean => collapseFloatingVideo())
     .onReady((context: NavDestinationContext): void => {
       this.navStack = context.pathStack;
       this.navParams = context.pathInfo.param as Record<string, Object> | undefined;

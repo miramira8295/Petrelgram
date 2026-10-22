@@ -22,7 +22,7 @@ import { MessageBubble } from './MessageBubble';
 // ids/current arrays, so no callback retains the AlbumGroup that created a row.
 export interface MessageBubbleActions {
   bubbleFocus: BubbleFocusChannel;
-  // 删除动画（issue #149）：删之前把要走的行标出来淡出。
+  // 删除动画：删之前通过旁路通道等待气泡消散。
   rowLeave: RowLeaveChannel;
   onStopLiveLocation: () => void;
   onMediaTap: (messageId: number, x: number, y: number) => void;
@@ -87,6 +87,7 @@ export interface MessageBubbleActions {
   onForwardMessages: (messageIds: number[]) => void;
   onSaveMessages: (messageIds: number[]) => void;
   onRepeatMessages: (messageIds: number[]) => void;
+  onSendDice: (emoji: string) => void;
   onViewSenderHistory: (senderId: number) => void;
   onReportMsg: (messageId: number) => void;
   onSelectMessages: (messageIds: number[]) => void;
@@ -198,6 +199,7 @@ const EMPTY_ACTIONS: MessageBubbleActions = {
   onCopyCode: (_text: string): void => {},
   onCopyLink: (_id: number): void => {}, onForwardMessages: (_ids: number[]): void => {},
   onSaveMessages: (_ids: number[]): void => {}, onRepeatMessages: (_ids: number[]): void => {},
+  onSendDice: (_emoji: string): void => {},
   onViewSenderHistory: (_id: number): void => {}, onReportMsg: (_id: number): void => {},
   onSelectMessages: (_ids: number[]): void => {},
   onToggleSelectedMessage: (_id: number): void => {}, onDeleteMsg: (_id: number): void => {},
@@ -447,6 +449,7 @@ export struct ReusableMessageBubble {
         dividerIsResume: this.data.dividerIsResume === true,
         dateLabel: this.shownGroup.dateLabel,
         editingActive: this.data.editingActive,
+        canReply: this.data.canReply,
         isPinnedMsg: this.data.isPinnedMsg,
         canReport: this.data.canReport,
         showAvatar: this.shownGroup.showAvatar,

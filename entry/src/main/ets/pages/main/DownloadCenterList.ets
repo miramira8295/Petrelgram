@@ -12,6 +12,7 @@ import {
   DC_ACTION_ALLOW_CELLULAR, DC_ACTION_CANCEL, DC_ACTION_DELETE, DC_ACTION_JUMP, DC_LAYOUT_GROUP, DC_LAYOUT_HEADER
 } from '../../util/downloadCenterRows';
 import { DcRowVM } from '../../util/downloadCenterRowVM';
+import { DownloadDeleteEffects } from '../../util/downloadDeleteEffects';
 
 // 下载中心一个页签的列表（2026-09-15；第四版行复用，第五版加折叠行、排序切换、长按菜单）。
 //
@@ -28,6 +29,9 @@ const HAIRLINE: string = '1px';
 
 @ComponentV2
 export struct DownloadCenterList {
+  @Require @Param deleteEffects: DownloadDeleteEffects;
+  @Require @Param listIndex: number;
+  @Param query: string = '';
   @Require @Param source: KeyedListDataSource<DcRowVM>;
   @Param batch: boolean = false;
   @Param loading: boolean = false;
@@ -56,7 +60,8 @@ export struct DownloadCenterList {
           } else {
             Column() {
               DownloadCenterRow({
-                row: vm,
+                deleteEffects: this.deleteEffects, listIndex: this.listIndex,
+                row: vm, query: this.query,
                 batch: this.batch,
                 onAction: (itemId: string, action: string): void => { this.onRowAction(itemId, action); }
               })
@@ -101,6 +106,7 @@ export struct DownloadCenterList {
       scrollBackward: NestedScrollMode.SELF_FIRST
     })
     .cachedCount(4)
+    .maintainVisibleContentPosition(true)
     .contentEndOffset(this.endSpace)
     .onReachEnd((): void => { this.onListEnd(); });
   }

@@ -1,3 +1,4 @@
+import { sendProxyRequest } from './HttpsProxyTransport';
 import { TdClient, TimerFns } from '../tdkit/TdClient';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
 import {
@@ -33,7 +34,7 @@ export class ProxyAutoSwitchService {
   private listKnown: boolean = false;
   private proxyCount: number = 0;
   private activeProxyId: number = 0;
-  private lastAttemptedProxyId: number = 0;
+  private lastAttemptedProxyId: number = -1;
   // Selection ownership is independent of the failover timer: Ready may cancel
   // a timer before enableProxy's acknowledgement arrives.
   private selectionIntent: number = 0;
@@ -79,7 +80,7 @@ export class ProxyAutoSwitchService {
     this.listKnown = false;
     this.proxyCount = 0;
     this.activeProxyId = 0;
-    this.lastAttemptedProxyId = 0;
+    this.lastAttemptedProxyId = -1;
     this.listSequence++;
     this.invalidateSelection();
     this.selectionListeners.clear();
@@ -90,7 +91,7 @@ export class ProxyAutoSwitchService {
   }
 
   settingsChanged(): void {
-    if (!this.autoSwitchOn()) { this.lastAttemptedProxyId = 0; }
+    if (!this.autoSwitchOn()) { this.lastAttemptedProxyId = -1; }
     this.cancelWork();
     this.armIfNeeded();
   }
@@ -141,11 +142,11 @@ export class ProxyAutoSwitchService {
     this.listSequence++;
     this.invalidateSelection();
     this.activeProxyId = proxyId;
-    this.lastAttemptedProxyId = 0;
+    this.lastAttemptedProxyId = -1;
     // Selection is intent, not proof that TDLib is still connecting. Add/edit
     // acknowledgements can arrive after Ready/Updating; canArm checks the
     // actual connection state before starting another failover timer.
-    this.proxyConnectPending = proxyId > 0;
+    this.proxyConnectPending = this.isConnecting();
     this.cancelWork();
     this.armIfNeeded();
   }
@@ -160,7 +161,7 @@ export class ProxyAutoSwitchService {
     if (state === 'connectionStateReady' || state === 'connectionStateUpdating' ||
       state === 'connectionStateWaitingForNetwork') {
       this.proxyConnectPending = false;
-      if (state !== 'connectionStateWaitingForNetwork') { this.lastAttemptedProxyId = 0; }
+      if (state !== 'connectionStateWaitingForNetwork') { this.lastAttemptedProxyId = -1; }
       this.cancelWork();
       if (state === 'connectionStateReady' && previous !== state) {
         this.refreshProxyList();
@@ -176,7 +177,7 @@ export class ProxyAutoSwitchService {
   private resumeConnecting(): void {
     // Reconnects need no new manual selection. Unknown lists are checked by
     // trySwitch before enabling anything, including a direct session.
-    this.proxyConnectPending = this.isConnecting() && (!this.listKnown || this.activeProxyId > 0);
+    this.proxyConnectPending = this.isConnecting();
     this.armIfNeeded();
   }
 
@@ -202,7 +203,7 @@ export class ProxyAutoSwitchService {
     if (!this.autoSwitchOn() || !this.proxyConnectPending || this.client === null) {
       return false;
     }
-    return !this.listKnown || (this.activeProxyId > 0 && this.proxyCount >= 2);
+    return !this.listKnown || this.proxyCount >= 1;
   }
 
   private armIfNeeded(): void {
@@ -240,7 +241,7 @@ export class ProxyAutoSwitchService {
   }
 
   private async listProxies(target: TdClient): Promise<ProxyAutoSwitchEntry[]> {
-    const result = await target.send({ '@type': 'getProxies' } as TdRequest);
+    const result = await sendProxyRequest(target, { '@type': 'getProxies' } as TdRequest);
     const raw = (result['proxies'] as TdObject[] | undefined) ?? [];
     return raw.map((entry: TdObject): ProxyAutoSwitchEntry => ({
       id: (entry['id'] as number | undefined) ?? 0,
@@ -248,10 +249,10 @@ export class ProxyAutoSwitchService {
     }));
   }
 
-  private enableProxy(target: TdClient, proxyId: number): Promise<void> {
-    const request: TdRequest = { '@type': 'enableProxy' };
-    request['proxy_id'] = proxyId;
-    return target.send(request, 20000).then((): void => {});
+  private selectRoute(target: TdClient, proxyId: number): Promise<void> {
+    const request: TdRequest = { '@type': proxyId === 0 ? 'disableProxy' : 'enableProxy' };
+    if (proxyId > 0) { request['proxy_id'] = proxyId; }
+    return sendProxyRequest(target, request, 20000).then((): void => {});
   }
 
   private applyProxyList(entries: ProxyAutoSwitchEntry[], manual: boolean): void {
@@ -259,12 +260,12 @@ export class ProxyAutoSwitchService {
       (entry: ProxyAutoSwitchEntry): boolean => entry.isEnabled
     )?.id ?? 0;
     const activeChanged = this.listKnown && nextActive !== this.activeProxyId;
-    if (manual || activeChanged) { this.lastAttemptedProxyId = 0; }
+    if (manual || activeChanged) { this.lastAttemptedProxyId = -1; }
     this.listKnown = true;
     this.proxyCount = entries.length;
     this.activeProxyId = nextActive;
-    this.proxyConnectPending = this.isConnecting() && nextActive > 0;
-    if (manual || activeChanged || entries.length < 2) { this.cancelWork(); }
+    this.proxyConnectPending = this.isConnecting();
+    if (manual || activeChanged || entries.length < 1) { this.cancelWork(); }
     this.armIfNeeded();
   }
 
@@ -293,19 +294,19 @@ export class ProxyAutoSwitchService {
     try {
       const initial = await this.listProxies(target);
       if (!this.canContinueSwitch(target, token)) { return; }
-      const active = initial.find(
+      const activeId = initial.find(
         (entry: ProxyAutoSwitchEntry): boolean => entry.isEnabled
-      );
-      if (active === undefined || initial.length < 2 ||
-        (this.listKnown && active.id !== this.activeProxyId)) {
+      )?.id ?? 0;
+      if (initial.length < 1 ||
+        (this.listKnown && activeId !== this.activeProxyId)) {
         this.applyProxyList(initial, false);
         this.publishSelection(this.activeProxyId);
         return;
       }
       this.listKnown = true;
       this.proxyCount = initial.length;
-      this.activeProxyId = active.id;
-      this.publishSelection(active.id);
+      this.activeProxyId = activeId;
+      this.publishSelection(activeId);
       // Re-read immediately before mutation. Select from the latest list so a
       // removed candidate cannot monopolize future attempts.
       const latest = await this.listProxies(target);
@@ -313,22 +314,22 @@ export class ProxyAutoSwitchService {
       const latestActive = latest.find(
         (entry: ProxyAutoSwitchEntry): boolean => entry.isEnabled
       )?.id ?? 0;
-      if (latestActive !== active.id || latest.length < 2) {
+      if (latestActive !== activeId || latest.length < 1) {
         this.applyProxyList(latest, false);
         this.publishSelection(this.activeProxyId);
         return;
       }
       const candidates = orderedProxyCandidateIds(latest, latestActive,
-        this.lastAttemptedProxyId > 0 ? this.lastAttemptedProxyId : latestActive);
+        this.lastAttemptedProxyId >= 0 ? this.lastAttemptedProxyId : latestActive);
       if (candidates.length === 0) { return; }
       const candidateId = candidates[0];
-      // Advance even if enableProxy is rejected; no second enable in this round.
+      // Advance even if route selection is rejected; only one mutation per window.
       this.lastAttemptedProxyId = candidateId;
       this.listSequence++;
       this.invalidateSelection();
       const intent = this.selectionIntent;
       try {
-        await this.enableProxy(target, candidateId);
+        await this.selectRoute(target, candidateId);
       } catch (caught) {
         // A timeout does not prove TDLib rejected the change. Finish confirming
         // the actual selection before starting another full waiting window.
@@ -341,7 +342,7 @@ export class ProxyAutoSwitchService {
       this.activeProxyId = candidateId;
       this.proxyConnectPending = this.isConnecting();
       this.publishSelection(candidateId);
-      logI(`[proxy] automatically switched proxy ${active.id} -> ${candidateId}`);
+      logI(`[proxy] automatically switched proxy ${activeId} -> ${candidateId}`);
     } catch (caught) {
       logW(`[proxy] automatic switch attempt failed: ${(caught as Error).message}`);
     } finally {

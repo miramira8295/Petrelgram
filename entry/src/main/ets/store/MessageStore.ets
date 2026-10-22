@@ -1,3 +1,4 @@
+import { rememberOpenedChat } from '../services/RecentChatHistoryService';
 import { SharedPayload } from '../util/sharedContent';
 import { sharedSendPermissions } from '../util/sendPermissions';
 import { sendWithChatPermissions, requireSendPermissions, showSendPermissionError } from './SendPermissionApi';
@@ -477,6 +478,7 @@ export class MessageStore {
     // full ChatPage underneath them.
     if (!passive) {
       this.sendSimple('openChat');
+      rememberOpenedChat(this.client, this.chatId);
       this.chatOpened = true;
       // Reactions retain their existing behavior; mentions are read per visible message.
       this.readAllReactions();

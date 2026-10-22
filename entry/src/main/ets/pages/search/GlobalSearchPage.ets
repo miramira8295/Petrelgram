@@ -1,3 +1,8 @@
+import { ShatterDeleteOverlay } from '../common/ShatterDeleteOverlay';
+import { SearchChannelPicker } from './SearchChannelPicker';
+import { messageScopeRequest, channelSearchCursor, messageMatch, MessageMatch, SEARCH_TAB_RECENT, searchTabForQuery } from '../../util/searchPresentation';
+import { emptySearchPageAction, SEARCH_PAGE_EMPTY, SEARCH_PAGE_FETCH, SEARCH_PAGE_MORE } from '../../util/searchPresentation';
+import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
@@ -18,9 +23,6 @@ import {
   COLOR_PRIMARY,
   COLOR_TEXT_PRIMARY,
   COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
-  COLOR_TAB_SELECTED,
-  COLOR_TAB_UNSELECTED,
-  COLOR_TAB_PILL_BG,
   mainCardFill, mainPageFill, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import {
@@ -28,7 +30,7 @@ import {
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import {
   SearchSession, forgetSearchSession, rememberSearchSession, takeSearchSession
@@ -40,6 +42,7 @@ import { readableContentWidth } from '../../util/contentWidth';
 import { AppBackdrop } from '../common/AppBackdrop';
 
 interface FoundItem {
+  match?: MessageMatch;
   chatId: number;
   messageId: number;
   chatTitle: string;
@@ -57,9 +60,10 @@ interface FoundItem {
 
 // Telegram global-search categories. Public post search belongs to 帖子;
 // hashtag search is a mode of that tab, not a second visible category.
-const TABS: string[] = [str('tab_chats'), str('gn_channel'), str('gs_apps'), str('gs_posts'), str('cpp_media'), str('cpp_links'), str('storage_file'), str('storage_audio'), str('storage_voice')];
+const TABS: string[] = [str('gs_objects'), str('cps_messages'), str('gs_apps'), str('gs_public_posts'), str('cpp_media'), str('cpp_links'), str('storage_file'), str('storage_audio'), str('storage_voice'), str('gs_downloads')];
 const TAB_CHATS: number = 0;
-const TAB_CHANNELS: number = 1;
+const TAB_MESSAGES: number = 1;
+const TAB_DOWNLOADS: number = 9;
 const TAB_APPS: number = 2;
 const TAB_POSTS: number = 3;
 const TAB_MEDIA: number = 4;
@@ -68,8 +72,7 @@ const TAB_LINKS: number = 5;
 const TAB_FILES: number = 6;
 const TAB_AUDIO: number = 7;
 const TAB_VOICE: number = 8;
-const SEARCH_TAB_BAR_HEIGHT: number = 44;
-const SEARCH_TAB_INDICATOR_HEIGHT: number = 32;
+const SEARCH_PAGE_INSET: number = 12;
 const SEARCH_RESULT_DIVIDER_INSET: number = 72;
 
 // TDLib message filter for the typed-message tabs ('' = no filter).
@@ -135,7 +138,7 @@ function mediaItemKey(it: FoundItem): string {
 
 // Global search (Telegram-style): an empty query shows frequent contacts and
 // recently opened chats; a typed query searches chats/channels by name or
-// messages ("帖子") globally.
+// message content separately from public posts.
 // 路由表（router_map.json）的 buildFunction 指向这里：搜索页现在是**聊天页签栈
 // 里的一层**（issue #129），栈是 聊天列表 → 搜索 → 会话，从会话返回天然回到
 // 还活着的搜索结果页。原来它是整页 router 页、点结果必须自己弹掉，返回也就
@@ -167,7 +170,12 @@ export struct GlobalSearchPage {
   @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   // 下载列表和应用榜按 query 过滤，query 变了要同步它们的数据源（见 syncQueryFilteredData）。
   @State @Watch('syncQueryFilteredData') query: string = '';
-  @State @Watch('syncTabFilteredData') tab: number = 0;
+  @State @Watch('syncTabFilteredData') tab: number = SEARCH_TAB_RECENT;
+  @State objectScope: string = 'all';
+  @State messageScope: string = 'all';
+  @State channelId: number = 0;
+  @State channelTitle: string = '';
+  @State channelPickerOpen: boolean = false;
   @State searchFocused: boolean = false;
   @State searchPending: boolean = false;
   @State clearPressed: boolean = false;
@@ -209,6 +217,8 @@ export struct GlobalSearchPage {
   @State searchedOnce: boolean = false;
   private nowSec: number = Math.floor(Date.now() / 1000);
   private seq: number = 0;
+  private searchTraceId: string = String(Date.now());
+  private lastSearchTraceState: string = '';
   private failedPagingOffset: string = '';
   private autoPages: number = 0; // consecutive auto-fetched pages that rendered nothing
   private debounceTimer: number = -1;
@@ -217,21 +227,16 @@ export struct GlobalSearchPage {
   private hashtagSearchSeq: number = 0;
   private postsQuotaSeq: number = 0;
   private resultOpeningTimer: number = -1;
+  @State private deletingRecentKey: string = '';
+  @State private deleteEffectVisible: boolean = false;
+  @State private deleteSnapshotReady: boolean = false;
+  private pendingRecentDelete: (() => void) | null = null;
+  private landingScroller: ListScroller = new ListScroller();
   private clearRecentDialogOpen: boolean = false;
+  private clearOpenedDialogOpen: boolean = false;
   private store: GlobalSearchStore | null = null;
   private unsub: (() => void) | null = null;
-  // Sliding selection pill (same pattern as the chat-list tab bar): frames are
-  // recorded per pill; the pill interpolates during content swipes.
-  @State indicatorX: number = 8;
-  @State indicatorW: number = 0;
-  private tabXs: number[] = [];
-  private tabWs: number[] = [];
-  private tabsWidth: number = 0;
-  private tabViewW: number = 0;
-  private tabScroller: Scroller = new Scroller();
-  private controller: TabsController = new TabsController();
-  // 结果列表的 LazyForEach 数据源（见 syncXxxData）。Tabs 里各 tab 的容器同时活着，同一份
-  // 数据被两个容器用到时各开一个：key 格式不同，诊断 key 表（util/keyGuard）不能共用。
+  // 各结果分组使用独立数据源，避免列表身份互相覆盖。
   private joinedChannelsData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-joined');
   private similarChannelsData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-similar');
   private combinedChatsData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-chats');
@@ -239,20 +244,12 @@ export struct GlobalSearchPage {
   private combinedMessagesData: KeyedListDataSource<FoundItem> = new KeyedListDataSource<FoundItem>('gs-combined-messages');
   private mediaItemsData: KeyedListDataSource<FoundItem> = new KeyedListDataSource<FoundItem>('gs-media');
   private topUsersData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-top');
+  private localNamesData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-local-names');
+  private publicNamesData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-public-names');
   private recentData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-recent');
   private recentlyOpenedData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-opened');
   private appsData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-apps');
   private combinedAppsData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-combined-apps');
-
-  @Styles
-  tabNormalStyle() {
-    .opacity(1)
-  }
-
-  @Styles
-  tabPressedStyle() {
-    .opacity(0.62)
-  }
 
   @Styles
   resultRowNormalStyle() {
@@ -296,50 +293,23 @@ export struct GlobalSearchPage {
     .opacity(0.72)
   }
 
-  private moveIndicatorTo(pos: number): void {
-    const n = TABS.length;
-    if (this.tabWs.length === 0) {
-      return;
-    }
-    const p = Math.max(0, Math.min(n - 1, pos));
-    const i0 = Math.floor(p);
-    const i1 = Math.min(n - 1, i0 + 1);
-    const f = p - i0;
-    const x0 = this.tabXs[i0] ?? 8;
-    const x1 = this.tabXs[i1] ?? x0;
-    const w0 = this.tabWs[i0] ?? 0;
-    const w1 = this.tabWs[i1] ?? w0;
-    this.indicatorX = x0 + (x1 - x0) * f;
-    this.indicatorW = w0 + (w1 - w0) * f;
+  private traceMessageSearch(event: string, detail: string = ''): void {
+    logI(`[MessageSearch] trace=v2-${this.searchTraceId} seq=${this.seq} event=${event} ` + detail);
   }
 
-  private ensureTabVisible(index: number): void {
-    const x = this.tabXs[index] ?? 0;
-    const w = this.tabWs[index] ?? 0;
-    if (w === 0 || this.tabViewW === 0) {
-      return;
-    }
-    const off = this.tabScroller.currentOffset().xOffset;
-    let target = -1;
-    if (x < off + 8) {
-      target = Math.max(0, x - 8);
-    } else if (x + w > off + this.tabViewW - 8) {
-      target = x + w - this.tabViewW + 8;
-    }
-    if (target >= 0) {
-      this.tabScroller.scrollTo({
-        xOffset: target,
-        yOffset: 0,
-        animation: {
-          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200),
-          curve: Curve.EaseOut
-        }
-      });
-    }
+  private traceMessageState(event: string): void {
+    const state = `tab=${this.tab} scope=${this.messageScope} fixedChat=${this.channelId !== 0} ` +
+      `rows=${this.items.length} visible=${this.visibleItems().length} ` +
+      `unresolved=${this.items.filter((it: FoundItem): boolean => it.chatTitle === '').length} ` +
+      `published=${this.messageItemsData.totalCount()} busy=${this.loading || this.pagingBusy} ` +
+      `failed=${this.messageError !== '' || this.pagingError} searched=${this.searchedOnce} ` +
+      `more=${this.nextOffset !== ''} autoPages=${this.autoPages} action=${this.emptyPageAction()}`;
+    const signature = `${this.seq}:${state}`;
+    if (signature === this.lastSearchTraceState) { return; }
+    this.lastSearchTraceState = signature;
+    this.traceMessageSearch(event, state);
   }
 
-  // Tab became current (tap or settled swipe): update state, settle the pill,
-  // keep it visible, and fire the tab's data loads.
   private onTabSelected(index: number): void {
     if (this.debounceTimer !== -1) {
       clearTimeout(this.debounceTimer);
@@ -347,16 +317,14 @@ export struct GlobalSearchPage {
     }
     this.searchPending = false;
     this.tab = index;
+    this.traceMessageSearch('select-tab', `tab=${index}`);
     this.hashtagSearchSeq++;
     this.postsQuotaSeq++;
-    animateTo({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200), curve: Curve.EaseOut
-    }, () => { this.moveIndicatorTo(index); });
-    this.ensureTabVisible(index);
     this.runSearch();
   }
 
   aboutToAppear(): void {
+    this.traceMessageSearch('open', 'diagnostics=message-search-v2');
     if (this.closeSearchTimer !== -1) {
       clearTimeout(this.closeSearchTimer);
       this.closeSearchTimer = -1;
@@ -371,9 +339,23 @@ export struct GlobalSearchPage {
     const store = new GlobalSearchStore(getTdClient());
     this.store = store;
     this.unsub = store.subscribe(() => {
+      const removedRecent = store.recent.length < this.recent.length ||
+        store.recentlyOpened.length < this.recentlyOpened.length;
       this.topUsers = store.topUsers;
-      this.recent = store.recent;
-      this.recentlyOpened = store.recentlyOpened;
+      if (removedRecent && this.query.trim() === '' && !this.closingSearch) {
+        // DELETE 通知与行退出在同一动画事务内发布，交给 List 保持存活行的位置。
+        // 不再布局后 scrollTo 旧绝对偏移，避免先补位、再被拉回。
+        this.getUIContext().animateTo({
+          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+          curve: Curve.EaseOut
+        }, (): void => {
+          this.recent = store.recent;
+          this.recentlyOpened = store.recentlyOpened;
+        });
+      } else {
+        this.recent = store.recent;
+        this.recentlyOpened = store.recentlyOpened;
+      }
       this.topLoaded = store.topLoaded;
       this.recentLoaded = store.recentLoaded;
       this.openedLoaded = store.openedLoaded;
@@ -409,12 +391,20 @@ export struct GlobalSearchPage {
     const restored: SearchSession | null = takeSearchSession(Date.now());
     if (restored !== null) {
       this.query = restored.query;
-      this.tab = restored.tab;
+      this.tab = searchTabForQuery(restored.query, restored.tab);
+      this.objectScope = restored.objectScope ?? 'all'; this.messageScope = restored.messageScope ?? 'all';
+      this.channelId = restored.channelId ?? 0; this.channelTitle = restored.channelTitle ?? '';
       this.runSearch();
     }
   }
 
   aboutToDisappear(): void {
+    this.traceMessageState('leave');
+    // 离页不丢掉已经确认的删除操作，也不把旧动画带到下一次打开。
+    this.finishRecentDeleteEffect();
+    this.deletingRecentKey = '';
+
+    this.channelPickerOpen = false;
     if (this.debounceTimer !== -1) { clearTimeout(this.debounceTimer); this.debounceTimer = -1; }
     if (this.searchHeaderTimer !== -1) {
       clearTimeout(this.searchHeaderTimer);
@@ -433,6 +423,7 @@ export struct GlobalSearchPage {
     this.cancelPressed = false;
     this.clearingRecent = false;
     this.clearRecentDialogOpen = false;
+    this.clearOpenedDialogOpen = false;
     this.closingSearch = false;
     this.searchHeaderVisible = false;
     if (this.unsub !== null) { this.unsub(); this.unsub = null; }
@@ -440,7 +431,9 @@ export struct GlobalSearchPage {
   }
 
   private onQueryChanged(v: string): void {
+    this.tab = searchTabForQuery(v, this.tab);
     this.query = v;
+    this.traceMessageSearch('query-change', `length=${v.trim().length} tab=${this.tab}`);
     if (this.debounceTimer !== -1) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = -1;
@@ -493,6 +486,7 @@ export struct GlobalSearchPage {
     this.searchPending = false;
     this.hashtagSearchSeq++;
     this.postsQuotaSeq++;
+    this.tab = SEARCH_TAB_RECENT;
     this.query = '';
     this.chatResults = [];
     this.items = [];
@@ -542,6 +536,7 @@ export struct GlobalSearchPage {
   }
 
   private searchPlaceholder(): string {
+    if (this.tab === SEARCH_TAB_RECENT) { return str('fe_search_hint'); }
     if (this.tab === TAB_MEDIA) {
       return str('gs_search_media');
     }
@@ -557,14 +552,16 @@ export struct GlobalSearchPage {
     if (this.tab === TAB_POSTS) {
       return str('gs_search_posts');
     }
-    return str('gs_search_chats');
+    if (this.tab === TAB_MESSAGES) { return str('gs_search_message_content'); }
+    if (this.tab === TAB_APPS) { return str('gs_search_app_names'); }
+    return str('gs_search_names');
   }
 
   private searchBusy(): boolean {
     if (this.searchPending) {
       return true;
     }
-    if (this.tab === TAB_CHATS || this.tab === TAB_CHANNELS) {
+    if (this.tab === TAB_CHATS || this.tab === TAB_MESSAGES) {
       return this.chatSearching || this.loading;
     }
     return this.loading;
@@ -574,9 +571,7 @@ export struct GlobalSearchPage {
   // channels, so a page of hits can render as nothing at all.
   private visibleItems(): FoundItem[] {
     const resolved = this.items.filter((it: FoundItem) => it.chatTitle !== '');
-    return this.tab === TAB_CHANNELS
-      ? resolved.filter((it: FoundItem) => it.isChannelChat)
-      : resolved;
+    return resolved;
   }
 
   private visibleHashtagPosts(): FoundItem[] {
@@ -587,33 +582,33 @@ export struct GlobalSearchPage {
     return this.items.some((it: FoundItem) => it.chatTitle === '');
   }
 
-  // The 频道 filter can discard an entire page of hits, leaving a screen with
-  // nothing to scroll — onReachEnd would never fire and the tab would look
-  // empty while more pages exist. Pull the next pages ourselves, bounded.
+  private emptyPageAction(): string {
+    return emptySearchPageAction({
+      searched: this.searchedOnce, busy: this.loading || this.pagingBusy,
+      failed: this.pagingError || this.messageError !== '', resolving: this.resolvingMessageRows(),
+      visibleCount: this.visibleItems().length, nextOffset: this.nextOffset, automaticPages: this.autoPages
+    }, MAX_AUTO_PAGES);
+  }
+
+  // Empty pages need continuation in every message scope, including All.
   private maybeAutoPage(): void {
-    if (this.tab !== TAB_CHANNELS || this.loading || this.pagingBusy || this.pagingError) {
-      return;
-    }
-    if (this.resolvingMessageRows()) {
-      return;
-    }
-    if (this.visibleItems().length > 0 || this.nextOffset === '' || this.autoPages >= MAX_AUTO_PAGES) {
-      return;
-    }
+    if (this.tab !== TAB_MESSAGES && !this.isFilterTab()) { return; }
+    if (this.emptyPageAction() !== SEARCH_PAGE_FETCH) { return; }
+    this.traceMessageState('auto-page');
     this.autoPages += 1;
     this.searchMessages(this.nextOffset);
   }
 
-  // True once paging has stopped for good — only then may the tab claim there
-  // is nothing to show (a hit whose chat type is still resolving isn't a miss).
   private searchExhausted(): boolean {
-    if (this.loading || this.pagingBusy || this.pagingError || this.messageError !== '') {
-      return false;
-    }
-    if (this.items.some((it: FoundItem) => it.chatTitle === '')) {
-      return false;
-    }
-    return this.tab !== TAB_CHANNELS || this.nextOffset === '' || this.autoPages >= MAX_AUTO_PAGES;
+    return this.emptyPageAction() === SEARCH_PAGE_EMPTY;
+  }
+
+  private continueEmptySearch(): void {
+    const action = this.emptyPageAction();
+    if (action !== SEARCH_PAGE_FETCH && action !== SEARCH_PAGE_MORE) { return; }
+    this.traceMessageState('manual-page');
+    this.autoPages = 0;
+    this.searchMessages(this.nextOffset);
   }
 
   private isFilterTab(): boolean {
@@ -642,6 +637,7 @@ export struct GlobalSearchPage {
   // returns without starting a new request has to call this — a stale `loading`
   // is what makes a tab spin forever.
   private cancelInFlight(): void {
+    this.traceMessageSearch('cancel', `busy=${this.loading || this.pagingBusy}`);
     this.seq++;
     this.pagingBusy = false;
     this.loading = false;
@@ -666,11 +662,20 @@ export struct GlobalSearchPage {
 
   private retryChatSearch(): void {
     if (this.store !== null && this.query.trim() !== '') {
-      this.store.searchChats(this.query);
+      this.store.searchChats(this.query, this.tab === TAB_APPS ? 'bot' : this.objectScope);
     }
   }
 
   private runSearch(): void {
+    this.traceMessageSearch('dispatch', `tab=${this.tab} scope=${this.messageScope} length=${this.query.trim().length}`);
+    if (this.query.trim() === '') {
+      this.cancelInFlight();
+      this.items = [];
+      this.hashtagPosts = [];
+      this.searchedOnce = false;
+      this.store?.searchChats('');
+      return;
+    }
     if (this.tab === TAB_POSTS) {
       if (this.query.trim().startsWith('#') && this.query.trim().length > 1) {
         // A hashtag is another mode of the official 帖子 tab. It uses TDLib's
@@ -684,20 +689,11 @@ export struct GlobalSearchPage {
         this.items = [];
         this.loadPostsQuota();
       }
-    } else if (this.isFilterTab()) {
+    } else if (this.tab === TAB_MESSAGES || this.isFilterTab()) {
       this.searchMessages('');
     } else {
-      // 聊天/频道/应用: matched objects on top + a 消息 section below.
-      if (this.tab !== TAB_APPS && this.store !== null) {
-        this.store.searchChats(this.query);
-      }
-      this.searchMessages('');
-      const q = this.query.trim();
-      if (q.startsWith('#') && q.length > 1) {
-        this.loadHashtagPosts('');
-      } else {
-        this.hashtagPosts = [];
-      }
+      this.cancelInFlight(); this.items = []; this.hashtagPosts = []; this.searchedOnce = false;
+      if (this.tab === TAB_CHATS || this.tab === TAB_APPS) { this.store?.searchChats(this.query, this.tab === TAB_APPS ? 'bot' : this.objectScope); }
     }
   }
 
@@ -762,22 +758,16 @@ export struct GlobalSearchPage {
     }
     const seq = ++this.seq;
     this.loading = offset === '';
+    const scoped = this.tab === TAB_MESSAGES && this.channelId !== 0;
     const req: TdRequest = mode === 'posts' ? { '@type': 'searchPublicPosts' }
-      : (mode === 'tagposts' ? { '@type': 'searchPublicMessagesByTag' } : { '@type': 'searchMessages' });
+      : (mode === 'tagposts' ? { '@type': 'searchPublicMessagesByTag' } :
+        messageScopeRequest(q, this.tab === TAB_MESSAGES ? this.messageScope : 'all', scoped ? this.channelId : 0, offset));
     if (mode === 'filter' || mode === 'all') {
       // **不设 chat_list**（issue #139）：TDLib 省略这一项时搜的是**所有**会话
       // 列表，归档里的消息才搜得到。原来固定 chatListMain，归档会话的内容一条
       // 都出不来，而官方客户端的全局搜索是含归档的。
       if (filterType !== '') {
         req['filter'] = { '@type': filterType } as TdObject;
-      }
-      if (this.tab === TAB_CHANNELS) {
-        // Match Telegram Android: make channel type part of the TDLib message
-        // search itself. Fetching all message types and filtering them after
-        // pagination loses valid channel hits whenever other chats fill a page.
-        req['chat_type_filter'] = {
-          '@type': 'searchMessagesChatTypeFilterChannel'
-        } as TdObject;
       }
     }
     if (mode === 'tagposts') {
@@ -786,10 +776,14 @@ export struct GlobalSearchPage {
     } else {
       req['query'] = q;
     }
-    req['offset'] = offset;
+    if (!scoped) { req['offset'] = offset; }
     req['limit'] = 30;
+    const startedAt = Date.now();
+    this.traceMessageSearch('request', `type=${req['@type']} tab=${this.tab} scope=${this.messageScope} ` +
+      `fixedChat=${scoped} first=${offset === ''} length=${q.length} filter=${filterType || 'none'}`);
     getTdClient().send(req).then((res: TdObject) => {
       if (seq !== this.seq) {
+        this.traceMessageSearch('stale-response', `requestSeq=${seq} elapsedMs=${Date.now() - startedAt}`);
         return;
       }
       this.pagingBusy = false;
@@ -798,7 +792,7 @@ export struct GlobalSearchPage {
       this.pagingError = false;
       this.failedPagingOffset = '';
       this.searchedOnce = true;
-      const responseOffset = (res['next_offset'] as string | undefined) ?? '';
+      const responseOffset = scoped ? channelSearchCursor(res, offset) : (res['next_offset'] as string | undefined) ?? '';
       // A non-advancing cursor would otherwise retrigger forever at the same
       // scroll position.
       this.nextOffset = responseOffset === offset ? '' : responseOffset;
@@ -815,6 +809,10 @@ export struct GlobalSearchPage {
         }
         fresh.push(item);
       }
+      this.traceMessageSearch('response', `requestSeq=${seq} elapsedMs=${Date.now() - startedAt} ` +
+        `type=${res['@type']} page=${this.loadedPageCount} returned=${msgs.length} accepted=${fresh.length} ` +
+        `discarded=${msgs.length - fresh.length} total=${res['total_count']} ` +
+        `rawMore=${responseOffset !== ''} repeatedCursor=${responseOffset !== '' && responseOffset === offset}`);
       this.items = this.mergeFoundItems(this.items, fresh, offset === '');
       if (mode === 'posts') {
         this.loadPostsQuota(); // a search just burned one — refresh the count
@@ -824,9 +822,11 @@ export struct GlobalSearchPage {
       if (offset === '') {
         this.autoPages = 0;
       }
+      this.traceMessageState('settled');
       this.maybeAutoPage();
     }).catch((e: TdError) => {
       if (seq !== this.seq) {
+        this.traceMessageSearch('stale-error', `requestSeq=${seq} code=${e.code}`);
         return;
       }
       this.pagingBusy = false;
@@ -839,6 +839,8 @@ export struct GlobalSearchPage {
         this.pagingError = true;
         this.failedPagingOffset = offset;
       }
+      this.traceMessageSearch('request-error', `requestSeq=${seq} code=${e.code} elapsedMs=${Date.now() - startedAt}`);
+      this.traceMessageState('failed');
       logE(`GlobalSearchPage.searchMessages failed: ${e.message}`);
     });
   }
@@ -853,7 +855,7 @@ export struct GlobalSearchPage {
     const cachedTitle = this.titles.get(chatId) ?? '';
     return {
       chatId, messageId, chatTitle: cachedTitle,
-      preview: formatPreview(m),
+      preview: formatPreview(m), match: messageMatch(m),
       date: (m['date'] as number | undefined) ?? 0,
       thumbPath: '', isVideo: false, duration: '',
       avatarPath: this.avatarCache.get(chatId) ?? '',
@@ -939,7 +941,7 @@ export struct GlobalSearchPage {
         it.chatId === item.chatId && it.messageId === item.messageId
         ? {
           chatId: it.chatId, messageId: it.messageId, chatTitle: it.chatTitle,
-          preview: it.preview, date: it.date,
+          preview: it.preview, match: it.match, date: it.date,
           thumbPath: path, isVideo: it.isVideo, duration: it.duration,
           avatarPath: it.avatarPath, initials: it.initials, isChannelChat: it.isChannelChat
         } : it);
@@ -967,6 +969,8 @@ export struct GlobalSearchPage {
     getTdClient().send(req).then((chat: TdObject) => {
       const title = (chat['title'] as string | undefined) ?? '';
       this.titles.set(chatId, title);
+      this.traceMessageSearch('chat-resolved', `hasTitle=${title !== ''} ` +
+        `affected=${this.items.filter((it: FoundItem): boolean => it.chatId === chatId).length}`);
       const type = chat['type'] as TdObject | undefined;
       const isChannel = type !== undefined
         && ((type['@type'] as string | undefined) ?? '') === 'chatTypeSupergroup'
@@ -974,7 +978,7 @@ export struct GlobalSearchPage {
       this.channelFlags.set(chatId, isChannel);
       this.patchItems(chatId, (it: FoundItem): FoundItem => ({
         chatId: it.chatId, messageId: it.messageId, chatTitle: title,
-        preview: it.preview, date: it.date,
+        preview: it.preview, match: it.match, date: it.date,
         thumbPath: it.thumbPath, isVideo: it.isVideo, duration: it.duration,
         avatarPath: it.avatarPath,
         initials: title.length > 0 ? title.substring(0, 1).toUpperCase() : '?',
@@ -996,7 +1000,7 @@ export struct GlobalSearchPage {
             this.avatarCache.set(chatId, path);
             this.patchItems(chatId, (it: FoundItem): FoundItem => ({
               chatId: it.chatId, messageId: it.messageId, chatTitle: it.chatTitle,
-              preview: it.preview, date: it.date,
+              preview: it.preview, match: it.match, date: it.date,
               thumbPath: it.thumbPath, isVideo: it.isVideo, duration: it.duration,
               avatarPath: path, initials: it.initials, isChannelChat: it.isChannelChat
             }));
@@ -1009,6 +1013,8 @@ export struct GlobalSearchPage {
       // A permanently unresolved row keeps the whole result screen in its
       // loading branch. Drop only that chat's unusable hits and allow paging or
       // the empty/error state to settle; a later search may resolve it again.
+      this.traceMessageSearch('chat-error', `code=${e.code} ` +
+        `dropped=${this.items.filter((it: FoundItem): boolean => it.chatId === chatId).length}`);
       this.titles.delete(chatId);
       this.channelFlags.delete(chatId);
       this.items = this.items.filter((it: FoundItem) => it.chatId !== chatId);
@@ -1040,7 +1046,7 @@ export struct GlobalSearchPage {
   // 稍后再点搜索时把上次的关键词端回来（issue #129），和返回栈无关。
   private openChatAndClose(params: Record<string, Object>): void {
     navigateToChat(params, 'search').then((): void => {
-      rememberSearchSession(this.query, this.tab, Date.now());
+      rememberSearchSession(this.query, this.tab, Date.now(), this.objectScope, this.messageScope, this.channelId, this.channelTitle);
     }).catch(logChatNavFailure);
   }
 
@@ -1226,6 +1232,76 @@ export struct GlobalSearchPage {
     });
   }
 
+  private confirmClearOpened(): void {
+    const store = this.store;
+    if (store === null || this.clearOpenedDialogOpen || this.resolvedRecentlyOpened().length === 0) { return; }
+    this.clearOpenedDialogOpen = true;
+    promptAction.showDialog({
+      title: $r('app.string.gs_clear_opened'),
+      message: $r('app.string.gs_clear_opened_confirm'),
+      buttons: [
+        { text: $r('app.string.cancel'), color: COLOR_TEXT_SECONDARY as string },
+        { text: $r('app.string.clear_all'), color: '#E64646' }
+      ]
+    }).then((result: promptAction.ShowDialogSuccessResponse): void => {
+      if (this.store !== store) { return; }
+      this.clearOpenedDialogOpen = false;
+      if (result.index === 1) {
+        try { store.clearOpened(); }
+        catch (_error) { promptAction.showToast({ message: $r('app.string.gs_clear_failed'), duration: 1800 }); }
+      }
+    }).catch((): void => {
+      if (this.store === store) { this.clearOpenedDialogOpen = false; }
+    });
+  }
+
+  private finishRecentDeleteEffect(): void {
+    const action = this.pendingRecentDelete;
+    this.pendingRecentDelete = null;
+    this.deleteEffectVisible = false;
+    if (action !== null) { action(); }
+  }
+
+  private playRecentDeleteEffect(key: string, action: () => void): void {
+    if (this.deletingRecentKey !== '') { return; }
+    const duration = powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 820);
+    if (duration === 0 || this.query.trim() !== '') { action(); return; }
+    this.pendingRecentDelete = action;
+    this.deletingRecentKey = key;
+    this.deleteSnapshotReady = false;
+    this.deleteEffectVisible = true;
+  }
+
+  private removeRecent(chatId: number): void {
+    const store = this.store;
+    if (store === null) { return; }
+    this.playRecentDeleteEffect('recent:' + chatId, (): void => {
+      store.removeRecent(chatId).then((): void => {
+        if (this.store === store) { this.deletingRecentKey = ''; }
+      }).catch((): void => {
+        if (this.store === store) {
+          this.deletingRecentKey = '';
+          promptAction.showToast({ message: $r('app.string.gs_clear_failed'), duration: 1800 });
+        }
+      });
+    });
+  }
+
+  private removeOpened(chatId: number): void {
+    const store = this.store;
+    if (store === null) { return; }
+    this.playRecentDeleteEffect('opened:' + chatId, (): void => {
+      try { store.removeOpened(chatId); }
+      catch (_error) {
+        if (this.store === store) {
+          promptAction.showToast({ message: $r('app.string.gs_clear_failed'), duration: 1800 });
+        }
+      } finally {
+        if (this.store === store) { this.deletingRecentKey = ''; }
+      }
+    });
+  }
+
   private performClearRecent(): void {
     if (this.store === null || this.clearingRecent) {
       return;
@@ -1388,76 +1464,35 @@ export struct GlobalSearchPage {
     });
   }
 
-  @Builder
-  searchTabPill(title: string, index: number) {
-    Row() {
-      Text(title)
-        .fontSize(14)
-        .fontWeight(this.tab === index ? FontWeight.Medium : FontWeight.Normal)
-        .fontColor(this.tab === index ? COLOR_TAB_SELECTED : COLOR_TAB_UNSELECTED)
-        .maxLines(1);
-    }
-    .height(SEARCH_TAB_BAR_HEIGHT)
-    .padding({ left: 12, right: 12 })
-    .margin({ right: 2 })
-    .borderRadius(SEARCH_TAB_BAR_HEIGHT / 2)
-    .stateStyles({
-      normal: this.tabNormalStyle,
-      pressed: this.tabPressedStyle
-    })
-    .onAreaChange((_old: Area, area: Area) => {
-      this.tabXs[index] = area.position.x as number;
-      this.tabWs[index] = area.width as number;
-      if (index === this.tab) {
-        this.moveIndicatorTo(index);
-      }
-    })
-    .accessibilityText(this.tab === index ? str('gs_selected_a11y', title) : title)
-    .onClick((): void => {
-      if (index !== this.tab) {
-        this.controller.changeIndex(index);
-      }
-    });
+  private categoryIds(showRecent: boolean): number[] {
+    const ids: number[] = showRecent ? [SEARCH_TAB_RECENT] : [];
+    for (let i = 0; i < TABS.length; i++) { ids.push(i); }
+    return ids;
   }
 
   @Builder
-  tabsBar() {
-    Column() {
-      Scroll(this.tabScroller) {
-        Stack({ alignContent: Alignment.TopStart }) {
-          // Match the home folder bar: a fixed-height pill follows horizontal
-          // content swipes and settles under the newly selected category.
-          Row()
-            .width(this.indicatorW)
-            .height(SEARCH_TAB_INDICATOR_HEIGHT)
-            .borderRadius(SEARCH_TAB_INDICATOR_HEIGHT / 2)
-            .backgroundColor(COLOR_TAB_PILL_BG)
-            .position({
-              x: this.indicatorX,
-              y: (SEARCH_TAB_BAR_HEIGHT - SEARCH_TAB_INDICATOR_HEIGHT) / 2
-            });
-          Row() {
-            ForEach(TABS, (title: string, index: number) => {
-              this.searchTabPill(title, index);
-            }, (title: string) => title);
-          }
-          .padding({ left: 8, right: 8 })
-          .height(SEARCH_TAB_BAR_HEIGHT);
+  searchCategoryTabs(showRecent: boolean) {
+    List({ space: 8, initialIndex: Math.max(0, this.tab + (showRecent ? 1 : 0)) }) {
+      ForEach(this.categoryIds(showRecent), (index: number) => {
+        ListItem() {
+          Text(index === SEARCH_TAB_RECENT ? str('gs_tab_recent') : TABS[index])
+            .fontSize(14)
+            .fontWeight(this.tab === index ? FontWeight.Medium : FontWeight.Normal)
+            .fontColor(this.tab === index ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY)
+            .maxLines(1)
+            .height(36)
+            .padding({ left: 12, right: 12 })
+            .borderRadius(18)
+            .backgroundColor(this.tab === index ? $r('app.color.selected_pill') : Color.Transparent);
         }
-      }
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      .align(Alignment.Start)
-      .width('100%')
-      .onAreaChange((_old: Area, area: Area) => {
-        this.tabViewW = area.width as number;
-        this.ensureTabVisible(this.tab);
-      });
+        .accessibilitySelected(this.tab === index)
+        .onClick((): void => { if (index !== this.tab) { this.onTabSelected(index); } });
+      }, (index: number): string => String(index));
     }
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-    .borderRadius(SEARCH_TAB_BAR_HEIGHT / 2)
-    .clip(true)
-    .margin({ top: 6 });
+    .listDirection(Axis.Horizontal)
+    .scrollBar(BarState.Off)
+    .width('100%').height(40)
+    .margin({ top: 8 });
   }
 
   @Builder
@@ -1537,8 +1572,8 @@ export struct GlobalSearchPage {
       .scrollBar(BarState.Off)
       .cachedCount(4);
     }
-    .width('calc(100% - 20vp)')
-    .margin({ left: 10, right: 10, top: 8 })
+    .width('100%')
+    .margin({ top: 8 })
     .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(18)
     .clip(true)
@@ -1605,42 +1640,82 @@ export struct GlobalSearchPage {
     ListItemGroup({ header: this.recentHeader() }) {
       LazyForEach(this.recentData, (r: SearchRow) => {
         ListItem() {
-          SearchChatRow({
-            chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
-            initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
-            opening: this.resultOpeningKey === `chat:${r.chatId}`, wallpaperOn: this.appWallpaperOn
-          });
+          Stack({ alignContent: Alignment.TopStart }) {
+          Row() {
+            SearchChatRow({
+              query: this.query,
+              chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
+              initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
+              opening: this.resultOpeningKey === `chat:${r.chatId}`, wallpaperOn: this.appWallpaperOn
+            })
+              .layoutWeight(1)
+              .onClick((): void => { this.openChat(r.chatId); });
+            Button({ type: ButtonType.Circle }) {
+              SymbolGlyph($r('sys.symbol.xmark'))
+                .fontSize(16)
+                .fontColor([COLOR_ICON_SECONDARY]);
+            }
+            .width(40).height(40)
+            .margin({ right: 6 })
+            .backgroundColor(Color.Transparent)
+            .enabled(!this.clearingRecent)
+            .accessibilityText(str('delete') + ' ' + str('gs_recent') + ' ' + r.title)
+            .onClick((): void => { this.removeRecent(r.chatId); });
+          }.width('100%')
+          .backgroundColor(mainCardFill(this.appWallpaperOn, false))
+          .id('search-delete-recent-' + r.chatId)
+          .opacity(this.deleteSnapshotReady && this.deletingRecentKey === 'recent:' + r.chatId ? 0 : 1);
+          if (this.deleteEffectVisible && this.deletingRecentKey === 'recent:' + r.chatId) {
+            ShatterDeleteOverlay({
+              nodeId: 'search-delete-recent-' + r.chatId,
+              onCaptured: (): void => { this.deleteSnapshotReady = true; },
+              onFinish: (): void => { this.finishRecentDeleteEffect(); }
+            }).position({ x: 0, y: 0 });
+          }
+          }.width('100%')
+            .enabled(this.deletingRecentKey === '');
         }
-        .accessibilityText(`${r.title}${r.subtitle !== '' ? '，' + r.subtitle : ''}`)
-        .onClick(() => { this.openChat(r.chatId); });
+        .transition(TransitionEffect.asymmetric(
+          TransitionEffect.IDENTITY,
+          TransitionEffect.OPACITY
+        ))
+        .accessibilityText(`${r.title}${r.subtitle !== '' ? '，' + r.subtitle : ''}`);
       }, (r: SearchRow, index: number): string =>
         guardKey(this.recentData.keyTableId, index, searchRowKey(r)));
     }
     .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
-    .width('calc(100% - 20vp)')
-    .margin({ left: 10, right: 10, top: 10, bottom: 10 })
+    .width('100%')
+    .margin({ top: 10, bottom: 10 })
     .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(18)
-    .clip(true)
-    .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ y: 5 }))
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-        curve: Curve.EaseOut
-      }));
+    .clip(!this.deleteEffectVisible)
+    .transition(TransitionEffect.asymmetric(
+      TransitionEffect.IDENTITY,
+      TransitionEffect.OPACITY
+    ));
   }
 
   @Builder
   recentlyOpenedHeader() {
     Column() {
-      Row({ space: 6 }) {
-        SymbolGlyph($r('sys.symbol.clock'))
-          .fontSize(16)
-          .fontColor([COLOR_ICON_SECONDARY]);
-        Text($r('app.string.gs_recent_chats'))
+      Row() {
+        Row({ space: 6 }) {
+          SymbolGlyph($r('sys.symbol.clock'))
+            .fontSize(16)
+            .fontColor([COLOR_ICON_SECONDARY]);
+          Text($r('app.string.gs_recent_chats'))
+            .fontSize(14)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(COLOR_TEXT_PRIMARY);
+        }
+        .layoutWeight(1);
+        Button($r('app.string.clear_all'))
           .fontSize(14)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(COLOR_TEXT_PRIMARY);
+          .fontColor(COLOR_PRIMARY)
+          .backgroundColor(Color.Transparent)
+          .height(32)
+          .accessibilityText($r('app.string.gs_clear_opened'))
+          .onClick((): void => { this.confirmClearOpened(); });
       }
       .width('100%')
       .height(46)
@@ -1659,29 +1734,59 @@ export struct GlobalSearchPage {
     ListItemGroup({ header: this.recentlyOpenedHeader() }) {
       LazyForEach(this.recentlyOpenedData, (r: SearchRow) => {
         ListItem() {
-          SearchChatRow({
-            chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
-            initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
-            opening: this.resultOpeningKey === `chat:${r.chatId}`, wallpaperOn: this.appWallpaperOn
-          });
+          Stack({ alignContent: Alignment.TopStart }) {
+          Row() {
+            SearchChatRow({
+              query: this.query,
+              chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
+              initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
+              opening: this.resultOpeningKey === `chat:${r.chatId}`, wallpaperOn: this.appWallpaperOn
+            })
+              .layoutWeight(1)
+              .onClick((): void => { this.openChat(r.chatId); });
+            Button({ type: ButtonType.Circle }) {
+              SymbolGlyph($r('sys.symbol.xmark'))
+                .fontSize(16)
+                .fontColor([COLOR_ICON_SECONDARY]);
+            }
+            .width(40).height(40)
+            .margin({ right: 6 })
+            .backgroundColor(Color.Transparent)
+            .accessibilityText(str('gs_remove_opened') + ' ' + r.title)
+            .onClick((): void => { this.removeOpened(r.chatId); });
+          }
+          .width('100%')
+          .backgroundColor(mainCardFill(this.appWallpaperOn, false))
+          .id('search-delete-opened-' + r.chatId)
+          .opacity(this.deleteSnapshotReady && this.deletingRecentKey === 'opened:' + r.chatId ? 0 : 1);
+          if (this.deleteEffectVisible && this.deletingRecentKey === 'opened:' + r.chatId) {
+            ShatterDeleteOverlay({
+              nodeId: 'search-delete-opened-' + r.chatId,
+              onCaptured: (): void => { this.deleteSnapshotReady = true; },
+              onFinish: (): void => { this.finishRecentDeleteEffect(); }
+            }).position({ x: 0, y: 0 });
+          }
+          }.width('100%')
+            .enabled(this.deletingRecentKey === '');
         }
-        .accessibilityText(`${r.title}${r.subtitle !== '' ? '，' + r.subtitle : ''}`)
-        .onClick(() => { this.openChat(r.chatId); });
+        .transition(TransitionEffect.asymmetric(
+          TransitionEffect.IDENTITY,
+          TransitionEffect.OPACITY
+        ))
+        .accessibilityText(`${r.title}${r.subtitle !== '' ? '，' + r.subtitle : ''}`);
       }, (r: SearchRow, index: number): string =>
         guardKey(this.recentlyOpenedData.keyTableId, index, searchRowKey(r)));
     }
     .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
-    .width('calc(100% - 20vp)')
-    .margin({ left: 10, right: 10, top: 10, bottom: 10 })
+    .width('100%')
+    .margin({ top: 10, bottom: 10 })
     .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(18)
-    .clip(true)
-    .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ y: 5 }))
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-        curve: Curve.EaseOut
-      }));
+    .clip(!this.deleteEffectVisible)
+    .transition(TransitionEffect.asymmetric(
+      TransitionEffect.IDENTITY,
+      TransitionEffect.OPACITY
+    ));
   }
 
   @Builder
@@ -1717,9 +1822,9 @@ export struct GlobalSearchPage {
         .textAlign(TextAlign.Center)
         .constraintSize({ maxWidth: 250 });
     }
-    .width('calc(100% - 24vp)')
+    .width('100%')
     .height(214)
-    .margin({ left: 12, right: 12, top: 12 })
+    .margin({ top: 12 })
     .justifyContent(FlexAlign.Center)
     .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(20)
@@ -1767,9 +1872,9 @@ export struct GlobalSearchPage {
       .accessibilityText($r('app.string.gs_reload_recent'))
       .onClick((): void => { this.retryLanding(); });
     }
-    .width('calc(100% - 24vp)')
+    .width('100%')
     .height(220)
-    .margin({ left: 12, right: 12, top: 12 })
+    .margin({ top: 12 })
     .justifyContent(FlexAlign.Center)
     .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(20)
@@ -1787,7 +1892,7 @@ export struct GlobalSearchPage {
   // Scroll 里的 ForEach，每次点开搜索都把几十行一次建完。
   @Builder
   landing() {
-    List() {
+    List({ scroller: this.landingScroller }) {
       if (this.resolvedTopUsers().length > 0) {
         ListItem() {
           this.frequentSection();
@@ -1817,6 +1922,7 @@ export struct GlobalSearchPage {
     .edgeEffect(EdgeEffect.Spring)
     .scrollBar(BarState.Off)
     .cachedCount(4)
+    .maintainVisibleContentPosition(true)
     // 底部留白原来是内容列的 padding（随内容滚动），在 List 上对应 contentEndOffset。
     .contentEndOffset(8);
   }
@@ -1879,16 +1985,16 @@ export struct GlobalSearchPage {
       })
       .accessibilityText(title)
       .onClick((): void => {
-        if (tab === TAB_CHANNELS) {
+        if (tab === TAB_MESSAGES) {
           this.retryChannels();
         } else {
           this.retryApps();
         }
       });
     }
-    .width('calc(100% - 24vp)')
+    .width('100%')
     .height(214)
-    .margin({ left: 12, right: 12, top: 12 })
+    .margin({ top: 12 })
     .justifyContent(FlexAlign.Center)
     .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(20)
@@ -1918,9 +2024,9 @@ export struct GlobalSearchPage {
         .fontColor(COLOR_TEXT_SECONDARY)
         .textAlign(TextAlign.Center);
     }
-    .width('calc(100% - 24vp)')
+    .width('100%')
     .height(194)
-    .margin({ left: 12, right: 12, top: 12 })
+    .margin({ top: 12 })
     .justifyContent(FlexAlign.Center)
     .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(20)
@@ -1947,6 +2053,7 @@ export struct GlobalSearchPage {
           LazyForEach(this.joinedChannelsData, (r: SearchRow) => {
             ListItem() {
               SearchChatRow({
+                query: this.query,
                 chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
                 initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
                 opening: this.resultOpeningKey === `chat:${r.chatId}`, wallpaperOn: this.appWallpaperOn
@@ -1968,6 +2075,7 @@ export struct GlobalSearchPage {
           LazyForEach(this.similarChannelsData, (r: SearchRow) => {
             ListItem() {
               SearchChatRow({
+                query: this.query,
                 chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
                 initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
                 opening: this.resultOpeningKey === `chat:${r.chatId}`, wallpaperOn: this.appWallpaperOn
@@ -1986,7 +2094,7 @@ export struct GlobalSearchPage {
           if (!this.joinedLoaded || !this.similarLoaded) {
             this.catalogLoadingState(str('gs_loading_channels'));
           } else if (this.joinedFailed || this.similarFailed) {
-            this.catalogErrorState(str('gs_channels_failed'), TAB_CHANNELS);
+            this.catalogErrorState(str('gs_channels_failed'), TAB_MESSAGES);
           } else {
             this.catalogEmptyState(
               str('gs_no_suggested'),
@@ -2009,13 +2117,13 @@ export struct GlobalSearchPage {
   appsList() {
     List() {
       ListItem() {
-        this.sectionHeader(str('gs_popular_apps'));
+        this.sectionHeader(str(this.query.trim() === '' ? 'gs_popular_apps' : 'gs_app_results'));
       }
       ListItemGroup() {
         LazyForEach(this.appsData, (r: SearchRow) => {
           ListItem() {
             SearchAppRow({
-              userId: r.userId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
+              query: this.query, identity: r.identity, userId: r.userId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
               initials: r.initials, opening: this.resultOpeningKey === `app:${r.userId}`,
               wallpaperOn: this.appWallpaperOn
             });
@@ -2023,11 +2131,14 @@ export struct GlobalSearchPage {
           .accessibilityText(str('gs_open_a11y', r.title, r.subtitle !== '' ? str('gs_comma') + r.subtitle : ''))
           .onClick(() => { this.openApp(r.userId); });
         }, (r: SearchRow, index: number): string =>
-          guardKey(this.appsData.keyTableId, index, appRowKey(r)));
+          guardKey(this.appsData.keyTableId, index, appRowKey(r) + this.query + JSON.stringify(r.identity)));
       }
       .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
       .backgroundColor(mainCardFill(this.appWallpaperOn, false));
-      if (this.filteredAppResults().length === 0 && this.query.trim() === '') {
+      if (this.query.trim() !== '' && (this.chatSearching || this.chatSearchFailed)) {
+        ListItem() { this.chatSearchInlineState(); }
+      }
+      if (this.filteredAppResults().length === 0) {
         ListItem() {
           if (!this.appsLoaded || this.apps.some((row: SearchRow) => row.title === '')) {
             this.catalogLoadingState(str('gs_loading_apps'));
@@ -2051,13 +2162,21 @@ export struct GlobalSearchPage {
 
   private filteredChatResults(): SearchRow[] {
     return this.chatResults.filter((row: SearchRow) =>
-      row.title !== '' && (this.tab === TAB_CHATS || row.isChannel));
+      row.title !== '' && (this.objectScope === 'all' || row.identity?.kind === this.objectScope));
   }
 
   private filteredAppResults(): SearchRow[] {
     const q = this.query.trim().toLowerCase();
-    return this.apps.filter((row: SearchRow) =>
-      row.title !== '' && (q === '' || row.title.toLowerCase().includes(q)));
+    const rows = this.apps.filter((row: SearchRow): boolean => row.title !== '' &&
+      (q === '' || row.title.toLowerCase().includes(q) ||
+        row.identity?.usernames.some((name: string): boolean => ('@' + name).toLowerCase().includes(q)) === true));
+    if (q !== '') {
+      for (const row of this.chatResults) {
+        if (row.title !== '' && row.identity?.isBot === true && row.userId > 0 &&
+          !rows.some((item: SearchRow): boolean => item.userId === row.userId)) { rows.push(row); }
+      }
+    }
+    return rows;
   }
 
   // —— 结果列表的 LazyForEach 数据源同步（@Watch 触发）——
@@ -2075,7 +2194,12 @@ export struct GlobalSearchPage {
 
   // 会话名结果按 tab 过滤（频道 tab 只留频道）：chatResults 和 tab 变了都走这里。
   private syncChatResultsData(): void {
+    this.syncAppsData();
     const rows: SearchRow[] = this.filteredChatResults();
+    const local = rows.filter((r: SearchRow): boolean => r.identity?.existing === true);
+    const pub = rows.filter((r: SearchRow): boolean => r.identity?.existing !== true);
+    this.localNamesData.update(local, local.map(searchRowId), local.map((r: SearchRow): string => searchRowKey(r) + this.query + JSON.stringify(r.identity)));
+    this.publicNamesData.update(pub, pub.map(searchRowId), pub.map((r: SearchRow): string => searchRowKey(r) + this.query + JSON.stringify(r.identity)));
     this.combinedChatsData.update(rows,
       rows.map((r: SearchRow): string => searchRowId(r)),
       rows.map((r: SearchRow): string => searchRowKey(r)));
@@ -2085,10 +2209,11 @@ export struct GlobalSearchPage {
   private syncFoundItemsData(): void {
     const rows: FoundItem[] = this.visibleItems();
     const ids: string[] = rows.map((it: FoundItem): string => foundItemId(it));
-    const keys: string[] = rows.map((it: FoundItem): string => foundItemKey(it));
+    const keys: string[] = rows.map((it: FoundItem): string => foundItemKey(it) + this.query + JSON.stringify(it.match));
     this.messageItemsData.update(rows, ids, keys);
     this.combinedMessagesData.update(rows, ids, keys);
     this.mediaItemsData.update(rows, ids, rows.map((it: FoundItem): string => mediaItemKey(it)));
+    this.traceMessageState('publish');
   }
 
   private syncTabFilteredData(): void {
@@ -2097,14 +2222,15 @@ export struct GlobalSearchPage {
   }
 
   private syncQueryFilteredData(): void {
-    this.syncAppsData();
+    this.syncChatResultsData();
+    this.syncFoundItemsData();
   }
 
   // 应用榜按 query 过滤：应用 tab 和综合结果各一个容器。
   private syncAppsData(): void {
     const rows: SearchRow[] = this.filteredAppResults();
     const ids: string[] = rows.map((r: SearchRow): string => appRowId(r));
-    const keys: string[] = rows.map((r: SearchRow): string => appRowKey(r));
+    const keys: string[] = rows.map((r: SearchRow): string => appRowKey(r) + this.query + JSON.stringify(r.identity));
     this.appsData.update(rows, ids, keys);
     this.combinedAppsData.update(rows, ids, keys);
   }
@@ -2154,11 +2280,9 @@ export struct GlobalSearchPage {
       }
     }
     .layoutWeight(compact ? 0 : 1)
-    .width(compact ? '100%' : 'calc(100% - 24vp)')
+    .width('100%')
     .height(compact ? 106 : '100%')
     .margin({
-      left: compact ? 0 : 12,
-      right: compact ? 0 : 12,
       top: compact ? 0 : 12,
       bottom: compact ? 0 : 12
     })
@@ -2210,11 +2334,9 @@ export struct GlobalSearchPage {
       .onClick((): void => { this.retryMessageSearch(); });
     }
     .layoutWeight(compact ? 0 : 1)
-    .width(compact ? '100%' : 'calc(100% - 24vp)')
+    .width('100%')
     .height(compact ? 166 : '100%')
     .margin({
-      left: compact ? 0 : 12,
-      right: compact ? 0 : 12,
       top: compact ? 0 : 12,
       bottom: compact ? 0 : 12
     })
@@ -2300,10 +2422,10 @@ export struct GlobalSearchPage {
 
   @Builder
   chatSearchInlineState() {
-    if (this.chatSearching) {
+    if (this.chatSearching || this.searchPending || this.chatResults.some((r: SearchRow): boolean => r.title === '')) {
       Row({ space: 8 }) {
         LoadingProgress().width(19).height(19).color(COLOR_PRIMARY);
-        Text(this.tab === TAB_CHANNELS ? $r('app.string.gs_searching_channels') : $r('app.string.gs_searching_chats'))
+        Text(this.tab === TAB_MESSAGES ? $r('app.string.gs_searching_channels') : $r('app.string.gs_searching_chats'))
           .fontSize(13)
           .fontColor(COLOR_TEXT_SECONDARY);
       }
@@ -2315,7 +2437,7 @@ export struct GlobalSearchPage {
         SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
           .fontSize(17)
           .fontColor(['#E64646']);
-        Text(this.tab === TAB_CHANNELS ? $r('app.string.gs_channel_search_failed') : $r('app.string.gs_chat_search_failed'))
+        Text(this.tab === TAB_MESSAGES ? $r('app.string.gs_channel_search_failed') : $r('app.string.gs_chat_search_failed'))
           .fontSize(13)
           .fontColor(COLOR_TEXT_SECONDARY);
         Row() {
@@ -2389,7 +2511,7 @@ export struct GlobalSearchPage {
       }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
     } else if (this.filteredChatResults().length === 0) {
       Column() {
-        Text(this.tab === TAB_CHANNELS ? $r('app.string.gs_no_channels') : $r('app.string.gs_no_chats'))
+        Text(this.tab === TAB_MESSAGES ? $r('app.string.gs_no_channels') : $r('app.string.gs_no_chats'))
           .fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
       }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
     } else {
@@ -2402,8 +2524,8 @@ export struct GlobalSearchPage {
           }, (r: SearchRow) => `res_${r.chatId}_${r.title}_${r.subtitle}_${r.avatarPath}`);
       }
       .layoutWeight(1)
-      .width('calc(100% - 24vp)')
-      .margin({ left: 12, right: 12, top: 12, bottom: 12 })
+      .width('100%')
+      .margin({ top: 12, bottom: 12 })
     .backgroundColor(mainCardFill(this.appWallpaperOn, false))
       .borderRadius(20)
       .clip(true);
@@ -2422,8 +2544,8 @@ export struct GlobalSearchPage {
         Text($r('app.string.gs_no_media')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
       }
       .layoutWeight(1)
-      .width('calc(100% - 24vp)')
-      .margin({ left: 12, right: 12, top: 12, bottom: 12 })
+      .width('100%')
+      .margin({ top: 12, bottom: 12 })
       .justifyContent(FlexAlign.Center)
       .backgroundColor(mainCardFill(this.appWallpaperOn, false))
       .borderRadius(20);
@@ -2455,8 +2577,8 @@ export struct GlobalSearchPage {
       .columnsGap(2).rowsGap(2)
       .cachedCount(2)
       .layoutWeight(1)
-      .width('calc(100% - 24vp)')
-      .margin({ left: 12, right: 12, top: 12, bottom: 12 })
+      .width('100%')
+      .margin({ top: 12, bottom: 12 })
       .backgroundColor(mainCardFill(this.appWallpaperOn, false))
       .borderRadius(20)
       .clip(true)
@@ -2485,7 +2607,7 @@ export struct GlobalSearchPage {
             Text($r('app.string.gs_show_more')).fontSize(14).fontColor(COLOR_PRIMARY)
               .onClick(() => {
                 // Hashtag results expand into the official 帖子 category.
-                this.controller.changeIndex(TAB_POSTS);
+                this.onTabSelected(TAB_POSTS);
               });
           }.width('100%').padding({ left: 16, right: 16, top: 10, bottom: 6 });
         }
@@ -2495,7 +2617,7 @@ export struct GlobalSearchPage {
             ListItem() {
               SearchMessageRow({
                 chatId: it.chatId, chatTitle: it.chatTitle, avatarPath: it.avatarPath, initials: it.initials,
-                preview: it.preview, timeLabel: formatTime(it.date, this.nowSec),
+                match: it.match, query: this.query, preview: it.preview, timeLabel: formatTime(it.date, this.nowSec),
                 opening: this.resultOpeningKey === `message:${it.chatId}:${it.messageId}`,
                 wallpaperOn: this.appWallpaperOn
               });
@@ -2517,7 +2639,7 @@ export struct GlobalSearchPage {
           LazyForEach(this.combinedAppsData, (r: SearchRow) => {
             ListItem() {
               SearchAppRow({
-                userId: r.userId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
+                query: this.query, identity: r.identity, userId: r.userId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
                 initials: r.initials, opening: this.resultOpeningKey === `app:${r.userId}`,
                 wallpaperOn: this.appWallpaperOn
               });
@@ -2539,13 +2661,14 @@ export struct GlobalSearchPage {
       } else {
         if (this.filteredChatResults().length > 0) {
           ListItem() {
-            this.sectionHeader(this.tab === TAB_CHANNELS ? str('gn_channel') : str('gs_chats_and_contacts'));
+            this.sectionHeader(this.tab === TAB_MESSAGES ? str('gn_channel') : str('gs_chats_and_contacts'));
           }
         }
         ListItemGroup() {
           LazyForEach(this.combinedChatsData, (r: SearchRow) => {
             ListItem() {
               SearchChatRow({
+                query: this.query,
                 chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
                 initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
                 opening: this.resultOpeningKey === `chat:${r.chatId}`, wallpaperOn: this.appWallpaperOn
@@ -2582,7 +2705,7 @@ export struct GlobalSearchPage {
             ListItem() {
               SearchMessageRow({
                 chatId: it.chatId, chatTitle: it.chatTitle, avatarPath: it.avatarPath, initials: it.initials,
-                preview: it.preview, timeLabel: formatTime(it.date, this.nowSec),
+                match: it.match, query: this.query, preview: it.preview, timeLabel: formatTime(it.date, this.nowSec),
                 opening: this.resultOpeningKey === `message:${it.chatId}:${it.messageId}`,
                 wallpaperOn: this.appWallpaperOn
               });
@@ -2608,8 +2731,8 @@ export struct GlobalSearchPage {
       }
     }
     .layoutWeight(1)
-    .width('calc(100% - 24vp)')
-    .margin({ left: 12, right: 12, top: 12, bottom: 12 })
+    .width('100%')
+    .margin({ top: 12, bottom: 12 })
     .edgeEffect(EdgeEffect.Spring)
     .scrollBar(BarState.Off)
     .backgroundColor(mainCardFill(this.appWallpaperOn, false))
@@ -2657,6 +2780,11 @@ export struct GlobalSearchPage {
       this.messageErrorState(false);
     } else if (this.loading || (this.resolvingMessageRows() && this.visibleItems().length === 0)) {
       this.messageLoadingState(false);
+    } else if (this.emptyPageAction() === SEARCH_PAGE_FETCH || this.emptyPageAction() === SEARCH_PAGE_MORE) {
+      Column({ space: 12 }) {
+        Text($r('app.string.gs_finding_messages')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+        Button($r('app.string.gs_show_more')).onClick((): void => { this.continueEmptySearch(); });
+      }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center).padding(24);
     } else if (this.visibleItems().length === 0 && this.searchedOnce && this.searchExhausted()) {
       Column() {
         Text(this.tab === TAB_LINKS ? $r('app.string.gs_no_links')
@@ -2666,8 +2794,8 @@ export struct GlobalSearchPage {
           .fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
       }
       .layoutWeight(1)
-      .width('calc(100% - 24vp)')
-      .margin({ left: 12, right: 12, top: 12, bottom: 12 })
+      .width('100%')
+      .margin({ top: 12, bottom: 12 })
       .justifyContent(FlexAlign.Center)
       .backgroundColor(mainCardFill(this.appWallpaperOn, false))
       .borderRadius(20);
@@ -2678,7 +2806,7 @@ export struct GlobalSearchPage {
           ListItem() {
             SearchMessageRow({
               chatId: it.chatId, chatTitle: it.chatTitle, avatarPath: it.avatarPath, initials: it.initials,
-              preview: it.preview, timeLabel: formatTime(it.date, this.nowSec),
+              match: it.match, query: this.query, preview: it.preview, timeLabel: formatTime(it.date, this.nowSec),
               opening: this.resultOpeningKey === `message:${it.chatId}:${it.messageId}`,
               wallpaperOn: this.appWallpaperOn
             });
@@ -2686,7 +2814,7 @@ export struct GlobalSearchPage {
           .accessibilityText(`${it.chatTitle}，${it.preview}`)
           .onClick(() => { this.openResult(it); });
         }, (it: FoundItem, index: number): string =>
-          guardKey(this.messageItemsData.keyTableId, index, foundItemKey(it)));
+          guardKey(this.messageItemsData.keyTableId, index, foundItemKey(it) + this.query + JSON.stringify(it.match)));
         if (this.pagingBusy || this.pagingError ||
           (this.loadedPageCount > 1 && this.nextOffset === '')) {
           ListItem() {
@@ -2695,8 +2823,8 @@ export struct GlobalSearchPage {
         }
       }
       .layoutWeight(1)
-      .width('calc(100% - 24vp)')
-      .margin({ left: 12, right: 12, top: 12, bottom: 12 })
+      .width('100%')
+      .margin({ top: 12, bottom: 12 })
       .backgroundColor(mainCardFill(this.appWallpaperOn, false))
       .borderRadius(20)
       .clip(true)
@@ -2709,7 +2837,7 @@ export struct GlobalSearchPage {
       })
       // Prefetch the next page a few rows before the bottom (no tap needed).
       .onScrollIndex((_start: number, end: number) => {
-        if (this.nextOffset !== '' && !this.loading && !this.pagingError &&
+        if (this.visibleItems().length > 0 && this.nextOffset !== '' && !this.loading && !this.pagingError &&
           end >= this.items.length - 5) {
           this.searchMessages(this.nextOffset);
         }
@@ -2717,30 +2845,113 @@ export struct GlobalSearchPage {
     }
   }
 
+  // Read reactive state here: a value parameter captures the tab from the first render.
   @Builder
-  tabBody(idx: number) {
-    if (idx === TAB_APPS && this.query.trim() === '') {
+  tabBody() {
+    if (this.tab === SEARCH_TAB_RECENT) {
+      this.landing();
+    } else if (this.query.trim() === '' && this.tab !== TAB_APPS && this.tab !== TAB_DOWNLOADS && this.tab !== TAB_POSTS) {
+      Column() {
+        Text($r('app.string.gs_empty_hint')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+      }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center).padding(24);
+    } else if (this.tab === TAB_DOWNLOADS) {
+      Column({ space: 14 }) {
+        Text($r('app.string.gs_download_scope')).fontColor(COLOR_TEXT_SECONDARY).fontSize(14);
+        Button($r('app.string.dc_title')).onClick((): void => {
+          this.navStack?.pushPathByName('DownloadCenterPage', { 'query': this.query } as Record<string, Object>);
+        });
+      }.layoutWeight(1).justifyContent(FlexAlign.Center).padding(24);
+    } else if (this.tab === TAB_APPS) {
       this.appsList();
-    } else if (idx === TAB_MEDIA) {
-      this.mediaGrid();
-    } else if (filterTypeForTab(idx) !== '') {
-      // 链接/文件/音乐/语音: typed-message results, query optional.
+    } else if (this.tab === TAB_MEDIA) {
+      if (this.query.trim() === '') { this.mediaGrid(); } else { this.messageResults(); }
+    } else if (filterTypeForTab(this.tab) !== '') {
       this.messageResults();
-    } else if (idx === TAB_POSTS) {
-      // Prompt (with explicit 搜索 button) until a search actually ran.
-      if (this.loading || this.searchedOnce) {
-        this.messageResults();
-      } else {
-        this.postsPrompt();
-      }
-    } else if (this.query.trim() === '') {
-      if (idx === TAB_CHATS) {
-        this.landing();
-      } else {
-        this.channelsLanding();
-      }
+    } else if (this.tab === TAB_POSTS) {
+      if (this.loading || this.searchedOnce) { this.messageResults(); } else { this.postsPrompt(); }
+    } else if (this.tab === TAB_MESSAGES) {
+      this.messageResults();
     } else {
-      this.combinedResults();
+      this.nameResults();
+    }
+  }
+
+  @Builder
+  nameGroup(publicResults: boolean) {
+    ListItemGroup() {
+      ListItem() { this.sectionHeader(str(publicResults ? 'gs_public_names' : 'gs_existing_chats')); }
+      LazyForEach(publicResults ? this.publicNamesData : this.localNamesData, (row: SearchRow) => {
+        ListItem() {
+          SearchChatRow({ chatId: row.chatId, title: row.title, subtitle: row.subtitle,
+            avatarPath: row.avatarPath, initials: row.initials, query: this.query, identity: row.identity,
+            wallpaperOn: this.appWallpaperOn, savedMessages: this.isSavedMessagesChat(row.chatId) });
+        }.onClick((): void => this.openChat(row.chatId));
+      }, (row: SearchRow): string => searchRowKey(row) + this.query + JSON.stringify(row.identity));
+    }
+  }
+
+  @Builder
+  nameResults() {
+    List() {
+      if (this.filteredChatResults().some((r: SearchRow): boolean => r.identity?.existing === true)) { this.nameGroup(false); }
+      if (this.filteredChatResults().some((r: SearchRow): boolean => r.identity?.existing !== true)) { this.nameGroup(true); }
+      if (this.chatSearching || this.searchPending || this.chatSearchFailed || this.chatResults.some((r: SearchRow): boolean => r.title === '')) {
+        ListItem() { this.chatSearchInlineState(); }
+      }
+      if (!this.chatSearching && !this.searchPending && !this.chatSearchFailed &&
+        !this.chatResults.some((r: SearchRow): boolean => r.title === '') && this.filteredChatResults().length === 0) {
+        ListItem() { Text($r('app.string.gs_no_chats')).padding(24).fontColor(COLOR_TEXT_SECONDARY); }
+      }
+      ListItem() { Text($r('app.string.gs_public_name_limit')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).padding(20); }
+    }.layoutWeight(1).width('100%').cachedCount(4);
+  }
+
+  private chooseScope(scope: string): void {
+    if (this.tab === TAB_CHATS) { this.objectScope = scope; this.syncChatResultsData(); this.runSearch(); }
+    else {
+      this.messageScope = scope;
+      if (scope !== 'channel') { this.channelId = 0; this.channelTitle = ''; }
+      this.runSearch();
+    }
+  }
+
+  @Builder
+  channelPicker() {
+    SearchChannelPicker({ onPick: (id: number, title: string): void => {
+      this.channelId = id; this.channelTitle = title; this.messageScope = 'channel';
+      this.channelPickerOpen = false; this.runSearch();
+    } });
+  }
+
+  @Builder
+  scopeControls() {
+    if (this.tab === TAB_CHATS || this.tab === TAB_MESSAGES) {
+      Column({ space: 8 }) {
+        Text(this.tab === TAB_CHATS ? str('gs_name_scope') :
+          (this.channelId !== 0 ? str('gs_channel_scope', this.channelTitle) : str('gs_message_scope')))
+          .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+        Row({ space: 8 }) {
+          ForEach(['all', 'user', 'group', 'channel'], (scope: string) => {
+            Button(str(scope === 'all' ? 'gs_scope_all' : scope === 'user' ?
+              (this.tab === TAB_MESSAGES ? 'gs_scope_private' : 'gs_scope_user') : scope === 'group' ? 'gn_group' : 'gn_channel'))
+              .fontSize(12).height(30)
+              .fontColor((this.tab === TAB_CHATS ? this.objectScope : this.messageScope) === scope ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY)
+              .backgroundColor((this.tab === TAB_CHATS ? this.objectScope : this.messageScope) === scope ? '#183D8BFF' : Color.Transparent)
+              .onClick((): void => this.chooseScope(scope));
+          });
+        }.width('100%');
+        if (this.tab === TAB_MESSAGES && this.messageScope === 'channel') {
+          Row({ space: 8 }) {
+            Button(this.channelId !== 0 ? this.channelTitle : str('gs_choose_channel'))
+              .fontSize(12).height(32).constraintSize({ maxWidth: '80%' })
+              .onClick((): void => { this.channelPickerOpen = true; });
+            if (this.channelId !== 0) {
+              Button('×').height(32).width(32).accessibilityText(str('gs_all_channels'))
+                .onClick((): void => { this.channelId = 0; this.channelTitle = ''; this.runSearch(); });
+            }
+          }.width('100%');
+        }
+      }.padding({ top: 8 }).width('100%');
     }
   }
 
@@ -2749,6 +2960,8 @@ export struct GlobalSearchPage {
       this.body();
     }
     .hideTitleBar(true)
+    .bindSheet($$this.channelPickerOpen, this.channelPicker(), { height: '80%', dragBar: true })
+    .onBackPressed((): boolean => collapseFloatingVideo())
     .onReady((context: NavDestinationContext): void => {
       this.navStack = context.pathStack;
     })
@@ -2764,62 +2977,29 @@ export struct GlobalSearchPage {
     AppBackdrop({ split: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) });
     Column() {
       Column() {
-        // 搜索框和分类条跟着下面的结果列一起限宽、一起居中。它们语义上像标题栏
-        // （通栏也说得通），但它们和结果卡片是上下贴着的一组，一个通栏一个居中
-        // 会明显不对齐；何况一个 2880px 宽的输入框本身就没法看。
-        Column() {
-          this.searchBar();
-          this.tabsBar();
+        this.searchBar();
+        // Rebuild the strip only when Recent enters/leaves, resetting its scroll to the selected tab.
+        if (this.query.trim() === '') {
+          this.searchCategoryTabs(true);
+        } else {
+          this.searchCategoryTabs(false);
+          this.scopeControls();
         }
-        .width('100%')
-        .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
-        .padding({ left: 12, right: 12, top: this.topSafe + 10, bottom: 8 });
       }
       .width('100%')
-      // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
-      .alignItems(HorizontalAlign.Center);
+      .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
+      .padding({ left: SEARCH_PAGE_INSET, right: SEARCH_PAGE_INSET, top: this.topSafe + 10 });
 
-      Tabs({ controller: this.controller, index: this.tab }) {
-        ForEach(TABS, (t: string, idx: number) => {
-          TabContent() {
-            // 这一页的限宽只能套在 tabBody 外面，不像联系人/设置那样落在滚动容器
-            // 内部：十个 tab 各有各的容器，其中六个（聊天结果 / 媒体宫格 / 消息结果
-            // / 下载 / 组合结果 / 各种空态）**自己就是那张卡片**——List/Grid/Scroll
-            // 上直接挂着 calc(100% - 24vp) + 圆角 + surface 背景，卡片外面本来就
-            // 不是内容区。套在外面还有一个好处：空态、加载态、错误态、以后新加的
-            // 状态全部自动同宽，不会漏掉某个分支导致 tab 之间宽度不一。
-            // 已知代价：limit 之后滚动容器本身收窄了，两侧留白按不动、拖不动页面。
-            Column() {
-              Column() {
-                this.tabBody(idx);
-              }
-              .width('100%').height('100%')
-              .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
-            }
-            .width('100%').height('100%')
-            // Column 默认左对齐：限了宽不居中，结果卡就全堆在屏幕左边了。
-            .alignItems(HorizontalAlign.Center);
-          }
-        }, (t: string) => t);
+      Column() {
+        this.tabBody();
       }
-      .barHeight(0)
+      .width('100%')
       .layoutWeight(1)
-      .onAreaChange((_old: Area, area: Area) => { this.tabsWidth = area.width as number; })
-      // Content swipe in progress: the pill tracks the finger continuously.
-      .onGestureSwipe((index: number, event: TabsAnimationEvent) => {
-        if (this.tabsWidth > 0) {
-          this.moveIndicatorTo(index - event.currentOffset / this.tabsWidth);
-        }
-      })
-      .onAnimationStart((_index: number, targetIndex: number) => {
-        animateTo({
-          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 250), curve: Curve.EaseOut
-        }, () => { this.moveIndicatorTo(targetIndex); });
-        this.ensureTabVisible(targetIndex);
-      })
-      .onChange((index: number) => { this.onTabSelected(index); });
+      .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
+      .padding({ left: SEARCH_PAGE_INSET, right: SEARCH_PAGE_INSET });
     }
     .width('100%').height('100%')
+    .alignItems(HorizontalAlign.Center)
     .backgroundColor(mainPageFill(this.appWallpaperOn))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
 

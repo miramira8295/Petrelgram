@@ -1,3 +1,6 @@
+import { TdObject, TdRequest } from '../../tdkit/TdTypes';
+import { sharedSendPermissions } from '../../util/sendPermissions';
+import { TargetSendFilter } from '../../services/TargetSendFilter';
 import { TargetFolderTabs } from '../common/TargetFolderTabs';
 import { FolderInfo } from '../../store/FolderStore';
 import { ALL_FOLDER_ID, forwardListKey } from '../../util/forwardFolders';
@@ -78,7 +81,53 @@ export struct ShareTargetSheet {
   private searchSeq: number = 0;
   private searchTimer: number = -1;
 
+  @State private allowedTargetIds: number[] = [];
+  @State private checkingTargets: boolean = true;
+  @State private targetCheckFailed: boolean = false;
+  private targetFilter: TargetSendFilter | null = null;
+  private autoPageCount: number = -1;
+
+  private startTargetFilter(): void {
+    this.targetFilter?.dispose();
+    const client = getTdClient();
+    const filter: TargetSendFilter = new TargetSendFilter(
+      (request: TdRequest): Promise<TdObject> => client.send(request, 15000),
+      async (): Promise<string[]> => {
+        const payload = peekPendingShare();
+        if (payload === null) { throw new Error('share ended'); }
+        return sharedSendPermissions(payload);
+      },
+      (): void => {
+        if (this.targetFilter !== filter) { return; }
+        this.allowedTargetIds = filter.allowedIds();
+        this.checkingTargets = filter.checking();
+        this.targetCheckFailed = filter.failed();
+        if (!this.sending && !this.checkingTargets && !this.targetCheckFailed) {
+          this.selectedIds = this.selectedIds.filter((id: number): boolean => this.allowedTargetIds.includes(id));
+          // A page containing only forbidden targets must not prevent reaching later chats.
+          if (this.query.trim() === '' && this.chats.length > 0 &&
+            !this.chats.some((chat: ChatEntry): boolean => this.allowedTargetIds.includes(chat.id)) &&
+            this.autoPageCount !== this.chats.length) {
+            this.autoPageCount = this.chats.length;
+            getChatStore().loadMore(this.listKey());
+          }
+        }
+      }, (): boolean => client === getTdClient());
+    this.targetFilter = filter;
+    filter.bind(client);
+    this.refreshTargets();
+  }
+
+  private refreshTargets(): void {
+    const ids: number[] = this.chats.map((chat: ChatEntry): number => chat.id);
+    ids.push(...this.results.map((row: ShareRow): number => row.chatId));
+    ids.push(...this.rawRecent().map((row: ShareTarget): number => row.chatId));
+    ids.push(...this.selectedIds);
+    this.targetFilter?.include(ids);
+  }
+
   aboutToAppear(): void {
+    this.startTargetFilter();
     this.unsubFolders = getFolderStore().subscribe((folders: FolderInfo[]): void => {
       this.folders = folders;
       if (this.folderId !== ALL_FOLDER_ID && !folders.some((folder: FolderInfo): boolean => folder.id === this.folderId)) {
@@ -93,10 +142,13 @@ export struct ShareTargetSheet {
       this.selectedIds = [];
       this.progress.clear();
       this.taskPayload = null;
+      this.startTargetFilter();
     });
   }
 
   aboutToDisappear(): void {
+    this.targetFilter?.dispose();
+    this.targetFilter = null;
     this.sendSeq++;
     this.unsubFolders?.();
     this.unsubFolders = null;
@@ -127,6 +179,7 @@ export struct ShareTargetSheet {
 
   private selectFolder(id: number): void {
     if (this.sending || id === this.folderId) { return; }
+    this.autoPageCount = -1;
     this.folderId = id;
     this.chats = [];
     this.bindChats();
@@ -146,9 +199,11 @@ export struct ShareTargetSheet {
     this.searchSeq++;
     if (trimmed === '') {
       this.results = [];
+      this.refreshTargets();
       return;
     }
     this.results = localShareRows(trimmed, this.folderId);
+    this.refreshTargets();
     const seq: number = this.searchSeq;
     const folderId: number = this.folderId;
     this.searchTimer = setTimeout((): void => {
@@ -157,6 +212,7 @@ export struct ShareTargetSheet {
         // 结果回来时用户可能已经改了词，认序号不认时间。
         if (seq === this.searchSeq) {
           this.results = rows;
+          this.refreshTargets();
         }
       });
     }, SEARCH_DEBOUNCE_MS);
@@ -167,9 +223,11 @@ export struct ShareTargetSheet {
     if (this.chats.length > 0) {
       this.loadState = 'ready';
     }
+    this.refreshTargets();
   }
 
   private loadChats(): void {
+    if (this.targetCheckFailed) { this.startTargetFilter(); }
     this.loadState = this.chats.length > 0 ? 'ready' : 'loading';
     const seq: number = ++this.seq;
     Promise.all([getChatStore().ensureLoaded(this.listKey()), ensureSavedTarget().then((): boolean => true).catch((): boolean => false)])
@@ -184,6 +242,10 @@ export struct ShareTargetSheet {
   }
 
   private recent(): ShareTarget[] {
+    return this.rawRecent().filter((row: ShareTarget): boolean => this.allowedTargetIds.includes(row.chatId));
+  }
+
+  private rawRecent(): ShareTarget[] {
     return pickerRows(orderShareTargets(this.chats, recentOutgoingChats(), SHARE_TARGET_LIMIT)
       .map((target: ShareTarget): ShareRow => ({ chatId: target.chatId, title: target.title,
         subtitle: '', avatarPath: target.avatarPath, initials: target.initials,
@@ -193,6 +255,10 @@ export struct ShareTargetSheet {
   // 列表要渲染的行。空查询走主列表的既有顺序；有查询走搜索结果
   // （候选集是本机全部会话 + TDLib 本地索引，见 services/ShareChatSearch）。
   private rows(): ShareRow[] {
+    return this.rawRows().filter((row: ShareRow): boolean => this.allowedTargetIds.includes(row.chatId));
+  }
+
+  private rawRows(): ShareRow[] {
     if (this.query.trim() === '') {
       const rows: ShareRow[] = pickerChatRows(this.chats);
       // 横向常用栏已展示收藏时，下面的全部网格不再重复。
@@ -236,6 +302,7 @@ export struct ShareTargetSheet {
   }
 
   private toggle(chatId: number): void {
+    if (!this.allowedTargetIds.includes(chatId)) { return; }
     if (this.sending) {
       return;
     }
@@ -245,7 +312,8 @@ export struct ShareTargetSheet {
   // 选 1 个：原样走 onPick——进会话、内容落输入框，用户还能再写一句。
   // 选 2 个以上：没有输入框可进了，直接群发。
   private confirm(): void {
-    if (this.sending || this.selectedIds.length === 0) {
+    if (this.sending || this.selectedIds.length === 0 ||
+      !this.selectedIds.every((id: number): boolean => this.allowedTargetIds.includes(id))) {
       return;
     }
     if (this.selectedIds.length === 1 && this.taskPayload === null) {
@@ -400,13 +468,13 @@ export struct ShareTargetSheet {
           .scrollBar(BarState.Off);
         }
 
-        if (this.loadState === 'loading') {
+        if (this.loadState === 'loading' || (this.checkingTargets && this.allowedTargetIds.length === 0)) {
           Column({ space: 10 }) {
             LoadingProgress().width(26).height(26).color(COLOR_PRIMARY);
             Text($r('app.string.fw_loading')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
           }
           .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
-        } else if (this.loadState === 'error') {
+        } else if (this.loadState === 'error' || this.targetCheckFailed) {
           Column({ space: 10 }) {
             Text($r('app.string.fw_load_failed')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
             Button($r('app.string.settings_retry')).onClick((): void => { this.loadChats(); });

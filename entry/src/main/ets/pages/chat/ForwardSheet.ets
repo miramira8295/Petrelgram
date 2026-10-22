@@ -1,5 +1,6 @@
+import { TargetSendFilter } from '../../services/TargetSendFilter';
 import { TargetFolderTabs } from '../common/TargetFolderTabs';
-import { sendWithChatPermissions, requireForwardPermissions } from '../../store/SendPermissionApi';
+import { sendWithChatPermissions, requireForwardPermissions, readForwardPermissionKeys } from '../../store/SendPermissionApi';
 import { TargetGrid } from '../common/TargetGrid';
 import { ForwardSendTask } from '../../util/forwardSendTask';
 import { ShareRow } from '../../util/shareSearch';
@@ -91,7 +92,49 @@ export struct ForwardSheet {
   private sendTask: ForwardSendTask | null = null;
   private unsubChats: (() => void) | null = null;
 
+  @State private allowedTargetIds: number[] = [];
+  @State private checkingTargets: boolean = true;
+  @State private targetCheckFailed: boolean = false;
+  private targetFilter: TargetSendFilter | null = null;
+  private autoPageCount: number = -1;
+
+  private startTargetFilter(): void {
+    this.targetFilter?.dispose();
+    const client = getTdClient();
+    const filter: TargetSendFilter = new TargetSendFilter(
+      (request: TdRequest): Promise<TdObject> => client.send(request, 15000),
+      (): Promise<string[]> => readForwardPermissionKeys(
+        (request: TdRequest): Promise<TdObject> => client.send(request, 15000), this.sourceChatId, this.messageIds),
+      (): void => {
+        if (this.targetFilter !== filter) { return; }
+        this.allowedTargetIds = filter.allowedIds();
+        this.checkingTargets = filter.checking();
+        this.targetCheckFailed = filter.failed();
+        if (!this.sending && !this.checkingTargets && !this.targetCheckFailed) {
+          this.selectedIds = this.selectedIds.filter((id: number): boolean => this.allowedTargetIds.includes(id));
+          // A page containing only forbidden targets must not prevent reaching later chats.
+          if (this.query.trim() === '' && this.chats.length > 0 &&
+            !this.chats.some((chat: ChatEntry): boolean => this.allowedTargetIds.includes(chat.id)) &&
+            this.autoPageCount !== this.chats.length) {
+            this.autoPageCount = this.chats.length;
+            getChatStore().loadMore(this.listKey());
+          }
+        }
+      }, (): boolean => client === getTdClient());
+    this.targetFilter = filter;
+    filter.bind(client);
+    this.refreshTargets();
+  }
+
+  private refreshTargets(): void {
+    const ids: number[] = this.chats.map((chat: ChatEntry): number => chat.id);
+    ids.push(...this.results.map((row: ShareRow): number => row.chatId));
+    ids.push(...this.selectedIds);
+    this.targetFilter?.include(ids);
+  }
+
   aboutToAppear(): void {
+    this.startTargetFilter();
     this.unsubFolders = getFolderStore().subscribe((folders: FolderInfo[]): void => {
       this.folders = folders;
       if (this.folderId !== ALL_FOLDER_ID && !folders.some((folder: FolderInfo): boolean => folder.id === this.folderId)) {
@@ -103,6 +146,8 @@ export struct ForwardSheet {
   }
 
   aboutToDisappear(): void {
+    this.targetFilter?.dispose();
+    this.targetFilter = null;
     this.sendSeq++;
     this.searchSeq++;
     if (this.searchTimer !== -1) { clearTimeout(this.searchTimer); }
@@ -135,6 +180,7 @@ export struct ForwardSheet {
     if (this.sending || id === this.folderId) {
       return;
     }
+    this.autoPageCount = -1;
     this.folderId = id;
     this.chats = [];
     this.bindChats();
@@ -154,6 +200,7 @@ export struct ForwardSheet {
     if (this.chats.length > 0) {
       this.loadState = 'ready';
     }
+    this.refreshTargets();
   }
 
   // The subscription above has already seeded `chats`; this only drives the
@@ -177,6 +224,7 @@ export struct ForwardSheet {
   }
 
   private retryChats(): void {
+    this.startTargetFilter();
     if (this.loadState === 'loading') {
       return;
     }
@@ -200,26 +248,28 @@ export struct ForwardSheet {
   }
 
   private filteredChats(): ShareRow[] {
-    return this.query.trim() === '' ? pickerChatRows(this.chats) : this.results;
+    const rows: ShareRow[] = this.query.trim() === '' ? pickerChatRows(this.chats) : this.results;
+    return rows.filter((row: ShareRow): boolean => this.allowedTargetIds.includes(row.chatId));
   }
 
   private onQueryChanged(query: string): void {
     this.query = query;
     const seq: number = ++this.searchSeq;
     if (this.searchTimer !== -1) { clearTimeout(this.searchTimer); this.searchTimer = -1; }
-    if (query.trim() === '') { this.results = []; return; }
+    if (query.trim() === '') { this.results = []; this.refreshTargets(); return; }
     this.results = localShareRows(query, this.folderId);
+    this.refreshTargets();
     const folderId: number = this.folderId;
     this.searchTimer = setTimeout((): void => {
       this.searchTimer = -1;
       searchShareRows(query, folderId).then((rows: ShareRow[]): void => {
-        if (seq === this.searchSeq) { this.results = rows; }
+        if (seq === this.searchSeq) { this.results = rows; this.refreshTargets(); }
       });
     }, 220);
   }
 
   private toggleTarget(chatId: number): void {
-    if (this.sending) {
+    if (this.sending || !this.allowedTargetIds.includes(chatId)) {
       return;
     }
     this.selectedIds = toggleTarget(this.selectedIds, chatId);
@@ -234,7 +284,8 @@ export struct ForwardSheet {
   // 发给选中的全部会话。串行（见 util/shareFanout 的说明），每个目标各自
   // 按 100 一批切开（buildForwardMessagesRequests 的既有契约）。
   private sendToSelected(): void {
-    if (this.sending || this.selectedIds.length === 0 || this.messageIds.length === 0) {
+    if (this.sending || this.selectedIds.length === 0 || this.messageIds.length === 0 ||
+      !this.selectedIds.every((id: number): boolean => this.allowedTargetIds.includes(id))) {
       return;
     }
     const seq: number = ++this.sendSeq;
@@ -430,13 +481,13 @@ export struct ForwardSheet {
         }
         Column() { this.forwardOptionsRow(); }.enabled(!this.optionsLocked).opacity(this.optionsLocked ? 0.5 : 1);
         this.sendBar();
-        if (this.loadState === 'loading') {
+        if (this.loadState === 'loading' || (this.checkingTargets && this.allowedTargetIds.length === 0)) {
           Column({ space: 10 }) {
             LoadingProgress().width(26).height(26).color(COLOR_PRIMARY);
             Text($r('app.string.fw_loading')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
           }
           .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
-        } else if (this.loadState === 'error') {
+        } else if (this.loadState === 'error' || this.targetCheckFailed) {
           Column({ space: 10 }) {
             SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
               .fontSize(28).fontColor([COLOR_ICON_SECONDARY]);

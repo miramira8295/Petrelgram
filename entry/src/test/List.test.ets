@@ -1,3 +1,10 @@
+import wallpaperEditorSessionTest from './WallpaperEditorSession.test';
+import targetSendFilterTest from './TargetSendFilter.test';
+import searchPresentationTest from './SearchPresentation.test';
+import recentChatHistoryTest from './RecentChatHistory.test';
+import httpsProxyRelayTest from './HttpsProxyRelay.test';
+import httpsProxyTest from './HttpsProxy.test';
+import floatingVideoRuntimeTest from './FloatingVideoRuntime.test';
 import messageDragGestureTest from './MessageDragGesture.test';
 import pinnedVisibilityTest from './PinnedVisibility.test';
 import messageDragTest from './MessageDrag.test';
@@ -215,6 +222,8 @@ import downloadCenterRowVMTest from './DownloadCenterRowVM.test';
 import backgroundCacheModelTest from './BackgroundCacheModel.test';
 import cacheRecordPausedTest from './CacheRecordPaused.test';
 import deferredRemovalTest from './DeferredRemoval.test';
+import downloadDeleteEffectsTest from './DownloadDeleteEffects.test';
+import chatListDeletionTest from './ChatListDeletion.test';
 import materialEpochTest from './MaterialEpoch.test';
 import gridRowsTest from './GridRows.test';
 import overlayMaterialTest from './OverlayMaterial.test';
@@ -381,6 +390,11 @@ import targetSelectionTest from './TargetSelection.test';
 import shareFanoutTest from './ShareFanout.test';
 
 export default function testsuite() {
+  httpsProxyTest();
+  searchPresentationTest();
+  recentChatHistoryTest();
+  httpsProxyRelayTest();
+  floatingVideoRuntimeTest();
   tdLogPolicyTest();
   tdLanguageTest();
   qrSessionTest();
@@ -519,6 +533,7 @@ export default function testsuite() {
   musicQueueTest();
   mediaPickTest();
   chatBackgroundStoreTest();
+  wallpaperEditorSessionTest();
   solidBackgroundTest();
   chatHeaderPresentationTest();
   mentionDraftTest();
@@ -532,6 +547,7 @@ export default function testsuite() {
   composerLineProbeTest();
   composerLayoutTest();
   sendPermissionsTest();
+  targetSendFilterTest();
   avatarFileChannelTest();
   miniThumbPlaceholderTest();
   pushSubKeyMigrationTest();
@@ -594,6 +610,8 @@ export default function testsuite() {
   backgroundCacheModelTest();
   cacheRecordPausedTest();
   deferredRemovalTest();
+  downloadDeleteEffectsTest();
+  chatListDeletionTest();
   materialEpochTest();
   gridRowsTest();
   overlayMaterialTest();

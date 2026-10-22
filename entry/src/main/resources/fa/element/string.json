@@ -10829,6 +10829,10 @@
       "value": "مخاطبین پرتکرار"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "اخیر"
+    },
+    {
       "name": "gs_recent",
       "value": "بازدیدهای اخیر"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "اگر پروکسی فعلی در دسترس نماند، پروکسی ذخیره‌شده بعدی امتحان شود"
+      "value": "اگر اتصال پیوسته ناموفق بود، به‌طور خودکار بین پروکسی‌های ذخیره‌شده و اتصال مستقیم جابه‌جا شوید"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "برای تغییر خودکار حداقل دو پروکسی اضافه کنید"
+      "value": "برای فعال‌سازی جابه‌جایی خودکار، حداقل یک پروکسی اضافه کنید"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "نمایش پیام‌های سنجاق‌شده"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "حداکثر سرعت با نگه‌داشتن"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "سمت راست ویدیو را نگه دارید تا سرعت به‌تدریج به این حد برسد. با رها کردن، سرعت اصلی برمی‌گردد. پخش آنلاین حداکثر 8× است."
+    },
+    {
+      "name": "vf_minimize",
+      "value": "پخش‌کننده کوچک"
+    },
+    {
+      "name": "vf_resize",
+      "value": "تغییر اندازه پخش‌کننده کوچک"
+    },
+    {
+      "name": "vf_play",
+      "value": "پخش"
+    },
+    {
+      "name": "vf_pause",
+      "value": "مکث"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "پاک کردن گفتگوهای اخیر"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "گفتگوهای اخیر این حساب پاک شوند؟ گفتگوها و پیام‌ها حذف نمی‌شوند. با باز کردن دوباره، گفتگوها به فهرست برمی‌گردند."
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "حذف از گفتگوهای اخیر"
+    },
+    {
+      "name": "gs_objects",
+      "value": "کاربران / گروه‌ها / کانال‌ها"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "انتخاب کانال"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "جستجوی نام یا @username"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "جستجوی محتوای پیام"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "جستجوی برنامه یا @username"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "عضو شده"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "عضو نشده"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "تطابق نام کانال"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "تطابق نام گروه"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "تطابق نام نمایشی"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "تطابق نام کاربری"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "تطابق محتوای پیام"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "تطابق نام فایل"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "همه"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "خصوصی"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "کاربران"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "همه کانال‌ها"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "نتایج عمومی"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "گفتگوهای موجود"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "نتایج برنامه‌ها"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "عبارت را دقیق‌تر کنید یا @username دقیق وارد کنید. جستجوی عمومی نام صفحه‌بندی ندارد."
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "نام و نام کاربری را جستجو کنید، از جمله گروه‌ها و کانال‌های عمومی که عضو نیستید."
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "محتوای پیام‌ها، از جمله گفتگوهای بایگانی‌شده را جستجو کنید."
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "فقط محتوای پیام‌های «%s» را جستجو کنید."
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "کارهای بارگیری و فایل‌های بارگیری‌شده را با نام پیدا کنید."
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "پیش‌بارگیری خودکار ویدیوها"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "ویدیوهای گفتگو را از قبل بافر کنید. خاموش کردن آن بر پخش یا دانلود دستی تأثیری ندارد."
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "پنهان کردن پیش‌فرض پیام‌های سنجاق‌شده"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "نمایش یا پنهان‌سازی جداگانه از منوی هر گفتگو"
     }
   ]
 }

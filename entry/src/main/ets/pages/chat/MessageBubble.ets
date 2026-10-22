@@ -1,3 +1,4 @@
+import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
 import { MessageDragGesture } from '../../util/messageDragGesture';
 import { configureMessageDrag } from '../../services/MessageDragSource';
 import { messageDragType } from '../../util/messageDrag';
@@ -35,7 +36,7 @@ import { SmartLoopVideo } from '../common/SmartLoopVideo';
 import { LiveThumbImage } from './LiveThumbImage';
 import {
   BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP,
-  bubbleMaxWidth, MediaBox, MEDIA_MAX_HEIGHT_RATIO, mediaBoxFor, mediaThumbWidth
+  bubbleMaxWidth, MediaBox, mediaBoxFor, mediaThumbWidth
 } from '../../util/mediaBox';
 import { AvLoopVideo } from '../common/AvLoopVideo';
 import { VoiceBubble } from './VoiceBubble';
@@ -516,7 +517,7 @@ export struct MessageBubble {
   // Long-press context menu actions.
   // emoji 参数其实是 reaction key：标准 emoji 原样，自定义 emoji 为 'ce:<id>'。
   // Blocks swipe-to-reply while the composer is in edit mode (avoids the two
-  // states fighting over the reply/edit strip). Long-press → 回复 is unaffected.
+  // states fighting over the reply/edit strip). The reply menu follows this guard too.
   // 直接转发到收藏（和自己的会话），不弹选择面板。
   // 转发回本会话——群里俗称"复读"。
   // 在本会话里筛出这个发送者的全部消息。
@@ -1171,21 +1172,6 @@ export struct MessageBubble {
 
   private mediaThumbW(): number {
     return mediaThumbWidth(this.data.contentWidth, this.avatarReserve());
-  }
-
-  private mediaMaxH(): number {
-    return this.mediaThumbW() * MEDIA_MAX_HEIGHT_RATIO;
-  }
-
-  private mediaRatio(): number {
-    if (this.msg.photoWidth > 0 && this.msg.photoHeight > 0) {
-      // Extreme source ratios remain visible through Cover cropping without
-      // producing an unusably narrow/tall chat bubble.
-      return Math.max(0.56, Math.min(2.1, this.msg.photoWidth / this.msg.photoHeight));
-    }
-    // An unknown photo remains square; an unknown video starts at the common
-    // 16:9 shape so its placeholder doesn't jump from square once decoded.
-    return this.msg.contentType === 'video' ? 16 / 9 : 1;
   }
 
   private videoFileUnavailable(): boolean {
@@ -2779,6 +2765,13 @@ export struct MessageBubble {
   msgContextMenu() {
     Menu() {
       MenuItem(this.messageReactionMenuItem);
+      if (this.data.canReply && !this.data.editingActive &&
+        this.msg.contentType !== 'system' && this.msg.contentType !== 'hidden') {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.arrowshape_turn_up_left')),
+          content: $r('app.string.mb_reply')
+        }).onClick((): void => { this.actions.onReplyTo(this.msg.id); });
+      }
       if (this.canEditNow() &&
         (this.msg.contentType === 'text' || EDITABLE_CAPTION_TYPES.indexOf(this.msg.contentType) >= 0)) {
         MenuItem({
@@ -3115,7 +3108,7 @@ export struct MessageBubble {
               boxWidth: this.mediaBox().width,
               boxHeight: this.mediaBox().height,
               radius: 8,
-              fit: ImageFit.Cover,
+              fit: this.msg.contentType === 'photo' ? ImageFit.Contain : ImageFit.Cover,
               // 单张大图不开 565：面积大、渐变明显。
               opaque: false,
               // 和 singleMediaPlaceholder 的底色同源（见 util/thumbBackdrop）。
@@ -3482,7 +3475,9 @@ export struct MessageBubble {
         successFrame: this.msg.diceSuccessFrame,
         stickerPath: this.msg.stickerPath,
         layerPaths: this.msg.diceLayerPaths,
-        playKey: `${this.data.chatId}:${this.msg.id}`
+        playKey: `${this.data.chatId}:${this.msg.id}`,
+        canInteract: (): boolean => !this.gestureClaimed && !this.data.selectionActive,
+        onSendSame: (emoji: string): void => { this.actions.onSendDice(emoji); }
       });
     } else if (this.msg.contentType === 'game') {
       GameBubble({
@@ -4410,73 +4405,74 @@ export struct MessageBubble {
       // 【按材质开关分两支容器，2026-09-14】理由见 LightweightPlainTextBubble 同一处：
       // 玻璃关着时这串属性全是空值，却每次更新/复用都重算、new 修饰器、建描边背景，
       // 外加一个每帧参与全局遍历的可见区回调。两支气泡必须同改。
-      if (this.env.bubbleMaterialOn) {
-        Row() {
-          this.bubbleCluster();
+      DissolveDeleteEffect({ instanceKey: 'message-' + this.data.chatId, rowId: this.msg.rowId,
+        leaving: this.leaving, channel: this.actions.rowLeave, captureSupported: !this.hasLiveVideoSurface() }) {
+        if (this.env.bubbleMaterialOn) {
+          Row() {
+            this.bubbleCluster();
+          }
+          // 「尾巴 + 气泡」整块由**上层**渲染：材质挂在这一层，形状由整体轮廓裁剪
+          // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
+          // 不存在「一边材质一边普通渲染」对不齐的问题。
+          .alignItems(VerticalAlign.Bottom)
+          .padding(this.tailGutterPadding())
+          // 容器跨着那 7vp 尾巴留白，形状**只**由 clipShape 给。所以它必须等量到
+          // 尺寸才上色，否则没裁剪的一帧会把留白一起涂满、左边缘外扩 7vp。
+          // 没量到时它全透明，这一帧的玻璃由气泡本体自己扛；量到后本体同步退为
+          // 透明，完整态始终只有外层这一份背景与模糊。
+          .backgroundColor(this.containerGlassBg())
+          // Transform the bubble and tail without moving avatar/date or list geometry.
+          // The jump controller owns the one-shot animation; no resident .animation().
+          .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
+            y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
+            centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
+          .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
+          .backgroundBlurStyle(this.containerGlassBlurStyle())
+          // 材质自带的边框沿**本节点的 border-box** 画，而且吃 borderRadius。不设圆角
+          // 它就画一个直角矩形框，被轮廓裁掉左边/底边后只剩顶边一条直线拐到右边——
+          // 真机上就是用户报的「气泡描边不对」。设成气泡自己的圆角，这条边框就和轮廓
+          // 重合（尾巴那侧仍由裁剪负责）。
+          .borderRadius(this.glassRadius())
+          .background(this.glassOutline(), { align: Alignment.TopStart })
+          .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
+            this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius()))
+          // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
+          // 上的长注释：apply*Attribute 里注册是叠加，会把注册表撑爆）。
+          // onSizeChange 而不是 onAreaChange：后者每帧参与一次全局遍历（HandleOnAreaChangeEvent）。
+          // 复用后尺寸没变不会回调，由 aboutToReuse 用 measuredGlassW/H 回填。
+          // 同值不写：@Local 赋同一个数也会走一遍变更通知。
+          .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+            const w: Length | undefined = size.width;
+            const h: Length | undefined = size.height;
+            if (typeof w !== 'number' || typeof h !== 'number') {
+              return;
+            }
+            this.measuredGlassW = w as number;
+            this.measuredGlassH = h as number;
+            if (this.glassW !== this.measuredGlassW) {
+              this.glassW = this.measuredGlassW;
+            }
+            if (this.glassH !== this.measuredGlassH) {
+              this.glassH = this.measuredGlassH;
+            }
+          })
+          // onScreen 只给材质用（bubbleMaterialLive），所以可见区回调只在这一支挂；容器与本体
+          // 是同一块，阈值 0.01 下的判定与原来挂在本体上一致。
+          .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
+            this.onScreen = visible;
+          })
+        } else {
+          Row() {
+            this.bubbleCluster();
+          }
+          // 玻璃关：只留与材质无关的这几个。
+          .alignItems(VerticalAlign.Bottom)
+          .padding(this.tailGutterPadding())
+          .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
+            y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
+            centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
+          .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
         }
-        // 「尾巴 + 气泡」整块由**上层**渲染：材质挂在这一层，形状由整体轮廓裁剪
-        // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
-        // 不存在「一边材质一边普通渲染」对不齐的问题。
-        .alignItems(VerticalAlign.Bottom)
-        .padding(this.tailGutterPadding())
-        // 容器跨着那 7vp 尾巴留白，形状**只**由 clipShape 给。所以它必须等量到
-        // 尺寸才上色，否则没裁剪的一帧会把留白一起涂满、左边缘外扩 7vp。
-        // 没量到时它全透明，这一帧的玻璃由气泡本体自己扛；量到后本体同步退为
-        // 透明，完整态始终只有外层这一份背景与模糊。
-        .backgroundColor(this.containerGlassBg())
-        // Transform the bubble and tail without moving avatar/date or list geometry.
-        // The jump controller owns the one-shot animation; no resident .animation().
-        .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
-          y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
-          centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
-        .opacity(1 - this.leaving)
-        .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
-        .backgroundBlurStyle(this.containerGlassBlurStyle())
-        // 材质自带的边框沿**本节点的 border-box** 画，而且吃 borderRadius。不设圆角
-        // 它就画一个直角矩形框，被轮廓裁掉左边/底边后只剩顶边一条直线拐到右边——
-        // 真机上就是用户报的「气泡描边不对」。设成气泡自己的圆角，这条边框就和轮廓
-        // 重合（尾巴那侧仍由裁剪负责）。
-        .borderRadius(this.glassRadius())
-        .background(this.glassOutline(), { align: Alignment.TopStart })
-        .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
-          this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius()))
-        // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
-        // 上的长注释：apply*Attribute 里注册是叠加，会把注册表撑爆）。
-        // onSizeChange 而不是 onAreaChange：后者每帧参与一次全局遍历（HandleOnAreaChangeEvent）。
-        // 复用后尺寸没变不会回调，由 aboutToReuse 用 measuredGlassW/H 回填。
-        // 同值不写：@Local 赋同一个数也会走一遍变更通知。
-        .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
-          const w: Length | undefined = size.width;
-          const h: Length | undefined = size.height;
-          if (typeof w !== 'number' || typeof h !== 'number') {
-            return;
-          }
-          this.measuredGlassW = w as number;
-          this.measuredGlassH = h as number;
-          if (this.glassW !== this.measuredGlassW) {
-            this.glassW = this.measuredGlassW;
-          }
-          if (this.glassH !== this.measuredGlassH) {
-            this.glassH = this.measuredGlassH;
-          }
-        })
-        // onScreen 只给材质用（bubbleMaterialLive），所以可见区回调只在这一支挂；容器与本体
-        // 是同一块，阈值 0.01 下的判定与原来挂在本体上一致。
-        .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
-          this.onScreen = visible;
-        })
-      } else {
-        Row() {
-          this.bubbleCluster();
-        }
-        // 玻璃关：只留与材质无关的这几个。
-        .alignItems(VerticalAlign.Bottom)
-        .padding(this.tailGutterPadding())
-        .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
-          y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
-          centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
-        .opacity(1 - this.leaving)
-        .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
       }
       }
       .alignItems(VerticalAlign.Bottom)
@@ -4487,8 +4483,7 @@ export struct MessageBubble {
         this.draggingMessage = true;
         this.gestureClaimed = true;
         this.msgContextMenuShown = false;
-        configureMessageDrag(event, this.data.chatId, this.msg.id, messageDragType(this.msg.contentType));
-        return {};
+        return configureMessageDrag(event, this.data.chatId, this.msg.id, messageDragType(this.msg.contentType));
       })
       .onDragEnd((): void => { this.draggingMessage = false; })
       .bindContextMenu(this.msgContextMenuShown, this.msgContextMenu(), {

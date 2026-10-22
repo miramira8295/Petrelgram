@@ -59,8 +59,8 @@ export async function requireSendPermissions(port: SendPermissionPort, chatId: n
   if (denied !== '') { throw new SendPermissionError(sendPermissionMessage(denied)); }
 }
 
-export async function requireForwardPermissions(port: SendPermissionPort, toChatId: number,
-  fromChatId: number, ids: number[]): Promise<void> {
+export async function readForwardPermissionKeys(port: SendPermissionPort,
+  fromChatId: number, ids: number[]): Promise<string[]> {
   const keys: string[] = [];
   try {
     for (let start: number = 0; start < ids.length; start += 100) {
@@ -79,7 +79,12 @@ export async function requireForwardPermissions(port: SendPermissionPort, toChat
       }
     }
   } catch (_error) { throw new SendPermissionError(str('cp_send_permission_check_failed')); }
-  await requireSendPermissions(port, toChatId, keys);
+  return Array.from(new Set<string>(keys));
+}
+
+export async function requireForwardPermissions(port: SendPermissionPort, toChatId: number,
+  fromChatId: number, ids: number[]): Promise<void> {
+  await requireSendPermissions(port, toChatId, await readForwardPermissionKeys(port, fromChatId, ids));
 }
 
 export async function sendWithChatPermissions(client: TdClient, request: TdRequest,

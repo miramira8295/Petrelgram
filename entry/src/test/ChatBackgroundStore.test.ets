@@ -77,6 +77,46 @@ function gradientBackground(top: number, bottom: number, rotation: number): TdOb
 
 export default function chatBackgroundStoreTest() {
   describe('chatBackgroundStore', () => {
+    it('默认背景已缓存时直接解析且不请求getChat零号会话', 0, () => {
+      const h = harness(false);
+      h.bridge.onReceive(JSON.stringify({ '@type': 'updateDefaultBackground', 'for_dark_theme': false,
+        'background': gradientBackground(0x123456, 0xABCDEF, 90)['background'] }));
+      h.store.open(0);
+      expect(h.bridge.sent.length).assertEqual(0); expect(h.store.current().colors.length).assertEqual(2);
+      expect(h.store.current().angle).assertEqual(90); h.store.close();
+    });
+    it('首次默认壁纸迟到时发布图案及文件完成状态', 0, () => {
+      invalidateDefaultSnapshot(false); const h = harness(false); h.store.open(0);
+      expect(h.bridge.sent.length).assertEqual(0);
+      const fill: TdObject = { '@type': 'backgroundFillGradient', 'top_color': 0x123456, 'bottom_color': 0xABCDEF };
+      const type: TdObject = { '@type': 'backgroundTypePattern', 'fill': fill, 'intensity': 50 };
+      const file: TdObject = { '@type': 'file', 'id': 77 };
+      const document: TdObject = { '@type': 'document', 'document': file };
+      const background: TdObject = { '@type': 'background', 'type': type, 'document': document };
+      h.bridge.onReceive(JSON.stringify({ '@type': 'updateDefaultBackground', 'for_dark_theme': false, 'background': background }));
+      expect(h.store.current().isPattern).assertTrue(); expect(h.store.current().colors.length).assertEqual(2);
+      expect(h.store.current().path).assertEqual(''); expect(h.bridge.lastType()).assertEqual('downloadFile');
+      const local: TdObject = { 'is_downloading_completed': true, 'path': '/cache/pattern.svg' };
+      h.bridge.onReceive(JSON.stringify({ '@type': 'updateFile', 'file': { '@type': 'file', 'id': 77, 'local': local } as TdObject }));
+      expect(h.store.current().path).assertEqual('/cache/pattern.svg');
+      h.bridge.reply({ '@type': 'file', 'id': 77, 'local': local }); h.store.close();
+    });
+    it('默认编辑解析忽略另一明暗模式更新并在关闭后停止发布', 0, () => {
+      invalidateDefaultSnapshot(false); const h = harness(false); h.store.open(0);
+      h.bridge.onReceive(JSON.stringify({ '@type': 'updateDefaultBackground', 'for_dark_theme': true,
+        'background': solidFillBackground(0xABCDEF)['background'] }));
+      expect(h.store.current().colors.length).assertEqual(0); h.store.close();
+      h.bridge.onReceive(JSON.stringify({ '@type': 'updateDefaultBackground', 'for_dark_theme': false,
+        'background': solidFillBackground(0x123456)['background'] }));
+      expect(h.store.current().colors.length).assertEqual(0);
+    });
+    it('成功选择的新壁纸不会被旧getChat结果覆盖', 0, async () => {
+      const h = harness(false); h.store.open(7);
+      h.store.applyKnownBackground(solidFillBackground(0x123456));
+      h.bridge.reply({ '@type': 'chat', 'id': 7, 'background': solidFillBackground(0xABCDEF) });
+      await new Promise<void>((resolve: () => void): void => { setTimeout(resolve, 0); });
+      expect(h.store.current().colors[0]).assertEqual('#123456'); h.store.close();
+    });
     it('gradient stops duplicate a single color across both ends', 0, () => {
       const stops = gradientStops(['#FF0000']);
       expect(stops.length).assertEqual(2);

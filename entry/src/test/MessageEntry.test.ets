@@ -1,3 +1,5 @@
+import { entryPlaybackVariant, entryVideoVariants } from '../main/ets/util/entryVideoVariant';
+import { QUALITY_AUTO, variantLabel } from '../main/ets/util/videoVariants';
 import { describe, it, expect } from '@ohos/hypium';
 import { TdClient } from '../main/ets/tdkit/TdClient';
 import { TdObject, TdBridge } from '../main/ets/tdkit/TdTypes';
@@ -42,6 +44,34 @@ function serviceMsg(id: number, senderUserId: number, content: TdObject,
 
 export default function messageEntryTest() {
   describe('MessageEntry', () => {
+    it('视频150px海报经解析克隆后原片仍标1080p且自动手动选档正确', 0, () => {
+      const m = msg(501, false, 7, '');
+      const file: TdObject = { '@type': 'file', 'id': 80, 'size': 90000 };
+      const thumb: TdObject = { '@type': 'thumbnail', 'width': 300, 'height': 150,
+        'file': { '@type': 'file', 'id': 81 } as TdObject };
+      const video: TdObject = { '@type': 'video', 'width': 1920, 'height': 1080, 'video': file, 'thumbnail': thumb };
+      const alt: TdObject = { 'width': 1280, 'height': 720, 'codec': 'h264',
+        'video': { '@type': 'file', 'id': 82, 'size': 40000 } as TdObject };
+      m['content'] = { '@type': 'messageVideo', 'video': video, 'alternative_videos': [alt] } as TdObject;
+      const e = cloneMessage(buildMessageEntry(m, usersOf()));
+      expect(variantLabel(entryVideoVariants(e)[0])).assertEqual('1080p');
+      expect(entryPlaybackVariant(e, QUALITY_AUTO, 'wifi')!.fileId).assertEqual(80);
+      expect(entryPlaybackVariant(e, QUALITY_AUTO, 'mobile')!.fileId).assertEqual(82);
+      expect(entryPlaybackVariant(e, 1080, 'mobile')!.fileId).assertEqual(80);
+      expect(entryPlaybackVariant(e, 720, 'wifi')!.fileId).assertEqual(82);
+    });
+    it('竖视频原片按真实短边标清晰度且不重复原片同档', 0, () => {
+      const m = msg(502, false, 7, '');
+      const video: TdObject = { '@type': 'video', 'width': 1080, 'height': 1920,
+        'video': { '@type': 'file', 'id': 90 } as TdObject,
+        'thumbnail': { '@type': 'thumbnail', 'width': 150, 'height': 150,
+          'file': { '@type': 'file', 'id': 91 } as TdObject } as TdObject };
+      const alt: TdObject = { 'width': 1080, 'height': 1920, 'codec': 'h264',
+        'video': { '@type': 'file', 'id': 92 } as TdObject };
+      m['content'] = { '@type': 'messageVideo', 'video': video, 'alternative_videos': [alt] } as TdObject;
+      const e = buildMessageEntry(m, usersOf()); const variants = entryVideoVariants(e);
+      expect(variants.length).assertEqual(1); expect(variantLabel(variants[0])).assertEqual('1080p');
+    });
     it('incoming_text', 0, () => {
       const e = buildMessageEntry(msg(10, false, 7, 'hi'), usersOf());
       expect(e.id).assertEqual(10);

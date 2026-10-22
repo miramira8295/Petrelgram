@@ -1,3 +1,4 @@
+import { HOLD_SPEED_LIMIT_DEFAULT, normalizeHoldSpeedLimit } from './holdSpeedLimit';
 // 全屏视频播放器的**外观与手感常量**，以及两个纯格式化函数。
 //
 // 【为什么单独一个文件】现在有两套播放引擎并存：ijkplayer 的
@@ -104,8 +105,9 @@ const HOLD_SPEED_CAP_LOCAL: number = 32;
 // 这个倍速及以上静音：声音已听不出内容，音频变速白占 CPU。
 const HOLD_SPEED_MUTE_FROM: number = 16;
 
-export function holdSpeedCap(fullyLocal: boolean): number {
-  return fullyLocal ? HOLD_SPEED_CAP_LOCAL : HOLD_SPEED_CAP_STREAMING;
+export function holdSpeedCap(fullyLocal: boolean, preferredLimit: number = HOLD_SPEED_LIMIT_DEFAULT): number {
+  return Math.min(normalizeHoldSpeedLimit(preferredLimit),
+    fullyLocal ? HOLD_SPEED_CAP_LOCAL : HOLD_SPEED_CAP_STREAMING);
 }
 
 export function holdSpeedMuted(speed: number): boolean {

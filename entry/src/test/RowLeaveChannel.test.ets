@@ -1,10 +1,35 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { RowLeaveChannel } from '../main/ets/util/rowLeaveChannel';
+import { DeleteRowGroup, RowLeaveChannel, wholeDeleteRowIds } from '../main/ets/util/rowLeaveChannel';
 
-// 删除动画（issue #149）：删之前先把要走的行标记出来淡出，随后 TDLib 的删除到达，
+// 删除动画：删之前等待可见气泡消散，随后 TDLib 的删除到达，
 // 走 publishGroupsNow 里现成的 animateTo 塌陷。旁路通道，只惊动被删的那几行。
 export default function rowLeaveChannelTest(): void {
   describe('rowLeaveChannel', (): void => {
+    it('整组删除只标记完整被选中的相册行', 0, (): void => {
+      const entries: DeleteRowGroup[] = [{ head: { rowId: 10 }, memberIds: [1, 2] },
+        { head: { rowId: 30 }, memberIds: [3] }];
+      expect(wholeDeleteRowIds(entries, [1, 3]).join(',')).assertEqual('30');
+      expect(wholeDeleteRowIds(entries, [1, 2]).join(',')).assertEqual('10');
+    });
+    it('等待所有挂载行完成并共享粒子预算，离屏行不阻塞', 0, async (): Promise<void> => {
+      const ch = new RowLeaveChannel();
+      ch.subscribe(1, (): void => {}); ch.subscribe(2, (): void => {});
+      let done = false;
+      const playing = ch.play([1, 1, 2, 3], true).then((): void => { done = true; });
+      expect(ch.particleBudget()).assertEqual(1600);
+      expect(ch.value(3)).assertEqual(0);
+      ch.complete(1); await Promise.resolve(); expect(done).assertFalse();
+      ch.complete(2); await playing; expect(done).assertTrue();
+    });
+    it('回收和失败清理释放等待，关闭动效不标记行', 0, async (): Promise<void> => {
+      const ch = new RowLeaveChannel();
+      const off = ch.subscribe(1, (): void => {});
+      await ch.play([1], false); expect(ch.value(1)).assertEqual(0);
+      const recycled = ch.play([1], true); off(); await recycled;
+      ch.clear(); ch.subscribe(1, (): void => {});
+      const cancelled = ch.play([1], true); ch.clear(); await cancelled;
+      expect(ch.value(1)).assertEqual(0);
+    });
     it('标记的行值为 1，其余为 0；订阅立即拿到现值', 0, (): void => {
       const ch: RowLeaveChannel = new RowLeaveChannel();
       ch.mark([7, 9]);

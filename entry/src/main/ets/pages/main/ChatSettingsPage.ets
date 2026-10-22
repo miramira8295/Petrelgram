@@ -24,7 +24,7 @@ import {
 import { KEY_APP_DARK } from '../../util/theme';
 import {
   KEY_TEXT_SIZE, KEY_BUBBLE_RADIUS, KEY_THREE_LINES, KEY_NIGHT_MODE, KEY_REDUCE_ANIM, KEY_SEND_BY_ENTER,
-  KEY_POWER_SMOOTH_TRANSITIONS, KEY_IN_APP_BROWSER,
+  KEY_POWER_SMOOTH_TRANSITIONS, KEY_IN_APP_BROWSER, KEY_HIDE_PINNED_DEFAULT,
   TEXT_SIZE_MIN, TEXT_SIZE_MAX, RADIUS_MIN, RADIUS_MAX,
   NIGHT_SYSTEM, NIGHT_DARK, NIGHT_LIGHT,
   KEY_MATERIAL_THICKNESS, KEY_MATERIAL_LIGHT,
@@ -159,6 +159,7 @@ export struct ChatSettingsPage {
   @StorageLink(KEY_REDUCE_ANIM) reduceAnim: boolean = false;
   @StorageLink(KEY_SEND_BY_ENTER) sendByEnter: boolean = false;
   @StorageLink(KEY_IN_APP_BROWSER) inAppBrowser: boolean = true;
+  @StorageLink(KEY_HIDE_PINNED_DEFAULT) hidePinnedDefault: boolean = false;
   // 厚度/光感按浅色/深色各一份，两组并列展示；当前模式那份由 overlayMaterial 自己选。
   @StorageLink(KEY_MATERIAL_THICKNESS) materialThickness: number = THICKNESS_DEFAULT;
   // **同一个键只能有一条 @StorageLink。** 这里原来还有第二条（带 @Watch 的），
@@ -223,6 +224,7 @@ export struct ChatSettingsPage {
   // 因为那条路才会在值变化时触发重绘。
   private booleanValue(key: string): boolean {
     if (key === KEY_REDUCE_ANIM) { return this.reduceAnim; }
+    if (key === KEY_HIDE_PINNED_DEFAULT) { return this.hidePinnedDefault; }
     if (key === KEY_IN_APP_BROWSER) { return this.inAppBrowser; }
     if (key === KEY_SEND_BY_ENTER) { return this.sendByEnter; }
     if (key === KEY_SURFACE_GLASS_ON) { return this.surfaceGlass; }
@@ -1084,6 +1086,8 @@ export struct ChatSettingsPage {
           }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
 
           Column() {
+            this.toggleRow(str('chat_settings_hide_pinned'), str('chat_settings_hide_pinned_sub'), KEY_HIDE_PINNED_DEFAULT);
+            Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
             this.toggleRow(str('chat_settings_reduce_anim'), str('chat_settings_reduce_anim_sub'), KEY_REDUCE_ANIM);
             Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
             this.toggleRow(str('chat_settings_send_by_enter'), str('chat_settings_send_by_enter_sub'), KEY_SEND_BY_ENTER);

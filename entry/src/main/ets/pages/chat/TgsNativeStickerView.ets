@@ -15,7 +15,7 @@ import {
 import { stickerFrameClock } from '../../util/stickerFrameClock';
 import { subscribeAnimationGateFor } from '../../util/stickerPanelGate';
 import { logE, logW } from '../../util/log';
-import { markPlayedOnce, playedOnce } from '../../util/stickerPlayedOnce';
+import { forgetPlayedOnce, markPlayedOnce, playedOnce } from '../../util/stickerPlayedOnce';
 
 // 出帧节奏的一键回退开关（2026-09-17）。true = 共享 displaySync 时钟，对齐屏幕刷新；
 // false = 原来的「画完一帧再 setTimeout」。真机上若出问题（比如贴纸停在缩略图不动、
@@ -45,6 +45,7 @@ export struct TgsNativeStickerView {
   @Param layerPaths: string[] = [];
   // 配合 playOnce：播过的（util/stickerPlayedOnce）再出现直接定格最后一帧，不重摇。
   @Param playKey: string = '';
+  @Param replayToken: number = 0;
   @Param thumbPath: string = '';
   @Param boxWidth: number = 160;
   @Param boxHeight: number = 160;
@@ -122,6 +123,13 @@ export struct TgsNativeStickerView {
 
   // 只在内容真变了时重来：layerPaths 来自消息条目，条目每次更新（已读、回应…）都会拷出
   // 一个新数组，按引用判会让老虎机每隔几秒重摇一遍（2026-10-10）。
+  @Monitor('replayToken')
+  onReplayRequested(): void {
+    if (this.replayToken <= 0 || !this.playOnce) { return; }
+    forgetPlayedOnce(this.playKey);
+    this.resetForNewSource();
+  }
+
   @Monitor('tgsPath', 'layerPaths')
   onPathChanged(): void {
     if (this.sourceKey() === this.openedKey) {

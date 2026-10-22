@@ -10829,6 +10829,10 @@
       "value": "常用聯絡人"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "最近"
+    },
+    {
       "name": "gs_recent",
       "value": "最近訪問"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "目前代理持續無法連線時，自動嘗試清單中的下一個代理"
+      "value": "連線持續失敗時，在已儲存的代理與直連之間自動輪換"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "至少新增兩個代理後才能自動切換"
+      "value": "至少新增一個代理後才能自動切換"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "顯示置頂"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "長按最高倍速"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "長按影片右側逐級加速至此上限，放開恢復原速。邊下載邊播放最高 8×。"
+    },
+    {
+      "name": "vf_minimize",
+      "value": "小窗"
+    },
+    {
+      "name": "vf_resize",
+      "value": "調整小窗大小"
+    },
+    {
+      "name": "vf_play",
+      "value": "播放"
+    },
+    {
+      "name": "vf_pause",
+      "value": "暫停"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "清空最近聊天"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "清空此帳號的最近聊天記錄？不會刪除聊天或訊息，重新開啟聊天後會再次記錄。"
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "移除此筆最近聊天記錄"
+    },
+    {
+      "name": "gs_objects",
+      "value": "使用者/群組/頻道"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "選擇固定頻道"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "搜尋名稱或 @使用者名稱"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "搜尋訊息內容"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "搜尋應用名稱或 @使用者名稱"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "已加入"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "未加入"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "頻道名稱相符"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "群組名稱相符"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "暱稱相符"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "使用者名稱相符"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "訊息內容相符"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "檔案名稱相符"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "全部"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "私聊"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "使用者"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "全部頻道"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "公開搜尋結果"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "已有對話"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "應用搜尋結果"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "更多結果請細化關鍵字或輸入準確的 @使用者名稱；公開名稱搜尋不支援翻頁。"
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "依名稱或使用者名稱搜尋，包括未加入的公開群組和頻道。"
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "搜尋訊息內容，包括已封存的對話。"
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "僅搜尋「%s」中的訊息內容。"
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "依名稱尋找下載任務和已下載的檔案。"
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "影片自動預載"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "提前緩衝聊天中的影片；關閉不影響播放和手動下載。"
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "預設隱藏置頂訊息"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "可在聊天選單中個別顯示或隱藏"
     }
   ]
 }

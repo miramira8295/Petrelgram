@@ -1,3 +1,4 @@
+import { VideoPlaybackControls, VideoPlaybackSnapshot } from '../../util/floatingVideoRuntime';
 import { setScreenAwakeFor } from './LiveViewerUi';
 import { videoAwakeOwner } from '../../util/screenAwake';
 import {
@@ -32,7 +33,7 @@ import {
 import { audio } from '@kit.AudioKit';
 import { getTdClient, getUiAbilityContext } from '../../tdkit/Globals';
 import { mediaPlaybackKeepAlive } from '../../services/MediaPlaybackKeepAlive';
-import { KEY_BG_PLAY_VIDEO, KEY_CURRENT_NETWORK_TYPE } from '../../store/AppSettings';
+import { KEY_HOLD_SPEED_LIMIT, KEY_BG_PLAY_VIDEO, KEY_CURRENT_NETWORK_TYPE } from '../../store/AppSettings';
 import { VideoRangeServer } from '../../services/VideoRangeServer';
 import { VideoTdSource } from '../../services/VideoTdSource';
 import { VideoStreamSession } from '../../services/VideoStreamSession';
@@ -92,6 +93,11 @@ export struct StreamingVideoPlayer {
   private pausedByFocusLoss: boolean = false;
   @Watch('onMutedChanged') @Prop muted: boolean = false;
   @Prop startPositionMs: number = 0;
+  @Prop startSpeedIndex: number = DEFAULT_SPEED_IDX;
+  @Prop startPaused: boolean = false;
+  @Prop compactMode: boolean = false;
+  @Prop appOnly: boolean = false;
+  onPlaybackControls: (controls: VideoPlaybackControls | null) => void = (): void => {};
   // ── 实况照片模式 ──────────────────────────────────────────────────────
   // 查看器把 PG 发的实况（见 util/livePhoto）渲染成 iOS 那样：进来自动播一遍，
   // 左下角一枚「实况」胶囊可以随时暂停/重播。标准控制栏那时是关掉的，所以需要
@@ -210,6 +216,18 @@ export struct StreamingVideoPlayer {
 
   aboutToAppear(): void {
     this.active = true;
+    this.speedIdx = this.startSpeedIndex >= 0 && this.startSpeedIndex < SPEEDS.length
+      ? this.startSpeedIndex : DEFAULT_SPEED_IDX;
+    this.onPlaybackControls({
+      snapshot: (): VideoPlaybackSnapshot | null => {
+        if (!this.active || !this.isPrepared || this.player === null || this.hasError) { return null; }
+        return { positionMs: Math.max(0, this.progressSeekUntil > Date.now()
+          ? this.currentTimeMs : this.player.getCurrentPosition()),
+          speedIndex: this.speedIdx, playing: this.isPlaying };
+      },
+      stop: (): void => { this.deactivate(); },
+      toggle: (): void => { this.togglePlay(); }
+    });
     this.armStatusDelay();
     if (this.surfaceContext !== null && this.player === null) {
       this.retryTimer = setTimeout((): void => {
@@ -265,6 +283,8 @@ export struct StreamingVideoPlayer {
   }
 
   private deactivate(): void {
+    if (!this.active) { return; }
+    this.onPlaybackControls(null);
     this.stopHold(false);
     this.active = false;
     this.isPlaying = false;
@@ -350,7 +370,7 @@ export struct StreamingVideoPlayer {
       mediaPlaybackKeepAlive.release('video');
       return;
     }
-    if (this.isPlaying && (AppStorage.get<boolean>(KEY_BG_PLAY_VIDEO) ?? false)) {
+    if (this.isPlaying && !this.appOnly && (AppStorage.get<boolean>(KEY_BG_PLAY_VIDEO) ?? false)) {
       const context = getUiAbilityContext();
       if (context !== null) {
         mediaPlaybackKeepAlive.acquire(context, 'video');
@@ -614,9 +634,13 @@ export struct StreamingVideoPlayer {
             this.currentTimeMs = this.startPositionMs;
           }
           this.isCompleted = false;
+          if (this.appOnly && !this.appIsForeground) {
+            this.pendingPlayRequest = false;
+            return;
+          }
           // 实况：预热到首帧就停住（见 primingFirstFrame）。用户在 prepare
           // 之前就点过播放键的话不预热，直接照常播。
-          if (this.liveMode && !this.pendingPlayRequest) {
+          if ((this.liveMode || this.startPaused) && !this.pendingPlayRequest) {
             this.primingFirstFrame = true;
             player.setVolume('0.0', '0.0');
             player.start();
@@ -905,7 +929,8 @@ export struct StreamingVideoPlayer {
     this.syncProgressPolling();
     if (this.appIsForeground) { this.refreshProgress(); }
     if (!this.appIsForeground) {
-      const keepPlaying: boolean = !this.embedded && (AppStorage.get<boolean>(KEY_BG_PLAY_VIDEO) ?? false);
+      if (this.appOnly) { this.pendingPlayRequest = false; this.pausedByFocusLoss = false; }
+      const keepPlaying: boolean = !this.embedded && !this.appOnly && (AppStorage.get<boolean>(KEY_BG_PLAY_VIDEO) ?? false);
       this.stopHold(keepPlaying);
     }
     this.syncScreenAwake();
@@ -913,7 +938,7 @@ export struct StreamingVideoPlayer {
       return;
     }
     // 内嵌播放位是列表里的静音预览，切后台没有任何理由继续解码。
-    if (!this.embedded && (AppStorage.get<boolean>(KEY_BG_PLAY_VIDEO) ?? false)) {
+    if (!this.embedded && !this.appOnly && (AppStorage.get<boolean>(KEY_BG_PLAY_VIDEO) ?? false)) {
       return;
     }
     // 不标记 pausedByFocusLoss：这不是音频打断，别让打断恢复的逻辑接管它。
@@ -957,7 +982,8 @@ export struct StreamingVideoPlayer {
     }
     if (action === FOCUS_RESUME && this.pausedByFocusLoss) {
       this.pausedByFocusLoss = false;
-      if (!this.isPlaying && this.isPrepared && !this.hasError && !this.isCompleted) {
+      if (!this.isPlaying && this.isPrepared && !this.hasError && !this.isCompleted &&
+        (!this.appOnly || this.appIsForeground)) {
         this.player.start();
         this.isPlaying = true;
       }
@@ -1252,7 +1278,8 @@ export struct StreamingVideoPlayer {
     }
     // 整份在本地（或已全部缓冲）才放开到 32×；边下边播封顶 8×（网络跟不上）。
     const fullyLocal: boolean = this.localPath !== '' || this.bufferedPercent >= 100;
-    const speed: number = holdSpeedAt(Date.now() - this.holdStartedAt, holdSpeedCap(fullyLocal));
+    const speed: number = holdSpeedAt(Date.now() - this.holdStartedAt, holdSpeedCap(fullyLocal,
+      AppStorage.get<number>(KEY_HOLD_SPEED_LIMIT) ?? 32));
     if (speed === this.holdCurrentSpeed) {
       return;
     }
@@ -1755,7 +1782,7 @@ export struct StreamingVideoPlayer {
       // Controls hidden → both halves remain interactive. Exclusive recognition
       // delays the single tap just enough to distinguish the double-tap seek.
       // Embedded (chat-bubble) mode never renders the gesture layer at all.
-      if (!this.embedded && !this.showControls) {
+      if (!this.embedded && !this.compactMode && !this.showControls) {
         Row() {
           this.tapZone(false);
           this.tapZone(true);
@@ -2005,7 +2032,7 @@ export struct StreamingVideoPlayer {
       // 可见时手势被它整片吃掉（重播按钮就栽过这个，见上面那段注释）。
       // 它是 HitTestMode.Transparent，不阻塞下面的单击/双击。
       // 实况不挂：那一路的界面是另一套胶囊，没有可调的东西。
-      if (!this.embedded && !this.liveMode) {
+      if (!this.embedded && !this.compactMode && !this.liveMode) {
         VideoGestureLayer({
           viewportW: this.viewportWidth,
           viewportH: this.viewportHeight,

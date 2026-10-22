@@ -10829,6 +10829,10 @@
       "value": "अक्सर बात करने वाले संपर्क"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "हालिया"
+    },
+    {
       "name": "gs_recent",
       "value": "हाल के दौरे"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "मौजूदा प्रॉक्सी उपलब्ध न रहने पर अगला सहेजा गया प्रॉक्सी आज़माएँ"
+      "value": "कनेक्शन लगातार विफल होने पर सहेजे गए प्रॉक्सी और सीधे कनेक्शन के बीच अपने आप बदलें"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "अपने-आप बदलने के लिए कम से कम दो प्रॉक्सी जोड़ें"
+      "value": "अपने आप बदलने के लिए कम से कम एक प्रॉक्सी जोड़ें"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "पिन किए गए संदेश दिखाएँ"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "दबाए रखने पर अधिकतम गति"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "इस सीमा तक धीरे-धीरे गति बढ़ाने के लिए वीडियो के दाएँ हिस्से को दबाए रखें। छोड़ने पर मूल गति लौटती है। स्ट्रीमिंग अधिकतम 8× है।"
+    },
+    {
+      "name": "vf_minimize",
+      "value": "मिनी प्लेयर"
+    },
+    {
+      "name": "vf_resize",
+      "value": "मिनी प्लेयर का आकार बदलें"
+    },
+    {
+      "name": "vf_play",
+      "value": "चलाएँ"
+    },
+    {
+      "name": "vf_pause",
+      "value": "रोकें"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "हाल की चैट साफ़ करें"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "इस खाते की हाल की चैट सूची साफ़ करें? चैट और संदेश नहीं मिटेंगे। दोबारा खोलने पर चैट फिर दिखाई देंगी।"
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "हाल की चैट से हटाएँ"
+    },
+    {
+      "name": "gs_objects",
+      "value": "उपयोगकर्ता / समूह / चैनल"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "चैनल चुनें"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "नाम या @username खोजें"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "संदेश की सामग्री खोजें"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "ऐप या @username खोजें"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "शामिल हैं"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "शामिल नहीं हैं"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "चैनल का नाम मिला"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "समूह का नाम मिला"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "उपनाम मिला"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "उपयोगकर्ता नाम मिला"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "संदेश की सामग्री मिली"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "फ़ाइल का नाम मिला"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "सभी"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "निजी"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "उपयोगकर्ता"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "सभी चैनल"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "सार्वजनिक परिणाम"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "मौजूदा चैट"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "ऐप परिणाम"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "अधिक परिणामों के लिए खोज स्पष्ट करें या सही @username लिखें। सार्वजनिक नाम खोज में पृष्ठ उपलब्ध नहीं हैं।"
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "नाम और उपयोगकर्ता नाम खोजें, उन सार्वजनिक समूहों और चैनलों सहित जिनसे आप नहीं जुड़े हैं।"
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "संग्रहीत चैट सहित संदेशों की सामग्री खोजें।"
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "केवल “%s” में संदेश की सामग्री खोजें।"
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "डाउनलोड कार्य और डाउनलोड की गई फ़ाइलें नाम से खोजें।"
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "वीडियो अपने आप प्रीलोड करें"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "चैट के वीडियो पहले से बफ़र करें। बंद करने से प्लेबैक या मैन्युअल डाउनलोड प्रभावित नहीं होते।"
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "पिन किए गए संदेश डिफ़ॉल्ट रूप से छिपाएँ"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "हर चैट के मेनू से अलग से दिखाएँ या छिपाएँ"
     }
   ]
 }

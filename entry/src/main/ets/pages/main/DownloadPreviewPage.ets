@@ -1,3 +1,4 @@
+import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { MediaViewerOverlay, VIEWER_CHROME_ON_OPEN } from '../chat/MediaViewerOverlay';
@@ -141,6 +142,7 @@ export struct DownloadPreviewPage {
       .backgroundColor(Color.Black);
     }
     .hideTitleBar(true)
+    .onBackPressed((): boolean => collapseFloatingVideo())
     .backgroundColor(Color.Black)
     .onReady((ctx: NavDestinationContext): void => {
       this.navStack = ctx.pathStack;

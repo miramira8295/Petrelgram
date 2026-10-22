@@ -19,7 +19,9 @@ import {
   blockAndDeleteChat
 } from '../../store/ChatActions';
 import { ClearHistoryOption, clearHistoryOptions, canClearHistory } from '../../store/ClearHistoryOptions';
-import { getChatStore, getFolderStore } from '../../tdkit/Globals';
+import { getActiveTdUserId, getChatStore, getFolderStore, getTdClient } from '../../tdkit/Globals';
+import { ConfirmedChatRemoval } from '../../util/confirmedChatRemoval';
+import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
 import {
   KEY_POWER_ACTIVE, KEY_POWER_PARTICLES, KEY_POWER_SMOOTH_TRANSITIONS,
   KEY_THREE_LINES, powerAnimationDuration
@@ -113,6 +115,10 @@ export struct ChatRow {
   @State menuOffsetX: number = 0;
   private livePulseTimer: number = -1;
   private rowActive: boolean = false;
+  private deletion: ConfirmedChatRemoval = new ConfirmedChatRemoval();
+  @State private deleteLeaving: number = 0;
+  private unsubDelete: (() => void) | null = null;
+  private deleteChatId: number = 0;
   // A long press is only valid for the exact row snapshot that was under the
   // finger on TouchType.Down. A new message can update the row revision or
   // reorder it while the recognition timer is running.
@@ -125,6 +131,7 @@ export struct ChatRow {
 
   aboutToAppear(): void {
     this.rowActive = true;
+    this.attachDeletion(this.row.snapshot.chat.id);
     this.startLivePulse(this.row.snapshot.chat.isLive);
   }
 
@@ -147,6 +154,7 @@ export struct ChatRow {
     // Params cover the reuse callback; ObjectLink watch covers later rebinding
     // and subsequent content changes while the component remains mounted.
     const next = params.row as ChatListRowState | undefined;
+    this.attachDeletion(next?.snapshot.chat.id ?? this.row.snapshot.chat.id);
     this.syncLivePulse(next !== undefined && next.snapshot.chat.isLive);
   }
 
@@ -155,7 +163,26 @@ export struct ChatRow {
   }
 
   private onRowChanged(): void {
-    if (this.rowActive) { this.syncLivePulse(this.row.snapshot.chat.isLive); }
+    if (this.rowActive) {
+      this.attachDeletion(this.row.snapshot.chat.id);
+      this.syncLivePulse(this.row.snapshot.chat.isLive);
+    }
+  }
+
+  private attachDeletion(chatId: number): void {
+    if (this.unsubDelete !== null && this.deleteChatId === chatId) { return; }
+    this.detachDeletion();
+    this.deleteChatId = chatId;
+    this.unsubDelete = this.deletion.channel.subscribe(chatId,
+      (strength: number): void => { this.deleteLeaving = strength; });
+  }
+
+  private detachDeletion(): void {
+    this.unsubDelete?.();
+    this.unsubDelete = null;
+    this.deletion.channel.restore(this.deleteChatId);
+    this.deleteChatId = 0;
+    this.deleteLeaving = 0;
   }
 
   private syncLivePulse(isLive: boolean): void {
@@ -182,6 +209,7 @@ export struct ChatRow {
 
   private teardown(): void {
     this.rowActive = false;
+    this.detachDeletion();
     if (this.livePulseTimer !== -1) {
       clearInterval(this.livePulseTimer);
       this.livePulseTimer = -1;
@@ -367,6 +395,9 @@ export struct ChatRow {
   }
 
   private confirmLeave(): void {
+    const client = getTdClient();
+    const selfId = getActiveTdUserId();
+    const active = (): boolean => getTdClient() === client && getActiveTdUserId() === selfId;
     const label = leaveLabel(this.row.snapshot.chat.kind);
     const chatId: number = this.row.snapshot.chat.id;
     const kind: ChatKind = this.row.snapshot.chat.kind;
@@ -393,13 +424,26 @@ export struct ChatRow {
         : leaveConfirmMessage(kind, title),
       buttons: buttons
     }, 'confirmLeave', (index: number): void => {
+      if (!active()) { return; }
       if (index === 1) {
-        leaveOrDeleteChat(chatId, kind, canOnlyForSelf, canForAllUsers);
+        if (kind === 'basicGroup' || kind === 'supergroup' || kind === 'channel') {
+          leaveOrDeleteChat(chatId, kind, canOnlyForSelf, canForAllUsers);
+        } else {
+          this.deletion.perform(chatId, !this.powerSaving && this.particlesEnabled &&
+            powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 550) > 0, active,
+            (): Promise<boolean> => leaveOrDeleteChat(chatId, kind, canOnlyForSelf, canForAllUsers))
+            .catch((e: Object): void => { logI(`ChatRow.delete failed: ${e}`); });
+        }
         return;
       }
       if (index === 2 && canBlock) {
-        blockAndDeleteChat(chatId);
-        promptAction.showToast({ message: str('cl_deleted_blocked', title), duration: 1800 });
+        this.deletion.perform(chatId, !this.powerSaving && this.particlesEnabled &&
+            powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 550) > 0, active,
+          (): Promise<boolean> => blockAndDeleteChat(chatId)).then((success: boolean): void => {
+          if (success && active()) {
+            promptAction.showToast({ message: str('cl_deleted_blocked', title), duration: 1800 });
+          }
+        }).catch((e: Object): void => { logI(`ChatRow.blockAndDelete failed: ${e}`); });
       }
     });
   }
@@ -567,242 +611,247 @@ export struct ChatRow {
   }
 
   build() {
-    Row({ space: 12 }) {
-      AvatarView({
-        avatarSize: this.spec().avatar,
-        avatarPath: this.row.snapshot.chat.avatarPath,
-        initials: this.row.snapshot.chat.initials,
-        colorSeed: this.row.snapshot.chat.id,
-        autoDeleteTime: this.row.snapshot.chat.autoDeleteTime,
-        isLive: this.row.snapshot.chat.isLive,
-        livePulseExpanded: this.livePulseExpanded,
-        savedMessages: this.row.snapshot.chat.isSavedMessages,
-        loadImage: this.loadImages
-      });
-      // 标题与预览之间。这个数和行高、头像、预览字号是一组的，见 CHAT_ROW_MIN_HEIGHT。
-      Column({ space: this.spec().titleGap }) {
-        Row() {
-          // 密聊在名字前挂一把锁：这是行里唯一能把它和普通私聊区分开的标记，
-          // 而两者的行为差别很大（端到端、不同步到别的设备、可能已关闭）。
-          // 颜色用绿色而不是强调色——和 Telegram 各端一致，也不会随主题变淡。
-          if (this.row.snapshot.chat.kind === 'secret') {
-            SymbolGlyph($r('sys.symbol.lock_fill'))
-              .fontSize(13).fontColor(['#31C48D'])
-              .margin({ right: 3 }).flexShrink(0);
+    DissolveDeleteEffect({
+      instanceKey: 'chat-list-' + this.listKey,
+      rowId: this.row.snapshot.chat.id, leaving: this.deleteLeaving, channel: this.deletion.channel
+    }) {
+      Row({ space: 12 }) {
+        AvatarView({
+          avatarSize: this.spec().avatar,
+          avatarPath: this.row.snapshot.chat.avatarPath,
+          initials: this.row.snapshot.chat.initials,
+          colorSeed: this.row.snapshot.chat.id,
+          autoDeleteTime: this.row.snapshot.chat.autoDeleteTime,
+          isLive: this.row.snapshot.chat.isLive,
+          livePulseExpanded: this.livePulseExpanded,
+          savedMessages: this.row.snapshot.chat.isSavedMessages,
+          loadImage: this.loadImages
+        });
+        // 标题与预览之间。这个数和行高、头像、预览字号是一组的，见 CHAT_ROW_MIN_HEIGHT。
+        Column({ space: this.spec().titleGap }) {
+          Row() {
+            // 密聊在名字前挂一把锁：这是行里唯一能把它和普通私聊区分开的标记，
+            // 而两者的行为差别很大（端到端、不同步到别的设备、可能已关闭）。
+            // 颜色用绿色而不是强调色——和 Telegram 各端一致，也不会随主题变淡。
+            if (this.row.snapshot.chat.kind === 'secret') {
+              SymbolGlyph($r('sys.symbol.lock_fill'))
+                .fontSize(13).fontColor(['#31C48D'])
+                .margin({ right: 3 }).flexShrink(0);
+            }
+            Text(this.row.snapshot.chat.isSavedMessages
+              ? $r('app.string.cl_saved_messages') : this.row.snapshot.chat.title)
+              .fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).flexShrink(1);
+            if (this.muted()) {
+              SymbolGlyph($r('sys.symbol.bell_slash')).fontSize(13).fontColor([COLOR_ICON_SECONDARY]).margin({ left: 4 }).flexShrink(0);
+            }
+            if (this.matchingFolders().length > 0) {
+              Text(this.matchingFolders()[0].title)
+                .fontSize(9).fontWeight(FontWeight.Medium)
+                .fontColor(folderColor(this.matchingFolders()[0].colorId))
+                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                .constraintSize({ maxWidth: 58 })
+                .padding({ left: 5, right: 5, top: 2, bottom: 2 })
+                .margin({ left: 5 })
+                .backgroundColor(`${folderColor(this.matchingFolders()[0].colorId)}18`)
+                .borderRadius(7).flexShrink(0);
+              if (this.matchingFolders().length > 1) {
+                Text(`+${this.matchingFolders().length - 1}`).fontSize(9)
+                  .fontColor(COLOR_TEXT_SECONDARY).margin({ left: 3 }).flexShrink(0);
+              }
+            }
+          }.width('100%');
+          Row() {
+            // 有草稿就顶掉"谁说了什么"（Telegram 各端都是这样）。
+            if (this.draftPreview() !== '') {
+              Text($r('app.string.cl_draft_prefix'))
+                .fontSize(14).fontColor('#E5484D')
+                .maxLines(1).flexShrink(0);
+            } else if (this.row.snapshot.chat.lastSenderName !== '') {
+              Text(`${this.row.snapshot.chat.lastSenderName}: `)
+                .fontSize(14).fontColor(this.accent())
+                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                .constraintSize({ maxWidth: 112 });
+            }
+            // 预览小图（issue #202）：minithumbnail 的 data URL，18vp，只在有媒体时多这一个节点。
+            if (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== '') {
+              Image(this.row.snapshot.chat.lastMessageThumb).draggable(false)
+                .width(18).height(18).borderRadius(3).objectFit(ImageFit.Cover)
+                .sourceSize({ width: 54, height: 54 }).autoResize(true)
+                .margin({ right: 5, top: 1 }).flexShrink(0);
+            }
+            Text(this.draftPreview() !== '' ? this.draftPreview()
+              : (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== ''
+                ? stripPreviewIcon(this.row.snapshot.chat.lastMessageText) : this.row.snapshot.chat.lastMessageText))
+              .fontSize(this.spec().previewFont).fontColor(COLOR_TEXT_SECONDARY)
+              .maxLines(this.threeLines ? 2 : 1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
+          }.width('100%').alignItems(VerticalAlign.Top);
+        }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+        Column({ space: 6 }) {
+          Row({ space: 3 }) {
+            if (this.isPinned()) {
+              SymbolGlyph($r('sys.symbol.pin')).fontSize(11).fontColor([COLOR_ICON_SECONDARY]);
+            }
+            Text(formatTime(this.row.snapshot.chat.lastMessageDate, this.nowSec))
+              .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
           }
-          Text(this.row.snapshot.chat.isSavedMessages
-            ? $r('app.string.cl_saved_messages') : this.row.snapshot.chat.title)
-            .fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).flexShrink(1);
-          if (this.muted()) {
-            SymbolGlyph($r('sys.symbol.bell_slash')).fontSize(13).fontColor([COLOR_ICON_SECONDARY]).margin({ left: 4 }).flexShrink(0);
-          }
-          if (this.matchingFolders().length > 0) {
-            Text(this.matchingFolders()[0].title)
-              .fontSize(9).fontWeight(FontWeight.Medium)
-              .fontColor(folderColor(this.matchingFolders()[0].colorId))
-              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-              .constraintSize({ maxWidth: 58 })
-              .padding({ left: 5, right: 5, top: 2, bottom: 2 })
-              .margin({ left: 5 })
-              .backgroundColor(`${folderColor(this.matchingFolders()[0].colorId)}18`)
-              .borderRadius(7).flexShrink(0);
-            if (this.matchingFolders().length > 1) {
-              Text(`+${this.matchingFolders().length - 1}`).fontSize(9)
-                .fontColor(COLOR_TEXT_SECONDARY).margin({ left: 3 }).flexShrink(0);
+          Row({ space: 5 }) {
+            if (this.row.snapshot.chat.unreadMentionCount > 0) {
+              Text('@').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.accent())
+                .height(22).align(Alignment.Center).accessibilityText($r('app.string.cp_unread_mentions'));
+            }
+            if (this.row.snapshot.chat.unreadCount > 0) {
+              // 数字胶囊与独立的重点色 @ 并排，静音只淡化数字。
+              Text(this.unreadLabel())
+                .fontSize(12).fontColor(Color.White)
+                .fontWeight(FontWeight.Medium)
+                .constraintSize({ minWidth: 22 })
+                .height(22).padding({ left: 7, right: 7 })
+                .align(Alignment.Center).textAlign(TextAlign.Center)
+                .backgroundColor(this.muted() ? COLOR_MUTED_BADGE : this.accent())
+                .borderRadius(11);
+            } else if (this.row.snapshot.chat.isMarkedUnread) {
+              // Manually flagged unread — a plain dot, like the official clients.
+              Circle({ width: 10, height: 10 })
+                .fill(this.muted() ? COLOR_MUTED_BADGE : this.accent());
             }
           }
-        }.width('100%');
-        Row() {
-          // 有草稿就顶掉"谁说了什么"（Telegram 各端都是这样）。
-          if (this.draftPreview() !== '') {
-            Text($r('app.string.cl_draft_prefix'))
-              .fontSize(14).fontColor('#E5484D')
-              .maxLines(1).flexShrink(0);
-          } else if (this.row.snapshot.chat.lastSenderName !== '') {
-            Text(`${this.row.snapshot.chat.lastSenderName}: `)
-              .fontSize(14).fontColor(this.accent())
-              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-              .constraintSize({ maxWidth: 112 });
-          }
-          // 预览小图（issue #202）：minithumbnail 的 data URL，18vp，只在有媒体时多这一个节点。
-          if (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== '') {
-            Image(this.row.snapshot.chat.lastMessageThumb).draggable(false)
-              .width(18).height(18).borderRadius(3).objectFit(ImageFit.Cover)
-              .sourceSize({ width: 54, height: 54 }).autoResize(true)
-              .margin({ right: 5, top: 1 }).flexShrink(0);
-          }
-          Text(this.draftPreview() !== '' ? this.draftPreview()
-            : (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== ''
-              ? stripPreviewIcon(this.row.snapshot.chat.lastMessageText) : this.row.snapshot.chat.lastMessageText))
-            .fontSize(this.spec().previewFont).fontColor(COLOR_TEXT_SECONDARY)
-            .maxLines(this.threeLines ? 2 : 1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
-        }.width('100%').alignItems(VerticalAlign.Top);
-      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-      Column({ space: 6 }) {
-        Row({ space: 3 }) {
-          if (this.isPinned()) {
-            SymbolGlyph($r('sys.symbol.pin')).fontSize(11).fontColor([COLOR_ICON_SECONDARY]);
-          }
-          Text(formatTime(this.row.snapshot.chat.lastMessageDate, this.nowSec))
-            .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
-        }
-        Row({ space: 5 }) {
-          if (this.row.snapshot.chat.unreadMentionCount > 0) {
-            Text('@').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.accent())
-              .height(22).align(Alignment.Center).accessibilityText($r('app.string.cp_unread_mentions'));
-          }
-          if (this.row.snapshot.chat.unreadCount > 0) {
-            // 数字胶囊与独立的重点色 @ 并排，静音只淡化数字。
-            Text(this.unreadLabel())
-              .fontSize(12).fontColor(Color.White)
-              .fontWeight(FontWeight.Medium)
-              .constraintSize({ minWidth: 22 })
-              .height(22).padding({ left: 7, right: 7 })
-              .align(Alignment.Center).textAlign(TextAlign.Center)
-              .backgroundColor(this.muted() ? COLOR_MUTED_BADGE : this.accent())
-              .borderRadius(11);
-          } else if (this.row.snapshot.chat.isMarkedUnread) {
-            // Manually flagged unread — a plain dot, like the official clients.
-            Circle({ width: 10, height: 10 })
-              .fill(this.muted() ? COLOR_MUTED_BADGE : this.accent());
-          }
-        }
-      }.alignItems(HorizontalAlign.End);
-    }
-    // 真卡片外沿 4vp、上下 2vp（相邻两张之间 2+2 = 4vp），头像内缩 8vp
-    // ——外边距不折叠，两张卡片之间就是两条 margin 相加。2026-09-18 用户把
-    // 四周收到 4vp；头像因此落在 4+8=12vp，与顶部大标题 16vp 的对齐有意放弃
-    // （见 util/listCardGeometry）。壁纸生效时卡片交给现有 'card'
-    // 稳定玻璃：所有 API 都随“材质厚度”改变锁定的模糊半径；用户关闭材质时
-    // overlayGlassFill 会自然退回原来的可读性实底。
-    .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
-    .margin({
-      left: this.cardGutter(), right: this.cardGutter(),
-      top: CHAT_ROW_VERTICAL_GUTTER, bottom: CHAT_ROW_VERTICAL_GUTTER
-    })
-    .borderRadius(16)
-    // 描边跟着玻璃走，**颜色也要跟着换**。
-    //
-    // 原来是 `COLOR_DIVIDER`：行是不透明白卡片时它就是一条正常的灰细线；换成
-    // 半透玻璃之后，它在壁纸上成了一圈发暗的框，圆角处两条边的抗锯齿叠在一起
-    // 四角最明显（用户实测"四角黑边"）。而 divider 在**深色模式下是 #101921**，
-    // 几乎全黑，那一档更糟。
-    // GLASS_OUTLINE_COLOR（#4DFFFFFF，30% 白）是玻璃气泡描边用的同一个色，
-    // 专门为"玻璃边缘"配的，深浅两种模式下都是提亮而不是压暗。
-    .border({
-      width: this.rowGlassEnabled() ? 0.5 : (this.appWallpaperOn ? 0.5 : 0),
-      color: this.rowGlassEnabled() ? GLASS_OUTLINE_COLOR : COLOR_DIVIDER
-    })
-    // 用框架容器材质而不是 backdropBlur：后者在节点边缘有采样衰减，四角最明显
-    // （见 util/surfaceGlass.surfaceGlassBlurStyle 的说明）。
-    .backgroundBlurStyle(this.rowBlurStyle())
-    // 无壁纸时保持原来的系统材质表现；隐藏页签才暂停壁纸背后的实时采样。
-    .attributeModifier(materialModifierWhen('card', this.rowGlassEnabled() &&
-      (!this.appWallpaperOn || this.liveEffects)))
-    .clip(true)
-    .constraintSize({ minHeight: this.spec().minHeight })
-    .padding({ left: HOME_CARD_INSET_VP, right: ROW_PAD_H, top: ROW_PAD_V, bottom: ROW_PAD_V })
-    .alignItems(VerticalAlign.Center)
-    .stateStyles({
-      normal: this.rowNormalStyle,
-      pressed: this.rowPressedStyle
-    })
-    .accessibilityText(this.accessibilitySummary())
-    .onClick(() => {
-      if (this.pressConsumedByMenu || this.contextMenuShown) {
-        this.pressConsumedByMenu = false;
-        return;
+        }.alignItems(HorizontalAlign.End);
       }
-      // 话题群**直接进消息流**（2026-09-16）：话题列表那一层去掉了，话题改由
-      // 详情页顶栏的横条切换（pages/chat/ChatTopicBar）。这里不带 forumTopicId，
-      // 页面拿到话题列表后自己落到第一个话题（ChatPage.syncTopicBar）。
-      // 话题列表页本身保留，仍可从别处进入。
-      if (getChatStore().isAdministeredDirectMessagesGroup(this.row.snapshot.chat.id)) {
-        const directParams: Record<string, Object> = {
-          'chatId': this.row.snapshot.chat.id, 'title': this.row.snapshot.chat.title
-        };
-        navigateToDirectMessagesTopics(
-          directParams, chatListRowOrigin(this.listKey));
-        return;
-      }
-      const params: Record<string, Object> = { 'chatId': this.row.snapshot.chat.id };
-      navigateToChat(params, chatListRowOrigin(this.listKey)).catch(logChatNavFailure);
-    })
-    .onTouch((event: TouchEvent): void => {
-      if (event.type === TouchType.Down) {
-        this.beginPress();
-      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-        this.endPress();
-      }
-    })
-    // Keep List's pan recognizer active. Movement cancels this recognizer,
-    // while a stationary hold reaches the data-consistency check above.
-    .parallelGesture(
-      LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
-        .onAction((event: GestureEvent): void => { this.openContextMenuIfCurrent(event); })
-        .onActionCancel((): void => { this.endPress(); })
-    )
-    // While the menu is open the list must not rebuild: an incoming message
-    // increments the row revision and would otherwise take the menu down.
-    // The flag freezes the list (see CHAT_MENU_OPEN).
-    .bindContextMenu(this.contextMenuShown, this.contextMenu, {
-      // 钉死 placement：不指定时 ArkUI 按可用空间自己挑锚定角，锚点一换偏移的
-      // 参照就变了。钉死之后 offset 才是一个稳定的水平平移。
-      placement: Placement.BottomLeft,
-      // **符号取反，这里必须解释清楚。**
+      // 真卡片外沿 4vp、上下 2vp（相邻两张之间 2+2 = 4vp），头像内缩 8vp
+      // ——外边距不折叠，两张卡片之间就是两条 margin 相加。2026-09-18 用户把
+      // 四周收到 4vp；头像因此落在 4+8=12vp，与顶部大标题 16vp 的对齐有意放弃
+      // （见 util/listCardGeometry）。壁纸生效时卡片交给现有 'card'
+      // 稳定玻璃：所有 API 都随“材质厚度”改变锁定的模糊半径；用户关闭材质时
+      // overlayGlassFill 会自然退回原来的可读性实底。
+      .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
+      .margin({
+        left: this.cardGutter(), right: this.cardGutter(),
+        top: CHAT_ROW_VERTICAL_GUTTER, bottom: CHAT_ROW_VERTICAL_GUTTER
+      })
+      .borderRadius(16)
+      // 描边跟着玻璃走，**颜色也要跟着换**。
       //
-      // 实测（平板，同一行两次长按，日志记的 offset 与截图量的菜单左缘）：
-      //   不取反   offset −110 -> 菜单左缘 418 ； offset +110 -> 176   （反向）
-      //   取反后   offset −110 -> 菜单左缘 176 ； offset +110 -> 418   （正向）
-      // 取反之后单调且方向正确：按行左侧菜单在左，按右侧在右。
-      //
-      // **我解释不了为什么这里要取反而 MessageBubble 不用**——那边同样是
-      // bindContextMenu + preview: IMAGE，用未取反的 offset 方向就是对的
-      // （左缘长按菜单左缘 521、右缘 827）。两处唯一的结构差别是预览的宽度：
-      // 这里的预览是整行满宽，那边是一个小气泡。先按实测结果写，别按推测写；
-      // 哪天 ArkUI 这块行为变了，上面那四组数字就是重新验证的基准。
-      offset: { x: -this.menuOffsetX, y: 0 },
-      // IMAGE captures this exact chat strip. The framework then lifts that
-      // snapshot above the mask, so list inertia can no longer move the
-      // focused item away from the menu.
-      preview: MenuPreviewMode.IMAGE,
-      previewBorderRadius: 14,
-      previewAnimationOptions: {
-        scale: [0.98, 1.035],
+      // 原来是 `COLOR_DIVIDER`：行是不透明白卡片时它就是一条正常的灰细线；换成
+      // 半透玻璃之后，它在壁纸上成了一圈发暗的框，圆角处两条边的抗锯齿叠在一起
+      // 四角最明显（用户实测"四角黑边"）。而 divider 在**深色模式下是 #101921**，
+      // 几乎全黑，那一档更糟。
+      // GLASS_OUTLINE_COLOR（#4DFFFFFF，30% 白）是玻璃气泡描边用的同一个色，
+      // 专门为"玻璃边缘"配的，深浅两种模式下都是提亮而不是压暗。
+      .border({
+        width: this.rowGlassEnabled() ? 0.5 : (this.appWallpaperOn ? 0.5 : 0),
+        color: this.rowGlassEnabled() ? GLASS_OUTLINE_COLOR : COLOR_DIVIDER
+      })
+      // 用框架容器材质而不是 backdropBlur：后者在节点边缘有采样衰减，四角最明显
+      // （见 util/surfaceGlass.surfaceGlassBlurStyle 的说明）。
+      .backgroundBlurStyle(this.rowBlurStyle())
+      // 无壁纸时保持原来的系统材质表现；隐藏页签才暂停壁纸背后的实时采样。
+      .attributeModifier(materialModifierWhen('card', this.rowGlassEnabled() &&
+        (!this.appWallpaperOn || this.liveEffects)))
+      .clip(true)
+      .constraintSize({ minHeight: this.spec().minHeight })
+      .padding({ left: HOME_CARD_INSET_VP, right: ROW_PAD_H, top: ROW_PAD_V, bottom: ROW_PAD_V })
+      .alignItems(VerticalAlign.Center)
+      .stateStyles({
+        normal: this.rowNormalStyle,
+        pressed: this.rowPressedStyle
+      })
+      .accessibilityText(this.accessibilitySummary())
+      .onClick(() => {
+        if (this.pressConsumedByMenu || this.contextMenuShown) {
+          this.pressConsumedByMenu = false;
+          return;
+        }
+        // 话题群**直接进消息流**（2026-09-16）：话题列表那一层去掉了，话题改由
+        // 详情页顶栏的横条切换（pages/chat/ChatTopicBar）。这里不带 forumTopicId，
+        // 页面拿到话题列表后自己落到第一个话题（ChatPage.syncTopicBar）。
+        // 话题列表页本身保留，仍可从别处进入。
+        if (getChatStore().isAdministeredDirectMessagesGroup(this.row.snapshot.chat.id)) {
+          const directParams: Record<string, Object> = {
+            'chatId': this.row.snapshot.chat.id, 'title': this.row.snapshot.chat.title
+          };
+          navigateToDirectMessagesTopics(
+            directParams, chatListRowOrigin(this.listKey));
+          return;
+        }
+        const params: Record<string, Object> = { 'chatId': this.row.snapshot.chat.id };
+        navigateToChat(params, chatListRowOrigin(this.listKey)).catch(logChatNavFailure);
+      })
+      .onTouch((event: TouchEvent): void => {
+        if (event.type === TouchType.Down) {
+          this.beginPress();
+        } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+          this.endPress();
+        }
+      })
+      // Keep List's pan recognizer active. Movement cancels this recognizer,
+      // while a stationary hold reaches the data-consistency check above.
+      .parallelGesture(
+        LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+          .onAction((event: GestureEvent): void => { this.openContextMenuIfCurrent(event); })
+          .onActionCancel((): void => { this.endPress(); })
+      )
+      // While the menu is open the list must not rebuild: an incoming message
+      // increments the row revision and would otherwise take the menu down.
+      // The flag freezes the list (see CHAT_MENU_OPEN).
+      .bindContextMenu(this.contextMenuShown, this.contextMenu, {
+        // 钉死 placement：不指定时 ArkUI 按可用空间自己挑锚定角，锚点一换偏移的
+        // 参照就变了。钉死之后 offset 才是一个稳定的水平平移。
+        placement: Placement.BottomLeft,
+        // **符号取反，这里必须解释清楚。**
+        //
+        // 实测（平板，同一行两次长按，日志记的 offset 与截图量的菜单左缘）：
+        //   不取反   offset −110 -> 菜单左缘 418 ； offset +110 -> 176   （反向）
+        //   取反后   offset −110 -> 菜单左缘 176 ； offset +110 -> 418   （正向）
+        // 取反之后单调且方向正确：按行左侧菜单在左，按右侧在右。
+        //
+        // **我解释不了为什么这里要取反而 MessageBubble 不用**——那边同样是
+        // bindContextMenu + preview: IMAGE，用未取反的 offset 方向就是对的
+        // （左缘长按菜单左缘 521、右缘 827）。两处唯一的结构差别是预览的宽度：
+        // 这里的预览是整行满宽，那边是一个小气泡。先按实测结果写，别按推测写；
+        // 哪天 ArkUI 这块行为变了，上面那四组数字就是重新验证的基准。
+        offset: { x: -this.menuOffsetX, y: 0 },
+        // IMAGE captures this exact chat strip. The framework then lifts that
+        // snapshot above the mask, so list inertia can no longer move the
+        // focused item away from the menu.
+        preview: MenuPreviewMode.IMAGE,
+        previewBorderRadius: 14,
+        previewAnimationOptions: {
+          scale: [0.98, 1.035],
+          transition: TransitionEffect.OPACITY
+            .combine(TransitionEffect.scale({ x: 0.98, y: 0.98 }))
+            .animation({
+              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+              curve: Curve.FastOutSlowIn
+            })
+        },
+        borderRadius: 16,
+        backgroundColor: Color.Transparent,
+        backgroundBlurStyle: containerBlur('menu'),
+        systemMaterial: overlayMaterial('menu'),
         transition: TransitionEffect.OPACITY
-          .combine(TransitionEffect.scale({ x: 0.98, y: 0.98 }))
+          .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
           .animation({
             duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
             curve: Curve.FastOutSlowIn
-          })
-      },
-      borderRadius: 16,
-      backgroundColor: Color.Transparent,
-      backgroundBlurStyle: containerBlur('menu'),
-      systemMaterial: overlayMaterial('menu'),
-      transition: TransitionEffect.OPACITY
-        .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
-        .animation({
-          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-          curve: Curve.FastOutSlowIn
-        }),
-      // A modal blurred mask keeps the page visually behind the lifted row
-      // and absorbs taps until the operation panel is dismissed.
-      mask: {
-        color: '#52000000',
-        backgroundBlurStyle: BlurStyle.BACKGROUND_THIN
-      },
-      modalMode: ModalMode.TARGET_WINDOW,
-      hapticFeedbackMode: HapticFeedbackMode.AUTO,
-      aboutToAppear: (): void => {
-        AppStorage.setOrCreate(CHAT_MENU_OPEN, true);
-      },
-      onDisappear: (): void => {
-        this.contextMenuShown = false;
-        AppStorage.setOrCreate(CHAT_MENU_OPEN, false);
-      }
-    });
+          }),
+        // A modal blurred mask keeps the page visually behind the lifted row
+        // and absorbs taps until the operation panel is dismissed.
+        mask: {
+          color: '#52000000',
+          backgroundBlurStyle: BlurStyle.BACKGROUND_THIN
+        },
+        modalMode: ModalMode.TARGET_WINDOW,
+        hapticFeedbackMode: HapticFeedbackMode.AUTO,
+        aboutToAppear: (): void => {
+          AppStorage.setOrCreate(CHAT_MENU_OPEN, true);
+        },
+        onDisappear: (): void => {
+          this.contextMenuShown = false;
+          AppStorage.setOrCreate(CHAT_MENU_OPEN, false);
+        }
+      });
+    }
   }
 }

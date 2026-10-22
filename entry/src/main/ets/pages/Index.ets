@@ -1,3 +1,4 @@
+import { collapseFloatingVideo } from '../util/floatingVideoRuntime';
 import { accountRegistry, TdAccountSummary } from '../tdkit/AccountRegistry';
 import { notifySlotAction, NOTIFY_DROP, NOTIFY_SWITCH } from '../util/notifySlot';
 import { switchAccountWithLiveWindow } from '../util/accountSwitch';
@@ -325,6 +326,7 @@ struct Index {
   private lastBackAt: number = 0;
 
   onBackPress(): boolean {
+    if (collapseFloatingVideo()) { return true; }
     // 分享选择器开着时先吃掉返回键。它是画在 Index 这一层的浮层，不在
     // Navigation 的栈里——不拦的话返回键会去弹 Navigation 的目的地，
     // 抽屉留在原地不动（用户实测"不受返回键控制"）。

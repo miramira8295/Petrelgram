@@ -1,14 +1,16 @@
 import { unifiedDataChannel as udc } from '@kit.ArkData';
 import { fileUri, fileIo } from '@kit.CoreFileKit';
-import { getTdClient } from '../tdkit/Globals';
+import { messageDragOriginTag } from '../util/messageDragOrigin';
+import { getActiveTdAccountSlot, getTdClient } from '../tdkit/Globals';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
 import { completedDragFilePath, messageDragPayload } from '../util/messageDrag';
 import { logW } from '../util/log';
 
 // The system owns this one-shot provider after drag start. Do not bind its lifetime
 // to a recycled bubble or to onDragEnd (receivers may still be reading then).
-export function configureMessageDrag(event: DragEvent, chatId: number, messageId: number, type: string): void {
+export function configureMessageDrag(event: DragEvent, chatId: number, messageId: number, type: string): DragItemInfo {
   const client = getTdClient();
+  const originTag = messageDragOriginTag(getActiveTdAccountSlot(), chatId);
   let pending: Promise<udc.UnifiedData | null> | undefined = undefined;
   const load = async (): Promise<udc.UnifiedData | null> => {
     try {
@@ -46,8 +48,14 @@ export function configureMessageDrag(event: DragEvent, chatId: number, messageId
     loadHandler: (): udc.UnifiedData | null => null,
     delayedDataLoadHandler: (): Promise<udc.UnifiedData | null> => {
       if (!pending) { pending = load(); }
-      return pending.then((data: udc.UnifiedData | null): udc.UnifiedData | null =>
-        client === getTdClient() ? data : null);
+      return pending.then((data: udc.UnifiedData | null): udc.UnifiedData | null => {
+        if (client !== getTdClient() || data === null) { return null; }
+        const properties = data.properties;
+        properties.tag = originTag;
+        data.properties = properties;
+        return data;
+      });
     }
   });
+  return { extraInfo: originTag };
 }

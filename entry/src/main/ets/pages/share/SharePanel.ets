@@ -2,8 +2,9 @@ import { common, UIExtensionContentSession, Want } from '@kit.AbilityKit';
 import { initShareHandoff, writeShareHandoff } from '../../services/ShareHandoff';
 import { initShareSendMode, readShareSendMode, writeShareSendMode } from '../../services/ShareSendModeStore';
 import { ShareSendMode, isAutoSend } from '../../util/shareSendMode';
-import { ShareTarget } from '../../util/shareTargets';
+import { ShareTarget, shareTargetsWithPermissions } from '../../util/shareTargets';
 import { SharedPayload, previewOf } from '../../util/sharedContent';
+import { sharedSendPermissions } from '../../util/sendPermissions';
 import { logE } from '../../util/log';
 
 // 系统分享面板里嵌的那一小块界面。
@@ -73,6 +74,10 @@ struct SharePanel {
       (this.payload.caption !== '' || this.payload.media.length > 0);
   }
 
+  private availableTargets(): ShareTarget[] {
+    return this.usable() ? shareTargetsWithPermissions(this.targets, sharedSendPermissions(this.payload)) : [];
+  }
+
   // 右上角那行状态。三态：解析中 / 失败 / 内容摘要。
   private statusText(): ResourceStr {
     if (!this.ready) {
@@ -87,7 +92,8 @@ struct SharePanel {
   // 选中一个目标（chatId 为 0 = 用户点了"在应用中选择"）。
   // 写交接文件 → 拉起主应用 → 关掉面板。
   private handOff(chatId: number): void {
-    if (this.sending || !this.usable()) {
+    if (this.sending || !this.usable() ||
+      (chatId !== 0 && !this.availableTargets().some((target: ShareTarget): boolean => target.chatId === chatId))) {
       return;
     }
     this.sending = true;
@@ -192,7 +198,7 @@ struct SharePanel {
       }
       .width('100%')
 
-      if (this.targets.length === 0) {
+      if (this.availableTargets().length === 0) {
         Column() {
           Text($r('app.string.share_no_targets'))
             .fontSize(13).fontColor('#8A8A8E')
@@ -201,7 +207,7 @@ struct SharePanel {
         .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center)
       } else {
         Grid() {
-          ForEach(this.targets, (target: ShareTarget): void => {
+          ForEach(this.availableTargets(), (target: ShareTarget): void => {
             GridItem() {
               this.targetCell(target)
             }

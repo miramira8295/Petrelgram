@@ -10829,6 +10829,10 @@
       "value": "Danh bạ thường liên lạc"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "Gần đây"
+    },
+    {
       "name": "gs_recent",
       "value": "Truy cập gần đây"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "Thử proxy đã lưu tiếp theo khi proxy hiện tại vẫn không khả dụng"
+      "value": "Khi kết nối liên tục thất bại, tự động luân phiên giữa các proxy đã lưu và kết nối trực tiếp"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "Thêm ít nhất hai proxy để bật chuyển đổi tự động"
+      "value": "Thêm ít nhất một proxy để bật chuyển đổi tự động"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "Hiện tin nhắn đã ghim"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "Tốc độ tối đa khi nhấn giữ"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "Nhấn giữ bên phải video để tăng dần tốc độ đến giới hạn này. Thả tay để về tốc độ ban đầu. Phát trực tuyến tối đa 8×."
+    },
+    {
+      "name": "vf_minimize",
+      "value": "Trình phát thu nhỏ"
+    },
+    {
+      "name": "vf_resize",
+      "value": "Đổi kích thước trình phát thu nhỏ"
+    },
+    {
+      "name": "vf_play",
+      "value": "Phát"
+    },
+    {
+      "name": "vf_pause",
+      "value": "Tạm dừng"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "Xóa danh sách trò chuyện gần đây"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "Xóa danh sách trò chuyện gần đây của tài khoản này? Các cuộc trò chuyện và tin nhắn vẫn được giữ lại. Trò chuyện sẽ xuất hiện lại khi bạn mở lại."
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "Xóa khỏi trò chuyện gần đây"
+    },
+    {
+      "name": "gs_objects",
+      "value": "Người dùng / Nhóm / Kênh"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "Chọn kênh"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "Tìm tên hoặc @username"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "Tìm nội dung tin nhắn"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "Tìm ứng dụng hoặc @username"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "Đã tham gia"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "Chưa tham gia"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "Khớp tên kênh"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "Khớp tên nhóm"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "Khớp biệt danh"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "Khớp tên người dùng"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "Khớp nội dung"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "Khớp tên tệp"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "Tất cả"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "Riêng tư"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "Người dùng"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "Tất cả kênh"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "Kết quả công khai"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "Trò chuyện hiện có"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "Kết quả ứng dụng"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "Hãy thu hẹp từ khóa hoặc nhập đúng @username. Tìm kiếm tên công khai không hỗ trợ phân trang."
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "Tìm tên và tên người dùng, gồm cả nhóm và kênh công khai chưa tham gia."
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "Tìm nội dung tin nhắn, bao gồm trò chuyện đã lưu trữ."
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "Chỉ tìm nội dung tin nhắn trong “%s”."
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "Tìm tác vụ tải xuống và tệp đã tải theo tên."
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "Tự động tải trước video"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "Tạo bộ đệm trước cho video trong trò chuyện. Tắt không ảnh hưởng đến phát video hoặc tải xuống thủ công."
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "Mặc định ẩn tin nhắn đã ghim"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "Hiện hoặc ẩn riêng trong menu của từng cuộc trò chuyện"
     }
   ]
 }

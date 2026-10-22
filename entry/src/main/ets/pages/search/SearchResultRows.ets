@@ -1,3 +1,5 @@
+import { SearchHitText } from './SearchHitText';
+import { SearchIdentity, MessageMatch, searchHit, searchExcerpt } from '../../util/searchPresentation';
 import { AvatarView } from '../chatlist/AvatarView';
 import {
   COLOR_ICON_SECONDARY, COLOR_ON_PRIMARY, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, mainCardFill
@@ -16,6 +18,8 @@ import { str } from '../../util/strings';
 @Reusable
 @Component
 export struct SearchChatRow {
+  @Require @Prop query: string = '';
+  @Prop identity: SearchIdentity | undefined = undefined;
   @Prop chatId: number = 0;
   @Prop title: string = '';
   @Prop subtitle: string = '';
@@ -24,6 +28,18 @@ export struct SearchChatRow {
   @Prop savedMessages: boolean = false;
   @Prop opening: boolean = false;
   @Prop wallpaperOn: boolean = false;
+
+  private matchLabel(): string {
+    const labels: string[] = [];
+    if (searchHit(this.title, this.query)) {
+      labels.push(str(this.identity?.kind === 'channel' ? 'gs_hit_channel' :
+        (this.identity?.kind === 'group' ? 'gs_hit_group' : 'gs_hit_name')));
+    }
+    if (this.identity?.usernames.some((name: string): boolean => searchHit('@' + name, this.query))) {
+      labels.push(str('gs_hit_username'));
+    }
+    return labels.join(' · ');
+  }
 
   @Styles
   normalStyle() {
@@ -42,9 +58,18 @@ export struct SearchChatRow {
         savedMessages: this.savedMessages
       });
       Column({ space: 3 }) {
-        Text(this.title !== '' ? this.title : '…')
-          .fontSize(16).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        SearchHitText({ text: this.title !== '' ? this.title : '…', query: this.query, textSize: 16, lines: 1 });
+        if (this.identity !== undefined && this.identity.usernames.length > 0 && (this.query ?? '').trim() !== '') {
+          SearchHitText({ text: this.identity.usernames.map((name: string): string => '@' + name).join(' · '),
+            query: this.query, textSize: 12, lines: 2, color: COLOR_TEXT_SECONDARY });
+        }
+        if (this.matchLabel() !== '') {
+          Text(this.matchLabel()).fontSize(11).fontColor(COLOR_PRIMARY);
+        }
+        if (this.identity?.joined !== undefined && (this.query ?? '').trim() !== '') {
+          Text(this.identity!.joined ? str('gs_member_joined') : str('gs_member_not_joined'))
+            .fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+        }
         if (this.subtitle !== '') {
           Text(this.subtitle).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
@@ -66,6 +91,8 @@ export struct SearchChatRow {
 @Reusable
 @Component
 export struct SearchMessageRow {
+  @Require @Prop query: string = '';
+  @Prop match: MessageMatch | undefined = undefined;
   @Prop chatId: number = 0;
   @Prop chatTitle: string = '';
   @Prop avatarPath: string = '';
@@ -100,8 +127,18 @@ export struct SearchMessageRow {
             Text(this.timeLabel).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
           }
         }.width('100%');
-        Text(this.preview).fontSize(14).fontColor(COLOR_TEXT_SECONDARY)
-          .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis });
+        SearchHitText({ text: searchExcerpt(this.match?.body || this.preview, this.query),
+          query: this.match?.body ? this.query : '', textSize: 14, color: COLOR_TEXT_SECONDARY });
+        if (this.match !== undefined && this.match.fileName !== '') {
+          SearchHitText({ text: searchExcerpt(this.match.fileName, this.query), query: this.query,
+            textSize: 13, lines: 2, color: COLOR_TEXT_SECONDARY });
+        }
+        if (searchHit(this.match?.body ?? '', this.query) || searchHit(this.match?.fileName ?? '', this.query)) {
+          Text([searchHit(this.match?.body ?? '', this.query) ? str('gs_hit_message') : '',
+            searchHit(this.match?.fileName ?? '', this.query) ? str('gs_hit_filename') : '']
+            .filter((label: string): boolean => label !== '').join(' · '))
+            .fontSize(11).fontColor(COLOR_PRIMARY);
+        }
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1);
@@ -161,6 +198,8 @@ export struct SearchMediaCell {
 @Reusable
 @Component
 export struct SearchAppRow {
+  @Require @Prop query: string = '';
+  @Prop identity: SearchIdentity | undefined = undefined;
   @Prop userId: number = 0;
   @Prop title: string = '';
   @Prop subtitle: string = '';
@@ -168,6 +207,18 @@ export struct SearchAppRow {
   @Prop initials: string = '';
   @Prop opening: boolean = false;
   @Prop wallpaperOn: boolean = false;
+
+  private matchLabel(): string {
+    const labels: string[] = [];
+    if (searchHit(this.title, this.query)) {
+      labels.push(str(this.identity?.kind === 'channel' ? 'gs_hit_channel' :
+        (this.identity?.kind === 'group' ? 'gs_hit_group' : 'gs_hit_name')));
+    }
+    if (this.identity?.usernames.some((name: string): boolean => searchHit('@' + name, this.query))) {
+      labels.push(str('gs_hit_username'));
+    }
+    return labels.join(' · ');
+  }
 
   @Styles
   normalStyle() {
@@ -183,9 +234,18 @@ export struct SearchAppRow {
     Row({ space: 12 }) {
       AvatarView({ avatarPath: this.avatarPath, initials: this.initials, colorSeed: this.userId, avatarSize: 48 });
       Column({ space: 3 }) {
-        Text(this.title !== '' ? this.title : '…')
-          .fontSize(16).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        SearchHitText({ text: this.title !== '' ? this.title : '…', query: this.query, textSize: 16, lines: 1 });
+        if (this.identity !== undefined && this.identity.usernames.length > 0 && (this.query ?? '').trim() !== '') {
+          SearchHitText({ text: this.identity.usernames.map((name: string): string => '@' + name).join(' · '),
+            query: this.query, textSize: 12, lines: 2, color: COLOR_TEXT_SECONDARY });
+        }
+        if (this.matchLabel() !== '') {
+          Text(this.matchLabel()).fontSize(11).fontColor(COLOR_PRIMARY);
+        }
+        if (this.identity?.joined !== undefined && (this.query ?? '').trim() !== '') {
+          Text(this.identity!.joined ? str('gs_member_joined') : str('gs_member_not_joined'))
+            .fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+        }
         if (this.subtitle !== '') {
           Text(this.subtitle).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });

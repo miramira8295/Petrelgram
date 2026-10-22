@@ -604,8 +604,7 @@ export class AttachActions {
     this.host.setDiceSheetOpen(true);
   }
 
-  // 唯一调用点在页面的 diceSheet @Builder（留页面）里 ForEach 的 onClick，
-  // 因此这里保持对外可见。
+  // 骰子选择器与消息上的「发送同款」共用权限检查及发送路径。
   sendDiceEmoji(emoji: string): void {
     if (this.host.sendAccess?.check('sendOtherMessages') === false) { return; }
     this.host.setDiceSheetOpen(false);

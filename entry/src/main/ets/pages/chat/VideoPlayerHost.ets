@@ -1,3 +1,4 @@
+import { VideoPlaybackControls } from '../../util/floatingVideoRuntime';
 import { StreamingVideoPlayer } from './StreamingVideoPlayer';
 import { VideoStatsSnapshot } from '../../util/videoStats';
 
@@ -20,6 +21,11 @@ export struct VideoPlayerHost {
   @Prop landscape: boolean = false;
   @Prop muted: boolean = false;
   @Prop startPositionMs: number = 0;
+  @Prop startSpeedIndex: number = 1;
+  @Prop startPaused: boolean = false;
+  @Prop compactMode: boolean = false;
+  @Prop appOnly: boolean = false;
+  onPlaybackControls: (controls: VideoPlaybackControls | null) => void = (): void => {};
   @Prop liveToggleSeq: number = 0;
   @Prop liveMode: boolean = false;
   onPlayStateChanged: (playing: boolean) => void = (): void => {};
@@ -48,6 +54,11 @@ export struct VideoPlayerHost {
       landscape: this.landscape,
       muted: this.muted,
       startPositionMs: this.startPositionMs,
+      startSpeedIndex: this.startSpeedIndex,
+      startPaused: this.startPaused,
+      compactMode: this.compactMode,
+      appOnly: this.appOnly,
+      onPlaybackControls: (controls: VideoPlaybackControls | null): void => { this.onPlaybackControls(controls); },
       onPositionChanged: (positionMs: number): void => { this.onPositionChanged(positionMs); },
       onDecoderKnown: (hardware: boolean): void => { this.onDecoderKnown(hardware); },
       onStatsSource: (source: (() => VideoStatsSnapshot) | null): void => { this.onStatsSource(source); },

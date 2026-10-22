@@ -74,7 +74,7 @@ function withLiveAvatars(targets: ShareTarget[]): ShareTarget[] {
     }
     return {
       chatId: target.chatId, title: target.title, avatarPath: '',
-      initials: target.initials, isSavedMessages: target.isSavedMessages
+      initials: target.initials, isSavedMessages: target.isSavedMessages, sendPermissions: target.sendPermissions
     };
   });
 }

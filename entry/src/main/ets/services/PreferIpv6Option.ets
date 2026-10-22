@@ -1,8 +1,6 @@
-import { connection } from '@kit.NetworkKit';
 import { getTdClient, isReady } from '../tdkit/Globals';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
-import { KEY_PREFER_IPV6 } from '../store/AppSettings';
-import { hasIpv4Among, shouldPreferIpv6 } from '../util/ipFamily';
+import { resolvePreferIpv6 } from './NetworkIpPreference';
 import { logI, logW } from '../util/log';
 
 // 给 TDLib 下 `prefer_ipv6`（issue #133）。
@@ -36,47 +34,20 @@ function sendPreferIpv6(value: boolean): Promise<void> {
   return getTdClient().send(request).then((): void => {});
 }
 
-// 本机当前这条默认网络有没有 IPv4 地址。拿不到就返回 true（维持默认行为）。
-async function deviceHasIpv4(): Promise<boolean> {
-  try {
-    const available: boolean = await connection.hasDefaultNet();
-    if (!available) {
-      return true;
-    }
-    const handle: connection.NetHandle = await connection.getDefaultNet();
-    if (handle.netId === 0) {
-      return true;
-    }
-    const props: connection.ConnectionProperties = await connection.getConnectionProperties(handle);
-    const families: number[] = props.linkAddresses.map(
-      (link: connection.LinkAddress): number => link.address.family ?? 0);
-    if (families.length === 0) {
-      return true;
-    }
-    return hasIpv4Among(families);
-  } catch (e) {
-    const err = e as Error;
-    logW(`[ipv6] link address probe failed: ${err.message}`);
-    return true;
-  }
-}
-
 // 重新判定并（仅在结果变化时）下发。启动与每次网络变化各调一次。
 // **永不抛异常**：它挂在网络回调上，一个可选优化不该有能力打断那条链路。
 export async function applyPreferIpv6(): Promise<void> {
   if (!isReady()) {
     return;
   }
-  const forced: boolean = AppStorage.get<boolean>(KEY_PREFER_IPV6) ?? false;
-  const hasIpv4: boolean = await deviceHasIpv4();
-  const want: boolean = shouldPreferIpv6(forced, hasIpv4);
+  const want: boolean = await resolvePreferIpv6();
   if (lastApplied === want) {
     return;
   }
   try {
     await sendPreferIpv6(want);
     lastApplied = want;
-    logI(`[ipv6] prefer_ipv6=${want} (forced=${forced} hasIpv4=${hasIpv4})`);
+    logI(`[ipv6] prefer_ipv6=${want}`);
   } catch (e) {
     const err = e as Error;
     logW(`[ipv6] setOption prefer_ipv6 failed: ${err.message}`);

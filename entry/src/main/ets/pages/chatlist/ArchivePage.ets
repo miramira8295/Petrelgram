@@ -1,3 +1,4 @@
+import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { ChatListView } from './ChatListView';
 import { CHAT_LIST_NOW } from './ChatListFreeze';
 import { ChatEntry } from '../../store/ChatEntry';
@@ -140,6 +141,7 @@ export struct ArchivePage {
     }
     // 本页自绘标题栏（返回键 + 「归档」标题那一条），不要 HDS 的。
     .hideTitleBar(true)
+    .onBackPressed((): boolean => collapseFloatingVideo())
     .onReady((ctx: NavDestinationContext): void => {
       this.navStack = ctx.pathStack;
     })

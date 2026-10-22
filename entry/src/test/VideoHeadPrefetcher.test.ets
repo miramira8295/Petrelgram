@@ -71,6 +71,74 @@ const MB: number = 1024 * 1024;
 
 export default function videoHeadPrefetcherTest() {
   describe('VideoHeadPrefetcher', () => {
+    it('disabled preload sends no request for visible videos', 0, () => {
+      const h = new FakeHost(); h.video(1, 11);
+      const p = prefetcherOn(h); p.setEnabled(false);
+      p.reportMedia(1, -1, 1);
+      expect(h.bridge.requests('downloadFile').length).assertEqual(0);
+      p.dispose();
+    });
+    it('reenabling preload resumes visible videos', 0, () => {
+      const h = new FakeHost(); h.video(1, 11);
+      const p = prefetcherOn(h); p.setEnabled(false);
+      p.reportMedia(1, -1, 1); p.setEnabled(true);
+      expect(h.bridge.requests('downloadFile').length).assertEqual(1);
+      p.dispose();
+    });
+    it('disabling cancels owned downloads and rejects late tail chaining', 0, async () => {
+      const h = new FakeHost(); h.video(1, 11);
+      const p = prefetcherOn(h); p.reportMedia(1, -1, 1);
+      p.setEnabled(false);
+      expect(h.bridge.requests('cancelDownloadFile').length).assertEqual(1);
+      h.bridge.replyLast('downloadFile'); await tick();
+      expect(h.bridge.requests('downloadFile').length).assertEqual(1);
+      expect(p.activeCount()).assertEqual(0);
+      p.dispose();
+    });
+    it('disabling retains user claimed downloads', 0, () => {
+      const h = new FakeHost(); h.video(1, 11);
+      const p = prefetcherOn(h); p.reportMedia(1, -1, 1);
+      h.claimed.add(11); p.setEnabled(false);
+      expect(h.bridge.requests('cancelDownloadFile').length).assertEqual(0);
+      p.dispose();
+    });
+    it('disabling also cancels prefetch retained while page suspended', 0, () => {
+      const h = new FakeHost(); h.video(1, 11);
+      const p = prefetcherOn(h); p.reportMedia(1, -1, 1); p.suspend();
+      p.setEnabled(false); p.setEnabled(true);
+      expect(h.bridge.requests('cancelDownloadFile').length).assertEqual(1);
+      expect(h.bridge.requests('downloadFile').length).assertEqual(1);
+      p.resume();
+      expect(h.bridge.requests('downloadFile').length).assertEqual(2);
+      p.dispose();
+    });
+    it('disabling clears dwell and queued prefetch requests', 0, async () => {
+      const h = new FakeHost(); h.video(1, 11);
+      const p = prefetcherOn(h, 20); p.reportMedia(1, -1, 1); p.setEnabled(false);
+      await tick(30);
+      expect(h.bridge.requests('downloadFile').length).assertEqual(0);
+      p.dispose();
+      const q = prefetcherOn(h);
+      for (let id = 1; id <= 5; id++) { h.video(id, id + 10); q.reportMedia(id, -1, 1); }
+      q.setEnabled(false); q.dropMedia(1, -1);
+      expect(h.bridge.requests('downloadFile').length).assertEqual(MAX_CONCURRENT_VIDEO_PREFETCH);
+      q.dispose();
+    });
+    it('bind receives persisted disabled setting and dispose removes listener', 0, () => {
+      const h = new FakeHost(); h.video(1, 11);
+      let detached = false;
+      const host: VideoPrefetchHost = {
+        client: h.client, videoAt: h.videoAt, fileClaimed: h.fileClaimed,
+        network: h.network, powerSaving: h.powerSaving,
+        subscribeEnabled: (listener: (enabled: boolean) => void): (() => void) => {
+          listener(false);
+          return (): void => { detached = true; };
+        }
+      };
+      const p = new VideoHeadPrefetcher(); p.bind(host, 0); p.reportMedia(1, -1, 1);
+      expect(h.bridge.requests('downloadFile').length).assertEqual(0);
+      p.dispose(); expect(detached).assertTrue();
+    });
     // 视频气泡一出现，先要头块——synchronous，应答回来才发尾块。
     // TDLib 对同一文件只保留一组 offset/limit，并发发头和尾就是尾把头顶掉。
     it('visible_video_requests_head_first_then_tail_after_it_lands', 0, async () => {

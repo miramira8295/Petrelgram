@@ -1,3 +1,6 @@
+import { WallpaperEditorSession, WallpaperEditorSource } from '../../services/WallpaperEditorSession';
+import { getTdClient, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
+import { TdClient } from '../../tdkit/TdClient';
 import { ThumbBatch } from '../../util/thumbBatch';
 import { uploadedThumbPath } from '../../util/localWallpaper';
 import { writeUploadedThumb } from '../../util/wallpaperThumb';
@@ -18,7 +21,7 @@ import {
   BackgroundPreview, backgroundPreviewOf, backgroundThumbnailFile
 } from '../../util/backgroundPresentation';
 import {
-  backgroundStateOf, BackgroundStateResult, ChatBackgroundState, defaultChatBackgroundSnapshot,
+  backgroundStateOf, BackgroundStateResult, ChatBackgroundState, ChatBackgroundStore, defaultChatBackgroundSnapshot,
   emptyChatBackground, invalidateDefaultSnapshot, localWallpaperState, parseSnapshot,
   serialiseSnapshot, referencedWallpaperPaths
 } from '../../store/ChatBackgroundStore';
@@ -102,10 +105,55 @@ struct ChatBackgroundPage {
   // ids are NEGATIVE — never gate the per-chat branch on chatId > 0.
   private chatId: number = 0;
   private active: boolean = false;
+  private previewSession: WallpaperEditorSession = new WallpaperEditorSession();
+  private pageClient: TdClient | null = null;
+  private editSequence: number = 0;
+  @StorageProp('tdSessionEpoch') @Watch('onSessionChanged') sessionEpoch: number = 0;
+
+  private onSessionChanged(): void {
+    if (!this.active) { return; }
+    this.active = false;
+    this.editSequence++; this.sequence++;
+    this.previewSession.close();
+    this.currentBackground = emptyChatBackground();
+    this.rows = []; this.uploaded = []; this.thumbPaths = new Map();
+    router.back();
+  }
+
+  private observeCurrentBackground(known?: TdObject | null): void {
+    this.previewSession.close();
+    if (!this.active || slotIsApp(this.effectiveSlot()) ||
+      (this.chatId === 0 && this.localPath !== '')) { return; }
+    const client = this.pageClient;
+    if (client === null || client !== getTdClient()) { return; }
+    const slot: string = this.effectiveSlot();
+    const dark: boolean = this.forDark;
+    const store = new ChatBackgroundStore(client, getChatStore(), getChatThemeStore(), (): boolean => dark);
+    const source: WallpaperEditorSource = {
+      seedFromDefault: (): void => store.seedFromDefault(),
+      subscribe: (listener: (state: ChatBackgroundState) => void): (() => void) => store.subscribe(listener),
+      open: (chatId: number): void => store.open(chatId),
+      close: (): void => store.close()
+    };
+    this.previewSession.open(source, this.chatId,
+      (): boolean => this.active && client === getTdClient() && slot === this.effectiveSlot(),
+      (state: ChatBackgroundState): void => { this.currentBackground = state; });
+    if (known !== undefined) { store.applyKnownBackground(known); }
+  }
+
+  private beginEdit(): number {
+    this.previewSession.close();
+    return ++this.editSequence;
+  }
+
+  private editIsCurrent(sequence: number): boolean {
+    return this.active && sequence === this.editSequence && this.pageClient === getTdClient();
+  }
   private sequence: number = 0;
 
   aboutToAppear(): void {
     this.active = true;
+    this.pageClient = getTdClient();
     const params = router.getParams() as BackgroundPageParams | undefined;
     this.chatId = params?.chatId ?? 0;
     this.slotId = params?.slot ?? '';
@@ -114,12 +162,15 @@ struct ChatBackgroundPage {
     }
     this.loadSlotValues();
     this.loadLocal();
+    this.observeCurrentBackground();
     this.loadUploaded();
     this.load();
   }
 
   aboutToDisappear(): void {
     this.active = false;
+    this.editSequence++;
+    this.previewSession.close();
     this.sequence++;
     this.thumbBatch.clear();
     if (this.thumbFlushTimer !== -1) {
@@ -176,11 +227,13 @@ struct ChatBackgroundPage {
   }
 
   private setForDark(value: boolean): void {
-    if (this.forDark === value) { return; }
+    if (this.forDark === value || this.applyingId !== '' || this.pickingLocal) { return; }
+    this.beginEdit();
     this.forDark = value;
     // 深浅色各存一张、三根滑杆也各存一份，切档要跟着换。
     this.loadSlotValues();
     this.loadLocal();
+    this.observeCurrentBackground();
     this.loadUploaded();
     this.thumbBatch.clear();
     this.thumbPaths = new Map();
@@ -195,13 +248,14 @@ struct ChatBackgroundPage {
   }
 
   private apply(row: GalleryRow): void {
-    if (this.applyingId !== '') { return; }
+    if (!this.active || this.applyingId !== '' || this.pickingLocal) { return; }
+    const edit: number = this.beginEdit();
     this.applyingId = row.preview.backgroundId;
     // APP 槽位不经过 TDLib：协议里根本没有「APP 背景」这个概念，它只能是本机设置。
     // 但转换必须和聊天壁纸走**同一段** backgroundStateOf + inflateTgvIfNeeded，
     // 否则同一张壁纸在聊天里和在主界面上会长得不一样。
     if (slotIsApp(this.effectiveSlot())) {
-      this.applyToAppSlot(row);
+      this.applyToAppSlot(row, edit);
       return;
     }
     this.invalidateSnapshotIfDefault();
@@ -209,7 +263,8 @@ struct ChatBackgroundPage {
       ? applyChatBackground(this.chatId, row.raw, true)
       : applyRemoteBackground(row.raw, this.forDark);
     task.then((): void => {
-      if (!this.active) { return; }
+      if (!this.editIsCurrent(edit)) { return; }
+      this.dropLocalForChatSlot();
       const parsed: BackgroundStateResult = backgroundStateOf(row.raw);
       if (parsed.state !== null) {
         // TDLib 的默认背景更新会异步回流；先用手里的选择刷新显隐与预览，避免
@@ -217,6 +272,7 @@ struct ChatBackgroundPage {
         this.currentBackground = parsed.state;
       }
       this.applyingId = '';
+      this.observeCurrentBackground(row.raw);
       promptAction.showToast({
         message: this.chatId !== 0
           ? $r('app.string.cb_chat_set')
@@ -224,8 +280,9 @@ struct ChatBackgroundPage {
         duration: 1600
       });
     }).catch((error: TdError): void => {
-      if (!this.active) { return; }
+      if (!this.editIsCurrent(edit)) { return; }
       this.applyingId = '';
+      this.observeCurrentBackground();
       logE(`ChatBackgroundPage.apply failed: ${error.message}`);
       const text = error.message.indexOf('BOOST') >= 0 || error.message.indexOf('boost') >= 0
         ? $r('app.string.cb_boost_required')
@@ -312,6 +369,8 @@ struct ChatBackgroundPage {
 
   // 选一张已上传的图给当前槽位。**不复制文件**——共用同一份。
   private useUploaded(path: string): void {
+    if (!this.active || this.applyingId !== '' || this.pickingLocal) { return; }
+    this.beginEdit();
     const previous: string = this.localPath;
     const state: ChatBackgroundState = localWallpaperState(path);
     if (slotIsApp(this.effectiveSlot())) {
@@ -381,17 +440,18 @@ struct ChatBackgroundPage {
   }
 
   private pickLocal(): void {
-    if (this.pickingLocal) {
+    if (!this.active || this.applyingId !== '' || this.pickingLocal) {
       return;
     }
     this.pickingLocal = true;
+    const edit: number = this.editSequence;
     const picker = new photoAccessHelper.PhotoViewPicker();
     const opts = new photoAccessHelper.PhotoSelectOptions();
     opts.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
     opts.maxSelectNumber = 1;
     picker.select(opts).then((res: photoAccessHelper.PhotoSelectResult): void => {
       this.pickingLocal = false;
-      if (!this.active || res.photoUris.length === 0) {
+      if (!this.editIsCurrent(edit) || res.photoUris.length === 0) {
         return;
       }
       this.installLocal(res.photoUris[0]);
@@ -399,6 +459,7 @@ struct ChatBackgroundPage {
   }
 
   private installLocal(uri: string): void {
+    this.beginEdit();
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
       // 文件名带时间戳：固定名会被 Image 的解码缓存卡住，换了图屏幕上还是旧的。
@@ -431,12 +492,15 @@ struct ChatBackgroundPage {
       this.afterLocalChange();
       promptAction.showToast({ message: $r('app.string.cb_local_applied'), duration: 1500 });
     } catch (error) {
+      this.observeCurrentBackground();
       logE(`ChatBackgroundPage.installLocal failed: ${error}`);
       promptAction.showToast({ message: $r('app.string.cb_local_failed'), duration: 1800 });
     }
   }
 
   private clearLocal(): void {
+    if (!this.active || this.applyingId !== '' || this.pickingLocal) { return; }
+    this.beginEdit();
     const previous: string = this.localPath;
     if (slotIsApp(this.effectiveSlot())) {
       setString(this.slotKeys().state, '');
@@ -448,6 +512,7 @@ struct ChatBackgroundPage {
     this.localPath = '';
     this.removeQuietly(previous);
     this.afterLocalChange();
+    this.observeCurrentBackground();
   }
 
   // 纯本地改动不会有 TDLib update 推回来，聊天页靠这个代次重算；快照也要作废，
@@ -480,7 +545,7 @@ struct ChatBackgroundPage {
     }
   }
 
-  private async applyToAppSlot(row: GalleryRow): Promise<void> {
+  private async applyToAppSlot(row: GalleryRow, edit: number): Promise<void> {
     try {
       const previous: string = this.localPath;
       const parsed: BackgroundStateResult = backgroundStateOf(row.raw);
@@ -492,17 +557,18 @@ struct ChatBackgroundPage {
         // 图案是 .tgv（gzip 的 SVG），下完要解压；纯色/渐变没有文档，跳过。
         state.path = await inflateTgvIfNeeded(await downloadFileToPath(parsed.fileId));
       }
+      if (!this.editIsCurrent(edit)) { return; }
       setString(this.slotKeys().state, serialiseSnapshot(state));
       this.currentBackground = state;
       this.localPath = '';
       this.removeQuietly(previous);
-      if (!this.active) {
+      if (!this.editIsCurrent(edit)) {
         return;
       }
       this.applyingId = '';
       promptAction.showToast({ message: $r('app.string.cb_local_applied'), duration: 1500 });
     } catch (error) {
-      if (!this.active) {
+      if (!this.editIsCurrent(edit)) {
         return;
       }
       this.applyingId = '';
@@ -526,9 +592,10 @@ struct ChatBackgroundPage {
   }
 
   private applySolid(color: string): void {
-    if (this.applyingId !== '') { return; }
+    if (!this.active || this.applyingId !== '' || this.pickingLocal) { return; }
     const value: number = hexColorToInt(color);
     if (value < 0) { return; }
+    const edit: number = this.beginEdit();
     const state: ChatBackgroundState = solidBackgroundState(color);
     if (slotIsApp(this.effectiveSlot())) {
       const previous: string = this.localPath;
@@ -546,9 +613,12 @@ struct ChatBackgroundPage {
       ? applySolidChatBackground(this.chatId, value)
       : applySolidDefaultBackground(value, this.forDark);
     task.then((): void => {
-      if (!this.active) { return; }
+      if (!this.editIsCurrent(edit)) { return; }
       this.currentBackground = state;
       this.applyingId = '';
+      const fill: TdObject = { '@type': 'backgroundFillSolid', 'color': value };
+      const type: TdObject = { '@type': 'backgroundTypeFill', 'fill': fill };
+      this.observeCurrentBackground({ '@type': 'background', 'type': type });
       promptAction.showToast({
         message: this.chatId !== 0
           ? $r('app.string.cb_chat_set')
@@ -556,8 +626,9 @@ struct ChatBackgroundPage {
         duration: 1600
       });
     }).catch((error: TdError): void => {
-      if (!this.active) { return; }
+      if (!this.editIsCurrent(edit)) { return; }
       this.applyingId = '';
+      this.observeCurrentBackground();
       logE(`ChatBackgroundPage.applySolid failed: ${error.message}`);
       promptAction.showToast({ message: $r('app.string.cb_set_failed'), duration: 2000 });
     });
@@ -571,7 +642,8 @@ struct ChatBackgroundPage {
   }
 
   private reset(): void {
-    if (this.applyingId !== '') { return; }
+    if (!this.active || this.applyingId !== '' || this.pickingLocal) { return; }
+    const edit: number = this.beginEdit();
     this.applyingId = 'reset';
     if (slotIsApp(this.effectiveSlot())) {
       const previous: string = this.localPath;
@@ -580,6 +652,7 @@ struct ChatBackgroundPage {
       this.currentBackground = emptyChatBackground();
       this.removeQuietly(previous);
       this.applyingId = '';
+      this.observeCurrentBackground();
       promptAction.showToast({ message: $r('app.string.cb_reset_done'), duration: 1500 });
       return;
     }
@@ -588,17 +661,19 @@ struct ChatBackgroundPage {
       ? clearChatBackground(this.chatId)
       : resetDefaultBackground(this.forDark);
     task.then((): void => {
-      if (!this.active) { return; }
+      if (!this.editIsCurrent(edit)) { return; }
       this.currentBackground = this.chatId !== 0
         ? defaultChatBackgroundSnapshot(this.forDark)
         : emptyChatBackground();
       this.applyingId = '';
+      this.observeCurrentBackground();
       promptAction.showToast({
         message: this.chatId !== 0 ? $r('app.string.cb_reset_to_global') : $r('app.string.cb_reset_done'), duration: 1500
       });
     }).catch((error: TdError): void => {
-      if (!this.active) { return; }
+      if (!this.editIsCurrent(edit)) { return; }
       this.applyingId = '';
+      this.observeCurrentBackground();
       logE(`ChatBackgroundPage.reset failed: ${error.message}`);
       promptAction.showToast({ message: $r('app.string.cb_reset_failed'), duration: 1800 });
     });

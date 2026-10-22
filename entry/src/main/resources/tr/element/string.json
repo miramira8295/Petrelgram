@@ -10829,6 +10829,10 @@
       "value": "Sık iletişim kurulan kişiler"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "Son"
+    },
+    {
       "name": "gs_recent",
       "value": "Son ziyaretler"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "Geçerli proxy kullanılamadığında kayıtlı bir sonraki proxy'yi dene"
+      "value": "Bağlantı sürekli başarısız olursa kayıtlı proxy’ler ve doğrudan bağlantı arasında otomatik geçiş yap"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "Otomatik değiştirme için en az iki proxy ekleyin"
+      "value": "Otomatik geçiş için en az bir proxy ekleyin"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "Sabitlenmiş mesajları göster"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "Basılı tutma için en yüksek hız"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "Bu sınıra kademeli hızlanmak için videonun sağ tarafını basılı tutun. Bırakınca önceki hıza döner. Akış en fazla 8× hızındadır."
+    },
+    {
+      "name": "vf_minimize",
+      "value": "Mini oynatıcı"
+    },
+    {
+      "name": "vf_resize",
+      "value": "Mini oynatıcıyı yeniden boyutlandır"
+    },
+    {
+      "name": "vf_play",
+      "value": "Oynat"
+    },
+    {
+      "name": "vf_pause",
+      "value": "Duraklat"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "Son sohbetleri temizle"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "Bu hesabın son sohbet listesi temizlensin mi? Sohbetler ve mesajlar silinmez. Sohbetler yeniden açıldığında tekrar görünür."
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "Son sohbetlerden kaldır"
+    },
+    {
+      "name": "gs_objects",
+      "value": "Kullanıcılar / Gruplar / Kanallar"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "Kanal seç"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "Ad veya @kullanıcıadı ara"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "Mesaj içeriği ara"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "Uygulama veya @kullanıcıadı ara"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "Katıldınız"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "Katılmadınız"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "Kanal adı eşleşmesi"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "Grup adı eşleşmesi"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "Görünen ad eşleşmesi"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "Kullanıcı adı eşleşmesi"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "Mesaj içeriği eşleşmesi"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "Dosya adı eşleşmesi"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "Tümü"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "Özel"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "Kullanıcılar"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "Tüm kanallar"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "Herkese açık sonuçlar"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "Mevcut sohbetler"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "Uygulama sonuçları"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "Daha fazla sonuç için aramayı daraltın veya tam @kullanıcıadı girin. Herkese açık ad aramasında sayfalama yoktur."
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "Katılmadığınız herkese açık grup ve kanallar dahil ad ve kullanıcı adı arayın."
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "Arşivlenmiş sohbetler dahil mesaj içeriklerini arayın."
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "Yalnızca “%s” içindeki mesaj içeriklerini ara."
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "İndirme görevlerini ve indirilen dosyaları ada göre bulun."
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "Videoları otomatik önceden yükle"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "Sohbet videolarını önceden arabelleğe alır. Kapatmak oynatmayı veya elle indirmeyi etkilemez."
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "Sabitlenmiş mesajları varsayılan olarak gizle"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "Her sohbetin menüsünden ayrı ayrı gösterin veya gizleyin"
     }
   ]
 }

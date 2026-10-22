@@ -74,19 +74,17 @@ export function mediaThumbWidth(screenW: number,
   return deviceType === 'phone' ? available : Math.min(MEDIA_MAX_WIDTH, available);
 }
 
-// 照片的极端比例靠 Cover 裁切消化，所以夹得比较紧，免得气泡窄成一条。
-// 视频不能裁——播放器只会在框里留黑边——所以夹得宽一些，尽量按真实比例走。
-// 尺寸未知时照片按正方形、视频按 16:9，免得尺寸到货后占位跳一下。
-const PHOTO_RATIO_MIN: number = 0.56;
-const PHOTO_RATIO_MAX: number = 2.1;
+// 照片使用消息中已有的 TDLib photoSize 比例，不依赖异步解码回调改变布局。
+// 无有效元数据时保留正方形占位；视频维持现有的比例夹取与裁切策略。
 const VIDEO_RATIO_MIN: number = 0.4;
 const VIDEO_RATIO_MAX: number = 2.4;
 
 export function mediaRatio(photoW: number, photoH: number, isVideo: boolean): number {
-  if (photoW > 0 && photoH > 0) {
-    const lo: number = isVideo ? VIDEO_RATIO_MIN : PHOTO_RATIO_MIN;
-    const hi: number = isVideo ? VIDEO_RATIO_MAX : PHOTO_RATIO_MAX;
-    return Math.max(lo, Math.min(hi, photoW / photoH));
+  if (Number.isFinite(photoW) && Number.isFinite(photoH) && photoW > 0 && photoH > 0) {
+    const ratio: number = photoW / photoH;
+    if (Number.isFinite(ratio) && ratio > 0) {
+      return isVideo ? Math.max(VIDEO_RATIO_MIN, Math.min(VIDEO_RATIO_MAX, ratio)) : ratio;
+    }
   }
   return isVideo ? 16 / 9 : 1;
 }
@@ -99,19 +97,9 @@ export function mediaBoxFor(
   const maxW = mediaThumbWidth(screenW, avatarGutter, deviceType);
   const maxH = maxW * MEDIA_MAX_HEIGHT_RATIO;
   const ratio = mediaRatio(photoW, photoH, isVideo);
-  // **宽度钉死在气泡宽度，横竖、照片视频一视同仁。** 多出来的高度交给
-  // ImageFit.Cover 裁掉——官方客户端也是这么做的，点开就是完整画面。
-  //
-  // 【视频为什么也这样了】原来视频是例外：高度顶到上限时把宽度按比例收回来，
-  // 理由是"播放器不会裁画面，框比视频扁就左右留黑边"。后果是一条 9:19.5 的
-  // 竖视频只有 153vp 宽，而同一条消息的气泡被长配文撑到 277vp，媒体缩在气泡
-  // 左边一小块（用户 2026-09-09 截图："媒体应该和气泡一样宽吧"）。
-  //
-  // 既然选了裁，就得**从头裁到尾**：内嵌播放位的渲染面同步改成 Cover
-  // （StreamingVideoPlayer.surfaceWidth/Height，只在 embedded 下），否则静态
-  // 缩略图是裁的、一点播放变回留黑边，尺寸当场跳一下——那正是上一版注释
-  // 要避开的东西，只是解法从"收窄框"换成了"播放也裁"。
-  // 全屏播放器不受影响：那一侧永远按真实比例留黑边，不裁。
-  // 宽度一律钉死气泡宽度，横竖、图片视频一视同仁；超出的高度交给 Cover 裁掉。
-  return { width: maxW, height: Math.min(maxW / ratio, maxH) };
+  // 照片同时适配宽高上限：高度触顶时宽度必须按同一比例缩小。
+  // 横图、竖图及极端长图都完整展示；最大尺寸仍沿用聊天列的既有约束。
+  // 视频的内嵌播放渲染面依赖原来的满宽裁切，保持该分支的几何不变。
+  const height: number = Math.min(maxW / ratio, maxH);
+  return { width: isVideo ? maxW : Math.min(maxW, height * ratio), height };
 }

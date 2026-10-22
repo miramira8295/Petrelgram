@@ -10829,6 +10829,10 @@
       "value": "Frequent contacts"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "Recent"
+    },
+    {
       "name": "gs_recent",
       "value": "Recent"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "Try the next saved proxy when the current one remains unavailable"
+      "value": "Automatically cycle through saved proxies and a direct connection when connection attempts keep failing"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "Add at least two proxies to enable automatic switching"
+      "value": "Add at least one proxy to enable automatic switching"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "Show pinned messages"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "Maximum hold speed"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "Hold the right side of a video to gradually reach this limit. Release to restore the original speed. Streaming is capped at 8×."
+    },
+    {
+      "name": "vf_minimize",
+      "value": "Mini player"
+    },
+    {
+      "name": "vf_resize",
+      "value": "Resize mini player"
+    },
+    {
+      "name": "vf_play",
+      "value": "Play"
+    },
+    {
+      "name": "vf_pause",
+      "value": "Pause"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "Clear recent chats"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "Clear recent chats for this account? Chats and messages stay intact. Chats will appear again when you reopen them."
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "Remove from recent chats"
+    },
+    {
+      "name": "gs_objects",
+      "value": "Users / Groups / Channels"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "Choose a channel"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "Search names or @usernames"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "Search message content"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "Search app names or @usernames"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "Joined"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "Not joined"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "Channel name match"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "Group name match"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "Display name match"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "Username match"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "Message content match"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "File name match"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "All"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "Private chats"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "Users"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "All channels"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "Public search results"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "Existing chats"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "App search results"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "Refine your query or enter an exact @username for more results. Public name search has no pagination."
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "Search names and usernames, including public groups and channels you have not joined."
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "Search message content, including archived chats."
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "Search message content only in “%s”."
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "Find download tasks and downloaded files by name."
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "Automatically preload videos"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "Buffer chat videos in advance. Turning this off does not affect playback or manual downloads."
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "Hide pinned messages by default"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "Show or hide them separately in each chat menu"
     }
   ]
 }

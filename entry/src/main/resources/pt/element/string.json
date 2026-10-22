@@ -10829,6 +10829,10 @@
       "value": "Contatos frequentes"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "Recentes"
+    },
+    {
       "name": "gs_recent",
       "value": "Visitados recentemente"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "Tentar o próximo proxy salvo se o atual continuar indisponível"
+      "value": "Se a conexão continuar falhando, alternar automaticamente entre os proxies salvos e a conexão direta"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "Adicione pelo menos dois proxies para ativar a troca automática"
+      "value": "Adicione pelo menos um proxy para ativar a troca automática"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "Mostrar mensagens fixadas"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "Velocidade máxima ao manter pressionado"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "Mantenha o lado direito do vídeo pressionado para acelerar até este limite. Solte para voltar à velocidade original. Streaming limitado a 8×."
+    },
+    {
+      "name": "vf_minimize",
+      "value": "Miniplayer"
+    },
+    {
+      "name": "vf_resize",
+      "value": "Redimensionar miniplayer"
+    },
+    {
+      "name": "vf_play",
+      "value": "Reproduzir"
+    },
+    {
+      "name": "vf_pause",
+      "value": "Pausar"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "Limpar conversas recentes"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "Limpar as conversas recentes desta conta? As conversas e mensagens serão mantidas. As conversas voltarão a aparecer quando forem reabertas."
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "Remover das conversas recentes"
+    },
+    {
+      "name": "gs_objects",
+      "value": "Usuários / Grupos / Canais"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "Escolher um canal"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "Buscar nome ou @usuário"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "Buscar conteúdo de mensagens"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "Buscar aplicativo ou @usuário"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "Membro"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "Não é membro"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "Nome do canal corresponde"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "Nome do grupo corresponde"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "Nome de exibição corresponde"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "Nome de usuário corresponde"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "Conteúdo corresponde"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "Nome do arquivo corresponde"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "Todos"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "Privados"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "Usuários"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "Todos os canais"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "Resultados públicos"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "Conversas existentes"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "Aplicativos encontrados"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "Refine a busca ou digite um @usuário exato. A busca pública por nomes não permite paginação."
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "Busque nomes e usuários, incluindo grupos e canais públicos dos quais não participa."
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "Busque conteúdo de mensagens, incluindo conversas arquivadas."
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "Buscar conteúdo de mensagens apenas em “%s”."
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "Busque tarefas de download e arquivos baixados pelo nome."
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "Pré-carregar vídeos automaticamente"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "Armazena vídeos do chat em buffer antecipadamente. Desativar não afeta a reprodução nem os downloads manuais."
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "Ocultar mensagens fixadas por padrão"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "Mostre ou oculte pelo menu de cada conversa"
     }
   ]
 }

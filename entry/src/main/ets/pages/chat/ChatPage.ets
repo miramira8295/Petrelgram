@@ -1,3 +1,5 @@
+import { subscribeVideoPreload } from '../../util/videoPreloadSetting';
+import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { ChatDropReceiver } from './ChatDropReceiver';
 import { CHAT_DROP_TYPES } from '../../services/DropData';
 import { EmojiDrawerState } from './EmojiDrawerState';
@@ -20,7 +22,7 @@ import {
 import { primeFavoriteStickers } from '../../store/FavoriteStickers';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { PROFILE_TAB_MEDIA } from '../../store/ChatProfileStore';
-import { RowLeaveChannel } from '../../util/rowLeaveChannel';
+import { RowLeaveChannel, wholeDeleteRowIds } from '../../util/rowLeaveChannel';
 import { saveableEntries, SaveablePlan } from '../../util/selectionSave';
 import { ActionBarContext, dismissActionBar, handleActionBar } from './ChatActionBarActions';
 import { ReportTarget, runReportFlow } from '../../util/reportFlow';
@@ -447,7 +449,6 @@ type InitialMessageReleaseResult = 'released' | 'waiting' | 'finished';
 // chevron). Ordered roughly like the official client's reaction sheet.
 // 删除时那几行淡出的时长（issue #149）。比 publishGroupsNow 里塌陷动画的 200ms
 // 略短，好让"先淡出、后收拢"读起来是一个连续动作。
-const ROW_LEAVE_FADE_MS: number = 160;
 
 @ComponentV2
 export struct ChatPage {
@@ -1608,6 +1609,7 @@ export struct ChatPage {
         onForwardMessages: (messageIds: number[]): void => { this.openForwardPicker(messageIds); },
         onSaveMessages: (messageIds: number[]): void => { this.saveToSavedMessages(messageIds); },
         onRepeatMessages: (messageIds: number[]): void => { this.repeatMessages(messageIds); },
+        onSendDice: (emoji: string): void => { this.attach.sendDiceEmoji(emoji); },
         onViewSenderHistory: (senderId: number): void => { this.search.enterForSender(senderId); },
         onReportMsg: (messageId: number): void => {
           // 与会话页共用 util/reportFlow；UI 三件套见 pages/common/ReportPrompts。
@@ -2902,7 +2904,7 @@ export struct ChatPage {
     this.messageDelete.bind({
       ui: (): UIContext => this.getUIContext(), client: (): TdClient => getTdClient(),
       chatId: (): number => this.chatId, selfId: (): number => getActiveTdUserId(),
-      markLeaving: (ids: number[]): void => { this.markRowsLeaving(ids); },
+      markLeaving: (ids: number[]): Promise<void> => this.markRowsLeaving(ids),
       clearLeaving: (): void => { this.rowLeave.clear(); },
       onDeleted: (): void => { this.selection.exit(); }
     });
@@ -3244,6 +3246,7 @@ export struct ChatPage {
         (this.store?.isVideoFileClaimed(fileId) ?? true) ||
         this.messages.some((e: MessageEntry): boolean =>
           e.id === this.viewerMsgId && entryOwnsVideoFile(e, fileId)),
+      subscribeEnabled: subscribeVideoPreload,
       network: (): string => AppStorage.get<string>(KEY_CURRENT_NETWORK_TYPE) ?? 'other',
       powerSaving: (): boolean => powerSavingActive()
     });
@@ -7354,22 +7357,10 @@ export struct ChatPage {
       .catch((e: Object): void => { logE(`ChatPage.openDeleteConfirm failed: ${e}`); });
   }
 
-  // 消息 id → 行 id（相册整组共用一个 rowId）；标记包在 animateTo 里，透明度滑过去。
-  private markRowsLeaving(ids: number[]): void {
-    const rowIds: number[] = [];
-    for (const id of ids) {
-      const m: MessageEntry | null = this.findMsg(id);
-      if (m !== null && rowIds.indexOf(m.rowId) < 0) {
-        rowIds.push(m.rowId);
-      }
-    }
-    if (rowIds.length === 0) {
-      return;
-    }
-    animateTo({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, ROW_LEAVE_FADE_MS),
-      curve: Curve.EaseOut
-    }, (): void => { this.rowLeave.mark(rowIds); });
+  // 消息 id → 行 id（相册整组共用一个 rowId），退场和完成等待交给独立通道。
+  private markRowsLeaving(ids: number[]): Promise<void> {
+    const rowIds = wholeDeleteRowIds(this.groups, ids);
+    return this.rowLeave.play(rowIds, powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 550) > 0);
   }
 
   private copyMessageText(messageId: number): void {
@@ -8149,6 +8140,8 @@ export struct ChatPage {
         recording: this.recording,
         showEmojiPanel: this.showEmojiPanel,
         composerEditorReady: this.composerEditorReady,
+        editorFocused: this.composerFocused,
+        keyboardVisible: this.keyboardH > 0,
         draft: this.draft,
         composerPlaceholder: this.composerPlaceholder(),
         composerController: this.composerController,
@@ -9320,7 +9313,7 @@ export struct ChatPage {
       if (typeof size.height === 'number') { this.emojiDrawer.measureViewport(size.height); }
     })
     .allowDrop(CHAT_DROP_TYPES)
-    .onDrop((event: DragEvent): void => {
+    .onDrop((event: DragEvent, extraParams?: string): void => {
       const store = this.store;
       if (store === null) { event.setResult(DragResult.DRAG_FAILED); return; }
       const client = getTdClient();
@@ -9330,7 +9323,7 @@ export struct ChatPage {
         (): boolean => this.store === store && getTdClient() === client && this.chatId === chatId && this.threadRootId === threadId &&
           this.pageVisible && this.appIsForeground && !this.viewerOpen() && !this.search.mode && !this.selection.active &&
           this.composer.editingId === 0 && !this.recording.isRecording && this.membershipState === 'writable',
-        this.header.titleTextOf());
+        this.header.titleTextOf(), chatId, extraParams);
     })
     // 贴纸合集面板挂在页面根 Stack 上：这个节点还没有别的 bindSheet（骰子那张
     // 挂 dock），同一节点上串两个只有最后一个生效。
@@ -9388,7 +9381,7 @@ export struct ChatPage {
     .onShown((): void => { this.handleShown(); })
     .onWillHide((): void => { this.handleWillHide(); })
     .onHidden((): void => { this.handleHidden(); })
-    .onBackPressed((): boolean => { return this.handleBackPressed(); })
+    .onBackPressed((): boolean => { return collapseFloatingVideo() || this.handleBackPressed(); })
     .width('100%').height('100%');
   }
 }

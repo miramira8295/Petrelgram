@@ -1,5 +1,6 @@
+import { executeChatListDelete } from '../services/ChatListDeletion';
 import { promptAction, UIContext } from '@kit.ArkUI';
-import { getChatStore, getFolderStore, getTdClient } from '../tdkit/Globals';
+import { getActiveTdUserId, getChatStore, getFolderStore, getTdClient } from '../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { chatListOf } from './ListKey';
 import { serializeFolderMutation } from './FolderApi';
@@ -261,16 +262,20 @@ export function blockPrivateChatSender(chatId: number): Promise<void> {
 // revoke 固定为 false 是安全的：这个入口只对 private 开放（见 blockPrivateChatSender
 // 的注释），而 TDLib 对 User 类型的会话恒有 can_be_deleted_only_for_self=true
 // （MessagesManager::can_delete_dialog 的 DialogType::User 分支返回 {true, …}）。
-export function blockAndDeleteChat(chatId: number): void {
-  withChat(chatId, 'blockAndDelete', (): Promise<TdObject> => {
-    return blockPrivateChatSender(chatId).then((): Promise<TdObject> => {
-      const req: TdRequest = { '@type': 'deleteChatHistory' };
-      req['chat_id'] = chatId;
-      req['remove_from_chat_list'] = true;
-      req['revoke'] = false;
-      return getTdClient().send(req);
-    });
-  });
+export function blockAndDeleteChat(chatId: number): Promise<boolean> {
+  return deleteChatFromList(chatId, false, true);
+}
+
+async function deleteChatFromList(chatId: number, revoke: boolean, block: boolean): Promise<boolean> {
+  const client = getTdClient();
+  const selfId = getActiveTdUserId();
+  const active = (): boolean => getTdClient() === client && getActiveTdUserId() === selfId;
+  try {
+    return await executeChatListDelete(client, chatId, revoke, block, active);
+  } catch (e) {
+    if (active()) { fail(block ? 'blockAndDelete' : 'deleteChat', e as TdError); }
+    return false;
+  }
 }
 
 // 退出群组/频道，并让它从所有会话列表里消失。
@@ -314,18 +319,13 @@ export async function leaveChatFully(chatId: number): Promise<void> {
 export function leaveOrDeleteChat(
   chatId: number, kind: ChatKind,
   canDeleteOnlyForSelf: boolean, canDeleteForAllUsers: boolean
-): void {
+): Promise<boolean> {
   if (kind === 'basicGroup' || kind === 'supergroup' || kind === 'channel') {
-    leaveChatFully(chatId).catch((e: TdError): void => { fail('leaveChat', e); });
-    return;
+    return leaveChatFully(chatId).then((): boolean => true).catch((e: TdError): boolean => {
+      fail('leaveChat', e); return false;
+    });
   }
-  withChat(chatId, 'deleteChat', (): Promise<TdObject> => {
-    const req: TdRequest = { '@type': 'deleteChatHistory' };
-    req['chat_id'] = chatId;
-    req['remove_from_chat_list'] = true;
-    req['revoke'] = deleteChatRevoke(canDeleteOnlyForSelf, canDeleteForAllUsers);
-    return getTdClient().send(req);
-  });
+  return deleteChatFromList(chatId, deleteChatRevoke(canDeleteOnlyForSelf, canDeleteForAllUsers), false);
 }
 
 // Menu label for the destructive last item, by chat kind.

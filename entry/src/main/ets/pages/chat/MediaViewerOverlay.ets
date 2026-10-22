@@ -1,3 +1,5 @@
+import { floatingVideoWindow, FloatingVideoSource } from './VideoFloatingWindow';
+import { closeFloatingVideo, VideoPlaybackControls } from '../../util/floatingVideoRuntime';
 import { common } from '@kit.AbilityKit';
 import { batteryInfo } from '@kit.BasicServicesKit';
 import { viewerSystemBarsOwner } from '../../util/systemBarsHidden';
@@ -197,6 +199,7 @@ export struct MediaViewerOverlay {
   // Captured once in aboutToAppear: which message initStartPositionMs belongs
   // to, since viewerMsgId itself moves as the user swipes.
   private initialViewerMsgId: number = 0;
+  private playbackControls: VideoPlaybackControls | null = null;
 
   @Local pageIdx: number = 0;
   // 横屏状态页面也要看得见：它的 onBackPress 得先认出"现在是横屏"、先退横屏
@@ -268,6 +271,7 @@ export struct MediaViewerOverlay {
   }
 
   aboutToAppear(): void {
+    closeFloatingVideo();
     this.underlaySession = this.underlay?.mount() ?? 0;
     const session: number = this.underlaySession;
     this.underlayEntranceFinished = (transitionIn: boolean): void => {
@@ -366,6 +370,22 @@ export struct MediaViewerOverlay {
     .backgroundColor($r('app.color.surface_alt'))
     .opacity(0.76)
     .scale({ x: 0.985, y: 0.96 })
+  }
+
+  private minimizeVideo(): void {
+    const controls = this.playbackControls;
+    if (controls === null || this.isLiveNow() || !this.isVideo()) { return; }
+    const source: FloatingVideoSource = {
+      fileId: this.playingFileId(), fileSize: this.playingFileSize(),
+      mimeType: this.videoMimeType(), videoWidth: this.playingWidth(), videoHeight: this.playingHeight(),
+      localPath: this.playingLocalPath(), posterPath: this.siblingPath(this.viewerMsgId), title: this.infoTitle()
+    };
+    if (!floatingVideoWindow.show(this.getUIContext(), source, controls)) {
+      this.getUIContext().getPromptAction().showToast({ message: str('player_preparing') });
+      return;
+    }
+    this.setVideoLandscape(false);
+    this.onRequestClose();
   }
 
   private setVideoLandscape(landscape: boolean): void {
@@ -1414,68 +1434,79 @@ export struct MediaViewerOverlay {
       LazyForEach(this.filmSource, (vm: FilmCellVM) => {
         Stack() {
           if (this.siblingIsVideo(vm.id)) {
-            // 本地文件在就挂播放器，不能只认 fileId：下载中心磁盘扫出来的视频
-            // fileId 恒为 0（TDLib 没有「路径 → fileId」的接口），而两个引擎的取源
-            // 顺序都是 localPath 优先（AvVideoPlayer / StreamingVideoPlayer）。
-            // 只认 fileId 的后果是这一页只画海报、播不了（用户 2026-09-16）。
-            if (vm.id === this.viewerMsgId &&
-              (this.videoFileId() !== 0 || this.videoLocalPath() !== '')) {
-              // 按播放档的文件建：换清晰度 = 换 key = 整个播放器重建（StreamingVideoPlayer
-              // 不监听 fileId 变化），起播位见 startPositionMs 里的切档那一支。
-              ForEach([this.playingFileId()], (playingId: number) => {
-              VideoPlayerHost({
-                fileId: playingId,
-                fileSize: this.playingFileSize(),
-                mimeType: this.videoMimeType(),
-                videoWidth: this.playingWidth(),
-                videoHeight: this.playingHeight(),
-                localPath: this.playingLocalPath(),
-                posterPath: this.siblingPath(vm.id),
-                // 实况走自己的胶囊，标准控制栏（进度条/倍速）让位。
-                showControls: this.chromeVisible && !this.isLiveEntry(vm.id),
-                liveMode: this.isLiveEntry(vm.id),
-                liveToggleSeq: this.liveToggleSeq,
-                onPlayStateChanged: (playing: boolean): void => { this.livePlaying = playing; },
-                landscape: this.videoLandscape,
-                // 全屏就该有声音，不受气泡自动播放静音开关影响。
-                muted: false,
-                // 实况恒从 0 起。续播位是给普通视频的——从一条播到一半的实况
-                // 气泡点进来，停在中途那一帧当「静态照片」是不对的。
-                startPositionMs: (vm.id === this.qualityResumeMsgId && !this.isLiveEntry(vm.id))
-                  ? this.qualityResumeMs
-                  : ((vm.id === this.initialViewerMsgId && !this.isLiveEntry(vm.id))
-                    ? this.initStartPositionMs : 0),
-                onPositionChanged: (positionMs: number): void => {
-                  this.lastVideoPositionMs = positionMs;
-                  this.speedTick = (this.speedTick + 1) & 0x7fffffff;
-                  this.onPositionChanged(positionMs);
-                },
-                onStatsSource: (source: (() => VideoStatsSnapshot) | null): void => {
-                  this.statsSource = source;
-                },
-                onDecoderKnown: (hardware: boolean): void => {
-                  this.decoderKey = this.playingKey();
-                  this.decoderHardware = hardware;
-                },
-                onBackgroundTap: () => { this.toggleChrome(); },
-                onSwipeNext: () => { this.switchViewer(1); },
-                onSwipePrev: () => { this.switchViewer(-1); },
-                onOrientationChange: (landscape: boolean) => {
-                  this.setVideoLandscape(landscape);
-                }
-              });
-              }, (playingId: number): string => `${playingId}`);
-            } else {
+            Stack() {
+              // 原生 Surface 退场/释放时保留海报底图，几何转场仍有可绘制内容。
               if (this.siblingPath(vm.id) !== '') {
                 Image(this.siblingPath(vm.id).startsWith('/')
                   ? `file://${this.siblingPath(vm.id)}` : this.siblingPath(vm.id)).draggable(false)
                   .objectFit(ImageFit.Contain).width('100%').height('100%');
               }
-              Stack() {
-                Circle({ width: 56, height: 56 }).fill('#00000066');
-                Text('▶').fontSize(24).fontColor(Color.White);
-              }.width(56).height(56);
+              // 本地文件在就挂播放器，不能只认 fileId：下载中心磁盘扫出来的视频
+              // fileId 恒为 0（TDLib 没有「路径 → fileId」的接口），而两个引擎的取源
+              // 顺序都是 localPath 优先（AvVideoPlayer / StreamingVideoPlayer）。
+              // 只认 fileId 的后果是这一页只画海报、播不了（用户 2026-09-16）。
+              if (vm.id === this.viewerMsgId &&
+                (this.videoFileId() !== 0 || this.videoLocalPath() !== '')) {
+                // 按播放档的文件建：换清晰度 = 换 key = 整个播放器重建（StreamingVideoPlayer
+                // 不监听 fileId 变化），起播位见 startPositionMs 里的切档那一支。
+                ForEach([this.playingFileId()], (playingId: number) => {
+                VideoPlayerHost({
+                  fileId: playingId,
+                  onPlaybackControls: (controls: VideoPlaybackControls | null): void => {
+                    this.playbackControls = controls;
+                  },
+                  fileSize: this.playingFileSize(),
+                  mimeType: this.videoMimeType(),
+                  videoWidth: this.playingWidth(),
+                  videoHeight: this.playingHeight(),
+                  localPath: this.playingLocalPath(),
+                  posterPath: this.siblingPath(vm.id),
+                  // 实况走自己的胶囊，标准控制栏（进度条/倍速）让位。
+                  showControls: this.chromeVisible && !this.isLiveEntry(vm.id),
+                  liveMode: this.isLiveEntry(vm.id),
+                  liveToggleSeq: this.liveToggleSeq,
+                  onPlayStateChanged: (playing: boolean): void => { this.livePlaying = playing; },
+                  landscape: this.videoLandscape,
+                  // 全屏就该有声音，不受气泡自动播放静音开关影响。
+                  muted: false,
+                  // 实况恒从 0 起。续播位是给普通视频的——从一条播到一半的实况
+                  // 气泡点进来，停在中途那一帧当「静态照片」是不对的。
+                  startPositionMs: (vm.id === this.qualityResumeMsgId && !this.isLiveEntry(vm.id))
+                    ? this.qualityResumeMs
+                    : ((vm.id === this.initialViewerMsgId && !this.isLiveEntry(vm.id))
+                      ? this.initStartPositionMs : 0),
+                  onPositionChanged: (positionMs: number): void => {
+                    this.lastVideoPositionMs = positionMs;
+                    this.speedTick = (this.speedTick + 1) & 0x7fffffff;
+                    this.onPositionChanged(positionMs);
+                  },
+                  onStatsSource: (source: (() => VideoStatsSnapshot) | null): void => {
+                    this.statsSource = source;
+                  },
+                  onDecoderKnown: (hardware: boolean): void => {
+                    this.decoderKey = this.playingKey();
+                    this.decoderHardware = hardware;
+                  },
+                  onBackgroundTap: () => { this.toggleChrome(); },
+                  onSwipeNext: () => { this.switchViewer(1); },
+                  onSwipePrev: () => { this.switchViewer(-1); },
+                  onOrientationChange: (landscape: boolean) => {
+                    this.setVideoLandscape(landscape);
+                  }
+                });
+                }, (playingId: number): string => `${playingId}`);
+              } else {
+                Stack() {
+                  Circle({ width: 56, height: 56 }).fill('#00000066');
+                  Text('▶').fontSize(24).fontColor(Color.White);
+                }.width(56).height(56);
+              }
             }
+            .width('100%').height('100%')
+            .clip(true)
+            // 和图片一样，每页固定绑定自己的消息；翻页后退出也回到对应缩略图。
+            // 绑定外层容器，播放器的旋转和 Surface 尺寸仍由内部独立管理。
+            .geometryTransition(`media_${this.chatId}_${vm.id}`);
           } else {
             // Gestures live on this UNSCALED wrapper, not on the Image: a
             // scaled component reports gesture coordinates/offsets in its own
@@ -1843,7 +1874,8 @@ export struct MediaViewerOverlay {
             quality: this.videoQuality,
             playing: this.playingVariant(),
             onPickQuality: (quality: number): void => { this.onPickQuality(quality); },
-            onShowStats: (): void => { this.statsOpen = true; }
+            onShowStats: (): void => { this.statsOpen = true; },
+            onMinimize: (): void => { this.minimizeVideo(); }
           });
         }
         if (this.videoLandscape) {

@@ -1,3 +1,4 @@
+import { messageDragOriginTag, isSameChatMessageDrag, isSameChatMessageDragExtra } from '../main/ets/util/messageDragOrigin';
 import { describe, expect, it } from '@ohos/hypium';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 import { completedDragFilePath, messageDragPayload, messageDragType } from '../main/ets/util/messageDrag';
@@ -5,6 +6,36 @@ import { completedDragFilePath, messageDragPayload, messageDragType } from '../m
 function td(json: string): TdObject { return JSON.parse(json) as TdObject; }
 export default function messageDragTest() {
   describe('MessageDrag', (): void => {
+    it('same_account_same_chat_drag_is_ignored', 0, (): void => {
+      expect(isSameChatMessageDrag(messageDragOriginTag('account-a', -100), 'account-a', -100)).assertTrue();
+    });
+    it('cross_chat_drag_is_retained', 0, (): void => {
+      expect(isSameChatMessageDrag(messageDragOriginTag('account-a', -100), 'account-a', -200)).assertFalse();
+    });
+    it('same_chat_id_in_another_account_is_not_self_drop', 0, (): void => {
+      expect(isSameChatMessageDrag(messageDragOriginTag('account-a', -100), 'account-b', -100)).assertFalse();
+    });
+    it('external_and_malformed_tags_are_not_filtered', 0, (): void => {
+      for (const tag of ['', 'external', 'petrelgram-message-drag-v1:{',
+        'petrelgram-message-drag-v1:null', 'petrelgram-message-drag-v1:{}',
+        'petrelgram-message-drag-v1:{"account":"account-a","chatId":"-100"}']) {
+        expect(isSameChatMessageDrag(tag, 'account-a', -100)).assertFalse();
+      }
+    });
+    it('unknown_account_or_chat_never_marks_a_self_drop', 0, (): void => {
+      expect(messageDragOriginTag('', -100)).assertEqual('');
+      expect(messageDragOriginTag('account-a', 0)).assertEqual('');
+      expect(messageDragOriginTag('account-a', NaN)).assertEqual('');
+      expect(isSameChatMessageDrag('', '', 0)).assertFalse();
+    });
+    it('arkui_extra_info_filters_self_drop_but_preserves_external_and_cross_chat', 0, (): void => {
+      const extra = JSON.stringify({ extraInfo: messageDragOriginTag('account-a', -100) });
+      expect(isSameChatMessageDragExtra(extra, 'account-a', -100)).assertTrue();
+      expect(isSameChatMessageDragExtra(extra, 'account-a', -200)).assertFalse();
+      for (const invalid of [undefined, '', '{}', '{', 'null', '{"extraInfo":123}']) {
+        expect(isSameChatMessageDragExtra(invalid, 'account-a', -100)).assertFalse();
+      }
+    });
     const permissions = td('{"can_be_forwarded":true,"can_be_saved":true}');
     const text = td('{"content":{"@type":"messageText","text":{"text":"hello https://example.com"}}}');
     it('text_preserves_original_text_and_link', 0, (): void => {

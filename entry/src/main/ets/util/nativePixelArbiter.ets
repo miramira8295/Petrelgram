@@ -34,10 +34,11 @@ export const ALPHA_FLOOR_BYTES: number = 12 * 1024 * 1024;
 // （48 张 × 约 100KB ≈ 4.8MB）——内容缓存实际只剩 48MiB 上下，而它本该有 68。
 // 同一天给 AvatarView 补上 pinBounded 之后这块还会再涨，不单开就是越挤越死。
 //
-// 12MiB 的来历：壁纸改按 RGB_565 解码后约 7.4MB（见 ChatBackdrop 的 opaque），
-// 加上头像钉的 4.8MB，正好压在这条线下。**超出的部分不再享受豁免**——
+// 20MiB：壁纸恢复完整色深以消除 RGB_565 色带，1316x2832 约 14.9MB，
+// 加上头像钉约 4.8MB。总预算不变，相应缩减可淘汰图片额度。
+// **超出的部分不再享受豁免**——
 // 钉住的东西无限增长时，多出来的照样从可淘汰预算里扣，不会把真实内存顶穿。
-export const PINNED_ALLOWANCE_BYTES: number = 12 * 1024 * 1024;
+export const PINNED_ALLOWANCE_BYTES: number = 20 * 1024 * 1024;
 
 // 图片**可淘汰**部分的天花板。总量 = 它 + 钉住的份额，仍然压在
 // NATIVE_PIXEL_CACHE_MAX_BYTES − 贴纸地板 之内，所以这次改动**不抬高真实内存**，

@@ -19,6 +19,19 @@ function filePayload(): SharedPayload {
 }
 export default function dropArrivalTest() {
   describe('DropArrival', (): void => {
+    it('ignored_source_does_not_check_permissions_modify_draft_or_open_preview', 0, async (): Promise<void> => {
+      const host = new DropHost(); host.denied = true;
+      const session = new DropArrivalSession();
+      expect(await session.receive(async (): Promise<SharedPayload | null> => null, host)).assertFalse();
+      expect(host.text).assertEqual('draft');
+      expect(host.previews.length).assertEqual(0);
+    });
+    it('ignored_source_releases_session_for_the_next_external_drop', 0, async (): Promise<void> => {
+      const host = new DropHost(); const session = new DropArrivalSession();
+      await session.receive(async (): Promise<SharedPayload | null> => null, host);
+      expect(await session.receive(async (): Promise<SharedPayload> => filePayload(), host)).assertTrue();
+      expect(host.previews.length).assertEqual(1);
+    });
     it('text_appends_without_sending', 0, async (): Promise<void> => {
       const host = new DropHost(); const session = new DropArrivalSession();
       expect(await session.receive(async (): Promise<SharedPayload> => textPayload(), host)).assertTrue();

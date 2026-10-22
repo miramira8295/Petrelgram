@@ -10829,6 +10829,10 @@
       "value": "Contatti frequenti"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "Recenti"
+    },
+    {
       "name": "gs_recent",
       "value": "Visite recenti"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "Prova il proxy salvato successivo se quello attuale resta non disponibile"
+      "value": "Se la connessione continua a fallire, alterna automaticamente i proxy salvati e la connessione diretta"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "Aggiungi almeno due proxy per attivare il cambio automatico"
+      "value": "Aggiungi almeno un proxy per attivare il cambio automatico"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "Mostra messaggi fissati"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "Velocità massima con pressione prolungata"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "Tieni premuto il lato destro del video per accelerare gradualmente fino al limite. Rilascia per ripristinare la velocità originale. Streaming limitato a 8×."
+    },
+    {
+      "name": "vf_minimize",
+      "value": "Mini lettore"
+    },
+    {
+      "name": "vf_resize",
+      "value": "Ridimensiona il mini lettore"
+    },
+    {
+      "name": "vf_play",
+      "value": "Riproduci"
+    },
+    {
+      "name": "vf_pause",
+      "value": "Pausa"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "Cancella chat recenti"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "Cancellare le chat recenti di questo account? Chat e messaggi non verranno eliminati. Le chat riappariranno quando le riaprirai."
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "Rimuovi dalle chat recenti"
+    },
+    {
+      "name": "gs_objects",
+      "value": "Utenti / Gruppi / Canali"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "Scegli un canale"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "Cerca nome o @username"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "Cerca nel contenuto dei messaggi"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "Cerca app o @username"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "Iscritto"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "Non iscritto"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "Nome del canale corrispondente"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "Nome del gruppo corrispondente"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "Nome visualizzato corrispondente"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "Username corrispondente"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "Contenuto corrispondente"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "Nome del file corrispondente"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "Tutti"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "Privati"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "Utenti"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "Tutti i canali"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "Risultati pubblici"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "Chat esistenti"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "App trovate"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "Affina la ricerca o inserisci un @username esatto. La ricerca pubblica per nome non supporta la paginazione."
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "Cerca nomi e username, anche in gruppi e canali pubblici a cui non partecipi."
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "Cerca nel contenuto dei messaggi, incluse le chat archiviate."
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "Cerca nei messaggi solo in «%s»."
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "Cerca download e file scaricati per nome."
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "Precarica automaticamente i video"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "Memorizza in anticipo i video della chat nel buffer. Disattivarlo non influisce sulla riproduzione o sui download manuali."
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "Nascondi i messaggi fissati per impostazione predefinita"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "Mostrali o nascondili dal menu di ogni chat"
     }
   ]
 }

@@ -10829,6 +10829,10 @@
       "value": "常用联系人"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "最近"
+    },
+    {
       "name": "gs_recent",
       "value": "最近访问"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "当前代理持续无法连接时，自动尝试列表中的下一个代理"
+      "value": "连接持续失败时，在已保存的代理和直连之间自动轮换"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "至少添加两个代理后才能自动切换"
+      "value": "至少添加一个代理后才能自动切换"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "显示置顶"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "长按最高倍速"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "长按视频右侧逐级加速至此上限，松手恢复原速。边下边播最高 8×。"
+    },
+    {
+      "name": "vf_minimize",
+      "value": "小窗"
+    },
+    {
+      "name": "vf_resize",
+      "value": "调整小窗大小"
+    },
+    {
+      "name": "vf_play",
+      "value": "播放"
+    },
+    {
+      "name": "vf_pause",
+      "value": "暂停"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "清空最近聊天"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "清空此账号的最近聊天记录？不会删除聊天或消息，重新打开聊天后会再次记录。"
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "移除这条最近聊天记录"
+    },
+    {
+      "name": "gs_objects",
+      "value": "用户/群组/频道"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "选择固定频道"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "搜索名称或 @用户名"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "搜索消息内容"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "搜索应用名称或 @用户名"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "已加入"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "未加入"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "频道名称匹配"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "群组名称匹配"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "昵称匹配"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "用户名匹配"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "消息内容匹配"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "文件名匹配"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "全部"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "私聊"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "用户"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "全部频道"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "公开搜索结果"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "已有会话"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "应用搜索结果"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "更多结果请细化关键词或输入准确的 @用户名；公开名称搜索不支持翻页。"
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "按名称或用户名查找，包括未加入的公开群组和频道。"
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "搜索消息内容，包括归档会话。"
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "仅搜索“%s”中的消息内容。"
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "按名称查找下载任务和已下载文件。"
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "视频自动预加载"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "提前缓冲聊天中的视频；关闭不影响播放和手动下载。"
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "默认隐藏置顶消息"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "可在聊天菜单中单独显示或隐藏"
     }
   ]
 }

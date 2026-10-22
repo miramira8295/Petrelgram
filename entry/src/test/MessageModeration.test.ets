@@ -108,6 +108,27 @@ export default function messageModerationTest() {
       expect(messageDeleteRevoke(scope, false, true)).assertTrue();
       expect(messageDeleteRevoke(scope, false, false)).assertFalse();
     });
+    it('delete_waits_for_visual_completion_before_sending', 0, async () => {
+      const b = new ModerationBridge(); const c = clientFor(b);
+      let release: () => void = (): void => {};
+      let entered: () => void = (): void => {};
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const started = new Promise<void>((resolve) => { entered = resolve; });
+      const task = executeMessageDelete(c, -100, 1, [10], null, choice(), (): boolean => b.active,
+        (): Promise<void> => { entered(); return gate; });
+      await started;
+      expect(b.mutations().length).assertEqual(0);
+      release(); const result = await task;
+      expect(result.failed).assertEqual('');
+      expect(b.mutations()[0]['@type']).assertEqual('deleteMessages');
+    });
+    it('leaving_chat_during_visual_wait_prevents_delete', 0, async () => {
+      const b = new ModerationBridge(); const c = clientFor(b);
+      const result = await executeMessageDelete(c, -100, 1, [10], null, choice(), (): boolean => b.active,
+        async (): Promise<void> => { await Promise.resolve(); b.active = false; });
+      expect(result.failed).assertEqual('delete');
+      expect(b.mutations().length).assertEqual(0);
+    });
     it('confirmed_self_scope_is_not_silently_upgraded_and_no_moderation_runs', 0, async () => {
       const b = new ModerationBridge(); b.deleteSelf = true;
       const c = clientFor(b);

@@ -1,3 +1,4 @@
+import { PinnedVisibility, PinnedVisibilityDefaults } from '../main/ets/util/pinnedVisibilityState';
 import { describe, expect, it } from '@ohos/hypium';
 import {
   LiveTopCardController, LiveTopCardHost
@@ -142,14 +143,15 @@ export default function liveTopCardControllerTest() {
   describe('LiveTopCardController', () => {
     it('hidden pins stay hidden after updates without hiding live call', 0, (): void => {
       const controller = controllerOn(new FakeHost());
-      controller.pinnedVisibility.hidden = true;
+      const defaults = new PinnedVisibilityDefaults(); defaults.hidden = true;
+      controller.pinnedVisibility = new PinnedVisibility('', null, defaults);
       controller.applyPinned('new pin', 1, 'ready');
       expect(controller.pinnedVisible()).assertFalse();
       expect(controller.shouldShow()).assertFalse();
       controller.liveGroupCallId = 7;
       controller.liveCallIsActive = true;
       expect(controller.shouldShow()).assertTrue();
-      controller.pinnedVisibility.hidden = false;
+      defaults.hidden = false;
       expect(controller.pinnedVisible()).assertTrue();
     });
 

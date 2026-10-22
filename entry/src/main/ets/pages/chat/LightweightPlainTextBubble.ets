@@ -1,3 +1,5 @@
+import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
+import { RowLeaveChannel } from '../../util/rowLeaveChannel';
 import { MessageDragGesture } from '../../util/messageDragGesture';
 import { configureMessageDrag } from '../../services/MessageDragSource';
 import { messageDragType } from '../../util/messageDrag';
@@ -68,6 +70,7 @@ const REPLY_QUOTE_LINE_H: number = 16;
 // poll, game, file or playback callbacks. The page-owned MessageBubbleActions
 // object is structurally compatible with this subset.
 export interface LightweightPlainTextActions {
+  rowLeave: RowLeaveChannel;
   onAvatarTap: (userId: number) => void;
   onAvatarLongPress: (userId: number, name: string) => void;
   onReplyTap: (messageId: number, fromId: number) => void;
@@ -92,6 +95,7 @@ export interface LightweightPlainTextActions {
 }
 
 const EMPTY_ACTIONS: LightweightPlainTextActions = {
+  rowLeave: new RowLeaveChannel(),
   onAvatarTap: (_id: number): void => {},
   onAvatarLongPress: (_id: number, _name: string): void => {},
   onReplyTap: (_id: number, _fromId: number): void => {},
@@ -302,6 +306,7 @@ export struct LightweightPlainTextBubble {
   @Param dividerIsResume: boolean = false;
   @Param dateLabel: string = '';
   @Param editingActive: boolean = false;
+  @Param canReply: boolean = false;
   @Param isPinnedMsg: boolean = false;
   @Param canReport: boolean = true;
   @Param showAvatar: boolean = true;
@@ -876,6 +881,12 @@ export struct LightweightPlainTextBubble {
   contextMenu() {
     Menu() {
       MenuItem(this.messageReactionMenuItem);
+      if (this.canReply && !this.editingActive) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.arrowshape_turn_up_left')),
+          content: $r('app.string.mb_reply')
+        }).onClick((): void => { this.actions.onReplyTo(this.msg.id); });
+      }
       if (this.canEditNow()) {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.square_and_pencil')),
@@ -1068,67 +1079,68 @@ export struct LightweightPlainTextBubble {
           // glassReady() 那一串重算一遍、new 一个修饰器、建一次描边背景，外加一个每帧参与
           // 全局遍历的可见区回调（15:25 trace 翻页段 30 个节点每帧 0.2ms）。关着的那一支
           // 只留与材质无关的几个属性；切换开关时这一块整体重建一次。两支气泡必须同改。
-          if (this.env.bubbleMaterialOn) {
-            Row() {
-              this.bubbleCluster();
+          DissolveDeleteEffect({ instanceKey: 'message-' + this.chatId, rowId: this.msg.rowId,
+            leaving: this.leaving, channel: this.actions.rowLeave }) {
+            if (this.env.bubbleMaterialOn) {
+              Row() {
+                this.bubbleCluster();
+              }
+              // 「尾巴 + 气泡」整块由**上层**渲染：材质挂在这一层，形状由整体轮廓裁剪
+              // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
+              // 不存在「一边材质一边普通渲染」对不齐的问题。
+              .alignItems(VerticalAlign.Bottom)
+              .padding(this.tailGutterPadding())
+              // 见 MessageBubble 同一处：容器跨着 7vp 留白，必须等量到尺寸才上色；
+              // 完整态本体同步退为透明，避免两层玻璃在同一区域重复合成。
+              .backgroundColor(this.containerGlassBg())
+              .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
+                y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
+                centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
+              .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
+              .backgroundBlurStyle(this.containerGlassBlurStyle())
+              // 见 MessageBubble 同一处：材质的边框沿本节点 border-box 画、吃 borderRadius，
+              // 不设圆角就是个直角框，裁剪之后剩下半条亮线。
+              .borderRadius(this.glassRadius())
+              .background(this.glassOutline(), { align: Alignment.TopStart })
+              .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
+                this.msg.isOutgoing, this.hasTail(), this.bubbleCorners()))
+              // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
+              // 上的长注释：apply*Attribute 里注册是叠加，会把注册表撑爆）。
+              // onSizeChange 而不是 onAreaChange：后者每帧参与一次全局遍历（HandleOnAreaChangeEvent）。
+              // 复用后尺寸没变不会回调，由 aboutToReuse 用 measuredGlassW/H 回填。
+              // 同值不写：@Local 赋同一个数也会走一遍变更通知。
+              .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+                const w: Length | undefined = size.width;
+                const h: Length | undefined = size.height;
+                if (typeof w !== 'number' || typeof h !== 'number') {
+                  return;
+                }
+                this.measuredGlassW = w as number;
+                this.measuredGlassH = h as number;
+                if (this.glassW !== this.measuredGlassW) {
+                  this.glassW = this.measuredGlassW;
+                }
+                if (this.glassH !== this.measuredGlassH) {
+                  this.glassH = this.measuredGlassH;
+                }
+              })
+              // onScreen 只给材质用（bubbleMaterialLive），所以可见区回调只在这一支挂；容器与本体
+              // 是同一块，阈值 0.01 下的判定与原来挂在本体上一致。
+              .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
+                this.onScreen = visible;
+              })
+            } else {
+              Row() {
+                this.bubbleCluster();
+              }
+              // 玻璃关：只留与材质无关的这几个。
+              .alignItems(VerticalAlign.Bottom)
+              .padding(this.tailGutterPadding())
+              .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
+                y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
+                centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
+              .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
             }
-            // 「尾巴 + 气泡」整块由**上层**渲染：材质挂在这一层，形状由整体轮廓裁剪
-            // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
-            // 不存在「一边材质一边普通渲染」对不齐的问题。
-            .alignItems(VerticalAlign.Bottom)
-            .padding(this.tailGutterPadding())
-            // 见 MessageBubble 同一处：容器跨着 7vp 留白，必须等量到尺寸才上色；
-            // 完整态本体同步退为透明，避免两层玻璃在同一区域重复合成。
-            .backgroundColor(this.containerGlassBg())
-            .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
-              y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
-              centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
-            .opacity(1 - this.leaving)
-            .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
-            .backgroundBlurStyle(this.containerGlassBlurStyle())
-            // 见 MessageBubble 同一处：材质的边框沿本节点 border-box 画、吃 borderRadius，
-            // 不设圆角就是个直角框，裁剪之后剩下半条亮线。
-            .borderRadius(this.glassRadius())
-            .background(this.glassOutline(), { align: Alignment.TopStart })
-            .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
-              this.msg.isOutgoing, this.hasTail(), this.bubbleCorners()))
-            // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
-            // 上的长注释：apply*Attribute 里注册是叠加，会把注册表撑爆）。
-            // onSizeChange 而不是 onAreaChange：后者每帧参与一次全局遍历（HandleOnAreaChangeEvent）。
-            // 复用后尺寸没变不会回调，由 aboutToReuse 用 measuredGlassW/H 回填。
-            // 同值不写：@Local 赋同一个数也会走一遍变更通知。
-            .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
-              const w: Length | undefined = size.width;
-              const h: Length | undefined = size.height;
-              if (typeof w !== 'number' || typeof h !== 'number') {
-                return;
-              }
-              this.measuredGlassW = w as number;
-              this.measuredGlassH = h as number;
-              if (this.glassW !== this.measuredGlassW) {
-                this.glassW = this.measuredGlassW;
-              }
-              if (this.glassH !== this.measuredGlassH) {
-                this.glassH = this.measuredGlassH;
-              }
-            })
-            // onScreen 只给材质用（bubbleMaterialLive），所以可见区回调只在这一支挂；容器与本体
-            // 是同一块，阈值 0.01 下的判定与原来挂在本体上一致。
-            .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
-              this.onScreen = visible;
-            })
-          } else {
-            Row() {
-              this.bubbleCluster();
-            }
-            // 玻璃关：只留与材质无关的这几个。
-            .alignItems(VerticalAlign.Bottom)
-            .padding(this.tailGutterPadding())
-            .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
-              y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
-              centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
-            .opacity(1 - this.leaving)
-            .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
           }
         }
         .alignItems(VerticalAlign.Bottom)
@@ -1139,8 +1151,7 @@ export struct LightweightPlainTextBubble {
           this.draggingMessage = true;
           this.gestureClaimed = true;
           this.menuShown = false;
-          configureMessageDrag(event, this.chatId, this.msg.id, messageDragType(this.msg.contentType));
-          return {};
+          return configureMessageDrag(event, this.chatId, this.msg.id, messageDragType(this.msg.contentType));
         })
         .onDragEnd((): void => { this.draggingMessage = false; })
         .bindContextMenu(this.menuShown, this.contextMenu(), {

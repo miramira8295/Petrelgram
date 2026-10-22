@@ -1,3 +1,4 @@
+import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { openMiniAppPage } from '../../util/miniAppNav';
 import { mainAppChatId } from '../../util/botMainApp';
@@ -1688,6 +1689,7 @@ export struct ProfilePage {
     }
     // 本页自绘标题栏（头图上那一行返回/更多），不要 HDS 的。
     .hideTitleBar(true)
+    .onBackPressed((): boolean => collapseFloatingVideo())
     .onReady((ctx: NavDestinationContext): void => {
       this.navStack = ctx.pathStack;
       this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;

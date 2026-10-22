@@ -13,7 +13,7 @@ import { ChatEntry } from '../store/ChatEntry';
 
 // 快照格式版本。字段含义变了就 +1，老版本快照直接丢弃（宁可少一行推荐，
 // 也不要拿旧字段去喂新界面）。
-export const SHARE_SNAPSHOT_VERSION: number = 1;
+export const SHARE_SNAPSHOT_VERSION: number = 2;
 
 // 快照里最多存几个。分享面板横排一行只看得见 4–6 个，多存是给应用内的
 // 选择页做"最近"分组用的。
@@ -30,6 +30,7 @@ export interface ShareTarget {
   avatarPath: string;
   initials: string;
   isSavedMessages: boolean;
+  sendPermissions?: string[];
 }
 
 // 「我主动发过消息」的 id 表：最近的在前，去重，定长。
@@ -150,8 +151,16 @@ export function parseShareTargets(text: string): ShareTarget[] {
       title: title ?? '',
       avatarPath: (row['avatarPath'] as string | undefined) ?? '',
       initials: (row['initials'] as string | undefined) ?? '',
-      isSavedMessages: (row['isSavedMessages'] as boolean | undefined) ?? false
+      isSavedMessages: (row['isSavedMessages'] as boolean | undefined) ?? false,
+      sendPermissions: Array.isArray(row['sendPermissions']) ?
+        (row['sendPermissions'] as Object[]).filter((key: Object): boolean => typeof key === 'string') as string[] : []
     });
   }
   return out;
+}
+
+// The extension has no TDLib: only advertise targets whose snapshot permits the whole payload.
+export function shareTargetsWithPermissions(targets: ShareTarget[], keys: string[]): ShareTarget[] {
+  return targets.filter((target: ShareTarget): boolean => target.sendPermissions !== undefined &&
+    keys.length > 0 && keys.every((key: string): boolean => target.sendPermissions!.includes(key)));
 }

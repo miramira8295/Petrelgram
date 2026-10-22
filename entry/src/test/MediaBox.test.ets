@@ -9,145 +9,113 @@ import {
   mediaThumbWidth
 } from '../main/ets/util/mediaBox';
 
-// 气泡里的单图应当铺满气泡宽度，不管横竖。
-//
-// 之前不是这样：高度超过上限时，代码把高压回上限**并按比例把宽度也缩了**，
-// 于是竖图只占气泡宽度的 67%，一条竖图消息比同一群里的横图窄一截。正确的
-// 做法是宽度钉死、只压高度，多出来的部分交给 ImageFit.Cover 裁掉。
 const SCREEN: number = 360;
+
+function assertPhotoFits(width: number, height: number, column: number,
+  gutter: number, device: string): void {
+  const box = mediaBoxFor(column, width, height, false, gutter, device);
+  const maxW: number = mediaThumbWidth(column, gutter, device);
+  expect(box.width >= 0 && box.width <= maxW + 0.001).assertTrue();
+  expect(box.height >= 0 && box.height <= maxW * MEDIA_MAX_HEIGHT_RATIO + 0.001).assertTrue();
+  if (maxW > 0) {
+    expect(Math.abs(box.width / box.height - width / height) < 0.000001).assertTrue();
+  }
+}
 
 export default function mediaBoxTest() {
   describe('mediaBox', () => {
-    it('media uses the maximum bubble content width beyond the old 280vp cap', 0, () => {
-      for (const width of [440, 720, 960]) {
-        expect(mediaThumbWidth(width, BUBBLE_AVATAR_GUTTER_VP, 'phone') + 16)
-          .assertEqual(bubbleMaxWidth(width));
-        expect(mediaThumbWidth(width, BUBBLE_AVATAR_GUTTER_VP, 'phone') > 280).assertTrue();
-      }
+    it('1920x1080 landscape retains 16:9', 0, () => {
+      const box = mediaBoxFor(368, 1920, 1080, false, 0, 'phone');
+      expect(box.width).assertEqual(320);
+      expect(box.height).assertEqual(180);
     });
-
-    it('private and outgoing media reclaim the avatar gutter', 0, () => {
-      const box = mediaBoxFor(440, 1600, 900, false, 0, 'phone');
-      expect(box.width + 16).assertEqual(bubbleMaxWidth(440, 0));
-      expect(box.width - mediaThumbWidth(440, BUBBLE_AVATAR_GUTTER_VP, 'phone'))
-        .assertEqual(BUBBLE_AVATAR_GUTTER_VP);
-      expect(mediaBoxFor(440, 900, 1600, true, 0, 'phone').width).assertEqual(box.width);
+    it('1080x1920 portrait shrinks both axes at the height limit', 0, () => {
+      const box = mediaBoxFor(368, 1080, 1920, false, 0, 'phone');
+      expect(box.width).assertEqual(216);
+      expect(box.height).assertEqual(384);
     });
-
-    it('non-phone media keeps the old cap for photos videos and albums', 0, () => {
-      for (const deviceType of ['tablet', '2in1', 'tv', 'wearable', 'unknown', '']) {
-        for (const gutter of [0, BUBBLE_AVATAR_GUTTER_VP]) {
-          expect(mediaThumbWidth(960, gutter, deviceType)).assertEqual(280);
-          expect(mediaBoxFor(960, 1600, 900, false, gutter, deviceType).width).assertEqual(280);
-          const portrait = mediaBoxFor(960, 900, 1600, true, gutter, deviceType);
-          expect(portrait.width).assertEqual(280);
-          expect(portrait.height).assertEqual(336);
-        }
-      }
+    it('1200x1200 square retains 1:1', 0, () => {
+      const box = mediaBoxFor(368, 1200, 1200, false, 0, 'phone');
+      expect(box.width).assertEqual(320);
+      expect(box.height).assertEqual(320);
     });
-
-    it('both device policies fit narrow columns without changing text bubble widths', 0, () => {
-      for (const deviceType of ['phone', 'tablet', '2in1']) {
-        for (const gutter of [0, BUBBLE_AVATAR_GUTTER_VP]) {
-          for (const width of [0, 40, 80, 240]) {
-            const box = mediaBoxFor(width, 900, 1600, false, gutter, deviceType);
-            expect(box.width).assertEqual(Math.max(0, bubbleMaxWidth(width, gutter) - 16));
-            expect(box.height >= 0).assertTrue();
+    it('three acceptance shapes fit phone tablet and desktop chat columns', 0, () => {
+      for (const device of ['phone', 'tablet', '2in1']) {
+        for (const column of [240, 360, 440, 720, 960]) {
+          for (const gutter of [0, BUBBLE_AVATAR_GUTTER_VP]) {
+            assertPhotoFits(1920, 1080, column, gutter, device);
+            assertPhotoFits(1080, 1920, column, gutter, device);
+            assertPhotoFits(1200, 1200, column, gutter, device);
           }
         }
       }
-      expect(bubbleMaxWidth(960, 0)).assertEqual(928);
     });
-
-    it('media dimensions stay nonnegative in very narrow columns', 0, () => {
-      for (const width of [0, 40, 80]) {
-        const box = mediaBoxFor(width, 900, 1600, false);
-        expect(box.width >= 0 && box.height >= 0).assertTrue();
-        expect(box.width <= bubbleMaxWidth(width)).assertTrue();
+    it('extreme tall photos retain the entire source ratio within the height cap', 0, () => {
+      assertPhotoFits(100, 20000, SCREEN, 0, 'phone');
+      expect(mediaRatio(100, 20000, false)).assertEqual(0.005);
+    });
+    it('ultrawide photos retain the entire source ratio', 0, () => {
+      assertPhotoFits(20000, 100, SCREEN, 0, 'phone');
+      expect(mediaRatio(20000, 100, false)).assertEqual(200);
+    });
+    it('zero and narrow columns produce nonnegative bounded geometry', 0, () => {
+      for (const column of [0, 40, 80]) {
+        for (const device of ['phone', 'tablet']) {
+          assertPhotoFits(1080, 1920, column, BUBBLE_AVATAR_GUTTER_VP, device);
+        }
       }
     });
-
-    it('fills the bubble width for a landscape photo', 0, () => {
-      const box = mediaBoxFor(SCREEN, 1600, 900, false);
+    it('missing metadata retains the square fallback', 0, () => {
+      const box = mediaBoxFor(SCREEN, 0, 0, false);
       expect(box.width).assertEqual(mediaThumbWidth(SCREEN));
+      expect(box.height).assertEqual(box.width);
     });
-
-    // 这一条是那个 bug 本身。
-    it('fills the bubble width for a portrait photo too', 0, () => {
-      const box = mediaBoxFor(SCREEN, 900, 1600, false);
-      expect(box.width).assertEqual(mediaThumbWidth(SCREEN));
-    });
-
-    it('fills the bubble width for a square photo', 0, () => {
-      const box = mediaBoxFor(SCREEN, 1000, 1000, false);
-      expect(box.width).assertEqual(mediaThumbWidth(SCREEN));
-    });
-
-    // 尺寸还没到（占位阶段）也要满宽，否则图一到就横向跳一下。
-    it('fills the bubble width before the size is known', 0, () => {
-      expect(mediaBoxFor(SCREEN, 0, 0, false).width).assertEqual(mediaThumbWidth(SCREEN));
-      expect(mediaBoxFor(SCREEN, 0, 0, true).width).assertEqual(mediaThumbWidth(SCREEN));
-    });
-
-    // 满宽不能变成"无限高"：极端竖图会把整屏占满，上限仍然要在。
-    it('never exceeds the height cap', 0, () => {
-      const cap: number = mediaThumbWidth(SCREEN) * MEDIA_MAX_HEIGHT_RATIO;
-      for (const h of [1600, 4000, 20000]) {
-        expect(mediaBoxFor(SCREEN, 900, h, false).height <= cap + 0.001).assertTrue();
+    it('invalid metadata cannot introduce NaN or infinite layout', 0, () => {
+      for (const invalid of [0, -1, NaN, Infinity]) {
+        expect(mediaRatio(invalid, 100, false)).assertEqual(1);
+        expect(mediaRatio(100, invalid, false)).assertEqual(1);
       }
     });
-
-    // 没到上限的图必须保持原始比例，不能被拉伸。
-    it('keeps the aspect ratio while under the cap', 0, () => {
-      const box = mediaBoxFor(SCREEN, 1600, 900, false);
-      const want: number = mediaThumbWidth(SCREEN) / mediaRatio(1600, 900, false);
-      expect(Math.abs(box.height - want) < 0.001).assertTrue();
-    });
-
-    // 预取器和气泡共用这个函数，像素缓存按"路径 + 目标尺寸"做键——同样的
-    // 输入必须给出同样的输出，差一个像素就是多解码一份。
-    it('is deterministic', 0, () => {
-      const a = mediaBoxFor(SCREEN, 900, 1600, false);
-      const b = mediaBoxFor(SCREEN, 900, 1600, false);
+    it('thumbnail resolution tiers preserve the same geometry', 0, () => {
+      const a = mediaBoxFor(SCREEN, 1920, 1080, false);
+      const b = mediaBoxFor(SCREEN, 640, 360, false);
       expect(a.width).assertEqual(b.width);
       expect(a.height).assertEqual(b.height);
     });
-
-    // **视频和照片一样钉死气泡宽度，超高就裁。**（用户 2026-09-09：「媒体应该
-    // 和气泡一样宽吧」）
-    //
-    // 原来视频是"高度顶到上限就把宽度按比例收回来"，于是一条 9:19.5 的竖视频
-    // 只有 153vp 宽，而同一条消息的气泡被长配文撑到 277vp，媒体缩在气泡左边
-    // 一小块。用户要的是两者齐平。
-    //
-    // 代价说清楚：裁了就得**从头裁到尾**——内嵌播放位的渲染面也改成 Cover
-    // （StreamingVideoPlayer.surfaceWidth/Height，只在 embedded 下），否则静态
-    // 缩略图是裁的、一点播放变成留黑边，尺寸当场跳一下。全屏播放器不受影响，
-    // 那一侧永远按真实比例留黑边。
-    it('a tall video fills the bubble width just like a photo', 0, () => {
-      const video = mediaBoxFor(SCREEN, 900, 1600, true);
-      const photo = mediaBoxFor(SCREEN, 900, 1600, false);
-      expect(video.width).assertEqual(mediaThumbWidth(SCREEN));
-      expect(video.width).assertEqual(photo.width);
-      expect(video.height).assertEqual(photo.height);
-    });
-
-    it('a landscape video still fills the bubble width', 0, () => {
-      // 高度没到上限，本来就是满宽。
-      expect(mediaBoxFor(SCREEN, 1600, 900, true).width).assertEqual(mediaThumbWidth(SCREEN));
-    });
-
-    // 比例夹取仍然分开：视频夹得松是为了**高度**更贴近真实比例，少裁一点。
-    it('video ratio clamp is looser than the photo one', 0, () => {
-      // 极端竖屏 1:3。照片夹到 0.56，视频夹到 0.4——视频更贴近真实比例。
-      expect(mediaRatio(1000, 3000, false) > mediaRatio(1000, 3000, true)).assertTrue();
-    });
-
-    it('video height still respects the cap', 0, () => {
-      const cap: number = mediaThumbWidth(SCREEN) * MEDIA_MAX_HEIGHT_RATIO;
-      for (const h of [1600, 4000, 20000]) {
-        expect(mediaBoxFor(SCREEN, 900, h, true).height <= cap + 0.001).assertTrue();
+    it('metadata yields identical placeholder prefetch and loaded image dimensions', 0, () => {
+      for (const dims of [[1920, 1080], [1080, 1920], [1200, 1200]]) {
+        const a = mediaBoxFor(SCREEN, dims[0], dims[1], false);
+        const b = mediaBoxFor(SCREEN, dims[0], dims[1], false);
+        expect(a.width).assertEqual(b.width);
+        expect(a.height).assertEqual(b.height);
       }
+    });
+    it('phone media width limit still uses the current chat column', 0, () => {
+      for (const width of [440, 720, 960]) {
+        expect(mediaThumbWidth(width, 0, 'phone') + 16).assertEqual(bubbleMaxWidth(width, 0));
+      }
+    });
+    it('non-phone media retains its width limit', 0, () => {
+      for (const device of ['tablet', '2in1', 'tv', 'unknown']) {
+        expect(mediaThumbWidth(960, 0, device)).assertEqual(280);
+      }
+    });
+    it('portrait video retains the existing full width cropping geometry', 0, () => {
+      const box = mediaBoxFor(368, 1080, 1920, true, 0, 'phone');
+      expect(box.width).assertEqual(320);
+      expect(box.height).assertEqual(384);
+    });
+    it('landscape video retains existing geometry', 0, () => {
+      const box = mediaBoxFor(368, 1920, 1080, true, 0, 'phone');
+      expect(box.width).assertEqual(320);
+      expect(box.height).assertEqual(180);
+    });
+    it('unknown video retains 16:9 placeholder', 0, () => {
+      expect(mediaRatio(0, 0, true)).assertEqual(16 / 9);
+    });
+    it('video ratio limits remain unchanged', 0, () => {
+      expect(mediaRatio(1000, 3000, true)).assertEqual(0.4);
+      expect(mediaRatio(3000, 1000, true)).assertEqual(2.4);
     });
 
     // ── 气泡最大宽：原来的 screenW * 0.78 其实只对群聊来信成立 ──────────

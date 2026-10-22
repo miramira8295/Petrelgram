@@ -75,6 +75,9 @@ export struct ChatComposerInput {
   @Require @Param recording: VoiceRecordingState;
   @Param showEmojiPanel: boolean = false;
   @Param composerEditorReady: boolean = false;
+  @Param editorFocused: boolean = false;
+  @Param keyboardVisible: boolean = false;
+  @Local private commandShortcutVisible: boolean = true;
   @Param draft: string = '';
   // 当前光标位置。页面真的整段改写草稿时（@提及补全、读回草稿、插表情），
   // 用它和 caretAfterExternalEdit 推出新位置，再 caretPosition 放回去。
@@ -349,10 +352,28 @@ export struct ChatComposerInput {
   // V2 用 @Monitor（@Watch 只在 V1 里有），名字必须是本 struct 的真实成员。
   aboutToAppear(): void {
     this.editorText = this.draft;
+    this.commandShortcutVisible = this.editorText.length === 0 &&
+      !(this.editorFocused && this.keyboardVisible);
     this.layoutActive = true;
     this.editorLayout = undefined;
     this.editorLines = 0;
     this.scheduleLinesRefresh();
+  }
+
+  @Monitor('editorFocused', 'keyboardVisible', 'editorText')
+  onCommandShortcutVisibilityChanged(): void {
+    // Keyboard dismissal alone must not restore the shortcut while editing.
+    // Restore only after blur with a completely empty editor (spaces count).
+    let visible = this.commandShortcutVisible;
+    if (this.editorFocused && this.keyboardVisible) {
+      visible = false;
+    } else if (!this.editorFocused) {
+      visible = this.editorText.length === 0;
+    }
+    if (visible === this.commandShortcutVisible) { return; }
+    this.getUIContext().animateTo({
+      duration: this.smoothEffectDuration(180), curve: Curve.EaseOut
+    }, (): void => { this.commandShortcutVisible = visible; });
   }
 
   @Monitor('composerEditorReady')
@@ -550,12 +571,13 @@ export struct ChatComposerInput {
             .animation({ duration: this.smoothEffectDuration(120), curve: Curve.EaseOut })
             .onClick((): void => { this.onFinishRecording(); });
           } else {
-            if (this.commandSuggestion.botMenuAvailable) {
+            if (this.commandSuggestion.botMenuAvailable && this.commandShortcutVisible) {
               Row() {
                 Text(this.commandSuggestion.commandMenuOpen ? '×' : '/')
                   .fontSize(22).fontWeight(FontWeight.Medium).fontColor(this.commandSuggestion.commandMenuOpen ? Color.White : this.chromeIconColor);
               }
               .width(32).height(32).justifyContent(FlexAlign.Center)
+              .transition(TransitionEffect.OPACITY.combine(TransitionEffect.scale({ x: 0.8, y: 0.8 })))
               .accessibilityText(this.commandSuggestion.commandMenuOpen ? str('close') : str('cp_bot_commands'))
               .borderRadius(15)
               .stateStyles({

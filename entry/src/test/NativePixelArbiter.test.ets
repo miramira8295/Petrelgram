@@ -20,7 +20,7 @@ export default function nativePixelArbiterTest() {
       expect(IMAGE_CAP_BYTES + PINNED_ALLOWANCE_BYTES).assertEqual(TOTAL - ALPHA_FLOOR_BYTES);
     });
 
-    // 钉住的字节在豁免额之内额外放行——壁纸 pin 住 7.4MB 不该把内容挤掉 7.4MB。
+    // 钉住的字节在豁免额之内额外放行。
     it('钉住的字节在豁免额内额外放行', 0, () => {
       const base: number = imagePixelLimitNow(IMAGE_CAP_BYTES, 0);
       expect(imagePixelLimitNow(IMAGE_CAP_BYTES, 8 * MIB)).assertEqual(base + 8 * MIB);
@@ -51,8 +51,10 @@ export default function nativePixelArbiterTest() {
       expect(sharedImageLimit(TOTAL, ALPHA_FLOOR_BYTES)).assertEqual(IMAGE_CAP_BYTES);
     });
 
-    it('贴纸占用超过地板后，图片按实际占用让出来', 0, () => {
-      expect(sharedImageLimit(TOTAL, 30 * MIB)).assertEqual(TOTAL - 30 * MIB);
+    it('贴纸占用增长时先受图片天花板限制，再按剩余额度收紧', 0, () => {
+      // 30MiB 时仍受可淘汰图片天花板约束；36MiB 时由共享余额约束。
+      expect(sharedImageLimit(TOTAL, 30 * MIB)).assertEqual(IMAGE_CAP_BYTES);
+      expect(sharedImageLimit(TOTAL, 36 * MIB)).assertEqual(TOTAL - 36 * MIB);
       expect(sharedImageLimit(TOTAL, 56 * MIB)).assertEqual(TOTAL - 56 * MIB);
     });
 

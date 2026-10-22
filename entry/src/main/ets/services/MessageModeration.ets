@@ -62,7 +62,7 @@ export interface MessageDeleteResult { completed: string[]; failed: string; erro
 export async function executeMessageDelete(
   client: TdClient, chatId: number, selfId: number, ids: number[], target: ModerationTarget | null,
   choice: DeleteMessageChoice, active: () => boolean,
-  beforeDelete: () => void
+  beforeDelete: () => void | Promise<void>
 ): Promise<MessageDeleteResult> {
   const completed: string[] = [];
   let step: string = 'scope';
@@ -113,13 +113,16 @@ export async function executeMessageDelete(
         req = { '@type': 'deleteChatMessagesBySender' };
         req['chat_id'] = chatId;
         req['sender_id'] = member(target!.userId);
-        beforeDelete();
       } else {
         req = { '@type': 'deleteMessages' };
         req['chat_id'] = chatId;
         req['message_ids'] = ids;
         req['revoke'] = choice.revoke;
-        beforeDelete();
+      }
+      if (step === 'deleteAll' || step === 'delete') {
+        await beforeDelete();
+        // 等待截图/动画期间可能已经离页或换号，不得继续写入旧会话。
+        if (!active()) { return { completed, failed: step, error: str('cancel') }; }
       }
       await client.send(req, 20000);
       completed.push(step);

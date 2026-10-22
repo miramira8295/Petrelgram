@@ -15,18 +15,23 @@ export interface SearchSession {
   query: string;
   tab: number;
   savedAt: number;
+  objectScope?: string;
+  messageScope?: string;
+  channelId?: number;
+  channelTitle?: string;
 }
 
 let session: SearchSession | null = null;
 
 // 只在「点开结果导致搜索页关闭」时记。点「取消」是明确要离开，见 forgetSearchSession。
-export function rememberSearchSession(query: string, tab: number, nowMs: number): void {
+export function rememberSearchSession(query: string, tab: number, nowMs: number, objectScope: string = 'all', messageScope: string = 'all',
+  channelId: number = 0, channelTitle: string = ''): void {
   const trimmed: string = query.trim();
   if (trimmed === '') {
     session = null;
     return;
   }
-  session = { query: query, tab: tab, savedAt: nowMs };
+  session = { query: query, tab: tab, savedAt: nowMs, objectScope: objectScope, messageScope: messageScope, channelId: channelId, channelTitle: channelTitle };
 }
 
 export function takeSearchSession(nowMs: number): SearchSession | null {

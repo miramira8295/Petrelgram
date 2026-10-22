@@ -437,6 +437,13 @@ export class ChatBackgroundStore {
   }
 
   refresh(): void {
+    // Zero denotes the account default, never a real TDLib chat. Resolve from
+    // ChatStore immediately and keep the existing default/file subscriptions.
+    if (this.chatId === 0) {
+      ++this.resolveSeq;
+      this.applyDefault();
+      return;
+    }
     // Reset the theme bubble tint; the theme path re-derives it in the same
     // tick when this chat still carries a theme.
     this.patchBubbleColor('');
@@ -470,6 +477,7 @@ export class ChatBackgroundStore {
   // A background already carried by a cached ChatEntry — the page hands this in
   // when it refreshes header identity, saving a round trip.
   applyKnownBackground(background: TdObject | null): void {
+    ++this.resolveSeq;
     this.applyBackground(background);
   }
 

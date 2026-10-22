@@ -48,7 +48,8 @@ export function guardKey(list: string, index: number, key: string): string {
   const t = tableFor(list);
   const at = t.byKey.get(key);
   if (at !== undefined && at !== index) {
-    logE(`[KeyGuard] ${list}: key claimed by index ${index} and ${at} -> ${key}`);
+    // Keys may contain search queries or message content; keep them out of logs.
+    logE(`[KeyGuard] ${list}: key claimed by index ${index} and ${at}`);
   }
   // Whatever this index held before is gone; drop its reverse entry so a stale
   // key cannot outlive the row that produced it.

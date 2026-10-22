@@ -14,7 +14,7 @@ export interface MessageDeleteHost {
   client: () => TdClient;
   chatId: () => number;
   selfId: () => number;
-  markLeaving: (ids: number[]) => void;
+  markLeaving: (ids: number[]) => Promise<void>;
   clearLeaving: () => void;
   onDeleted: () => void;
 }
@@ -84,7 +84,7 @@ export class MessageDeleteSession {
       if (!active() || this.busy) { return; }
       this.busy = true;
       executeMessageDelete(client, chatId, selfId, frozenIds, target, choice, active,
-        (): void => { if (active()) { host.markLeaving(frozenIds); } }).then((result): void => {
+        async (): Promise<void> => { if (active()) { await host.markLeaving(frozenIds); } }).then((result): void => {
         if (!active()) { return; }
         this.busy = false;
         if (result.failed === '') {
@@ -108,6 +108,7 @@ export class MessageDeleteSession {
 
   dispose(): void {
     this.seq++;
+    this.host?.clearLeaving();
     this.preparing = false;
     this.busy = false;
     this.closeDialog?.();

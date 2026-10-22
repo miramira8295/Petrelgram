@@ -1,3 +1,7 @@
+import { forgetSearchSession } from '../util/searchSession';
+import { attachRecentChatHistory, detachRecentChatHistory } from '../services/RecentChatHistoryService';
+import { attachHttpsProxyRuntime, restoreHttpsProxyRuntime, detachHttpsProxyRuntime } from '../services/HttpsProxyTransport';
+import { closeFloatingVideo } from '../util/floatingVideoRuntime';
 import { SessionSecurityStore } from '../store/SessionSecurityStore';
 import { attachTdLanguage, detachTdLanguage, initTdLanguageContext, syncTdLanguage } from '../services/TdLanguage';
 import testNapi from 'libentry.so';
@@ -141,11 +145,14 @@ function createTdClientWithBridge(): TdClient {
 }
 
 function createRuntime(slotId: string): void {
+  forgetSearchSession();
   runtimeReady = false;
   const directories: TdAccountDirectories = accountRegistry.directories(baseFilesDir, slotId);
   activeTdFilesDirectory = directories.filesDirectory;
   repairTdTempDirectory(directories.filesDirectory);
   client = createTdClientWithBridge();
+  attachHttpsProxyRuntime(client, directories.databaseDirectory);
+  attachRecentChatHistory(client, directories.databaseDirectory);
   // prefer_ipv6 越早越好：它影响的是**第一次**连接走哪个协议族，等连上了再设
   // 就晚了。setOption 在 setTdlibParameters 之前就能收（issue #133）。
   // 缓存记在模块级变量里，而新运行时上这个选项是 TDLib 的默认值，必须先清。
@@ -192,6 +199,9 @@ function createRuntime(slotId: string): void {
   const runtimeClient = client;
   const runtimeAuth = auth;
   runtimeAuth.onStageChange((stage: AuthStage): void => {
+    if (client === runtimeClient && stage !== AuthStage.Init && stage !== AuthStage.LoggedOut) {
+      restoreHttpsProxyRuntime(runtimeClient).catch((): void => logE('HTTPS proxy restoration failed'));
+    }
     if (stage === AuthStage.Ready && client === runtimeClient && auth === runtimeAuth) {
       runtimeReady = true;
       sessionSecurity?.read().catch((): void => {});
@@ -224,6 +234,8 @@ function createRuntime(slotId: string): void {
     sessionSecurity = undefined;
     auth.dispose();
     proxyAutoSwitchService.detach(client);
+    detachHttpsProxyRuntime(client);
+    detachRecentChatHistory(client);
     files?.close();
     client.dispose();
     client = undefined;
@@ -356,6 +368,7 @@ function reregisterStoredWebPush(client: TdClient): void {
 //   'destroy' 删掉本地授权数据 —— 只有卡在扫码授权态、必须从零重来时才用
 //             （见 util/authError.ets 的 needsAuthorizationReset）。
 async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
+  closeFloatingVideo();
   sessionSecurity?.close();
   sessionSecurity = undefined;
   detachTdLanguage();
@@ -366,6 +379,8 @@ async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
   files?.close();
   if (currentClient !== undefined) {
     proxyAutoSwitchService.detach(currentClient);
+    detachHttpsProxyRuntime(currentClient);
+    detachRecentChatHistory(currentClient);
   }
   if (currentClient !== undefined && currentReady) {
     try {

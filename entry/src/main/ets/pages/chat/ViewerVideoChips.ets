@@ -22,6 +22,7 @@ export struct ViewerVideoChips {
   @Param playing: VideoVariant | null = null;
   @Event onPickQuality: (quality: number) => void = (_q: number): void => {};
   // 点「ⓘ 硬解」打开详细统计信息面板（VideoStatsPanel）。
+  @Event onMinimize: () => void = (): void => {};
   @Event onShowStats: () => void = (): void => {};
 
   private qualityText(): string {
@@ -63,6 +64,9 @@ export struct ViewerVideoChips {
 
   build() {
     Row({ space: 6 }) {
+      Text(str('vf_minimize')).fontSize(11).fontColor(CHIP_TEXT)
+        .height(CHIP_HEIGHT).padding({ left: 8, right: 8 }).borderRadius(CHIP_HEIGHT / 2)
+        .backgroundColor(CHIP_BG).onClick((): void => { this.onMinimize(); });
       if (this.decoder !== '') {
         Row({ space: 3 }) {
           SymbolGlyph($r('sys.symbol.exclamationmark_circle')).fontSize(12).fontColor([CHIP_TEXT]);

@@ -16,16 +16,18 @@ export function orderedProxyCandidateIds(
   entries: ProxySwitchCandidate[], activeProxyId: number, afterProxyId: number = activeProxyId
 ): number[] {
   if (entries.length === 0) { return []; }
-  let startIndex = entries.findIndex(
+  const routes: ProxySwitchCandidate[] = entries.filter((entry: ProxySwitchCandidate): boolean => entry.id > 0);
+  routes.push({ id: 0 }); // The proxy adapter selects the direct relay route with disableProxy.
+  let startIndex = routes.findIndex(
     (entry: ProxySwitchCandidate): boolean => entry.id === afterProxyId
   );
   if (startIndex < 0) {
-    startIndex = entries.findIndex((entry: ProxySwitchCandidate): boolean => entry.id === activeProxyId);
+    startIndex = routes.findIndex((entry: ProxySwitchCandidate): boolean => entry.id === activeProxyId);
   }
   const result: number[] = [];
-  for (let offset = 1; offset <= entries.length; offset++) {
-    const entry = entries[(startIndex + offset) % entries.length];
-    if (entry.id > 0 && entry.id !== activeProxyId) { result.push(entry.id); }
+  for (let offset = 1; offset <= routes.length; offset++) {
+    const entry = routes[(startIndex + offset) % routes.length];
+    if (entry.id !== activeProxyId) { result.push(entry.id); }
   }
   return result;
 }

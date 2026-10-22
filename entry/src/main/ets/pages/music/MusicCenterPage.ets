@@ -1,3 +1,4 @@
+import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { common } from '@kit.AbilityKit';
 import { HdsNavDestination } from '@kit.UIDesignKit';
 import { getTdClient } from '../../tdkit/Globals';
@@ -747,7 +748,7 @@ export struct MusicCenterPage {
     .onReady((ctx: NavDestinationContext): void => {
       this.navStack = ctx.pathStack;
     })
-    .onBackPressed((): boolean => this.onBack())
+    .onBackPressed((): boolean => collapseFloatingVideo() || this.onBack())
     .width('100%').height('100%');
   }
 }

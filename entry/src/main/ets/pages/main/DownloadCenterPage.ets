@@ -7,7 +7,8 @@ import { DownloadCenterList } from './DownloadCenterList';
 import { DownloadCenterStorageCard } from './DownloadCenterStorageCard';
 import { DownloadCenterStore } from '../../store/DownloadCenterStore';
 import { formatBytes } from '../../store/StorageApi';
-import { KEY_BG_CACHE_WIFI_ONLY, setBoolean } from '../../store/AppSettings';
+import { KEY_BG_CACHE_WIFI_ONLY, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, setBoolean } from '../../store/AppSettings';
+import { DownloadDeleteEffects } from '../../util/downloadDeleteEffects';
 import { onBackgroundCachePolicyChanged } from '../../services/BackgroundCache';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { buildDownloadViewerSet, DownloadViewerSet } from '../../util/downloadViewerSet';
@@ -17,8 +18,8 @@ import {
   accentSoft, COLOR_ON_PRIMARY, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import {
-  DC_KIND_PHOTO, DC_KIND_VIDEO, DC_SORT_SIZE, DC_SORT_TIME, DC_SOURCE_MANAGER, DC_STATE_COMPLETE, DC_TAB_ALL, DC_TABS,
-  DownloadCenterItem, displayNameOf, downloadCenterItemId, filterDownloadCenterItems, groupDownloadCenterItems
+  DC_KIND_PHOTO, DC_KIND_VIDEO, DC_SORT_SIZE, DC_SORT_TIME, DC_SOURCE_MANAGER, DC_STATE_COMPLETE, DC_TABS,
+  DownloadCenterItem, displayNameOf, downloadCenterItemId, filterDownloadCenterItems, groupDownloadCenterItems, isUnsourcedCache
 } from '../../util/downloadCenterModel';
 import { dcKindLabel } from '../../util/downloadCenterLabels';
 import {
@@ -34,7 +35,7 @@ import { logE, logI } from '../../util/log';
 // 下载中心（2026-09-15，设置 → 下载中心；第三版照 Claude Design「下载中心」稿，第四版行复用与分页，第五版补体验）。
 //
 // 从上到下：存储占用卡片（含「仅在 Wi‑Fi 下后台缓存」）→ 搜索框 → 胶囊类型页签（可横滑；内容区也能左右滑）→
-// 「进行中」「已完成」两张卡片（已完成可按时间 / 大小排；「全部」页签里来源不明的缓存折成一行）。
+// 「进行中」「已完成」两张卡片（已完成可按时间 / 大小排；来源不明的磁盘缓存只计入存储占用，不展示在列表里）。
 // 标题栏右上角「选择」进批量模式（可全选），底部浮出批量操作条；取消 / 删除先藏起来给几秒「撤销」再真正执行。
 // 长按条目：定位到消息 / 用流量继续 / 删除。返回键先退出批量模式。
 //
@@ -78,7 +79,6 @@ export struct DownloadCenterPage {
   @State private sortMode: string = DC_SORT_TIME;
   @State private undoMessage: string = '';
   @State private tabItemCounts: number[] = DC_TABS.map((_t: string): number => 0);
-  private unsourcedExpanded: boolean = false;
   private items: DownloadCenterItem[] = [];
   private selected: Set<string> = new Set<string>();
   private busy: Set<string> = new Set<string>();
@@ -95,6 +95,7 @@ export struct DownloadCenterPage {
   private rowModels: Map<string, DcRowVM>[] =
     DC_TABS.map((_t: string): Map<string, DcRowVM> => new Map<string, DcRowVM>());
   private removal: DeferredRemoval = new DeferredRemoval((): void => { this.onRemovalChanged(); });
+  private deleteEffects: DownloadDeleteEffects = new DownloadDeleteEffects();
   private store: DownloadCenterStore = new DownloadCenterStore((): void => { this.onStoreChanged(); });
 
   aboutToAppear(): void {
@@ -105,6 +106,7 @@ export struct DownloadCenterPage {
 
   aboutToDisappear(): void {
     // 等撤销的那一批离开页面就执行：用户看到的是「已删除」，不能因为离开页面就当没发生。
+    this.deleteEffects.flush();
     this.removal.flush();
     this.store.dispose();
   }
@@ -116,7 +118,8 @@ export struct DownloadCenterPage {
   // —— 数据 ——
 
   private onStoreChanged(): void {
-    this.items = this.store.items();
+    // 原始磁盘缓存仍由 store 统计、清理；各页签、搜索与批量选择只展示可识别来源的下载。
+    this.items = this.store.items().filter((it: DownloadCenterItem): boolean => !isUnsourcedCache(it));
     this.loading = this.store.loading;
     this.loadingMore = this.store.loadingMore;
     this.cacheBytes = this.store.totalCacheBytes;
@@ -139,10 +142,10 @@ export struct DownloadCenterPage {
     return this.items.filter((it: DownloadCenterItem): boolean => !this.removal.isHidden(downloadCenterItemId(it)));
   }
 
-  private rowOptions(tabIndex: number): DcRowOptions {
+  private rowOptions(): DcRowOptions {
     return {
       batch: this.batch, selectedIds: this.selected, sort: this.sortMode,
-      collapseUnsourced: DC_TABS[tabIndex] === DC_TAB_ALL, unsourcedExpanded: this.unsourcedExpanded
+      collapseUnsourced: false, unsourcedExpanded: false
     };
   }
 
@@ -180,7 +183,7 @@ export struct DownloadCenterPage {
   // 同一身份、同一布局的行沿用原来的 DcRowVM（原地改字段）；布局变了换新对象，key 跟着变。
   private syncTab(i: number, base: DownloadCenterItem[], counts: number[]): void {
     const filtered: DownloadCenterItem[] = filterDownloadCenterItems(base, DC_TABS[i], this.query);
-    const rows: DcRow[] = buildDownloadCenterRows(groupDownloadCenterItems(filtered, this.sortMode), this.rowOptions(i));
+    const rows: DcRow[] = buildDownloadCenterRows(groupDownloadCenterItems(filtered, this.sortMode), this.rowOptions());
     const prev: Map<string, DcRowVM> = this.rowModels[i];
     const next: Map<string, DcRowVM> = new Map<string, DcRowVM>();
     const models: DcRowVM[] = [];
@@ -212,7 +215,7 @@ export struct DownloadCenterPage {
     return this.items.find((it: DownloadCenterItem): boolean => downloadCenterItemId(it) === id);
   }
 
-  // —— 分页、排序、折叠 ——
+  // —— 分页、排序 ——
 
   private maybeTopUp(): void {
     if (shouldTopUp(this.tabItemCounts[this.currentTab], this.store.hasMore(),
@@ -228,6 +231,7 @@ export struct DownloadCenterPage {
   }
 
   private onQueryChanged(value: string): void {
+    this.deleteEffects.flush();
     this.query = value;
     if (value.trim() !== '') {
       this.store.loadAll(this.ctx());
@@ -246,12 +250,6 @@ export struct DownloadCenterPage {
     this.syncVisibleTabs();
   }
 
-  private toggleUnsourced(): void {
-    this.unsourcedExpanded = !this.unsourcedExpanded;
-    this.markAllDirty();
-    this.syncVisibleTabs();
-  }
-
   private setWifiOnly(on: boolean): void {
     setBoolean(KEY_BG_CACHE_WIFI_ONLY, on);
     onBackgroundCachePolicyChanged();
@@ -266,6 +264,7 @@ export struct DownloadCenterPage {
   }
 
   private onTabChanged(index: number): void {
+    this.deleteEffects.flush();
     this.currentTab = index;
     this.syncDirtyNeighbors();
     this.maybeTopUp();
@@ -365,24 +364,32 @@ export struct DownloadCenterPage {
       (): Promise<void> => this.store.deleteBatch(picked).then((_n: number): void => {}));
   }
 
-  // 取消 / 删除先藏起来给「撤销」，过几秒（或下一次删除、离开页面）才真正执行；失败放回列表。
+  // 先消散，再进入原有撤销窗口；过几秒（或下一次删除、离开页面）才真正执行。
   private deferRemoval(items: DownloadCenterItem[], message: string, run: () => Promise<void>): void {
     const ids: string[] = items.map((it: DownloadCenterItem): string => downloadCenterItemId(it));
-    this.removal.schedule({
-      ids: ids,
-      message: message,
-      commit: (): void => {
-        run().catch((e: Object): void => {
-          this.removal.restore(ids);
-          this.reportFailure('remove', e);
+    this.deleteEffects.start(this.currentTab, ids,
+      powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 550) > 0, (): void => {
+        this.getUIContext().animateTo({
+          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180), curve: Curve.EaseOut
+        }, (): void => {
+          this.removal.schedule({
+            ids: ids,
+            message: message,
+            commit: (): void => {
+              run().catch((e: Object): void => {
+                this.removal.restore(ids);
+                this.reportFailure('remove', e);
+              });
+            }
+          });
         });
-      }
-    });
+      });
   }
 
   // —— 行操作 ——
 
   private onRowTap(itemId: string): void {
+    if (this.deleteEffects.isPending(itemId)) { return; }
     const it: DownloadCenterItem | undefined = this.findItem(itemId);
     if (it === undefined) {
       return;
@@ -395,6 +402,7 @@ export struct DownloadCenterPage {
   }
 
   private onRowAction(itemId: string, action: string): void {
+    if (this.deleteEffects.isPending(itemId)) { return; }
     const it: DownloadCenterItem | undefined = this.findItem(itemId);
     if (it === undefined) {
       return;
@@ -553,7 +561,12 @@ export struct DownloadCenterPage {
       actionLabel: this.batch ? $r('app.string.dc_batch_done') : $r('app.string.dc_batch_select'),
       onAction: (): void => { this.toggleBatch(); },
       onBackPressed: (): boolean => this.leaveBatchOnBack(),
-      onNavStack: (stack: NavPathStack): void => { this.navStack = stack; }
+      onNavStack: (stack: NavPathStack): void => { this.navStack = stack; },
+      onRouteParams: (param: Object | undefined): void => {
+        if (param === undefined || param === null) { return; }
+        const query = (param as Record<string, Object>)['query'];
+        if (typeof query === 'string') { this.onQueryChanged(query as string); }
+      }
     }) {
       Stack({ alignContent: Alignment.Bottom }) {
         Scroll(this.scroller) {
@@ -590,7 +603,8 @@ export struct DownloadCenterPage {
               ForEach(DC_TABS, (_tab: string, i: number) => {
                 TabContent() {
                   DownloadCenterList({
-                    source: this.sources[i],
+                    deleteEffects: this.deleteEffects, listIndex: i,
+                    source: this.sources[i], query: this.query,
                     batch: this.batch,
                     loading: this.loading,
                     loadingMore: this.loadingMore,
@@ -600,7 +614,6 @@ export struct DownloadCenterPage {
                     onRowAction: (itemId: string, action: string): void => { this.onRowAction(itemId, action); },
                     onToggleAll: (pauseAll: boolean): void => { this.toggleAll(pauseAll); },
                     onToggleSort: (): void => { this.toggleSort(); },
-                    onToggleGroup: (): void => { this.toggleUnsourced(); },
                     onListEnd: (): void => { this.onListEnd(); }
                   });
                 }

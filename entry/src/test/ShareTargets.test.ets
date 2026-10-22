@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { ChatEntry } from '../main/ets/store/ChatEntry';
 import {
-  ShareTarget, SHARE_SNAPSHOT_VERSION,
+  ShareTarget, SHARE_SNAPSHOT_VERSION, shareTargetsWithPermissions,
   orderShareTargets, pushRecentOutgoing, serializeShareTargets, parseShareTargets
 } from '../main/ets/util/shareTargets';
 
@@ -27,6 +27,24 @@ function ids(targets: ShareTarget[]): number[] {
 
 export default function shareTargetsTest() {
   describe('shareTargets', () => {
+
+    it('快照完整保留可发送类型并按混合内容过滤', 0, (): void => {
+      const targets = orderShareTargets([chat(1, 'A', 1), chat(2, 'B', 2)], []);
+      targets[0].sendPermissions = ['sendMessages', 'sendPhotos'];
+      targets[1].sendPermissions = ['sendMessages', 'sendPhotos', 'sendDocuments'];
+      const back = parseShareTargets(serializeShareTargets(targets));
+      expect(ids(shareTargetsWithPermissions(back, ['sendPhotos', 'sendDocuments'])).join(',')).assertEqual('1');
+      expect(shareTargetsWithPermissions(back, ['sendMessages']).length).assertEqual(2);
+    });
+    it('快照缺少权限时不展示未确认的目标', 0, (): void => {
+      const targets = orderShareTargets([chat(1, 'A', 1)], []);
+      expect(shareTargetsWithPermissions(targets, ['sendPhotos']).length).assertEqual(0);
+      expect(shareTargetsWithPermissions(parseShareTargets(serializeShareTargets(targets)), ['sendPhotos']).length).assertEqual(0);
+    });
+    it('空载荷不提前展示候选', 0, (): void => {
+      const targets = orderShareTargets([chat(1, 'A', 1)], []); targets[0].sendPermissions = ['sendPhotos'];
+      expect(shareTargetsWithPermissions(targets, []).length).assertEqual(0);
+    });
 
     // ---- pushRecentOutgoing ----
 

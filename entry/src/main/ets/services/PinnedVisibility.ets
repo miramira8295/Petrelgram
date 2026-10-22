@@ -15,7 +15,11 @@ export function pinnedVisibilityFor(chatId: number): PinnedVisibility {
   try {
     const store = preferences.getPreferencesSync(context, { name: 'pinned_visibility' });
     const storage: PinnedVisibilityStorage = {
-      read: (name: string): boolean => store.getSync(name, false) === true,
+      read: (name: string): boolean | undefined => {
+        // Missing means inherit the global default; preserve both old explicit choices.
+        const value = store.getSync(name, 'inherit');
+        return typeof value === 'boolean' ? value : undefined;
+      },
       write: (name: string, hidden: boolean): void => {
         store.putSync(name, hidden);
         store.flush().catch((): void => { logE('PinnedVisibility flush failed'); });

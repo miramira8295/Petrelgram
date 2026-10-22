@@ -187,30 +187,30 @@ export default function proxyAutoSwitchTest() {
 
     it('tries_saved_proxies_after_active_and_wraps_once', 0, (): void => {
       const ordered = orderedProxyCandidateIds(candidates([11, 22, 33, 44]), 33);
-      expect(ordered.join(',')).assertEqual('44,11,22');
+      expect(ordered.join(',')).assertEqual('44,0,11,22');
     });
 
     it('never_retries_the_active_proxy', 0, (): void => {
-      expect(orderedProxyCandidateIds(candidates([7]), 7).length).assertEqual(0);
+      expect(orderedProxyCandidateIds(candidates([7]), 7).join(',')).assertEqual('0');
       expect(orderedProxyCandidateIds(candidates([7, 8]), 7).join(','))
-        .assertEqual('8');
+        .assertEqual('8,0');
     });
 
     it('continues_after_failed_candidate_without_retrying_active', 0, (): void => {
-      expect(orderedProxyCandidateIds(candidates([1, 2, 3]), 1, 2).join(',')).assertEqual('3,2');
+      expect(orderedProxyCandidateIds(candidates([1, 2, 3]), 1, 2).join(',')).assertEqual('3,0,2');
     });
 
     it('removed_cursor_falls_back_to_current_saved_order', 0, (): void => {
-      expect(orderedProxyCandidateIds(candidates([1, 3, 4]), 1, 2).join(',')).assertEqual('3,4');
+      expect(orderedProxyCandidateIds(candidates([1, 3, 4]), 1, 2).join(',')).assertEqual('3,4,0');
     });
 
     it('single_alternative_can_be_retried_on_a_later_round', 0, (): void => {
-      expect(orderedProxyCandidateIds(candidates([1, 2]), 1, 2).join(',')).assertEqual('2');
+      expect(orderedProxyCandidateIds(candidates([1, 2]), 1, 2).join(',')).assertEqual('0,2');
     });
 
     it('keeps_saved_order_when_active_proxy_is_stale', 0, (): void => {
       expect(orderedProxyCandidateIds(candidates([4, 5, 6]), 99).join(','))
-        .assertEqual('4,5,6');
+        .assertEqual('4,5,6,0');
     });
   });
 
@@ -240,20 +240,115 @@ export default function proxyAutoSwitchTest() {
       else { AppStorage.setOrCreate(KEY_CURRENT_NETWORK_TYPE, previousNetwork); }
     });
 
+    it('single_proxy_direct_failure_returns_to_proxy_after_full_delay', 0, async (): Promise<void> => {
+      fixture.ids = [1];
+      fixture.publishList();
+      fixture.state('connectionStateConnecting');
+      await fixture.nextEnable(1);
+      expect(fixture.bridge.pending[0]['@type']).assertEqual('disableProxy');
+      fixture.bridge.reply('disableProxy', { '@type': 'ok' } as TdObject);
+      await settleProxySwitch();
+      expect(fixture.clock.lastDelay).assertEqual(10000);
+      await fixture.nextEnable(0);
+      expect(fixture.bridge.pending[0]['proxy_id']).assertEqual(1);
+    });
+
+    it('direct_ready_before_ack_publishes_direct_and_stops_rotation', 0, async (): Promise<void> => {
+      fixture.ids = [1];
+      fixture.publishList();
+      let selected: number = -1;
+      fixture.service.subscribeSelection(fixture.client, (id: number): void => { selected = id; });
+      fixture.state('connectionStateConnecting');
+      await fixture.nextEnable(1);
+      fixture.state('connectionStateReady');
+      fixture.bridge.reply('disableProxy', { '@type': 'ok' } as TdObject);
+      await settleProxySwitch();
+      await fixture.replySelection(0);
+      expect(selected).assertEqual(0);
+      expect(fixture.clock.callbacks.size).assertEqual(0);
+    });
+
+    it('disable_timeout_actual_direct_gets_full_window', 0, async (): Promise<void> => {
+      fixture.ids = [1];
+      fixture.publishList();
+      fixture.state('connectionStateConnecting');
+      await fixture.nextEnable(1);
+      await fixture.reject('disableProxy', 'request timeout');
+      expect(fixture.clock.callbacks.size).assertEqual(0);
+      await fixture.replySelection(0);
+      expect(fixture.clock.lastDelay).assertEqual(10000);
+      expect(fixture.bridge.count('enableProxy')).assertEqual(0);
+      await fixture.nextEnable(0);
+      expect(fixture.bridge.pending[0]['proxy_id']).assertEqual(1);
+    });
+
+    it('manual_selection_during_disable_ignores_late_ack', 0, async (): Promise<void> => {
+      fixture.ids = [1];
+      fixture.publishList();
+      fixture.state('connectionStateConnecting');
+      await fixture.nextEnable(1);
+      fixture.service.proxySelectionChanged(1);
+      fixture.bridge.reply('disableProxy', { '@type': 'ok' } as TdObject);
+      await settleProxySwitch();
+      expect(fixture.clock.callbacks.size).assertEqual(1);
+      await fixture.nextEnable(1);
+      expect(fixture.bridge.count('disableProxy')).assertEqual(2);
+    });
+
+    it('auto_switch_off_prevents_direct_fallback', 0, async (): Promise<void> => {
+      fixture.ids = [1];
+      fixture.publishList();
+      await fixture.startListCheck();
+      AppStorage.setOrCreate(KEY_PROXY_AUTO_SWITCH, false);
+      fixture.service.settingsChanged();
+      await fixture.replySelection(1);
+      expect(fixture.bridge.count('disableProxy')).assertEqual(0);
+      expect(fixture.clock.callbacks.size).assertEqual(0);
+    });
+
+    it('network_loss_prevents_direct_fallback', 0, async (): Promise<void> => {
+      fixture.ids = [1];
+      fixture.publishList();
+      await fixture.startListCheck();
+      fixture.network.change('none');
+      await fixture.replySelection(1);
+      expect(fixture.bridge.count('disableProxy')).assertEqual(0);
+      expect(fixture.clock.callbacks.size).assertEqual(0);
+    });
+
+    it('direct_with_no_saved_proxy_does_not_schedule', 0, (): void => {
+      fixture.ids = [];
+      fixture.publishList();
+      fixture.state('connectionStateConnecting');
+      expect(fixture.clock.callbacks.size).assertEqual(0);
+    });
+
+    it('direct_with_saved_proxy_recovers_after_network_returns', 0, async (): Promise<void> => {
+      fixture.service.proxyListChanged([{ id: 1, isEnabled: false }]);
+      fixture.state('connectionStateConnecting');
+      fixture.network.change('none');
+      expect(fixture.clock.callbacks.size).assertEqual(0);
+      fixture.network.change('wifi');
+      expect(fixture.clock.lastDelay).assertEqual(10000);
+      await fixture.nextEnable(0);
+      expect(fixture.bridge.pending[0]['proxy_id']).assertEqual(1);
+    });
+
     it('rotates_all_saved_proxies_one_per_window_without_ping', 0, async (): Promise<void> => {
       fixture.ids = [1, 2, 3];
       fixture.publishList();
       fixture.state('connectionStateConnectingToProxy');
-      const activeIds: number[] = [1, 2, 3];
-      const targetIds: number[] = [2, 3, 1];
+      const activeIds: number[] = [1, 2, 3, 0];
+      const targetIds: number[] = [2, 3, 0, 1];
       for (let i = 0; i < activeIds.length; i++) {
         await fixture.nextEnable(activeIds[i]);
-        expect(fixture.bridge.pending[0]['proxy_id']).assertEqual(targetIds[i]);
+        expect((fixture.bridge.pending[0]['proxy_id'] as number | undefined) ?? 0).assertEqual(targetIds[i]);
         expect(fixture.clock.callbacks.size).assertEqual(0);
         fixture.state('connectionStateConnecting');
         expect(fixture.clock.callbacks.size).assertEqual(0);
-        await fixture.enableReply();
-        expect(fixture.bridge.count('enableProxy')).assertEqual(i + 1);
+        fixture.bridge.reply(targetIds[i] === 0 ? 'disableProxy' : 'enableProxy', { '@type': 'ok' } as TdObject);
+        await settleProxySwitch();
+        expect(fixture.bridge.count('enableProxy') + fixture.bridge.count('disableProxy')).assertEqual(i + 1);
         expect(fixture.clock.callbacks.size).assertEqual(1);
         expect(fixture.clock.lastDelay).assertEqual(10000);
       }
@@ -264,14 +359,14 @@ export default function proxyAutoSwitchTest() {
       fixture.ids = [1, 2, 3];
       fixture.publishList();
       fixture.state('connectionStateConnecting');
-      const targets: number[] = [2, 3, 2];
+      const targets: number[] = [2, 3, 0, 2];
       for (let i = 0; i < targets.length; i++) {
         await fixture.nextEnable(1);
-        expect(fixture.bridge.pending[0]['proxy_id']).assertEqual(targets[i]);
-        await fixture.reject('enableProxy', 'proxy rejected');
+        expect((fixture.bridge.pending[0]['proxy_id'] as number | undefined) ?? 0).assertEqual(targets[i]);
+        await fixture.reject(targets[i] === 0 ? 'disableProxy' : 'enableProxy', 'proxy rejected');
         expect(fixture.clock.callbacks.size).assertEqual(0);
         await fixture.replySelection(1);
-        expect(fixture.bridge.count('enableProxy')).assertEqual(i + 1);
+        expect(fixture.bridge.count('enableProxy') + fixture.bridge.count('disableProxy')).assertEqual(i + 1);
         expect(fixture.clock.callbacks.size).assertEqual(1);
         expect(fixture.clock.lastDelay).assertEqual(10000);
       }
@@ -299,10 +394,11 @@ export default function proxyAutoSwitchTest() {
       expect(fixture.bridge.count('enableProxy')).assertEqual(1);
     });
 
-    it('removing_all_alternatives_stops_rotation', 0, async (): Promise<void> => {
+    it('removing_other_proxies_still_tries_direct', 0, async (): Promise<void> => {
       await fixture.startListCheck();
       fixture.ids = [1];
       await fixture.replySelection(1);
+      expect(fixture.bridge.count('disableProxy')).assertEqual(1);
       expect(fixture.bridge.count('enableProxy')).assertEqual(0);
       expect(fixture.clock.callbacks.size).assertEqual(0);
     });
@@ -408,13 +504,16 @@ export default function proxyAutoSwitchTest() {
       expect(fixture.bridge.pending[0]['proxy_id']).assertEqual(2);
     });
 
-    it('manual_disable_during_reconciliation_cancels_all_rotation', 0, async (): Promise<void> => {
+    it('manual_direct_during_reconciliation_cancels_old_rotation_and_waits', 0, async (): Promise<void> => {
       await fixture.startEnable();
       await fixture.reject('enableProxy', 'request timeout');
       fixture.service.proxySelectionChanged(0);
       await fixture.replySelection(2);
-      expect(fixture.clock.callbacks.size).assertEqual(0);
-      expect(fixture.bridge.count('enableProxy')).assertEqual(1);
+      expect(fixture.clock.callbacks.size).assertEqual(1);
+      expect(fixture.clock.lastDelay).assertEqual(10000);
+      await fixture.nextEnable(0);
+      expect(fixture.bridge.pending[0]['proxy_id']).assertEqual(1);
+      expect(fixture.bridge.count('enableProxy')).assertEqual(2);
     });
 
     it('offline_during_final_read_does_not_enable_any_candidate', 0, async (): Promise<void> => {
@@ -485,7 +584,10 @@ export default function proxyAutoSwitchTest() {
       expect(fixture.service.proxyListLoaded(fixture.client, fixture.service.getSelectionRevision(),
         [{ id: 1, isEnabled: false }, { id: 2, isEnabled: false }])).assertTrue();
       expect(selected.join(',')).assertEqual('0');
-      expect(fixture.clock.callbacks.size).assertEqual(0);
+      expect(fixture.clock.callbacks.size).assertEqual(1);
+      expect(fixture.clock.lastDelay).assertEqual(10000);
+      await fixture.nextEnable(0);
+      expect(fixture.bridge.pending[0]['proxy_id']).assertEqual(1);
     });
 
     it('manual_reselection_is_not_overwritten_by_automatic_ack', 0, async (): Promise<void> => {
@@ -707,12 +809,13 @@ export default function proxyAutoSwitchTest() {
       expect(fixture.clock.callbacks.size).assertEqual(0);
     });
 
-    it('manual_disable_during_probe_prevents_automatic_enable', 0, async (): Promise<void> => {
+    it('manual_direct_selection_cancels_old_attempt_and_starts_full_delay', 0, async (): Promise<void> => {
       await fixture.startListCheck();
       fixture.service.proxySelectionChanged(0);
       await fixture.listReply();
       expect(fixture.bridge.count('enableProxy')).assertEqual(0);
-      expect(fixture.clock.callbacks.size).assertEqual(0);
+      expect(fixture.clock.callbacks.size).assertEqual(1);
+      expect(fixture.clock.lastDelay).assertEqual(10000);
     });
 
     it('ready_to_connecting_arms_without_manual_selection', 0, async (): Promise<void> => {
@@ -804,7 +907,7 @@ export default function proxyAutoSwitchTest() {
       expect(fixture.bridge.count('enableProxy')).assertEqual(1);
     });
 
-    it('manual_disable_survives_old_list_reply_and_network_recovery', 0, async (): Promise<void> => {
+    it('manual_direct_selection_ignores_stale_list_and_recovers_with_full_delay', 0, async (): Promise<void> => {
       fixture.state('connectionStateReady'); // list refresh is still in flight
       fixture.service.proxySelectionChanged(0);
       fixture.network.change('none');
@@ -812,7 +915,8 @@ export default function proxyAutoSwitchTest() {
       await fixture.listReply(); // stale list still says proxy 1 is enabled
       fixture.network.change('wifi');
       fixture.state('connectionStateConnectingToProxy');
-      expect(fixture.clock.callbacks.size).assertEqual(0);
+      expect(fixture.clock.callbacks.size).assertEqual(1);
+      expect(fixture.clock.lastDelay).assertEqual(10000);
       expect(fixture.bridge.count('pingProxy')).assertEqual(0);
     });
 
@@ -826,12 +930,12 @@ export default function proxyAutoSwitchTest() {
       expect(fixture.clock.callbacks.size).assertEqual(0);
     });
 
-    it('single_proxy_does_not_start_failover_after_recovery', 0, (): void => {
+    it('single_proxy_starts_failover_after_recovery', 0, (): void => {
       fixture.service.proxyListChanged([{ id: 1, isEnabled: true }]);
       fixture.network.change('none');
       fixture.state('connectionStateConnecting');
       fixture.network.change('wifi');
-      expect(fixture.clock.callbacks.size).assertEqual(0);
+      expect(fixture.clock.callbacks.size).assertEqual(1);
     });
 
     it('unknown_list_checks_direct_session_before_any_probe', 0, async (): Promise<void> => {
@@ -840,8 +944,9 @@ export default function proxyAutoSwitchTest() {
       expect(fixture.clock.callbacks.size).assertEqual(1);
       fixture.clock.fire();
       await fixture.listReply(false);
+      await fixture.listReply(false);
       expect(fixture.bridge.count('pingProxy')).assertEqual(0);
-      expect(fixture.bridge.count('enableProxy')).assertEqual(0);
+      expect(fixture.bridge.count('enableProxy')).assertEqual(1);
       expect(fixture.clock.callbacks.size).assertEqual(0);
     });
 

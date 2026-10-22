@@ -10829,6 +10829,10 @@
       "value": "Частые контакты"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "Недавние"
+    },
+    {
       "name": "gs_recent",
       "value": "Недавние"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "Пробовать следующий прокси, если текущий долго недоступен"
+      "value": "При постоянных сбоях подключения автоматически перебирать сохранённые прокси и прямое соединение"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "Добавьте не менее двух прокси для автопереключения"
+      "value": "Добавьте хотя бы один прокси для автоматического переключения"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "Показать закреплённые сообщения"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "Максимальная скорость при удержании"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "Удерживайте правую часть видео для постепенного ускорения до этого предела. Отпустите для возврата к исходной скорости. Потоковое воспроизведение: до 8×."
+    },
+    {
+      "name": "vf_minimize",
+      "value": "Мини-плеер"
+    },
+    {
+      "name": "vf_resize",
+      "value": "Изменить размер мини-плеера"
+    },
+    {
+      "name": "vf_play",
+      "value": "Воспроизвести"
+    },
+    {
+      "name": "vf_pause",
+      "value": "Пауза"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "Очистить недавние чаты"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "Очистить список недавних чатов этого аккаунта? Чаты и сообщения останутся. Чаты появятся снова, когда вы их откроете."
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "Убрать из недавних чатов"
+    },
+    {
+      "name": "gs_objects",
+      "value": "Люди / Группы / Каналы"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "Выбрать канал"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "Поиск по имени или @username"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "Поиск по тексту сообщений"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "Поиск приложения или @username"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "Вы подписаны"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "Вы не подписаны"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "Совпадение в названии канала"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "Совпадение в названии группы"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "Совпадение в имени"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "Совпадение в username"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "Совпадение в тексте"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "Совпадение в имени файла"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "Все"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "Личные"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "Люди"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "Все каналы"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "Публичные результаты"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "Существующие чаты"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "Найденные приложения"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "Уточните запрос или введите точный @username. Публичный поиск по имени не поддерживает страницы."
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "Поиск имён и username, включая публичные группы и каналы без подписки."
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "Поиск по содержимому сообщений, включая архивные чаты."
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "Поиск по сообщениям только в «%s»."
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "Поиск задач загрузки и загруженных файлов по имени."
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "Автопредзагрузка видео"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "Заранее буферизовать видео в чате. Отключение не влияет на воспроизведение и ручную загрузку."
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "Скрывать закреплённые сообщения по умолчанию"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "Показать или скрыть можно отдельно в меню каждого чата"
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { navigateToSetting } from '../../util/settingsNav';
-import { NewSessionBanner } from './NewSessionBanner';
+import { NewSessionBanner, NEW_SESSION_BAR_HEIGHT } from './NewSessionBanner';
 import { common } from '@kit.AbilityKit';
 import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { SCOPE_MUTE_EPOCH } from '../../store/ScopeMuteStore';
@@ -12,7 +12,7 @@ import {
 import { UnreadBadgeCounts } from '../../util/unreadBadgeRule';
 import { chatListSyncState } from '../../util/syncState';
 import { flushPendingNavs } from '../../util/pendingNavFlush';
-import { getFolderStore, getUnreadCountStore, getChatStore, getConnectionState, getTdClient } from '../../tdkit/Globals';
+import { getSessionSecurityStore, getFolderStore, getUnreadCountStore, getChatStore, getConnectionState, getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { FolderInfo } from '../../store/FolderStore';
 import { ChatListView } from './ChatListView';
@@ -471,7 +471,13 @@ export struct ChatListPage {
     return this.viewerCoversWindow && isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait);
   }
 
+  @State private newSessionCount: number = 0;
+  private unsubSessionSecurity: (() => void) | null = null;
+
   aboutToAppear(): void {
+    this.unsubSessionSecurity = getSessionSecurityStore().subscribe((count: number): void => {
+      this.newSessionCount = count;
+    });
     this.pageActive = true;
     // 深链、通知点击、账号切换都在页面之外触发跳转，拿不到组件上下文，
     // 只能靠全局注册表取栈。见 util/navStacks.ets 的说明。
@@ -805,6 +811,8 @@ export struct ChatListPage {
   private qrScanner: TelegramQrScanner = new TelegramQrScanner();
 
   aboutToDisappear(): void {
+    this.unsubSessionSecurity?.();
+    this.unsubSessionSecurity = null;
     this.qrScanner.cancel();
     this.pageActive = false;
     this.cancelListRenderResume();
@@ -1052,10 +1060,11 @@ export struct ChatListPage {
     // 试过让它单独浮在内容区上层（Stack）：两者中间断开一道，观感割裂；而且
     // 标题栏那块玻璃背后只剩一小段列表，透不出东西来，看着几乎是实心的。
     // 合成一块之后列表从整块底下穿过去，玻璃才有内容可透。
-    if (this.folders.length > 0) {
+    if (this.folders.length > 0 || this.newSessionCount > 0) {
       content.bottomBuilder = {
-        builder: (): void => { this.tabBar(); },
-        height: FOLDER_BAR_SPACE
+        builder: (): void => { this.titleBarBottom(); },
+        height: (this.folders.length > 0 ? FOLDER_BAR_SPACE : 0)
+          + (this.newSessionCount > 0 ? NEW_SESSION_BAR_HEIGHT : 0)
       };
     }
     return content;
@@ -1202,6 +1211,18 @@ export struct ChatListPage {
   }
 
   @Builder
+  titleBarBottom() {
+    Column() {
+      if (this.newSessionCount > 0) {
+        NewSessionBanner({ count: this.newSessionCount });
+      }
+      if (this.folders.length > 0) {
+        this.tabBar();
+      }
+    }.width('100%');
+  }
+
+  @Builder
   tabBar() {
     Column() {
       Scroll(this.tabScroller) {
@@ -1287,7 +1308,6 @@ export struct ChatListPage {
             // A definite full-height Column pins the list to the top and lets
             // the body's layoutWeight(1) actually stretch.
             Column() {
-              NewSessionBanner();
               if (spec.key === 'main') {
                 MainTabBody({
                   // 让位整个交给标题栏的 enableComponentSafeArea——横条现在挂在

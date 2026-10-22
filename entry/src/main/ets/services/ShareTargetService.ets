@@ -2,7 +2,7 @@ import { ShareRow } from '../util/shareSearch';
 import { pickerRows } from './ShareChatSearch';
 import { common } from '@kit.AbilityKit';
 import { ChatEntry } from '../store/ChatEntry';
-import { getChatStore } from '../tdkit/Globals';
+import { getChatStore, getTdClient } from '../tdkit/Globals';
 import {
   SHARE_TARGET_LIMIT, ShareTarget, orderShareTargets
 } from '../util/shareTargets';
@@ -10,6 +10,9 @@ import { onRecentOutgoingChanged, recentOutgoingChats } from '../util/recentOutg
 import {
   clearShareTargetSnapshot, initShareSnapshot, writeShareTargetSnapshot
 } from './ShareTargetSnapshot';
+import { TargetSendFilter } from './TargetSendFilter';
+import { TdClient } from '../tdkit/TdClient';
+import { TdObject, TdRequest } from '../tdkit/TdTypes';
 import { donateShareTargets } from './ShareContactDonation';
 
 // 把「发给谁」的候选名单持续写到磁盘上，供分享面板里的扩展进程读。
@@ -30,6 +33,8 @@ let unsubRecent: (() => void) | null = null;
 let lastWriteAt: number = 0;
 let pending: boolean = false;
 let lastPayload: string = '';
+let permissionFilter: TargetSendFilter | null = null;
+let permissionClient: TdClient | null = null;
 // 捐献要 BaseContext。由 startShareTargetService 传进来存着。
 let donationContext: common.BaseContext | null = null;
 
@@ -48,10 +53,25 @@ function fingerprintOf(targets: ShareTarget[]): string {
 }
 
 function writeNow(): void {
-  const targets: ShareTarget[] = currentTargets();
-  const print: string = fingerprintOf(targets);
   lastWriteAt = Date.now();
   pending = false;
+  const client = getTdClient();
+  if (permissionFilter === null || permissionClient !== client) {
+    permissionFilter?.dispose();
+    permissionClient = client;
+    permissionFilter = new TargetSendFilter(
+      (request: TdRequest): Promise<TdObject> => client.send(request, 15000),
+      async (): Promise<string[]> => [], (): void => scheduleRefresh(),
+      (): boolean => client === getTdClient());
+    permissionFilter.bind(client);
+  }
+  const filter: TargetSendFilter = permissionFilter;
+  const targets: ShareTarget[] = currentTargets();
+  filter.retain(targets.map((target: ShareTarget): number => target.chatId));
+  for (const target of targets) {
+    target.sendPermissions = filter.permissionKeys(target.chatId) ?? [];
+  }
+  const print: string = fingerprintOf(targets);
   // **空名单绝不写盘。** 冷启动时订阅会立刻回调一次，那一刻 ChatStore 还是空的
   // ——写下去就是把上一次跑攒好的快照抹成空的，分享面板从此没有推荐可显示，
   // 直到用户主动打开一次应用。空名单等于"还不知道"，不是"没有"。
@@ -108,6 +128,7 @@ export function stopShareTargetService(): void {
     unsubRecent = null;
   }
   pending = false;
+  permissionFilter?.dispose(); permissionFilter = null; permissionClient = null;
 }
 
 // 退出登录/切账号：快照里是上一个账号的会话标题，必须抹掉。
@@ -116,6 +137,7 @@ export function stopShareTargetService(): void {
 // 前提下才删——冷启动时 tdSessionEpoch 也会跳一次，那时候删等于每次开机都
 // 把快照清空，分享面板在用户打开应用之前永远是空的。
 export function resetShareTargets(force: boolean = false): void {
+  permissionFilter?.dispose(); permissionFilter = null; permissionClient = null;
   const wrote: boolean = lastPayload !== '';
   lastPayload = '';
   lastWriteAt = 0;

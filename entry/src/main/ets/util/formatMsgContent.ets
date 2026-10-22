@@ -516,26 +516,33 @@ function thumbnailFileOf(thumb: TdObject): TdObject | undefined {
   return thumb['thumbnail'] as TdObject | undefined;
 }
 
+function validMediaGeometry(width: number, height: number): boolean {
+  return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
+}
+
 function videoThumbnail(video: TdObject | undefined): PhotoSize {
   if (video === undefined) {
     return { fileId: 0, width: 0, height: 0 };
   }
   const sourceWidth = (video['width'] as number | undefined) ?? 0;
   const sourceHeight = (video['height'] as number | undefined) ?? 0;
+  const hasSource: boolean = validMediaGeometry(sourceWidth, sourceHeight);
   const thumb = thumbnailObjectOf(video);
   if (thumb === undefined) {
-    return { fileId: 0, width: sourceWidth, height: sourceHeight };
+    return { fileId: 0, width: hasSource ? sourceWidth : 0, height: hasSource ? sourceHeight : 0 };
   }
   const file = thumbnailFileOf(thumb);
   const thumbWidth = (thumb['width'] as number | undefined) ?? 0;
   const thumbHeight = (thumb['height'] as number | undefined) ?? 0;
   return {
     fileId: file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0,
-    // Some TDLib messages contain a valid thumbnail file but report 0×0 for
-    // its dimensions. Keep the video's source geometry so the chat bubble
-    // doesn't flash square and then jump to 16:9 when playback starts.
-    width: thumbWidth > 0 ? thumbWidth : sourceWidth,
-    height: thumbHeight > 0 ? thumbHeight : sourceHeight
+    // These dimensions also describe the original playback variant. The thumbnail
+    // file is only the poster: its short edge (e.g. 150px) is not video quality.
+    // Use one complete geometry pair, never mix source and thumbnail axes.
+    width: hasSource ? sourceWidth :
+      (validMediaGeometry(thumbWidth, thumbHeight) ? thumbWidth : 0),
+    height: hasSource ? sourceHeight :
+      (validMediaGeometry(thumbWidth, thumbHeight) ? thumbHeight : 0)
   };
 }
 

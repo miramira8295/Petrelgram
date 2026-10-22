@@ -10829,6 +10829,10 @@
       "value": "Kenalan kerap"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "Terkini"
+    },
+    {
       "name": "gs_recent",
       "value": "Akses terkini"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "Cuba proksi disimpan seterusnya apabila proksi semasa terus tidak tersedia"
+      "value": "Jika sambungan terus gagal, bertukar secara automatik antara proksi tersimpan dan sambungan terus"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "Tambah sekurang-kurangnya dua proksi untuk mendayakan pertukaran automatik"
+      "value": "Tambah sekurang-kurangnya satu proksi untuk mengaktifkan pertukaran automatik"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "Tunjukkan mesej disemat"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "Kelajuan maksimum semasa ditekan lama"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "Tekan lama sebelah kanan video untuk memecut secara beransur hingga had ini. Lepaskan untuk kembali ke kelajuan asal. Penstriman dihadkan kepada 8×."
+    },
+    {
+      "name": "vf_minimize",
+      "value": "Pemain mini"
+    },
+    {
+      "name": "vf_resize",
+      "value": "Ubah saiz pemain mini"
+    },
+    {
+      "name": "vf_play",
+      "value": "Main"
+    },
+    {
+      "name": "vf_pause",
+      "value": "Jeda"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "Kosongkan sembang terkini"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "Kosongkan sembang terkini untuk akaun ini? Sembang dan mesej tidak dipadamkan. Sembang akan muncul semula apabila dibuka kembali."
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "Alih keluar daripada sembang terkini"
+    },
+    {
+      "name": "gs_objects",
+      "value": "Pengguna / Kumpulan / Saluran"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "Pilih saluran"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "Cari nama atau @username"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "Cari kandungan mesej"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "Cari aplikasi atau @username"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "Telah menyertai"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "Belum menyertai"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "Nama saluran sepadan"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "Nama kumpulan sepadan"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "Nama paparan sepadan"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "Nama pengguna sepadan"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "Kandungan mesej sepadan"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "Nama fail sepadan"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "Semua"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "Peribadi"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "Pengguna"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "Semua saluran"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "Hasil awam"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "Sembang sedia ada"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "Hasil aplikasi"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "Perincikan carian atau masukkan @username yang tepat. Carian nama awam tidak menyokong halaman seterusnya."
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "Cari nama dan nama pengguna, termasuk kumpulan dan saluran awam yang belum disertai."
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "Cari kandungan mesej, termasuk sembang yang diarkibkan."
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "Cari kandungan mesej hanya dalam “%s”."
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "Cari tugas muat turun dan fail yang dimuat turun mengikut nama."
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "Pramuat video secara automatik"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "Penimbal video sembang lebih awal. Mematikannya tidak menjejaskan main balik atau muat turun manual."
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "Sembunyikan mesej dipinkan secara lalai"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "Papar atau sembunyikan melalui menu setiap sembang"
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { HOLD_SPEED_LIMIT_OPTIONS, normalizeHoldSpeedLimit } from '../main/ets/util/holdSpeedLimit';
 import { describe, expect, it } from '@ohos/hypium';
 import holdRewindTest from './HoldRewind.test';
 import {
@@ -81,6 +82,42 @@ export default function playerChromeTest() {
     it('封顶：边下边播 8×、本地 32×', 0, () => {
       expect(holdSpeedAt(60_000, holdSpeedCap(false))).assertEqual(8);
       expect(holdSpeedAt(60_000, holdSpeedCap(true))).assertEqual(32);
+    });
+
+    it('自定义上限覆盖所有本地和流式档位', 0, (): void => {
+      for (const limit of HOLD_SPEED_LIMIT_OPTIONS) {
+        expect(holdSpeedCap(true, limit)).assertEqual(limit);
+        expect(holdSpeedCap(false, limit)).assertEqual(Math.min(limit, 8));
+        expect(holdSpeedAt(60_000, holdSpeedCap(true, limit))).assertEqual(limit);
+      }
+    });
+
+    it('2倍上限从按下到长时间按住都不再加速', 0, (): void => {
+      for (const elapsed of [0, 1500, 2500, 4500, 6500, 60_000]) {
+        expect(holdSpeedAt(elapsed, holdSpeedCap(true, 2))).assertEqual(2);
+      }
+    });
+
+    it('6倍上限保留之前的阶梯并在6倍停住', 0, (): void => {
+      expect(holdSpeedAt(0, holdSpeedCap(true, 6))).assertEqual(2);
+      expect(holdSpeedAt(1500, holdSpeedCap(true, 6))).assertEqual(3);
+      expect(holdSpeedAt(2500, holdSpeedCap(true, 6))).assertEqual(4);
+      expect(holdSpeedAt(3500, holdSpeedCap(true, 6))).assertEqual(6);
+      expect(holdSpeedAt(6500, holdSpeedCap(true, 6))).assertEqual(6);
+    });
+
+    it('无效设置回退默认而不是传入非法播放速度', 0, (): void => {
+      for (const value of [0, -2, 1, 5, 2.5, 64, Number.NaN, Number.POSITIVE_INFINITY]) {
+        expect(normalizeHoldSpeedLimit(value)).assertEqual(32);
+        expect(holdSpeedCap(true, value)).assertEqual(32);
+        expect(holdSpeedCap(false, value)).assertEqual(8);
+      }
+    });
+
+    it('下载完成后仍受用户上限约束', 0, (): void => {
+      expect(holdSpeedAt(6500, holdSpeedCap(false, 16))).assertEqual(8);
+      expect(holdSpeedAt(6500, holdSpeedCap(true, 16))).assertEqual(16);
+      expect(holdSpeedAt(6500, holdSpeedCap(true, 4))).assertEqual(4);
     });
 
     it('16× 及以上静音（声音已听不出内容）', 0, () => {

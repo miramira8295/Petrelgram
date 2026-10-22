@@ -10829,6 +10829,10 @@
       "value": "Часті контакти"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "Нещодавні"
+    },
+    {
       "name": "gs_recent",
       "value": "Нещодавні"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "Пробувати наступний проксі, якщо поточний довго недоступний"
+      "value": "У разі постійних збоїв підключення автоматично перебирати збережені проксі та пряме з’єднання"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "Додайте щонайменше два проксі для автоперемикання"
+      "value": "Додайте хоча б один проксі для автоматичного перемикання"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "Показати закріплені повідомлення"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "Максимальна швидкість при утриманні"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "Утримуйте праву частину відео для поступового прискорення до цієї межі. Відпустіть для повернення початкової швидкості. Потокове відтворення: до 8×."
+    },
+    {
+      "name": "vf_minimize",
+      "value": "Мініплеєр"
+    },
+    {
+      "name": "vf_resize",
+      "value": "Змінити розмір мініплеєра"
+    },
+    {
+      "name": "vf_play",
+      "value": "Відтворити"
+    },
+    {
+      "name": "vf_pause",
+      "value": "Пауза"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "Очистити нещодавні чати"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "Очистити список нещодавніх чатів цього облікового запису? Чати й повідомлення залишаться. Чати з’являться знову, коли ви їх відкриєте."
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "Прибрати з нещодавніх чатів"
+    },
+    {
+      "name": "gs_objects",
+      "value": "Люди / Групи / Канали"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "Вибрати канал"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "Пошук за ім’ям або @username"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "Пошук у тексті повідомлень"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "Пошук застосунку або @username"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "Ви підписані"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "Ви не підписані"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "Збіг у назві каналу"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "Збіг у назві групи"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "Збіг в імені"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "Збіг у username"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "Збіг у тексті"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "Збіг в імені файлу"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "Усі"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "Особисті"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "Люди"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "Усі канали"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "Публічні результати"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "Наявні чати"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "Знайдені застосунки"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "Уточніть запит або введіть точний @username. Публічний пошук за ім’ям не підтримує сторінки."
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "Пошук імен і username, зокрема публічних груп і каналів без підписки."
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "Пошук у вмісті повідомлень, зокрема в архівних чатах."
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "Пошук у повідомленнях лише в «%s»."
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "Пошук завдань завантаження та завантажених файлів за іменем."
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "Автоматичне передзавантаження відео"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "Заздалегідь буферизувати відео в чаті. Вимкнення не впливає на відтворення та ручне завантаження."
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "Приховувати закріплені повідомлення за замовчуванням"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "Показати чи приховати можна окремо в меню кожного чату"
     }
   ]
 }

@@ -10829,6 +10829,10 @@
       "value": "ผู้ติดต่อที่ติดต่อบ่อย"
     },
     {
+      "name": "gs_tab_recent",
+      "value": "ล่าสุด"
+    },
+    {
       "name": "gs_recent",
       "value": "การเข้าชมล่าสุด"
     },
@@ -11858,11 +11862,11 @@
     },
     {
       "name": "px_auto_switch_sub",
-      "value": "ลองพร็อกซีที่บันทึกไว้รายการถัดไปเมื่อพร็อกซีปัจจุบันยังใช้ไม่ได้"
+      "value": "เมื่อเชื่อมต่อล้มเหลวอย่างต่อเนื่อง ให้สลับระหว่างพร็อกซีที่บันทึกไว้และการเชื่อมต่อโดยตรงโดยอัตโนมัติ"
     },
     {
       "name": "px_auto_switch_need_more",
-      "value": "เพิ่มพร็อกซีอย่างน้อยสองรายการเพื่อเปิดการสลับอัตโนมัติ"
+      "value": "เพิ่มพร็อกซีอย่างน้อยหนึ่งรายการเพื่อเปิดใช้การสลับอัตโนมัติ"
     },
     {
       "name": "px_auto_switch_delay",
@@ -13139,6 +13143,158 @@
     {
       "name": "cp_show_pinned",
       "value": "แสดงข้อความที่ปักหมุด"
+    },
+    {
+      "name": "ms_hold_speed_limit",
+      "value": "ความเร็วสูงสุดเมื่อกดค้าง"
+    },
+    {
+      "name": "ms_hold_speed_limit_sub",
+      "value": "กดด้านขวาของวิดีโอค้างไว้เพื่อเพิ่มความเร็วทีละขั้นจนถึงขีดจำกัดนี้ ปล่อยเพื่อกลับสู่ความเร็วเดิม สตรีมได้สูงสุด 8×"
+    },
+    {
+      "name": "vf_minimize",
+      "value": "เครื่องเล่นขนาดเล็ก"
+    },
+    {
+      "name": "vf_resize",
+      "value": "ปรับขนาดเครื่องเล่นขนาดเล็ก"
+    },
+    {
+      "name": "vf_play",
+      "value": "เล่น"
+    },
+    {
+      "name": "vf_pause",
+      "value": "หยุดชั่วคราว"
+    },
+    {
+      "name": "gs_clear_opened",
+      "value": "ล้างแชทล่าสุด"
+    },
+    {
+      "name": "gs_clear_opened_confirm",
+      "value": "ล้างรายการแชทล่าสุดของบัญชีนี้หรือไม่? แชทและข้อความจะไม่ถูกลบ แชทจะปรากฏอีกครั้งเมื่อคุณเปิดใหม่"
+    },
+    {
+      "name": "gs_remove_opened",
+      "value": "นำออกจากแชทล่าสุด"
+    },
+    {
+      "name": "gs_objects",
+      "value": "ผู้ใช้ / กลุ่ม / ช่อง"
+    },
+    {
+      "name": "gs_choose_channel",
+      "value": "เลือกช่อง"
+    },
+    {
+      "name": "gs_search_names",
+      "value": "ค้นหาชื่อหรือ @username"
+    },
+    {
+      "name": "gs_search_message_content",
+      "value": "ค้นหาเนื้อหาข้อความ"
+    },
+    {
+      "name": "gs_search_app_names",
+      "value": "ค้นหาแอปหรือ @username"
+    },
+    {
+      "name": "gs_member_joined",
+      "value": "เข้าร่วมแล้ว"
+    },
+    {
+      "name": "gs_member_not_joined",
+      "value": "ยังไม่เข้าร่วม"
+    },
+    {
+      "name": "gs_hit_channel",
+      "value": "ชื่อช่องตรงกัน"
+    },
+    {
+      "name": "gs_hit_group",
+      "value": "ชื่อกลุ่มตรงกัน"
+    },
+    {
+      "name": "gs_hit_name",
+      "value": "ชื่อที่แสดงตรงกัน"
+    },
+    {
+      "name": "gs_hit_username",
+      "value": "ชื่อผู้ใช้ตรงกัน"
+    },
+    {
+      "name": "gs_hit_message",
+      "value": "เนื้อหาข้อความตรงกัน"
+    },
+    {
+      "name": "gs_hit_filename",
+      "value": "ชื่อไฟล์ตรงกัน"
+    },
+    {
+      "name": "gs_scope_all",
+      "value": "ทั้งหมด"
+    },
+    {
+      "name": "gs_scope_private",
+      "value": "ส่วนตัว"
+    },
+    {
+      "name": "gs_scope_user",
+      "value": "ผู้ใช้"
+    },
+    {
+      "name": "gs_all_channels",
+      "value": "ทุกช่อง"
+    },
+    {
+      "name": "gs_public_names",
+      "value": "ผลการค้นหาสาธารณะ"
+    },
+    {
+      "name": "gs_existing_chats",
+      "value": "แชทที่มีอยู่"
+    },
+    {
+      "name": "gs_app_results",
+      "value": "ผลการค้นหาแอป"
+    },
+    {
+      "name": "gs_public_name_limit",
+      "value": "ระบุคำค้นให้ละเอียดหรือป้อน @username ที่ถูกต้อง การค้นหาชื่อสาธารณะไม่รองรับการแบ่งหน้า"
+    },
+    {
+      "name": "gs_name_scope",
+      "value": "ค้นหาชื่อและชื่อผู้ใช้ รวมถึงกลุ่มและช่องสาธารณะที่ยังไม่ได้เข้าร่วม"
+    },
+    {
+      "name": "gs_message_scope",
+      "value": "ค้นหาเนื้อหาข้อความ รวมถึงแชทที่เก็บถาวร"
+    },
+    {
+      "name": "gs_channel_scope",
+      "value": "ค้นหาเนื้อหาข้อความเฉพาะใน “%s”"
+    },
+    {
+      "name": "gs_download_scope",
+      "value": "ค้นหางานดาวน์โหลดและไฟล์ที่ดาวน์โหลดตามชื่อ"
+    },
+    {
+      "name": "ms_video_auto_preload",
+      "value": "โหลดวิดีโอล่วงหน้าอัตโนมัติ"
+    },
+    {
+      "name": "ms_video_auto_preload_sub",
+      "value": "บัฟเฟอร์วิดีโอในแชทล่วงหน้า การปิดไม่กระทบการเล่นหรือดาวน์โหลดด้วยตนเอง"
+    },
+    {
+      "name": "chat_settings_hide_pinned",
+      "value": "ซ่อนข้อความที่ปักหมุดตามค่าเริ่มต้น"
+    },
+    {
+      "name": "chat_settings_hide_pinned_sub",
+      "value": "แสดงหรือซ่อนแยกกันได้ในเมนูของแต่ละแชท"
     }
   ]
 }
