@@ -25,6 +25,14 @@ class FakeBridge implements TdBridge {
     reply['@extra'] = last['@extra'];
     this.onReceive(JSON.stringify(reply));
   }
+
+  replyFile(fileId: number, failed: boolean = false): void {
+    const all: TdObject[] = this.requests('downloadFile').filter((r: TdObject): boolean => r['file_id'] === fileId);
+    const reply: TdObject = { '@type': failed ? 'error' : 'file' };
+    if (failed) { reply['code'] = 500; reply['message'] = 'test download failure'; }
+    reply['@extra'] = all[all.length - 1]['@extra'];
+    this.onReceive(JSON.stringify(reply));
+  }
 }
 
 class FakeHost implements VideoPrefetchHost {
@@ -34,6 +42,7 @@ class FakeHost implements VideoPrefetchHost {
   claimed: Set<number> = new Set();
   networkValue: string = 'wifi';
   saving: boolean = false;
+  networkListener: ((network: string) => void) | null = null;
 
   // 字段初始化器里不能引用 this（ArkTS 报成"不支持结构类型"），照 ChatStore.test
   // 的样板在构造函数里装配。
@@ -49,6 +58,16 @@ class FakeHost implements VideoPrefetchHost {
   fileClaimed: (fileId: number) => boolean = (fileId: number): boolean => this.claimed.has(fileId);
   network: () => string = (): string => this.networkValue;
   powerSaving: () => boolean = (): boolean => this.saving;
+  subscribeNetwork: (listener: (network: string) => void) => () => void =
+    (listener: (network: string) => void): (() => void) => {
+      this.networkListener = listener;
+      return (): void => { this.networkListener = null; };
+    };
+
+  changeNetwork(network: string): void {
+    this.networkValue = network;
+    this.networkListener?.(network);
+  }
 
   // 默认 200MB：要明显大于头块（20MB），才走"头 + 尾"两块的路径。
   video(messageId: number, fileId: number, size: number = 200 * 1024 * 1024, local: boolean = false): void {
@@ -71,6 +90,129 @@ const MB: number = 1024 * 1024;
 
 export default function videoHeadPrefetcherTest() {
   describe('VideoHeadPrefetcher', () => {
+    it('completed head and tail immediately free a slot for the next visible video', 0, async () => {
+      const h = new FakeHost(); const p = prefetcherOn(h);
+      for (let id = 1; id <= 4; id++) { h.video(id, id + 10); p.reportMedia(id, -1, 1); }
+      h.bridge.replyFile(11); await tick();
+      expect(h.bridge.requests('downloadFile').length).assertEqual(4); // 三个头 + 第一个尾
+      expect(p.activeCount()).assertEqual(3);
+      h.bridge.replyFile(11); await tick();
+      expect(h.bridge.requests('downloadFile')[4]['file_id']).assertEqual(14);
+      expect(p.activeCount()).assertEqual(3);
+      p.dispose();
+    });
+    it('completed small video is not requested again on network events or resume', 0, async () => {
+      const h = new FakeHost(); h.video(1, 11, MB); const p = prefetcherOn(h);
+      p.reportMedia(1, -1, 1); h.bridge.replyFile(11); await tick();
+      expect(p.activeCount()).assertEqual(0);
+      h.changeNetwork('mobile'); p.suspend(); p.resume();
+      p.setEnabled(false); p.setEnabled(true); p.reportMedia(1, -1, 1);
+      expect(h.bridge.requests('downloadFile').length).assertEqual(1);
+      expect(h.bridge.requests('cancelDownloadFile').length).assertEqual(0);
+      p.dispose();
+    });
+    it('completed shared file is remembered until its last visible holder leaves', 0, async () => {
+      const h = new FakeHost(); h.video(1, 11, MB); h.video(2, 11, MB);
+      const p = prefetcherOn(h); p.reportMedia(1, -1, 1); p.reportMedia(2, -1, 1);
+      h.bridge.replyFile(11); await tick(); p.dropMedia(1, -1); h.changeNetwork('mobile');
+      expect(h.bridge.requests('downloadFile').length).assertEqual(1);
+      p.dropMedia(2, -1); p.reportMedia(1, -1, 1);
+      expect(h.bridge.requests('downloadFile').length).assertEqual(2);
+      p.dispose();
+    });
+    it('failed download frees its slot and lets queued work start', 0, async () => {
+      const h = new FakeHost(); const p = prefetcherOn(h);
+      for (let id = 1; id <= 4; id++) { h.video(id, id + 10); p.reportMedia(id, -1, 1); }
+      h.bridge.replyFile(11, true); await tick();
+      expect(h.bridge.requests('downloadFile')[3]['file_id']).assertEqual(14);
+      expect(h.bridge.requests('cancelDownloadFile')[0]['file_id']).assertEqual(11);
+      expect(p.activeCount()).assertEqual(3);
+      p.dispose();
+    });
+    it('stale failed request cannot release a newer prefetch chain', 0, async () => {
+      const h = new FakeHost(); h.video(1, 11); const p = prefetcherOn(h);
+      p.reportMedia(1, -1, 1); p.suspend(); h.bridge.replyFile(11, true); p.resume(); await tick();
+      expect(p.activeCount()).assertEqual(1);
+      expect(h.bridge.requests('cancelDownloadFile').length).assertEqual(0);
+      p.dispose();
+    });
+    it('failed visible download retries on network recovery without cancelling playback', 0, async () => {
+      const h = new FakeHost(); h.video(1, 11); const p = prefetcherOn(h);
+      p.reportMedia(1, -1, 1); h.claimed.add(11); h.bridge.replyFile(11, true); await tick();
+      expect(p.activeCount()).assertEqual(0);
+      expect(h.bridge.requests('cancelDownloadFile').length).assertEqual(0);
+      h.changeNetwork('mobile'); expect(h.bridge.requests('downloadFile').length).assertEqual(1);
+      h.claimed.delete(11); h.changeNetwork('wifi');
+      expect(h.bridge.requests('downloadFile').length).assertEqual(2);
+      p.dispose();
+    });
+    it('late completed tail cannot release the slot of a resumed chain', 0, async () => {
+      const h = new FakeHost(); h.video(1, 11); const p = prefetcherOn(h);
+      p.reportMedia(1, -1, 1); h.bridge.replyFile(11); await tick();
+      p.suspend(); h.bridge.replyFile(11); p.resume(); await tick();
+      expect(p.activeCount()).assertEqual(1);
+      expect(h.bridge.requests('downloadFile').length).assertEqual(3);
+      p.dispose();
+    });
+    it('tail request is skipped if playback claims the file while the head loads', 0, async () => {
+      const h = new FakeHost(); h.video(1, 11); const p = prefetcherOn(h);
+      p.reportMedia(1, -1, 1); h.claimed.add(11); h.bridge.replyFile(11); await tick();
+      expect(h.bridge.requests('downloadFile').length).assertEqual(1);
+      expect(p.activeCount()).assertEqual(0);
+      expect(h.bridge.requests('cancelDownloadFile').length).assertEqual(0);
+      p.dispose();
+    });
+    it('queued video claimed by playback is skipped when a slot opens', 0, async () => {
+      const h = new FakeHost(); const p = prefetcherOn(h);
+      for (let id = 1; id <= 5; id++) { h.video(id, id + 10, MB); p.reportMedia(id, -1, 1); }
+      h.claimed.add(14); h.bridge.replyFile(11); await tick();
+      expect(h.bridge.requests('downloadFile')[3]['file_id']).assertEqual(15);
+      expect(p.activeCount()).assertEqual(3);
+      p.dispose();
+    });
+    it('network recovery retries a stationary visible video without another ratio report', 0, () => {
+      const h = new FakeHost(); h.video(1, 11); h.networkValue = 'other'; const p = prefetcherOn(h);
+      p.reportMedia(1, -1, 1); expect(h.bridge.requests('downloadFile').length).assertEqual(0);
+      h.changeNetwork('wifi'); h.changeNetwork('mobile');
+      expect(h.bridge.requests('downloadFile').length).assertEqual(1);
+      p.dispose();
+    });
+    it('queued video rechecks network and starts after connectivity recovers', 0, async () => {
+      const h = new FakeHost(); const p = prefetcherOn(h);
+      for (let id = 1; id <= 4; id++) { h.video(id, id + 10, MB); p.reportMedia(id, -1, 1); }
+      h.changeNetwork('none'); h.bridge.replyFile(11); await tick();
+      expect(h.bridge.requests('downloadFile').length).assertEqual(3);
+      h.changeNetwork('wifi');
+      expect(h.bridge.requests('downloadFile')[3]['file_id']).assertEqual(14);
+      p.dispose();
+    });
+    it('network notification respects the remaining dwell time', 0, async () => {
+      const h = new FakeHost(); h.video(1, 11); const p = prefetcherOn(h, 30);
+      p.reportMedia(1, -1, 1); h.changeNetwork('mobile');
+      expect(h.bridge.requests('downloadFile').length).assertEqual(0);
+      await tick(50); expect(h.bridge.requests('downloadFile').length).assertEqual(1);
+      p.dispose();
+    });
+    it('network recovery obeys disabled suspended gone and disposed lifecycle', 0, () => {
+      const h = new FakeHost(); h.video(1, 11); h.networkValue = 'none'; const p = prefetcherOn(h);
+      p.reportMedia(1, -1, 1); p.suspend(); h.changeNetwork('wifi');
+      expect(h.bridge.requests('downloadFile').length).assertEqual(0);
+      p.setEnabled(false); p.resume(); h.changeNetwork('mobile');
+      expect(h.bridge.requests('downloadFile').length).assertEqual(0);
+      p.dropMedia(1, -1); p.setEnabled(true); h.changeNetwork('wifi');
+      expect(h.bridge.requests('downloadFile').length).assertEqual(0);
+      p.dispose(); expect(h.networkListener === null).assertTrue();
+      h.changeNetwork('mobile'); p.reportMedia(1, -1, 1);
+      expect(h.bridge.requests('downloadFile').length).assertEqual(0);
+    });
+    it('network retry tracks the freshly selected quality file for cancellation', 0, () => {
+      const h = new FakeHost(); h.video(1, 11); h.networkValue = 'none'; const p = prefetcherOn(h);
+      p.reportMedia(1, -1, 1); h.video(1, 12); h.changeNetwork('wifi');
+      expect(h.bridge.requests('downloadFile')[0]['file_id']).assertEqual(12);
+      p.dropMedia(1, -1);
+      expect(h.bridge.requests('cancelDownloadFile')[0]['file_id']).assertEqual(12);
+      expect(p.activeCount()).assertEqual(0); p.dispose();
+    });
     it('disabled preload sends no request for visible videos', 0, () => {
       const h = new FakeHost(); h.video(1, 11);
       const p = prefetcherOn(h); p.setEnabled(false);

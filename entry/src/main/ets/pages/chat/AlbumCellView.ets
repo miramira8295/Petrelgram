@@ -241,6 +241,7 @@ export struct AlbumCellView {
       // 的 fileId 可能仍是 0，丢了路径就把一张已下载的图退化成死的"重试"块。
       LiveThumbImage({
         spec: {
+          syncDisplay: true,
           fileId: this.fileId(),
           initialPath: this.pathAt(),
           boxWidth: this.cell.width,

@@ -51,10 +51,11 @@ export interface VideoPrefetchHost {
   network: () => string;
   powerSaving: () => boolean;
   subscribeEnabled?: (listener: (enabled: boolean) => void) => () => void;
+  subscribeNetwork?: (listener: (network: string) => void) => () => void;
 }
 
 // 头块是 synchronous 请求，蜂窝下 20MB 可能要下一阵子；超时只是本地不再等应答，
-// TDLib 那边照下不误，代价只是尾块不发。
+// TDLib 那边可能还在下载，超时后取消未被认领的请求并释放并发名额。
 const HEAD_REQUEST_TIMEOUT_MS: number = 120_000;
 
 function keyOf(messageId: number, albumIndex: number): string {
@@ -71,12 +72,15 @@ export class VideoHeadPrefetcher {
   private dwellTimers: Map<string, number> = new Map();
   // 在途预取。
   private active: Set<number> = new Set();
+  // 已完成的可见文件不再占并发位，也不因网络通知重复请求。
+  private completed: Set<number> = new Set();
   // 每个文件的"代次"：释放/暂停后 +1，让还没回来的头块应答不再发尾块。
   private chainSeq: Map<number, number> = new Map();
   // 超过并发上限的排队（FIFO、不重复）。
   private queue: number[] = [];
   private enabled: boolean = true;
   private unsubscribeEnabled: (() => void) | null = null;
+  private unsubscribeNetwork: (() => void) | null = null;
   // suspend 保留 TDLib 请求；关开关时这些未被用户认领的请求也必须停止。
   private ownedFiles: Set<number> = new Set();
   private suspended: boolean = false;
@@ -88,6 +92,8 @@ export class VideoHeadPrefetcher {
     this.dwellMs = Math.max(0, dwellMs);
     this.unsubscribeEnabled?.();
     this.unsubscribeEnabled = host.subscribeEnabled?.((enabled: boolean): void => this.setEnabled(enabled)) ?? null;
+    this.unsubscribeNetwork?.();
+    this.unsubscribeNetwork = host.subscribeNetwork?.((_network: string): void => this.retryVisible()) ?? null;
   }
 
   setEnabled(enabled: boolean): void {
@@ -152,7 +158,7 @@ export class VideoHeadPrefetcher {
       if (this.disposed || this.suspended || !this.visible.has(key)) {
         return;
       }
-      this.tryStart(ref);
+      this.retryVisible();
     }, this.dwellMs);
     this.dwellTimers.set(key, timer);
   }
@@ -177,6 +183,7 @@ export class VideoHeadPrefetcher {
       }
       this.refs.delete(fileId);
     }
+    this.completed.delete(fileId);
     this.release(fileId, true);
     this.pumpQueue();
   }
@@ -199,18 +206,7 @@ export class VideoHeadPrefetcher {
       return;
     }
     this.suspended = false;
-    const seen: Set<number> = new Set();
-    this.visible.forEach((fileId: number, key: string): void => {
-      if (seen.has(fileId)) {
-        return;
-      }
-      seen.add(fileId);
-      const parts: string[] = key.split(':');
-      const ref: VideoRef | null = this.host!.videoAt(Number(parts[0]), Number(parts[1]));
-      if (ref !== null) {
-        this.tryStart(ref);
-      }
-    });
+    this.retryVisible();
   }
 
   // 页面销毁：没被认领的在途预取取消掉（这里没有查看器要保护）。
@@ -219,6 +215,8 @@ export class VideoHeadPrefetcher {
     const inflight: number[] = Array.from(this.ownedFiles);
     this.unsubscribeEnabled?.();
     this.unsubscribeEnabled = null;
+    this.unsubscribeNetwork?.();
+    this.unsubscribeNetwork = null;
     this.ownedFiles.clear();
     this.suspend();
     for (const fileId of inflight) {
@@ -226,6 +224,7 @@ export class VideoHeadPrefetcher {
     }
     this.visible.clear();
     this.refs.clear();
+    this.completed.clear();
     this.disposed = true;
   }
 
@@ -240,8 +239,29 @@ export class VideoHeadPrefetcher {
     return next;
   }
 
+  private retryVisible(): void {
+    if (this.disposed || this.suspended || !this.enabled || this.host === null) { return; }
+    // 网络改变也可能改变自动清晰度，重新读文件并更新可见表的归属。
+    const keys: string[] = Array.from(this.visible.keys());
+    for (const key of keys) {
+      if (this.dwellTimers.has(key)) { continue; }
+      const parts: string[] = key.split(':');
+      const messageId: number = Number(parts[0]);
+      const albumIndex: number = Number(parts[1]);
+      const ref: VideoRef | null = this.host.videoAt(messageId, albumIndex);
+      if (ref === null || ref.fileId !== this.visible.get(key)) {
+        this.dropMedia(messageId, albumIndex);
+        this.reportMedia(messageId, albumIndex, 1);
+      } else {
+        this.tryStart(ref);
+      }
+    }
+    this.pumpQueue();
+  }
+
   private tryStart(ref: VideoRef): void {
-    if (!this.enabled || this.suspended || this.host === null || this.active.has(ref.fileId) || this.queue.indexOf(ref.fileId) >= 0) {
+    if (!this.enabled || this.suspended || this.host === null || this.completed.has(ref.fileId) ||
+      this.active.has(ref.fileId) || this.queue.indexOf(ref.fileId) >= 0) {
       return;
     }
     const reason: string = prefetchRefusalReason({
@@ -252,9 +272,6 @@ export class VideoHeadPrefetcher {
       fileId: ref.fileId
     });
     if (reason !== '') {
-      // 'local' 是常态（看过的视频），不打；其余原因都值得留痕。
-      if (reason !== 'local') {
-      }
       return;
     }
     if (this.active.size >= MAX_CONCURRENT_VIDEO_PREFETCH) {
@@ -294,12 +311,24 @@ export class VideoHeadPrefetcher {
         return;
       }
       if (index + 1 < ranges.length) {
-        this.issueRange(fileId, ranges, index + 1, seq);
+        // 头块落地时播放器可能已接管；不能再用尾块覆盖它的下载范围。
+        if (this.host?.fileClaimed(fileId)) {
+          this.release(fileId, false);
+          this.pumpQueue();
+        } else {
+          this.issueRange(fileId, ranges, index + 1, seq);
+        }
       } else {
-        this.ownedFiles.delete(fileId);
+        this.completed.add(fileId);
+        this.release(fileId, false);
+        this.pumpQueue();
       }
     }).catch((e: TdError): void => {
+      if (this.chainSeq.get(fileId) !== seq || !this.active.has(fileId)) { return; }
       logW(`VideoHeadPrefetcher.downloadFile ${fileId}@${r.offset}+${r.limit} failed: ${e.message}`);
+      // 超时可能只有本地停止等待，先取消未被认领的残留请求，再释放名额。
+      this.release(fileId, true);
+      this.pumpQueue();
     });
   }
 
@@ -348,7 +377,9 @@ export class VideoHeadPrefetcher {
       if (ref === null) {
         continue;
       }
-      this.start(ref);
+      // 排队期间网络、清晰度和播放归属都可能改变，不能直接 start。
+      if (ref.fileId !== fileId) { continue; }
+      this.tryStart(ref);
     }
   }
 }

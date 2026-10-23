@@ -114,6 +114,7 @@ class RelayWriter {
 
 export class HttpsTunnel {
   private tls: RelayTlsEndpoint | undefined = undefined;
+  private cancelDial: (() => void) | undefined = undefined;
   private closed: boolean = false;
   private phase: string = 'request';
   private request = new ProxyHeaderReader();
@@ -209,33 +210,7 @@ export class HttpsTunnel {
     const preferred = host.indexOf(':') >= 0 || (!literal && await this.preferIpv6()) ? 2 : 1;
     if (this.closed) { return; }
     const families = literal ? [preferred] : [preferred, preferred === 1 ? 2 : 1];
-    let connected: RelayTlsEndpoint | undefined = undefined;
-    for (let i = 0; i < families.length && !this.closed; i++) {
-      const trial = type === PROXY_HTTPS ? this.createTls() : this.createTcp();
-      this.tls = trial;
-      try {
-        await trial.bind(families[i]);
-        if (this.closed) { trial.close(); return; }
-        trial.onData((data: ArrayBuffer): void => {
-          if (this.tls !== trial) { return; }
-          try { this.receiveRemote(data); } catch (_error) { this.close(); }
-        });
-        trial.onEnd((): void => {
-          if (this.tls === trial && this.phase !== 'connecting') { this.close(); }
-        });
-        // Keep the hostname for SNI; family chooses the DNS address family, not identity.
-        await trial.connect(host, target.port, families[i],
-          i + 1 < families.length ? HANDSHAKE_TIMEOUT / 2 : HANDSHAKE_TIMEOUT);
-        if (this.closed) { trial.close(); return; }
-        if (type === PROXY_HTTPS) { await trial.verifyName(host); }
-        if (this.closed) { trial.close(); return; }
-        connected = trial;
-        break;
-      } catch (_error) {
-        try { trial.close(); } catch (_ignored) {}
-        this.earlyRemote = []; this.earlyBytes = 0;
-      }
-    }
+    const connected = await this.dial(host, target.port, families, type === PROXY_HTTPS);
     if (connected === undefined || this.closed) { this.close(); return; }
     if (this.httpRewriter !== undefined) {
       this.phase = 'http-stream';
@@ -254,6 +229,86 @@ export class HttpsTunnel {
     }
     const early = this.earlyRemote; this.earlyRemote = []; this.earlyBytes = 0;
     for (const chunk of early) { this.receiveRemote(chunk); }
+  }
+
+  // Happy Eyeballs: retain the first connected (and, for HTTPS, verified)
+  // socket. The other family starts after 250ms, independently of a hung OS
+  // connect promise. Buffers belong to attempts until one owns the tunnel.
+  private dial(host: string, port: number, families: number[], secure: boolean): Promise<RelayTlsEndpoint | undefined> {
+    return new Promise<RelayTlsEndpoint | undefined>((resolve): void => {
+      const trials: RelayTlsEndpoint[] = [];
+      let next = 0;
+      let failed = 0;
+      let done = false;
+      let launchTimer = -1;
+      const finish = (winner: RelayTlsEndpoint | undefined): void => {
+        if (done) { return; }
+        done = true;
+        if (launchTimer !== -1) { clearTimeout(launchTimer); launchTimer = -1; }
+        this.cancelDial = undefined;
+        this.tls = winner;
+        for (const trial of trials) { if (trial !== winner) { trial.close(); } }
+        resolve(winner);
+      };
+      this.cancelDial = (): void => finish(undefined);
+      const launch = (): void => {
+        if (done || this.closed || next >= families.length) { return; }
+        const family = families[next++];
+        let trial: RelayTlsEndpoint;
+        try { trial = secure ? this.createTls() : this.createTcp(); }
+        catch (_error) {
+          failed++;
+          if (next < families.length) { launch(); }
+          else if (failed === next) { finish(undefined); }
+          return;
+        }
+        trials.push(trial);
+        let ended = false;
+        let buffered: ArrayBuffer[] = [];
+        let bytes = 0;
+        const fail = (): void => {
+          if (ended) { return; }
+          ended = true;
+          buffered = [];
+          if (done) { if (this.tls === trial) { this.close(); } return; }
+          failed++;
+          trial.close();
+          if (launchTimer !== -1) { clearTimeout(launchTimer); launchTimer = -1; }
+          if (next < families.length) { launch(); }
+          else if (failed === next) { finish(undefined); }
+        };
+        trial.onEnd(fail);
+        trial.onData((data: ArrayBuffer): void => {
+          if (ended || this.closed) { return; }
+          if (done) {
+            if (this.tls === trial) {
+              try { this.receiveRemote(data); } catch (_error) { this.close(); }
+            }
+            return;
+          }
+          bytes += data.byteLength;
+          if (bytes > MAX_QUEUED_BYTES) { fail(); return; }
+          buffered.push(data);
+        });
+        const connect = async (): Promise<void> => {
+          await trial.bind(family);
+          if (ended || done || this.closed) { trial.close(); return; }
+          // Keep the original hostname for DNS, TLS SNI and identity checks.
+          await trial.connect(host, port, family, HANDSHAKE_TIMEOUT);
+          if (ended || done || this.closed) { trial.close(); return; }
+          if (secure) { await trial.verifyName(host); }
+          if (ended || done || this.closed) { trial.close(); return; }
+          this.earlyRemote = buffered; this.earlyBytes = bytes;
+          buffered = [];
+          finish(trial);
+        };
+        connect().catch(fail);
+      };
+      launch();
+      if (!done && next < families.length) {
+        launchTimer = setTimeout((): void => { launchTimer = -1; launch(); }, 250);
+      }
+    });
   }
 
   private flushPending(): void {
@@ -291,6 +346,7 @@ export class HttpsTunnel {
   close(): void {
     if (this.closed) { return; }
     this.closed = true;
+    this.cancelDial?.();
     if (this.timer !== -1) { clearTimeout(this.timer); this.timer = -1; }
     this.pending = [];
     this.pendingBytes = 0;

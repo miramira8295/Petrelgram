@@ -32,6 +32,8 @@ import { warnStaleThumbAttach } from '../../util/thumbAttachGuard';
 // 子树只有一个 CachedImage 或一段占位——赔得起；纯文本气泡的子树是整条消息，
 // 赔不起。
 export interface LiveThumbSpec {
+  // Chat cells opt in; shared viewer/filmstrip uses keep the default policy.
+  syncDisplay?: boolean;
   fileId: number;
   initialPath: string;
   boxWidth: number;
@@ -154,6 +156,7 @@ export struct LiveThumbImage {
   build() {
     if (this.drawPath() !== '') {
       CachedImage({
+        syncDisplay: this.spec.syncDisplay === true,
         path: this.path,
         boxWidth: this.spec.boxWidth,
         boxHeight: this.spec.boxHeight,

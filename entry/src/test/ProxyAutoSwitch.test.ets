@@ -1,3 +1,4 @@
+import { ProxyCandidateRace } from '../main/ets/services/ProxyCandidateRace';
 import { afterEach, beforeEach, describe, expect, it } from '@ohos/hypium';
 import {
   normalizeProxySwitchDelay, orderedProxyCandidateIds, ProxySwitchCandidate
@@ -81,7 +82,7 @@ class ProxySwitchNetwork {
 
 // Drain Promise continuations only; failover time is controlled by ProxySwitchClock.
 async function settleProxySwitch(): Promise<void> {
-  for (let i = 0; i < 8; i++) { await Promise.resolve(); }
+  for (let i = 0; i < 30; i++) { await Promise.resolve(); }
 }
 
 class ProxySwitchFixture {
@@ -90,10 +91,12 @@ class ProxySwitchFixture {
   bridge: ProxySwitchBridge = new ProxySwitchBridge();
   client: TdClient = new TdClient(this.bridge);
   network: ProxySwitchNetwork = new ProxySwitchNetwork();
-  service: ProxyAutoSwitchService = new ProxyAutoSwitchService(this.clock,
-    (listener: (network: string) => void): () => void => this.network.subscribe(listener));
+  service: ProxyAutoSwitchService;
 
-  constructor() {
+  constructor(realProbe: boolean = false) {
+    this.service = new ProxyAutoSwitchService(this.clock,
+      (listener: (network: string) => void): () => void => this.network.subscribe(listener),
+      realProbe ? undefined : async (_id: number): Promise<boolean> => true);
     this.client.start();
     this.service.attach(this.client);
     this.publishList();
@@ -214,6 +217,60 @@ export default function proxyAutoSwitchTest() {
     });
   });
 
+  describe('ProxyCandidateRace', (): void => {
+    it('bounds concurrency and includes direct in the first wave', 0, async (): Promise<void> => {
+      const clock = new ProxySwitchClock(); const race = new ProxyCandidateRace(clock); const started: number[] = [];
+      const resolve = new Map<number, (usable: boolean) => void>();
+      const pending = race.run([2, 3, 4, 5, 0], (id: number): Promise<boolean> => {
+        started.push(id); return new Promise<boolean>((finish): void => { resolve.set(id, finish); });
+      });
+      await settleProxySwitch(); expect(started.join(',')).assertEqual('2,3,0');
+      resolve.get(0)!(true); expect(await pending).assertEqual(0);
+      resolve.get(2)!(true); resolve.get(3)!(false); await settleProxySwitch();
+      expect(started.length).assertEqual(3); expect(clock.callbacks.size).assertEqual(0);
+    });
+    it('failed probes release slots and the first successful candidate wins', 0, async (): Promise<void> => {
+      const race = new ProxyCandidateRace(new ProxySwitchClock()); const started: number[] = [];
+      const result = await race.run([2, 3, 4, 5], async (id: number): Promise<boolean> => {
+        started.push(id); return id === 5;
+      });
+      expect(result).assertEqual(5); expect(started.length).assertEqual(4);
+    });
+    it('cancellation ignores late success and stops queued probes', 0, async (): Promise<void> => {
+      const clock = new ProxySwitchClock(); const race = new ProxyCandidateRace(clock); let started = 0;
+      let finish: (value: boolean) => void = (_value: boolean): void => {};
+      const pending = race.run([1, 2, 3, 4], (_id: number): Promise<boolean> => {
+        started++; return new Promise<boolean>((resolve): void => { finish = resolve; });
+      });
+      await settleProxySwitch(); race.cancel(); finish(true); await settleProxySwitch();
+      expect(await pending === undefined).assertTrue(); expect(started).assertEqual(3);
+      expect(clock.callbacks.size).assertEqual(0);
+    });
+    it('hung probes time out and allow a queued usable route to run', 0, async (): Promise<void> => {
+      const clock = new ProxySwitchClock(); const race = new ProxyCandidateRace(clock);
+      const pending = race.run([1, 2, 3, 4], (id: number): Promise<boolean> =>
+        id === 4 ? Promise.resolve(true) : new Promise<boolean>(() => {}));
+      await settleProxySwitch(); clock.fire(); await settleProxySwitch();
+      expect(await pending).assertEqual(4); expect(clock.callbacks.size).assertEqual(0);
+    });
+    it('all failures preserve the active route instead of picking an unusable node', 0, async (): Promise<void> => {
+      const race = new ProxyCandidateRace(new ProxySwitchClock());
+      expect(await race.run([1, 0], async (_id: number): Promise<boolean> => false) === undefined).assertTrue();
+    });
+    it('synchronous probe exceptions do not block the next candidate', 0, async (): Promise<void> => {
+      const race = new ProxyCandidateRace(new ProxySwitchClock());
+      expect(await race.run([1, 0], (id: number): Promise<boolean> => {
+        if (id === 1) { throw new Error('probe failed'); } return Promise.resolve(true);
+      })).assertEqual(0);
+    });
+    it('cancelling before launch creates no native probes', 0, async (): Promise<void> => {
+      const race = new ProxyCandidateRace(new ProxySwitchClock()); let calls = 0;
+      const pending = race.run([1, 0], async (_id: number): Promise<boolean> => { calls++; return true; });
+      race.cancel(); expect(await pending === undefined).assertTrue(); await settleProxySwitch();
+      expect(calls).assertEqual(0);
+    });
+  });
+
   describe('ProxyAutoSwitchService timing', (): void => {
     let fixture: ProxySwitchFixture;
     let previousAuto: boolean | undefined;
@@ -240,6 +297,59 @@ export default function proxyAutoSwitchTest() {
       else { AppStorage.setOrCreate(KEY_CURRENT_NETWORK_TYPE, previousNetwork); }
     });
 
+    it('real parallel probes start only after default failure delay and select direct when it wins', 0, async (): Promise<void> => {
+      fixture.close(); fixture = new ProxySwitchFixture(true);
+      fixture.state('connectionStateConnecting');
+      expect(fixture.bridge.count('pingProxy')).assertEqual(0);
+      fixture.clock.fire(); await fixture.listReply();
+      expect(fixture.bridge.pending.length).assertEqual(2);
+      expect(fixture.bridge.pending[0]['proxy_id']).assertEqual(2);
+      expect(fixture.bridge.pending[1]['proxy_id']).assertEqual(0);
+      fixture.bridge.replyAt(1, 'pingProxy', { '@type': 'seconds', 'seconds': 0.2 }); await settleProxySwitch();
+      fixture.bridge.replyAt(1, 'getProxies', fixture.listResponse(1)); await settleProxySwitch();
+      fixture.bridge.replyAt(1, 'disableProxy', { '@type': 'ok' }); await settleProxySwitch();
+      fixture.bridge.reply('pingProxy', { '@type': 'seconds', 'seconds': 0.1 }); await settleProxySwitch();
+      expect(fixture.bridge.count('disableProxy')).assertEqual(1); expect(fixture.bridge.count('enableProxy')).assertEqual(0);
+    });
+    it('current route recovering during probes prevents every later selection', 0, async (): Promise<void> => {
+      fixture.close(); fixture = new ProxySwitchFixture(true); fixture.state('connectionStateConnecting');
+      fixture.clock.fire(); await fixture.listReply();
+      fixture.state('connectionStateReady');
+      fixture.bridge.replyAt(0, 'pingProxy', { '@type': 'seconds', 'seconds': 0.2 });
+      fixture.bridge.replyAt(0, 'pingProxy', { '@type': 'seconds', 'seconds': 0.1 }); await settleProxySwitch();
+      fixture.bridge.reply('getProxies', fixture.listResponse(1)); await settleProxySwitch();
+      expect(fixture.bridge.count('enableProxy')).assertEqual(0); expect(fixture.bridge.count('disableProxy')).assertEqual(0);
+      expect(fixture.clock.callbacks.size).assertEqual(0);
+    });
+    it('automatic switching disabled means no candidate probes even during default failure', 0, async (): Promise<void> => {
+      fixture.close(); fixture = new ProxySwitchFixture(true);
+      AppStorage.setOrCreate(KEY_PROXY_AUTO_SWITCH, false); fixture.service.settingsChanged();
+      fixture.state('connectionStateConnecting'); await settleProxySwitch();
+      expect(fixture.clock.callbacks.size).assertEqual(0); expect(fixture.bridge.count('pingProxy')).assertEqual(0);
+    });
+    it('manual selection cancels native probes and ignores their late success', 0, async (): Promise<void> => {
+      fixture.close(); fixture = new ProxySwitchFixture(true); fixture.state('connectionStateConnecting');
+      fixture.clock.fire(); await fixture.listReply(); fixture.service.proxySelectionChanged(2);
+      fixture.bridge.reply('pingProxy', { '@type': 'seconds', 'seconds': 0.1 });
+      fixture.bridge.reply('pingProxy', { '@type': 'seconds', 'seconds': 0.1 }); await settleProxySwitch();
+      expect(fixture.bridge.count('enableProxy')).assertEqual(0); expect(fixture.bridge.count('disableProxy')).assertEqual(0);
+    });
+    it('failed or invalid probe results do not change the default route', 0, async (): Promise<void> => {
+      fixture.close(); fixture = new ProxySwitchFixture(true); fixture.state('connectionStateConnecting');
+      fixture.clock.fire(); await fixture.listReply();
+      fixture.bridge.reply('pingProxy', { '@type': 'seconds', 'seconds': -1 });
+      fixture.bridge.reply('pingProxy', { '@type': 'error', 'code': 500, 'message': 'unreachable' }); await settleProxySwitch();
+      expect(fixture.bridge.count('enableProxy')).assertEqual(0); expect(fixture.bridge.count('disableProxy')).assertEqual(0);
+      expect(fixture.clock.callbacks.size).assertEqual(1); expect(fixture.clock.lastDelay).assertEqual(10000);
+    });
+    it('changing networks cancels probes from the previous network', 0, async (): Promise<void> => {
+      fixture.close(); fixture = new ProxySwitchFixture(true); fixture.state('connectionStateConnecting');
+      fixture.clock.fire(); await fixture.listReply(); fixture.network.change('cellular');
+      fixture.bridge.reply('pingProxy', { '@type': 'seconds', 'seconds': 0.1 });
+      fixture.bridge.reply('pingProxy', { '@type': 'seconds', 'seconds': 0.1 }); await settleProxySwitch();
+      expect(fixture.bridge.count('enableProxy')).assertEqual(0); expect(fixture.bridge.count('disableProxy')).assertEqual(0);
+      expect(fixture.clock.callbacks.size).assertEqual(1);
+    });
     it('single_proxy_direct_failure_returns_to_proxy_after_full_delay', 0, async (): Promise<void> => {
       fixture.ids = [1];
       fixture.publishList();
@@ -334,7 +444,7 @@ export default function proxyAutoSwitchTest() {
       expect(fixture.bridge.pending[0]['proxy_id']).assertEqual(1);
     });
 
-    it('rotates_all_saved_proxies_one_per_window_without_ping', 0, async (): Promise<void> => {
+    it('selects_one_verified_candidate_per_window_with_injected_successful_probes', 0, async (): Promise<void> => {
       fixture.ids = [1, 2, 3];
       fixture.publishList();
       fixture.state('connectionStateConnectingToProxy');
@@ -390,14 +500,18 @@ export default function proxyAutoSwitchTest() {
       await fixture.startListCheck();
       fixture.ids = [1, 3];
       await fixture.replySelection(1);
+      expect(fixture.bridge.count('enableProxy')).assertEqual(0);
+      expect(fixture.clock.callbacks.size).assertEqual(1);
+      await fixture.nextEnable(1);
       expect(fixture.bridge.pending[0]['proxy_id']).assertEqual(3);
-      expect(fixture.bridge.count('enableProxy')).assertEqual(1);
     });
 
     it('removing_other_proxies_still_tries_direct', 0, async (): Promise<void> => {
       await fixture.startListCheck();
       fixture.ids = [1];
       await fixture.replySelection(1);
+      expect(fixture.bridge.count('disableProxy')).assertEqual(0);
+      await fixture.nextEnable(1);
       expect(fixture.bridge.count('disableProxy')).assertEqual(1);
       expect(fixture.bridge.count('enableProxy')).assertEqual(0);
       expect(fixture.clock.callbacks.size).assertEqual(0);

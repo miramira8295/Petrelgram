@@ -80,6 +80,7 @@ import { cacheMessagesInBackground } from '../../services/chatBackgroundCache';
 import { selectionHasCacheableVideo } from '../../util/backgroundCacheEligibility';
 import { PlaySlotDriver } from './PlaySlotDriver';
 import { VideoHeadPrefetcher, VideoRef } from '../../services/VideoHeadPrefetcher';
+import { subscribeNetworkType } from '../../services/NetworkStateService';
 import { autoplaySizeAllowed, shouldCompete, slotKey } from './playSlot';
 import { MediaViewerOverlay, VIEWER_CHROME_ON_OPEN } from './MediaViewerOverlay';
 import { openSelectTextOverlay, selectTextPayload } from './SelectTextOverlay';
@@ -3247,6 +3248,7 @@ export struct ChatPage {
         this.messages.some((e: MessageEntry): boolean =>
           e.id === this.viewerMsgId && entryOwnsVideoFile(e, fileId)),
       subscribeEnabled: subscribeVideoPreload,
+      subscribeNetwork: subscribeNetworkType,
       network: (): string => AppStorage.get<string>(KEY_CURRENT_NETWORK_TYPE) ?? 'other',
       powerSaving: (): boolean => powerSavingActive()
     });

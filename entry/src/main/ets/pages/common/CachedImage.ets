@@ -39,6 +39,11 @@ export struct CachedImage {
   @Param onReady: () => void = (): void => {};
   // 小图同步解码（#137）：未命中缓存时在主线程解一次，首帧就有图。准入见 pixelSyncPolicy。
   @Param syncSmall: boolean = false;
+  // Already-decoded chat thumbnails can still flash when native Image reloads
+  // asynchronously after a row is moved/recycled. Opt into synchronous Image
+  // loading only for an available PixelMap; this does not change file decoding.
+  // Separate from syncSmall, which controls the cache-miss decode policy.
+  @Param syncDisplay: boolean = false;
   // 源身份（issue #188）：同一身份下换路径视为"同图升级"，旧位图保留到新图解完；
   // 不传就按路径判（老行为）。LiveThumbImage 传缩略图 fileId。
   @Param sourceKey: string = '';
@@ -259,6 +264,7 @@ export struct CachedImage {
           .blur(MINI_PLACEHOLDER_BLUR);
       }
       Image(this.pixelMap)
+        .syncLoad(this.syncDisplay && this.pixelMap !== undefined)
         .draggable(false)
         .width(this.boxWidth).height(this.boxHeight)
         // 解码完成前 Image(undefined) 什么都不画；没有这层底色，调用方撤掉占位

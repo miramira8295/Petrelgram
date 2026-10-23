@@ -25,16 +25,23 @@ class RelaySocketFake implements RelayTlsEndpoint {
   failConnect: boolean = false;
   connectBarrier: Promise<void> | undefined = undefined;
   validCertificate: boolean = true;
+  bindBarrier: Promise<void> | undefined = undefined;
+  verifyBarrier: Promise<void> | undefined = undefined;
+  end: () => void = (): void => {};
   message: (data: ArrayBuffer) => void = (_data: ArrayBuffer): void => {};
   onData(callback: (data: ArrayBuffer) => void): void { this.message = callback; }
-  onEnd(_callback: () => void): void {}
-  async bind(family: number): Promise<void> { this.bindings.push(family); }
+  onEnd(callback: () => void): void { this.end = callback; }
+  async bind(family: number): Promise<void> {
+    this.bindings.push(family);
+    if (this.bindBarrier !== undefined) { await this.bindBarrier; }
+  }
   async connect(host: string, _port: number, family: number, _timeout: number): Promise<void> {
     this.connects.push(host); this.families.push(family);
     if (this.failConnect) { throw new Error('connection refused'); }
     if (this.connectBarrier !== undefined) { await this.connectBarrier; }
   }
   async verifyName(_host: string): Promise<void> {
+    if (this.verifyBarrier !== undefined) { await this.verifyBarrier; }
     if (!this.validCertificate) { throw new Error('hostname mismatch'); }
   }
   async send(value: string | ArrayBuffer): Promise<void> {
@@ -125,6 +132,103 @@ export default function httpsProxyRelayTest() {
       t.start(); local.receive(buffer(request)); await settle();
       expect(first.families.join(',')).assertEqual('1'); expect(first.closed).assertTrue();
       expect(second.families.join(',')).assertEqual('2'); expect(second.sent.length).assertEqual(1); t.close();
+    });
+    it('hung IPv6 connect starts IPv4 without waiting for the native timeout', 0, async () => {
+      for (const secure of [false, true]) {
+        const local = new RelaySocketFake(); const first = new RelaySocketFake(); const second = new RelaySocketFake();
+        first.connectBarrier = new Promise<void>(() => {}); let calls = 0;
+        const route: HttpsProxyRecord = { key: 'race', token: 't', server: 'proxy.example', port: 443,
+          username: '', password: '', type: secure ? 'proxyTypeHttps' : 'proxyTypeSocks5' };
+        const create = (): RelayTlsEndpoint => calls++ === 0 ? first : second;
+        const t = new HttpsTunnel(local, (_auth: string): HttpsProxyRecord => route, (_t: HttpsTunnel): void => {},
+          create, create, async (): Promise<boolean> => true);
+        t.start(); local.receive(buffer(request)); await settle();
+        expect(first.families.join(',')).assertEqual('2'); expect(calls).assertEqual(1);
+        await new Promise<void>((resolve): void => { setTimeout(resolve, 300); }); await settle();
+        expect(second.families.join(',')).assertEqual('1'); expect(first.closed).assertTrue();
+        expect(second.sent.length).assertEqual(1); expect(local.closed).assertFalse(); t.close();
+      }
+    });
+    it('late IPv6 completion cannot replace the retained IPv4 socket', 0, async () => {
+      const local = new RelaySocketFake(); const first = new RelaySocketFake(); const second = new RelaySocketFake();
+      let finish: () => void = (): void => {};
+      first.connectBarrier = new Promise<void>((resolve): void => { finish = resolve; }); let calls = 0;
+      const create = (): RelayTlsEndpoint => calls++ === 0 ? first : second;
+      const t = new HttpsTunnel(local, (_auth: string): HttpsProxyRecord => target, (_t: HttpsTunnel): void => {},
+        create, create, async (): Promise<boolean> => true);
+      t.start(); local.receive(buffer(request)); await new Promise<void>((resolve): void => { setTimeout(resolve, 300); });
+      await settle(); finish(); await settle();
+      expect(first.sent.length).assertEqual(0); expect(first.closed).assertTrue();
+      second.receive(buffer('HTTP/1.1 200 OK\r\n\r\n')); await settle();
+      local.receive(buffer('payload')); await settle();
+      expect(stringOf(second.sent[1])).assertEqual('payload'); expect(local.closed).assertFalse(); t.close();
+    });
+    it('local close cancels delayed family launch even when bind never returns', 0, async () => {
+      const local = new RelaySocketFake(); const first = new RelaySocketFake(); let calls = 0;
+      first.bindBarrier = new Promise<void>(() => {});
+      const create = (): RelayTlsEndpoint => { calls++; return first; };
+      const t = new HttpsTunnel(local, (_auth: string): HttpsProxyRecord => target, (_t: HttpsTunnel): void => {},
+        create, create, async (): Promise<boolean> => true);
+      t.start(); local.receive(buffer(request)); await settle(); t.close();
+      await new Promise<void>((resolve): void => { setTimeout(resolve, 300); });
+      expect(calls).assertEqual(1); expect(first.closed).assertTrue(); expect(first.connects.length).assertEqual(0);
+    });
+    it('end event during a pending connect immediately starts the other family', 0, async () => {
+      const local = new RelaySocketFake(); const first = new RelaySocketFake(); const second = new RelaySocketFake();
+      first.connectBarrier = new Promise<void>(() => {}); let calls = 0;
+      const create = (): RelayTlsEndpoint => calls++ === 0 ? first : second;
+      const t = new HttpsTunnel(local, (_auth: string): HttpsProxyRecord => target, (_t: HttpsTunnel): void => {},
+        create, create, async (): Promise<boolean> => false);
+      t.start(); local.receive(buffer(request)); await settle(); first.end(); await settle();
+      expect(first.families.join(',')).assertEqual('1'); expect(second.families.join(',')).assertEqual('2');
+      expect(second.sent.length).assertEqual(1); t.close();
+    });
+    it('fast preferred connection suppresses the unused family', 0, async () => {
+      const local = new RelaySocketFake(); const first = new RelaySocketFake(); let calls = 0;
+      const create = (): RelayTlsEndpoint => { calls++; return first; };
+      const t = new HttpsTunnel(local, (_auth: string): HttpsProxyRecord => target, (_t: HttpsTunnel): void => {},
+        create, create, async (): Promise<boolean> => true);
+      t.start(); local.receive(buffer(request)); await settle();
+      await new Promise<void>((resolve): void => { setTimeout(resolve, 300); });
+      expect(calls).assertEqual(1); expect(first.families.join(',')).assertEqual('2'); t.close();
+    });
+    it('both families failing closes the local tunnel', 0, async () => {
+      const local = new RelaySocketFake(); let calls = 0;
+      const create = (): RelayTlsEndpoint => { const remote = new RelaySocketFake(); remote.failConnect = true; calls++; return remote; };
+      const t = new HttpsTunnel(local, (_auth: string): HttpsProxyRecord => target, (_t: HttpsTunnel): void => {},
+        create, create, async (): Promise<boolean> => true);
+      t.start(); local.receive(buffer(request)); await settle();
+      expect(calls).assertEqual(2); expect(local.closed).assertTrue(); t.close();
+    });
+    it('hung bind or TLS verification cannot prevent the other family winning', 0, async () => {
+      for (const stage of ['bind', 'verify']) {
+        const local = new RelaySocketFake(); const first = new RelaySocketFake(); const second = new RelaySocketFake();
+        if (stage === 'bind') { first.bindBarrier = new Promise<void>(() => {}); }
+        else { first.verifyBarrier = new Promise<void>(() => {}); }
+        let calls = 0; const create = (): RelayTlsEndpoint => calls++ === 0 ? first : second;
+        const t = new HttpsTunnel(local, (_auth: string): HttpsProxyRecord => target, (_t: HttpsTunnel): void => {},
+          create, create, async (): Promise<boolean> => true);
+        t.start(); local.receive(buffer(request)); await new Promise<void>((resolve): void => { setTimeout(resolve, 300); });
+        await settle(); expect(first.closed).assertTrue(); expect(first.sent.length).assertEqual(0);
+        expect(second.sent.length).assertEqual(1); expect(local.closed).assertFalse(); t.close();
+      }
+    });
+    it('preferred family can still win after fallback has started and both pending sockets close on cancellation', 0, async () => {
+      for (const cancel of [false, true]) {
+        const local = new RelaySocketFake(); const first = new RelaySocketFake(); const second = new RelaySocketFake();
+        let finish: () => void = (): void => {};
+        first.connectBarrier = new Promise<void>((resolve): void => { finish = resolve; });
+        second.connectBarrier = new Promise<void>(() => {});
+        let calls = 0; const create = (): RelayTlsEndpoint => calls++ === 0 ? first : second;
+        const t = new HttpsTunnel(local, (_auth: string): HttpsProxyRecord => target, (_t: HttpsTunnel): void => {},
+          create, create, async (): Promise<boolean> => true);
+        t.start(); local.receive(buffer(request)); await new Promise<void>((resolve): void => { setTimeout(resolve, 300); });
+        await settle(); expect(second.families.join(',')).assertEqual('1');
+        if (cancel) { t.close(); } finish(); await settle();
+        expect(second.closed).assertTrue(); expect(first.sent.length).assertEqual(cancel ? 0 : 1);
+        if (cancel) { expect(first.closed).assertTrue(); } else { first.end(); expect(local.closed).assertTrue(); }
+        t.close();
+      }
     });
     it('IP literals use their own address family without consulting domain preference', 0, async () => {
       for (const host of ['[2001:db8::1]', '192.0.2.1']) {

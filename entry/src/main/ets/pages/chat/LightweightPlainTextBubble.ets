@@ -226,7 +226,8 @@ struct LightweightSenderAvatar {
         // 和 LiveSenderAvatar 同一理由：头像被大图挤出 LRU 后重解码会闪
         // （issue #137）。两处要一起开，否则纯文本行的头像仍然会闪。
         pinBounded: true,
-        syncSmall: true
+        syncSmall: true,
+        syncDisplay: true
       }).visibility(this.path !== '' ? Visibility.Visible : Visibility.None);
       if (this.animated) {
         SenderAnimatedLayer({ senderId: this.senderId, senderIsUser: this.senderIsUser, avatarSize: 38 });

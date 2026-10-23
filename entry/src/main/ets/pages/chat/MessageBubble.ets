@@ -375,7 +375,8 @@ struct LiveSenderAvatar {
         // 「翻消息的时候对话头像会闪」（issue #137）。
         pinBounded: true,
         // 首帧就要有图（#137）：头像很小，未命中缓存时同步解一次，不再先露首字母。
-        syncSmall: true
+        syncSmall: true,
+        syncDisplay: true
       })
         .visibility(this.path !== '' ? Visibility.Visible : Visibility.None);
       if (this.animated) {
@@ -3103,6 +3104,7 @@ export struct MessageBubble {
           // downloaded photo to a dead "retry" tile.
           LiveThumbImage({
             spec: {
+              syncDisplay: true,
               fileId: this.msg.photoFileId,
               initialPath: this.msg.photoPath,
               boxWidth: this.mediaBox().width,

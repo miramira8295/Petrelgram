@@ -1,3 +1,4 @@
+import { ProxyCandidateRace, ProxyCandidateProbe } from './ProxyCandidateRace';
 import { sendProxyRequest } from './HttpsProxyTransport';
 import { TdClient, TimerFns } from '../tdkit/TdClient';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
@@ -20,11 +21,14 @@ export interface ProxyAutoSwitchEntry extends ProxySwitchCandidate {
 // ProxyPage: leaving settings must not turn automatic failover off.
 export class ProxyAutoSwitchService {
   private clock: TimerFns;
+  private probe: ProxyCandidateProbe;
+  private probeRace: ProxyCandidateRace | undefined = undefined;
   private subscribeNetwork: ProxyNetworkSubscription;
   private client: TdClient | null = null;
   private unsubscribe: (() => void) | null = null;
   private unsubscribeNetwork: (() => void) | null = null;
   private hadNetwork: boolean = true;
+  private networkType: string = '';
   private timer: number = -1;
   private generation: number = 0;
   private listSequence: number = 0;
@@ -42,18 +46,28 @@ export class ProxyAutoSwitchService {
   private confirmedProxyId: number = -1;
   private selectionListeners: Set<(proxyId: number) => void> = new Set();
 
-  constructor(clock?: TimerFns, subscribeNetwork?: ProxyNetworkSubscription) {
+  constructor(clock?: TimerFns, subscribeNetwork?: ProxyNetworkSubscription, probe?: ProxyCandidateProbe) {
     this.clock = clock ?? {
       setTimeout: (callback: () => void, ms: number): number => setTimeout(callback, ms),
       clearTimeout: (id: number): void => clearTimeout(id)
     };
     this.subscribeNetwork = subscribeNetwork ?? subscribeNetworkType;
+    this.probe = probe ?? (async (id: number): Promise<boolean> => {
+      const target = this.client;
+      if (target === null) { return false; }
+      const request: TdRequest = { '@type': 'pingProxy' };
+      request['proxy_id'] = id;
+      const result = await sendProxyRequest(target, request, 12000);
+      const seconds = result['seconds'] as number | undefined;
+      return seconds !== undefined && Number.isFinite(seconds) && seconds >= 0;
+    });
   }
 
   attach(target: TdClient): void {
     this.detach();
     this.client = target;
     this.hadNetwork = this.networkAvailable();
+    this.networkType = AppStorage.get<string>(KEY_CURRENT_NETWORK_TYPE) ?? 'other';
     this.unsubscribeNetwork = this.subscribeNetwork((network: string): void => {
       if (this.client === target) { this.onNetworkState(network); }
     });
@@ -184,12 +198,15 @@ export class ProxyAutoSwitchService {
   private onNetworkState(network: string): void {
     const available = network !== 'none';
     const recovered = !this.hadNetwork && available;
+    const changed = this.networkType !== network;
+    this.networkType = network;
     this.hadNetwork = available;
     if (!available) {
       // Invalidate old list reads too: their replies must not switch proxies after
       // the network comes back. Recovery starts a fresh, full delay.
       this.cancelWork();
-    } else if (recovered) {
+    } else if (recovered || (changed && this.switchingToken !== -1)) {
+      this.cancelWork();
       this.resumeConnecting();
     }
   }
@@ -220,6 +237,8 @@ export class ProxyAutoSwitchService {
   }
 
   private cancelWork(): void {
+    this.probeRace?.cancel();
+    this.probeRace = undefined;
     this.generation++;
     this.switchingToken = -1;
     if (this.timer !== -1) {
@@ -307,8 +326,16 @@ export class ProxyAutoSwitchService {
       this.proxyCount = initial.length;
       this.activeProxyId = activeId;
       this.publishSelection(activeId);
-      // Re-read immediately before mutation. Select from the latest list so a
-      // removed candidate cannot monopolize future attempts.
+      const candidates = orderedProxyCandidateIds(initial, activeId,
+        this.lastAttemptedProxyId >= 0 ? this.lastAttemptedProxyId : activeId);
+      if (candidates.length === 0) { return; }
+      const race = new ProxyCandidateRace(this.clock);
+      this.probeRace = race;
+      const candidateId = await race.run(candidates, this.probe);
+      if (this.probeRace === race) { this.probeRace = undefined; }
+      if (candidateId === undefined || !this.canContinueSwitch(target, token)) { return; }
+      // A successful probe is not ownership of the route. Recheck selection and
+      // deletion after probing, before enabling the winning candidate once.
       const latest = await this.listProxies(target);
       if (!this.canContinueSwitch(target, token)) { return; }
       const latestActive = latest.find(
@@ -319,11 +346,9 @@ export class ProxyAutoSwitchService {
         this.publishSelection(this.activeProxyId);
         return;
       }
-      const candidates = orderedProxyCandidateIds(latest, latestActive,
-        this.lastAttemptedProxyId >= 0 ? this.lastAttemptedProxyId : latestActive);
-      if (candidates.length === 0) { return; }
-      const candidateId = candidates[0];
-      // Advance even if route selection is rejected; only one mutation per window.
+      if (candidateId !== 0 && !latest.some((entry: ProxyAutoSwitchEntry): boolean => entry.id === candidateId)) {
+        return;
+      }
       this.lastAttemptedProxyId = candidateId;
       this.listSequence++;
       this.invalidateSelection();
