@@ -14,8 +14,9 @@
 // ——一个复用壳挂的恰好是另一行的文件。
 //
 // 【为什么监听 spec 整体而不是 'spec.fileId'】LiveThumbSpec 是普通 interface，
-// 没有 @ObservedV2 / @Trace，嵌套路径的观测没有保证；而调用点每次重建都传新的
-// 对象字面量，监听根对象一定触发。多触发不要紧——判据在这里，同身份直接早退。
+// 没有 @ObservedV2 / @Trace，嵌套路径的观测没有保证。调用方在源/几何变化时
+// 发布新 spec，监听根对象即可；相册现在复用内容相同的 spec，复用后重挂仍由
+// aboutToReuse 同步完成。额外触发时也由这里的同身份判据直接早退。
 
 export function shouldReattachThumb(
   specFileId: number,

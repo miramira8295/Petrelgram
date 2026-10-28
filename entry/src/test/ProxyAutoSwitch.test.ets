@@ -1,4 +1,5 @@
 import { ProxyCandidateRace } from '../main/ets/services/ProxyCandidateRace';
+import { ProxyProbeCancellation } from '../main/ets/util/ProxyProbeCancellation';
 import { afterEach, beforeEach, describe, expect, it } from '@ohos/hypium';
 import {
   normalizeProxySwitchDelay, orderedProxyCandidateIds, ProxySwitchCandidate
@@ -268,6 +269,41 @@ export default function proxyAutoSwitchTest() {
       const pending = race.run([1, 0], async (_id: number): Promise<boolean> => { calls++; return true; });
       race.cancel(); expect(await pending === undefined).assertTrue(); await settleProxySwitch();
       expect(calls).assertEqual(0);
+    });
+    it('winner cancels every probe resource including pending siblings', 0, async (): Promise<void> => {
+      const race = new ProxyCandidateRace(new ProxySwitchClock());
+      const cancelled: number[] = []; let win: () => void = (): void => {};
+      const result = race.run([1, 2, 3, 4], (id: number, cancellation?: ProxyProbeCancellation): Promise<boolean> => {
+        cancellation!.subscribe((): void => { cancelled.push(id); });
+        return new Promise<boolean>((resolve): void => { if (id === 2) { win = (): void => resolve(true); } });
+      });
+      await settleProxySwitch(); win();
+      expect(await result).assertEqual(2); expect(cancelled.sort().join(',')).assertEqual('1,2,3');
+    });
+    it('timeout cancels a hung probe before reusing its concurrency slot', 0, async (): Promise<void> => {
+      const clock = new ProxySwitchClock(); const race = new ProxyCandidateRace(clock);
+      const cancelled: number[] = []; let checked = false;
+      const result = race.run([1, 2, 3, 4], (id: number, cancellation?: ProxyProbeCancellation): Promise<boolean> => {
+        if (id === 4) { checked = cancelled.length >= 1; return Promise.resolve(true); }
+        cancellation!.subscribe((): void => { cancelled.push(id); });
+        return new Promise<boolean>(() => {});
+      });
+      await settleProxySwitch(); clock.fire(); await settleProxySwitch();
+      expect(await result).assertEqual(4); expect(checked).assertTrue(); expect(cancelled.length).assertEqual(3);
+    });
+    it('manual cancellation releases active probe resources once', 0, async (): Promise<void> => {
+      const race = new ProxyCandidateRace(new ProxySwitchClock()); let closed = 0;
+      const result = race.run([1, 2, 3, 4], (_id: number, cancellation?: ProxyProbeCancellation): Promise<boolean> => {
+        cancellation!.subscribe((): void => { closed++; }); return new Promise<boolean>(() => {});
+      });
+      await settleProxySwitch(); race.cancel(); race.cancel();
+      expect(await result === undefined).assertTrue(); expect(closed).assertEqual(3);
+    });
+    it('one failing cancellation callback cannot leave sibling resources live', 0, () => {
+      const cancellation = new ProxyProbeCancellation(); let closed = 0;
+      cancellation.subscribe((): void => { throw new Error('cleanup failed'); });
+      cancellation.subscribe((): void => { closed++; }); cancellation.cancel(); cancellation.cancel();
+      cancellation.subscribe((): void => { closed++; }); expect(closed).assertEqual(2);
     });
   });
 

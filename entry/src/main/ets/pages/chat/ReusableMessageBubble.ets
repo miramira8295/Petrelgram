@@ -1,3 +1,4 @@
+import { MessageTextLayout } from '../../util/messageTextInput';
 import { StickerMessageBubble } from './StickerMessageBubble';
 import { TextMessageBubble } from './TextMessageBubble';
 import { AlbumMessageBubble } from './AlbumMessageBubble';
@@ -114,7 +115,7 @@ export interface MessageBubbleActions {
   onBackgroundCache: (messageIds: number[]) => void;
 }
 
-export interface MessageBubbleRenderData {
+export interface MessageBubbleRenderData extends MessageTextLayout {
   // 这个会话此刻能不能发言。只读频道、未加入、被封禁、机器人还没「开始」时
   // 输入框根本不在（membershipLosesComposer），此时左滑回复不该有反应
   // ——滑了也只是把一条回复挂到一个不存在的输入框上
@@ -128,11 +129,6 @@ export interface MessageBubbleRenderData {
   selectionActive: boolean;
   selectedMemberIds: number[];
   chatId: number;
-  // Actual row width after page-local chrome such as the multi-select gutter.
-  // Media, albums and both bubble renderers derive every cap from this value.
-  contentWidth: number;
-  isGroup: boolean;
-  isChannel: boolean;
   liveSharingId: number;
   themeBubbleOut: string;
   showUnreadDivider: boolean;

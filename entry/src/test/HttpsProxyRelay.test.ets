@@ -1,8 +1,8 @@
 import { resolvePreferIpv6 } from '../main/ets/services/NetworkIpPreference';
 import { describe, expect, it } from '@ohos/hypium';
-import { HttpsTunnel, RelayTlsEndpoint } from '../main/ets/services/HttpsProxyRelay';
+import { HttpsTunnel, RelayTlsEndpoint, encodeProxyUtf8 } from '../main/ets/services/HttpsProxyRelay';
 import { SocksProxyHandshake } from '../main/ets/util/socksProxyProtocol';
-import { ProxyHttpRequestRewriter, PROXY_DIRECT } from '../main/ets/util/httpsProxyProtocol';
+import { ProxyHttpRequestRewriter, PROXY_DIRECT, validRelayProxy } from '../main/ets/util/httpsProxyProtocol';
 import { HttpsProxyRecord } from '../main/ets/util/httpsProxyProtocol';
 
 function buffer(text: string): ArrayBuffer {
@@ -68,6 +68,29 @@ function tunnel(local: RelaySocketFake, remote: RelaySocketFake, validCertificat
 
 export default function httpsProxyRelayTest() {
   describe('HttpsProxyRelay', () => {
+    it('empty proxy credentials bypass the platform encoder returning undefined', 0, () => {
+      let calls = 0;
+      const bytes = encodeProxyUtf8('', (_text: string): Uint8Array | undefined => { calls++; return undefined; });
+      expect(bytes.length).assertEqual(0); expect(calls).assertEqual(0);
+      const handshake = new SocksProxyHandshake('dc.example:443', bytes, bytes);
+      expect(Array.from(new Uint8Array(handshake.greeting())).join(',')).assertEqual('5,1,0');
+      expect(new Uint8Array(handshake.push(buffer('\x05\x00')).writes[0])[3]).assertEqual(3);
+    });
+    it('nonempty credential encoding failures cannot silently select no authentication', 0, () => {
+      for (const bytes of [undefined, new Uint8Array(0)]) {
+        let rejected = false;
+        try { encodeProxyUtf8('user', (_text: string): Uint8Array | undefined => bytes); }
+        catch (_error) { rejected = true; }
+        expect(rejected).assertTrue();
+      }
+    });
+    it('HTTP and SOCKS proxy configs accept domains and IPs with empty credentials', 0, () => {
+      for (const type of ['proxyTypeHttp', 'proxyTypeSocks5', 'proxyTypeHttps']) {
+        for (const host of ['proxy.example', '192.168.1.2', '2001:db8::1']) {
+          expect(validRelayProxy({ type: type, server: host, port: 1080, username: '', password: '' })).assertTrue();
+        }
+      }
+    });
     it('pure IPv6 networks automatically prefer IPv6 with the manual switch off', 0, async () => {
       expect(await resolvePreferIpv6(async (): Promise<boolean> => false, (): boolean => false)).assertTrue();
     });
@@ -302,7 +325,7 @@ export default function httpsProxyRelayTest() {
     });
     it('SOCKS authenticated fragmented handshake preserves the first payload', 0, () => {
       const handshake = new SocksProxyHandshake('[2001:db8::1]:443', new Uint8Array([117]), new Uint8Array([112]));
-      expect(Array.from(new Uint8Array(handshake.greeting())).join(',')).assertEqual('5,1,2');
+      expect(Array.from(new Uint8Array(handshake.greeting())).join(',')).assertEqual('5,2,0,2');
       expect(handshake.push(buffer('\x05')).writes.length).assertEqual(0);
       expect(Array.from(new Uint8Array(handshake.push(buffer('\x02')).writes[0])).join(',')).assertEqual('1,1,117,1,112');
       const connect = new Uint8Array(handshake.push(buffer('\x01\x00')).writes[0]);
@@ -312,15 +335,41 @@ export default function httpsProxyRelayTest() {
       const ready = handshake.push(buffer(response.slice(-1) + 'payload'));
       expect(ready.ready).assertTrue(); expect(stringOf(ready.rest)).assertEqual('payload');
     });
-    it('SOCKS uses remote DNS and rejects authentication downgrade and connection failures', 0, () => {
+    it('SOCKS uses remote DNS and rejects unoffered authentication and connection failures', 0, () => {
       const handshake = new SocksProxyHandshake('dc.example:443', new Uint8Array(0), new Uint8Array(0));
       const connect = new Uint8Array(handshake.push(buffer('\x05\x00')).writes[0]);
       expect(connect[3]).assertEqual(3); expect(connect[4]).assertEqual(10);
       let rejected = false;
       try { handshake.push(buffer('\x05\x05\x00\x01')); } catch (_e) { rejected = true; }
       expect(rejected).assertTrue(); rejected = false;
-      try { new SocksProxyHandshake('host:443', new Uint8Array([1]), new Uint8Array([2])).push(buffer('\x05\x00')); }
+      try { new SocksProxyHandshake('host:443', new Uint8Array(0), new Uint8Array(0)).push(buffer('\x05\x02')); }
       catch (_e) { rejected = true; }
+      expect(rejected).assertTrue();
+    });
+    it('SOCKS accepts fragmented no-auth selection with full or partial saved credentials', 0, () => {
+      for (const credentials of [['u', 'p'], ['u', ''], ['', 'p']]) {
+        const handshake = new SocksProxyHandshake('dc.example:443', new Uint8Array(buffer(credentials[0])),
+          new Uint8Array(buffer(credentials[1])));
+        expect(Array.from(new Uint8Array(handshake.greeting())).join(',')).assertEqual('5,2,0,2');
+        expect(handshake.push(buffer('\x05')).writes.length).assertEqual(0);
+        const step = handshake.push(buffer('\x00'));
+        const connect = new Uint8Array(step.writes[0]);
+        expect(connect[0]).assertEqual(5); expect(connect[1]).assertEqual(1); expect(connect[3]).assertEqual(3);
+        const ready = handshake.push(buffer('\x05\x00\x00\x01\x7f\x00\x00\x01\x00\x50payload'));
+        expect(ready.ready).assertTrue(); expect(stringOf(ready.rest)).assertEqual('payload');
+      }
+    });
+    it('SOCKS rejects unsupported methods and a failed password without sending CONNECT', 0, () => {
+      for (const reply of ['\x05\xff', '\x05\x01', '\x04\x00']) {
+        let rejected = false;
+        try { new SocksProxyHandshake('host:443', new Uint8Array([117]), new Uint8Array([112])).push(buffer(reply)); }
+        catch (_error) { rejected = true; }
+        expect(rejected).assertTrue();
+      }
+      const handshake = new SocksProxyHandshake('host:443', new Uint8Array([117]), new Uint8Array([112]));
+      expect(new Uint8Array(handshake.push(buffer('\x05\x02')).writes[0])[0]).assertEqual(1);
+      let rejected = false;
+      try { handshake.push(buffer('\x01\x01')); } catch (_error) { rejected = true; }
       expect(rejected).assertTrue();
     });
     it('HTTP-only rewrites every keepalive header while preserving fragmented binary bodies', 0, () => {

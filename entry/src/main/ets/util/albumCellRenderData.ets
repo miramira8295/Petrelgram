@@ -46,10 +46,6 @@ export function albumRenderRowAt(rows: AlbumCellRenderData[][], index: number): 
   return Number.isInteger(index) && index >= 0 && index < rows.length ? rows[index] : EMPTY_RENDER_ROW;
 }
 
-function sameCells(a: AlbumCellRenderData[], b: AlbumCellRenderData[]): boolean {
-  return a.length === b.length && a.every((cell: AlbumCellRenderData, i: number): boolean => cell === b[i]);
-}
-
 function prepareCell(previous: AlbumCellRenderData | undefined, cell: AlbumCell,
   group: AlbumGroup, data: AlbumCellRenderContext): AlbumCellRenderData {
   const i = cell.idx;
@@ -101,8 +97,31 @@ export class AlbumCellRenderCache {
   private ratios: number[] = [];
   private width: number = -1;
   private geometry: AlbumCell[][] = [];
-  private cells: Map<number, AlbumCellRenderData> = new Map();
+  // packAlbumRows emits each contiguous source index once. This private index
+  // can change in place; published cells/rows remain immutable snapshots.
+  private cells: AlbumCellRenderData[] = [];
   private rows: AlbumCellRenderData[][] = [];
+
+  private prepareRow(geometry: AlbumCell[], previous: AlbumCellRenderData[] | undefined,
+    group: AlbumGroup, data: AlbumCellRenderContext): AlbumCellRenderData[] {
+    let next = previous;
+    for (let i = 0; i < geometry.length; i++) {
+      const cell = geometry[i];
+      const prepared = prepareCell(this.cells[cell.idx], cell, group, data);
+      this.cells[cell.idx] = prepared;
+      if (next === undefined) { next = []; }
+      if (next[i] !== prepared) {
+        if (next === previous) { next = next.slice(); }
+        next[i] = prepared;
+      }
+    }
+    if (next === undefined) { return EMPTY_RENDER_ROW; }
+    if (next.length !== geometry.length) {
+      if (next === previous) { next = next.slice(0, geometry.length); }
+      else { next.length = geometry.length; }
+    }
+    return next;
+  }
 
   prepare(group: AlbumGroup, data: AlbumCellRenderContext, width: number): AlbumCellRenderData[][] {
     if (Math.abs(this.width - width) > 0.01 || this.ratios.length !== group.photoRatios.length ||
@@ -111,21 +130,21 @@ export class AlbumCellRenderCache {
       this.ratios = group.photoRatios.slice();
       this.geometry = packAlbumRows(this.ratios, width);
     }
-    const cells = new Map<number, AlbumCellRenderData>();
-    const rows: AlbumCellRenderData[][] = this.geometry.map((row: AlbumCell[], index: number): AlbumCellRenderData[] => {
-      const next = row.map((cell: AlbumCell): AlbumCellRenderData => {
-        const prepared = prepareCell(this.cells.get(cell.idx), cell, group, data);
-        cells.set(cell.idx, prepared);
-        return prepared;
-      });
-      const previous = this.rows[index];
-      return previous !== undefined && sameCells(previous, next) ? previous : next;
-    });
-    this.cells = cells;
-    if (this.rows.length !== rows.length || this.rows.some(
-      (row: AlbumCellRenderData[], i: number): boolean => row !== rows[i])) {
-      this.rows = rows;
+    let rows = this.rows;
+    for (let i = 0; i < this.geometry.length; i++) {
+      const next = this.prepareRow(this.geometry[i], this.rows[i], group, data);
+      if (rows[i] !== next) {
+        if (rows === this.rows) { rows = rows.slice(); }
+        rows[i] = next;
+      }
     }
+    if (rows.length !== this.geometry.length) {
+      if (rows === this.rows) { rows = rows.slice(0, this.geometry.length); }
+      else { rows.length = this.geometry.length; }
+    }
+    // Drop references to removed members when reusing for a smaller album.
+    this.cells.length = this.ratios.length;
+    this.rows = rows;
     return this.rows;
   }
 }

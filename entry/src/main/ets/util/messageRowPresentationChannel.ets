@@ -1,3 +1,4 @@
+import { thumbPathFor } from './mediaThumbChannel';
 import { AlbumGroup } from './collapseAlbums';
 import { MessageEntry } from '../store/MessageEntry';
 
@@ -92,8 +93,8 @@ function sameBooleans(a: boolean[], b: boolean[]): boolean {
 // Deliberately excludes byte progress. Progress is much hotter than every
 // other field here and already has mediaProgressChannel; waking the whole
 // bubble for it would merely move the per-tick rebuild one level down.
-function sameHeadPresentation(x: MessageEntry, y: MessageEntry): boolean {
-  return x.photoPath === y.photoPath && x.photoFailed === y.photoFailed &&
+function sameHeadPresentation(x: MessageEntry, y: MessageEntry, thumbDelivered: boolean = false): boolean {
+  return (thumbDelivered || x.photoPath === y.photoPath) && x.photoFailed === y.photoFailed &&
     x.linkPhotoPath === y.linkPhotoPath && x.linkPhotoFailed === y.linkPhotoFailed &&
     x.linkPhotoDownloadActive === y.linkPhotoDownloadActive &&
     x.videoPath === y.videoPath && x.videoFailed === y.videoFailed &&
@@ -114,6 +115,39 @@ function samePresentation(a: AlbumGroup, b: AlbumGroup): boolean {
     return false;
   }
   return sameStrings(a.photoPaths, b.photoPaths) && sameBooleans(a.photoFailed, b.photoFailed);
+}
+
+// An album thumbnail already delivered to LiveThumbImage/ThumbReadyGate
+// must not additionally wake every tile, its caption and the shared shell.
+// Never suppress removals, local-only sources, file replacements or a path
+// that the file channel has not actually received. Video posters and failed
+// cells also read the row path directly (player / tap-to-retry), so keep their
+// notifications. Keep the latest full group
+// in the channel cache so a recycled/new subscriber still seeds fresh inputs.
+function albumThumbsAlreadyDelivered(a: AlbumGroup, b: AlbumGroup): boolean {
+  if (a.photoPaths.length <= 1 || a.photoPaths.length !== b.photoPaths.length ||
+    a.memberIds.length !== b.memberIds.length || a.photoFileIds.length !== b.photoFileIds.length ||
+    a.head.photoFileId !== b.head.photoFileId || !sameHeadPresentation(a.head, b.head, true) ||
+    !sameBooleans(a.photoFailed, b.photoFailed)) {
+    return false;
+  }
+  let changed: boolean = a.head.photoPath !== b.head.photoPath;
+  if (changed && (b.head.photoFileId <= 0 || b.head.photoPath === '' ||
+    thumbPathFor(b.head.photoFileId) !== b.head.photoPath)) { return false; }
+  for (let i = 0; i < b.memberIds.length; i++) {
+    if (a.memberIds[i] !== b.memberIds[i]) { return false; }
+  }
+  for (let i = 0; i < b.photoPaths.length; i++) {
+    if (a.photoFileIds[i] !== b.photoFileIds[i]) { return false; }
+    if (a.photoPaths[i] === b.photoPaths[i]) { continue; }
+    if (a.photoIsVideo[i] || b.photoIsVideo[i] || b.photoFailed[i]) { return false; }
+    const fileId: number = b.photoFileIds[i] ?? 0;
+    if (fileId <= 0 || b.photoPaths[i] === '' || thumbPathFor(fileId) !== b.photoPaths[i]) {
+      return false;
+    }
+    changed = true;
+  }
+  return changed;
 }
 
 // 快照描述的是不是同一条消息的同一种内容。展示字段相同不代表是同一条：发送成功时 MessageStore 把临时 id
@@ -159,6 +193,10 @@ export function publishMessageRowPresentations(chatId: number, groups: AlbumGrou
     if (sameIdentity && samePresentation(previous, group)) {
       // The usual download tick lands here: no map churn and, crucially, no
       // whole-bubble wake-up. The tiny progress view owns that update.
+      continue;
+    }
+    if (sameIdentity && previous.key === group.key && albumThumbsAlreadyDelivered(previous, group)) {
+      remember(owner, rowId, group);
       continue;
     }
     remember(owner, rowId, group);

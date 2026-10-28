@@ -150,143 +150,222 @@ function readEntities(text: string, entities: TdObject[]): Ent[] {
   return out;
 }
 
-function styleAt(pos: number, ents: Ent[]): RichRun {
-  let bold = false;
-  let italic = false;
-  let underline = false;
-  let strike = false;
-  let code = false;
-  let spoiler = false;
-  let customEmojiId = '';
-  let link = false;
-  for (const e of ents) {
-    if (isBlock(e.type)) {
-      continue;
-    }
-    if (pos >= e.offset && pos < e.offset + e.length) {
-      if (e.type === 'textEntityTypeBold') {
-        bold = true;
-      } else if (e.type === 'textEntityTypeItalic') {
-        italic = true;
-      } else if (e.type === 'textEntityTypeUnderline') {
-        underline = true;
-      } else if (e.type === 'textEntityTypeStrikethrough') {
-        strike = true;
-      } else if (e.type === 'textEntityTypeCode') {
-        code = true;
-      } else if (e.type === 'textEntityTypeSpoiler') {
-        spoiler = true;
-      } else if (e.type === 'textEntityTypeCustomEmoji') {
-        customEmojiId = e.customEmojiId;
-      } else if (isLinkEntityType(e.type)) {
-        link = true;
-      }
-    }
+// Resolve from the FULL entity, not a run split by overlapping formatting.
+// Resolved at most once per entity while sweeping its active ranges.
+function entityLinkTarget(e: Ent, text: string): string {
+  if (e.type === 'textEntityTypeTextUrl' || e.type === 'textEntityTypeFallbackUrl') {
+    return e.url;
   }
-  return {
-    offset: pos,
-    text: '',
-    bold,
-    italic,
-    underline,
-    strike,
-    code,
-    spoiler,
-    customEmojiId,
-    link,
-    url: ''
-  };
-}
-
-// Resolve the tap target for a run at `pos`. Use the FULL entity range rather
-// than the current run: overlapping bold/italic boundaries can split one URL
-// into several visual runs, but every piece must still open the complete URL.
-// '' means the run is styled as a link but has no openable target.
-function linkTargetFor(pos: number, text: string, ents: Ent[]): string {
-  for (const e of ents) {
-    if (isBlock(e.type) || !isLinkEntityType(e.type)) {
-      continue;
-    }
-    if (pos >= e.offset && pos < e.offset + e.length) {
-      const entityText = text.substring(e.offset, e.offset + e.length);
-      if (e.type === 'textEntityTypeTextUrl') {
-        return e.url;
-      }
-      if (e.type === 'textEntityTypeUrl') {
-        return entityText;
-      }
-      if (e.type === 'textEntityTypeMention') {
-        return `https://t.me/${entityText.replace('@', '')}`;
-      }
-      if (e.type === 'textEntityTypeMentionName') {
-        return e.userId > 0 ? `tg://user?id=${e.userId}` : '';
-      }
-      if (e.type === 'textEntityTypeEmailAddress') {
-        return `mailto:${entityText}`;
-      }
-      if (e.type === 'textEntityTypePhoneNumber') {
-        return `tel:${entityText.replace(/[ \-()]/g, '')}`;
-      }
-      if (e.type === 'textEntityTypeBotCommand') {
-        return `tg-command:${entityText}`;
-      }
-      if (e.type === 'textEntityTypeBankCardNumber') {
-        return `tg-copy:${entityText}`;
-      }
-      // Pseudo-scheme: the chat page turns hashtag taps into an in-chat search.
-      if (e.type === 'textEntityTypeHashtag' || e.type === 'textEntityTypeCashtag') {
-        return `tg-hashtag:${entityText}`;
-      }
-      if (e.type === 'textEntityTypeFallbackUrl') {
-        return e.url;
-      }
-      return '';
-    }
+  if (e.type === 'textEntityTypeMentionName') {
+    return e.userId > 0 ? `tg://user?id=${e.userId}` : '';
+  }
+  const entityText = text.substring(e.offset, e.offset + e.length);
+  if (e.type === 'textEntityTypeUrl') {
+    return entityText;
+  }
+  if (e.type === 'textEntityTypeMention') {
+    return `https://t.me/${entityText.replace('@', '')}`;
+  }
+  if (e.type === 'textEntityTypeEmailAddress') {
+    return `mailto:${entityText}`;
+  }
+  if (e.type === 'textEntityTypePhoneNumber') {
+    return `tel:${entityText.replace(/[ \-()]/g, '')}`;
+  }
+  if (e.type === 'textEntityTypeBotCommand') {
+    return `tg-command:${entityText}`;
+  }
+  if (e.type === 'textEntityTypeBankCardNumber') {
+    return `tg-copy:${entityText}`;
+  }
+  if (e.type === 'textEntityTypeHashtag' || e.type === 'textEntityTypeCashtag') {
+    return `tg-hashtag:${entityText}`;
   }
   return '';
 }
 
-// Split [start,end) into runs at inline-entity boundaries; style is constant
-// within each run.
-function buildRuns(text: string, start: number, end: number, ents: Ent[]): RichRun[] {
-  const bounds: number[] = [start, end];
-  for (const e of ents) {
-    if (isBlock(e.type)) {
-      continue;
-    }
-    const s = e.offset;
-    const en = e.offset + e.length;
-    if (s > start && s < end) {
-      bounds.push(s);
-    }
-    if (en > start && en < end) {
-      bounds.push(en);
+// Collapse only adjacent non-interactive runs after block boundary trimming.
+// Spoilers keep their offset/length reveal keys; each custom emoji keeps its own
+// ImageSpan. Links also keep their original text ranges: linkTextHidesUrl uses
+// that text when deciding whether a tap needs a confirmation.
+function compactStyledRuns(runs: RichRun[]): void {
+  if (runs.length < 2) {
+    return;
+  }
+  let count = 1;
+  for (let i = 1; i < runs.length; i++) {
+    const previous = runs[count - 1];
+    const next = runs[i];
+    if (!previous.spoiler && !next.spoiler && !previous.link && !next.link &&
+      previous.customEmojiId === '' && next.customEmojiId === '' &&
+      previous.url === '' && next.url === '' &&
+      previous.offset + previous.text.length === next.offset &&
+      previous.bold === next.bold && previous.italic === next.italic &&
+      previous.underline === next.underline && previous.strike === next.strike &&
+      previous.code === next.code) {
+      previous.text += next.text;
+    } else {
+      runs[count++] = next;
     }
   }
-  bounds.sort((a: number, b: number): number => a - b);
-  const uniq: number[] = [];
-  for (let k = 0; k < bounds.length; k++) {
-    if (k === 0 || bounds[k] !== bounds[k - 1]) {
-      uniq.push(bounds[k]);
+  runs.length = count;
+}
+
+// Each inline entity contributes two ordered events. Style counters handle
+// arbitrary overlaps; priority heaps preserve TDLib array order for the first
+// link and last custom emoji. Every event is consumed once across all blocks.
+interface InlineEvent {
+  position: number;
+  entityIndex: number;
+  flags: number;
+  entering: boolean;
+}
+
+function inlineFlags(type: string): number {
+  switch (type) {
+    case 'textEntityTypeBold': return 1;
+    case 'textEntityTypeItalic': return 2;
+    case 'textEntityTypeUnderline': return 4;
+    case 'textEntityTypeStrikethrough': return 8;
+    case 'textEntityTypeCode': return 16;
+    case 'textEntityTypeSpoiler': return 32;
+    case 'textEntityTypeCustomEmoji': return 64;
+    default: return isLinkEntityType(type) ? 128 : 0;
+  }
+}
+
+// Min-heap of original indices (negated for last-entity priority). Expired
+// entries are discarded lazily, at most once each; no array shifts or rescans.
+class ActiveEntityHeap {
+  private values: number[] = [];
+  private lastWins: boolean;
+
+  constructor(lastWins: boolean) { this.lastWins = lastWins; }
+
+  add(index: number): void {
+    const value = this.lastWins ? -index : index;
+    const values = this.values;
+    let child = values.length;
+    values.push(value);
+    while (child > 0) {
+      const parent = (child - 1) >> 1;
+      if (values[parent] <= value) { break; }
+      values[child] = values[parent];
+      child = parent;
+    }
+    values[child] = value;
+  }
+
+  current(active: boolean[]): number {
+    const values = this.values;
+    while (values.length > 0) {
+      const index = this.lastWins ? -values[0] : values[0];
+      if (active[index]) { return index; }
+      const tail = values.pop()!;
+      if (values.length === 0) { break; }
+      let parent = 0;
+      while (parent * 2 + 1 < values.length) {
+        let child = parent * 2 + 1;
+        if (child + 1 < values.length && values[child + 1] < values[child]) { child++; }
+        if (values[child] >= tail) { break; }
+        values[parent] = values[child];
+        parent = child;
+      }
+      values[parent] = tail;
+    }
+    return -1;
+  }
+}
+
+class InlineRunCursor {
+  private text: string;
+  private entities: Ent[];
+  private events: InlineEvent[] = [];
+  private nextEvent: number = 0;
+  private active: boolean[] = [];
+  private counts: number[] = [0, 0, 0, 0, 0, 0];
+  private links: ActiveEntityHeap | null = null;
+  private emojis: ActiveEntityHeap | null = null;
+  private linkTargets: string[] = [];
+
+  constructor(text: string, entities: Ent[]) {
+    this.text = text;
+    this.entities = entities;
+    for (let i = 0; i < entities.length; i++) {
+      const entity = entities[i];
+      // NaN ranges never supplied boundaries or styles in the previous parser.
+      if (isBlock(entity.type) || !Number.isFinite(entity.offset) || !Number.isFinite(entity.length)) {
+        continue;
+      }
+      const flags = inlineFlags(entity.type);
+      if (flags === 128 && this.links === null) { this.links = new ActiveEntityHeap(false); }
+      if (flags === 64 && this.emojis === null) { this.emojis = new ActiveEntityHeap(true); }
+      // Unknown entity types still create boundaries: interactive run keys
+      // must not change just because their neighboring entity is unrecognized.
+      this.events.push({ position: entity.offset, entityIndex: i, flags, entering: true });
+      this.events.push({ position: entity.offset + entity.length, entityIndex: i, flags, entering: false });
+    }
+    this.events.sort((a: InlineEvent, b: InlineEvent): number => a.position - b.position);
+  }
+
+  private advanceTo(position: number): void {
+    while (this.nextEvent < this.events.length && this.events[this.nextEvent].position <= position) {
+      const event = this.events[this.nextEvent++];
+      const flags = event.flags;
+      const delta = event.entering ? 1 : -1;
+      this.active[event.entityIndex] = event.entering;
+      if ((flags & 1) !== 0) { this.counts[0] += delta; }
+      if ((flags & 2) !== 0) { this.counts[1] += delta; }
+      if ((flags & 4) !== 0) { this.counts[2] += delta; }
+      if ((flags & 8) !== 0) { this.counts[3] += delta; }
+      if ((flags & 16) !== 0) { this.counts[4] += delta; }
+      if ((flags & 32) !== 0) { this.counts[5] += delta; }
+      if (event.entering) {
+        if (flags === 128) { this.links!.add(event.entityIndex); }
+        if (flags === 64) { this.emojis!.add(event.entityIndex); }
+      }
     }
   }
-  const runs: RichRun[] = [];
-  for (let k = 0; k < uniq.length - 1; k++) {
-    const s = uniq[k];
-    const en = uniq[k + 1];
-    if (en <= s) {
-      continue;
+
+  private run(start: number, end: number): RichRun {
+    const link = this.links !== null ? this.links.current(this.active) : -1;
+    const emoji = this.emojis !== null ? this.emojis.current(this.active) : -1;
+    let url = '';
+    if (link >= 0) {
+      const cached: string | undefined = this.linkTargets[link];
+      if (cached !== undefined) {
+        url = cached;
+      } else {
+        url = entityLinkTarget(this.entities[link], this.text);
+        this.linkTargets[link] = url;
+      }
     }
-    const run = styleAt(s, ents);
-    run.text = text.substring(s, en);
-    if (run.link) {
-      run.url = linkTargetFor(s, text, ents);
-    }
-    if (run.text.length > 0) {
-      runs.push(run);
-    }
+    return {
+      offset: start, text: this.text.substring(start, end),
+      bold: this.counts[0] > 0, italic: this.counts[1] > 0,
+      underline: this.counts[2] > 0, strike: this.counts[3] > 0,
+      code: this.counts[4] > 0, spoiler: this.counts[5] > 0,
+      customEmojiId: emoji >= 0 ? this.entities[emoji].customEmojiId : '',
+      link: link >= 0, url
+    };
   }
-  return runs;
+
+  // Call ranges are in document order. A pre/code block can skip a range;
+  // advanceTo consumes its events so inline styles resume correctly afterwards.
+  runs(start: number, end: number): RichRun[] {
+    const runs: RichRun[] = [];
+    let position = start;
+    this.advanceTo(position);
+    while (position < end) {
+      const next = this.nextEvent < this.events.length
+        ? Math.min(end, this.events[this.nextEvent].position) : end;
+      const run = this.run(position, next);
+      if (run.text.length > 0) { runs.push(run); }
+      position = next;
+      this.advanceTo(position);
+    }
+    return runs;
+  }
 }
 
 // TDLib commonly leaves the blank line(s) separating ordinary text from a
@@ -354,6 +433,10 @@ interface ParseCacheEntry {
 // path re-parses on every render otherwise, which shows up as scroll jank.
 // WeakMap keeps a cache entry alive exactly as long as its message does.
 const parseCache: WeakMap<TdObject[], ParseCacheEntry> = new WeakMap();
+// Only parser-owned, read-only segments participate. An empty value marks a
+// segment whose fingerprint has not been requested yet; shape-only consumers
+// do not pay for hashing. Caller-created mutable segments remain uncached.
+const segmentFingerprints: WeakMap<RichSegment, string> = new WeakMap();
 
 // Parse a TDLib formattedText (text + entities) into renderable segments.
 // Results are memoized; callers must treat the returned segments as read-only.
@@ -363,6 +446,10 @@ export function parseFormattedText(text: string, entities: TdObject[]): RichSegm
     return hit.segments;
   }
   const segments = parseFormattedTextUncached(text, entities);
+  for (const segment of segments) {
+    compactStyledRuns(segment.runs);
+    segmentFingerprints.set(segment, '');
+  }
   parseCache.set(entities, { text, segments });
   return segments;
 }
@@ -390,6 +477,7 @@ function parseFormattedTextUncached(text: string, entities: TdObject[]): RichSeg
     normalizedBlocks.push(block);
     blockEnd = block.offset + block.length;
   }
+  const inline = new InlineRunCursor(text, ents);
   const segments: RichSegment[] = [];
   const n = text.length;
   let cursor = 0;
@@ -397,7 +485,7 @@ function parseFormattedTextUncached(text: string, entities: TdObject[]): RichSeg
     const bStart = Math.max(0, b.offset);
     const bEnd = Math.min(n, b.offset + b.length);
     if (bStart > cursor) {
-      const runs = trimBoundaryBreaks(buildRuns(text, cursor, bStart, ents));
+      const runs = trimBoundaryBreaks(inline.runs(cursor, bStart));
       if (runs.length > 0) {
         segments.push({
           kind: 'text', runs, text: '', offset: cursor,
@@ -409,7 +497,7 @@ function parseFormattedTextUncached(text: string, entities: TdObject[]): RichSeg
       ? 'quote' : 'pre';
     // Quotes keep their inline runs so links/mentions inside stay tappable.
     const quoteRuns = kind === 'quote'
-      ? trimBoundaryBreaks(buildRuns(text, bStart, bEnd, ents)) : [];
+      ? trimBoundaryBreaks(inline.runs(bStart, bEnd)) : [];
     const blockText = trimBlockText(text.substring(bStart, bEnd));
     if (blockText !== '') {
       segments.push({
@@ -426,8 +514,8 @@ function parseFormattedTextUncached(text: string, entities: TdObject[]): RichSeg
   }
   if (cursor < n) {
     const runs = normalizedBlocks.length > 0
-      ? trimBoundaryBreaks(buildRuns(text, cursor, n, ents))
-      : buildRuns(text, cursor, n, ents);
+      ? trimBoundaryBreaks(inline.runs(cursor, n))
+      : inline.runs(cursor, n);
     if (runs.length > 0) {
       segments.push({
         kind: 'text', runs, text: '', offset: cursor,
@@ -501,8 +589,13 @@ export function messageUrls(text: string, entities: TdObject[]): string[] {
 // 是不是最后一段——它决定要不要给时间戳留位），所以一并进键。
 //
 // 取指纹而不是原文：键会被 ForEach 一直留着，一条几百字的说明乘以可见行数不划算；
-// 而 parseFormattedText 本来每帧就要把同一串字符走一遍，多算一次 djb2 可以忽略。
+// 解析结果已按 entities 身份复用；同一只读分段的指纹也只算一次，避免滚动
+// 重绑时 ForEach 取键反复扫描文字和样式。编辑/翻译的新解析结果独立计算。
 function segmentFingerprint(seg: RichSegment): string {
+  const cached: string | undefined = segmentFingerprints.get(seg);
+  if (cached !== undefined && cached !== '') {
+    return cached;
+  }
   let h: number = 5381;
   const mix = (s: string): void => {
     for (let i = 0; i < s.length; i++) {
@@ -523,7 +616,11 @@ function segmentFingerprint(seg: RichSegment): string {
       `${run.strike ? 's' : ''}${run.code ? 'c' : ''}${run.spoiler ? 'p' : ''}` +
       `${run.link ? 'l' : ''}`);
   }
-  return h.toString(36);
+  const fingerprint: string = h.toString(36);
+  if (cached !== undefined) {
+    segmentFingerprints.set(seg, fingerprint);
+  }
+  return fingerprint;
 }
 
 export function richSegmentKey(index: number, seg: RichSegment): string {

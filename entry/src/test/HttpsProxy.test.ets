@@ -7,6 +7,7 @@ import {
 } from '../main/ets/util/httpsProxyProtocol';
 import { HttpsProxyRuntime, HttpsRegistry, ProxyRequestClient } from '../main/ets/services/HttpsProxyTransport';
 import { HttpsRelay } from '../main/ets/services/HttpsProxyRelay';
+import { ProxyProbeCancellation } from '../main/ets/util/ProxyProbeCancellation';
 
 function bytes(text: string): ArrayBuffer {
   const data = new Uint8Array(text.length);
@@ -70,10 +71,12 @@ class TestProxyClient implements ProxyRequestClient {
   sent: TdRequest[] = [];
   failKind: string = '';
   nextId: number = 100;
+  probeBarrier: Promise<TdObject> | undefined = undefined;
   async send(request: TdRequest): Promise<TdObject> {
     this.sent.push(request);
     const kind = request['@type'];
     if (kind === this.failKind) { throw new Error('request timeout'); }
+    if (kind === 'testProxy' && this.probeBarrier !== undefined) { return this.probeBarrier; }
     if (kind === 'getProxies') {
       const list: TdObject = { '@type': 'addedProxies' }; list['proxies'] = this.rows.slice(); return list;
     }
@@ -100,6 +103,64 @@ function runtime(client: TestProxyClient, store: TestRegistry, relay: TestRelay)
 
 export default function httpsProxyTest() {
   describe('HttpsProxy', () => {
+    it('cancelling an in-flight test immediately revokes only its temporary route', 0, async () => {
+      const c = new TestProxyClient(); c.probeBarrier = new Promise<TdObject>(() => {});
+      const relay = new TestRelay(); relay.register(record());
+      const rt = runtime(c, new TestRegistry(), relay); const cancellation = new ProxyProbeCancellation();
+      const result = rt.send(httpsRequest('testProxy'), 12000, cancellation).then(
+        (): boolean => false, (): boolean => true);
+      for (let i = 0; i < 40; i++) { await Promise.resolve(); }
+      expect(relay.active.size).assertEqual(2); cancellation.cancel();
+      expect(relay.active.size).assertEqual(1); expect(relay.active.has('key')).assertTrue();
+      expect(await result).assertTrue(); rt.close();
+    });
+    it('cancelled listener startup cannot launch a late native probe', 0, async () => {
+      const c = new TestProxyClient(); const relay = new TestRelay();
+      let finish: (port: number) => void = (_port: number): void => {};
+      relay.delay = new Promise<number>((resolve): void => { finish = resolve; });
+      const rt = runtime(c, new TestRegistry(), relay); const cancellation = new ProxyProbeCancellation();
+      const result = rt.send(httpsRequest('testProxy'), 12000, cancellation).then(
+        (): boolean => false, (): boolean => true);
+      for (let i = 0; i < 20; i++) { await Promise.resolve(); }
+      cancellation.cancel(); finish(54321);
+      expect(await result).assertTrue();
+      for (let i = 0; i < 20; i++) { await Promise.resolve(); }
+      expect(c.sent.length).assertEqual(0); expect(relay.active.size).assertEqual(0); rt.close();
+    });
+    it('cancellation isolates automatic probes from simultaneous manual latency tests', 0, async () => {
+      const c = new TestProxyClient(); let finish: (value: TdObject) => void = (_value: TdObject): void => {};
+      c.probeBarrier = new Promise<TdObject>((resolve): void => { finish = resolve; });
+      const relay = new TestRelay(); const rt = runtime(c, new TestRegistry(), relay);
+      const cancellation = new ProxyProbeCancellation();
+      const automatic = rt.send(httpsRequest('testProxy'), 12000, cancellation).catch((): TdObject => ({ '@type': 'cancelled' }));
+      const manual = rt.send(httpsRequest('testProxy'));
+      for (let i = 0; i < 40; i++) { await Promise.resolve(); }
+      expect(relay.active.size).assertEqual(2); cancellation.cancel();
+      expect(relay.active.size).assertEqual(1); expect((await automatic)['@type']).assertEqual('cancelled');
+      finish({ '@type': 'ok' }); await manual;
+      for (let i = 0; i < 20; i++) { await Promise.resolve(); }
+      expect(relay.active.size).assertEqual(0); rt.close();
+    });
+    it('pre-cancelled tests create no credential or native request', 0, async () => {
+      const c = new TestProxyClient(); const relay = new TestRelay(); const rt = runtime(c, new TestRegistry(), relay);
+      const cancellation = new ProxyProbeCancellation(); cancellation.cancel();
+      let rejected = false;
+      try { await rt.send(httpsRequest('testProxy'), 12000, cancellation); } catch (_error) { rejected = true; }
+      expect(rejected).assertTrue(); expect(c.sent.length).assertEqual(0); expect(relay.active.size).assertEqual(0); rt.close();
+    });
+    it('automatic saved-proxy probes own temporary credentials and preserve active route', 0, async () => {
+      const c = new TestProxyClient(); const relay = new TestRelay(); const rt = runtime(c, new TestRegistry(), relay);
+      const added = await rt.send(httpsRequest()); const before = relay.active.size;
+      c.probeBarrier = new Promise<TdObject>(() => {});
+      const cancellation = new ProxyProbeCancellation(); const request: TdRequest = { '@type': 'pingProxy' };
+      request['proxy_id'] = added['id'];
+      const pending = rt.send(request, 12000, cancellation).catch((): TdObject => ({ '@type': 'cancelled' }));
+      for (let i = 0; i < 100; i++) { await Promise.resolve(); }
+      expect(relay.active.size).assertEqual(before + 1);
+      expect(c.sent[c.sent.length - 1]['@type']).assertEqual('testProxy');
+      cancellation.cancel(); expect(relay.active.size).assertEqual(before);
+      expect(relay.active.has(ACTIVE_ROUTE_KEY)).assertTrue(); await pending; rt.close();
+    });
     it('certificate DNS identity allows exact case-insensitive and single-label wildcard names', 0, () => {
       expect(proxyDnsNameMatches('Proxy.Example.com', 'proxy.example.com')).assertTrue();
       expect(proxyDnsNameMatches('proxy.example.com', '*.example.com')).assertTrue();

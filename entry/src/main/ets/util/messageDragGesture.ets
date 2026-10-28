@@ -9,6 +9,12 @@ export class MessageDragGesture {
   private finished: boolean = false;
   private held: boolean = false;
 
+  reset(): void {
+    this.started = -1; this.x = 0; this.y = 0;
+    this.moved = false; this.earlyMove = false; this.claimed = false;
+    this.finished = false; this.held = false;
+  }
+
   begin(x: number, y: number, now: number): void {
     this.started = now; this.x = x; this.y = y;
     this.moved = false; this.earlyMove = false; this.claimed = false;

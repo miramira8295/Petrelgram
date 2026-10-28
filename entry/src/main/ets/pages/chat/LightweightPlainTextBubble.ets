@@ -26,7 +26,7 @@ import {
   overlayBackdropBlur, containerBlur, overlayGlassFill, overlayMaterial
 } from '../../util/overlayMaterial';
 import {
-  GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, solidBubbleShadowShape
+  GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, SolidBubbleShadowCache
 } from '../../util/bubbleTail';
 import {
   glassBodyFallbackPainted, glassBodyPainted, glassPaintReady, tailShapeCommands
@@ -329,6 +329,7 @@ export struct LightweightPlainTextBubble {
   // aboutToReuse 用它回填。
   private measuredGlassW: number = 0;
   private measuredGlassH: number = 0;
+  private shadowShapeCache: SolidBubbleShadowCache = new SolidBubbleShadowCache();
 
   private bubbleFillColor(): ResourceColor {
     if (this.env.appearanceEpoch < 0) {
@@ -427,7 +428,7 @@ export struct LightweightPlainTextBubble {
       // 单个完整轮廓负责外部投影，阴影不再落在主体与尾角之间。
       Column() {}
         .width(this.glassW).height(this.glassH)
-        .clipShape(solidBubbleShadowShape(this.glassW, this.glassH, this.msg.isOutgoing,
+        .clipShape(this.shadowShapeCache.prepare(this.glassW, this.glassH, this.msg.isOutgoing,
           this.hasTail(), this.bubbleCorners()))
         .shadow({ radius: 2, color: '#14000000', offsetX: 0, offsetY: 1, fill: false })
         .hitTestBehavior(HitTestMode.None).accessibilityLevel('no');

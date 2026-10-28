@@ -1,9 +1,10 @@
 import { TimerFns } from '../tdkit/TdClient';
+import { ProxyProbeCancellation } from '../util/ProxyProbeCancellation';
 
-export type ProxyCandidateProbe = (id: number) => Promise<boolean>;
+export type ProxyCandidateProbe = (id: number, cancellation?: ProxyProbeCancellation) => Promise<boolean>;
 
-// Probe without changing the active route. Native probes cannot be aborted;
-// cancellation invalidates their results and stops scheduling further work.
+// Probe without changing the active route. Cancelling revokes the probe's
+// temporary relay route as well as ignoring late native request replies.
 export class ProxyCandidateRace {
   private cancelled: boolean = false;
   private finish: (id: number | undefined) => void = (_id: number | undefined): void => {};
@@ -25,11 +26,14 @@ export class ProxyCandidateRace {
       let done = false;
       let next = 0;
       let active = 0;
+      const probes: Set<ProxyProbeCancellation> = new Set();
       this.finish = (id: number | undefined): void => {
         if (done) { return; }
         done = true;
         this.timers.forEach((timer: number): void => this.clock.clearTimeout(timer));
         this.timers.clear();
+        probes.forEach((probe: ProxyProbeCancellation): void => probe.cancel());
+        probes.clear();
         resolve(id);
       };
       const pump = (): void => {
@@ -37,12 +41,16 @@ export class ProxyCandidateRace {
         if (this.cancelled) { this.finish(undefined); return; }
         while (!done && active < 3 && next < queue.length) {
           const id = queue[next++];
+          const cancellation = new ProxyProbeCancellation();
+          probes.add(cancellation);
           active++;
           let settled = false;
           let timer = -1;
           const complete = (usable: boolean): void => {
             if (settled || done) { return; }
             settled = true;
+            probes.delete(cancellation);
+            cancellation.cancel();
             this.clock.clearTimeout(timer); this.timers.delete(timer);
             active--;
             if (usable) { this.finish(id); } else { pump(); }
@@ -50,7 +58,7 @@ export class ProxyCandidateRace {
           timer = this.clock.setTimeout((): void => complete(false), 12000);
           this.timers.add(timer);
           // Also catch synchronous failures at injected/native boundaries.
-          Promise.resolve().then((): Promise<boolean> => done ? Promise.resolve(false) : probe(id)).then(
+          Promise.resolve().then((): Promise<boolean> => done ? Promise.resolve(false) : probe(id, cancellation)).then(
             (usable: boolean): void => complete(usable), (): void => complete(false));
         }
         if (!done && active === 0 && next === queue.length) { this.finish(undefined); }

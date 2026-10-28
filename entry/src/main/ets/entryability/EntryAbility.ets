@@ -1,3 +1,4 @@
+import { invalidateTextMeasurements } from '../util/textMeasureCache';
 import { mediaThumbWidth } from '../util/mediaBox';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit';
@@ -199,6 +200,9 @@ export default class EntryAbility extends UIAbility {
   // formatters are cached in-process and do not, so they would keep rendering
   // dates in the language the user just left.
   onConfigurationUpdate(config: Configuration): void {
+    invalidateTextMeasurements();
+    // Density changes can also arrive via configuration without a size change.
+    clearOutlineCache();
     refreshLocale();
     // Only on an actual language change. This fires for every configuration
     // change — dark mode, font scale, orientation — and the epoch is embedded

@@ -1,3 +1,5 @@
+import inlineCaptionDataTest from './InlineCaptionData.test';
+import messageTextInputTest from './MessageTextInput.test';
 import albumCellRenderDataTest from './AlbumCellRenderData.test';
 import searchResultsDrawerTest from './SearchResultsDrawer.test';
 import wallpaperEditorSessionTest from './WallpaperEditorSession.test';
@@ -115,6 +117,7 @@ import liveStreamStoreTest from './LiveStreamStore.test';
 import groupCallStreamSessionTest from './GroupCallStreamSession.test';
 import albumLayoutTest from './AlbumLayout.test';
 import richTextTest from './RichText.test';
+import messageBubblePresentationTest from './MessageBubblePresentation.test';
 import linkPreviewTest from './LinkPreview.test';
 import voiceWaveformTest from './VoiceWaveform.test';
 import fileMessageTest from './FileMessage.test';
@@ -496,8 +499,11 @@ export default function testsuite() {
   liveStreamStoreTest();
   groupCallStreamSessionTest();
   albumLayoutTest();
+  inlineCaptionDataTest();
+  messageTextInputTest();
   albumCellRenderDataTest();
   richTextTest();
+  messageBubblePresentationTest();
   linkPreviewTest();
   voiceWaveformTest();
   fileMessageTest();

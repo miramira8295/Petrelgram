@@ -1,3 +1,4 @@
+import { MessageTextPresentationCache } from '../../util/messageTextInput';
 import { MessageEntry } from '../../store/MessageEntry';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { MessageBubbleContext, MessageBubbleShell } from './MessageBubbleShell';
@@ -26,6 +27,7 @@ import { PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, slotKey } from './playSlot
 // 只订阅自身的缩略图/视频进度，播放可见性与候选生命周期也在此归属。
 @ComponentV2
 export struct SingleMediaBubble {
+  private textInputCache: MessageTextPresentationCache = new MessageTextPresentationCache();
   @Require @Param msg: MessageEntry;
   @Require @Param group: AlbumGroup;
   @Require @Param data: MessageBubbleRenderData;
@@ -547,8 +549,9 @@ export struct SingleMediaBubble {
   content() {
     this.media();
     if (this.msg.text !== '' || this.msg.translatedText !== '') {
-      MessageBubbleText({ msg: this.msg, group: this.group, data: this.data, actions: this.actions,
-        context: this.context, text: this.msg.text, entities: this.msg.textEntities, mode: 'caption' });
+      MessageBubbleText({ actions: this.actions,
+        context: this.context, presentation: this.textInputCache.prepare(this.msg, this.group.showSenderName, this.data,
+          this.msg.text, this.msg.textEntities, 0, 'caption') });
     }
   }
 

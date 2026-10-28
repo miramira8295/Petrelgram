@@ -2,7 +2,7 @@ import { thumbBackdropColor } from '../../util/thumbBackdrop';
 import { miniPlaceholderOf } from '../../util/miniThumbPlaceholder';
 import { AlbumCellRenderData } from '../../util/albumCellRenderData';
 import { MessageBubbleActions } from './ReusableMessageBubble';
-import { LiveThumbImage } from './LiveThumbImage';
+import { LiveThumbImage, LiveThumbSpec } from './LiveThumbImage';
 import { LiveProgressRing } from './LiveProgressRing';
 import { ThumbReadyGate } from './ThumbReadyGate';
 import { VideoBubbleSurface } from './VideoBubbleSurface';
@@ -49,6 +49,29 @@ export struct AlbumCellView {
   @Require @Param actions: MessageBubbleActions;
   @Require @Param hooks: AlbumCellHooks;
   // 多选态、勾选和媒体标量均由单格输入提供；不再读取整组的并行数组。
+  private cachedThumbSpec: LiveThumbSpec | null = null;
+
+  // 每格只保留一份输入。勾选/进度/播放角标变化不再制造新 spec，避免下层
+  // Monitor 和图片属性无效刷新；命中前不创建临时对象，也不持有整条消息。
+  private thumbSpec(): LiveThumbSpec {
+    const cell: AlbumCellRenderData = this.cell;
+    const backdrop: string = thumbBackdropColor(cell.isVideo);
+    const mini: string = miniPlaceholderOf(cell.mini);
+    const previous: LiveThumbSpec | null = this.cachedThumbSpec;
+    if (previous !== null && previous.fileId === cell.thumbFileId &&
+      previous.initialPath === cell.thumbPath && previous.boxWidth === cell.width &&
+      previous.boxHeight === cell.height && previous.backdrop === backdrop && previous.mini === mini) {
+      return previous;
+    }
+    const next: LiveThumbSpec = {
+      syncDisplay: true, fileId: cell.thumbFileId, initialPath: cell.thumbPath,
+      boxWidth: cell.width, boxHeight: cell.height, radius: 6, fit: ImageFit.Cover,
+      // 一行 6–9 格保留 RGB_565；底色与下载占位同源，mini 仍在滚动时停用。
+      opaque: true, backdrop, mini, deferMiniOnScroll: true
+    };
+    this.cachedThumbSpec = next;
+    return next;
+  }
 
   // 【这三个必须是**成员** @Builder，不能提成全局函数】
   // 2026-09-11 试过提到 pages/chat/mediaBadges.ets 做全局 @Builder，真机一进会话
@@ -173,8 +196,6 @@ export struct AlbumCellView {
   @Builder
   placeholderWithFile() {
     Stack() {
-      Column().width(this.cell.width).height(this.cell.height).borderRadius(6)
-        .backgroundColor(thumbBackdropColor(this.isVideo()));
       if (!this.failed()) {
         this.mediaLoadState(
           Math.min(34, Math.min(this.cell.width, this.cell.height) * 0.4),
@@ -186,19 +207,19 @@ export struct AlbumCellView {
         this.mediaLoadState(
           Math.min(34, Math.min(this.cell.width, this.cell.height) * 0.4), 0, 0, true);
       }
-    }.width(this.cell.width).height(this.cell.height);
+    }.width(this.cell.width).height(this.cell.height).borderRadius(6)
+      .backgroundColor(thumbBackdropColor(this.isVideo()));
   }
 
   @Builder
   placeholderNoFile() {
     Stack() {
-      Column().width(this.cell.width).height(this.cell.height).borderRadius(6)
-        .backgroundColor(this.isVideo() ? '#AEB6C0' : '#D7DCE2');
       if (!this.isVideo()) {
         this.mediaLoadState(
           Math.min(34, Math.min(this.cell.width, this.cell.height) * 0.4), 0, 0, true);
       }
-    }.width(this.cell.width).height(this.cell.height);
+    }.width(this.cell.width).height(this.cell.height).borderRadius(6)
+      .backgroundColor(thumbBackdropColor(this.isVideo()));
   }
 
   @Builder
@@ -233,23 +254,7 @@ export struct AlbumCellView {
       // 条件不能只看 fileId：MessageStore 会用原图下载回填 photoPath，而那一条
       // 的 fileId 可能仍是 0，丢了路径就把一张已下载的图退化成死的"重试"块。
       LiveThumbImage({
-        spec: {
-          syncDisplay: true,
-          fileId: this.fileId(),
-          initialPath: this.pathAt(),
-          boxWidth: this.cell.width,
-          boxHeight: this.cell.height,
-          radius: 6,
-          fit: ImageFit.Cover,
-          // 相册格开 RGB_565：一行 6–9 张，是唯一把像素预算撑爆的那一类
-          // （2026-09-20 定位，见 pixelCache.PixelRequest.opaque）。
-          opaque: true,
-          // 和下面 placeholderWithFile 的底色同源：撤占位到出图之间不透出去。
-          backdrop: thumbBackdropColor(this.isVideo()),
-          // 内联小图占位（issue：相册图片闪一下）。相册每格各有自己的一张。
-          mini: miniPlaceholderOf(this.cell.mini),
-          deferMiniOnScroll: true
-        },
+        spec: this.thumbSpec(),
         placeholder: (): void => { this.placeholderWithFile(); }
       });
     } else {

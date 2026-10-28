@@ -1,3 +1,4 @@
+import { publishThumbPath, subscribeThumbPath } from '../main/ets/util/mediaThumbChannel';
 import { describe, it, expect } from '@ohos/hypium';
 import { MessageEntry, cloneMessage, buildMessageEntry } from '../main/ets/store/MessageEntry';
 import { TdClient } from '../main/ets/tdkit/TdClient';
@@ -46,8 +47,138 @@ function media(id: number): MessageEntry {
   return entry;
 }
 
+function album(id: number, fileId: number): MessageEntry[] {
+  const a = media(id);
+  const b = media(id + 1);
+  a.albumId = String(700000 + id);
+  b.albumId = a.albumId;
+  a.photoFileId = fileId;
+  b.photoFileId = fileId + 1;
+  return [a, b];
+}
+
 export default function messageRowPresentationChannelTest() {
   describe('messageRowPresentationChannel', () => {
+    it('album_delivered_thumbnails_update_tiles_without_waking_the_row', 0, () => {
+      const entries = album(890101, 910101);
+      const first = collapseAlbums(entries)[0];
+      publishMessageRowPresentations(991101, [first]);
+      let rows = 0;
+      let tiles = 0;
+      const unsub = subscribeMessageRowPresentation(991101, first.head.rowId, (): void => { rows++; });
+      const unthumb = subscribeThumbPath(entries[0].photoFileId, (): void => { tiles++; });
+      const next = entries.map((m: MessageEntry): MessageEntry => cloneMessage(m));
+      next[0].photoPath = '/album-delivered-a';
+      next[1].photoPath = '/album-delivered-b';
+      publishThumbPath(next[0].photoFileId, next[0].photoPath);
+      publishThumbPath(next[1].photoFileId, next[1].photoPath);
+      const group = collapseAlbums(next)[0];
+      publishMessageRowPresentations(991101, [group]);
+      expect(rows).assertEqual(0);
+      expect(tiles).assertEqual(1);
+      expect(messageRowPresentationFor(991101, first.head.rowId) === group).assertTrue();
+      unsub(); unthumb();
+    });
+    it('album_missing_file_channel_still_notifies_row', 0, () => {
+      const entries = album(890200, 910200);
+      const next = entries.map((m: MessageEntry): MessageEntry => cloneMessage(m));
+      next[0].photoPath = '/not-published';
+      const first = collapseAlbums(entries)[0];
+      publishMessageRowPresentations(991102, [first]);
+      let rows = 0;
+      const unsub = subscribeMessageRowPresentation(991102, first.head.rowId, (): void => { rows++; });
+      publishMessageRowPresentations(991102, [collapseAlbums(next)[0]]);
+      expect(rows).assertEqual(1);
+      unsub();
+    });
+    it('album_different_channel_path_still_notifies_row', 0, () => {
+      const entries = album(890210, 910210);
+      const next = entries.map((m: MessageEntry): MessageEntry => cloneMessage(m));
+      next[0].photoPath = '/wanted'; publishThumbPath(next[0].photoFileId, '/different');
+      const first = collapseAlbums(entries)[0];
+      publishMessageRowPresentations(991103, [first]);
+      let rows = 0;
+      const unsub = subscribeMessageRowPresentation(991103, first.head.rowId, (): void => { rows++; });
+      publishMessageRowPresentations(991103, [collapseAlbums(next)[0]]);
+      expect(rows).assertEqual(1);
+      unsub();
+    });
+    it('album_local_only_path_still_notifies_row', 0, () => {
+      const entries = album(890220, 910220);
+      const next = entries.map((m: MessageEntry): MessageEntry => cloneMessage(m));
+      entries[0].photoFileId = 0; next[0].photoFileId = 0; next[0].photoPath = '/local-only';
+      const first = collapseAlbums(entries)[0];
+      publishMessageRowPresentations(991104, [first]);
+      let rows = 0;
+      const unsub = subscribeMessageRowPresentation(991104, first.head.rowId, (): void => { rows++; });
+      publishMessageRowPresentations(991104, [collapseAlbums(next)[0]]);
+      expect(rows).assertEqual(1);
+      unsub();
+    });
+    it('album_path_removal_still_notifies_row', 0, () => {
+      const entries = album(890230, 910230);
+      const next = entries.map((m: MessageEntry): MessageEntry => cloneMessage(m));
+      entries[0].photoPath = '/old'; next[0].photoPath = '';
+      const first = collapseAlbums(entries)[0];
+      publishMessageRowPresentations(991105, [first]);
+      let rows = 0;
+      const unsub = subscribeMessageRowPresentation(991105, first.head.rowId, (): void => { rows++; });
+      publishMessageRowPresentations(991105, [collapseAlbums(next)[0]]);
+      expect(rows).assertEqual(1);
+      unsub();
+    });
+    it('album_failure_with_delivered_path_still_notifies_row', 0, () => {
+      const entries = album(890240, 910240);
+      const next = entries.map((m: MessageEntry): MessageEntry => cloneMessage(m));
+      next[0].photoPath = '/failure'; next[0].photoFailed = true; publishThumbPath(next[0].photoFileId, next[0].photoPath);
+      const first = collapseAlbums(entries)[0];
+      publishMessageRowPresentations(991106, [first]);
+      let rows = 0;
+      const unsub = subscribeMessageRowPresentation(991106, first.head.rowId, (): void => { rows++; });
+      publishMessageRowPresentations(991106, [collapseAlbums(next)[0]]);
+      expect(rows).assertEqual(1);
+      unsub();
+    });
+    it('album_translation_with_delivered_path_still_notifies_row', 0, () => {
+      const entries = album(890250, 910250);
+      const next = entries.map((m: MessageEntry): MessageEntry => cloneMessage(m));
+      next[0].photoPath = '/translation'; next[0].translatedText = 'translated'; publishThumbPath(next[0].photoFileId, next[0].photoPath);
+      const first = collapseAlbums(entries)[0];
+      publishMessageRowPresentations(991107, [first]);
+      let rows = 0;
+      const unsub = subscribeMessageRowPresentation(991107, first.head.rowId, (): void => { rows++; });
+      publishMessageRowPresentations(991107, [collapseAlbums(next)[0]]);
+      expect(rows).assertEqual(1);
+      unsub();
+    });
+    it('album_video_poster_still_notifies_row_after_file_delivery', 0, () => {
+      const entries = album(890260, 910260);
+      entries[1].contentType = 'video';
+      const next = entries.map((m: MessageEntry): MessageEntry => cloneMessage(m));
+      next[1].photoPath = '/video-poster';
+      publishThumbPath(next[1].photoFileId, next[1].photoPath);
+      const first = collapseAlbums(entries)[0];
+      publishMessageRowPresentations(991108, [first]);
+      let rows = 0;
+      const unsub = subscribeMessageRowPresentation(991108, first.head.rowId, (): void => { rows++; });
+      publishMessageRowPresentations(991108, [collapseAlbums(next)[0]]);
+      expect(rows).assertEqual(1);
+      unsub();
+    });
+    it('album_existing_failure_path_arrival_refreshes_tap_to_retry', 0, () => {
+      const entries = album(890270, 910270);
+      entries[1].photoFailed = true;
+      const next = entries.map((m: MessageEntry): MessageEntry => cloneMessage(m));
+      next[1].photoPath = '/arrived-despite-failure';
+      publishThumbPath(next[1].photoFileId, next[1].photoPath);
+      const first = collapseAlbums(entries)[0];
+      publishMessageRowPresentations(991109, [first]);
+      let rows = 0;
+      const unsub = subscribeMessageRowPresentation(991109, first.head.rowId, (): void => { rows++; });
+      publishMessageRowPresentations(991109, [collapseAlbums(next)[0]]);
+      expect(rows).assertEqual(1);
+      unsub();
+    });
     it('进度不唤醒整颗气泡，失败和译文会定点更新', 0, () => {
       const chatId: number = 990001;
       const firstEntry: MessageEntry = media(880001);

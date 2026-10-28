@@ -30,6 +30,25 @@ let fullDateFmt: Intl.DateTimeFormat | null = null;
 let monthDayTimeFmt: Intl.DateTimeFormat | null = null;
 let fullDateTimeFmt: Intl.DateTimeFormat | null = null;
 
+// Reuse ICU number formatters across media metadata/reaction rebuilds. Values
+// are never cached. Precision policy belongs in the key; locale changes clear
+// the bounded cache alongside the existing date/time formatters.
+const NUMBER_FORMAT_CACHE_LIMIT: number = 16;
+const numberFormats: Map<string, Intl.NumberFormat> = new Map<string, Intl.NumberFormat>();
+
+function decimalFormatter(minimum: number, maximum: number): Intl.NumberFormat {
+  const key: string = `${minimum}:${maximum}`;
+  const hit = numberFormats.get(key);
+  if (hit !== undefined) { return hit; }
+  const opts: Intl.NumberFormatOptions = {
+    minimumFractionDigits: minimum, maximumFractionDigits: maximum
+  };
+  const formatter = new Intl.NumberFormat(currentLocale(), opts);
+  if (numberFormats.size >= NUMBER_FORMAT_CACHE_LIMIT) { numberFormats.clear(); }
+  numberFormats.set(key, formatter);
+  return formatter;
+}
+
 // Message bubbles render the same clock string over and over: a timestamp is
 // immutable, and every row rebuild re-formats it. What the clock shows only
 // depends on the minute the timestamp falls in, so results are memoised per
@@ -152,6 +171,7 @@ function withHourCycle(opts: Intl.DateTimeFormatOptions): Intl.DateTimeFormatOpt
 export function refreshLocale(): void {
   localeTag = '';
   hourCycle = '';
+  numberFormats.clear();
   clockFmt = null;
   weekdayFmt = null;
   monthDayFmt = null;
@@ -314,10 +334,7 @@ export function fullDateTime(d: Date): string {
 // genuinely needed for here is the decimal separator — "1,2 MB" in German.
 export function decimal(value: number, fractionDigits: number): string {
   try {
-    const opts: Intl.NumberFormatOptions = {
-      minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits
-    };
-    return new Intl.NumberFormat(currentLocale(), opts).format(value);
+    return decimalFormatter(fractionDigits, fractionDigits).format(value);
   } catch (e) {
     return value.toFixed(fractionDigits);
   }
@@ -326,10 +343,7 @@ export function decimal(value: number, fractionDigits: number): string {
 // Trailing zeros dropped rather than padded — "1.5 TON", not "1.500 TON".
 export function decimalUpTo(value: number, maxFractionDigits: number): string {
   try {
-    const opts: Intl.NumberFormatOptions = {
-      minimumFractionDigits: 0, maximumFractionDigits: maxFractionDigits
-    };
-    return new Intl.NumberFormat(currentLocale(), opts).format(value);
+    return decimalFormatter(0, maxFractionDigits).format(value);
   } catch (e) {
     return value.toFixed(maxFractionDigits).replace(/\.?0+$/, '');
   }

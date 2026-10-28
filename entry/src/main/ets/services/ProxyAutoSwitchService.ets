@@ -1,4 +1,5 @@
 import { ProxyCandidateRace, ProxyCandidateProbe } from './ProxyCandidateRace';
+import { ProxyProbeCancellation } from '../util/ProxyProbeCancellation';
 import { sendProxyRequest } from './HttpsProxyTransport';
 import { TdClient, TimerFns } from '../tdkit/TdClient';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
@@ -52,12 +53,12 @@ export class ProxyAutoSwitchService {
       clearTimeout: (id: number): void => clearTimeout(id)
     };
     this.subscribeNetwork = subscribeNetwork ?? subscribeNetworkType;
-    this.probe = probe ?? (async (id: number): Promise<boolean> => {
+    this.probe = probe ?? (async (id: number, cancellation?: ProxyProbeCancellation): Promise<boolean> => {
       const target = this.client;
       if (target === null) { return false; }
       const request: TdRequest = { '@type': 'pingProxy' };
       request['proxy_id'] = id;
-      const result = await sendProxyRequest(target, request, 12000);
+      const result = await sendProxyRequest(target, request, 12000, cancellation);
       const seconds = result['seconds'] as number | undefined;
       return seconds !== undefined && Number.isFinite(seconds) && seconds >= 0;
     });

@@ -100,6 +100,7 @@ function radiusOf(v: Length | undefined): number {
 // 不敏感，而整体清空的实现不会在热路径上多花一次 Map 遍历。
 const OUTLINE_CACHE_MAX: number = 256;
 const outlineCache: Map<string, string> = new Map<string, string>();
+let outlineEpoch: number = 0;
 
 function outlineCommands(w: number, h: number, outgoing: boolean,
   hasTail: boolean, radii: BorderRadiuses, inset: number, gutter: number = TAIL_W - 1): string {
@@ -126,6 +127,7 @@ function outlineCommands(w: number, h: number, outgoing: boolean,
 // vp2px(1) 没进键，所以必须由外部在这种时刻清一次。
 export function clearOutlineCache(): void {
   outlineCache.clear();
+  outlineEpoch++;
 }
 
 // 描边用（向内缩半个线宽）。
@@ -145,8 +147,51 @@ export function bubbleGlassModifier(live: boolean, w: number, h: number, outgoin
 
 // 实心档尾角的 -2vp 压叠使外壳留白为6vp；无尾角仍保留7vp对齐位。
 // 只给投影节点用，主体和尾角本身的布局/填色不变。
-export function solidBubbleShadowShape(w: number, h: number, outgoing: boolean,
-  hasTail: boolean, radii: BorderRadiuses): PathShape {
-  return new PathShape({ commands: outlineCommands(w, h, outgoing, hasTail, radii, 0,
-    TAIL_W - (hasTail ? 2 : 1)) });
+export class SolidBubbleShadowCache {
+  private commands: string = '';
+  private shape: PathShape | undefined = undefined;
+  private epoch: number = -1;
+  private width: number = 0;
+  private height: number = 0;
+  private outgoing: boolean = false;
+  private hasTail: boolean = false;
+  private topLeft: number = 0;
+  private topRight: number = 0;
+  private bottomRight: number = 0;
+  private bottomLeft: number = 0;
+
+  prepare(w: number, h: number, outgoing: boolean,
+    hasTail: boolean, radii: BorderRadiuses): PathShape {
+    const tl = radiusOf(radii.topLeft);
+    const tr = radiusOf(radii.topRight);
+    const br = radiusOf(radii.bottomRight);
+    const bl = radiusOf(radii.bottomLeft);
+    const previous = this.shape;
+    // Read every current input before the fast path; equal geometry needs
+    // neither a composite string key nor another global Map lookup.
+    if (previous !== undefined && this.epoch === outlineEpoch && this.width === w && this.height === h &&
+      this.outgoing === outgoing && this.hasTail === hasTail && this.topLeft === tl && this.topRight === tr &&
+      this.bottomRight === br && this.bottomLeft === bl) {
+      return previous;
+    }
+    // Resolve current geometry through the existing density-invalidated cache.
+    // Compare the final px path, not radii identity or an incomplete vp key.
+    const commands = outlineCommands(w, h, outgoing, hasTail, radii, 0,
+      TAIL_W - (hasTail ? 2 : 1));
+    this.epoch = outlineEpoch;
+    this.width = w;
+    this.height = h;
+    this.outgoing = outgoing;
+    this.hasTail = hasTail;
+    this.topLeft = tl;
+    this.topRight = tr;
+    this.bottomRight = br;
+    this.bottomLeft = bl;
+    if (previous !== undefined && this.commands === commands) { return previous; }
+    // One shape per component; never mutate a shape still held by an old node.
+    const next = new PathShape({ commands: commands });
+    this.commands = commands;
+    this.shape = next;
+    return next;
+  }
 }

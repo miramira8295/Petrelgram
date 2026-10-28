@@ -1,3 +1,4 @@
+import { TextMeasureCache, textMeasureEnvironment, sharedTextMeasurements } from '../../util/textMeasureCache';
 import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
 import { MessageDragGesture } from '../../util/messageDragGesture';
 import { configureMessageDrag } from '../../services/MessageDragSource';
@@ -10,7 +11,7 @@ import { stickerSourceFileId } from '../../util/stickerSetItems';
 import { promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import { MessageMenuTransitions } from '../../util/messageMenuTransitions';
 import { isEdgeSwipeStart, SWIPE_REPLY_MAX, SWIPE_REPLY_TRIGGER, SWIPE_SELECT_MAX, SWIPE_SELECT_TRIGGER } from '../../util/swipeReplyGesture';
-import { pasteboard } from '@kit.BasicServicesKit';
+import { pasteboard, deviceInfo } from '@kit.BasicServicesKit';
 import { MessageEntry, ReactionInfo, InlineBtn } from '../../store/MessageEntry';
 import { slotKey } from './playSlot';
 import { TdObject } from '../../tdkit/TdTypes';
@@ -18,6 +19,8 @@ import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
 import { senderHasAnimatedPhoto } from '../../services/PhotoAnimationFetch';
 import { SenderAnimatedLayer } from './SenderAnimatedLayer';
 import { CachedImage } from '../common/CachedImage';
+import { CachedImageSpec } from '../../util/cachedImageSpec';
+import { BubbleCornerCache, SenderAvatarSpec, SenderAvatarSpecCache } from '../../util/messageBubblePresentation';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { rememberLabelWidth, recallLabelWidth } from '../../util/labelWidthMemory';
 import { SenderRoleTag } from './SenderRoleTag';
@@ -35,7 +38,7 @@ import { TranslationStatus, subscribeTranslationStatus, translationStatusFor } f
 import { subscribeViewCount, viewCountLabelFor, viewsReserve } from '../../util/viewCountChannel';
 import { pinForTranslationGrowth } from '../../util/translationGrowthPin';
 import { containerBlur, overlayMaterial } from '../../util/overlayMaterial';
-import { GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, solidBubbleShadowShape } from '../../util/bubbleTail';
+import { GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, SolidBubbleShadowCache } from '../../util/bubbleTail';
 import { glassBodyFallbackPainted, glassBodyPainted, glassPaintReady, tailShapeCommands } from '../../util/bubbleGlassPath';
 import { timeLayerMinWidth } from '../../util/timeLayerWidth';
 import { MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
@@ -53,6 +56,10 @@ import { firstFinger } from '../../util/firstFinger';
 
 // 气泡玻璃自绘：明确不指望 systemMaterial（系统已收回组件级材质），
 // 和输入栏同一对函数，受「界面模糊质感」开关与档位控制。
+
+// SDK capability is fixed for this process. Read lazily once, not through
+// the deviceInfo native getter on every local text-measure cache miss.
+let sharedTextMeasurementSupported: boolean | undefined = undefined;
 
 const REACTORS_ARROW_PAD_H: number = 7;
 const REACTORS_ARROW_ICON_VP: number = 16;
@@ -128,21 +135,26 @@ const AVATAR_GUTTER: Padding = { left: BUBBLE_AVATAR_GUTTER_VP };
 // 行边距与气泡最大宽同源，见 util/mediaBox.BUBBLE_ROW_SIDE_VP。
 const NO_GUTTER: Padding = {};
 
+interface SenderAvatarState {
+  path: string;
+  animated: boolean;
+}
+const EMPTY_SENDER_AVATAR_STATE: SenderAvatarState = { path: '', animated: false };
+
 @ComponentV2
 struct LiveSenderAvatar {
-  @Param senderId: number = 0;
-  @Param senderIsUser: boolean = true;
-  @Param initialPath: string = '';
-  @Param initials: string = '?';
-  // 评论行的头像栈比发送者头像小一圈。
-  // 群聊里发送者头像的直径。占位列宽 = 它 + 6 的右外边距，两处必须一起改，
-  // 否则连续消息的气泡和带头像那行会错开。
-  @Param avatarSize: number = 38;
-  // 动态头像只在群聊气泡左侧放（issue #140）；评论行那一串 22vp 的小头像不放。
-  @Param animate: boolean = false;
-  @Local private path: string = '';
-  // 这个发送者的头像带不带动画（UserStore/ChatStore 的 has_animation 标志）。
-  @Local private animated: boolean = false;
+  // One atomic input keeps sender identity/path together and resets one Param
+  // per reuse. The caller keeps the 38vp sender / 22vp comment policies.
+  @Require @Param spec: SenderAvatarSpec;
+  @Local private avatarState: SenderAvatarState = EMPTY_SENDER_AVATAR_STATE;
+  private get path(): string { return this.avatarState.path; }
+  private get animated(): boolean { return this.avatarState.animated; }
+
+  private setAvatarState(path: string, animated: boolean): void {
+    if (this.path !== path || this.animated !== animated) {
+      this.avatarState = { path, animated };
+    }
+  }
   // 无装饰器成员复用时不重置（官方表格 + 批 0.5 实测），照旧记订阅与回收态。
   private unsubAvatar: (() => void) | null = null;
   private attachedAvatarKey: string = '';
@@ -150,45 +162,28 @@ struct LiveSenderAvatar {
   private attachAvatarChannel(senderId: number, senderIsUser: boolean, initialPath: string): void {
     const key: string = senderChannelKey(senderId, senderIsUser);
     const known: string = senderAvatarFor(key);
-    this.animated = this.animate && senderHasAnimatedPhoto(senderId, senderIsUser);
-    if (this.unsubAvatar !== null && this.attachedAvatarKey === key) {
-      // 同 key 短路：订阅原样保留，但 path 必须重新播种——P0-1 让
-      // aboutToRecycle / aboutToReuse 无条件清空了 path，不补种会空一帧。
-      this.path = known !== '' ? known : initialPath;
-      return;
-    }
+    this.setAvatarState(known !== '' ? known : initialPath,
+      this.spec.animate && senderHasAnimatedPhoto(senderId, senderIsUser));
+    if (this.unsubAvatar !== null && this.attachedAvatarKey === key) { return; }
     this.detachAvatarChannel();
     this.attachedAvatarKey = key;
-    this.path = known !== '' ? known : initialPath;
     this.unsubAvatar = subscribeSenderAvatar(key, (path: string): void => {
-      this.path = path;
-      // 用户资料（带 has_animation）可能晚于这一行挂上才到；静态头像到的时候资料一定到了。
-      this.animated = this.animate && senderHasAnimatedPhoto(this.senderId, this.senderIsUser);
+      if (this.attachedAvatarKey !== key) { return; }
+      const spec = this.spec;
+      this.setAvatarState(path, spec.animate && senderHasAnimatedPhoto(spec.senderId, spec.senderIsUser));
     });
   }
 
-  // 非复用路径上同一实例真的换了发送者时兜底重挂；复用路径靠 aboutToReuse
-  // （@Monitor 复用期静默，批 0.5 实测 0 触发）。第三个参数传 ''：@Param
-  // 逐个落地时 initialPath 可能还是上一行的（I-2 串头像坑在非复用路径依旧
-  // 成立），最差先显示首字母圆底。
-  @Monitor('senderId', 'senderIsUser')
-  onSenderChanged(): void {
-    this.attachAvatarChannel(this.senderId, this.senderIsUser, '');
-  }
-
-  // 【补空窗，但不画错人】onSenderChanged 传 '' 是故意的（见那边注释）：@Param
-  // 逐个落地时 initialPath 可能还是上一行的，拿它兜底就是"图配错人"。代价是
-  // 通道没缓存时 path 变空、露一下首字母圆底——Repeat 自己的外壳复用打开之后
-  // 走的正是 @Monitor 这条路，这一闪就显出来了（用户 2026-09-10：「会闪一下
-  // 头像」）。
-  //
-  // 这里**只在 path 为空时**用 initialPath 补种：到这一刻 initialPath 已经是
-  // 本行自己的值（它变了才会触发本回调），既不会画上一个人的头像，也不留空窗。
-  @Monitor('initialPath')
-  onInitialPathArrived(): void {
-    if (this.path === '' && this.initialPath !== '') {
-      this.path = this.initialPath;
+  @Monitor('spec')
+  onSpecChanged(): void {
+    const spec = this.spec;
+    if (this.unsubAvatar === null ||
+      this.attachedAvatarKey !== senderChannelKey(spec.senderId, spec.senderIsUser)) {
+      this.attachAvatarChannel(spec.senderId, spec.senderIsUser, spec.initialPath);
+      return;
     }
+    this.setAvatarState(this.path !== '' ? this.path : spec.initialPath,
+      spec.animate && senderHasAnimatedPhoto(spec.senderId, spec.senderIsUser));
   }
 
   private detachAvatarChannel(): void {
@@ -200,7 +195,8 @@ struct LiveSenderAvatar {
   }
 
   aboutToAppear(): void {
-    this.attachAvatarChannel(this.senderId, this.senderIsUser, this.initialPath);
+    const spec = this.spec;
+    this.attachAvatarChannel(spec.senderId, spec.senderIsUser, spec.initialPath);
   }
 
   aboutToRecycle(): void {
@@ -212,11 +208,33 @@ struct LiveSenderAvatar {
     // 重播种即可。initialPath 也是新行的值，I-2 串头像坑在这条路不存在；
     // #137 的「按 key 保留 path」不再需要——同步重播种（通道现值或新行
     // initialPath）的窗口是零帧，比保留旧值更不闪。
-    this.attachAvatarChannel(this.senderId, this.senderIsUser, this.initialPath);
+    const spec = this.spec;
+    this.attachAvatarChannel(spec.senderId, spec.senderIsUser, spec.initialPath);
   }
 
   aboutToDisappear(): void {
     this.detachAvatarChannel();
+  }
+
+  private preparedImageSpec: CachedImageSpec | undefined = undefined;
+
+  private imageSpec(): CachedImageSpec {
+    const size: number = this.spec.avatarSize;
+    const path: string = this.path;
+    const previous = this.preparedImageSpec;
+    // All other fields are fixed policy or derived from size. Read live values
+    // before comparing so channel updates and in-place input changes still win.
+    if (previous !== undefined && previous.path === path && previous.boxWidth === size) {
+      return previous;
+    }
+    // Preserve bounded pinning, synchronous small-avatar decoding and native
+    // display. No Computed: the child expression reads the current path/size.
+    const next: CachedImageSpec = {
+      path: path, boxWidth: size, boxHeight: size, radius: size / 2,
+      fit: ImageFit.Cover, pinBounded: true, syncSmall: true, syncDisplay: true
+    };
+    this.preparedImageSpec = next;
+    return next;
   }
 
   build() {
@@ -228,33 +246,20 @@ struct LiveSenderAvatar {
       // 底色圆和首字母合成一个 Text（背景色 + 半径圆角 = 原来的 Circle），头像少一个节点。
       // 字母只在真没头像时画；有路径但图还没到（极少数走异步的情况）就是纯色圆，
       // 色块→照片比字母→照片柔和得多——所以有图时只清空文字、不藏背景。
-      Text(this.path === '' ? this.initials : '')
-        .width(this.avatarSize).height(this.avatarSize).borderRadius(this.avatarSize / 2)
-        .backgroundColor(AVATAR_PALETTE[Math.abs(this.senderId) % AVATAR_PALETTE.length])
+      Text(this.path === '' ? this.spec.initials : '')
+        .width(this.spec.avatarSize).height(this.spec.avatarSize).borderRadius(this.spec.avatarSize / 2)
+        .backgroundColor(AVATAR_PALETTE[Math.abs(this.spec.senderId) % AVATAR_PALETTE.length])
         .textAlign(TextAlign.Center).align(Alignment.Center)
-        .fontColor(Color.White).fontSize(this.avatarSize * 0.4).fontWeight(FontWeight.Medium);
-      CachedImage({ spec: {
-        path: this.path,
-        boxWidth: this.avatarSize,
-        boxHeight: this.avatarSize,
-        radius: this.avatarSize / 2,
-        fit: ImageFit.Cover,
-        // 头像有上限地钉住：它和大图挤在同一个 LRU 预算里，滑过图多的会话就
-        // 被挤掉，回滚时重新解码，那一两帧露出下面的首字母圆底——用户报的
-        // 「翻消息的时候对话头像会闪」（issue #137）。
-        pinBounded: true,
-        // 首帧就要有图（#137）：头像很小，未命中缓存时同步解一次，不再先露首字母。
-        syncSmall: true,
-        syncDisplay: true
-      } })
+        .fontColor(Color.White).fontSize(this.spec.avatarSize * 0.4).fontWeight(FontWeight.Medium);
+      CachedImage({ spec: this.imageSpec() })
         .visibility(this.path !== '' ? Visibility.Visible : Visibility.None);
       if (this.animated) {
         SenderAnimatedLayer({
-          senderId: this.senderId, senderIsUser: this.senderIsUser, avatarSize: this.avatarSize
+          senderId: this.spec.senderId, senderIsUser: this.spec.senderIsUser, avatarSize: this.spec.avatarSize
         });
       }
     }
-    .width(this.avatarSize).height(this.avatarSize);
+    .width(this.spec.avatarSize).height(this.spec.avatarSize);
   }
 }
 
@@ -309,6 +314,8 @@ export struct MessageBubbleShell {
 
   private measuredGlassH: number = 0;
 
+  private shadowShapeCache: SolidBubbleShadowCache = new SolidBubbleShadowCache();
+
   @Param nowSec: number = 0;
 
   @Param jumpFocus: number = 0;
@@ -341,9 +348,37 @@ export struct MessageBubbleShell {
 
   @Local private editableTick: number = 0;
 
+  private textMeasureFailed: boolean = false;
+  private textMeasureCache: TextMeasureCache = new TextMeasureCache();
   private rxWidthSig: string = '';
 
   private rxWidthCache: number = 0;
+
+  private cornerCache: BubbleCornerCache = new BubbleCornerCache();
+  private avatarSpecCache: SenderAvatarSpecCache = new SenderAvatarSpecCache();
+  private commentAvatarSpecCaches: SenderAvatarSpecCache[] = [];
+
+  private senderAvatarSpec(): SenderAvatarSpec {
+    const msg = this.msg;
+    return this.avatarSpecCache.prepare(msg.senderId, msg.senderIsUser, msg.senderAvatarPath,
+      msg.senderInitials, 38, true);
+  }
+
+  private commentAvatarSpec(senderId: number, index: number): SenderAvatarSpec {
+    const msg = this.msg;
+    // Reuse cache slots by position, never by sender ID. Shrink when a later
+    // message has fewer comment avatars so old senders are not retained.
+    if (this.commentAvatarSpecCaches.length > msg.commentReplierIds.length) {
+      this.commentAvatarSpecCaches.length = msg.commentReplierIds.length;
+    }
+    let cache = this.commentAvatarSpecCaches[index];
+    if (cache === undefined) {
+      cache = new SenderAvatarSpecCache();
+      this.commentAvatarSpecCaches[index] = cache;
+    }
+    const paths = msg.commentReplierAvatarPaths;
+    return cache.prepare(senderId, true, index < paths.length ? paths[index] : '', '?', 22, false);
+  }
 
   private accent(): ResourceColor {
     return this.env.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
@@ -406,7 +441,7 @@ export struct MessageBubbleShell {
   }
 
   private clearTransientState(): void {
-    this.dragGesture = new MessageDragGesture();
+    this.dragGesture.reset();
     // Context is a stable ordinary member of the content owner, so ArkUI does
     // not reset its traced fields when this child is rebound to another row.
     this.context.resetInteraction();
@@ -463,14 +498,6 @@ export struct MessageBubbleShell {
 
   private inlineMaxW(): number {
     return this.bubbleMaxW() - 16;
-  }
-
-  private runCornerRadius(): number {
-    return Math.min(this.env.bubbleRadius, 7);
-  }
-
-  private tailCornerRadius(): number {
-    return Math.min(this.env.bubbleRadius, 2);
   }
 
   private hasBubbleTail(): boolean {
@@ -776,14 +803,7 @@ export struct MessageBubbleShell {
       if (this.msg.commentReplierIds.length > 0) {
         Row() {
           ForEach(this.msg.commentReplierIds, (uid: number, idx: number) => {
-            LiveSenderAvatar({
-              senderId: uid,
-              senderIsUser: true,
-              initialPath: idx < this.msg.commentReplierAvatarPaths.length
-                ? this.msg.commentReplierAvatarPaths[idx] : '',
-              initials: '?',
-              avatarSize: 22
-            })
+            LiveSenderAvatar({ spec: this.commentAvatarSpec(uid, idx) })
               .margin({ left: idx === 0 ? 0 : -8 })
               .borderRadius(11)
               // 叠压处那圈是"挖掉的间隙"，不是描边——所以取气泡自己的底色，
@@ -888,16 +908,10 @@ export struct MessageBubbleShell {
   }
 
   private bubbleCornerRadius(): BorderRadiuses {
-    return {
-      topLeft: this.msg.isOutgoing ? this.env.bubbleRadius :
-        (this.group.showSenderName ? this.env.bubbleRadius : this.runCornerRadius()),
-      topRight: this.msg.isOutgoing ?
-        (this.group.showSenderName ? this.env.bubbleRadius : this.runCornerRadius()) : this.env.bubbleRadius,
-      bottomLeft: this.msg.isOutgoing ? this.env.bubbleRadius :
-        (this.group.showAvatar ? this.tailCornerRadius() : this.runCornerRadius()),
-      bottomRight: this.msg.isOutgoing ?
-        (this.group.showAvatar ? this.tailCornerRadius() : this.runCornerRadius()) : this.env.bubbleRadius
-    };
+    // Read all reactive inputs before the cache lookup, including on hits.
+    const group = this.group;
+    return this.cornerCache.prepare(this.env.bubbleRadius, this.msg.isOutgoing,
+      group.showSenderName, group.showAvatar);
   }
 
   @Builder
@@ -999,45 +1013,81 @@ export struct MessageBubbleShell {
   }
 
   private reactionsRowWidth(): number {
+    const environment: string = `${textMeasureEnvironment.epoch}:${this.env.langEpoch}:${this.env.appearanceEpoch}`;
+    this.textMeasureCache.prepare(environment);
+    const availableWidth: number = this.inlineMaxW();
+    const reactions: ReactionInfo[] = this.msg.reactions;
+    const arrowShown: boolean = this.reactorsArrowShown();
+    const timeText: string = this.messageTimeText();
+    const edited: boolean = this.msg.editDate > 0;
+    const outgoing: boolean = this.msg.isOutgoing;
+    const views: string = this.context.liveViews;
     // 签名里必须带上影响时间戳宽度的四样（时刻文本、已编辑、自己发的、浏览数），
     // 否则同一条消息被编辑过之后仍拿着旧的上限。
-    const sig: string = this.msg.reactions
+    const sig: string = reactions
       .map((r: ReactionInfo): string => `${r.emoji}|${r.customEmojiId}|${r.count}`).join(',') +
-      `>${this.reactorsArrowShown()}` +
-      `#${this.messageTimeText()}|${this.msg.editDate > 0}|${this.msg.isOutgoing}|${this.context.liveViews}`;
+      `>${arrowShown}` +
+      `#${timeText}|${edited}|${outgoing}|${views}` +
+      `@${environment}:${availableWidth}`;
     if (sig === this.rxWidthSig && this.rxWidthCache > 0) {
       return this.rxWidthCache;
     }
+    this.textMeasureFailed = false;
     const chips: number[] = [];
-    for (const r of this.msg.reactions) {
+    for (const r of reactions) {
       // 自定义表情是 15×15 的位图（或同尺寸占位）；unicode 表情是 13fp 的 Text，得测。
       const icon: number = r.customEmojiId !== '' ? CHIP_ICON_VP : this.measureTextVp(r.emoji, 13);
       chips.push(reactionChipWidth(icon, this.measureTextVp(`${r.count}`, 12)));
     }
-    if (this.reactorsArrowShown()) {
+    if (arrowShown) {
       chips.push(REACTORS_ARROW_PAD_H * 2 + REACTORS_ARROW_ICON_VP + REACTORS_ARROW_MARGIN_R);
     }
     // 时间戳和反应条同处一行，先把它要占的位扣掉再封顶——不扣的话反应条会
     // 顶满 inlineMaxW，把时间戳挤到气泡外面（见 util/reactionsWidth 的说明）。
     const timeVp: number = timeOverlayWidth(
-      this.measureTextVp(this.messageTimeText(), 11),
-      this.msg.editDate > 0 ? this.measureTextVp(str('mb_edited'), 10.5) : 0,
-      this.msg.editDate > 0, this.msg.isOutgoing,
+      this.measureTextVp(timeText, 11),
+      edited ? this.measureTextVp(str('mb_edited'), 10.5) : 0,
+      edited, outgoing,
       // 眼睛 11 + 间隙 2 + 标签。
-      this.context.liveViews !== '' ? 13 + this.measureTextVp(this.context.liveViews, 11) : 0);
-    this.rxWidthSig = sig;
+      views !== '' ? 13 + this.measureTextVp(views, 11) : 0);
+    this.rxWidthSig = this.textMeasureFailed ? '' : sig;
     this.rxWidthCache = reactionsRowWidth(chips,
-      reactionsRowMaxWidth(this.inlineMaxW(), timeVp));
+      reactionsRowMaxWidth(availableWidth, timeVp));
     return this.rxWidthCache;
   }
 
   private measureTextVp(text: string, fontSize: number): number {
     try {
-      const size: SizeOptions = this.getUIContext().getMeasureUtils().measureTextSize({
-        textContent: text, fontSize: fontSize
+      return this.textMeasureCache.width(text, fontSize, (content: string, size: number): number => {
+        const uiContext = this.getUIContext();
+        const measure = (value: string, font: number): number => {
+          const measured: SizeOptions = uiContext.getMeasureUtils().measureTextSize({
+            textContent: value, fontSize: font
+          });
+          return measured.width as number;
+        };
+        let scope: number = -1;
+        let units: string = '';
+        // getId is API 22+. On API 20/21 or an unavailable context identity,
+        // retain the original per-component cache and native measurement path.
+        if (sharedTextMeasurementSupported === undefined) {
+          sharedTextMeasurementSupported = deviceInfo.sdkApiVersion >= 22;
+        }
+        if (sharedTextMeasurementSupported) {
+          try {
+            const density: number = uiContext.vp2px(1);
+            const fontScale: number = uiContext.fp2px(1);
+            if (Number.isFinite(density) && density > 0 && Number.isFinite(fontScale) && fontScale > 0) {
+              units = `${density}:${fontScale}`;
+              scope = uiContext.getId();
+            }
+          } catch (e) { scope = -1; }
+        }
+        const environment: string = `${textMeasureEnvironment.epoch}:${this.env.langEpoch}:${this.env.appearanceEpoch}:${units}`;
+        return px2vp(sharedTextMeasurements.width(scope, environment, content, size, measure));
       });
-      return px2vp(size.width as number);
     } catch (e) {
+      this.textMeasureFailed = true;
       return fontSize * Math.max(1, text.length);
     }
   }
@@ -1335,9 +1385,9 @@ export struct MessageBubbleShell {
   }
 
   private isBareEmoji(): boolean {
-    return this.msg.contentType === 'emoji' || this.msg.contentType === 'sticker'
-      || this.msg.contentType === 'customEmoji' || this.msg.contentType === 'videoNote'
-      || this.msg.contentType === 'dice';
+    const type: string = this.msg.contentType;
+    return type === 'emoji' || type === 'sticker' || type === 'customEmoji'
+      || type === 'videoNote' || type === 'dice';
   }
 
   private stickerFileForFavorite(): number {
@@ -1438,7 +1488,7 @@ export struct MessageBubbleShell {
       // 单个完整轮廓负责外部投影，阴影不再落在主体与尾角之间。
       Column() {}
         .width(this.glassW).height(this.glassH)
-        .clipShape(solidBubbleShadowShape(this.glassW, this.glassH, this.msg.isOutgoing,
+        .clipShape(this.shadowShapeCache.prepare(this.glassW, this.glassH, this.msg.isOutgoing,
           this.hasBubbleTail(), this.bubbleCornerRadius()))
         .shadow({ radius: 2, color: '#14000000', offsetX: 0, offsetY: 1, fill: false })
         .hitTestBehavior(HitTestMode.None).accessibilityLevel('no');
@@ -1885,13 +1935,7 @@ export struct MessageBubbleShell {
         // LiveSenderAvatar, not AvatarView directly: the path arrives via the
         // sender-avatar side channel and swaps in place — the row itself never
         // rebuilds for an avatar (see senderAvatarChannel).
-        LiveSenderAvatar({
-          senderId: this.msg.senderId,
-          senderIsUser: this.msg.senderIsUser,
-          initialPath: this.msg.senderAvatarPath,
-          initials: this.msg.senderInitials,
-          animate: true
-        })
+        LiveSenderAvatar({ spec: this.senderAvatarSpec() })
           .margin({ right: BUBBLE_AVATAR_GAP_VP })
           .onClick(() => {
             if (this.context.gestureClaimed) { return; }

@@ -29,7 +29,11 @@ export class SocksProxyHandshake {
     this.auth = user.length > 0 || password.length > 0;
   }
 
-  greeting(): ArrayBuffer { return new Uint8Array([5, 1, this.auth ? 2 : 0]).buffer as ArrayBuffer; }
+  // Like TDLib, allow the server to waive authentication (e.g. a trusted LAN)
+  // even when credentials are saved. Only offer password auth when configured.
+  greeting(): ArrayBuffer {
+    return new Uint8Array(this.auth ? [5, 2, 0, 2] : [5, 1, 0]).buffer as ArrayBuffer;
+  }
 
   private connectRequest(): ArrayBuffer {
     const target = proxyTarget(this.target);
@@ -53,9 +57,12 @@ export class SocksProxyHandshake {
       this.bytes.push(input[i]);
       if (this.bytes.length > 262) { throw new Error('proxy SOCKS reply too large'); }
       if (this.phase === 'method' && this.bytes.length === 2) {
-        if (this.bytes[0] !== 5 || this.bytes[1] !== (this.auth ? 2 : 0)) { throw new Error('proxy SOCKS auth rejected'); }
+        const method = this.bytes[1];
+        if (this.bytes[0] !== 5 || (method !== 0 && !(this.auth && method === 2))) {
+          throw new Error('proxy SOCKS auth rejected');
+        }
         this.bytes = [];
-        if (this.auth) {
+        if (method === 2) {
           writes.push(new Uint8Array([1, this.user.length, ...Array.from(this.user),
             this.password.length, ...Array.from(this.password)]).buffer as ArrayBuffer);
           this.phase = 'auth';

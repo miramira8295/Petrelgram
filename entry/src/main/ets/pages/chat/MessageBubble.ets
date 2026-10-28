@@ -1,3 +1,4 @@
+import { MessageTextPresentationCache, TRANSLATION_TEXT_INPUT } from '../../util/messageTextInput';
 import { MessageEntry } from '../../store/MessageEntry';
 import { TdObject } from '../../tdkit/TdTypes';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
@@ -35,6 +36,8 @@ interface RichContentBuilderParams {
 // 行布局/材质/菜单/手势由公共壳负责，相册、单媒体、贴纸与正文直接绕过此入口。
 @ComponentV2
 export struct MessageBubble {
+  private translationInputCache: MessageTextPresentationCache = new MessageTextPresentationCache();
+  private textInputCache: MessageTextPresentationCache = new MessageTextPresentationCache();
   private context: MessageBubbleContext = new MessageBubbleContext();
   private env: ChatEnvMirror = chatEnv;
 
@@ -195,15 +198,17 @@ export struct MessageBubble {
 
   @Builder
   richContent(params: RichContentBuilderParams) {
-    MessageBubbleText({ msg: this.msg, group: this.group, data: this.data, actions: this.actions,
-      context: this.context, text: params.text, entities: params.entities, maxWidth: params.maxWidth });
+    MessageBubbleText({ actions: this.actions,
+      context: this.context, presentation: this.textInputCache.prepare(this.msg, this.group.showSenderName, this.data,
+        params.text, params.entities, params.maxWidth, 'body') });
   }
 
   @Builder
   translationBlock() {
     if (this.msg.translatedText !== '' || this.context.translationStatus !== null) {
-      MessageBubbleText({ msg: this.msg, group: this.group, data: this.data, actions: this.actions,
-        context: this.context, mode: 'translation' });
+      MessageBubbleText({ actions: this.actions,
+        context: this.context, presentation: this.translationInputCache.prepare(this.msg, this.group.showSenderName, this.data,
+          TRANSLATION_TEXT_INPUT.text, TRANSLATION_TEXT_INPUT.entities, 0, 'translation') });
     }
   }
 

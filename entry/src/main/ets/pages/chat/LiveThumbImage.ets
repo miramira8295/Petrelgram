@@ -1,5 +1,8 @@
-import { CachedImage } from '../common/CachedImage';
-import { CachedImageSpec, CachedImageSpecCache } from '../../util/cachedImageSpec';
+import { image } from '@kit.ImageKit';
+import { CachedImageSession } from '../../util/CachedImageSession';
+import { MINI_PLACEHOLDER_BLUR } from '../../util/miniThumbPlaceholder';
+import { scrollPlaceholderState } from '../../util/scrollEffects';
+import { CachedImageSpec } from '../../util/cachedImageSpec';
 import { subscribeThumbPath, thumbPathFor } from '../../util/mediaThumbChannel';
 import { liveThumbPath } from '../../util/liveThumbPath';
 import { shouldReattachThumb } from '../../util/liveThumbAttach';
@@ -13,7 +16,7 @@ import { warnStaleThumbAttach } from '../../util/thumbAttachGuard';
 //
 // 无图/有图两态都在组件内部处理：没有路径时渲染调用方通过 placeholder 传入
 // 的占位内容（灰底、进度环、失败重试等，那些细节和调用方状态强耦合，留在
-// 调用方而不搬进来），拿到路径后原地换成 CachedImage。
+// 调用方而不搬进来），拿到路径后在本组件内直接绘图，路径与位图生命周期在同一个边界内完成。
 //
 // 进入时先读通道现值而不是干等推送：滚回已经下好的那一段历史时不会有新的
 // 发布，只靠订阅会一直是空白。
@@ -30,7 +33,7 @@ import { warnStaleThumbAttach } from '../../util/thumbAttachGuard';
 //
 // **这和 LightweightPlainTextBubble 那边刻意不合并不矛盾**，判据是同一条：
 // 合并省的是"逐个登记 + 每次排队列"，赔的是"整棵子树粗粒度失效"。本组件的
-// 子树只有一个 CachedImage 或一段占位——赔得起；纯文本气泡的子树是整条消息，
+// 子树只有一组图片节点或一段占位——赔得起；纯文本气泡的子树是整条消息，
 // 赔不起。
 export interface LiveThumbSpec {
   // Chat cells opt in; shared viewer/filmstrip uses keep the default policy.
@@ -60,6 +63,10 @@ export struct LiveThumbImage {
   @Require @Param spec: LiveThumbSpec;
   @BuilderParam placeholder: () => void;
   @Local private path: string = '';
+  @Local private pixelMap: image.PixelMap | undefined = undefined;
+  private scrollState = scrollPlaceholderState;
+  private imageSession: CachedImageSession = new CachedImageSession(
+    (pixels: image.PixelMap | undefined): void => { this.pixelMap = pixels; });
   private unsubThumb: (() => void) | null = null;
   // 订阅此刻挂在哪个文件上。两个用途：① 同 key 短路，让 attach 幂等；
   // ② 让「订阅挂在哪」成为可判定的事实，而不是靠推断 params 到没到。
@@ -93,7 +100,9 @@ export struct LiveThumbImage {
     const known: string = thumbPathFor(fileId);
     this.path = liveThumbPath(fileId, known, this.path, initialPath, false);
     this.unsubThumb = subscribeThumbPath(fileId, (path: string): void => {
+      if (this.attachedFileId !== fileId) { return; }
       this.path = path;
+      this.imageSession.update(this.imageSpec());
     });
   }
 
@@ -116,36 +125,39 @@ export struct LiveThumbImage {
   // 判据见 util/liveThumbAttach（纯函数，有回归测试）。
   @Monitor('spec')
   onSpecChanged(): void {
-    if (!shouldReattachThumb(this.spec.fileId, this.spec.initialPath,
+    if (shouldReattachThumb(this.spec.fileId, this.spec.initialPath,
       this.attachedFileId, this.path)) {
-      return;
+      // 可下载文件的实时路径以通道为准；纯路径模式由 initialPath 定义身份。
+      this.attach(this.spec.fileId, this.spec.fileId === 0 ? this.spec.initialPath : '');
     }
-    // fileId ≠ 0 时第二个参数传 ''：@Param 逐个落地时 initialPath 可能还是
-    // 上一条的，拿它兜底等于把旧图画上去；通道现值本来就按新 fileId 查。
-    this.attach(this.spec.fileId,
-      this.spec.fileId === 0 ? this.spec.initialPath : '');
+    // 即使文件未变，尺寸/像素格式等输入变化仍需交给同一个图片会话。
+    this.imageSession.update(this.imageSpec());
   }
 
   aboutToAppear(): void {
     this.attach(this.spec.fileId, this.spec.initialPath);
+    this.imageSession.activate(this.imageSpec());
   }
 
   aboutToRecycle(): void {
     // path 不清（翻页图片乱跳的根修之一）：@Local 由框架在下次复用前重置，
     // aboutToReuse 里同步播种，空窗只剩「通道确实没图」的固有情形。
     this.detach('recycle');
+    this.imageSession.recycle();
   }
 
   aboutToReuse(): void {
     // @Param 已是新值、@Local path 已被框架重置（批 0.5 判读）：同步重挂+
     // 播种。initialPath 也是新行的值，V1「不敢用 initialPath 兜底」的坑不在。
     this.attach(this.spec.fileId, this.spec.initialPath);
+    this.imageSession.activate(this.imageSpec());
   }
 
   // 不退订会让箭头函数一直持有本组件实例，组件无法释放（官方状态管理 FAQ
   // 明确点过这个泄漏）。
   aboutToDisappear(): void {
     this.detach('disappear');
+    this.imageSession.dispose();
   }
 
   // 不变量检查挂在**分支条件**上：build 里不能放语句，而这里同样是拿当前
@@ -156,25 +168,73 @@ export struct LiveThumbImage {
     return this.path;
   }
 
-  private imageSpecCache: CachedImageSpecCache = new CachedImageSpecCache();
+  private preparedImageSpec: CachedImageSpec | undefined = undefined;
+  private preparedImageFileId: number = -1;
 
-  @Computed
-  private get imageSpec(): CachedImageSpec {
-    return this.imageSpecCache.prepare({
-      path: this.path, boxWidth: this.spec.boxWidth, boxHeight: this.spec.boxHeight,
-      radius: this.spec.radius, fit: this.spec.fit,
-      syncDisplay: this.spec.syncDisplay === true,
+  // Read reactive inputs during child construction/update. @Computed would
+  // force a reset on every reuse; the existing cache already keeps equal specs
+  // stable without that extra dependency rebuild.
+  private imageSpec(): CachedImageSpec {
+    const spec: LiveThumbSpec = this.spec;
+    const previous = this.preparedImageSpec;
+    // Compare scalar inputs before allocating the candidate or its source key.
+    // Do not short-circuit solely on spec identity: path notifications are
+    // independent, and comparing values also handles a changed input in place.
+    if (previous !== undefined && this.preparedImageFileId === spec.fileId &&
+      previous.path === this.path && previous.boxWidth === spec.boxWidth &&
+      previous.boxHeight === spec.boxHeight && previous.radius === spec.radius && previous.fit === spec.fit &&
+      previous.syncDisplay === (spec.syncDisplay === true) && previous.opaque === spec.opaque &&
+      previous.backdrop === spec.backdrop && previous.backdropImage === spec.mini &&
+      previous.deferBackdropOnScroll === (spec.deferMiniOnScroll === true)) {
+      return previous;
+    }
+    const next: CachedImageSpec = {
+      path: this.path, boxWidth: spec.boxWidth, boxHeight: spec.boxHeight,
+      radius: spec.radius, fit: spec.fit,
+      syncDisplay: spec.syncDisplay === true,
       // A path upgrade for the same file keeps the held image until it is ready.
-      sourceKey: this.spec.fileId > 0 ? `f${this.spec.fileId}` : '',
-      opaque: this.spec.opaque, backdrop: this.spec.backdrop,
-      backdropImage: this.spec.mini,
-      deferBackdropOnScroll: this.spec.deferMiniOnScroll === true
-    });
+      sourceKey: spec.fileId > 0 ? `f${spec.fileId}` : '',
+      opaque: spec.opaque, backdrop: spec.backdrop,
+      backdropImage: spec.mini,
+      deferBackdropOnScroll: spec.deferMiniOnScroll === true
+    };
+    this.preparedImageFileId = spec.fileId;
+    this.preparedImageSpec = next;
+    return next;
+  }
+
+  private showMiniPlaceholder(): boolean {
+    return this.pixelMap === undefined && this.spec.mini !== '' &&
+      !(this.spec.deferMiniOnScroll === true && this.scrollState.active);
+  }
+
+  // 与 CachedImage 的原生图片属性保持一致。成员零参 Builder 直接读当前输入，
+  // 省去每格一层自定义组件及其复用/参数登记，仍保留同步显示与圆角抗锯齿。
+  @Builder
+  imageContent() {
+    Stack() {
+      if (this.showMiniPlaceholder()) {
+        Image(this.spec.mini)
+          .draggable(false)
+          .width(this.spec.boxWidth).height(this.spec.boxHeight)
+          .borderRadius(this.spec.radius).clip(true)
+          .objectFit(this.spec.fit)
+          .blur(MINI_PLACEHOLDER_BLUR);
+      }
+      Image(this.pixelMap)
+        .syncLoad(this.spec.syncDisplay === true && this.pixelMap !== undefined)
+        .draggable(false)
+        .width(this.spec.boxWidth).height(this.spec.boxHeight)
+        .backgroundColor(this.spec.backdrop !== '' ? this.spec.backdrop : Color.Transparent)
+        .borderRadius(this.spec.radius).clip(true)
+        .interpolation(ImageInterpolation.High)
+        .objectFit(this.spec.fit);
+    }.width(this.spec.boxWidth).height(this.spec.boxHeight);
   }
 
   build() {
     if (this.drawPath() !== '') {
-      CachedImage({ spec: this.imageSpec });
+      this.imageContent();
     } else {
       this.placeholder();
     }

@@ -1,9 +1,11 @@
+import { InlineCaptionCache, InlineCaptionRun } from '../../util/inlineCaptionData';
+import { MessageTextInput, MessageTextMode, MessageTextPresentation, MessageTextLayout } from '../../util/messageTextInput';
 import { MessageEntry } from '../../store/MessageEntry';
 import { TdObject } from '../../tdkit/TdTypes';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth } from '../../util/mediaBox';
 import { formatClockTime } from '../../util/formatTime';
-import { parseFormattedText, richSegmentKey, RichSegment, RichRun } from '../../util/richText';
+import { isUnformattedPlainText, parseFormattedText, richSegmentKey, RichSegment, RichRun } from '../../util/richText';
 import { animationDurationFor, persistentAnimationDurationFor, scrollActiveNow } from '../../util/scrollEffects';
 import { COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, bubbleTextFor } from '../../util/theme';
 import { languageDisplayName } from '../../services/TranslationService';
@@ -11,8 +13,7 @@ import { str } from '../../util/strings';
 import { viewsReserve } from '../../util/viewCountChannel';
 import { translationReplacesOriginal } from '../../util/translationMode';
 import { timeLayerMinWidth } from '../../util/timeLayerWidth';
-import { AlbumGroup } from '../../util/collapseAlbums';
-import { MessageBubbleActions, MessageBubbleRenderData } from './ReusableMessageBubble';
+import { MessageBubbleActions } from './ReusableMessageBubble';
 import { linkTextHidesUrl } from '../../util/messageLinkAction';
 import { MessageBubbleContext } from './MessageBubbleShell';
 
@@ -28,7 +29,6 @@ interface RichContentBuilderParams {
   maxWidth: number;
 }
 
-type MessageTextMode = 'body' | 'caption' | 'translation';
 
 @Styles
 function msgLinkRunNormalStyle() { .opacity(1) }
@@ -41,17 +41,15 @@ function msgLinkRunPressedStyle() { .opacity(0.52) }
 @ComponentV2
 export struct MessageBubbleText {
   @Require @Param context: MessageBubbleContext;
-  @Param text: string = '';
-  @Param entities: TdObject[] = [];
-  @Param maxWidth: number = 0;
-  @Param mode: MessageTextMode = 'body';
+  @Require @Param presentation: MessageTextPresentation;
+  private get input(): MessageTextInput { return this.presentation.input; }
+  private get msg(): MessageEntry { return this.presentation.msg; }
+  private get data(): MessageTextLayout { return this.presentation.layout; }
+  private get text(): string { return this.input.text; }
+  private get entities(): TdObject[] { return this.input.entities; }
+  private get maxWidth(): number { return this.input.maxWidth; }
+  private get mode(): MessageTextMode { return this.input.mode; }
   private env: ChatEnvMirror = chatEnv;
-
-  @Require @Param msg: MessageEntry;
-
-  @Require @Param group: AlbumGroup;
-
-  @Require @Param data: MessageBubbleRenderData;
 
   @Require @Param actions: MessageBubbleActions;
 
@@ -226,6 +224,19 @@ export struct MessageBubbleText {
         .onClick(() => {
           if (this.context.gestureClaimed) { return; }
           this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url)); });
+    } else if (run.url !== '' && !run.code && !run.underline && !run.strike) {
+      // Idle links without decoration/code use Span's None/transparent defaults.
+      // Keep pressed styling and the exact link handler; the busy branch above
+      // still owns loading feedback. A separate branch prevents stale styles.
+      Span(run.text)
+        .fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
+        .fontStyle(run.italic ? FontStyle.Italic : FontStyle.Normal)
+        .fontFamily('')
+        .fontColor(this.accent())
+        .stateStyles({ normal: msgLinkRunNormalStyle, pressed: msgLinkRunPressedStyle })
+        .onClick(() => {
+          if (this.context.gestureClaimed) { return; }
+          this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url)); });
     } else if (run.url !== '') {
       // **闲着的链接：一个 .animation() 都不写。**
       //
@@ -251,6 +262,18 @@ export struct MessageBubbleText {
         .onClick(() => {
           if (this.context.gestureClaimed) { return; }
           this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url)); });
+    } else if (!run.code && !run.underline && !run.strike) {
+      // Plain/bold/italic runs have no background or decoration. Span's native
+      // defaults are transparent/0 and None; both owning Text builders leave
+      // decoration unset. Keep explicit font/color resets, but skip two native
+      // setters and their option objects even on the first construction.
+      // This branch creates its own Span, so switching from code/decorated text
+      // cannot retain that branch's background or decoration.
+      Span(run.text)
+        .fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
+        .fontStyle(run.italic ? FontStyle.Italic : FontStyle.Normal)
+        .fontFamily('')
+        .fontColor(run.link ? this.accent() : bubbleTextFor(this.msg.isOutgoing));
     } else {
       // 这里刻意不挂 .animation()：普通 run 是气泡里数量最多的节点，一条常驻
       // 属性动画会按 run 数线性放大更新开销。2026-08-27 11:57 的真机 trace 里，
@@ -298,10 +321,11 @@ export struct MessageBubbleText {
   }
 
   private replacementTranslationShown(): boolean {
+    const msg: MessageEntry = this.msg;
     return translationReplacesOriginal(
       this.env.translateReplaceOriginal,
-      this.msg.translatedText,
-      this.msg.translationHidden
+      msg.translatedText,
+      msg.translationHidden
     );
   }
 
@@ -319,6 +343,74 @@ export struct MessageBubbleText {
     // 数组身份稳定（挂在 MessageEntry 上，每条消息一份），parseFormattedText
     // 的按身份缓存不会串槽。
     return this.replacementTranslationShown() ? this.msg.translatedEntities : original;
+  }
+
+  private inlineCaptionCache: InlineCaptionCache = new InlineCaptionCache();
+
+  private inlineCaptionSegment(): RichSegment | null {
+    const replace: boolean = this.replacementTranslationShown();
+    const input: MessageTextInput = this.input;
+    const msg: MessageEntry = this.msg;
+    return this.inlineCaptionCache.prepare(replace ? msg.translatedText : input.text,
+      replace ? msg.translatedEntities : input.entities);
+  }
+
+  private inlineCaptionItems(): InlineCaptionRun[] {
+    // Read live inputs here so ArkUI keeps tracking edits/translation/reuse.
+    // The key callback below only reads the prepared item, never this component.
+    this.inlineCaptionSegment();
+    return this.inlineCaptionCache.runs();
+  }
+
+  // Zero-argument builder reads the current message on every reuse. Keep the
+  // same Column/Text geometry as richContent -> richRuns, without a block loop
+  // and its pre/quote/text dispatch for the common single-inline caption.
+  @Builder
+  inlineCaptionContent() {
+    Column() {
+      Text() {
+        ForEach(this.inlineCaptionItems(), (item: InlineCaptionRun) => {
+          this.richInlineRun(item.run);
+        }, (item: InlineCaptionRun) => item.key);
+        if (this.timeReserveInText() && this.inlineCaptionSegment()?.isLast === true) {
+          Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
+        }
+      }
+      .fontSize(this.env.msgTextSize)
+      .lineHeight(this.env.msgTextSize * 1.34)
+      .wordBreak(WordBreak.BREAK_WORD)
+      .constraintSize({ maxWidth: this.inlineMaxW() });
+    }
+    .constraintSize({ minWidth: this.measuredTimeLayerWidth(), maxWidth: this.inlineMaxW() })
+    .alignItems(HorizontalAlign.Start);
+  }
+
+  private plainCaptionShown(): boolean {
+    const replace: boolean = this.replacementTranslationShown();
+    const input: MessageTextInput = this.input;
+    const msg: MessageEntry = this.msg;
+    return isUnformattedPlainText(replace ? msg.translatedText : input.text,
+      replace ? msg.translatedEntities : input.entities);
+  }
+
+  // 普通配文不需要分段/逐 run 的 ForEach。零参读取当前输入，复用、编辑和
+  // 翻译替换后都能更新；时间占位仍由与 richRuns 相同的判据决定。
+  @Builder
+  plainCaption() {
+    Text() {
+      Span(this.displayedMessageText(this.text));
+      if (this.timeReserveInText()) {
+        Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
+      }
+    }
+    .fontSize(this.env.msgTextSize)
+    .fontWeight(FontWeight.Normal)
+    .fontStyle(FontStyle.Normal)
+    .fontFamily('')
+    .fontColor(bubbleTextFor(this.msg.isOutgoing))
+    .lineHeight(this.env.msgTextSize * 1.34)
+    .wordBreak(WordBreak.BREAK_WORD)
+    .constraintSize({ minWidth: this.measuredTimeLayerWidth(), maxWidth: this.inlineMaxW() });
   }
 
   @Builder
@@ -553,7 +645,7 @@ export struct MessageBubbleText {
   }
 
   private senderLabelShown(): boolean {
-    return this.data.isGroup && !this.msg.isOutgoing && this.msg.senderName !== '' && this.group.showSenderName;
+    return this.data.isGroup && !this.msg.isOutgoing && this.msg.senderName !== '' && this.presentation.showSenderName;
   }
 
   private commentsRowShown(): boolean {
@@ -566,8 +658,14 @@ export struct MessageBubbleText {
     } else if (this.mode === 'caption') {
       if (this.displayedMessageText(this.text) !== '') {
         Column() {
-          this.richContent({ text: this.displayedMessageText(this.text),
-            entities: this.displayedMessageEntities(this.entities), maxWidth: this.inlineMaxW() });
+          if (this.plainCaptionShown()) {
+            this.plainCaption();
+          } else if (this.inlineCaptionSegment() !== null) {
+            this.inlineCaptionContent();
+          } else {
+            this.richContent({ text: this.displayedMessageText(this.text),
+              entities: this.displayedMessageEntities(this.entities), maxWidth: this.inlineMaxW() });
+          }
           this.translationBlock();
         }.margin({ top: 6 });
       }
@@ -576,9 +674,9 @@ export struct MessageBubbleText {
     }
   }
 
-  @Monitor('msg', 'text')
+  @Monitor('presentation')
   resetTextState(): void {
-    // MessageEntry 是普通快照，监听 @Param 根对象，再按身份判断。
+    // 展示快照合并了消息与文本输入；监听根对象，再按消息身份/正文判断。
     // 同一行的发送态/下载态更新不能收起用户已经展开的引用。
     if (this.textRowId !== this.msg.rowId || this.previousText !== this.text) {
       this.revealedSpoilerKeys = [];

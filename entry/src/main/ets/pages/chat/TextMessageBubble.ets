@@ -1,3 +1,4 @@
+import { MessageTextPresentationCache, TRANSLATION_TEXT_INPUT } from '../../util/messageTextInput';
 import { MessageEntry } from '../../store/MessageEntry';
 import { TdObject } from '../../tdkit/TdTypes';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
@@ -34,6 +35,8 @@ function msgLinkCardPressedStyle() { .opacity(0.8).scale({ x: 0.986, y: 0.986 })
 // 正文、富消息与链接预览的完整行入口，只订阅预览图下载。
 @ComponentV2
 export struct TextMessageBubble {
+  private translationInputCache: MessageTextPresentationCache = new MessageTextPresentationCache();
+  private textInputCache: MessageTextPresentationCache = new MessageTextPresentationCache();
   @Require @Param msg: MessageEntry;
   @Require @Param group: AlbumGroup;
   @Require @Param data: MessageBubbleRenderData;
@@ -227,15 +230,17 @@ export struct TextMessageBubble {
 
   @Builder
   richContent(params: RichContentBuilderParams) {
-    MessageBubbleText({ msg: this.msg, group: this.group, data: this.data, actions: this.actions,
-      context: this.context, text: params.text, entities: params.entities, maxWidth: params.maxWidth });
+    MessageBubbleText({ actions: this.actions,
+      context: this.context, presentation: this.textInputCache.prepare(this.msg, this.group.showSenderName, this.data,
+        params.text, params.entities, params.maxWidth, 'body') });
   }
 
   @Builder
   translationBlock() {
     if (this.msg.translatedText !== '' || this.context.translationStatus !== null) {
-      MessageBubbleText({ msg: this.msg, group: this.group, data: this.data, actions: this.actions,
-        context: this.context, mode: 'translation' });
+      MessageBubbleText({ actions: this.actions,
+        context: this.context, presentation: this.translationInputCache.prepare(this.msg, this.group.showSenderName, this.data,
+          TRANSLATION_TEXT_INPUT.text, TRANSLATION_TEXT_INPUT.entities, 0, 'translation') });
     }
   }
 

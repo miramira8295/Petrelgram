@@ -1,3 +1,4 @@
+import { MessageTextPresentationCache } from '../../util/messageTextInput';
 import { MessageBubbleContext, MessageBubbleShell } from './MessageBubbleShell';
 import { MessageBubbleText } from './MessageBubbleText';
 import { AlbumGroup } from '../../util/collapseAlbums';
@@ -13,6 +14,7 @@ import { logW } from '../../util/log';
 // 格子几何与视频候选生命周期由相册自己持有；菜单/滑动共用壳的认领状态。
 @ComponentV2
 export struct AlbumMessageBubble {
+  private textInputCache: MessageTextPresentationCache = new MessageTextPresentationCache();
   @Require @Param group: AlbumGroup;
   @Require @Param data: MessageBubbleRenderData;
   @Require @Param actions: MessageBubbleActions;
@@ -34,14 +36,25 @@ export struct AlbumMessageBubble {
     if (this.attachedRowId !== this.group.head.rowId) {
       this.centers.clear();
     }
-    const next: Map<number, number> = new Map<number, number>();
+    let next: Map<number, number> | undefined = undefined;
     for (let i = 0; i < this.group.photoIsVideo.length; i++) {
-      if (this.group.photoIsVideo[i]) { next.set(i, this.group.memberIds[i] ?? 0); }
+      if (this.group.photoIsVideo[i]) {
+        if (next === undefined) { next = new Map<number, number>(); }
+        next.set(i, this.group.memberIds[i] ?? 0);
+      }
     }
-    this.competing.forEach((id: number, index: number): void => {
-      if (next.get(index) !== id) { this.actions.onMediaGone(id, index); }
-    });
-    this.competing = next;
+    if (next === undefined) {
+      // Photo-only albums need no new empty candidate map. Still retire every
+      // previous video before reusing the existing private map.
+      this.competing.forEach((id: number, index: number): void => { this.actions.onMediaGone(id, index); });
+      this.competing.clear();
+    } else {
+      const candidates = next;
+      this.competing.forEach((id: number, index: number): void => {
+        if (candidates.get(index) !== id) { this.actions.onMediaGone(id, index); }
+      });
+      this.competing = candidates;
+    }
     this.attachedRowId = this.group.head.rowId;
   }
 
@@ -107,9 +120,9 @@ export struct AlbumMessageBubble {
   content() {
     this.grid();
     if (this.group.caption !== '' || this.group.head.translatedText !== '') {
-      MessageBubbleText({ msg: this.group.head, group: this.group, data: this.data,
-        actions: this.actions, context: this.context, text: this.group.caption,
-        entities: this.group.captionEntities, mode: 'caption' });
+      MessageBubbleText({ actions: this.actions, context: this.context,
+        presentation: this.textInputCache.prepare(this.group.head, this.group.showSenderName, this.data,
+          this.group.caption, this.group.captionEntities, 0, 'caption') });
     }
   }
 

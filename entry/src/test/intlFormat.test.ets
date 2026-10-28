@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from '@ohos/hypium';
 import {
-  clockTime, decimal, fullDate, fullDateTime, monthDay, refreshLocale, setHourCycleForTest,
+  clockTime, decimal, decimalUpTo, fullDate, fullDateTime, monthDay, refreshLocale, setHourCycleForTest,
   setLocaleForTest, weekdayShort
 } from '../main/ets/util/intlFormat';
 
@@ -64,6 +64,28 @@ export default function intlFormatTest() {
       setLocaleForTest('zh-CN');
       expect(decimal(1234.5, 1)).assertEqual('1,234.5');
       expect(decimal(24.34, 1)).assertEqual('24.3');
+    });
+
+    it('cached_number_formatters_clear_on_locale_switch', 0, () => {
+      setLocaleForTest('en-US'); expect(decimal(1234.5, 1)).assertEqual('1,234.5');
+      setLocaleForTest('de-DE'); expect(decimal(1234.5, 1)).assertEqual('1.234,5');
+      setLocaleForTest('en-US'); expect(decimal(1234.5, 1)).assertEqual('1,234.5');
+    });
+
+    it('fixed_and_variable_precision_do_not_share_the_wrong_formatter', 0, () => {
+      setLocaleForTest('en-US');
+      expect(decimal(1.5, 2)).assertEqual('1.50');
+      expect(decimalUpTo(1.5, 2)).assertEqual('1.5');
+      expect(decimal(1.5, 0)).assertEqual('2');
+      expect(decimal(1.5, 2)).assertEqual('1.50');
+    });
+
+    it('reusing_a_formatter_never_reuses_the_previous_number', 0, () => {
+      setLocaleForTest('en-US');
+      expect(decimal(12.3, 1)).assertEqual('12.3');
+      expect(decimal(45.6, 1)).assertEqual('45.6');
+      expect(decimalUpTo(-12.25, 2)).assertEqual('-12.25');
+      expect(decimalUpTo(0, 2)).assertEqual('0');
     });
 
     // No platform installed a locale, and no test forced one: everything must

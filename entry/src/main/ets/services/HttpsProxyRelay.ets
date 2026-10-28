@@ -4,6 +4,7 @@ import { SocksProxyHandshake, proxyTarget, ProxyTarget } from '../util/socksProx
 import { verifyProxyCertificateName } from './HttpsProxyCertificate';
 import { socket } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
+import { logW } from '../util/log';
 import {
   HttpsProxyRecord, HTTPS_PROXY_MARKER, ProxyHeaderReader, parseProxyConnect,
   proxyConnectHeader, proxyConnectSucceeded, relayProxyType, PROXY_DIRECT, PROXY_HTTPS,
@@ -16,9 +17,21 @@ const HANDSHAKE_TIMEOUT: number = 15000;
 const CONNECT_OK: ArrayBuffer = new Uint8Array('HTTP/1.1 200 Connection Established\r\n\r\n'
   .split('').map((c: string): number => c.charCodeAt(0))).buffer as ArrayBuffer;
 
+// HarmonyOS documents encodeInto('') as undefined despite its Uint8Array type.
+// Keep empty credentials valid without calling the encoder. A failed nonempty
+// encoding must never silently turn configured credentials into no-auth.
+export function encodeProxyUtf8(text: string,
+  encode: (value: string) => Uint8Array | undefined =
+    (value: string): Uint8Array => new util.TextEncoder().encodeInto(value)): Uint8Array {
+  if (text.length === 0) { return new Uint8Array(0); }
+  const bytes = encode(text);
+  if (bytes === undefined || bytes.length === 0) { throw new Error('proxy credential encoding failed'); }
+  return bytes;
+}
+
 function basic(user: string, password: string): string {
   return 'Basic ' + new util.Base64Helper().encodeToStringSync(
-    new util.TextEncoder().encodeInto(`${user}:${password}`));
+    encodeProxyUtf8(`${user}:${password}`));
 }
 
 export interface RelayEndpoint {
@@ -36,57 +49,175 @@ export interface RelayTlsEndpoint extends RelayEndpoint {
 
 class LocalRelayEndpoint implements RelayEndpoint {
   private socket: socket.TCPSocketConnection;
-  constructor(local: socket.TCPSocketConnection) { this.socket = local; }
-  onData(callback: (data: ArrayBuffer) => void): void {
-    this.socket.on('message', (info: socket.SocketMessageInfo): void => callback(info.message));
+  private closed: boolean = false;
+  private retired: boolean = false;
+  private receiverReady: boolean = false;
+  private nativeCloseStarted: boolean = false;
+  private pendingSends: number = 0;
+  private message: ((data: ArrayBuffer) => void) | undefined = undefined;
+  private end: (() => void) | undefined = undefined;
+  constructor(local: socket.TCPSocketConnection) {
+    this.socket = local;
+    localRelayEndpoints.add(this);
+    // Native ClientHandler waits for this listener. Register even for rejected
+    // connections, and retain both the object and listeners until native close.
+    // off(message) or GC before that event can strand its initialization thread.
+    this.socket.on('message', (info: socket.SocketMessageInfo): void => {
+      // A message proves ClientHandler has read its fd from the native map.
+      // Merely registering the listener does not: early close can erase that
+      // entry before WaitForManagerReady reads it (map[] then yields fd 0).
+      this.receiverReady = true;
+      if (this.closed) { this.closeWhenReady(); } else { this.message?.(info.message); }
+    });
+    this.socket.on('close', (): void => this.retire());
+    this.socket.on('error', (): void => {
+      const end = this.end;
+      this.close();
+      end?.();
+    });
   }
-  onEnd(callback: () => void): void { this.socket.on('close', callback); this.socket.on('error', callback); }
-  send(data: string | ArrayBuffer): Promise<void> { return this.socket.send({ data: data }); }
+  onData(callback: (data: ArrayBuffer) => void): void {
+    if (!this.closed) { this.message = callback; }
+  }
+  onEnd(callback: () => void): void { if (!this.closed) { this.end = callback; } }
+  async send(data: string | ArrayBuffer): Promise<void> {
+    if (this.closed) { throw new Error('local relay closed'); }
+    this.pendingSends++;
+    try { await this.socket.send({ data: data }); }
+    finally { this.pendingSends--; this.closeWhenReady(); }
+  }
   close(): void {
+    if (this.closed) { return; }
+    this.closed = true;
+    this.message = undefined;
+    this.end = undefined;
+    this.closeWhenReady();
+  }
+  private closeWhenReady(): void {
+    if (!this.closed || !this.receiverReady || this.retired || this.nativeCloseStarted || this.pendingSends > 0) {
+      return;
+    }
+    this.nativeCloseStarted = true;
+    // Until first data (or peer close) keep the listener and fd intact. This is
+    // an initialization handshake, not a delay guessed from the native timing.
+    try { this.socket.close().catch((): void => { this.checkAlive(); }); }
+    catch (_error) { this.checkAlive(); }
+  }
+  async checkAlive(): Promise<void> {
+    if (this.retired) { return; }
+    try { await this.socket.getRemoteAddress(); }
+    catch (_error) {
+      // Native accepted-client receive errors are reported on the SERVER, and
+      // may remove this client without a per-client close event. No fd remains.
+      this.retire();
+    }
+  }
+  private retire(): void {
+    if (this.retired) { return; }
+    this.retired = true;
+    const end = this.end;
+    this.closed = true;
+    this.message = undefined;
+    this.end = undefined;
     try { this.socket.off('message'); this.socket.off('close'); this.socket.off('error'); } catch (_error) {}
-    try { this.socket.close().catch((): void => {}); } catch (_error) {}
+    localRelayEndpoints.delete(this);
+    end?.();
+  }
+}
+
+// Native close may arrive after the listener/relay itself has been replaced.
+// Do not let that replacement finalize a client still entering ClientHandler.
+const localRelayEndpoints: Set<LocalRelayEndpoint> = new Set();
+
+// Never overlap a native close with bind/connect/send. Logical cancellation is
+// immediate; physical cleanup follows the in-flight operation, at most once.
+// This also avoids the old close-now + close-again-in-finally sequence.
+class RelayOperationGate {
+  private closed: boolean = false;
+  private pending: number = 0;
+  private touched: boolean = false;
+  private closeStarted: boolean = false;
+  private cleanup: () => Promise<void>;
+  constructor(cleanup: () => Promise<void>) { this.cleanup = cleanup; }
+  alive(): boolean { return !this.closed; }
+  async run(task: () => Promise<void>): Promise<void> {
+    if (this.closed) { throw new Error('relay dial cancelled'); }
+    this.pending++; this.touched = true;
+    try { await task(); }
+    finally { this.pending--; this.drain(); }
+  }
+  close(): void { this.closed = true; this.drain(); }
+  private drain(): void {
+    if (!this.closed || this.pending !== 0 || !this.touched || this.closeStarted) { return; }
+    this.closeStarted = true;
+    this.cleanup().catch((): void => {});
   }
 }
 
 class TlsRelayEndpoint implements RelayTlsEndpoint {
   private socket: socket.TLSSocket = socket.constructTLSSocketInstance();
+  private gate: RelayOperationGate = new RelayOperationGate(async (): Promise<void> => {
+    // Failed construction/bind or peer close need not own a live socket.
+    const state = await this.socket.getState();
+    if (!state.isClose) { await this.socket.close(); }
+  });
   bind(family: number): Promise<void> {
-    return this.socket.bind({ address: family === 2 ? '::' : '0.0.0.0', family: family, port: 0 });
+    return this.gate.run((): Promise<void> => this.socket.bind({
+      address: family === 2 ? '::' : '0.0.0.0', family: family, port: 0 }));
   }
   onData(callback: (data: ArrayBuffer) => void): void {
-    this.socket.on('message', (info: socket.SocketMessageInfo): void => callback(info.message));
+    this.socket.on('message', (info: socket.SocketMessageInfo): void => {
+      if (this.gate.alive()) { callback(info.message); }
+    });
   }
   onEnd(callback: () => void): void { this.socket.on('close', callback); this.socket.on('error', callback); }
   connect(host: string, port: number, family: number, timeout: number): Promise<void> {
-    return this.socket.connect({ address: { address: host, port: port, family: family },
+    return this.gate.run((): Promise<void> => this.socket.connect({
+      address: { address: host, port: port, family: family },
       secureOptions: { protocols: [socket.Protocol.TLSv12, socket.Protocol.TLSv13] },
-      ALPNProtocols: ['http/1.1'], skipRemoteValidation: false, timeout: timeout });
+      ALPNProtocols: ['http/1.1'], skipRemoteValidation: false, timeout: timeout }));
   }
-  verifyName(host: string): Promise<void> { return verifyProxyCertificateName(this.socket, host); }
-  send(data: string | ArrayBuffer): Promise<void> { return this.socket.send(data); }
+  verifyName(host: string): Promise<void> {
+    return this.gate.run((): Promise<void> => verifyProxyCertificateName(this.socket, host));
+  }
+  send(data: string | ArrayBuffer): Promise<void> {
+    return this.gate.run((): Promise<void> => this.socket.send(data));
+  }
   close(): void {
+    if (!this.gate.alive()) { return; }
     try { this.socket.off('message'); this.socket.off('close'); this.socket.off('error'); } catch (_error) {}
-    try { this.socket.close().catch((): void => {}); } catch (_error) {}
+    this.gate.close();
   }
 }
 
 class TcpRelayEndpoint implements RelayTlsEndpoint {
   private socket: socket.TCPSocket = socket.constructTCPSocketInstance();
+  private gate: RelayOperationGate = new RelayOperationGate(async (): Promise<void> => {
+    const state = await this.socket.getState();
+    if (!state.isClose) { await this.socket.close(); }
+  });
   bind(family: number): Promise<void> {
-    return this.socket.bind({ address: family === 2 ? '::' : '0.0.0.0', family: family, port: 0 });
+    return this.gate.run((): Promise<void> => this.socket.bind({
+      address: family === 2 ? '::' : '0.0.0.0', family: family, port: 0 }));
   }
   onData(callback: (data: ArrayBuffer) => void): void {
-    this.socket.on('message', (info: socket.SocketMessageInfo): void => callback(info.message));
+    this.socket.on('message', (info: socket.SocketMessageInfo): void => {
+      if (this.gate.alive()) { callback(info.message); }
+    });
   }
   onEnd(callback: () => void): void { this.socket.on('close', callback); this.socket.on('error', callback); }
   connect(host: string, port: number, family: number, timeout: number): Promise<void> {
-    return this.socket.connect({ address: { address: host, port: port, family: family }, timeout: timeout });
+    return this.gate.run((): Promise<void> => this.socket.connect({
+      address: { address: host, port: port, family: family }, timeout: timeout }));
   }
   async verifyName(_host: string): Promise<void> {}
-  send(data: string | ArrayBuffer): Promise<void> { return this.socket.send({ data: data }); }
+  send(data: string | ArrayBuffer): Promise<void> {
+    return this.gate.run((): Promise<void> => this.socket.send({ data: data }));
+  }
   close(): void {
+    if (!this.gate.alive()) { return; }
     try { this.socket.off('message'); this.socket.off('close'); this.socket.off('error'); } catch (_error) {}
-    try { this.socket.close().catch((): void => {}); } catch (_error) {}
+    this.gate.close();
   }
 }
 
@@ -219,8 +350,8 @@ export class HttpsTunnel {
     } else if (type === PROXY_DIRECT) {
       this.tunnelReady();
     } else if (type === 'proxyTypeSocks5') {
-      this.socks = new SocksProxyHandshake(authority, new util.TextEncoder().encodeInto(record.username),
-        new util.TextEncoder().encodeInto(record.password));
+      this.socks = new SocksProxyHandshake(authority, encodeProxyUtf8(record.username),
+        encodeProxyUtf8(record.password));
       this.phase = 'socks'; this.toRemote.write(this.socks.greeting());
     } else {
       this.phase = 'response';
@@ -270,7 +401,10 @@ export class HttpsTunnel {
           if (ended) { return; }
           ended = true;
           buffered = [];
-          if (done) { if (this.tls === trial) { this.close(); } return; }
+          if (done) {
+            if (this.tls === trial) { this.close(); } else { trial.close(); }
+            return;
+          }
           failed++;
           trial.close();
           if (launchTimer !== -1) { clearTimeout(launchTimer); launchTimer = -1; }
@@ -373,6 +507,10 @@ export class HttpsProxyRelay implements HttpsRelay {
   private tunnels: Set<HttpsTunnel> = new Set();
   private restart: () => void;
   private listenerGeneration: number = 0;
+  private rejectedConnections: number = 0;
+  private localClients: Set<LocalRelayEndpoint> = new Set();
+  private checkingServer: socket.TCPSocketServer | undefined = undefined;
+  private checkingClients: boolean = false;
   constructor(restart: () => void = (): void => {}) { this.restart = restart; }
 
   register(record: HttpsProxyRecord): void {
@@ -412,20 +550,24 @@ export class HttpsProxyRelay implements HttpsRelay {
     const server = socket.constructTCPSocketServerInstance();
     this.server = server;
     server.on('connect', (local: socket.TCPSocketConnection): void => {
-      if (this.closed || this.tunnels.size >= MAX_CONNECTIONS) { local.close().catch((): void => {}); return; }
-      const tunnel = new HttpsTunnel(new LocalRelayEndpoint(local),
+      const endpoint = new LocalRelayEndpoint(local);
+      if (this.closed || this.server !== server || this.tunnels.size >= MAX_CONNECTIONS) {
+        endpoint.close();
+        if (this.server === server && !this.closed) { this.checkClients(); }
+        this.rejectedConnections++;
+        if ((this.rejectedConnections & (this.rejectedConnections - 1)) === 0) {
+          logW(`[proxy-lifecycle] rejected=${this.rejectedConnections} active=${this.tunnels.size} nativePending=${localRelayEndpoints.size}`);
+        }
+        return;
+      }
+      const tunnel = new HttpsTunnel(endpoint,
         (authorization: string): HttpsProxyRecord | undefined => this.credentials.get(authorization),
-        (done: HttpsTunnel): void => { this.tunnels.delete(done); });
+        (done: HttpsTunnel): void => { this.tunnels.delete(done); this.localClients.delete(endpoint); });
+      this.localClients.add(endpoint);
       this.tunnels.add(tunnel);
       try { tunnel.start(); } catch (_error) { tunnel.close(); }
     });
-    server.on('error', (): void => {
-      if (this.closed || this.server !== server) { return; }
-      this.listenerGeneration++;
-      this.stopListener();
-      this.starting = undefined;
-      this.restart();
-    });
+    server.on('error', (): void => { this.checkServer(server); });
     try {
       await server.listen({ address: '127.0.0.1', family: 1, port: 0 });
       const address = await server.getLocalAddress();
@@ -434,18 +576,54 @@ export class HttpsProxyRelay implements HttpsRelay {
       }
       return address.port;
     } catch (_error) {
-      server.close().catch((): void => {});
+      // stopListener owns the current server; stale listen completions must
+      // not close a newly created listener or issue duplicate native closes.
+      if (this.server === server) { this.stopListener(); }
       throw new Error('proxy listener unavailable');
     }
+  }
+
+  private async checkClients(): Promise<void> {
+    if (this.checkingClients) { return; }
+    this.checkingClients = true;
+    try {
+      const checks: Promise<void>[] = [];
+      this.localClients.forEach((client: LocalRelayEndpoint): void => { checks.push(client.checkAlive()); });
+      await Promise.all(checks);
+    } finally { this.checkingClients = false; }
+  }
+
+  private async checkServer(server: socket.TCPSocketServer): Promise<void> {
+    if (this.closed || this.server !== server || this.checkingServer === server) { return; }
+    this.checkingServer = server;
+    try {
+      const state = await server.getState();
+      if (this.closed || this.server !== server) { return; }
+      if (state.isBound && !state.isClose) {
+        // NetStack reports accepted-client receive failures on this listener.
+        // Retire only dead clients; keep healthy business tunnels and port.
+        await this.checkClients();
+        return;
+      }
+    } catch (_error) { /* A genuinely unavailable listener needs recovery. */ }
+    finally { if (this.checkingServer === server) { this.checkingServer = undefined; } }
+    if (this.closed || this.server !== server) { return; }
+    this.listenerGeneration++;
+    this.stopListener();
+    this.starting = undefined;
+    this.restart();
   }
 
   private stopListener(): void {
     this.tunnels.forEach((tunnel: HttpsTunnel): void => tunnel.close());
     this.tunnels.clear();
+    this.localClients.clear();
     if (this.server !== undefined) {
-      try { this.server.off('connect'); this.server.off('error'); } catch (_error) {}
-      try { this.server.close().catch((): void => {}); } catch (_error) {}
+      const server = this.server;
       this.server = undefined;
+      // Keep connect registered: native accepts already queued before close
+      // still need to pass through LocalRelayEndpoint and be safely retired.
+      try { server.close().catch((): void => {}); } catch (_error) {}
     }
   }
 

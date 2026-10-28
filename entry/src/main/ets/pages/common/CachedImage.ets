@@ -1,243 +1,41 @@
 import { image } from '@kit.ImageKit';
-import {
-  cachedPixelMap, cancelPixelMap, loadPixelMap, loadPixelMapSync, PixelHandle, PixelRequest,
-  pinPixelMap, pinPixelMapBounded, releasePixelMap, retainPixelMap
-} from '../../util/pixelCache';
-import {
-  isDecodableTarget, sameDecodeTarget, shouldBlankBeforeDecode
-} from '../../util/imageSwap';
+import { CachedImageSession } from '../../util/CachedImageSession';
 import { MINI_PLACEHOLDER_BLUR } from '../../util/miniThumbPlaceholder';
-import { CachedImageSpec, sameCachedImageDecode } from '../../util/cachedImageSpec';
+import { CachedImageSpec } from '../../util/cachedImageSpec';
 import { scrollPlaceholderState } from '../../util/scrollEffects';
 
-// An Image fed from the decoded-PixelMap cache instead of a file path.
-//
-// Everything about the lifetime lives here so callers stay a one-liner: the
-// decode is async, the cache is reference counted, and a reused row has to let
-// go of the old bitmap before it takes the new one. Getting any of that wrong
-// frees pixels that are still on screen, so it is deliberately not something
-// each call site re-implements.
-//
-// P4 批 4：迁 @ComponentV2（判读依据 survey 批 0.5 节，配方经批 1/2/3b/3c
-// 四轮验证）。aboutToReuse 时 @Param 已是新值 → 换源判定与重启动全部同步，
-// V1 的 reuseParam/nextFrameQueue 延帧退役。V2 专属陷阱：@Local pixelMap 被
-// 框架重置为 undefined，而 held 的位图还 retain 着——同源复用走 sameAsHeld
-// 早退分支时必须补种，见 start() 里的注释。
+// The rendering boundary for callers that already own a local image path.
+// Bitmap ownership is shared with LiveThumbImage through a non-observed session;
+// neither component needs to instantiate the other to reuse the decode policy.
 @ComponentV2
 export struct CachedImage {
-  // One atomic image input instead of resetting 14 independent parameters for
-  // every recycled tile. Only source/size/decode-policy changes restart work.
   @Require @Param spec: CachedImageSpec;
   @Event onReady: () => void = (): void => {};
-  private startedSpec: CachedImageSpec | undefined = undefined;
+  @Local pixelMap: image.PixelMap | undefined = undefined;
   private scrollState = scrollPlaceholderState;
+  private imageSession: CachedImageSession = new CachedImageSession(
+    (pixels: image.PixelMap | undefined, ready: boolean): void => {
+      this.pixelMap = pixels;
+      if (ready) { this.onReady(); }
+    });
 
-  private get path(): string { return this.spec.path; }
   private get boxWidth(): number { return this.spec.boxWidth; }
   private get boxHeight(): number { return this.spec.boxHeight; }
   private get radius(): number { return this.spec.radius ?? 0; }
   private get fit(): ImageFit { return this.spec.fit ?? ImageFit.Cover; }
-  private get pin(): boolean { return this.spec.pin === true; }
-  private get pinBounded(): boolean { return this.spec.pinBounded === true; }
-  // syncSmall controls cache-miss decoding; syncDisplay only controls native
-  // Image loading of an already-decoded PixelMap. Keep these policies separate.
-  private get syncSmall(): boolean { return this.spec.syncSmall === true; }
   private get syncDisplay(): boolean { return this.spec.syncDisplay === true; }
-  private get sourceKey(): string { return this.spec.sourceKey ?? ''; }
-  // Only known opaque sources opt into RGB_565; avatars/wallpaper keep alpha/color.
-  private get opaque(): boolean { return this.spec.opaque === true; }
   private get backdrop(): string { return this.spec.backdrop ?? ''; }
   private get backdropImage(): string { return this.spec.backdropImage ?? ''; }
 
-  private heldKey: string = '';
-  @Local pixelMap: image.PixelMap | undefined = undefined;
-  // The handle currently retained, so it can be released even after path has
-  // already been overwritten by a reuse — and even if the LRU has since
-  // dropped it from the map.
-  private held: PixelHandle | null = null;
-  private heldReq: PixelRequest | null = null;
-  // The decode currently waited on, so it can be cancelled by request rather
-  // than merely ignored when it lands.
-  private awaiting: PixelRequest | null = null;
-  // Guards against an out-of-order decode landing after a newer one.
-  private seq: number = 0;
-  aboutToAppear(): void {
-    this.start();
-  }
+  aboutToAppear(): void { this.imageSession.activate(this.spec); }
+  aboutToReuse(): void { this.imageSession.activate(this.spec); }
+  aboutToRecycle(): void { this.imageSession.recycle(); }
+  aboutToDisappear(): void { this.imageSession.dispose(); }
 
-  aboutToDisappear(): void {
-    // 组件要被销毁了：只还引用、撤掉在等的解码，**不写 @Local**（2026-09-15）。drop() 里那句
-    // pixelMap = undefined 在销毁路径上没有意义，却要走一遍 V2 的变更通知——退出会话后整页销毁的那一帧里，
-    // 19 个 CachedImage 的 aboutToDisappear 合计 6.4ms，是整页销毁里最贵的一项（trace 20260915T174809）。
-    this.cancelPending();
-    if (this.held !== null) {
-      releasePixelMap(this.held);
-      this.held = null;
-      this.heldReq = null;
-    }
-  }
-
-  // Recycling cancels work in flight but keeps a bitmap that is already
-  // decoded. Dropping it here was a real bug: a pooled row reused with the
-  // same photo gets no @Watch (the values never changed), so nothing reloaded
-  // it and the cell stayed blank.
-  // Recycling cancels work in flight but keeps the retained bitmap: a pooled
-  // row reused with the same photo re-seeds from it synchronously (start()'s
-  // sameAsHeld branch) — no decode, no blank frame.
-  aboutToRecycle(): void {
-    this.cancelPending();
-  }
-
-  aboutToReuse(): void {
-    // @Param 已是新值（批 0.5 判读）：换源判定直接同步做。换了源先 drop——
-    // 复用出来的行绝不能画着上一条消息的图等新解码；同源保留位图，
-    // start() 里补种（@Local 已被框架重置）。
-    if (this.sourceChanged()) {
-      this.drop();
-    }
-    this.start();
-  }
-
-  // 是否真的换了源（按身份，没身份按路径）。同源升级不 drop：旧位图留着当占位，
-  // swapTo 换上新图时再把旧引用还回去。
-  private sourceChanged(): boolean {
-    return this.heldReq !== null &&
-      shouldBlankBeforeDecode(this.heldReq.path, this.path, this.heldKey, this.sourceKey);
-  }
-
-  private request(): PixelRequest {
-    return {
-      path: this.path,
-      width: vp2px(this.boxWidth),
-      height: vp2px(this.boxHeight),
-      opaque: this.opaque
-    };
-  }
-
-  // Stop waiting for a decode that has not arrived. If this was the last
-  // component interested and the decode never started, the work is skipped.
-  private cancelPending(): void {
-    this.seq++;
-    if (this.awaiting !== null) {
-      cancelPixelMap(this.awaiting);
-      this.awaiting = null;
-    }
-  }
-
-  private drop(): void {
-    this.cancelPending();
-    if (this.held !== null) {
-      releasePixelMap(this.held);
-      this.held = null;
-      this.heldReq = null;
-    }
-    this.heldKey = '';
-    this.pixelMap = undefined;
-  }
-
-  // 非复用路径上源/尺寸真变化时重启动；复用路径由 aboutToReuse 覆盖
-  // （@Monitor 复用期静默，批 0.5 实测）。
-  // 【两条复用路径都要覆盖】aboutToReuse 只在 @ReusableV2 那条路上触发；打开
-  // Repeat 自己的复用（virtualScroll reusable:true）时它**不会被调用**（官方：
-  // 「Repeat 自身能够进行复用，不会走到自定义组件复用的生命周期」）。而
-  // @ReusableV2 复用的重置期间 @Monitor 又是静默的——两者互补，缺一不可。
+  // Repeat updates and @ReusableV2 activation are both required: the former
+  // uses Monitor while the latter resets locals with monitors temporarily muted.
   @Monitor('spec')
-  onSourceChanged(): void {
-    if (sameCachedImageDecode(this.startedSpec, this.spec)) {
-      return;
-    }
-    // 与 aboutToReuse 同样先 drop 再 start：换了源文件就得把旧位图的引用还回去，
-    // 否则它一直被 retain 着，白占 LRU 预算（显示本身由 start() 里的
-    // shouldBlankBeforeDecode 兜住，这里修的是资源不是画面）。
-    if (this.sourceChanged()) {
-      this.drop();
-    }
-    this.start();
-  }
-
-  // 判定本身在 util/imageSwap（纯函数 + 单测）。这里只负责把当前握着的那张
-  // 摊平成参数。
-  private sameAsHeld(req: PixelRequest): boolean {
-    const held = this.heldReq;
-    if (held === null) {
-      return false;
-    }
-    return held.opaque === req.opaque && sameDecodeTarget(held.path, held.width, held.height,
-      req.path, req.width, req.height);
-  }
-
-  // The old bitmap stays on screen until the new one is in hand — no blank
-  // frame between two valid images.
-  private swapTo(req: PixelRequest, handle: PixelHandle): void {
-    const previous = this.held;
-    retainPixelMap(handle);
-    this.held = handle;
-    this.heldReq = req;
-    this.heldKey = this.sourceKey;
-    this.pixelMap = handle.pixelMap;
-    this.onReady();
-    if (this.pin) {
-      pinPixelMap(handle);
-    } else if (this.pinBounded) {
-      pinPixelMapBounded(req, handle);
-    }
-    if (previous !== null) {
-      releasePixelMap(previous);
-    }
-  }
-
-  private start(): void {
-    this.startedSpec = this.spec;
-    if (!isDecodableTarget(this.path, this.boxWidth, this.boxHeight)) {
-      this.drop();
-      return;
-    }
-    const req = this.request();
-    // 只在换了**源文件**时才提前清空：复用出来的行绝不能继续画上一条消息的图。
-    //
-    // 同一个源文件仅仅是解码目标尺寸变了（photoWidth/photoHeight 这类元数据晚到，
-    // boxHeight 先给错后修正）时**不再清空**——老位图和新位图画的是同一张图,
-    // 中间那段空窗纯属白送，用户看到的就是图闪一下。新位图由 swapTo 到手再换。
-    if (shouldBlankBeforeDecode(this.heldReq !== null ? this.heldReq.path : '', req.path,
-      this.heldKey, this.sourceKey)) {
-      this.pixelMap = undefined;
-    }
-    if (this.sameAsHeld(req)) {
-      // V2 复用把 @Local pixelMap 重置成 undefined，held 的位图却还 retain
-      // 着——不补种就是永久空白（V1 靠「复用不清 @State」天然没这个问题）。
-      if (this.pixelMap === undefined && this.held !== null) {
-        this.pixelMap = this.held.pixelMap;
-        this.onReady();
-      }
-      return; // already showing exactly this
-    }
-    const token = ++this.seq;
-    // A row that has been on screen before hits synchronously; going through
-    // the Promise there would blank the image for a frame on every recycle.
-    const hit = cachedPixelMap(req);
-    if (hit !== undefined) {
-      this.swapTo(req, hit);
-      return;
-    }
-    if (this.syncSmall) {
-      const sync = loadPixelMapSync(req);
-      if (sync !== undefined) {
-        this.swapTo(req, sync);
-        return;
-      }
-    }
-    this.awaiting = req;
-    loadPixelMap(req).then((handle: PixelHandle | undefined): void => {
-      if (token !== this.seq) {
-        return;
-      }
-      this.awaiting = null;
-      if (handle === undefined) {
-        return;
-      }
-      this.swapTo(req, handle);
-    });
-  }
+  onSourceChanged(): void { this.imageSession.update(this.spec); }
 
   private showMiniPlaceholder(): boolean {
     // Only unresolved album images subscribe to scrolling. Once decoded, the

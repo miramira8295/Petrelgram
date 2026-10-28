@@ -7,6 +7,7 @@ import {
   PROXY_DIRECT, ACTIVE_ROUTE_KEY, relayProxyType, usesProxyRelay
 } from '../util/httpsProxyProtocol';
 import { HttpsProxyRelay, HttpsRelay } from './HttpsProxyRelay';
+import { ProxyProbeCancellation } from '../util/ProxyProbeCancellation';
 
 export interface HttpsRegistry {
   read(): HttpsProxyRecord[];
@@ -285,9 +286,12 @@ export class HttpsProxyRuntime {
     }
   }
 
-  send(request: TdRequest, timeoutMs: number = 20000): Promise<TdObject> {
-    if (request['@type'] === 'pingProxy') { return this.ping(request, timeoutMs); }
-    if (request['@type'] === 'testProxy') { return this.test(request, timeoutMs); }
+  send(request: TdRequest, timeoutMs: number = 20000, cancellation?: ProxyProbeCancellation): Promise<TdObject> {
+    if (request['@type'] === 'pingProxy' || request['@type'] === 'testProxy') {
+      const probe = (): Promise<TdObject> => request['@type'] === 'pingProxy' ?
+        this.ping(request, timeoutMs, cancellation) : this.test(request, timeoutMs, cancellation);
+      return cancellation === undefined ? probe() : cancellation.run(probe);
+    }
     return this.serial(async (): Promise<TdObject> => {
       const kind = request['@type'];
       if (kind === 'disableProxy') { return this.selectDirect(); }
@@ -356,10 +360,25 @@ export class HttpsProxyRuntime {
     } catch (_error) { /* Uncertain native results retain recoverable credentials. */ }
   }
 
-  private async ping(request: TdRequest, timeoutMs: number): Promise<TdObject> {
+  private async ping(request: TdRequest, timeoutMs: number, cancellation?: ProxyProbeCancellation): Promise<TdObject> {
     if (request['proxy_id'] !== 0) {
       await this.prepare(); this.assertOpen();
+      cancellation?.assertActive();
       if (request['proxy_id'] === this.ingressId) { throw new Error('proxy ingress is internal'); }
+      if (cancellation !== undefined) {
+        const row = (await this.rawList()).find((item: TdObject): boolean => item['id'] === request['proxy_id']);
+        cancellation.assertActive();
+        if (row === undefined) { throw new Error('proxy probe route missing'); }
+        const key = localKey(row['proxy'] as TdObject);
+        const config = key === '' ? configOf(row['proxy'] as TdObject) : this.record(key);
+        if (usesProxyRelay(relayProxyType(config))) {
+          const started = Date.now();
+          // A race gets unique credentials. Revoke them immediately on cancel;
+          // never close another caller's test or the selected route's tunnels.
+          await this.testConfig(config, timeoutMs, cancellation);
+          return { '@type': 'seconds', 'seconds': (Date.now() - started) / 1000 };
+        }
+      }
       return this.client.send(request, timeoutMs);
     }
     // Direct latency probing must not restore or select the shared ingress.
@@ -367,25 +386,35 @@ export class HttpsProxyRuntime {
     // proxy on as a side effect of merely opening the proxy page.
     this.assertOpen();
     const started = Date.now();
-    await this.testConfig({ type: PROXY_DIRECT, server: '', port: 0, username: '', password: '' }, timeoutMs);
+    await this.testConfig({ type: PROXY_DIRECT, server: '', port: 0, username: '', password: '' }, timeoutMs, cancellation);
     const result: TdObject = { '@type': 'seconds' }; result['seconds'] = (Date.now() - started) / 1000; return result;
   }
-  private async testConfig(config: HttpsProxyConfig, timeoutMs: number): Promise<TdObject> {
+  private async testConfig(config: HttpsProxyConfig, timeoutMs: number,
+    cancellation?: ProxyProbeCancellation): Promise<TdObject> {
+    cancellation?.assertActive();
     const record = this.createRecord(config); this.relay.register(record);
+    let released = false;
+    const release = (): void => {
+      if (released) { return; }
+      released = true;
+      this.relay.unregister(record.key);
+    };
+    const unsubscribe = cancellation?.subscribe(release);
     try {
       const port = await this.relay.start(); this.assertOpen();
+      cancellation?.assertActive();
       const request: TdRequest = { '@type': 'testProxy' };
       request['proxy'] = nativeProxy(record, port); request['dc_id'] = 2; request['timeout'] = Math.max(1, timeoutMs / 1000 - 2);
       return await this.client.send(request, timeoutMs);
-    } finally { this.relay.unregister(record.key); }
+    } finally { unsubscribe?.(); release(); }
   }
-  private async test(request: TdRequest, timeoutMs: number): Promise<TdObject> {
+  private async test(request: TdRequest, timeoutMs: number, cancellation?: ProxyProbeCancellation): Promise<TdObject> {
     // Form tests use a temporary relay entry and must not restore the saved
     // route first.  restore() may add/edit/enable the hidden ingress, which
     // makes a latency test change the visible system-proxy switch.
     this.assertOpen();
     const config = configOf(request['proxy'] as TdObject);
-    return usesProxyRelay(relayProxyType(config)) ? this.testConfig(config, timeoutMs) : this.client.send(request, timeoutMs);
+    return usesProxyRelay(relayProxyType(config)) ? this.testConfig(config, timeoutMs, cancellation) : this.client.send(request, timeoutMs);
   }
   close(): void {
     this.closed = true;
@@ -418,6 +447,10 @@ export function detachHttpsProxyRuntime(client: TdClient): void {
   runtimes.delete(client);
 }
 
-export function sendProxyRequest(client: TdClient, request: TdRequest, timeoutMs: number = 20000): Promise<TdObject> {
-  return runtimes.get(client)?.send(request, timeoutMs) ?? client.send(request, timeoutMs);
+export function sendProxyRequest(client: TdClient, request: TdRequest, timeoutMs: number = 20000,
+  cancellation?: ProxyProbeCancellation): Promise<TdObject> {
+  const runtime = runtimes.get(client);
+  if (runtime !== undefined) { return runtime.send(request, timeoutMs, cancellation); }
+  return cancellation === undefined ? client.send(request, timeoutMs) :
+    cancellation.run((): Promise<TdObject> => client.send(request, timeoutMs));
 }
