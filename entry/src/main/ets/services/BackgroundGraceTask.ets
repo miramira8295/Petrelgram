@@ -11,18 +11,22 @@ import { logE, logI } from '../util/log';
 class BackgroundGraceTask {
   private requestId: number = -1;
   private expireTimer: number = -1;
+  private expiryCallback: (() => void) | null = null;
 
   // 切后台时调用。系统回调 onExpire 表示配额即将耗尽，必须立刻取消。
-  begin(): void {
+  begin(onExpire?: () => void): void {
     if (this.requestId !== -1) {
       return;
     }
+    this.expiryCallback = onExpire ?? null;
     try {
       const info = backgroundTaskManager.requestSuspendDelay('telegram-message-sync',
         (): void => {
           // 配额耗尽：系统即将挂起进程，主动收尾避免被强杀。
           logI('[BackgroundGraceTask] expired by system');
+          const callback = this.expiryCallback;
           this.end();
+          callback?.();
         });
       this.requestId = info.requestId;
       // 到期前主动释放：留出余量，不等系统回调最后一刻。
@@ -32,7 +36,9 @@ class BackgroundGraceTask {
           const safeMs: number = Math.max(1000, remainingMs - 5000);
           this.expireTimer = setTimeout((): void => {
             this.expireTimer = -1;
+            const callback = this.expiryCallback;
             this.end();
+            callback?.();
           }, safeMs);
         })
         .catch((e: BusinessError): void => {
@@ -42,6 +48,7 @@ class BackgroundGraceTask {
       // 配额用尽或系统拒绝：不是错误路径，安静退回"立即挂起"的默认行为。
       logI(`[BackgroundGraceTask] request rejected: ${(e as BusinessError).message}`);
       this.requestId = -1;
+      this.expiryCallback = null;
     }
   }
 
@@ -56,6 +63,7 @@ class BackgroundGraceTask {
     }
     const id: number = this.requestId;
     this.requestId = -1;
+    this.expiryCallback = null;
     try {
       backgroundTaskManager.cancelSuspendDelay(id);
       logI('[BackgroundGraceTask] cancelled');

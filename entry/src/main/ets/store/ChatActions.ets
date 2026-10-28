@@ -312,6 +312,8 @@ export async function leaveChatFully(chatId: number): Promise<void> {
 }
 
 // Groups/channels are left; private and secret chats are deleted from the list.
+// ChatListDeletion closes secret chats first and deletes their local history
+// with revoke=false after closure; the flags below describe the pre-close state.
 // revoke 由会话的能力位决定，不能硬写 false：活跃密聊在 TDLib 里是
 // {can_be_deleted_only_for_self:false, can_be_deleted_for_all_users:true}
 // （"active secret chats can be deleted only for both users"），带 revoke=false

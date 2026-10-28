@@ -61,6 +61,15 @@ function publish(network: string, forceTd: boolean = false): void {
   });
 }
 
+// TDLib can be suspended while the process stays alive. Re-send the last
+// confirmed bearer immediately when the Ability returns to foreground, before
+// the asynchronous capability probe completes. The probe still follows and
+// publishes the actual bearer when Wi-Fi/mobile/VPN has changed.
+export function republishNetworkTypeToTd(): void {
+  publish(lastPublished !== '' ? lastPublished :
+    (AppStorage.get<string>(KEY_CURRENT_NETWORK_TYPE) ?? 'other'), true);
+}
+
 async function cellularType(): Promise<string> {
   try {
     const state = await radio.getNetworkState();

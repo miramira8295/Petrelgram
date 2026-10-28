@@ -13295,6 +13295,38 @@
     {
       "name": "chat_settings_hide_pinned_sub",
       "value": "Показать или скрыть можно отдельно в меню каждого чата"
+    },
+    {
+      "name": "mi_added",
+      "value": "Добавлено участников: %1$s"
+    },
+    {
+      "name": "mi_partial",
+      "value": "Добавлено: %1$s; не удалось добавить: %2$s"
+    },
+    {
+      "name": "mi_failed",
+      "value": "Не удалось добавить участников: %1$s"
+    },
+    {
+      "name": "mi_timeout",
+      "value": "Результат не подтверждён. Перед повтором проверьте список участников."
+    },
+    {
+      "name": "mp_story_show_profile",
+      "value": "Показать в профиле"
+    },
+    {
+      "name": "mp_story_hide_profile",
+      "value": "Убрать из профиля"
+    },
+    {
+      "name": "mp_story_delete_confirm",
+      "value": "Удалить эту историю навсегда?"
+    },
+    {
+      "name": "cp_search_results",
+      "value": "Результаты поиска"
     }
   ]
 }

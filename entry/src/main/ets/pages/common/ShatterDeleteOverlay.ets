@@ -1,25 +1,9 @@
 import { image } from '@kit.ImageKit';
-import { AnimatorResult, FrameCallback, LengthMetricsUnit } from '@kit.ArkUI';
+import { FrameCallback } from '@kit.ArkUI';
+import { shatterPrepare, shatterAttach, shatterBegin, shatterClose } from 'libentry.so';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
-
-interface ShatterRegion {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-interface ShatterTile {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  drift: number;
-  rise: number;
-  delay: number;
-  lifetime: number;
-  fade: number;
-}
+import { logI, logW } from '../../util/log';
+import { ShatterCanvasFallback } from './ShatterCanvasFallback';
 
 class ShatterCaptureFrame extends FrameCallback {
   private ready: () => void;
@@ -34,61 +18,89 @@ class ShatterCaptureFrame extends FrameCallback {
   }
 }
 
-// 整区域截图消散：一张纹理、一个Canvas，按原始颜色绘制细碎片。
-// 像素坐标绘制，避免不同屏幕密度下源图裁切错位；不保存截图到磁盘。
+// 截图/完成协议不变；切块和像素准备在 worker，运动/淡出在 GPU。
+// TEXTURE 参与 ArkUI 透明合成，避免独立 SURFACE 覆盖其他页面内容。
 @Component
 export struct ShatterDeleteOverlay {
   nodeId: string = '';
-  particleBudget: number = 3200;
+  particleBudget: number = 8000;
   onCaptured: () => void = (): void => {};
   onFinish: () => void = (): void => {};
-  @State private snapshot: image.PixelMap | undefined = undefined;
+  @State private ready: boolean = false;
+  @State private fallback: boolean = false;
   @State private widthVp: number = 0;
   @State private heightVp: number = 0;
-  private tiles: ShatterTile[] = [];
-  private widthPx: number = 0;
-  private heightPx: number = 0;
-  private paddingPx: number = 0;
-  private paddingVp: number = 280;
-  private ctx: CanvasRenderingContext2D =
-    new CanvasRenderingContext2D(new RenderingContextSettings(true), LengthMetricsUnit.PX);
-  private animator: AnimatorResult | undefined = undefined;
+  @State private surfaceWidthVp: number = 0;
+  @State private surfaceHeightVp: number = 0;
+  @State private topVp: number = 0;
+  private controller: XComponentController = new XComponentController();
+  private handle: number = 0;
   private active: boolean = false;
   private finished: boolean = false;
+  private started: boolean = false;
+  private captured: boolean = false;
+  private preparing: boolean = false;
+  private snapshot: image.PixelMap | undefined = undefined;
   private timeout: number = -1;
+  private nativeTimeout: number = -1;
 
   aboutToAppear(): void {
     this.active = true;
-    this.timeout = setTimeout((): void => this.finish(), 2200);
+    this.timeout = setTimeout((): void => this.finish(), 2750);
+    if (powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 1100) === 0) {
+      this.finish();
+      return;
+    }
     this.capture();
   }
 
   aboutToDisappear(): void {
-    // 行滑出复用区或切换搜索时也完成已确认的删除，避免卡住页面删除状态。
+    // 行滑出复用区或切页也完成已确认的删除，迟到的准备结果会自行关闭。
     this.finish();
     this.active = false;
-    this.stop();
-    const pixels = this.snapshot;
-    this.snapshot = undefined;
-    this.tiles = [];
-    if (pixels !== undefined) { pixels.release(); }
-  }
-
-  private stop(): void {
-    if (this.timeout !== -1) { clearTimeout(this.timeout); this.timeout = -1; }
-    if (this.animator !== undefined) {
-      this.animator.onFrame = (): void => {};
-      this.animator.onFinish = (): void => {};
-      this.animator.cancel();
-      this.animator = undefined;
-    }
   }
 
   private finish(): void {
     if (!this.active || this.finished) { return; }
     this.finished = true;
-    this.stop();
+    if (this.timeout !== -1) { clearTimeout(this.timeout); this.timeout = -1; }
+    this.clearNativeTimeout();
+    if (this.handle !== 0) {
+      shatterClose(this.handle);
+      this.handle = 0;
+    }
+    this.ready = false;
+    this.fallback = false;
+    // worker 还在读取时等它返回后释放；回退 Canvas 也从此不再绘制。
+    if (!this.preparing) { this.releaseSnapshot(); }
     this.onFinish();
+  }
+
+  private clearNativeTimeout(): void {
+    if (this.nativeTimeout !== -1) { clearTimeout(this.nativeTimeout); this.nativeTimeout = -1; }
+  }
+
+  private releaseSnapshot(): void {
+    const pixels = this.snapshot;
+    this.snapshot = undefined;
+    if (pixels !== undefined) { pixels.release(); }
+  }
+
+  private useFallback(reason: string): void {
+    if (!this.active || this.finished || this.fallback) { return; }
+    logW(`[Shatter] Canvas fallback: ${reason}`);
+    if (this.snapshot === undefined) { this.finish(); return; }
+    this.clearNativeTimeout();
+    // 先切后端，XComponent 的 onDestroy 和迟到的 native 事件不能结束回退动画。
+    this.fallback = true;
+    this.ready = false;
+    if (this.handle !== 0) { shatterClose(this.handle); this.handle = 0; }
+  }
+
+  private markCaptured(): void {
+    if (!this.active || this.finished || this.captured) { return; }
+    this.captured = true;
+    this.onCaptured();
   }
 
   private async capture(): Promise<void> {
@@ -96,130 +108,86 @@ export struct ShatterDeleteOverlay {
     try {
       pixels = await this.getUIContext().getComponentSnapshot().get(this.nodeId,
         { waitUntilRenderFinished: true });
-      const info = await pixels.getImageInfo();
       if (!this.active || this.finished) { pixels.release(); return; }
-      this.widthPx = info.size.width;
-      this.heightPx = info.size.height;
-      this.widthVp = this.getUIContext().px2vp(this.widthPx);
-      this.heightVp = this.getUIContext().px2vp(this.heightPx);
-      this.paddingPx = this.getUIContext().vp2px(this.paddingVp);
-      // 随机二分完整截图，切口错开，不再按等距网格切成粉尘。
-      // 常见碎片约2–4vp，增加密度并保留随机切口；宽屏按预算放大。
-      // 每块的启动时机由右上角向左下角传播；少量抖动只打散波前，不改变整体方向。
-      const target = Math.max(this.getUIContext().vp2px(4),
-        Math.sqrt(this.widthPx * this.heightPx / this.particleBudget));
-      const pending: ShatterRegion[] = [{ x: 0, y: 0, width: this.widthPx, height: this.heightPx }];
-      const tiles: ShatterTile[] = [];
-      while (pending.length > 0) {
-        const region = pending.pop()!;
-        if ((region.width > target || region.height > target) &&
-          tiles.length + pending.length < Math.min(6143, this.particleBudget * 2 - 1)) {
-          const vertical = region.width > target &&
-            (region.height <= target || region.width * (0.7 + Math.random() * 0.6) > region.height);
-          const ratio = 0.36 + Math.random() * 0.28;
-          if (vertical) {
-            const cut = Math.max(1, Math.min(region.width - 1, Math.round(region.width * ratio)));
-            pending.push({ x: region.x, y: region.y, width: cut, height: region.height });
-            pending.push({ x: region.x + cut, y: region.y, width: region.width - cut, height: region.height });
-          } else {
-            const cut = Math.max(1, Math.min(region.height - 1, Math.round(region.height * ratio)));
-            pending.push({ x: region.x, y: region.y, width: region.width, height: cut });
-            pending.push({ x: region.x, y: region.y + cut, width: region.width, height: region.height - cut });
-          }
-          continue;
-        }
-        const centerX = region.x + region.width / 2;
-        const centerY = region.y + region.height / 2;
-        const fromRight = 1 - centerX / this.widthPx;
-        const fromTop = centerY / this.heightPx;
-        const cornerDistance = Math.sqrt(fromRight * fromRight + fromTop * fromTop) / Math.SQRT2;
-        const delay = Math.max(0, Math.min(0.52,
-          cornerDistance * 0.5 + (Math.random() - 0.5) * 0.035));
-        tiles.push({ x: region.x, y: region.y, width: region.width, height: region.height,
-          // 所有碎片朝右上方移动，越靠左的碎片向右漂移越远。
-          drift: this.getUIContext().vp2px(70 + fromRight * 150 + Math.random() * 24),
-          rise: this.getUIContext().vp2px(100 + Math.random() * 140),
-          delay, lifetime: 1 - delay,
-          fade: 0.55 + Math.random() * 0.4 });
-      }
-      this.tiles = tiles.sort((left: ShatterTile, right: ShatterTile): number => left.delay - right.delay);
       this.snapshot = pixels;
+      this.preparing = true;
+      const prepared = await shatterPrepare(pixels, this.getUIContext().vp2px(1), this.particleBudget);
+      if (prepared === null) { this.useFallback('prepare'); return; }
+      if (!this.active || this.finished) {
+        shatterClose(prepared.handle);
+        return;
+      }
+      this.handle = prepared.handle;
+      this.widthVp = this.getUIContext().px2vp(prepared.width);
+      this.heightVp = this.getUIContext().px2vp(prepared.height);
+      this.surfaceWidthVp = this.getUIContext().px2vp(prepared.surfaceWidth);
+      this.surfaceHeightVp = this.getUIContext().px2vp(prepared.surfaceHeight);
+      this.topVp = this.getUIContext().px2vp(prepared.top);
+      this.ready = true;
+      this.nativeTimeout = setTimeout((): void => this.useFallback('first-frame-timeout'), 700);
     } catch (_error) {
-      if (pixels !== undefined && this.snapshot !== pixels) { pixels.release(); }
-      this.finish();
+      if (this.snapshot !== undefined) { this.useFallback('prepare-exception'); }
+      else { logW('[Shatter] capture failed'); this.finish(); }
+    } finally {
+      this.preparing = false;
+      // 保留截图到本次效果结束，保证 GPU 失败时仍能恢复原效果；不留到业务删除返回。
+      if (!this.active || this.finished) { this.releaseSnapshot(); }
+    }
+  }
+
+  private attach(): void {
+    if (!this.active || this.finished || this.fallback || this.handle === 0) { return; }
+    try {
+      const attached = shatterAttach(this.handle, this.controller.getXComponentSurfaceId(),
+        (event: number): void => {
+          if (!this.active || this.finished || this.fallback) { return; }
+          if (event === 0) {
+            // 首帧已 swap，再等 ArkUI 一帧交接，隐藏原行后才启动 1100ms 计时。
+            this.getUIContext().postFrameCallback(new ShatterCaptureFrame((): void => this.start()));
+          } else if (event === 1) {
+            this.finish();
+          } else {
+            this.useFallback('render');
+          }
+        });
+      if (!attached) { this.useFallback('surface-attach'); }
+    } catch (_error) {
+      this.useFallback('surface-exception');
     }
   }
 
   private start(): void {
-    if (!this.active || this.finished || this.animator !== undefined) { return; }
-    this.draw(0);
-    // Canvas命令异步提交：首帧完成后才隐藏原行，避免头像交接时出现空帧。
-    this.getUIContext().postFrameCallback(new ShatterCaptureFrame((): void => this.animate()));
-  }
-
-  private animate(): void {
-    if (!this.active || this.finished || this.animator !== undefined) { return; }
-    this.onCaptured();
-    this.animator = this.getUIContext().createAnimator({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 550),
-      easing: 'linear', delay: 0, fill: 'forwards', direction: 'normal',
-      iterations: 1, begin: 0, end: 1
-    });
-    this.animator.onFrame = (progress: number): void => {
-      if (this.active && !this.finished) { this.draw(progress); }
-    };
-    this.animator.onFinish = (): void => this.finish();
-    this.animator.play();
-  }
-
-  private draw(progress: number): void {
-    const pixels = this.snapshot;
-    if (pixels === undefined) { return; }
-    // 粒子只向右上移动，仅在上方和右侧预留画布，减少清屏面积。
-    this.ctx.clearRect(0, 0, this.widthPx + this.paddingPx, this.heightPx + this.paddingPx);
-    if (progress <= 0) {
-      this.ctx.drawImage(pixels, 0, this.paddingPx);
-      return;
-    }
-    // 未启动区域共用一次整图绘制，头像不会在波前到达前反复拼接、缩放。
-    // 切口对齐源图整数像素，避免相邻裁片重复采样造成亮缝。
-    this.ctx.save();
-    this.ctx.beginPath();
-    for (const tile of this.tiles) {
-      if (progress <= tile.delay) {
-        this.ctx.rect(tile.x, this.paddingPx + tile.y, tile.width, tile.height);
-      }
-    }
-    this.ctx.clip();
-    this.ctx.drawImage(pixels, 0, this.paddingPx);
-    this.ctx.restore();
-    for (const tile of this.tiles) {
-      if (progress <= tile.delay) { break; }
-      const t = Math.max(0, Math.min(1, (progress - tile.delay) / tile.lifetime));
-      if (t >= 1) { continue; }
-      const travel = t * t;
-      const scale = 1 - 0.45 * t;
-      const motion = 0.35 * t + 0.65 * travel;
-      this.ctx.globalAlpha = Math.pow(1 - t, tile.fade);
-      // 细粒子直接绘制到目标矩形，避免逐片save/translate/rotate/restore。
-      this.ctx.drawImage(pixels, tile.x, tile.y, tile.width, tile.height,
-        tile.x + tile.width * (1 - scale) / 2 + tile.drift * motion,
-        this.paddingPx + tile.y + tile.height * (1 - scale) / 2 - tile.rise * motion,
-        tile.width * scale, tile.height * scale);
-    }
-    this.ctx.globalAlpha = 1;
+    if (!this.active || this.finished || this.fallback || this.started || this.handle === 0) { return; }
+    this.started = true;
+    this.clearNativeTimeout();
+    logI('[Shatter] GPU first frame ready');
+    this.markCaptured();
+    if (!this.active || this.finished || this.handle === 0) { return; }
+    shatterBegin(this.handle, powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 1100));
   }
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      if (this.snapshot !== undefined) {
-        Canvas(this.ctx)
-          .width(this.widthVp + this.paddingVp).height(this.heightVp + this.paddingVp)
-          .position({ x: 0, y: -this.paddingVp })
-          .onReady((): void => this.start());
+      if (this.fallback) {
+        ShatterCanvasFallback({
+          pixels: this.snapshot,
+          particleBudget: this.particleBudget,
+          canDraw: (): boolean => this.active && !this.finished && this.fallback,
+          onCaptured: (): void => this.markCaptured(),
+          onFinish: (): void => this.finish()
+        });
+      } else if (this.ready) {
+        XComponent({ id: `shatter_${this.handle}`, type: XComponentType.TEXTURE, controller: this.controller })
+          .width(this.surfaceWidthVp).height(this.surfaceHeightVp)
+          .position({ x: 0, y: -this.topVp })
+          .backgroundColor(Color.Transparent)
+          .onLoad((): void => this.attach())
+          .onDestroy((): void => {
+            if (!this.fallback) { this.finish(); }
+          });
       }
     }
-    .width(this.widthVp).height(this.heightVp)
+    .width(this.fallback ? undefined : this.widthVp).height(this.fallback ? undefined : this.heightVp)
     .hitTestBehavior(HitTestMode.None)
     .accessibilityLevel('no');
   }

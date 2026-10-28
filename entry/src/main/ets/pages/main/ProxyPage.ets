@@ -579,6 +579,15 @@ export struct ProxyPage {
           }
         }
       }
+      // Let the just-finished row render before this lane starts its next
+      // request. Without a scheduling yield, several TDLib replies can land
+      // in one UI turn and ArkUI coalesces the Map updates, making every
+      // latency appear only after the whole batch has completed.
+      if (this.active && generation === this.pingGeneration) {
+        await new Promise<void>((resolve: (value: void) => void): void => {
+          setTimeout(resolve, 0);
+        });
+      }
       index += 3;
     }
   }

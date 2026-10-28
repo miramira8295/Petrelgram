@@ -9,14 +9,58 @@
 
 export const KEY_SCROLL_ACTIVE: string = 'chatScrollActive';
 
+// Placeholder visibility follows the actual start/stop lifecycle, including
+// inertia and page exit. The animation watchdog below is deliberately separate:
+// a long drag must not bring album mini images/blur back after three seconds.
+@ObservedV2
+export class ScrollPlaceholderState {
+  @Trace active: boolean = false;
+}
+
+export const scrollPlaceholderState: ScrollPlaceholderState = new ScrollPlaceholderState();
+
 // 看门狗上限。onScrollStop 未必与 onScrollStart 配对（滑动中被程序化跳转打断），
 // 标志卡在 true 的后果是此后所有气泡的隐式动画被永久压成 0。宁可提前过期——
 // 提前过期只是把动画还原成改动前的样子，无害；卡住才是真故障。
 // 同一个页面里 armFloatDateHide（ChatPage.ets:3555）用的是同一套办法。
 const SCROLL_ACTIVE_MAX_MS: number = 3000;
 let scrollWatchdog: number = -1;
+let placeholderWatchdog: number = -1;
+let placeholderLastMotionAt: number = 0;
+
+function expireIdlePlaceholderScroll(): void {
+  placeholderWatchdog = -1;
+  const remaining = SCROLL_ACTIVE_MAX_MS - (Date.now() - placeholderLastMotionAt);
+  if (remaining > 0) {
+    placeholderWatchdog = setTimeout(expireIdlePlaceholderScroll, remaining);
+  } else if (scrollPlaceholderState.active) {
+    scrollPlaceholderState.active = false;
+  }
+}
+
+// Called on actual movement only. Sustained movement only updates a timestamp;
+// no per-frame observable writes/timers. Also handles movement resuming after
+// an idle watchdog expiry without a second onScrollStart.
+export function noteScrollPlaceholderMotion(): void {
+  placeholderLastMotionAt = Date.now();
+  if (!scrollPlaceholderState.active) {
+    scrollPlaceholderState.active = true;
+    placeholderWatchdog = setTimeout(expireIdlePlaceholderScroll, SCROLL_ACTIVE_MAX_MS);
+  }
+}
 
 export function setScrollActive(active: boolean): void {
+  if (scrollPlaceholderState.active !== active) {
+    scrollPlaceholderState.active = active;
+  }
+  if (placeholderWatchdog !== -1) {
+    clearTimeout(placeholderWatchdog);
+    placeholderWatchdog = -1;
+  }
+  if (active) {
+    noteScrollPlaceholderMotion();
+    placeholderWatchdog = setTimeout(expireIdlePlaceholderScroll, SCROLL_ACTIVE_MAX_MS);
+  }
   if (scrollWatchdog !== -1) {
     clearTimeout(scrollWatchdog);
     scrollWatchdog = -1;

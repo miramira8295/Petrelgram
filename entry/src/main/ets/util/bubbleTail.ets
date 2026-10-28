@@ -102,19 +102,19 @@ const OUTLINE_CACHE_MAX: number = 256;
 const outlineCache: Map<string, string> = new Map<string, string>();
 
 function outlineCommands(w: number, h: number, outgoing: boolean,
-  hasTail: boolean, radii: BorderRadiuses, inset: number): string {
+  hasTail: boolean, radii: BorderRadiuses, inset: number, gutter: number = TAIL_W - 1): string {
   const tl: number = radiusOf(radii.topLeft);
   const tr: number = radiusOf(radii.topRight);
   const br: number = radiusOf(radii.bottomRight);
   const bl: number = radiusOf(radii.bottomLeft);
   const key: string = `${w}|${h}|${outgoing ? 1 : 0}|${hasTail ? 1 : 0}` +
-    `|${tl}|${tr}|${br}|${bl}|${inset}`;
+    `|${tl}|${tr}|${br}|${bl}|${inset}|${gutter}`;
   const hit: string | undefined = outlineCache.get(key);
   if (hit !== undefined) {
     return hit;
   }
   const commands: string = glassBubbleCommands(w, h, outgoing, hasTail,
-    tl, tr, br, bl, TAIL_W, TAIL_H, vp2px(1), inset);
+    tl, tr, br, bl, TAIL_W, TAIL_H, vp2px(1), inset, gutter);
   if (outlineCache.size >= OUTLINE_CACHE_MAX) {
     outlineCache.clear();
   }
@@ -141,4 +141,12 @@ export function bubbleGlassModifier(live: boolean, w: number, h: number, outgoin
   }
   return new BubbleGlassModifier(true,
     new PathShape({ commands: outlineCommands(w, h, outgoing, hasTail, radii, 0) }));
+}
+
+// 实心档尾角的 -2vp 压叠使外壳留白为6vp；无尾角仍保留7vp对齐位。
+// 只给投影节点用，主体和尾角本身的布局/填色不变。
+export function solidBubbleShadowShape(w: number, h: number, outgoing: boolean,
+  hasTail: boolean, radii: BorderRadiuses): PathShape {
+  return new PathShape({ commands: outlineCommands(w, h, outgoing, hasTail, radii, 0,
+    TAIL_W - (hasTail ? 2 : 1)) });
 }

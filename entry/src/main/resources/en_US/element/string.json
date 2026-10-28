@@ -13295,6 +13295,38 @@
     {
       "name": "chat_settings_hide_pinned_sub",
       "value": "Show or hide them separately in each chat menu"
+    },
+    {
+      "name": "mi_added",
+      "value": "Added %1$s members"
+    },
+    {
+      "name": "mi_partial",
+      "value": "Added %1$s members; %2$s could not be added"
+    },
+    {
+      "name": "mi_failed",
+      "value": "Could not add members: %1$s"
+    },
+    {
+      "name": "mi_timeout",
+      "value": "The result is unconfirmed. Check the group member list before trying again."
+    },
+    {
+      "name": "mp_story_show_profile",
+      "value": "Show on profile"
+    },
+    {
+      "name": "mp_story_hide_profile",
+      "value": "Remove from profile"
+    },
+    {
+      "name": "mp_story_delete_confirm",
+      "value": "Permanently delete this story?"
+    },
+    {
+      "name": "cp_search_results",
+      "value": "Search results"
     }
   ]
 }

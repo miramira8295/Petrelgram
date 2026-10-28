@@ -173,6 +173,11 @@ export class MessageStore {
   private users: UserStore;
   private chatId: number;
   private messages: MessageEntry[] = [];
+  // When the view is parked at an unread/around window, an outgoing update
+  // must not be appended after that window. Hold it until jumpToLatest has
+  // installed the server's real latest page.
+  private deferOutgoingUntilLatest: boolean = false;
+  private deferredOutgoing: MessageEntry[] = [];
   private oldestId: number = 0;
   private subtitle: string = '';
   private pinnedPreview: string = '';
@@ -1432,6 +1437,7 @@ export class MessageStore {
         if (onComplete !== undefined) {
           onComplete(false);
         }
+        this.flushDeferredOutgoing();
         return;
       }
       this.hasMoreNewer = false;
@@ -1445,6 +1451,8 @@ export class MessageStore {
       this.messages = [];
       this.oldestId = 0;
       this.onHistory(res, 'latest');
+      this.deferOutgoingUntilLatest = false;
+      this.flushDeferredOutgoing();
       const windowLast: number = this.messages.length > 0
         ? this.messages[this.messages.length - 1].id : 0;
       logW(`[JumpLatest] #${probeSeq} store applied got=${got} rows=${this.messages.length}` +
@@ -1463,7 +1471,51 @@ export class MessageStore {
       if (onComplete !== undefined) {
         onComplete(false);
       }
+      this.flushDeferredOutgoing();
     });
+  }
+
+  // Called before sending while the loaded window has a newer-page gap.
+  // The server history request remains the sole source of the latest window.
+  deferOutgoingForLatest(): void {
+    if (this.hasMoreNewer) {
+      this.deferOutgoingUntilLatest = true;
+    }
+  }
+
+  // Recovery path for a failed/aborted latest jump. The message must remain
+  // visible even when the network cannot replace the window right now.
+  flushDeferredOutgoing(): void {
+    if (this.deferredOutgoing.length === 0) {
+      this.deferOutgoingUntilLatest = false;
+      return;
+    }
+    const pending: MessageEntry[] = this.deferredOutgoing;
+    this.deferredOutgoing = [];
+    this.deferOutgoingUntilLatest = false;
+    for (const entry of pending) {
+      this.upsert(entry);
+    }
+    this.resolveReplies();
+    this.requestPhotos();
+    this.notifySoon();
+  }
+
+  private publishOutgoing(entry: MessageEntry): void {
+    if (this.deferOutgoingUntilLatest && this.hasMoreNewer && entry.isOutgoing) {
+      const index: number = this.deferredOutgoing.findIndex((e: MessageEntry): boolean => e.id === entry.id);
+      if (index >= 0) {
+        this.deferredOutgoing[index] = entry;
+      } else {
+        this.deferredOutgoing.push(entry);
+      }
+      return;
+    }
+    if (this.deferOutgoingUntilLatest && this.hasMoreNewer && entry.isOutgoing) {
+      this.publishOutgoing(entry);
+      return;
+    }
+    this.upsert(entry);
   }
 
   // Anchor of the one allowed cache-warm retry — see the comment in loadNewer.
@@ -1777,7 +1829,7 @@ export class MessageStore {
       if (pendingId !== 0) {
         this.sendStartedAt.set(pendingId, sentAt);
       }
-      this.upsert(buildMessageEntry(m, this.users));
+      this.publishOutgoing(buildMessageEntry(m, this.users));
       this.resolveReplies();
       this.notifySoon();
     });
@@ -2449,7 +2501,7 @@ export class MessageStore {
       for (let i = 0; i < sent.length; i++) {
         const source = items[Math.min(i, items.length - 1)];
         const entry = this.rememberLocalMedia(buildMessageEntry(sent[i], this.users), source);
-        this.upsert(entry);
+        this.publishOutgoing(entry);
       }
       this.resolveReplies();
       this.requestPhotos();
@@ -2491,7 +2543,7 @@ export class MessageStore {
     }
     this.applyTopicScope(req);
     return sendWithChatPermissions(this.client, req).then((sent: TdObject): void => {
-      this.upsert(buildMessageEntry(sent, this.users));
+      this.publishOutgoing(buildMessageEntry(sent, this.users));
       this.resolveReplies();
       this.notifySoon();
     }).catch((e: TdError): Promise<void> => {
@@ -3055,6 +3107,10 @@ export class MessageStore {
         return;
       }
     }
+    if (this.deferOutgoingUntilLatest && this.hasMoreNewer && entry.isOutgoing) {
+      this.publishOutgoing(entry);
+      return;
+    }
     this.upsert(entry);
     // 实时到达（不是翻历史翻出来的）。整段媒体的可见窗口对这些消息放行：
     // 它们一次就一条，用户多半正看着尾部，等滚动事件才下会明显发愣。
@@ -3096,16 +3152,21 @@ export class MessageStore {
       // 里出现过——2026-09-10 那份 30837 行的日志里 [SendDiag] 零命中。
       logW(`[SendDiag] serverAck=${Date.now() - startedAt}ms rows=${this.messages.length}`);
     }
-    const previous = this.messages.find((e: MessageEntry): boolean => e.id === oldId);
+    const deferredIndex: number = this.deferredOutgoing.findIndex((e: MessageEntry): boolean => e.id === oldId);
+    const previous = this.messages.find((e: MessageEntry): boolean => e.id === oldId) ??
+      (deferredIndex >= 0 ? this.deferredOutgoing[deferredIndex] : undefined);
     const carriedRowId: number = previous !== undefined ? previous.rowId : 0;
     this.messages = this.messages.filter((e: MessageEntry) => e.id !== oldId);
+    if (deferredIndex >= 0) {
+      this.deferredOutgoing.splice(deferredIndex, 1);
+    }
     const arrived = buildMessageEntry(m, this.users);
     if (carriedRowId !== 0) {
       arrived.rowId = carriedRowId;
     }
     this.carryLocalVideoAssets(previous, arrived);
     publishSendState(arrived.rowId, arrived.sendState);
-    this.upsert(arrived);
+    this.publishOutgoing(arrived);
     this.resolveReplies();
     this.requestPhotos();
     this.notifySoon();

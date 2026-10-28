@@ -1,3 +1,4 @@
+import { showProfileStoryActions } from '../../services/ProfileStoryActions';
 import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { pageMarginVp } from '../../util/pageMargin';
 import {
@@ -177,6 +178,7 @@ export struct MyProfilePage {
   @State pressedPostStateAction: string = '';
   @State storyPickerOpen: boolean = false;
   @State storyPosting: boolean = false;
+  @State storyActionBusy: boolean = false;
   private store: ProfileStore | null = null;
   private unsub: (() => void) | null = null;
   // 个人资料页签的路由栈。本页强制单栏，推进来的目的地是**整页替换**——
@@ -335,6 +337,7 @@ export struct MyProfilePage {
     builder: QrDialog({ ownUser: true, title: this.name,
       onScan: (): void => { this.qrScanner.start(getContext(this) as common.UIAbilityContext); },
       onClosed: (): void => { this.qrOpen = false; } }),
+    customStyle: true,
     alignment: DialogAlignment.Center,
     autoCancel: true
   });
@@ -865,7 +868,45 @@ export struct MyProfilePage {
   private storyCell(): number {
     // 三宫格铺满的是**内容列**，不是窗口。限宽之后仍拿 screenW 去除，格子会比
     // 内容列宽出一截、右边一列被裁掉。
-    return (readableContentWidth(this.screenW) - 4) / 3;
+    return Math.max(0, (readableContentWidth(this.screenW) - this.pageMargin() * 2 - 2) / 3);
+  }
+
+  private openProfileStory(item: StoryItem, snapshotIds?: number[]): void {
+    if (this.myId <= 0) { return; }
+    const items = this.postTab === 0 ? this.stories : this.archivedStories;
+    router.pushUrl({ url: 'pages/story/StoryViewerPage', params: {
+      chatId: this.myId, storyIds: snapshotIds ?? items.map((entry: StoryItem): number => entry.id),
+      storyId: item.id, chatTitle: this.name, chatAvatar: this.avatarPath,
+      chatInitials: this.initials
+    } }).catch((error: Error): void => {
+      logE(`MyProfilePage.openProfileStory failed: ${error.message}`);
+      promptAction.showToast({ message: str('apply_failed_retry') });
+    });
+  }
+
+  private async manageProfileStory(item: StoryItem): Promise<void> {
+    const store = this.store;
+    if (this.storyActionBusy || store === null || this.myId <= 0) { return; }
+    const sequence = this.profileLoadSequence;
+    const chatId = this.myId;
+    const ids = (this.postTab === 0 ? this.stories : this.archivedStories)
+      .map((entry: StoryItem): number => entry.id);
+    this.storyActionBusy = true;
+    try {
+      await showProfileStoryActions(getContext(this) as common.UIAbilityContext, getTdClient(),
+        chatId, item.id, (): boolean => this.store === store && this.profileLoadSequence === sequence,
+        (): void => this.openProfileStory(item, ids), (): void => {
+          store.reloadStories(true);
+          store.loadArchivedStories(true);
+        });
+    } catch (error) {
+      logE(`MyProfilePage.manageProfileStory failed: ${error}`);
+      if (this.store === store) {
+        promptAction.showToast({ message: str('apply_failed_retry') });
+      }
+    } finally {
+      this.storyActionBusy = false;
+    }
   }
 
   private formatStoryDuration(totalSeconds: number): string {
@@ -1910,9 +1951,9 @@ export struct MyProfilePage {
   }
 
   @Builder
-  storyGrid(items: StoryItem[], enterX: number) {
+  storyGrid() {
     Flex({ wrap: FlexWrap.Wrap }) {
-      ForEach(items, (item: StoryItem) => {
+      ForEach(this.postTab === 0 ? this.stories : this.archivedStories, (item: StoryItem, index: number) => {
         Stack({ alignContent: Alignment.BottomStart }) {
           if (item.thumbPath !== '') {
             Image(item.thumbPath.startsWith('/') ? `file://${item.thumbPath}` : item.thumbPath).draggable(false)
@@ -1949,14 +1990,16 @@ export struct MyProfilePage {
         }
         .width(this.storyCell())
         .height(this.storyCell() * 1.33)
-        .margin({ right: 1, bottom: 1 })
-        .clip(true);
+        .margin({ right: index % 3 === 2 ? 0 : 1, bottom: 1 })
+        .clip(true)
+        .onClick((): void => { this.openProfileStory(item); })
+        .gesture(LongPressGesture().onAction((): void => { this.manageProfileStory(item); }));
       }, (item: StoryItem): string => `my_story_${this.postTab}_${item.id}_${item.thumbPath}`);
     }
     .width('100%')
-    .padding({ top: 2, bottom: 28 })
+    .padding({ left: this.pageMargin(), right: this.pageMargin(), top: 2, bottom: 28 })
     .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ x: enterX }))
+      .combine(TransitionEffect.translate({ x: this.postTab === 0 ? -12 : 12 }))
       .animation({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 190),
         curve: Curve.EaseOut
@@ -1988,7 +2031,7 @@ export struct MyProfilePage {
             -12
           );
         } else {
-          this.storyGrid(this.stories, -12);
+          this.storyGrid();
         }
       } else {
         if (this.archivedStoriesError !== '') {
@@ -2003,7 +2046,7 @@ export struct MyProfilePage {
             12
           );
         } else {
-          this.storyGrid(this.archivedStories, 12);
+          this.storyGrid();
         }
       }
     }

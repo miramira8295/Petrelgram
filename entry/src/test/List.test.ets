@@ -1,3 +1,5 @@
+import albumCellRenderDataTest from './AlbumCellRenderData.test';
+import searchResultsDrawerTest from './SearchResultsDrawer.test';
 import wallpaperEditorSessionTest from './WallpaperEditorSession.test';
 import targetSendFilterTest from './TargetSendFilter.test';
 import searchPresentationTest from './SearchPresentation.test';
@@ -121,6 +123,7 @@ import liveViewerHeaderPresentationTest from './LiveViewerHeaderPresentation.tes
 import liveViewerMediaPresentationTest from './LiveViewerMediaPresentation.test';
 import liveInteractionPresentationTest from './LiveInteractionPresentation.test';
 import floatingDragTest from './FloatingDrag.test';
+import chatMemberInviteTest from './ChatMemberInvite.test';
 import newGroupLogicTest from './NewGroupLogic.test';
 import proxyLogicTest from './ProxyLogic.test';
 import proxyAutoSwitchTest from './ProxyAutoSwitch.test';
@@ -493,6 +496,7 @@ export default function testsuite() {
   liveStreamStoreTest();
   groupCallStreamSessionTest();
   albumLayoutTest();
+  albumCellRenderDataTest();
   richTextTest();
   linkPreviewTest();
   voiceWaveformTest();
@@ -503,6 +507,7 @@ export default function testsuite() {
   liveInteractionPresentationTest();
   floatingDragTest();
   newGroupLogicTest();
+  chatMemberInviteTest();
   proxyLogicTest();
   proxyAutoSwitchTest();
   callHistoryPresentationTest();
@@ -516,6 +521,7 @@ export default function testsuite() {
   colorMathTest();
   animationShapeTest();
   reactionCanonicalTest();
+  searchResultsDrawerTest();
   searchSessionTest();
   chatResumeTest();
   chatViewportGeometryTest();

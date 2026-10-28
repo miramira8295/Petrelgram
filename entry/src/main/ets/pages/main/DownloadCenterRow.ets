@@ -273,10 +273,10 @@ export struct DownloadCenterRow {
             .onClick((): void => { this.act(DC_ACTION_SELECT); });
           }
           if (this.row.kind === DC_KIND_PHOTO && this.row.path !== '') {
-            CachedImage({ path: this.row.path, boxWidth: 44, boxHeight: 44, radius: 12, fit: ImageFit.Cover });
+            CachedImage({ spec: { path: this.row.path, boxWidth: 44, boxHeight: 44, radius: 12, fit: ImageFit.Cover } });
           } else if (this.poster !== '') {
             Stack() {
-              CachedImage({ path: this.poster, boxWidth: 44, boxHeight: 44, radius: 12, fit: ImageFit.Cover });
+              CachedImage({ spec: { path: this.poster, boxWidth: 44, boxHeight: 44, radius: 12, fit: ImageFit.Cover } });
               SymbolGlyph($r('sys.symbol.play_fill')).fontSize(14).fontColor([Color.White]);
             }
             .width(44).height(44);

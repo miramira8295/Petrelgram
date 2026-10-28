@@ -331,7 +331,7 @@ export struct ChatBackdrop {
       // 走 PixelMap 缓存，而不是 Image(file://…)。这张光栅是整屏 JPEG，解码约
       // 20ms——实测每次进会话都要重付一次，正是"第一次进卡、第二次顺"的主因。
       // 所有会话共用同一张背景，缓存后只解一次。
-        CachedImage({
+        CachedImage({ spec: {
           path: this.rasterPath,
           boxWidth: this.layerW(),
           boxHeight: this.layerH(),
@@ -340,9 +340,8 @@ export struct ChatBackdrop {
           pin: true,
           // 渐变壁纸不能降到 RGB_565，否则会出现明显色带（#232 / #234）。
           // 与 setRasterPath 的缓存预查保持同一格式，继续复用整屏位图。
-          opaque: false,
-          onReady: (): void => { this.rasterShown = true; }
-        });
+          opaque: false
+        }, onReady: (): void => { this.rasterShown = true; } });
       }
     }
     .width('100%').height('100%')

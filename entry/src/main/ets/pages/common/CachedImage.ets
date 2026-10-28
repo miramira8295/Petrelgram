@@ -7,6 +7,8 @@ import {
   isDecodableTarget, sameDecodeTarget, shouldBlankBeforeDecode
 } from '../../util/imageSwap';
 import { MINI_PLACEHOLDER_BLUR } from '../../util/miniThumbPlaceholder';
+import { CachedImageSpec, sameCachedImageDecode } from '../../util/cachedImageSpec';
+import { scrollPlaceholderState } from '../../util/scrollEffects';
 
 // An Image fed from the decoded-PixelMap cache instead of a file path.
 //
@@ -23,44 +25,30 @@ import { MINI_PLACEHOLDER_BLUR } from '../../util/miniThumbPlaceholder';
 // 早退分支时必须补种，见 start() 里的注释。
 @ComponentV2
 export struct CachedImage {
-  @Param path: string = '';
-  @Param boxWidth: number = 0;
-  @Param boxHeight: number = 0;
-  @Param radius: number = 0;
-  @Param fit: ImageFit = ImageFit.Cover;
-  // Keep the decoded bitmap for the whole session (see pinPixelMap).
-  @Param pin: boolean = false;
-  // 有上限的钉：只保最近 N 张，超出还给 LRU（见 util/boundedPins）。
-  // 给「便宜但到处复用、数量随内容增长」的那一类用——头像就是典型：不钉会被
-  // 大图挤掉、回滚时重解码露出首字母圆底（issue #137「翻消息时头像会闪」）。
-  @Param pinBounded: boolean = false;
-  // 位图第一次真正交给 Image 的那一刻。调用方据此决定什么时候撤掉自己的兜底层
-  // ——解码失败时这个回调永远不来，兜底层就一直留着（issue #90）。
-  @Param onReady: () => void = (): void => {};
-  // 小图同步解码（#137）：未命中缓存时在主线程解一次，首帧就有图。准入见 pixelSyncPolicy。
-  @Param syncSmall: boolean = false;
-  // Already-decoded chat thumbnails can still flash when native Image reloads
-  // asynchronously after a row is moved/recycled. Opt into synchronous Image
-  // loading only for an available PixelMap; this does not change file decoding.
-  // Separate from syncSmall, which controls the cache-miss decode policy.
-  @Param syncDisplay: boolean = false;
-  // 源身份（issue #188）：同一身份下换路径视为"同图升级"，旧位图保留到新图解完；
-  // 不传就按路径判（老行为）。LiveThumbImage 传缩略图 fileId。
-  @Param sourceKey: string = '';
-  // 不透明源，允许 RGB_565 解码（每像素省一半字节，见 pixelCache.PixelRequest.opaque）。
-  // 只有相册格开；带 alpha 的源开了会丢透明通道。**不进 @Monitor**：它是调用点
-  // 写死的常量，同一个组件实例上不会变。
-  @Param opaque: boolean = false;
-  // 位图解出来之前垫的底色（见 util/thumbBackdrop）。空串 = 不垫，保持原来
-  // "什么都不画"的行为（背景图、头像那几条路调用方自己有底）。
-  @Param backdrop: string = '';
-  // 解码完成前画在底下的**内联小图**（~40px JPEG 的 data URL，不用下载）。
-  // 空串 = 只用 backdrop 那层纯色。
-  //
-  // 【为什么放在这里而不是调用方】这一层自己知道"位图到没到"（pixelMap），
-  // 所以真图一上来这个节点就自动消失，不需要任何额外状态、也不需要 onReady
-  // 往回通知。调用方只管把 data URL 递进来。
-  @Param backdropImage: string = '';
+  // One atomic image input instead of resetting 14 independent parameters for
+  // every recycled tile. Only source/size/decode-policy changes restart work.
+  @Require @Param spec: CachedImageSpec;
+  @Event onReady: () => void = (): void => {};
+  private startedSpec: CachedImageSpec | undefined = undefined;
+  private scrollState = scrollPlaceholderState;
+
+  private get path(): string { return this.spec.path; }
+  private get boxWidth(): number { return this.spec.boxWidth; }
+  private get boxHeight(): number { return this.spec.boxHeight; }
+  private get radius(): number { return this.spec.radius ?? 0; }
+  private get fit(): ImageFit { return this.spec.fit ?? ImageFit.Cover; }
+  private get pin(): boolean { return this.spec.pin === true; }
+  private get pinBounded(): boolean { return this.spec.pinBounded === true; }
+  // syncSmall controls cache-miss decoding; syncDisplay only controls native
+  // Image loading of an already-decoded PixelMap. Keep these policies separate.
+  private get syncSmall(): boolean { return this.spec.syncSmall === true; }
+  private get syncDisplay(): boolean { return this.spec.syncDisplay === true; }
+  private get sourceKey(): string { return this.spec.sourceKey ?? ''; }
+  // Only known opaque sources opt into RGB_565; avatars/wallpaper keep alpha/color.
+  private get opaque(): boolean { return this.spec.opaque === true; }
+  private get backdrop(): string { return this.spec.backdrop ?? ''; }
+  private get backdropImage(): string { return this.spec.backdropImage ?? ''; }
+
   private heldKey: string = '';
   @Local pixelMap: image.PixelMap | undefined = undefined;
   // The handle currently retained, so it can be released even after path has
@@ -153,8 +141,11 @@ export struct CachedImage {
   // Repeat 自己的复用（virtualScroll reusable:true）时它**不会被调用**（官方：
   // 「Repeat 自身能够进行复用，不会走到自定义组件复用的生命周期」）。而
   // @ReusableV2 复用的重置期间 @Monitor 又是静默的——两者互补，缺一不可。
-  @Monitor('path', 'boxWidth', 'boxHeight')
+  @Monitor('spec')
   onSourceChanged(): void {
+    if (sameCachedImageDecode(this.startedSpec, this.spec)) {
+      return;
+    }
     // 与 aboutToReuse 同样先 drop 再 start：换了源文件就得把旧位图的引用还回去，
     // 否则它一直被 retain 着，白占 LRU 预算（显示本身由 start() 里的
     // shouldBlankBeforeDecode 兜住，这里修的是资源不是画面）。
@@ -171,7 +162,7 @@ export struct CachedImage {
     if (held === null) {
       return false;
     }
-    return sameDecodeTarget(held.path, held.width, held.height,
+    return held.opaque === req.opaque && sameDecodeTarget(held.path, held.width, held.height,
       req.path, req.width, req.height);
   }
 
@@ -196,6 +187,7 @@ export struct CachedImage {
   }
 
   private start(): void {
+    this.startedSpec = this.spec;
     if (!isDecodableTarget(this.path, this.boxWidth, this.boxHeight)) {
       this.drop();
       return;
@@ -247,6 +239,13 @@ export struct CachedImage {
     });
   }
 
+  private showMiniPlaceholder(): boolean {
+    // Only unresolved album images subscribe to scrolling. Once decoded, the
+    // real image stays visible and scroll changes cannot invalidate its input.
+    return this.pixelMap === undefined && this.backdropImage !== '' &&
+      !(this.spec.deferBackdropOnScroll === true && this.scrollState.active);
+  }
+
   build() {
     // 未解码状态本身不画内容——加载/失败态由调用方自己叠。但**底色要垫**：
     // 调用方是"有路径就换成 CachedImage"的 if/else，撤占位与出图之间会透出去。
@@ -254,7 +253,7 @@ export struct CachedImage {
       // 内联小图：只在还没解出来时存在，位图一到手这个 if 就false、节点消失。
       // 40px 拉到几百 px 必然是马赛克，所以叠一层模糊让它读起来像"正在变清晰"
       // 而不是"画糊了"——官方客户端也是这个做法。
-      if (this.pixelMap === undefined && this.backdropImage !== '') {
+      if (this.showMiniPlaceholder()) {
         Image(this.backdropImage)
           .draggable(false)
           .width(this.boxWidth).height(this.boxHeight)

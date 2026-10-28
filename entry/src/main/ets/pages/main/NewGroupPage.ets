@@ -1,6 +1,10 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { ContactsStore, ContactItem } from '../../store/ContactsStore';
+import { TD_SESSION_EPOCH, TD_ACCOUNT_SWITCHING } from '../../tdkit/AccountRegistry';
+import { loadMemberInviteContext, submitMemberInvites } from '../../util/chatMemberInvite';
+import { requestOutcomeUncertain } from '../../util/tdRequestTimeout';
 import { getTdClient } from '../../tdkit/Globals';
+import { TdClient } from '../../tdkit/TdClient';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
@@ -72,6 +76,72 @@ struct NewGroupPage {
   private searchSequence: number = 0;
   private creationSequence: number = 0;
   private active: boolean = false;
+  @State addToChatId: number = 0;
+  @State inviteReady: boolean = false;
+  @State inviteTargetTitle: string = '';
+  private inviteExcludedIds: Set<number> = new Set<number>();
+  private inviteClient: TdClient | null = null;
+  private inviteEpoch: number = 0;
+
+  private inviteCurrent(): boolean {
+    return this.active && this.inviteClient === getTdClient() &&
+      this.inviteEpoch === (AppStorage.get<number>(TD_SESSION_EPOCH) ?? 0) &&
+      !(AppStorage.get<boolean>(TD_ACCOUNT_SWITCHING) ?? false);
+  }
+
+  private async loadInviteTarget(): Promise<void> {
+    const client = this.inviteClient;
+    if (client === null || !this.inviteCurrent()) { return; }
+    this.createError = '';
+    try {
+      const context = await loadMemberInviteContext(
+        (request: TdRequest, timeoutMs: number): Promise<TdObject> => client.send(request, timeoutMs),
+        this.addToChatId, (): boolean => this.inviteCurrent());
+      if (!this.inviteCurrent()) { return; }
+      this.inviteTargetTitle = context.title;
+      this.inviteExcludedIds.add(context.selfUserId);
+      this.maxSelectableMembers = context.maxSelectable;
+      this.inviteReady = true;
+      this.syncContactsData();
+    } catch (error) {
+      if (!this.inviteCurrent()) { return; }
+      this.createError = str('mi_failed', (error as Error).message);
+    }
+  }
+
+  private async addMembers(): Promise<void> {
+    if (!this.createActionEnabled() || this.inviteClient === null || !this.inviteCurrent()) { return; }
+    this.creating = true;
+    this.createError = '';
+    try {
+      const client = this.inviteClient;
+      const result = await submitMemberInvites(
+        (request: TdRequest, timeoutMs: number): Promise<TdObject> => client.send(request, timeoutMs),
+        this.addToChatId, this.selectedIds.slice(),
+        (): boolean => this.inviteCurrent());
+      if (!this.inviteCurrent()) { return; }
+      for (const id of [...result.addedUserIds, ...result.existingUserIds]) { this.inviteExcludedIds.add(id); }
+      this.maxSelectableMembers = Math.max(0, this.maxSelectableMembers - result.addedUserIds.length);
+      this.selectedIds = result.failedUserIds;
+      this.syncContactsData();
+      if (result.failedUserIds.length > 0) {
+        this.createError = str('mi_partial', result.addedUserIds.length, result.failedUserIds.length);
+      } else {
+        if (result.addedUserIds.length > 0) {
+          promptAction.showToast({ message: str('mi_added', result.addedUserIds.length) });
+        }
+        router.back();
+      }
+    } catch (error) {
+      if (!this.inviteCurrent()) { return; }
+      const message = (error as Error).message;
+      this.creationOutcomeUnknown = requestOutcomeUncertain(message) || message === 'INVITE_RESULT_UNKNOWN';
+      this.createError = this.creationOutcomeUnknown ? str('mi_timeout') : str('mi_failed', message);
+    } finally {
+      // 会话变化时丢弃旧结果，同时解除仍存活页面的返回锁。
+      if (this.active) { this.creating = false; }
+    }
+  }
 
   @Styles
   topActionNormalStyle() {
@@ -111,7 +181,16 @@ struct NewGroupPage {
 
   aboutToAppear(): void {
     this.active = true;
-    this.loadBasicGroupLimit();
+    const params = router.getParams() as Record<string, Object> | undefined;
+    this.addToChatId = (params?.['addToChatId'] as number | undefined) ?? 0;
+    if (this.addToChatId !== 0) {
+      this.inviteClient = getTdClient();
+      this.inviteEpoch = AppStorage.get<number>(TD_SESSION_EPOCH) ?? 0;
+      this.inviteExcludedIds = new Set<number>((params?.['existingUserIds'] as number[] | undefined) ?? []);
+      this.loadInviteTarget();
+    } else {
+      this.loadBasicGroupLimit();
+    }
     const store = new ContactsStore(getTdClient());
     this.store = store;
     this.unsubscribe = store.subscribe((): void => {
@@ -190,6 +269,7 @@ struct NewGroupPage {
 
   private retryContacts(): void {
     if (this.store !== null && !this.loading) { this.store.reload(); }
+    if (this.addToChatId !== 0 && !this.inviteReady) { this.loadInviteTarget(); }
   }
 
   private onQueryChanged(value: string): void {
@@ -247,13 +327,16 @@ struct NewGroupPage {
 
   private filteredContacts(): ContactItem[] {
     const value = this.query.trim().toLowerCase();
-    if (value === '') { return this.contacts; }
+    const available = this.addToChatId !== 0
+      ? this.contacts.filter((c: ContactItem): boolean => !this.inviteExcludedIds.has(c.id)) : this.contacts;
+    if (value === '') { return available; }
     const localQuery = value.replace(/^@/, '');
-    const result = this.contacts.filter((contact: ContactItem): boolean =>
+    const result = available.filter((contact: ContactItem): boolean =>
       contact.name.toLowerCase().indexOf(localQuery) >= 0 ||
         contact.statusText.toLowerCase().indexOf(value) >= 0
     );
     for (const user of this.remoteUsers) {
+      if (this.addToChatId !== 0 && this.inviteExcludedIds.has(user.id)) { continue; }
       if (!result.some((item: ContactItem): boolean => item.id === user.id)) {
         result.push(user);
       }
@@ -286,6 +369,7 @@ struct NewGroupPage {
   }
 
   private toggle(userId: number): void {
+    if (this.addToChatId !== 0 && (!this.inviteReady || !this.inviteCurrent() || this.creationOutcomeUnknown)) { return; }
     if (this.creating || this.openingCreatedChat) { return; }
     let next: number[];
     if (this.selected(userId)) {
@@ -327,6 +411,10 @@ struct NewGroupPage {
   }
 
   private createActionEnabled(): boolean {
+    if (this.addToChatId !== 0) {
+      return this.inviteReady && this.inviteCurrent() && !this.creating && !this.creationOutcomeUnknown &&
+        this.selectedIds.length > 0 && this.selectedIds.length <= this.maxSelectableMembers;
+    }
     if (!this.naming) { return this.selectedIds.length > 0 && !this.loading; }
     if (this.creating || this.openingCreatedChat || this.creationOutcomeUnknown) { return false; }
     if (this.createdChatId > 0) { return true; }
@@ -336,6 +424,7 @@ struct NewGroupPage {
   }
 
   private headerActionText(): string {
+    if (this.addToChatId !== 0) { return str(this.creating ? 'adding' : 'add'); }
     if (!this.naming) { return str('next'); }
     if (this.openingCreatedChat) { return str('opening'); }
     if (this.creating) { return str('creating'); }
@@ -512,7 +601,7 @@ struct NewGroupPage {
         Text(this.naming ? plural('ng_member_count', this.selectedIds.length, this.selectedIds.length) :
           (this.selectedIds.length > 0
             ? str('ng_selected_of', this.selectedIds.length, this.maxSelectableMembers)
-            : $r('app.string.ng_pick_members')))
+            : (this.addToChatId !== 0 ? this.inviteTargetTitle : $r('app.string.ng_pick_members'))))
           .fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
       }
       .alignItems(HorizontalAlign.Start).layoutWeight(1);
@@ -531,7 +620,8 @@ struct NewGroupPage {
       .stateStyles({ normal: this.topActionNormalStyle, pressed: this.topActionPressedStyle })
       .accessibilityText(this.headerActionText())
       .onClick((): void => {
-        if (this.naming) { this.createGroup(); } else { this.goNext(); }
+        if (this.addToChatId !== 0) { this.addMembers(); }
+        else if (this.naming) { this.createGroup(); } else { this.goNext(); }
       });
     }
     .width('100%').height(58).padding({ left: 6, right: 8 })
@@ -807,6 +897,13 @@ struct NewGroupPage {
   memberPicker() {
     Column() {
       this.searchBox();
+      if (this.addToChatId !== 0 && this.createError !== '') {
+        Text(this.createError).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
+          .padding({ left: 16, right: 16, bottom: 8 });
+        if (!this.inviteReady) {
+          Button($r('app.string.settings_retry')).onClick((): void => { this.loadInviteTarget(); });
+        }
+      }
       this.selectedSummary();
       this.memberContent();
     }

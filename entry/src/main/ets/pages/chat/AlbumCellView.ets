@@ -1,13 +1,12 @@
-import { AlbumGroup } from '../../util/collapseAlbums';
 import { thumbBackdropColor } from '../../util/thumbBackdrop';
 import { miniPlaceholderOf } from '../../util/miniThumbPlaceholder';
-import { AlbumCell } from '../../util/packAlbumRows';
-import { MessageBubbleRenderData, MessageBubbleActions } from './ReusableMessageBubble';
+import { AlbumCellRenderData } from '../../util/albumCellRenderData';
+import { MessageBubbleActions } from './ReusableMessageBubble';
 import { LiveThumbImage } from './LiveThumbImage';
 import { LiveProgressRing } from './LiveProgressRing';
 import { ThumbReadyGate } from './ThumbReadyGate';
 import { VideoBubbleSurface } from './VideoBubbleSurface';
-import { PLAY_SLOT_ENTER_RATIO, PLAY_SLOT_KEEP_RATIO, slotKey } from './playSlot';
+import { PLAY_SLOT_ENTER_RATIO, PLAY_SLOT_KEEP_RATIO } from './playSlot';
 import { formatFileSize } from '../../util/formatFileSize';
 import { formatMediaDuration } from '../../util/mediaDuration';
 import { str } from '../../util/strings';
@@ -46,15 +45,10 @@ export interface AlbumCellHooks {
 
 @ComponentV2
 export struct AlbumCellView {
-  @Require @Param cell: AlbumCell;
-  @Require @Param group: AlbumGroup;
-  @Require @Param data: MessageBubbleRenderData;
+  @Require @Param cell: AlbumCellRenderData;
   @Require @Param actions: MessageBubbleActions;
   @Require @Param hooks: AlbumCellHooks;
-  // 多选态与「这一张选没选中」。逐格勾选的数据面本来就有：selection.ids 是逐条
-  // 消息 id 的平表，相册成员就是那些独立 id（见 util/messageSelection）。
-  @Param selectionActive: boolean = false;
-  @Param selected: boolean = false;
+  // 多选态、勾选和媒体标量均由单格输入提供；不再读取整组的并行数组。
 
   // 【这三个必须是**成员** @Builder，不能提成全局函数】
   // 2026-09-11 试过提到 pages/chat/mediaBadges.ets 做全局 @Builder，真机一进会话
@@ -119,27 +113,27 @@ export struct AlbumCellView {
   }
 
   private pathAt(): string {
-    return this.group.photoPaths[this.idx()] ?? '';
+    return this.cell.thumbPath;
   }
 
   private isVideo(): boolean {
-    return this.group.photoIsVideo[this.idx()] ?? false;
+    return this.cell.isVideo;
   }
 
   private isLive(): boolean {
-    return this.group.photoIsLive[this.idx()] ?? false;
+    return this.cell.isLive;
   }
 
   private memberId(): number {
-    return this.group.memberIds[this.idx()] ?? 0;
+    return this.cell.messageId;
   }
 
   private fileId(): number {
-    return this.group.photoFileIds[this.idx()] ?? 0;
+    return this.cell.thumbFileId;
   }
 
   private failed(): boolean {
-    return this.group.photoFailed[this.idx()] ?? false;
+    return this.cell.failed;
   }
 
   private retryable(): boolean {
@@ -147,20 +141,19 @@ export struct AlbumCellView {
   }
 
   private videoFileId(): number {
-    return this.group.videoFileIds[this.idx()] ?? 0;
+    return this.cell.videoFileId;
   }
 
   // 与 isPlaySlot() 同一道 !isAnimation 兜底：动图不参加竞选（spec §3.3），
   // 相册格子也不例外，否则相册里的动图会错挂流式播放器。
   private isPlaySlot(): boolean {
-    return this.data.playSlotKey !== '' && !this.group.head.isAnimation &&
-      this.data.playSlotKey === slotKey(this.memberId(), this.idx());
+    return this.cell.isPlaySlot;
   }
 
   private videoMetaText(): string {
-    const bytes: number = this.group.videoFileSizes[this.idx()] ?? 0;
+    const bytes: number = this.cell.videoFileSize;
     const size: string = bytes > 0 ? formatFileSize(bytes) : '';
-    const durationSec: number = this.group.videoDurations[this.idx()] ?? 0;
+    const durationSec: number = this.cell.videoDuration;
     if (durationSec <= 0) {
       return size;
     }
@@ -174,7 +167,7 @@ export struct AlbumCellView {
   // 带参 builder 的参数不更新（见文件头），格子一缩它就停在旧尺寸上。
   // 相册整组一起发，头条的发送态就是整组的。
   private uploading(): boolean {
-    return this.group.head.sendState === 'sending';
+    return this.cell.uploading;
   }
 
   @Builder
@@ -186,7 +179,7 @@ export struct AlbumCellView {
         this.mediaLoadState(
           Math.min(34, Math.min(this.cell.width, this.cell.height) * 0.4),
           this.fileId(),
-          this.group.photoProgress[this.idx()] ?? 0,
+          this.cell.progress,
           false
         );
       } else if (!this.isVideo()) {
@@ -214,13 +207,13 @@ export struct AlbumCellView {
       // 播放位选中这一格：挂播放器而不是静态封面。
       // 小窗播低清那一档（多清晰度，见 util/entryVideoVariant.entryInlineFile）。
       VideoBubbleSurface({
-        fileId: (this.group.inlineFileIds[this.idx()] ?? 0) || this.videoFileId(),
-        fileSize: (this.group.inlineFileIds[this.idx()] ?? 0) !== 0
-          ? (this.group.inlineFileSizes[this.idx()] ?? 0) : (this.group.videoFileSizes[this.idx()] ?? 0),
-        mimeType: this.group.videoMimeTypes[this.idx()] ?? '',
+        fileId: this.cell.inlineFileId || this.videoFileId(),
+        fileSize: this.cell.inlineFileId !== 0
+          ? this.cell.inlineFileSize : this.cell.videoFileSize,
+        mimeType: this.cell.videoMimeType,
         posterPath: this.pathAt(),
-        muted: this.data.autoplayMuted,
-        startPositionMs: this.data.playSlotStartMs,
+        muted: this.cell.autoplayMuted,
+        startPositionMs: this.cell.playSlotStartMs,
         onPositionChanged: (positionMs: number): void => {
           this.actions.onPlaySlotPositionChanged(this.memberId(), this.idx(), positionMs);
         },
@@ -254,7 +247,8 @@ export struct AlbumCellView {
           // 和下面 placeholderWithFile 的底色同源：撤占位到出图之间不透出去。
           backdrop: thumbBackdropColor(this.isVideo()),
           // 内联小图占位（issue：相册图片闪一下）。相册每格各有自己的一张。
-          mini: miniPlaceholderOf(this.group.photoMinis[this.idx()] ?? '')
+          mini: miniPlaceholderOf(this.cell.mini),
+          deferMiniOnScroll: true
         },
         placeholder: (): void => { this.placeholderWithFile(); }
       });
@@ -307,7 +301,7 @@ export struct AlbumCellView {
   // 外层保持默认居中，勾单独放进一个填满格子的 Stack 里去贴右上。
   @Builder
   selectionOverlay() {
-    if (this.selectionActive) {
+    if (this.cell.selectionActive) {
       Stack({ alignContent: Alignment.TopEnd }) {
         this.selectionMark();
       }
@@ -322,7 +316,7 @@ export struct AlbumCellView {
   @Builder
   selectionMark() {
     Stack() {
-      if (this.selected) {
+      if (this.cell.selected) {
         Circle({ width: 20, height: 20 }).fill(Color.White);
         SymbolGlyph($r('sys.symbol.checkmark_circle'))
           .fontSize(22).fontColor([$r('app.color.primary')]);
@@ -340,7 +334,7 @@ export struct AlbumCellView {
       return;
     }
     // 多选态下点一格 = 只切这一张。此时不打开查看器、也不触发重试。
-    if (this.selectionActive) {
+    if (this.cell.selectionActive) {
       this.hooks.onToggleMember(this.memberId());
       return;
     }
@@ -395,7 +389,7 @@ export struct AlbumCellView {
         }
         .width(this.cell.width).height(this.cell.height)
         // 见单图分支：按被点的那一格的消息 id 绑定，相册里每格各自成对。
-        .geometryTransition(`media_${this.data.chatId}_${this.memberId()}`)
+        .geometryTransition(`media_${this.cell.chatId}_${this.memberId()}`)
         .accessibilityText(this.failed() ? str('mb_photo_failed')
           : str('mb_album_item', this.idx() + 1))
         // **图片格不挂 onVisibleAreaApproximateChange。**

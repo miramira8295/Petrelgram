@@ -13295,6 +13295,38 @@
     {
       "name": "chat_settings_hide_pinned_sub",
       "value": "可在聊天菜单中单独显示或隐藏"
+    },
+    {
+      "name": "mi_added",
+      "value": "已添加 %1$s 位成员"
+    },
+    {
+      "name": "mi_partial",
+      "value": "已添加 %1$s 位成员，另有 %2$s 位未能加入"
+    },
+    {
+      "name": "mi_failed",
+      "value": "添加成员失败：%1$s"
+    },
+    {
+      "name": "mi_timeout",
+      "value": "添加请求结果暂时无法确认，请返回群成员列表查看后再操作"
+    },
+    {
+      "name": "mp_story_show_profile",
+      "value": "显示到资料页"
+    },
+    {
+      "name": "mp_story_hide_profile",
+      "value": "移出资料页"
+    },
+    {
+      "name": "mp_story_delete_confirm",
+      "value": "确定永久删除这条动态吗？"
+    },
+    {
+      "name": "cp_search_results",
+      "value": "搜索结果"
     }
   ]
 }

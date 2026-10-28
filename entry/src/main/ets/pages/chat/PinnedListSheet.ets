@@ -1,4 +1,4 @@
-import { promptAction } from '@kit.ArkUI';
+import { curves, promptAction } from '@kit.ArkUI';
 import { getChatStore, getTdClient, getUserStore } from '../../tdkit/Globals';
 import { MessageStore } from '../../store/MessageStore';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
@@ -56,6 +56,7 @@ export struct PinnedListSheet {
   // 会让大半段时间花在屏幕外面，看上去就是「弹了一下才出现」。
   @State private panelH: number = 320;
   @State private shown: boolean = false;
+  @State private dragY: number = 0;
 
   private entered: boolean = false;
   private closing: boolean = false;
@@ -114,13 +115,13 @@ export struct PinnedListSheet {
     if (this.closing) {
       return;
     }
+    this.closing = true;
     const duration: number = powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180);
     if (duration <= 0) {
       this.show = false;
       this.onShowChange(false);
       return;
     }
-    this.closing = true;
     animateTo({
       duration, curve: Curve.Friction,
       onFinish: (): void => {
@@ -128,6 +129,29 @@ export struct PinnedListSheet {
         this.onShowChange(false);
       }
     }, (): void => { this.shown = false; });
+  }
+
+  private updateDrag(offsetY: number): void {
+    if (!this.shown || this.closing) { return; }
+    // 上拖采用渐进阻尼，最多接近20vp；下拖继续直接跟手。
+    this.dragY = offsetY < 0 ? -20 * (-offsetY) / (100 - offsetY) : Math.min(this.panelH, offsetY);
+  }
+
+  private restoreDrag(): void {
+    if (this.closing) { return; }
+    const duration = powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 240);
+    if (duration <= 0) { this.dragY = 0; return; }
+    animateTo({ duration, curve: curves.springMotion(0.32, 0.82) }, (): void => { this.dragY = 0; });
+  }
+
+  private finishDrag(velocityY: number): void {
+    if (this.closing) { return; }
+    const distance = Math.max(48, Math.min(96, this.panelH * 0.25));
+    if (this.dragY >= distance || (this.dragY >= 16 && velocityY > 900)) {
+      this.close();
+    } else {
+      this.restoreDrag();
+    }
   }
 
   private readFromStore(): void {
@@ -321,19 +345,39 @@ export struct PinnedListSheet {
     .width('100%');
   }
 
+  @Builder
+  panelBackdrop() {
+    // 背板向下多留20vp，上拖只移动视觉，不改内容高度，也不露出底部空隙。
+    Column() {}
+      .width('100%').height(this.panelH + 20)
+      .backgroundColor($r('app.color.surface'))
+      .borderRadius({ topLeft: 16, topRight: 16 })
+      .hitTestBehavior(HitTestMode.None);
+  }
+
   build() {
     Column() {
-      Column().layoutWeight(1).onClick((): void => { this.close(); });
+      Column().width('100%').layoutWeight(1)
+        .backgroundColor(Color.Transparent)
+        .hitTestBehavior(HitTestMode.Block)
+        .onClick((): void => { this.close(); });
       Column({ space: 10 }) {
-        Row().width(40).height(4).borderRadius(2).backgroundColor('#D0D0D0');
-        Row({ space: 6 }) {
-          Text($r('app.string.cp_pinned_list_title')).fontSize(17).fontWeight(FontWeight.Medium)
-            .fontColor(COLOR_TEXT_PRIMARY);
-          if (this.entries.length > 0) {
-            Text(pinnedCountLabel(this.entries.length)).fontSize(13)
-              .fontColor(COLOR_TEXT_SECONDARY);
+        Column({ space: 10 }) {
+          Row().width(40).height(4).borderRadius(2).backgroundColor('#D0D0D0');
+          Row({ space: 6 }) {
+            Text($r('app.string.cp_pinned_list_title')).fontSize(17).fontWeight(FontWeight.Medium)
+              .fontColor(COLOR_TEXT_PRIMARY);
+            if (this.entries.length > 0) {
+              Text(pinnedCountLabel(this.entries.length)).fontSize(13)
+                .fontColor(COLOR_TEXT_SECONDARY);
+            }
           }
         }
+        .width('100%').padding({ top: 10 })
+        .gesture(PanGesture({ direction: PanDirection.Vertical, distance: 8 })
+          .onActionUpdate((event: GestureEvent): void => { this.updateDrag(event.offsetY); })
+          .onActionEnd((event: GestureEvent): void => { this.finishDrag(event.velocityY); })
+          .onActionCancel((): void => { this.restoreDrag(); }));
         if (this.loadState === 'loading' && this.entries.length === 0) {
           LoadingProgress().width(28).height(28).margin({ top: 24, bottom: 24 });
         } else if (this.loadState === 'error') {
@@ -354,13 +398,13 @@ export struct PinnedListSheet {
         }
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 10, bottom: 24 })
-      .backgroundColor($r('app.color.surface'))
+      .padding({ left: 16, right: 16, bottom: 24 })
+      .background(this.panelBackdrop(), { align: Alignment.TopStart })
       .borderRadius({ topLeft: 16, topRight: 16 })
-      .translate({ y: this.shown ? 0 : this.panelH })
+      .translate({ y: this.shown ? this.dragY : this.panelH })
       .onAreaChange((_old: Area, area: Area): void => {
         const h: number = Number(area.height);
-        if (h > 0 && Math.abs(h - this.panelH) > 0.5 && !this.shown) {
+        if (h > 0 && Math.abs(h - this.panelH) > 0.5) {
           this.panelH = h;
         }
         this.enter();

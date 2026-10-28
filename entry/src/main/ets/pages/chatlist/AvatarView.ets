@@ -83,7 +83,7 @@ export struct AvatarView {
         // circle rather than a hole.
         this.initialsCircle();
         if (this.loadImage) {
-          CachedImage({
+          CachedImage({ spec: {
             path: this.avatarPath,
             boxWidth: this.avatarSize,
             boxHeight: this.avatarSize,
@@ -100,7 +100,7 @@ export struct AvatarView {
             //               176，否则本机 161px 的头像差一像素够不着。
             pinBounded: true,
             syncSmall: true
-          });
+          } });
         }
       }
       .width(this.avatarSize).height(this.avatarSize);

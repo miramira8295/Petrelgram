@@ -312,7 +312,13 @@ export struct SearchBottomBar {
         .borderRadius(bottomPillRadius())
         .backdropBlur(plainBackdropBlur('card'))
         .visualEffect(hdsVisualEffect('card'))
-        .alignItems(VerticalAlign.Center);
+        .alignItems(VerticalAlign.Center)
+        .accessibilityText(this.search.results.length > 0 ? str('cp_search_results') : '')
+        .onClick((): void => {
+          if (this.search.results.length === 0) { return; }
+          this.getUIContext().getFocusController().clearFocus();
+          this.search.openResults();
+        });
 
         Blank().layoutWeight(1);
 

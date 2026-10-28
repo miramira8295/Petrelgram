@@ -16,7 +16,7 @@ export default function rowLeaveChannelTest(): void {
       ch.subscribe(1, (): void => {}); ch.subscribe(2, (): void => {});
       let done = false;
       const playing = ch.play([1, 1, 2, 3], true).then((): void => { done = true; });
-      expect(ch.particleBudget()).assertEqual(1600);
+      expect(ch.particleBudget()).assertEqual(4000);
       expect(ch.value(3)).assertEqual(0);
       ch.complete(1); await Promise.resolve(); expect(done).assertFalse();
       ch.complete(2); await playing; expect(done).assertTrue();

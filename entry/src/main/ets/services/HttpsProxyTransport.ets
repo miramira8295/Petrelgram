@@ -357,11 +357,15 @@ export class HttpsProxyRuntime {
   }
 
   private async ping(request: TdRequest, timeoutMs: number): Promise<TdObject> {
-    await this.prepare(); this.assertOpen();
     if (request['proxy_id'] !== 0) {
+      await this.prepare(); this.assertOpen();
       if (request['proxy_id'] === this.ingressId) { throw new Error('proxy ingress is internal'); }
       return this.client.send(request, timeoutMs);
     }
+    // Direct latency probing must not restore or select the shared ingress.
+    // Restoring here could edit the hidden native proxy and turn the system
+    // proxy on as a side effect of merely opening the proxy page.
+    this.assertOpen();
     const started = Date.now();
     await this.testConfig({ type: PROXY_DIRECT, server: '', port: 0, username: '', password: '' }, timeoutMs);
     const result: TdObject = { '@type': 'seconds' }; result['seconds'] = (Date.now() - started) / 1000; return result;
@@ -376,7 +380,10 @@ export class HttpsProxyRuntime {
     } finally { this.relay.unregister(record.key); }
   }
   private async test(request: TdRequest, timeoutMs: number): Promise<TdObject> {
-    await this.prepare(); this.assertOpen();
+    // Form tests use a temporary relay entry and must not restore the saved
+    // route first.  restore() may add/edit/enable the hidden ingress, which
+    // makes a latency test change the visible system-proxy switch.
+    this.assertOpen();
     const config = configOf(request['proxy'] as TdObject);
     return usesProxyRelay(relayProxyType(config)) ? this.testConfig(config, timeoutMs) : this.client.send(request, timeoutMs);
   }

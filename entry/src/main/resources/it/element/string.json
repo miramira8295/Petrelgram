@@ -13295,6 +13295,38 @@
     {
       "name": "chat_settings_hide_pinned_sub",
       "value": "Mostrali o nascondili dal menu di ogni chat"
+    },
+    {
+      "name": "mi_added",
+      "value": "Aggiunti %1$s membri"
+    },
+    {
+      "name": "mi_partial",
+      "value": "%1$s aggiunti; impossibile aggiungerne %2$s"
+    },
+    {
+      "name": "mi_failed",
+      "value": "Impossibile aggiungere membri: %1$s"
+    },
+    {
+      "name": "mi_timeout",
+      "value": "Risultato non confermato. Controlla l’elenco dei membri prima di riprovare."
+    },
+    {
+      "name": "mp_story_show_profile",
+      "value": "Mostra sul profilo"
+    },
+    {
+      "name": "mp_story_hide_profile",
+      "value": "Rimuovi dal profilo"
+    },
+    {
+      "name": "mp_story_delete_confirm",
+      "value": "Eliminare definitivamente questa storia?"
+    },
+    {
+      "name": "cp_search_results",
+      "value": "Risultati di ricerca"
     }
   ]
 }

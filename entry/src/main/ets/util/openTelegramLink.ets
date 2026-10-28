@@ -17,6 +17,7 @@ import { navigateToChatProfile, navigateToProfile } from './profileNav';
 import { navigateToSetting } from './settingsNav';
 import { logE } from './log';
 import { navigateToSearch } from './searchNav';
+import { endLinkNavIf } from './linkTapGuard';
 
 // **一律 'content'。** 这条路上的每一次跳转，用户都是"在内容里点了什么"——
 // 消息里的链接、资料页简介里的链接、内置浏览器里的链接。navigateToChat 的默认
@@ -41,6 +42,7 @@ function openChatPage(chatId: number, showJoinedNotice: boolean = false,
 // off to the system browser; for a deep-link ENTRY point we must not — opening
 // the browser there bounces browser → app → browser, so just tell the user.
 function onLinkUnresolved(context: common.UIAbilityContext, url: string, allowBrowser: boolean): void {
+  endLinkNavIf(url);
   // A Telegram resource must never bounce to its web landing page. Besides
   // being jarring for an in-message tap, a cold-start deep link can otherwise
   // loop browser -> app -> browser. Only genuinely external URLs use openUrl.
@@ -570,7 +572,12 @@ export function openInviteLink(context: common.UIAbilityContext, invite: string,
     // Expired or invalid Telegram resources stay in-app and show a precise
     // failure instead of opening Telegram's web landing page.
     logE(`openInviteLink.check failed: ${e.message}`);
-    onLinkUnresolved(context, original, allowBrowser);
+    endLinkNavIf(original);
+    // The URL was already recognized as an invite by inviteLinkOf(). A failed
+    // TDLib check therefore means the invite is expired, revoked, or
+    // inaccessible; it must not fall through to the generic "unrecognized
+    // Telegram link" message.
+    promptAction.showToast({ message: str('cpp_invite_invalid'), duration: 2000 });
   });
 }
 

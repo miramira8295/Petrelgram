@@ -35,7 +35,7 @@ export struct VoiceBubble {
   // 语音转文字：'' 未识别 / pending 识别中 / done 已完成 / error 失败
   @Param speechState: string = '';
   @Param speechText: string = '';
-  @Param onRecognizeTap: () => void = (): void => {};
+  @Event onRecognizeTap: () => void = (): void => {};
   @Param onNeedDownload: () => void = (): void => {};
   @Param onPlaybackStarted: () => void = (): void => {};
   @Local playbackStatus: string = 'idle';
@@ -265,6 +265,36 @@ export struct VoiceBubble {
     });
   }
 
+  private recognizeSpeech(): void {
+    // A completed/pending recognition must not dispatch again if an old
+    // control receives the final click while its branch is being replaced.
+    if (this.speechState === 'pending' || this.speechState === 'done') {
+      return;
+    }
+    this.onRecognizeTap();
+  }
+
+  @Builder
+  private recognizeControl() {
+    Button({ type: ButtonType.Normal, stateEffect: true }) {
+      Row({ space: 4 }) {
+        SymbolGlyph($r('sys.symbol.character_square')).fontSize(13)
+          .fontColor([this.speechSecondaryColor()]);
+        Text($r('app.string.voice_transcribe')).fontSize(12.5).fontColor(this.speechSecondaryColor());
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.Start)
+      .hitTestBehavior(HitTestMode.None);
+    }
+    .width(WAVEFORM_WIDTH)
+    .height(32)
+    .padding({ left: 0, right: 8 })
+    .borderRadius(6)
+    .backgroundColor(Color.Transparent)
+    .accessibilityText($r('app.string.voice_transcribe_sub'))
+    .onClick((): void => { this.recognizeSpeech(); });
+  }
+
   // 转文字入口与结果。放在波形下方而不是挤进那一行——识别文本可能很长，
   // 塞进气泡内的横向空间会把波形压没。
   @Builder
@@ -282,17 +312,14 @@ export struct VoiceBubble {
         .width(WAVEFORM_WIDTH)
         .textAlign(TextAlign.Start);
     } else if (this.speechState === 'error') {
-      Text(this.speechText !== '' ? this.speechText : $r('app.string.voice_transcribe_failed'))
-        .fontSize(12.5).fontColor('#FF3B30').width(WAVEFORM_WIDTH);
-    } else {
-      Row({ space: 4 }) {
-        SymbolGlyph($r('sys.symbol.character_square')).fontSize(13)
-          .fontColor([this.speechSecondaryColor()]);
-        Text($r('app.string.voice_transcribe')).fontSize(12.5).fontColor(this.speechSecondaryColor());
+      Column({ space: 2 }) {
+        Text(this.speechText !== '' ? this.speechText : $r('app.string.voice_transcribe_failed'))
+          .fontSize(12.5).fontColor('#FF3B30').width(WAVEFORM_WIDTH);
+        this.recognizeControl();
       }
-      .padding({ top: 3, bottom: 3, right: 8 })
-      .accessibilityText($r('app.string.voice_transcribe_sub'))
-      .onClick((): void => { this.onRecognizeTap(); });
+      .alignItems(HorizontalAlign.Start);
+    } else {
+      this.recognizeControl();
     }
   }
 

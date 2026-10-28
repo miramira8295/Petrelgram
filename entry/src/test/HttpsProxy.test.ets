@@ -244,16 +244,16 @@ export default function httpsProxyTest() {
     });
     it('test does not persist or enable and releases temporary authentication', 0, async () => {
       const c = new TestProxyClient(); const s = new TestRegistry(); const relay = new TestRelay();
-      const rt = runtime(c, s, relay); await rt.prepare(); const before = c.sent.length;
+      const rt = runtime(c, s, relay);
       await rt.send(httpsRequest('testProxy'));
-      expect(s.rows.length).assertEqual(1); expect(c.rows.length).assertEqual(1);
-      expect(relay.active.size).assertEqual(1);
-      expect(c.sent.slice(before).some((r: TdRequest): boolean => r['@type'] === 'addProxy' || r['@type'] === 'enableProxy')).assertFalse();
+      expect(s.rows.length).assertEqual(0); expect(c.rows.length).assertEqual(0);
+      expect(relay.active.size).assertEqual(0);
+      expect(c.sent.some((r: TdRequest): boolean => r['@type'] === 'addProxy' || r['@type'] === 'editProxy' || r['@type'] === 'enableProxy')).assertFalse();
     });
     it('failed test also releases temporary authentication', 0, async () => {
       const c = new TestProxyClient(); c.failKind = 'testProxy'; const relay = new TestRelay();
       try { await runtime(c, new TestRegistry(), relay).send(httpsRequest('testProxy')); } catch (_e) {}
-      expect(relay.active.size).assertEqual(1);
+      expect(relay.active.size).assertEqual(0);
     });
     it('delete removes durable credentials and closes the corresponding relay tunnels', 0, async () => {
       const c = new TestProxyClient(); const s = new TestRegistry(); const relay = new TestRelay();

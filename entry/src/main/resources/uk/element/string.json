@@ -13295,6 +13295,38 @@
     {
       "name": "chat_settings_hide_pinned_sub",
       "value": "Показати чи приховати можна окремо в меню кожного чату"
+    },
+    {
+      "name": "mi_added",
+      "value": "Додано учасників: %1$s"
+    },
+    {
+      "name": "mi_partial",
+      "value": "Додано: %1$s; не вдалося додати: %2$s"
+    },
+    {
+      "name": "mi_failed",
+      "value": "Не вдалося додати учасників: %1$s"
+    },
+    {
+      "name": "mi_timeout",
+      "value": "Результат не підтверджено. Перед повтором перевірте список учасників."
+    },
+    {
+      "name": "mp_story_show_profile",
+      "value": "Показати в профілі"
+    },
+    {
+      "name": "mp_story_hide_profile",
+      "value": "Прибрати з профілю"
+    },
+    {
+      "name": "mp_story_delete_confirm",
+      "value": "Видалити цю історію назавжди?"
+    },
+    {
+      "name": "cp_search_results",
+      "value": "Результати пошуку"
     }
   ]
 }

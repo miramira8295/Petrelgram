@@ -13295,6 +13295,38 @@
     {
       "name": "chat_settings_hide_pinned_sub",
       "value": "各チャットのメニューで個別に表示・非表示を設定"
+    },
+    {
+      "name": "mi_added",
+      "value": "%1$s 人のメンバーを追加しました"
+    },
+    {
+      "name": "mi_partial",
+      "value": "%1$s 人を追加しました。%2$s 人は追加できませんでした"
+    },
+    {
+      "name": "mi_failed",
+      "value": "メンバーを追加できませんでした：%1$s"
+    },
+    {
+      "name": "mi_timeout",
+      "value": "結果を確認できません。再試行する前にグループのメンバー一覧を確認してください。"
+    },
+    {
+      "name": "mp_story_show_profile",
+      "value": "プロフィールに表示"
+    },
+    {
+      "name": "mp_story_hide_profile",
+      "value": "プロフィールから削除"
+    },
+    {
+      "name": "mp_story_delete_confirm",
+      "value": "このストーリーを完全に削除しますか？"
+    },
+    {
+      "name": "cp_search_results",
+      "value": "検索結果"
     }
   ]
 }

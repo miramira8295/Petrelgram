@@ -25,7 +25,7 @@ export class RowLeaveChannel {
   private leaving: Set<number> = new Set<number>();
   private listeners: Map<number, Set<(strength: number) => void>> = new Map();
   private pending: Map<number, () => void> = new Map();
-  private budget: number = 3200;
+  private budget: number = 8000;
 
   particleBudget(): number { return this.budget; }
 
@@ -35,13 +35,13 @@ export class RowLeaveChannel {
     const visible = Array.from(new Set(rowIds)).filter((id: number): boolean =>
       (this.listeners.get(id)?.size ?? 0) > 0);
     if (visible.length === 0) { return; }
-    this.budget = Math.max(128, Math.floor(3200 / visible.length));
+    this.budget = Math.max(128, Math.floor(8000 / visible.length));
     const waits: Promise<void>[] = visible.map((id: number): Promise<void> => new Promise<void>((resolve) => {
       this.pending.set(id, resolve);
     }));
     const timer = setTimeout((): void => {
       for (const id of visible) { this.complete(id); }
-    }, 2200);
+    }, 2750);
     try {
       this.mark(visible);
       await Promise.all(waits);

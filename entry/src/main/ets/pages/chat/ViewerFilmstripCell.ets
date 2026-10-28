@@ -95,10 +95,10 @@ export struct ViewerFilmstripCell {
     Stack() {
       if (this.cell.videoPath !== '') {
         if (this.poster !== '') {
-          CachedImage({
+          CachedImage({ spec: {
             path: this.poster, boxWidth: THUMB, boxHeight: THUMB,
             radius: RADIUS, fit: ImageFit.Cover
-          });
+          } });
         } else {
           this.emptyBox();
         }

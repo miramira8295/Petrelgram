@@ -1,4 +1,5 @@
 import { CachedImage } from '../common/CachedImage';
+import { CachedImageSpec, CachedImageSpecCache } from '../../util/cachedImageSpec';
 import { subscribeThumbPath, thumbPathFor } from '../../util/mediaThumbChannel';
 import { liveThumbPath } from '../../util/liveThumbPath';
 import { shouldReattachThumb } from '../../util/liveThumbAttach';
@@ -49,6 +50,8 @@ export interface LiveThumbSpec {
   // 解码完成前画的内联小图（data URL，见 util/miniThumbPlaceholder）。
   // 空串 = 只有底色。
   mini: string;
+  // Album-only placeholder policy; decoded images remain visible while scrolling.
+  deferMiniOnScroll?: boolean;
 }
 
 
@@ -153,21 +156,25 @@ export struct LiveThumbImage {
     return this.path;
   }
 
+  private imageSpecCache: CachedImageSpecCache = new CachedImageSpecCache();
+
+  @Computed
+  private get imageSpec(): CachedImageSpec {
+    return this.imageSpecCache.prepare({
+      path: this.path, boxWidth: this.spec.boxWidth, boxHeight: this.spec.boxHeight,
+      radius: this.spec.radius, fit: this.spec.fit,
+      syncDisplay: this.spec.syncDisplay === true,
+      // A path upgrade for the same file keeps the held image until it is ready.
+      sourceKey: this.spec.fileId > 0 ? `f${this.spec.fileId}` : '',
+      opaque: this.spec.opaque, backdrop: this.spec.backdrop,
+      backdropImage: this.spec.mini,
+      deferBackdropOnScroll: this.spec.deferMiniOnScroll === true
+    });
+  }
+
   build() {
     if (this.drawPath() !== '') {
-      CachedImage({
-        syncDisplay: this.spec.syncDisplay === true,
-        path: this.path,
-        boxWidth: this.spec.boxWidth,
-        boxHeight: this.spec.boxHeight,
-        radius: this.spec.radius,
-        fit: this.spec.fit,
-        // 同一缩略图 fileId 下换路径（海报 → 真缩略图）保留旧图当占位（issue #188）。
-        sourceKey: this.spec.fileId > 0 ? `f${this.spec.fileId}` : '',
-        opaque: this.spec.opaque,
-        backdrop: this.spec.backdrop,
-        backdropImage: this.spec.mini
-      });
+      CachedImage({ spec: this.imageSpec });
     } else {
       this.placeholder();
     }

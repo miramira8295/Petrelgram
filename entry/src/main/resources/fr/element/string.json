@@ -13295,6 +13295,38 @@
     {
       "name": "chat_settings_hide_pinned_sub",
       "value": "Affichez ou masquez-les dans le menu de chaque discussion"
+    },
+    {
+      "name": "mi_added",
+      "value": "%1$s membres ajoutés"
+    },
+    {
+      "name": "mi_partial",
+      "value": "%1$s membres ajoutés ; %2$s n’ont pas pu être ajoutés"
+    },
+    {
+      "name": "mi_failed",
+      "value": "Impossible d’ajouter les membres : %1$s"
+    },
+    {
+      "name": "mi_timeout",
+      "value": "Résultat non confirmé. Vérifiez la liste des membres avant de réessayer."
+    },
+    {
+      "name": "mp_story_show_profile",
+      "value": "Afficher sur le profil"
+    },
+    {
+      "name": "mp_story_hide_profile",
+      "value": "Retirer du profil"
+    },
+    {
+      "name": "mp_story_delete_confirm",
+      "value": "Supprimer définitivement cette story ?"
+    },
+    {
+      "name": "cp_search_results",
+      "value": "Résultats de recherche"
     }
   ]
 }

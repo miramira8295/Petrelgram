@@ -13295,6 +13295,38 @@
     {
       "name": "chat_settings_hide_pinned_sub",
       "value": "แสดงหรือซ่อนแยกกันได้ในเมนูของแต่ละแชท"
+    },
+    {
+      "name": "mi_added",
+      "value": "เพิ่มสมาชิก %1$s คนแล้ว"
+    },
+    {
+      "name": "mi_partial",
+      "value": "เพิ่มแล้ว %1$s คน แต่เพิ่ม %2$s คนไม่ได้"
+    },
+    {
+      "name": "mi_failed",
+      "value": "เพิ่มสมาชิกไม่ได้: %1$s"
+    },
+    {
+      "name": "mi_timeout",
+      "value": "ยังยืนยันผลไม่ได้ โปรดตรวจสอบรายชื่อสมาชิกกลุ่มก่อนลองอีกครั้ง"
+    },
+    {
+      "name": "mp_story_show_profile",
+      "value": "แสดงบนโปรไฟล์"
+    },
+    {
+      "name": "mp_story_hide_profile",
+      "value": "นำออกจากโปรไฟล์"
+    },
+    {
+      "name": "mp_story_delete_confirm",
+      "value": "ลบสตอรี่นี้อย่างถาวรหรือไม่"
+    },
+    {
+      "name": "cp_search_results",
+      "value": "ผลการค้นหา"
     }
   ]
 }

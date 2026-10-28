@@ -28,6 +28,7 @@ struct StoryViewerPage {
   @State chatAvatar: string = '';
   @State chatInitials: string = '?';
   private active: boolean = false;
+  private profileSequence: boolean = false;
   private loadSeq: number = 0;
   private progressTimer: number = -1;
   private segmentStartMs: number = 0;
@@ -39,6 +40,20 @@ struct StoryViewerPage {
     const params = router.getParams() as Record<string, Object> | undefined;
     const chatId: number = params !== undefined
       ? ((params['chatId'] as number | undefined) ?? 0) : 0;
+    const ids = params !== undefined ? params['storyIds'] as number[] | undefined : undefined;
+    if (chatId !== 0 && ids !== undefined && ids.length > 0) {
+      // Profile/archive stories need not appear in the active-story ring.
+      this.profileSequence = true;
+      this.chatId = chatId;
+      this.storyIds = ids.filter((id: number): boolean => id > 0);
+      const selected = (params!['storyId'] as number | undefined) ?? 0;
+      this.index = Math.max(0, this.storyIds.indexOf(selected));
+      this.chatTitle = (params!['chatTitle'] as string | undefined) ?? '';
+      this.chatAvatar = (params!['chatAvatar'] as string | undefined) ?? '';
+      this.chatInitials = (params!['chatInitials'] as string | undefined) ?? '?';
+      this.loadCurrent();
+      return;
+    }
     this.enterChat(chatId, true);
   }
 
@@ -244,6 +259,10 @@ struct StoryViewerPage {
     if (next >= 0 && next < this.storyIds.length) {
       this.index = next;
       this.loadCurrent();
+      return;
+    }
+    if (this.profileSequence) {
+      router.back();
       return;
     }
     const ring: StoryRingEntry[] = getStoryStore().entries();

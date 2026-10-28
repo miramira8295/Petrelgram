@@ -22,7 +22,10 @@ include_directories(${NATIVERENDER_ROOT_PATH}
                     ${NATIVERENDER_ROOT_PATH}/include)
 
 add_library(entry SHARED napi_init.cpp webm_alpha.cpp webm_alpha_napi.cpp sticker_frame_cache.cpp sticker_decode_queue.cpp
-    tgs_render.cpp tgs_napi.cpp tgs_frame_cache.cpp)
+    tgs_render.cpp tgs_napi.cpp tgs_frame_cache.cpp shatter_renderer.cpp)
+
+# 粒子准备也用于 debug 真机性能验证，不让 O0 放大首次切块/像素转换开销。
+set_source_files_properties(shatter_renderer.cpp PROPERTIES COMPILE_OPTIONS "-O2")
 
 add_library(tdjson SHARED IMPORTED)
 set_target_properties(tdjson PROPERTIES IMPORTED_LOCATION
@@ -63,4 +66,4 @@ target_include_directories(entry PRIVATE ${LIBVPX_DIR}/include)
 # libnative_media_* 三个已经摘掉——换成 libvpx 之后不再碰系统解码器。
 # libz：解码后的帧落盘前压一遍（见 sticker_frame_cache.cpp 的说明）。NDK 自带。
 target_link_libraries(entry PUBLIC libace_napi.z.so tdjson tgcalls_ohos libhilog_ndk.z.so
-    vpx rlottie libpixelmap.so libz.so)
+    vpx rlottie libpixelmap.so libz.so libEGL.so libGLESv3.so libnative_window.so libnative_vsync.so)

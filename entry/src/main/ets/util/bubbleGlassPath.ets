@@ -28,10 +28,10 @@ const TAIL_HOOK_LIFT: number = 0.3;
 
 export function glassBubbleCommands(w: number, h: number, outgoing: boolean, hasTail: boolean,
   tl: number, tr: number, br: number, bl: number, tailW: number, tailH: number, scale: number,
-  inset: number = 0): string {
+  inset: number = 0, tailGutter: number = tailW - 1): string {
   // 没尾巴的行也留同宽的空位（气泡组件里是 bubbleTailGutter = tailW - 1），
   // 气泡边缘才能上下对齐。
-  const gutter = tailW - 1;
+  const gutter = tailGutter;
   const x0 = (outgoing ? 0 : gutter) + inset;
   const x1 = (outgoing ? w - gutter : w) - inset;
   const yTop = inset;

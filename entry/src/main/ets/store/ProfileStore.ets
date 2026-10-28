@@ -57,7 +57,7 @@ export class ProfileStore {
   private listeners: Listener[] = [];
   private unsubs: Array<() => void> = [];
   // file id → apply(path) for every thumbnail/avatar this store downloads
-  private fileApply: Map<number, (path: string) => void> = new Map();
+  private fileApply: Map<number, Array<(path: string) => void>> = new Map();
   private avatarVersion: number = 0;
   private avatarAnimationVersion: number = 0;
   private statusEmojiVersion: number = 0;
@@ -179,6 +179,7 @@ export class ProfileStore {
       un();
     }
     this.unsubs = [];
+    this.fileApply.clear();
     this.stopStatusRefresh();
     this.listeners = [];
   }
@@ -250,14 +251,29 @@ export class ProfileStore {
     if (fileId <= 0) {
       return;
     }
-    this.fileApply.set(fileId, apply);
+    // A thumbnail can belong to both grids (or multiple gifts). Keep every
+    // consumer until completion instead of replacing the previous callback.
+    const pending = this.fileApply.get(fileId);
+    if (pending !== undefined) {
+      pending.push(apply);
+      return;
+    }
+    const consumers: Array<(path: string) => void> = [apply];
+    this.fileApply.set(fileId, consumers);
     const req: TdRequest = { '@type': 'downloadFile' };
     req['file_id'] = fileId;
     req['priority'] = DL_PRIORITY;
-    this.send(req, 'downloadFile', (f: TdObject) => this.applyFile(f));
+    this.send(req, 'downloadFile', (f: TdObject) => this.applyFile(f), (): void => {
+      if (this.fileApply.get(fileId) === consumers) {
+        this.fileApply.delete(fileId);
+      }
+    });
   }
 
   private applyFile(file: TdObject): void {
+    if (!this.active) {
+      return;
+    }
     const id = file['id'] as number | undefined;
     if (id === undefined) {
       return;
@@ -270,7 +286,10 @@ export class ProfileStore {
     const done = local !== undefined ? ((local['is_downloading_completed'] as boolean | undefined) ?? false) : false;
     const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
     if (done && path !== '') {
-      apply(path);
+      this.fileApply.delete(id);
+      for (const consumer of apply) {
+        consumer(path);
+      }
       this.notify();
     }
   }
@@ -541,8 +560,8 @@ export class ProfileStore {
     });
   }
 
-  reloadStories(): void {
-    if (!this.storiesLoading) {
+  reloadStories(force: boolean = false): void {
+    if (force || !this.storiesLoading) {
       this.loadStories();
     }
   }
@@ -577,6 +596,7 @@ export class ProfileStore {
     const contentType = content !== undefined
       ? ((content['@type'] as string | undefined) ?? '') : '';
     let thumbFileId = 0;
+    let thumbFile: TdObject | undefined = undefined;
     let duration = 0;
     let isVideo = false;
     if (contentType === 'storyContentVideo') {
@@ -586,12 +606,14 @@ export class ProfileStore {
         ? Math.round((video['duration'] as number | undefined) ?? 0) : 0;
       const thumb = video !== undefined ? (video['thumbnail'] as TdObject | undefined) : undefined;
       const file = thumb !== undefined ? (thumb['file'] as TdObject | undefined) : undefined;
+      thumbFile = file;
       thumbFileId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
     } else if (contentType === 'storyContentPhoto') {
       const photo = content!['photo'] as TdObject | undefined;
       const sizes = photo !== undefined ? ((photo['sizes'] as TdObject[] | undefined) ?? []) : [];
       if (sizes.length > 0) {
         const file = sizes[0]['photo'] as TdObject | undefined;
+        thumbFile = file;
         thumbFileId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
       }
     } else {
@@ -600,8 +622,11 @@ export class ProfileStore {
     if (id <= 0) {
       return null;
     }
+    const local = thumbFile !== undefined ? thumbFile['local'] as TdObject | undefined : undefined;
+    const thumbPath = local !== undefined && local['is_downloading_completed'] === true
+      ? (local['path'] as string | undefined) ?? '' : '';
     return {
-      item: { id, thumbPath: '', duration, isVideo },
+      item: { id, thumbPath, duration, isVideo },
       thumbFileId
     };
   }
@@ -624,7 +649,7 @@ export class ProfileStore {
     }
     this.notify();
     for (const entry of parsed) {
-      if (entry.thumbFileId <= 0) {
+      if (entry.thumbFileId <= 0 || entry.item.thumbPath !== '') {
         continue;
       }
       const storyId = entry.item.id;
@@ -674,7 +699,7 @@ export class ProfileStore {
   }
 
   loadArchivedStories(force: boolean = false): void {
-    if (this.archivedStoriesLoading || (this.archivedStoriesLoaded && !force)) {
+    if (!force && (this.archivedStoriesLoading || this.archivedStoriesLoaded)) {
       return;
     }
     const version = ++this.archivedStoriesVersion;

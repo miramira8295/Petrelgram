@@ -1,3 +1,4 @@
+import { canInviteChatMembers } from '../util/chatMemberInvite';
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { MemberRole, memberRoleOf, memberRoleRank } from '../util/memberRole';
@@ -120,6 +121,7 @@ export class ChatProfileStore {
   isChannel: boolean = false;
   isMuted: boolean = false;
   canManageVideoChats: boolean = false;
+  canInviteMembers: boolean = false;
   canManageChat: boolean = false; // creator or admin with usable admin rights
   // 自己在这个群里的身份与逐项权限。成员长按菜单按这几项决定出哪些条目——
   // canManageChat 是"有任意一项管理权限"，用它一刀切会给只会封禁的管理员
@@ -157,6 +159,8 @@ export class ChatProfileStore {
   private chatId: number;
   private supergroupId: number = 0;
   private basicGroupId: number = 0;
+  private invitePermissions: TdObject | undefined = undefined;
+  private ownMemberStatus: TdObject | undefined = undefined;
   private listeners: Listener[] = [];
   private unsubs: Array<() => void> = [];
   private fileApply: Map<number, (path: string) => void> = new Map();
@@ -188,6 +192,14 @@ export class ChatProfileStore {
     this.unsubs.push(this.client.onUpdate('updateChatNotificationSettings', (u: TdObject) => {
       if ((u['chat_id'] as number | undefined) === this.chatId) {
         this.applyNotificationSettings(u['notification_settings'] as TdObject | undefined);
+        this.notify();
+      }
+    }));
+    this.unsubs.push(this.client.onUpdate('updateChatPermissions', (u: TdObject): void => {
+      if (u['chat_id'] === this.chatId) {
+        this.invitePermissions = u['permissions'] as TdObject | undefined;
+        this.canInviteMembers = canInviteChatMembers(this.ownMemberStatus, this.invitePermissions, this.isChannel);
+        this.rebuildAvailableTabs();
         this.notify();
       }
     }));
@@ -288,7 +300,7 @@ export class ChatProfileStore {
     const next: string[] = [];
     for (const tab of order) {
       const available = tab === PROFILE_TAB_MEMBERS
-        ? this.membersAvailable : (this.tabAvailability.get(tab) ?? false);
+        ? (this.membersAvailable || this.canInviteMembers) : (this.tabAvailability.get(tab) ?? false);
       if (available) {
         next.push(tab);
       }
@@ -814,6 +826,7 @@ export class ChatProfileStore {
         (p: string) => { this.avatarPath = p; });
       this.applyNotificationSettings(chat['notification_settings'] as TdObject | undefined);
       this.applyVideoChat(chat['video_chat'] as TdObject | undefined);
+      this.invitePermissions = chat['permissions'] as TdObject | undefined;
       const type = chat['type'] as TdObject | undefined;
       const typeName = type !== undefined ? ((type['@type'] as string | undefined) ?? '') : '';
       if (typeName === 'chatTypeSupergroup') {
@@ -867,6 +880,9 @@ export class ChatProfileStore {
   }
 
   private applyMemberStatus(status: TdObject | undefined): void {
+    this.ownMemberStatus = status;
+    this.canInviteMembers = canInviteChatMembers(status, this.invitePermissions, this.isChannel);
+    this.rebuildAvailableTabs();
     const type = (status?.['@type'] as string | undefined) ?? '';
     if (type === 'chatMemberStatusLeft') {
       this.membershipState = 'joinable';

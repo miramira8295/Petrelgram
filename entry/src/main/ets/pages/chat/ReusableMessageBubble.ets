@@ -1,3 +1,7 @@
+import { StickerMessageBubble } from './StickerMessageBubble';
+import { TextMessageBubble } from './TextMessageBubble';
+import { AlbumMessageBubble } from './AlbumMessageBubble';
+import { SingleMediaBubble } from './SingleMediaBubble';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { BubbleFocusChannel } from '../../util/bubbleFocusChannel';
 import { RowLeaveChannel } from '../../util/rowLeaveChannel';
@@ -435,7 +439,23 @@ export struct ReusableMessageBubble {
   }
 
   build() {
-    if (this.data.lightweightPlainText && this.shownGroup.head.translatedText === '') {
+    if (this.shownGroup.photoPaths.length > 1) {
+      // 在实例化通用类型内容之前分流，相册只建立公共壳与自身需要的状态。
+      AlbumMessageBubble({ group: this.shownGroup, data: this.data, actions: this.actions,
+        nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
+        .opacity(this.translationFade);
+    } else if (this.shownGroup.head.contentType === 'photo' || this.shownGroup.head.contentType === 'video') {
+      SingleMediaBubble({ msg: this.shownGroup.head, group: this.shownGroup,
+        data: this.data, actions: this.actions,
+        nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
+        .opacity(this.translationFade);
+    } else if (this.shownGroup.head.contentType === 'sticker' ||
+      this.shownGroup.head.contentType === 'emoji' || this.shownGroup.head.contentType === 'customEmoji') {
+      StickerMessageBubble({ msg: this.shownGroup.head, group: this.shownGroup,
+        data: this.data, actions: this.actions,
+        nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
+        .opacity(this.translationFade);
+    } else if (this.data.lightweightPlainText && this.shownGroup.head.translatedText === '') {
       LightweightPlainTextBubble({
         jumpFocus: this.jumpFocus,
         leaving: this.leaving,
@@ -458,6 +478,11 @@ export struct ReusableMessageBubble {
         memberIds: this.shownGroup.memberIds,
         actions: this.actions
       })
+        .opacity(this.translationFade);
+    } else if (this.shownGroup.head.contentType === 'text' || this.shownGroup.head.contentType === 'richMessage') {
+      TextMessageBubble({ msg: this.shownGroup.head, group: this.shownGroup,
+        data: this.data, actions: this.actions,
+        nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
         .opacity(this.translationFade);
     } else {
       MessageBubble({

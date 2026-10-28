@@ -13295,6 +13295,38 @@
     {
       "name": "chat_settings_hide_pinned_sub",
       "value": "Hiện hoặc ẩn riêng trong menu của từng cuộc trò chuyện"
+    },
+    {
+      "name": "mi_added",
+      "value": "Đã thêm %1$s thành viên"
+    },
+    {
+      "name": "mi_partial",
+      "value": "Đã thêm %1$s; không thể thêm %2$s"
+    },
+    {
+      "name": "mi_failed",
+      "value": "Không thể thêm thành viên: %1$s"
+    },
+    {
+      "name": "mi_timeout",
+      "value": "Chưa xác nhận được kết quả. Hãy kiểm tra danh sách thành viên nhóm trước khi thử lại."
+    },
+    {
+      "name": "mp_story_show_profile",
+      "value": "Hiển thị trên hồ sơ"
+    },
+    {
+      "name": "mp_story_hide_profile",
+      "value": "Gỡ khỏi hồ sơ"
+    },
+    {
+      "name": "mp_story_delete_confirm",
+      "value": "Xóa vĩnh viễn tin này?"
+    },
+    {
+      "name": "cp_search_results",
+      "value": "Kết quả tìm kiếm"
     }
   ]
 }

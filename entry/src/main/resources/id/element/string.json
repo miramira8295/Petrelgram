@@ -13295,6 +13295,38 @@
     {
       "name": "chat_settings_hide_pinned_sub",
       "value": "Tampilkan atau sembunyikan lewat menu setiap obrolan"
+    },
+    {
+      "name": "mi_added",
+      "value": "%1$s anggota ditambahkan"
+    },
+    {
+      "name": "mi_partial",
+      "value": "%1$s ditambahkan; %2$s tidak dapat ditambahkan"
+    },
+    {
+      "name": "mi_failed",
+      "value": "Tidak dapat menambahkan anggota: %1$s"
+    },
+    {
+      "name": "mi_timeout",
+      "value": "Hasil belum dikonfirmasi. Periksa daftar anggota grup sebelum mencoba lagi."
+    },
+    {
+      "name": "mp_story_show_profile",
+      "value": "Tampilkan di profil"
+    },
+    {
+      "name": "mp_story_hide_profile",
+      "value": "Hapus dari profil"
+    },
+    {
+      "name": "mp_story_delete_confirm",
+      "value": "Hapus cerita ini secara permanen?"
+    },
+    {
+      "name": "cp_search_results",
+      "value": "Hasil pencarian"
     }
   ]
 }

@@ -13295,6 +13295,38 @@
     {
       "name": "chat_settings_hide_pinned_sub",
       "value": "可在聊天選單中個別顯示或隱藏"
+    },
+    {
+      "name": "mi_added",
+      "value": "已新增 %1$s 位成員"
+    },
+    {
+      "name": "mi_partial",
+      "value": "已新增 %1$s 位成員，另有 %2$s 位未能加入"
+    },
+    {
+      "name": "mi_failed",
+      "value": "新增成員失敗：%1$s"
+    },
+    {
+      "name": "mi_timeout",
+      "value": "暫時無法確認新增結果，請返回群組成員清單查看後再操作"
+    },
+    {
+      "name": "mp_story_show_profile",
+      "value": "顯示到個人資料頁"
+    },
+    {
+      "name": "mp_story_hide_profile",
+      "value": "從個人資料頁移除"
+    },
+    {
+      "name": "mp_story_delete_confirm",
+      "value": "確定永久刪除這則動態嗎？"
+    },
+    {
+      "name": "cp_search_results",
+      "value": "搜尋結果"
     }
   ]
 }

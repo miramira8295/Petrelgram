@@ -102,6 +102,12 @@ export class SearchSession {
   @Trace results: number[] = []; // message ids, newest → oldest；整体替换，不原地 push
   @Trace total: number = 0;
   @Trace idx: number = 0; // 0-based index into results
+  @Trace resultsOpen: boolean = false;
+  @Trace resultMessages: Map<number, TdObject> = new Map();
+  @Trace loading: boolean = false;
+  @Trace loadFailed: boolean = false;
+  private resultsExhausted: boolean = false;
+  private disposed: boolean = false;
   // 「查看历史」筛的那个发送者；0 = 不按发送者筛（普通关键词搜索）。
   // 按发送者筛时 query 允许为空——TDLib 支持"空 query + sender_id"列出此人
   // 全部消息。
@@ -146,6 +152,7 @@ export class SearchSession {
 
   // ChatPage.aboutToAppear 里调一次。
   bind(host: SearchSessionHost): void {
+    this.disposed = false;
     this.host = host;
     this.senders.bind({
       chatId: (): number => this.host.chatId(),
@@ -196,6 +203,7 @@ export class SearchSession {
   // 搬之前是 ChatPage.enterSearch()。头部 ⋮ 菜单的"搜索"项调用（页面侧改调
   // this.search.enter()）。
   enter(): void {
+    this.disposed = false;
     this.cancelEntrySearch();
     this.seq++;
     this.anchorId = 0;
@@ -203,6 +211,11 @@ export class SearchSession {
     this.mode = true;
     this.query = '';
     this.results = [];
+    this.resultMessages = new Map();
+    this.resultsOpen = false;
+    this.loading = false;
+    this.loadFailed = false;
+    this.resultsExhausted = false;
     this.total = 0;
     this.idx = 0;
   }
@@ -219,6 +232,11 @@ export class SearchSession {
     this.clearSender();
     this.anchorId = 0;
     this.results = [];
+    this.resultMessages = new Map();
+    this.resultsOpen = false;
+    this.loading = false;
+    this.loadFailed = false;
+    this.resultsExhausted = false;
     this.total = 0;
     this.idx = 0;
     this.seq++;
@@ -238,6 +256,11 @@ export class SearchSession {
     this.anchorId = 0;
     if (this.senderId === 0) { this.senders.update(value); } else { this.senders.clear(); }
     this.results = [];
+    this.resultMessages = new Map();
+    this.resultsOpen = false;
+    this.loading = false;
+    this.loadFailed = false;
+    this.resultsExhausted = false;
     this.total = 0;
     this.idx = 0;
     this.seq++;
@@ -250,7 +273,7 @@ export class SearchSession {
   // enterForSender()（本类）、applySearchStep()（本类）、
   // SearchHeader.onSubmit（簇外，直接调 run(0,0)，跳过 updateQuery() 那次
   // 提前清空——无害，因为 fromMsgId===0 本来就会整体替换 results）。
-  run(fromMsgId: number, thenJumpTo: number): void {
+  run(fromMsgId: number, thenJumpTo: number, navigate: boolean = true): void {
     this.senders.clear();
     const q = this.keywords();
     // 关键词为空时通常没什么可搜的，但**按发送者筛是例外**：空 query +
@@ -260,6 +283,9 @@ export class SearchSession {
       return;
     }
     const seq = ++this.seq;
+    this.loading = true;
+    this.loadFailed = false;
+    if (fromMsgId === 0) { this.resultsExhausted = false; }
     const req: TdRequest = { '@type': 'searchChatMessages' };
     req['chat_id'] = this.host.chatId();
     req['query'] = q;
@@ -277,6 +303,7 @@ export class SearchSession {
       if (seq !== this.seq || !this.mode) {
         return;
       }
+      this.loading = false;
       const msgs = (res['messages'] as TdObject[] | undefined) ?? [];
       const ids: number[] = [];
       for (const m of msgs) {
@@ -286,7 +313,16 @@ export class SearchSession {
         }
       }
       this.total = (res['total_count'] as number | undefined) ?? ids.length;
-      this.results = fromMsgId === 0 ? ids : [...this.results, ...ids];
+      const previousLength = fromMsgId === 0 ? 0 : this.results.length;
+      const combined = fromMsgId === 0 ? ids : [...this.results, ...ids];
+      this.results = Array.from(new Set<number>(combined));
+      this.resultsExhausted = ids.length === 0 || this.results.length === previousLength;
+      const messages = fromMsgId === 0 ? new Map<number, TdObject>() : new Map(this.resultMessages);
+      for (const message of msgs) {
+        const id = (message['id'] as number | undefined) ?? 0;
+        if (id > 0) { messages.set(id, message); }
+      }
+      this.resultMessages = messages;
       if (this.results.length === 0) {
         promptAction.showToast({ message: $r('app.string.cp_no_messages_found'), duration: 1500 });
         return;
@@ -310,10 +346,51 @@ export class SearchSession {
       }
       // fromMsgId ≠ 0 只会来自 ∧ 翻过已加载的那一页（applySearchStep 的 FETCH
       // 分支），也就是用户手动翻页；新搜索落第一条不算。
-      this.jumpToResult(thenJumpTo, fromMsgId !== 0);
+      if (navigate) { this.jumpToResult(thenJumpTo, fromMsgId !== 0); }
     }).catch((e: TdError): void => {
+      if (seq !== this.seq || !this.mode) { return; }
+      this.loading = false;
+      this.loadFailed = true;
       logE(`SearchSession.run searchChatMessages failed: ${e.message}`);
     });
+  }
+
+  openResults(): void {
+    if (this.disposed || !this.mode || this.results.length === 0) { return; }
+    this.resultsOpen = true;
+    // A route anchor may have been merged into the IDs without belonging to
+    // the first search page. Fetch just that missing row, never the timeline.
+    const seq = this.seq;
+    for (const id of this.results) {
+      if (this.resultMessages.has(id)) { continue; }
+      const request: TdRequest = { '@type': 'getMessage' };
+      request['chat_id'] = this.host.chatId();
+      request['message_id'] = id;
+      this.client().send(request).then((message: TdObject): void => {
+        if (seq !== this.seq || !this.mode || !this.results.includes(id)) { return; }
+        const messages = new Map(this.resultMessages);
+        messages.set(id, message);
+        this.resultMessages = messages;
+      }).catch((): void => {});
+    }
+  }
+
+  closeResults(): void { this.resultsOpen = false; }
+
+  chooseResult(messageId: number): void {
+    const index = this.results.indexOf(messageId);
+    if (this.disposed || !this.mode || index < 0) { return; }
+    this.closeResults();
+    this.jumpToResult(index, true);
+  }
+
+  canLoadMoreResults(): boolean {
+    return !this.disposed && !this.resultsExhausted && this.results.length > 0 && this.results.length < this.total;
+  }
+
+  loadMoreResults(): void {
+    if (!this.mode || this.loading || !this.canLoadMoreResults()) { return; }
+    this.run(this.results[this.results.length - 1], this.idx, false);
   }
 
   // 搬之前是 ChatPage.jumpToResult()。只在本类内部调用（run() 的成功路径、
@@ -423,6 +500,9 @@ export class SearchSession {
   // 清完定时器之后那一小段窗口里被漏进来——与本仓所有 @ObservedV2 控制器的
   // dispose 顺序约定一致。
   dispose(): void {
+    this.disposed = true;
+    this.resultsOpen = false;
+    this.loading = false;
     this.senders.clear();
     this.seq++;
     if (this.entryTimer !== -1) {

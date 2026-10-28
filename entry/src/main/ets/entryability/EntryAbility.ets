@@ -26,7 +26,7 @@ import { initSettings, refreshPowerSavingState, KEY_CACHE_LIMIT } from '../store
 import { migrateLegacyAppWallpaperStates } from '../store/ChatBackgroundStore';
 import { CACHE_LIMIT_DEFAULT, shouldTrimNow } from '../store/CacheLimit';
 import { applyCacheLimit } from '../store/StorageApi';
-import { beginNetworkMonitoring, refreshNetworkState } from '../services/NetworkStateService';
+import { beginNetworkMonitoring, refreshNetworkState, republishNetworkTypeToTd } from '../services/NetworkStateService';
 import { proxyAutoSwitchService } from '../services/ProxyAutoSwitchService';
 import { updateChecker } from '../services/UpdateChecker';
 import { liveLocation } from '../services/LiveLocationService';
@@ -588,6 +588,11 @@ export default class EntryAbility extends UIAbility {
   onForeground(): void {
     // Ability has brought to foreground
     refreshPowerSavingState();
+    // Re-awaken TDLib with the last confirmed bearer immediately. The full
+    // NetworkKit probe below is asynchronous and may take longer after a long
+    // suspended period (especially through VPN); waiting for it leaves the UI
+    // in connectionStateConnecting/WaitingForNetwork unnecessarily.
+    republishNetworkTypeToTd();
     refreshNetworkState(true);
     AppStorage.setOrCreate('appIsForeground', true);
     mirrorChatEnvKey('appIsForeground', true);
@@ -611,9 +616,10 @@ export default class EntryAbility extends UIAbility {
     // Ability has back to background
     AppStorage.setOrCreate('appIsForeground', false);
     mirrorChatEnvKey('appIsForeground', false);
-    setTdOnlineState(false);
     // 申请短时任务：切后台后多存活几分钟，这段时间内新消息仍能实时收到并通知。
-    backgroundGraceTask.begin();
+    // 保持 TDLib 的 online 选项，代理连接也就能复用；宽限期耗尽、进程即将
+    // 被挂起时再切 offline，回前台不必每次都重新连代理。
+    backgroundGraceTask.begin((): void => setTdOnlineState(false));
     // 解码后的位图很占内存（几十 MB 量级），后台留着只会抬高被系统查杀的概率。
     // 还挂在组件上的那些由引用计数保住，回前台重新解码代价很小。
     trimPixelCache();

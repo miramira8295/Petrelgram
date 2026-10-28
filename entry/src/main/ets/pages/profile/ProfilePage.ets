@@ -382,6 +382,7 @@ export struct ProfilePage {
   private qrCtrl: CustomDialogController = new CustomDialogController({
     builder: QrDialog({ link: this.qrLink, title: this.name,
       onScan: (): void => { this.qrScanner.start(getContext(this) as common.UIAbilityContext); } }),
+    customStyle: true,
     alignment: DialogAlignment.Center,
     autoCancel: true
   });
@@ -1093,9 +1094,18 @@ export struct ProfilePage {
         }
       }
       .width('100%').padding({ left: 12, right: 12, top: 4, bottom: 4 })
-      .glassCard()
       .alignItems(HorizontalAlign.Start);
+      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 12, right: 12 });
+      Row() {
+        if (!this.isContact) {
+          Column() { this.addContactCard(); }.layoutWeight(1);
+          Divider().vertical(true).height(24).color($r('app.color.divider')).strokeWidth(0.7);
+        }
+        Column() { this.secretChatCard(); }.layoutWeight(1);
+      }.width('100%');
     }
+    .glassCard()
+    .clip(true)
     .margin({ left: this.pageMargin(), right: this.pageMargin(), top: GLASS_GAP });
   }
 
@@ -1134,14 +1144,15 @@ export struct ProfilePage {
           .fontColor(['#31C48D']);
         Text($r('app.string.pp_start_secret'))
           .fontSize(15)
+          .flexShrink(1)
           .fontColor('#31C48D');
       }
       .width('100%')
+      .justifyContent(FlexAlign.Center)
       .padding(14)
-      .glassCard()
       .onClick((): void => { this.startSecretChat(); });
     }
-    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: GLASS_GAP });
+    .width('100%');
   }
 
   @Builder
@@ -1153,14 +1164,15 @@ export struct ProfilePage {
           .fontColor([COLOR_TEXT_PRIMARY]);
         Text($r('app.string.pp_add_contact'))
           .fontSize(15)
+          .flexShrink(1)
           .fontColor(COLOR_TEXT_PRIMARY);
       }
       .width('100%')
+      .justifyContent(FlexAlign.Center)
       .padding(14)
-      .glassCard()
       .onClick((): void => { this.addContact(); });
     }
-    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: GLASS_GAP });
+    .width('100%');
   }
 
   @Builder
@@ -1643,10 +1655,6 @@ export struct ProfilePage {
                 this.channelCard();
               }
               this.infoCard();
-              if (!this.isContact) {
-                this.addContactCard();
-              }
-              this.secretChatCard();
             }
           }
           .width('100%');

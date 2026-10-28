@@ -164,6 +164,7 @@ export struct ChatProfilePage {
   @State isMuted: boolean = false;
   @State canManageVideoChats: boolean = false;
   @State canManageChat: boolean = false;
+  @State canInviteMembers: boolean = false;
   // 逐项管理权限。长按菜单按这几项出条目，不用 canManageChat 一刀切。
   @State @Watch('syncMembersData') viewerIsCreator: boolean = false;
   @State @Watch('syncMembersData') canPromoteMembers: boolean = false;
@@ -333,11 +334,12 @@ export struct ChatProfilePage {
     builder: QrDialog({ chatId: this.chatId, title: this.title,
       onScan: (): void => { this.qrScanner.start(getContext(this) as common.UIAbilityContext); },
       onClosed: (): void => { this.qrOpen = false; } }),
+    customStyle: true,
     alignment: DialogAlignment.Center, autoCancel: true
   });
 
   private openQr(): void {
-    if (this.qrOpen || this.chatId === 0) { return; }
+    if (this.qrOpen || this.chatId === 0 || this.chatUsername === '') { return; }
     this.qrOpen = true;
     this.qrCtrl.open();
   }
@@ -416,6 +418,7 @@ export struct ChatProfilePage {
     this.isMuted = s.isMuted;
     this.canManageVideoChats = s.canManageVideoChats;
     this.canManageChat = s.canManageChat;
+    this.canInviteMembers = s.canInviteMembers;
     this.viewerIsCreator = s.isCreator;
     this.canPromoteMembers = s.canPromoteMembers;
     this.canRestrictMembers = s.canRestrictMembers;
@@ -1253,45 +1256,37 @@ export struct ChatProfilePage {
             this.sectionDivider();
           }
           Row({ space: 12 }) {
-            Row() {
-              SymbolGlyph($r('sys.symbol.link')).fontSize(21).fontColor([COLOR_PRIMARY]);
-            }
-            .width(42).height(42).borderRadius(GLASS_RADIUS_CHIP)
-            .justifyContent(FlexAlign.Center)
-            .backgroundColor($r('app.color.selected_pill'))
-            .flexShrink(0);
             Column({ space: 2 }) {
-              // 点整块复制链接。长按选中（copyOption）留着，但那是次要路径——
-              // 这里是分享入口，一下就拿到可粘贴的完整地址才顺手。
-              Text(this.publicChatLink()).fontSize(15).fontWeight(FontWeight.Medium)
-                .fontColor(COLOR_PRIMARY).maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .copyOption(CopyOptions.LocalDevice);
+              Row({ space: 6 }) {
+                Text(this.publicChatLink()).fontSize(15).fontWeight(FontWeight.Medium)
+                  .fontColor(COLOR_PRIMARY).maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .constraintSize({ maxWidth: 'calc(100% - 26vp)' })
+                  .flexShrink(1)
+                  .copyOption(CopyOptions.LocalDevice);
+                SymbolGlyph($r('sys.symbol.plus_square_on_square'))
+                  .fontSize(14).fontColor([COLOR_PRIMARY])
+                  .width(20).height(24).flexShrink(0);
+              }
+              .width('100%').alignItems(VerticalAlign.Center);
               Text($r('app.string.cpp_links')).fontSize(12.5).fontColor(COLOR_TEXT_SECONDARY);
             }
             .alignItems(HorizontalAlign.Start).layoutWeight(1)
-            .onClick((): void => { this.copyPublicLink(); });
-            // 复制链接保留独立按钮；二维码入口在下方。
-            // （点链接文字本身也能复制，这颗是给"看到按钮才知道能点"的人。）
-            Row() {
-              SymbolGlyph($r('sys.symbol.plus_square_on_square'))
-                .fontSize(21).fontColor([COLOR_PRIMARY]);
-            }
-            .width(42).height(42).borderRadius(GLASS_RADIUS_CHIP)
-            .justifyContent(FlexAlign.Center)
-            .backgroundColor($r('app.color.selected_pill'))
             .accessibilityText($r('app.string.fl_copy_link'))
             .onClick((): void => { this.copyPublicLink(); });
+            if (this.chatId !== 0) {
+              Row() {
+                SymbolGlyph($r('sys.symbol.qrcode')).fontSize(21).fontColor([COLOR_PRIMARY]);
+              }
+              .width(42).height(42).borderRadius(GLASS_RADIUS_CHIP)
+              .justifyContent(FlexAlign.Center).flexShrink(0)
+              .backgroundColor($r('app.color.selected_pill'))
+              .accessibilityText($r('app.string.mp_show_qr'))
+              .onClick((): void => { this.openQr(); });
+            }
           }
           .width('100%').padding({ top: 8, bottom: 8 })
           .alignItems(VerticalAlign.Center);
-        }
-        if (this.chatId !== 0) {
-          Row({ space: 12 }) {
-            SymbolGlyph($r('sys.symbol.qrcode')).fontSize(22).fontColor([COLOR_PRIMARY]);
-            Text($r('app.string.mp_show_qr')).fontSize(15).fontColor(COLOR_PRIMARY);
-          }.width('100%').padding({ top: 12, bottom: 12 })
-            .onClick((): void => { this.openQr(); });
         }
         if (this.description === '' && this.chatUsername === '') {
           Text($r('app.string.cpp_no_profile')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY)
@@ -1622,9 +1617,31 @@ export struct ChatProfilePage {
   // 成员页签：一整块玻璃卡（ListItemGroup），成员行走 LazyForEach + 复用组件 MemberRow。
   // 原来是 Column + ForEach，大群翻页加载后几百上千行一起活着。左右滑切页签的手势挂在卡片
   // 上（原来挂在内容 Column 上），不挂整个 List——那会抢走页签条自己的横向滚动。
+  private openAddMembers(): void {
+    if (!this.canInviteMembers || this.chatId === 0) { return; }
+    this.pendingMemberReload = true;
+    const params: Record<string, Object> = { 'addToChatId': this.chatId,
+      'existingUserIds': this.members.map((member: MemberItem): number => member.userId) };
+    router.pushUrl({ url: 'pages/main/NewGroupPage', params }).catch((error: Error): void => {
+      this.pendingMemberReload = false;
+      logE(`ChatProfilePage.openAddMembers failed: ${error.message}`);
+    });
+  }
+
   @Builder
   membersItems() {
     ListItemGroup() {
+      if (this.canInviteMembers && this.chatId !== 0) {
+        ListItem() {
+          Row({ space: 12 }) {
+            SymbolGlyph($r('sys.symbol.person_badge_plus')).fontSize(24).fontColor([COLOR_PRIMARY]);
+            Text($r('app.string.ng_add_members')).fontSize(16).fontColor(COLOR_PRIMARY).layoutWeight(1);
+            SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(12).fontColor([COLOR_ICON_SECONDARY]);
+          }
+          .width('100%').height(56).padding({ left: 16, right: 16 })
+          .onClick((): void => this.openAddMembers());
+        }
+      }
       // 成员搜索（名字、用户名都匹配，服务端做；见 ChatProfileStore.searchMembers）。
       // 看不到名单（频道普通订阅者）时不挂：搜也搜不到。
       if (this.membersState !== 'restricted') {

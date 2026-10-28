@@ -10,6 +10,7 @@ class ChatDeletionBridge implements TdBridge {
   active: boolean = true;
   stopAfter: string = '';
   failType: string = '';
+  secretId: number = 0;
   init(receive: (json: string) => void): void { this.receive = receive; }
   send(json: string): void {
     const req = JSON.parse(json) as TdObject;
@@ -17,6 +18,10 @@ class ChatDeletionBridge implements TdBridge {
     if (req['@type'] === this.stopAfter) { this.active = false; }
     const result: TdObject = req['@type'] === this.failType
       ? { '@type': 'error', 'code': 400, 'message': 'denied' } : { '@type': 'ok' };
+    if (req['@type'] === 'getChat' && this.secretId > 0) {
+      result['@type'] = 'chat';
+      result['type'] = { '@type': 'chatTypeSecret', 'secret_chat_id': this.secretId } as TdObject;
+    }
     result['@extra'] = req['@extra'];
     this.receive(JSON.stringify(result));
   }
@@ -81,6 +86,28 @@ export default function chatListDeletionTest(): void {
       expect(req['@type']).assertEqual('deleteChatHistory');
       expect(req['chat_id']).assertEqual(11);
       expect(req['revoke']).assertTrue(); expect(req['remove_from_chat_list']).assertTrue();
+    });
+    it('secret_delete_closes_real_secret_id_before_removing_history', 0, async (): Promise<void> => {
+      const bridge = new ChatDeletionBridge(); bridge.secretId = 77;
+      expect(await executeChatListDelete(clientFor(bridge), 11, true, false, (): boolean => bridge.active)).assertTrue();
+      expect(bridge.requests.map((r: TdObject): string => r['@type'] as string).join(','))
+        .assertEqual('getChat,closeSecretChat,deleteChatHistory');
+      expect(bridge.requests[1]['secret_chat_id']).assertEqual(77);
+      expect(bridge.requests[2]['chat_id']).assertEqual(11);
+      expect(bridge.requests[2]['remove_from_chat_list']).assertTrue();
+      expect(bridge.requests[2]['revoke']).assertFalse();
+    });
+    it('failed_secret_close_does_not_delete_history', 0, async (): Promise<void> => {
+      const bridge = new ChatDeletionBridge(); bridge.secretId = 77; bridge.failType = 'closeSecretChat';
+      let failed = false;
+      try { await executeChatListDelete(clientFor(bridge), 11, true, false, (): boolean => bridge.active); }
+      catch (_) { failed = true; }
+      expect(failed).assertTrue(); expect(bridge.requests.length).assertEqual(2);
+    });
+    it('account_switch_after_secret_close_stops_history_delete', 0, async (): Promise<void> => {
+      const bridge = new ChatDeletionBridge(); bridge.secretId = 77; bridge.stopAfter = 'closeSecretChat';
+      expect(await executeChatListDelete(clientFor(bridge), 11, true, false, (): boolean => bridge.active)).assertFalse();
+      expect(bridge.requests.length).assertEqual(2);
     });
     it('block_finishes_before_delete_and_uses_the_same_chat', 0, async (): Promise<void> => {
       const bridge = new ChatDeletionBridge();

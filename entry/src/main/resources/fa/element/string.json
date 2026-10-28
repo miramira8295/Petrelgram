@@ -13295,6 +13295,38 @@
     {
       "name": "chat_settings_hide_pinned_sub",
       "value": "نمایش یا پنهان‌سازی جداگانه از منوی هر گفتگو"
+    },
+    {
+      "name": "mi_added",
+      "value": "%1$s عضو اضافه شد"
+    },
+    {
+      "name": "mi_partial",
+      "value": "%1$s عضو اضافه شد؛ افزودن %2$s نفر ممکن نشد"
+    },
+    {
+      "name": "mi_failed",
+      "value": "افزودن اعضا ناموفق بود: %1$s"
+    },
+    {
+      "name": "mi_timeout",
+      "value": "نتیجه تأیید نشده است. پیش از تلاش دوباره فهرست اعضای گروه را بررسی کنید."
+    },
+    {
+      "name": "mp_story_show_profile",
+      "value": "نمایش در نمایه"
+    },
+    {
+      "name": "mp_story_hide_profile",
+      "value": "حذف از نمایه"
+    },
+    {
+      "name": "mp_story_delete_confirm",
+      "value": "این داستان برای همیشه حذف شود؟"
+    },
+    {
+      "name": "cp_search_results",
+      "value": "نتایج جستجو"
     }
   ]
 }

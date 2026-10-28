@@ -17,7 +17,7 @@ export struct StickerPoster {
 
   build() {
     if (this.path.startsWith('/')) {
-      CachedImage({ path: this.path, boxWidth: this.boxWidth, boxHeight: this.boxHeight, fit: this.fit });
+      CachedImage({ spec: { path: this.path, boxWidth: this.boxWidth, boxHeight: this.boxHeight, fit: this.fit } });
     } else if (this.path !== '') {
       Image(this.path).draggable(false)
         .width(this.boxWidth).height(this.boxHeight).objectFit(this.fit);

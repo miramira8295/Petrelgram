@@ -13295,6 +13295,38 @@
     {
       "name": "chat_settings_hide_pinned_sub",
       "value": "हर चैट के मेनू से अलग से दिखाएँ या छिपाएँ"
+    },
+    {
+      "name": "mi_added",
+      "value": "%1$s सदस्य जोड़े गए"
+    },
+    {
+      "name": "mi_partial",
+      "value": "%1$s सदस्य जोड़े गए; %2$s को नहीं जोड़ा जा सका"
+    },
+    {
+      "name": "mi_failed",
+      "value": "सदस्य नहीं जोड़े जा सके: %1$s"
+    },
+    {
+      "name": "mi_timeout",
+      "value": "परिणाम की पुष्टि नहीं हुई। दोबारा कोशिश से पहले समूह की सदस्य सूची देखें।"
+    },
+    {
+      "name": "mp_story_show_profile",
+      "value": "प्रोफ़ाइल पर दिखाएँ"
+    },
+    {
+      "name": "mp_story_hide_profile",
+      "value": "प्रोफ़ाइल से हटाएँ"
+    },
+    {
+      "name": "mp_story_delete_confirm",
+      "value": "इस स्टोरी को हमेशा के लिए मिटाएँ?"
+    },
+    {
+      "name": "cp_search_results",
+      "value": "खोज परिणाम"
     }
   ]
 }

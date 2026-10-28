@@ -13295,6 +13295,38 @@
     {
       "name": "chat_settings_hide_pinned_sub",
       "value": "Papar atau sembunyikan melalui menu setiap sembang"
+    },
+    {
+      "name": "mi_added",
+      "value": "%1$s ahli ditambah"
+    },
+    {
+      "name": "mi_partial",
+      "value": "%1$s ditambah; %2$s tidak dapat ditambah"
+    },
+    {
+      "name": "mi_failed",
+      "value": "Tidak dapat menambah ahli: %1$s"
+    },
+    {
+      "name": "mi_timeout",
+      "value": "Keputusan belum disahkan. Semak senarai ahli kumpulan sebelum mencuba lagi."
+    },
+    {
+      "name": "mp_story_show_profile",
+      "value": "Papar pada profil"
+    },
+    {
+      "name": "mp_story_hide_profile",
+      "value": "Alih keluar daripada profil"
+    },
+    {
+      "name": "mp_story_delete_confirm",
+      "value": "Padam cerita ini secara kekal?"
+    },
+    {
+      "name": "cp_search_results",
+      "value": "Hasil carian"
     }
   ]
 }

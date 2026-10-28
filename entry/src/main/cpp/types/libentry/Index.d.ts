@@ -134,3 +134,19 @@ export const tgsClose: (handle: number) => void;
 
 // 还开着几个（诊断用）。
 export const tgsOpenCount: () => number;
+
+// 删除消散：准备期间调用者保留 PixelMap，Promise 完成后可立即 release。
+export interface ShatterPrepared {
+  handle: number;
+  width: number;
+  height: number;
+  surfaceWidth: number;
+  surfaceHeight: number;
+  top: number;
+}
+export const shatterPrepare: (snapshot: image.PixelMap, density: number,
+  particleBudget: number) => Promise<ShatterPrepared | null>;
+// event: 0 = 首帧已提交，1 = 动画完成，-1 = 渲染失败。无逐帧 ArkTS 回调。
+export const shatterAttach: (handle: number, surfaceId: string, onEvent: (event: number) => void) => boolean;
+export const shatterBegin: (handle: number, durationMs: number) => void;
+export const shatterClose: (handle: number) => void;

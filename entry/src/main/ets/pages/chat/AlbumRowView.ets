@@ -1,7 +1,6 @@
-import { AlbumCell } from '../../util/packAlbumRows';
-import { AlbumGroup } from '../../util/collapseAlbums';
+import { AlbumCellRenderData } from '../../util/albumCellRenderData';
 import { AlbumCellView, AlbumCellHooks } from './AlbumCellView';
-import { MessageBubbleRenderData, MessageBubbleActions } from './ReusableMessageBubble';
+import { MessageBubbleActions } from './ReusableMessageBubble';
 
 // 相册里的一行（2026-09-20）。
 //
@@ -26,19 +25,12 @@ import { MessageBubbleRenderData, MessageBubbleActions } from './ReusableMessage
 // 【为什么仍然不用 ForEach】理由与 albumGrid 原注释一致：ForEach 键值不变就
 // 不重跑子构建函数，几何变了送不进去。这里每格仍是固定槽位，只是判据挪了位置。
 //
-// 【选中态为什么是三个布尔而不是一个数组】跨组件边界只传基本类型：数组每帧都是
-// 新引用，白白触发比较；而 @Param 的深拷贝对数组也更贵。三格写死，够用。
+// 每行/每格接收相册层准备的稳定输入；某格选中或媒体状态变化仅替换该格及其所在行。
 @ComponentV2
 export struct AlbumRowView {
-  @Require @Param cells: AlbumCell[];
-  @Require @Param group: AlbumGroup;
-  @Require @Param data: MessageBubbleRenderData;
+  @Require @Param cells: AlbumCellRenderData[];
   @Require @Param actions: MessageBubbleActions;
   @Require @Param hooks: AlbumCellHooks;
-  @Param selectionActive: boolean = false;
-  @Param sel0: boolean = false;
-  @Param sel1: boolean = false;
-  @Param sel2: boolean = false;
 
   build() {
     // 空行整个不画——不是画一个 0 高的 Row。后者会吃掉外层 Column 的一档 space。
@@ -47,34 +39,22 @@ export struct AlbumRowView {
         if (this.cells.length > 0) {
           AlbumCellView({
             cell: this.cells[0],
-            group: this.group,
-            data: this.data,
             actions: this.actions,
-            hooks: this.hooks,
-            selectionActive: this.selectionActive,
-            selected: this.sel0
+            hooks: this.hooks
           });
         }
         if (this.cells.length > 1) {
           AlbumCellView({
             cell: this.cells[1],
-            group: this.group,
-            data: this.data,
             actions: this.actions,
-            hooks: this.hooks,
-            selectionActive: this.selectionActive,
-            selected: this.sel1
+            hooks: this.hooks
           });
         }
         if (this.cells.length > 2) {
           AlbumCellView({
             cell: this.cells[2],
-            group: this.group,
-            data: this.data,
             actions: this.actions,
-            hooks: this.hooks,
-            selectionActive: this.selectionActive,
-            selected: this.sel2
+            hooks: this.hooks
           });
         }
       }
