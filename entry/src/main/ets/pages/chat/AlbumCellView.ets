@@ -10,6 +10,7 @@ import { PLAY_SLOT_ENTER_RATIO, PLAY_SLOT_KEEP_RATIO } from './playSlot';
 import { formatFileSize } from '../../util/formatFileSize';
 import { formatMediaDuration } from '../../util/mediaDuration';
 import { str } from '../../util/strings';
+import { chatEnv } from '../../util/chatEnvMirror';
 
 // 相册里的一格。
 //
@@ -50,6 +51,11 @@ export struct AlbumCellView {
   @Require @Param hooks: AlbumCellHooks;
   // 多选态、勾选和媒体标量均由单格输入提供；不再读取整组的并行数组。
   private cachedThumbSpec: LiveThumbSpec | null = null;
+  private metaBytes: number = -1;
+  private metaDuration: number = -1;
+  private metaWide: boolean = false;
+  private metaLangEpoch: number = -1;
+  private metaText: string = '';
 
   // 每格只保留一份输入。勾选/进度/播放角标变化不再制造新 spec，避免下层
   // Monitor 和图片属性无效刷新；命中前不创建临时对象，也不持有整条消息。
@@ -175,15 +181,26 @@ export struct AlbumCellView {
 
   private videoMetaText(): string {
     const bytes: number = this.cell.videoFileSize;
-    const size: string = bytes > 0 ? formatFileSize(bytes) : '';
     const durationSec: number = this.cell.videoDuration;
-    if (durationSec <= 0) {
-      return size;
+    const wide: boolean = this.cell.width >= 112;
+    // Read every input before the hit, including the observed language epoch.
+    // The condition and Text share one result without retaining a message.
+    const langEpoch: number = chatEnv.langEpoch;
+    if (this.metaBytes === bytes && this.metaDuration === durationSec &&
+      this.metaWide === wide && this.metaLangEpoch === langEpoch) {
+      return this.metaText;
     }
-    const duration: string = formatMediaDuration(durationSec);
+    const size: string = bytes > 0 ? formatFileSize(bytes) : '';
+    const duration: string = durationSec <= 0 ? '' : formatMediaDuration(durationSec);
     // 三列等窄格优先保证 issue #93 要求的文件大小可见；宽格与单视频一致。
-    return size !== '' && this.cell.width >= 112
-      ? `${duration} · ${size}` : (size !== '' ? size : duration);
+    const text: string = durationSec <= 0 ? size : (size !== '' && wide
+      ? `${duration} · ${size}` : (size !== '' ? size : duration));
+    this.metaBytes = bytes;
+    this.metaDuration = durationSec;
+    this.metaWide = wide;
+    this.metaLangEpoch = langEpoch;
+    this.metaText = text;
+    return text;
   }
 
   // 占位底。两个变体只差 hasFile 一个条件，但**必须各自是零参 @Builder**——

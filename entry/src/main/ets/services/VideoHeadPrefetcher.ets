@@ -86,6 +86,14 @@ export class VideoHeadPrefetcher {
   private suspended: boolean = false;
   private disposed: boolean = false;
   private skipLogged: boolean = false;
+  // 判据给出的拒绝原因，按文件去重。
+  //
+  // 这个功能原来在整个正常路径上**一条日志都没有**：拒绝原因被直接丢掉
+  // （tryStart），下发、完成、让位也都不打。真机上"没感觉被预取"时，日志里
+  // 只剩下失败那几条，分不清是没触发、被哪一条拒了、还是下发了但没下完。
+  // 同一文件同一原因只打一次：retryVisible 会在驻留到点、网络变化、页面回来
+  // 时重跑，不去重的话一次滑动就是几十行同样的拒绝。
+  private refusalLog: Map<number, string> = new Map();
 
   bind(host: VideoPrefetchHost, dwellMs: number = VIDEO_PREFETCH_DWELL_MS): void {
     this.host = host;
@@ -136,6 +144,7 @@ export class VideoHeadPrefetcher {
       // 时需要知道信号到底走没走到这里——打一次即可。
       if (!this.skipLogged) {
         this.skipLogged = true;
+        logW(`[Prefetch] signal reached, first non-video msg=${messageId} idx=${albumIndex}`);
       }
       return;
     }
@@ -264,14 +273,27 @@ export class VideoHeadPrefetcher {
       this.active.has(ref.fileId) || this.queue.indexOf(ref.fileId) >= 0) {
       return;
     }
+    const host: VideoPrefetchHost = this.host;
+    // 这三个取值各查一次就够：network/powerSaving 便宜，fileClaimed 在 ChatPage
+    // 那边是一次 messages.some()，日志里要复述它们，不能为打日志再查一遍。
+    const network: string = host.network();
+    const powerSaving: boolean = host.powerSaving();
+    const claimed: boolean = host.fileClaimed(ref.fileId);
     const reason: string = prefetchRefusalReason({
-      network: this.host.network(),
-      powerSaving: this.host.powerSaving(),
+      network: network,
+      powerSaving: powerSaving,
       alreadyLocal: ref.local,
-      fileClaimed: this.host.fileClaimed(ref.fileId),
+      fileClaimed: claimed,
       fileId: ref.fileId
     });
     if (reason !== '') {
+      if (this.refusalLog.get(ref.fileId) !== reason) {
+        this.refusalLog.set(ref.fileId, reason);
+        // 把判据的取值范围原样打出来：'local'/'claimed'/'power-saving'/'not-video'
+        // 与 `network=xxx` 一眼就能分开，这是区分"闸拦住了"和"没下发"的唯一依据。
+        logW(`[Prefetch] refuse file=${ref.fileId} size=${ref.fileSize} reason=${reason}` +
+          ` network=${network} powerSaving=${powerSaving} claimed=${claimed}`);
+      }
       return;
     }
     if (this.active.size >= MAX_CONCURRENT_VIDEO_PREFETCH) {
@@ -282,13 +304,17 @@ export class VideoHeadPrefetcher {
   }
 
   private start(ref: VideoRef): void {
-    if (this.host === null) {
+    const host: VideoPrefetchHost | null = this.host;
+    if (host === null) {
       return;
     }
     this.active.add(ref.fileId);
     this.ownedFiles.add(ref.fileId);
     const seq: number = this.bumpSeq(ref.fileId);
     const ranges: VideoPrefetchRange[] = prefetchRanges(ref.fileSize);
+    // 下发这一条与上面那条拒绝成对：两条都在，才谈得上"下发了但没下完"。
+    logW(`[Prefetch] start file=${ref.fileId} size=${ref.fileSize} blocks=${ranges.length}` +
+      ` network=${host.network()} active=${this.active.size}`);
     this.issueRange(ref.fileId, ranges, 0, seq);
   }
 
@@ -313,12 +339,14 @@ export class VideoHeadPrefetcher {
       if (index + 1 < ranges.length) {
         // 头块落地时播放器可能已接管；不能再用尾块覆盖它的下载范围。
         if (this.host?.fileClaimed(fileId)) {
+          logW(`[Prefetch] handoff file=${fileId} after head block (claimed by player)`);
           this.release(fileId, false);
           this.pumpQueue();
         } else {
           this.issueRange(fileId, ranges, index + 1, seq);
         }
       } else {
+        logW(`[Prefetch] done file=${fileId} blocks=${ranges.length}`);
         this.completed.add(fileId);
         this.release(fileId, false);
         this.pumpQueue();
@@ -352,6 +380,10 @@ export class VideoHeadPrefetcher {
     if (this.host === null || this.host.fileClaimed(fileId)) {
       return;
     }
+    // 这条一定要留痕：cancelDownloadFile(only_if_pending=false) 会连**别人**在下的
+    // 同一个文件一起停掉。播放器刚接管时如果 fileClaimed 判晚了，这里就是凶手，
+    // 而它平时完全静默——失败才打日志，成功什么都不说。
+    logW(`[Prefetch] cancel file=${fileId} (not claimed)`);
     const req: TdRequest = { '@type': 'cancelDownloadFile' };
     req['file_id'] = fileId;
     req['only_if_pending'] = false;

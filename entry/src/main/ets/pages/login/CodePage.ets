@@ -205,7 +205,7 @@ export struct CodePage {
   build() {
     Scroll() {
       Column({ space: 14 }) {
-        LoginHero({ mode: 'code' });
+        LoginHero();
 
         Text($r('app.string.lg_enter_code'))
           .fontSize(27).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);

@@ -12,6 +12,7 @@ import {
   KEY_POWER_ACTIVE, KEY_POWER_PARTICLES, KEY_POWER_SMOOTH_TRANSITIONS
 } from '../main/ets/store/AppSettings';
 import { AlbumGroup } from '../main/ets/util/collapseAlbums';
+import { NowPlaying } from '../main/ets/util/nowPlayingChannel';
 
 // 顶栏下挂那张浮卡（置顶条 + 直播条）的状态机，B5 把它从 ChatPage 整体搬进
 // pages/chat/LiveTopCardController.ets 之后补的第一组断言。
@@ -114,6 +115,25 @@ function groupCallOf(active: boolean, rtmp: boolean, participants: number): TdOb
   call['is_rtmp_stream'] = rtmp;
   call['participant_count'] = participants;
   return call;
+}
+
+// musicVisible() 只要求 musicTrack 非空，其余字段取占位值。
+function trackOf(): NowPlaying {
+  return {
+    chatId: 5, messageId: 900, title: 't', performer: 'p',
+    coverPath: '', path: '/tmp/t.mp3', durationSec: 180
+  };
+}
+
+// "两张卡同时存在"的状态：一条看得见的置顶 + 一首正在放的歌。pinnedVisibility
+// 显式给一份 hidden=false 的默认值，免得别的用例改过全局默认后这里跟着漂。
+function armBothBanners(controller: LiveTopCardController): void {
+  const defaults: PinnedVisibilityDefaults = new PinnedVisibilityDefaults();
+  defaults.hidden = false;
+  controller.pinnedVisibility = new PinnedVisibility('', null, defaults);
+  controller.applyPinned('置顶内容', 1, 'ready');
+  controller.musicTrack = trackOf();
+  controller.applyMusicVoiceState('music', 'playing', 0, 180000);
 }
 
 // 只填 syncLiveFromChatEntry 读得到的三个字段，其余取占位值。
@@ -631,6 +651,84 @@ export default function liveTopCardControllerTest() {
       expect(b.pinnedPreview).assertEqual('');
       expect(a.liveNavigationBusy).assertFalse();
       b.dispose();
+    });
+
+    // ——— 音乐条 / 置顶条两张卡的左右切换 ———
+    //
+    // 用户报的「左右切换不好使」有两个来源，各钉一条：真因是播放进度回调把页翻
+    // 回去（下面第一条），另一半是手写 PanGesture 那两层阈值，本层测不到，已在
+    // TopBanners 换成 Swiper。
+
+    it('播放进度回调不再把卡片从置顶页翻回音乐页', 0, (): void => {
+      const controller: LiveTopCardController = controllerOn(new FakeHost());
+      armBothBanners(controller);
+      expect(controller.musicPage).assertEqual('music');
+
+      controller.setMusicPage('pinned');
+      expect(controller.musicPage).assertEqual('pinned');
+
+      // VoicePlayback 播放期间每条 timeUpdate 都是这样进来的。
+      for (let tick: number = 1; tick <= 5; tick++) {
+        controller.applyMusicVoiceState('music', 'playing', tick * 500, 180000);
+      }
+      expect(controller.musicPage).assertEqual('pinned');
+    });
+
+    // 暂停之后控制条要留在原地：用户按的就是暂停，不是"把这棵控制条丢掉"。
+    // 收掉的话会话里再没有能接着放的入口。放完（completed）则相反，不留。
+    it('暂停时控制条仍然在，放完了才收', 0, (): void => {
+      const controller: LiveTopCardController = controllerOn(new FakeHost());
+      armBothBanners(controller);
+
+      controller.applyMusicVoiceState('music', 'paused', 12500, 180000);
+      expect(controller.musicVisible()).assertTrue();
+      expect(controller.musicStatus).assertEqual('paused');
+
+      controller.applyMusicVoiceState('music', 'completed', 180000, 180000);
+      expect(controller.musicVisible()).assertFalse();
+    });
+
+    // 边沿那一半：暂停再继续是货真价实的"重新开始"，自动翻页会翻一次，但用户
+    // 自己停在置顶页的选择要扛得住这一下。
+    it('音乐停一下再起，用户停在置顶页的选择保得住', 0, (): void => {
+      const controller: LiveTopCardController = controllerOn(new FakeHost());
+      armBothBanners(controller);
+      controller.setMusicPage('pinned');
+
+      controller.applyMusicVoiceState('music', 'paused', 0, 180000);
+      controller.applyMusicVoiceState('music', 'playing', 0, 180000);
+      expect(controller.musicVisible()).assertTrue();
+      expect(controller.musicPage).assertEqual('pinned');
+    });
+
+    // 防的回归：为了修上面那条，把"只有一条横幅时也能写 musicPage"放开。单条时
+    // 根本没有另一页，写进去只会留下一个悬空值——另一条横幅出现时 Swiper 会一
+    // 上来就开在空白页。
+    it('只有一条横幅时 setMusicPage 无操作', 0, (): void => {
+      const onlyMusic: LiveTopCardController = controllerOn(new FakeHost());
+      onlyMusic.musicTrack = trackOf();
+      onlyMusic.applyMusicVoiceState('music', 'playing', 0, 180000);
+      onlyMusic.setMusicPage('pinned');
+      expect(onlyMusic.musicPage).assertEqual('music');
+
+      const onlyPinned: LiveTopCardController = controllerOn(new FakeHost());
+      onlyPinned.applyPinned('置顶内容', 1, 'ready');
+      onlyPinned.setMusicPage('pinned');
+      expect(onlyPinned.musicPage).assertEqual('music');
+    });
+
+    // 防的回归：为了修翻页，把订阅里那三行状态写入也一起拿掉——那样进度条和时长
+    // 就永远停在初始值。
+    it('非音乐模式下音乐态照旧归零', 0, (): void => {
+      const controller: LiveTopCardController = controllerOn(new FakeHost());
+      armBothBanners(controller);
+      expect(controller.musicStatus).assertEqual('playing');
+      expect(controller.musicDurationMs).assertEqual(180000);
+
+      controller.applyMusicVoiceState('voice', 'playing', 4200, 9000);
+      expect(controller.musicStatus).assertEqual('idle');
+      expect(controller.musicPositionMs).assertEqual(0);
+      expect(controller.musicDurationMs).assertEqual(0);
     });
   });
 }

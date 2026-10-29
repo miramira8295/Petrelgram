@@ -94,6 +94,7 @@ export struct TopBanners {
   // 独立动作（那个跳当前这一条，这个看全量），命中区也互不重叠。
   @Event onOpenPinnedList: () => void = (): void => {};
   @Event onLiveStreamTap: () => void = (): void => {};
+  @Event onMusicTap: () => void = (): void => {};
   // 会话操作条（issue #201 第 8 条）：空串 = 没有。按钮 id 由 ChatPage 转给
   // ChatActionBarActions，本层照旧只发回调。
   @Param actionBarKind: string = '';
@@ -130,7 +131,7 @@ export struct TopBanners {
   }
 
   private hasContent(): boolean {
-    return this.actionBarKind !== '' || this.topCard.pinnedVisible() ||
+    return this.actionBarKind !== '' || this.topCard.musicVisible() || this.topCard.pinnedVisible() ||
       (this.topCard.liveGroupCallId > 0 && this.topCard.liveCallIsActive);
   }
 
@@ -143,6 +144,7 @@ export struct TopBanners {
       topSafe: 0,
       searchMode: false,
       pinnedVisible: this.topCard.pinnedVisible(),
+      musicVisible: this.topCard.musicVisible(),
       liveVisible: this.liveShowing(),
       actionBarVisible: this.actionBarKind !== ''
     };
@@ -156,6 +158,44 @@ export struct TopBanners {
     return this.topCard.liveParticipantCount > 0
       ? plural('cp_n_online', this.topCard.liveParticipantCount, this.topCard.liveParticipantCount)
       : str('cp_live_in_progress');
+  }
+
+  @Builder
+  musicBanner() {
+    Row({ space: 9 }) {
+      Stack() {
+        if (this.topCard.musicTrack !== null && this.topCard.musicTrack.coverPath !== '') {
+          Image(this.topCard.musicTrack.coverPath.startsWith('/')
+            ? `file://${this.topCard.musicTrack.coverPath}` : this.topCard.musicTrack.coverPath)
+            .draggable(false).width(34).height(34).objectFit(ImageFit.Cover);
+        } else {
+          SymbolGlyph($r('sys.symbol.music_note_list')).fontSize(17).fontColor([COLOR_PRIMARY]);
+        }
+      }.width(34).height(34).borderRadius(17).clip(true)
+        .backgroundColor($r('app.color.surface_alt'));
+      Column({ space: 1 }) {
+        Text(this.topCard.musicTrack !== null ? this.topCard.musicTrack.title : '')
+          .fontSize(13).fontWeight(FontWeight.Medium)
+          .fontColor(COLOR_TEXT_PRIMARY).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        if (this.topCard.musicTrack !== null && this.topCard.musicTrack.performer !== '') {
+          Text(this.topCard.musicTrack.performer).fontSize(11).fontColor(COLOR_TEXT_SECONDARY)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        }
+      }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+        .onClick((): void => { this.onMusicTap(); });
+      Row() {
+        SymbolGlyph($r(this.topCard.musicStatus === 'playing'
+          ? 'sys.symbol.pause_fill' : 'sys.symbol.play_fill'))
+          .fontSize(18).fontColor([COLOR_TEXT_PRIMARY]);
+      }.width(34).height(34).justifyContent(FlexAlign.Center)
+        .onClick((): void => { this.topCard.toggleMusic(); });
+      Row() {
+        SymbolGlyph($r('sys.symbol.xmark')).fontSize(15).fontColor([COLOR_TEXT_SECONDARY]);
+      }.width(28).height(28).justifyContent(FlexAlign.Center)
+        .onClick((): void => { this.topCard.stopMusic(); });
+    }
+    .width('100%').height(CHAT_TOP_BANNER_ROW_HEIGHT)
+    .padding({ left: 14, right: 10, top: 8, bottom: 8 }).alignItems(VerticalAlign.Center);
   }
 
   // 【为什么"定位"和"查看全部"是两个互不重叠的命中区，而不是一层套一层】
@@ -304,10 +344,35 @@ export struct TopBanners {
             onDismiss: (): void => { this.onActionBarDismiss(); }
           });
         }
-        if (this.topCard.pinnedVisible()) {
+        // 两条都在时是两张并排的卡：Swiper 负责拖动跟手、落页动画，并把落定的
+        // 那一页写回 musicPage。只在"两条同时可见"时建 Swiper——只剩一条时外面
+        // 套一层 Swiper 只会让人能把唯一那张卡拖出空白。
+        //
+        // 换掉的是原来那对手写 PanGesture：要划过 18 才认出手势，抬手时还要求
+        // 总位移 >= 24，两层阈值叠在一起，行程短一点就什么都不发生；而且它只在
+        // 手势结束那一瞬翻页，拖动中间没有任何跟手位移。Swiper 的阈值和跟手感
+        // 都是现成的，不用我们再调参。
+        if (this.topCard.musicAndPinnedVisible()) {
+          Swiper() {
+            this.musicBanner();
+            this.pinnedBanner();
+          }
+          .index(this.topCard.musicPage === 'pinned' ? 1 : 0)
+          .indicator(false)
+          .loop(false)
+          .width('100%')
+          .height(CHAT_TOP_BANNER_ROW_HEIGHT)
+          .duration(powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 240))
+          .curve(Curve.EaseOut)
+          .onChange((index: number): void => {
+            this.topCard.setMusicPage(index === 0 ? 'music' : 'pinned');
+          });
+        } else if (this.topCard.musicVisible()) {
+          this.musicBanner();
+        } else if (this.topCard.pinnedVisible()) {
           this.pinnedBanner();
         }
-        if (this.topCard.pinnedVisible() && this.liveShowing()) {
+        if ((this.topCard.pinnedVisible() || this.topCard.musicVisible()) && this.liveShowing()) {
           Divider()
             .strokeWidth(0.5)
             .height(CHAT_TOP_BANNER_DIVIDER_HEIGHT)

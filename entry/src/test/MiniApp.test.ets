@@ -61,7 +61,7 @@ export default function miniAppTest() {
       expect(request['bot_user_id']).assertEqual(7);
       expect(request['url']).assertEqual('https://app.example/open');
       const parameters = request['parameters'] as TdObject;
-      expect(parameters['application_name']).assertEqual('Petrelgram');
+      expect(parameters['application_name']).assertEqual('Petrel');
       expect((parameters['theme'] as TdObject)['background_color']).assertEqual(0x18222d);
     });
 

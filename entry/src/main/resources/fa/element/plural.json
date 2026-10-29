@@ -109,11 +109,11 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d ماه Telegram Premium"
+          "value": "%d ماه Premium"
         },
         {
           "quantity": "other",
-          "value": "%d ماه Telegram Premium"
+          "value": "%d ماه Premium"
         }
       ]
     },
@@ -122,11 +122,11 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d ستاره تلگرام"
+          "value": "%d ستاره"
         },
         {
           "quantity": "other",
-          "value": "%d ستاره تلگرام"
+          "value": "%d ستاره"
         }
       ]
     },
@@ -226,11 +226,11 @@
       "value": [
         {
           "quantity": "one",
-          "value": "ورود Telegram در %d وب‌سایت قطع می‌شود."
+          "value": "ورود در %d وب‌سایت قطع می‌شود."
         },
         {
           "quantity": "other",
-          "value": "ورود Telegram در %d وب‌سایت قطع می‌شود."
+          "value": "ورود در %d وب‌سایت قطع می‌شود."
         }
       ]
     },

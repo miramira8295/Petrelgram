@@ -168,6 +168,11 @@ function drainHolderReleases(): void {
 }
 
 function evictDownTo(limit: number, maxEntries: number = Number.MAX_SAFE_INTEGER): number {
+  // Most insertions fit the current budget. Avoid copying the entire LRU key
+  // set when no eviction can occur; keep the existing snapshot/order otherwise.
+  if (usedBytes <= limit || maxEntries <= 0) {
+    return 0;
+  }
   let evicted: number = 0;
   for (const key of Array.from(cache.keys())) {
     if (usedBytes <= limit || evicted >= maxEntries) {

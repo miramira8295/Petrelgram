@@ -113,6 +113,18 @@ class VoicePlayback {
     this.toggleSource(messageId, localAudioSource(path), fallbackDurationSec, 'music');
   }
 
+  // 只按曲目 id 暂停/继续，不需要来源。
+  //
+  // 顶栏音乐条和底栏迷你条手上只有 nowPlayingChannel 那份曲目信息，而**流式起播
+  // 那一路的 path 是空串**（见 ChatPage 的 playStream），拿它拼出来的 AudioSource
+  // 在 audioSourcePlayable() 那里就不成立——它们原来调的 toggleMusic(...) 于是
+  // 在开头那行直接返回，表现就是「点暂停没反应」（2026-10-29 用户实报）。
+  // 暂停/继续本来也不需要来源：只要点的是**当前正在放的这一条**就行，id 对不上
+  // 就什么都不做，绝不会因此起播一首新的。
+  toggleMusicById(messageId: number): void {
+    this.toggleCurrent(messageId, 'music');
+  }
+
   startMusic(messageId: number, path: string, fallbackDurationSec: number): void {
     this.startMusicSource(messageId, localAudioSource(path), fallbackDurationSec);
   }
@@ -159,35 +171,45 @@ class VoicePlayback {
     if (messageId <= 0 || !audioSourcePlayable(source)) {
       return;
     }
-    if (this.state.playingId === messageId && this.state.mode === mode && this.player !== null) {
-      if (this.state.status === 'loading') {
-        return;
-      }
-      if (this.state.status === 'playing') {
-        this.pauseCurrent();
-        return;
-      }
-      if (this.state.status === 'paused') {
-        this.resumeCurrent(messageId);
-        return;
-      }
-      if (this.state.status === 'completed') {
-        try {
-          this.player.seek(0, media.SeekMode.SEEK_PREV_SYNC);
-          this.player.play();
-          this.setState({
-            playingId: messageId, paused: false, positionMs: 0,
-            durationMs: this.state.durationMs, completedId: 0,
-            status: 'playing', mode,
-            speed: mode === 'voice' ? this.preferredSpeed : 1, errorId: 0
-          });
-        } catch (caught) {
-          this.fail(this.generation, messageId, caught, mode);
-        }
-        return;
-      }
+    if (this.toggleCurrent(messageId, mode)) {
+      return;
     }
     this.play(messageId, source, Math.max(0, fallbackDurationSec), mode);
+  }
+
+  // 这一条就是当前这条时的播放/暂停切换。返回 true = 已经处理完，不用再起播。
+  private toggleCurrent(messageId: number, mode: string): boolean {
+    if (this.player === null || this.state.playingId !== messageId || this.state.mode !== mode) {
+      return false;
+    }
+    if (this.state.status === 'loading') {
+      // 还在准备中：再点一下什么都不做，而不是拿新来源从头来一遍。
+      return true;
+    }
+    if (this.state.status === 'playing') {
+      this.pauseCurrent();
+      return true;
+    }
+    if (this.state.status === 'paused') {
+      this.resumeCurrent(messageId);
+      return true;
+    }
+    if (this.state.status === 'completed') {
+      try {
+        this.player.seek(0, media.SeekMode.SEEK_PREV_SYNC);
+        this.player.play();
+        this.setState({
+          playingId: messageId, paused: false, positionMs: 0,
+          durationMs: this.state.durationMs, completedId: 0,
+          status: 'playing', mode,
+          speed: mode === 'voice' ? this.preferredSpeed : 1, errorId: 0
+        });
+      } catch (caught) {
+        this.fail(this.generation, messageId, caught, mode);
+      }
+      return true;
+    }
+    return false;
   }
 
   cycleSpeed(messageId: number): number {

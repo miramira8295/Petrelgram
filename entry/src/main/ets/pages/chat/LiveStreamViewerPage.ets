@@ -39,6 +39,7 @@ import {
   liveInteractionPresentation, mergeLiveInteractions
 } from '../../util/liveInteractionPresentation';
 import { LiveInteractionBubble } from './LiveInteractionBubble';
+import { openWebUrl } from '../../util/webBrowserNav';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
 import { plural, str } from '../../util/strings';
@@ -2396,6 +2397,10 @@ struct LiveStreamViewerPage {
     .onClick((): void => this.openInteractionDrawer());
   }
 
+  private openInteractionLink(url: string): void {
+    openWebUrl(getContext(this) as common.UIAbilityContext, url);
+  }
+
   @Builder
   interactionMessageList() {
     Stack({ alignContent: Alignment.Bottom }) {
@@ -2418,7 +2423,11 @@ struct LiveStreamViewerPage {
           // LazyForEach + 复用气泡：只有刚到的消息播入场动画（见 KeyedListDataSource.isFresh）。
           LazyForEach(this.interactionData, (message: LiveInteractionEntry) => {
             ListItem() {
-              LiveInteractionBubble({ message: message, animateIn: this.interactionData.isFresh(message.key) });
+              LiveInteractionBubble({
+                message: message,
+                animateIn: this.interactionData.isFresh(message.key),
+                onLinkTap: (url: string): void => this.openInteractionLink(url)
+              });
             }
           }, (message: LiveInteractionEntry, index: number): string =>
             guardKey(this.interactionData.keyTableId, index, interactionKey(message)))

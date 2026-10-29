@@ -118,10 +118,10 @@ for(const kind of ['', 'Bold', 'Italic', 'Underline', 'Strikethrough', 'Code', '
  const ordinary=['','Bold','Italic','TextUrl'].includes(kind);
  assert.equal(decorations.length,ordinary?0:1);assert.equal(backgrounds.length,ordinary?0:1);
  assert.equal(events.filter(e=>e[0]==='Text'&&e[1]==='decoration').length,0);
- assert.equal(events.filter(e=>e[0]==='Span'&&['fontWeight','fontStyle','fontFamily','fontColor'].includes(e[1])).length,4);
+ assert.equal(events.filter(e=>e[0]==='Span'&&['fontWeight','fontStyle','fontFamily','fontColor'].includes(e[1])).length,['','TextUrl'].includes(kind)?1:4);
  styleCases++;
 }
-console.log(`Cold Span construction: ${styleCases} style cases passed; ordinary/bold/italic and idle-link default style setters 6 -> 4`);
+console.log(`Cold Span construction: ${styleCases} style cases passed; ordinary text/link font setters 4 -> 1; styled runs keep explicit font resets`);
 
 // Optional real pre-change compiler output gives a cross-version differential.
 // Only omit no-op native defaults; compare all remaining geometry, styles,
@@ -130,7 +130,9 @@ if(process.env.CAPTION_BASELINE_COMPILED) {
  const before=setup(fs.readFileSync(process.env.CAPTION_BASELINE_COMPILED,'utf8')),after=setup();
  function effectiveOutput(output){return JSON.stringify(JSON.parse(output).filter(e=> !(e[0]==='Span'&&(
   (e[1]==='decoration'&&e[2].type==='None')||
-  (e[1]==='textBackgroundStyle'&&e[2].color==='Transparent'&&e[2].radius===0)))));}
+  (e[1]==='textBackgroundStyle'&&e[2].color==='Transparent'&&e[2].radius===0)||
+  (e[1]==='fontWeight'&&e[2]==='Normal')||(e[1]==='fontStyle'&&e[2]==='Normal')||
+  (e[1]==='fontFamily'&&e[2]==='')))));}
  let comparisons=0;
  const flags=['Bold','Italic','Underline','Strikethrough','Code','Spoiler'];
  for(let mask=0;mask<64;mask++)for(const outgoing of [false,true])for(const mode of ['normal','link','busy','emoji','pendingEmoji']) {

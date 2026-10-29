@@ -68,7 +68,7 @@ export function miniAppRequest(launch: MiniAppLaunch, dark: boolean): TdRequest 
   }
   const mode: TdObject = { '@type': 'webAppOpenModeFullSize' };
   const parameters: TdObject = { '@type': 'webAppOpenParameters',
-    'application_name': 'Petrelgram', 'theme': theme, 'mode': mode };
+    'application_name': 'Petrel', 'theme': theme, 'mode': mode };
   request['parameters'] = parameters;
   return request;
 }

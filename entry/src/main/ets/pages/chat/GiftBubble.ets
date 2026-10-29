@@ -95,7 +95,7 @@ export struct GiftBubble {
       }
       Row({ space: 5 }) {
         SymbolGlyph($r('sys.symbol.gift')).fontSize(11).fontColor([this.accent()]);
-        Text('TELEGRAM GIFT').fontSize(9.5).fontWeight(FontWeight.Medium)
+        Text('Unknown').fontSize(9.5).fontWeight(FontWeight.Medium)
           .fontColor(this.accent());
       }
       .position({ x: 10, y: 9 });

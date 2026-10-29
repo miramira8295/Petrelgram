@@ -30,7 +30,7 @@ export struct PasswordPage {
   build() {
     Scroll() {
       Column({ space: 14 }) {
-        LoginHero({ mode: 'password', active: this.password !== '' });
+        LoginHero({ active: this.password !== '' });
 
         Text($r('app.string.ps_two_step'))
           .fontSize(27).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);

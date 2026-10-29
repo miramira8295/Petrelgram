@@ -1,8 +1,0 @@
-Login mascot animation
-
-Sticker set: Utya Duck Animated (FullDuck)
-Pack: https://t.me/addstickers/FullDuck
-Referenced by Telegram's sticker documentation:
-https://core.telegram.org/import-stickers
-
-The packaged files remain standard Telegram TGS animations.

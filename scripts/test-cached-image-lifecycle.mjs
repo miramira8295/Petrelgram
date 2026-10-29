@@ -34,10 +34,10 @@ const spec = changes => ({ path: '/a', boxWidth: 100, boxHeight: 80, sourceKey: 
 function setup(initial = spec(), thumbnail = false) {
   const cache = new Map(), requests = [], cancelled = [], retained = [], released = [], pins = [], timers = new Map();
   const storage = new Map();
-  let nextTimer = 1, ready = 0, synchronous = 0, now = 0;
+  let nextTimer = 1, ready = 0, synchronous = 0, now = 0, density = 3;
   const key = r => [r.path, r.width, r.height, r.opaque === true].join('|');
   const context = vm.createContext({
-    ImageFit: { Cover: 0 }, warnStaleThumbAttach() {}, vp2px: n => n * 3, Date: { now: () => now },
+    ImageFit: { Cover: 0 }, warnStaleThumbAttach() {}, vp2px: n => n * density, Date: { now: () => now },
     AppStorage: { get: k => storage.get(k), setOrCreate: (k, v) => storage.set(k, v) },
     setTimeout: (f, ms) => { const id = nextTimer++; timers.set(id, { run: f, at: now + ms }); return id; },
     clearTimeout: id => timers.delete(id),
@@ -59,6 +59,7 @@ function setup(initial = spec(), thumbnail = false) {
   assign(initial); image.onReady = () => ready++;
   return { image, requests, cancelled, retained, released, pins, timers, context,
     handle: name => ({ pixelMap: { name } }),
+    setDensity(next) { density = next; },
     get ready() { return ready; }, get synchronous() { return synchronous; },
     put(h, override) {
       const current = override ?? (thumbnail ? { ...image.spec, path:image.spec.initialPath } : image.spec);
@@ -134,6 +135,25 @@ await check('same-source recycle reseeds the held bitmap without decode or anoth
   assert.equal(s.image.pixelMap, h.pixelMap); assert.equal(s.requests.length, 0);
   assert.equal(s.retained.length, 1); assert.equal(s.ready, 2);
   s.image.aboutToDisappear(); assert.deepEqual(s.released, [h]);
+});
+await check('repeated same-target activation reseeds without replacing ownership', () => {
+  const s = setup(); const h = s.handle('a'); s.put(h); s.image.aboutToAppear();
+  for (let i = 0; i < 1000; i++) { s.image.aboutToRecycle(); s.reuse(spec()); }
+  assert.equal(s.image.pixelMap, h.pixelMap); assert.equal(s.ready, 1001);
+  assert.equal(s.retained.length, 1); assert.equal(s.released.length, 0); assert.equal(s.requests.length, 0);
+  s.image.aboutToDisappear(); assert.deepEqual(s.released, [h]);
+});
+await check('same-spec activation still re-evaluates density before reusing pixels', () => {
+  const s = setup(); const h = s.handle('a'); s.put(h); s.image.aboutToAppear();
+  s.image.aboutToRecycle(); s.setDensity(4); s.reuse(spec());
+  assert.equal(s.requests.length, 1); assert.equal(s.requests[0].request.width, 400);
+  assert.equal(s.requests[0].request.height, 320); assert.equal(s.image.pixelMap, h.pixelMap);
+});
+await check('equal path under a different source identity cannot keep old ownership', () => {
+  const s = setup(); const h = s.handle('a'); s.put(h); s.image.aboutToAppear();
+  s.image.aboutToRecycle(); s.reuse(spec({sourceKey:'f2'}));
+  assert.deepEqual(s.released, [h]); assert.equal(s.retained.length, 2);
+  assert.equal(s.image.pixelMap, h.pixelMap); assert.equal(s.ready, 2);
 });
 await check('new source clears old image and releases it while awaiting decode', async () => {
   const s = setup(); const a = s.handle('a'); s.put(a); s.image.aboutToAppear();

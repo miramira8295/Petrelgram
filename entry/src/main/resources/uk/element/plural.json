@@ -173,19 +173,19 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d місяць Telegram Premium"
+          "value": "%d місяць Premium"
         },
         {
           "quantity": "few",
-          "value": "%d місяці Telegram Premium"
+          "value": "%d місяці Premium"
         },
         {
           "quantity": "many",
-          "value": "%d місяців Telegram Premium"
+          "value": "%d місяців Premium"
         },
         {
           "quantity": "other",
-          "value": "%d місяців Telegram Premium"
+          "value": "%d місяців Premium"
         }
       ]
     },
@@ -194,19 +194,19 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d зірка Telegram"
+          "value": "%d зірка"
         },
         {
           "quantity": "few",
-          "value": "%d зірки Telegram"
+          "value": "%d зірки"
         },
         {
           "quantity": "many",
-          "value": "%d зірок Telegram"
+          "value": "%d зірок"
         },
         {
           "quantity": "other",
-          "value": "%d зірок Telegram"
+          "value": "%d зірок"
         }
       ]
     },
@@ -362,19 +362,19 @@
       "value": [
         {
           "quantity": "one",
-          "value": "Буде відключено вхід через Telegram на %d сайті."
+          "value": "Буде відключено вхід на %d сайті."
         },
         {
           "quantity": "few",
-          "value": "Буде відключено вхід через Telegram на %d сайтах."
+          "value": "Буде відключено вхід на %d сайтах."
         },
         {
           "quantity": "many",
-          "value": "Буде відключено вхід через Telegram на %d сайтах."
+          "value": "Буде відключено вхід на %d сайтах."
         },
         {
           "quantity": "other",
-          "value": "Буде відключено вхід через Telegram на %d сайтах."
+          "value": "Буде відключено вхід на %d сайтах."
         }
       ]
     },

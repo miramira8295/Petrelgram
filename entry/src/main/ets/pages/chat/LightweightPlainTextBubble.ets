@@ -60,6 +60,9 @@ import { menuPreviewCompact } from '../../util/menuPreview';
 // 和输入栏同一对函数，受「界面模糊质感」开关与档位控制。
 import { bubbleGlassBlurStyle, bubbleGlassFill } from '../../util/surfaceGlass';
 import { firstFinger } from '../../util/firstFinger';
+import { linkifyRuns } from '../../util/linkify';
+import { RichRun } from '../../util/richText';
+import { linkTextHidesUrl } from '../../util/messageLinkAction';
 
 const QUICK_REACTIONS: string[] = ['❤️', '👍', '👎', '🔥', '🥰', '👏'];
 // 左滑回复的几何与边缘判据见 util/swipeReplyGesture（与 MessageBubble 共用）。
@@ -82,6 +85,7 @@ export interface LightweightPlainTextActions {
   onSetDefaultReaction: (emoji: string) => void;
   onCopyText: (messageId: number) => void;
   onSelectText: (messageId: number) => void;
+  onLinkTap: (url: string, askFirst: boolean) => void;
   onCopyLink: (messageId: number) => void;
   onForwardMessages: (messageIds: number[]) => void;
   onSaveMessages: (messageIds: number[]) => void;
@@ -105,6 +109,7 @@ const EMPTY_ACTIONS: LightweightPlainTextActions = {
   onPinMsg: (_id: number, _unpin: boolean): void => {},
   onSetDefaultReaction: (_emoji: string): void => {},
   onCopyText: (_id: number): void => {}, onSelectText: (_id: number): void => {},
+  onLinkTap: (_url: string, _askFirst: boolean): void => {},
   onCopyLink: (_id: number): void => {},
   onForwardMessages: (_ids: number[]): void => {},
   onSaveMessages: (_ids: number[]): void => {},
@@ -827,7 +832,20 @@ export struct LightweightPlainTextBubble {
     Column() {
       if (this.msg.replyToMessageId !== 0) { this.replyQuote(); }
       Text() {
-        Span(this.msg.text).fontColor(bubbleTextFor(this.msg.isOutgoing));
+        ForEach(linkifyRuns(this.msg.text, []), (run: RichRun) => {
+          Span(run.text)
+            .fontColor(run.link ? this.accent() : bubbleTextFor(this.msg.isOutgoing))
+            .decoration({
+              type: run.link ? TextDecorationType.Underline : TextDecorationType.None,
+              color: this.accent()
+            })
+            .onClick((): void => {
+              if (run.link && !this.gestureClaimed) {
+                this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url));
+              }
+            });
+        }, (run: RichRun, index: number): string =>
+          `light_text_${index}_${run.offset}_${run.text}`);
         if (this.translationStatus === null) {
           Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
         }

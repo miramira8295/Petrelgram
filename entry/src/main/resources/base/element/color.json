@@ -13,8 +13,12 @@
       "value": "#EFEFF4"
     },
     {
+      "name": "app_page_bg",
+      "value": "#E3F2E6"
+    },
+    {
       "name": "chat_bg",
-      "value": "#EFEFF4"
+      "value": "#E3F2E6"
     },
     {
       "name": "surface",

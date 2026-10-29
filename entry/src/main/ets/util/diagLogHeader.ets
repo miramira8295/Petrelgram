@@ -27,7 +27,7 @@ export interface DiagEnvironment {
 export function diagLogHeader(env: DiagEnvironment): string {
   const unknown: string = 'unknown';
   const lines: string[] = [
-    '=== Petrelgram diagnostics ===',
+    '=== Petrel diagnostics ===',
     `app: ${env.appVersion === '' ? unknown : env.appVersion}`,
     `api: ${env.apiVersion > 0 ? `${env.apiVersion}` : unknown}`,
     `model: ${env.deviceModel === '' ? unknown : env.deviceModel}`,

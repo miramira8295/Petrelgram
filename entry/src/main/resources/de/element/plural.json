@@ -59,15 +59,15 @@
     {
       "name": "prize_premium_months",
       "value": [
-        { "quantity": "one", "value": "%d Monat Telegram Premium" },
-        { "quantity": "other", "value": "%d Monate Telegram Premium" }
+        { "quantity": "one", "value": "%d Monat Premium" },
+        { "quantity": "other", "value": "%d Monate Premium" }
       ]
     },
     {
       "name": "prize_stars",
       "value": [
-        { "quantity": "one", "value": "%d Telegram-Stern" },
-        { "quantity": "other", "value": "%d Telegram-Sterne" }
+        { "quantity": "one", "value": "%d Stern" },
+        { "quantity": "other", "value": "%d Sterne" }
       ]
     },
     {
@@ -122,8 +122,8 @@
     {
       "name": "cw_disconnect_all_confirm",
       "value": [
-        { "quantity": "one", "value": "Die Telegram-Anmeldung auf %d Website wird getrennt." },
-        { "quantity": "other", "value": "Die Telegram-Anmeldung auf %d Websites wird getrennt." }
+        { "quantity": "one", "value": "Die Anmeldung auf %d Website wird getrennt." },
+        { "quantity": "other", "value": "Die Anmeldungen auf %d Websites werden getrennt." }
       ]
     },
     {

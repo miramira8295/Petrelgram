@@ -109,11 +109,11 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d aylık Telegram Premium"
+          "value": "%d aylık Premium"
         },
         {
           "quantity": "other",
-          "value": "%d aylık Telegram Premium"
+          "value": "%d aylık Premium"
         }
       ]
     },
@@ -122,11 +122,11 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d Telegram Yıldızı"
+          "value": "%d Yıldızı"
         },
         {
           "quantity": "other",
-          "value": "%d Telegram Yıldızı"
+          "value": "%d Yıldızı"
         }
       ]
     },
@@ -226,11 +226,11 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d sitedeki Telegram oturumu kapatılacak."
+          "value": "%d sitedeki oturum kapatılacak."
         },
         {
           "quantity": "other",
-          "value": "%d sitedeki Telegram oturumu kapatılacak."
+          "value": "%d sitedeki oturum kapatılacak."
         }
       ]
     },

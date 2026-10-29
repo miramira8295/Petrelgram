@@ -138,7 +138,7 @@
     },
     {
       "name": "chat_header_kind_user",
-      "value": "Telegram उपयोगकर्ता"
+      "value": "उपयोगकर्ता"
     },
     {
       "name": "chat_header_loading",
@@ -194,7 +194,7 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "Petrelgram"
+      "value": "Petrel"
     },
     {
       "name": "file_download_failed",
@@ -414,11 +414,11 @@
     },
     {
       "name": "gift_premium_title",
-      "value": "Telegram Premium उपहार"
+      "value": "Premium उपहार"
     },
     {
       "name": "gift_regular_title",
-      "value": "Telegram उपहार"
+      "value": "उपहार"
     },
     {
       "name": "gift_special",
@@ -426,7 +426,7 @@
     },
     {
       "name": "gift_stars_title",
-      "value": "Telegram स्टार उपहार"
+      "value": "स्टार उपहार"
     },
     {
       "name": "gift_stars_unknown",
@@ -486,7 +486,7 @@
     },
     {
       "name": "gift_unique",
-      "value": "एक अनोखा Telegram उपहार"
+      "value": "एक अनोखा उपहार"
     },
     {
       "name": "gift_valued_at",
@@ -562,7 +562,7 @@
     },
     {
       "name": "link_preview_open_in_telegram",
-      "value": "Telegram में खोलें"
+      "value": "खोलें"
     },
     {
       "name": "link_preview_open_invite",
@@ -1110,15 +1110,15 @@
     },
     {
       "name": "preview_gift",
-      "value": "🎁 Telegram उपहार"
+      "value": "🎁 उपहार"
     },
     {
       "name": "preview_gift_collectible",
-      "value": "🎁 Telegram संग्रहणीय उपहार"
+      "value": "🎁 संग्रहणीय उपहार"
     },
     {
       "name": "preview_gift_premium",
-      "value": "💎 ने Telegram Premium उपहार में दिया"
+      "value": "💎 ने Premium उपहार में दिया"
     },
     {
       "name": "preview_gift_premium_n",
@@ -1398,7 +1398,7 @@
     },
     {
       "name": "service_contact_registered",
-      "value": "Telegram से जुड़े"
+      "value": "Petrel से जुड़े"
     },
     {
       "name": "service_custom_service_action",
@@ -1434,7 +1434,7 @@
     },
     {
       "name": "service_gifted_premium",
-      "value": "ने Telegram Premium उपहार में दिया"
+      "value": "ने Premium उपहार में दिया"
     },
     {
       "name": "service_gifted_stars",
@@ -1474,11 +1474,11 @@
     },
     {
       "name": "service_passport_data_received",
-      "value": "ने Telegram Passport डेटा प्राप्त किया"
+      "value": "ने Passport डेटा प्राप्त किया"
     },
     {
       "name": "service_passport_data_sent",
-      "value": "ने Telegram Passport डेटा भेजा"
+      "value": "ने Passport डेटा भेजा"
     },
     {
       "name": "service_payment_refunded",
@@ -1678,11 +1678,11 @@
     },
     {
       "name": "telegram_giveaway_prize",
-      "value": "Telegram उपहार पुरस्कार"
+      "value": "उपहार पुरस्कार"
     },
     {
       "name": "telegram_stars",
-      "value": "Telegram स्टार"
+      "value": "स्टार"
     },
     {
       "name": "tglink_added",
@@ -1762,7 +1762,7 @@
     },
     {
       "name": "tglink_kind_unsupported",
-      "value": "वर्तमान संस्करण %1$s Telegram लिंक का समर्थन नहीं करता"
+      "value": "वर्तमान संस्करण %1$s लिंक का समर्थन नहीं करता"
     },
     {
       "name": "tglink_opened_profile_no_live",
@@ -1802,7 +1802,7 @@
     },
     {
       "name": "tglink_unrecognized",
-      "value": "इस Telegram लिंक को पहचाना नहीं जा सका"
+      "value": "इस लिंक को पहचाना नहीं जा सका"
     },
     {
       "name": "tglink_use_bottom_bar",
@@ -1994,7 +1994,7 @@
     },
     {
       "name": "settings_telegram_account",
-      "value": "Telegram खाता"
+      "value": "खाता"
     },
     {
       "name": "settings_open_profile_failed",
@@ -2090,7 +2090,7 @@
     },
     {
       "name": "settings_add_account_sub",
-      "value": "किसी अन्य Telegram खाते में लॉगिन करें"
+      "value": "किसी अन्य खाते में लॉगिन करें"
     },
     {
       "name": "settings_search_hint",
@@ -2266,7 +2266,7 @@
     },
     {
       "name": "accent_needs_premium",
-      "value": "इस रंग के लिए Telegram Premium आवश्यक है"
+      "value": "इस रंग के लिए Premium आवश्यक है"
     },
     {
       "name": "apply_failed_retry",
@@ -2283,10 +2283,6 @@
     {
       "name": "accent_waiting_palette",
       "value": "कलर पैलेट की प्रतीक्षा…"
-    },
-    {
-      "name": "accent_palette_from_server",
-      "value": "पैलेट लॉगिन के बाद Telegram सर्वर द्वारा भेजा जाता है"
     },
     {
       "name": "accent_name_colour",
@@ -2314,7 +2310,7 @@
     },
     {
       "name": "accent_premium_note",
-      "value": "मल्टी-रंग ग्रेडिएंट केवल Telegram Premium के लिए है, गैर-सदस्य चुनने पर सर्वर अस्वीकार कर देगा। सेटिंग्स आपके सभी डिवाइसों पर सिंक होंगी।"
+      "value": "मल्टी-रंग ग्रेडिएंट केवल Premium के लिए है, गैर-सदस्य चुनने पर सर्वर अस्वीकार कर देगा। सेटिंग्स आपके सभी डिवाइसों पर सिंक होंगी।"
     },
     {
       "name": "emoji_status_cleared",
@@ -2326,7 +2322,7 @@
     },
     {
       "name": "emoji_status_needs_premium",
-      "value": "इमोजी स्टेटस के लिए Telegram Premium आवश्यक है"
+      "value": "इमोजी स्टेटस के लिए Premium आवश्यक है"
     },
     {
       "name": "emoji_status_loading",
@@ -2358,7 +2354,7 @@
     },
     {
       "name": "emoji_status_note",
-      "value": "इमोजी स्टेटस आपके नाम के पास दिखता है, इसके लिए Telegram Premium आवश्यक है।"
+      "value": "इमोजी स्टेटस आपके नाम के पास दिखता है, इसके लिए Premium आवश्यक है।"
     },
     {
       "name": "bgplay_music",
@@ -2418,7 +2414,7 @@
     },
     {
       "name": "chat_theme_from_server",
-      "value": "थीम लॉगिन के बाद Telegram सर्वर द्वारा भेजी जाती है"
+      "value": "थीम लॉगिन के बाद सर्वर द्वारा भेजी जाती है"
     },
     {
       "name": "chat_theme_reset",
@@ -2618,7 +2614,7 @@
     },
     {
       "name": "cw_disconnect_confirm",
-      "value": "%1$s को डिस्कनेक्ट करने के बाद Telegram से दोबारा लॉगिन करना होगा।"
+      "value": "%1$s को डिस्कनेक्ट करने के बाद दोबारा लॉगिन करना होगा।"
     },
     {
       "name": "cw_this_site",
@@ -2674,11 +2670,11 @@
     },
     {
       "name": "cw_empty_sub",
-      "value": "Telegram से लॉगिन की गई वेबसाइट यहाँ दिखेंगी।"
+      "value": "जिन वेबसाइटों में आपने लॉगिन किया है वे यहाँ दिखेंगी।"
     },
     {
       "name": "cw_note",
-      "value": "वेबसाइट प्राधिकरण और डिवाइस सत्र एक-दूसरे से स्वतंत्र हैं। वेबसाइट डिस्कनेक्ट करने से इस डिवाइस या अन्य Telegram क्लाइंट से लॉगआउट नहीं होगा।"
+      "value": "वेबसाइट प्राधिकरण और डिवाइस सत्र एक-दूसरे से स्वतंत्र हैं। वेबसाइट डिस्कनेक्ट करने से इस डिवाइस या अन्य क्लाइंट से लॉगआउट नहीं होगा।"
     },
     {
       "name": "pe_title",
@@ -4118,7 +4114,7 @@
     },
     {
       "name": "ct_no_user",
-      "value": "इस नंबर का कोई Telegram उपयोगकर्ता नहीं मिला"
+      "value": "इस नंबर का कोई उपयोगकर्ता नहीं मिला"
     },
     {
       "name": "network_failed_retry",
@@ -4702,7 +4698,7 @@
     },
     {
       "name": "ps_needs_premium",
-      "value": "इस गोपनीयता नियम के लिए Telegram Premium आवश्यक है"
+      "value": "इस गोपनीयता नियम के लिए Premium आवश्यक है"
     },
     {
       "name": "ps_not_loaded_refresh",
@@ -4814,7 +4810,7 @@
     },
     {
       "name": "ps_note",
-      "value": "गोपनीयता नियम क्रम से Telegram सर्वर द्वारा लागू होते हैं; सामान्य नियम बदलने पर मौजूदा अपवाद पूरी तरह बने रहते हैं।"
+      "value": "गोपनीयता नियम क्रम से सर्वर द्वारा लागू होते हैं; सामान्य नियम बदलने पर मौजूदा अपवाद पूरी तरह बने रहते हैं।"
     },
     {
       "name": "tsv_code_sent_note",
@@ -5038,7 +5034,7 @@
     },
     {
       "name": "tsv_note",
-      "value": "पासवर्ड केवल Telegram द्वारा सत्यापन के लिए भेजा जाता है, पेज छोड़ते ही दर्ज की गई सामग्री हट जाती है। कृपया सुलभ रिकवरी ईमेल अवश्य सेट करें।"
+      "value": "पासवर्ड केवल सत्यापन के लिए सर्वर को भेजा जाता है, पेज छोड़ते ही दर्ज की गई सामग्री हट जाती है। कृपया सुलभ रिकवरी ईमेल अवश्य सेट करें।"
     },
     {
       "name": "px_enabled_server",
@@ -5266,7 +5262,7 @@
     },
     {
       "name": "px_from_link",
-      "value": "Telegram प्रॉक्सी लिंक से भरा गया, कृपया पुष्टि करके सहेजें"
+      "value": "प्रॉक्सी लिंक से भरा गया, कृपया पुष्टि करके सहेजें"
     },
     {
       "name": "px_edit_note",
@@ -5358,7 +5354,7 @@
     },
     {
       "name": "fe_needs_premium",
-      "value": "इस रंग या टैग क्षमता के लिए Telegram Premium आवश्यक है"
+      "value": "इस रंग या टैग क्षमता के लिए Premium आवश्यक है"
     },
     {
       "name": "fe_chat_not_in_list",
@@ -5546,7 +5542,7 @@
     },
     {
       "name": "as_fresh_limit",
-      "value": "Telegram सुरक्षा सीमा: नए लॉगिन वाले डिवाइस को 24 घंटे इंतज़ार करना होगा, %1$s से कार्रवाई संभव होगी"
+      "value": "सुरक्षा सीमा: नए लॉगिन वाले डिवाइस को 24 घंटे इंतज़ार करना होगा, %1$s से कार्रवाई संभव होगी"
     },
     {
       "name": "as_terminate_confirm",
@@ -5670,7 +5666,7 @@
     },
     {
       "name": "as_scan_qr",
-      "value": "Telegram डेस्कटॉप या वेब का QR कोड स्कैन करें"
+      "value": "डेस्कटॉप या वेब का QR कोड स्कैन करें"
     },
     {
       "name": "as_current_short",
@@ -5738,7 +5734,7 @@
     },
     {
       "name": "as_accept_calls_sub",
-      "value": "इस डिवाइस पर Telegram कॉल प्राप्त करने की अनुमति दें"
+      "value": "इस डिवाइस पर कॉल प्राप्त करने की अनुमति दें"
     },
     {
       "name": "as_needs_2fa",
@@ -5778,7 +5774,7 @@
     },
     {
       "name": "as_fresh_rejected",
-      "value": "Telegram ने अभी इस डिवाइस से पुराने सत्र समाप्त करने से अस्वीकार किया, कृपया बाद में पुनः प्रयास करें"
+      "value": "सर्वर ने अभी इस डिवाइस से पुराने सत्र समाप्त करने से मना किया, कृपया बाद में पुनः प्रयास करें"
     },
     {
       "name": "as_no_others",
@@ -6178,7 +6174,7 @@
     },
     {
       "name": "mp_story_needs_premium",
-      "value": "स्टोरीज़ पोस्ट करने के लिए वर्तमान खाते में Telegram Premium आवश्यक है"
+      "value": "स्टोरीज़ पोस्ट करने के लिए वर्तमान खाते में Premium आवश्यक है"
     },
     {
       "name": "mp_story_limit",
@@ -6474,7 +6470,7 @@
     },
     {
       "name": "cb_telegram_user",
-      "value": "Telegram उपयोगकर्ता"
+      "value": "उपयोगकर्ता"
     },
     {
       "name": "cb_unnamed",
@@ -6482,7 +6478,7 @@
     },
     {
       "name": "cb_tap_profile",
-      "value": "Telegram प्रोफ़ाइल देखने के लिए टैप करें"
+      "value": "प्रोफ़ाइल देखने के लिए टैप करें"
     },
     {
       "name": "cb_contact_card",
@@ -6570,7 +6566,7 @@
     },
     {
       "name": "game_interactive",
-      "value": "Telegram इंटरैक्टिव गेम"
+      "value": "इंटरैक्टिव गेम"
     },
     {
       "name": "game_unreadable",
@@ -6594,7 +6590,7 @@
     },
     {
       "name": "game_title",
-      "value": "Telegram गेम"
+      "value": "गेम"
     },
     {
       "name": "lv_leave_title",
@@ -7394,7 +7390,7 @@
     },
     {
       "name": "mb_telegram_link",
-      "value": "Telegram लिंक"
+      "value": "लिंक"
     },
     {
       "name": "mb_web_link",
@@ -7978,7 +7974,7 @@
     },
     {
       "name": "cp_pay_stars_body",
-      "value": "%1$d Telegram स्टार का भुगतान होगा। भुगतान पूरा होने के बाद यह संदेश अनलॉक स्थिति में अपडेट हो जाएगा।"
+      "value": "%1$d स्टार का भुगतान होगा। भुगतान पूरा होने के बाद यह संदेश अनलॉक स्थिति में अपडेट हो जाएगा।"
     },
     {
       "name": "cp_pay_stars_button",
@@ -8654,7 +8650,7 @@
     },
     {
       "name": "cp_transcribe_premium",
-      "value": "टेक्स्ट में बदलना Telegram Premium सुविधा है"
+      "value": "टेक्स्ट में बदलना Premium सुविधा है"
     },
     {
       "name": "cp_stop_poll_body",
@@ -9102,7 +9098,7 @@
     },
     {
       "name": "sm_joined_telegram",
-      "value": "%1$s Telegram से जुड़े"
+      "value": "%1$s Petrel से जुड़े"
     },
     {
       "name": "sm_set_theme",
@@ -9826,7 +9822,7 @@
     },
     {
       "name": "lg_code_call",
-      "value": "Telegram %1$s पर कॉल करके वेरिफिकेशन कोड बताएगा"
+      "value": "सर्वर %1$s पर कॉल करके वेरिफिकेशन कोड बताएगा"
     },
     {
       "name": "lg_code_flash_call",
@@ -9854,7 +9850,7 @@
     },
     {
       "name": "lg_code_other_device",
-      "value": "वेरिफिकेशन कोड आपके दूसरे डिवाइस के Telegram पर भेजा गया"
+      "value": "वेरिफिकेशन कोड आपके दूसरे डिवाइस पर भेजा गया"
     },
     {
       "name": "lg_code_email",
@@ -9866,7 +9862,7 @@
     },
     {
       "name": "lg_code_telegram_or_sms",
-      "value": "वेरिफिकेशन कोड आपको Telegram या SMS के माध्यम से भेजा गया"
+      "value": "वेरिफिकेशन कोड आपको ऐप या SMS के माध्यम से भेजा गया"
     },
     {
       "name": "lg_no_resend",
@@ -9874,7 +9870,7 @@
     },
     {
       "name": "lg_use_telegram",
-      "value": "कोड प्राप्त करने के लिए Telegram का उपयोग करें"
+      "value": "कोड प्राप्त करने के लिए ऐप का उपयोग करें"
     },
     {
       "name": "lg_use_sms",
@@ -9934,7 +9930,7 @@
     },
     {
       "name": "lg_phone_hint",
-      "value": "कृपया देश या क्षेत्र चुनें, और Telegram में लॉगिन के लिए फ़ोन नंबर दर्ज करें।"
+      "value": "कृपया देश या क्षेत्र चुनें और वह फ़ोन नंबर दर्ज करें जिससे आप लॉगिन करते हैं।"
     },
     {
       "name": "lg_sending_code",
@@ -9958,7 +9954,7 @@
     },
     {
       "name": "lg_no_account_yet",
-      "value": "इस नंबर का कोई Telegram खाता नहीं है। नाम भरते ही खाता बन जाएगा।"
+      "value": "इस नंबर का कोई खाता नहीं है। नाम भरते ही खाता बन जाएगा।"
     },
     {
       "name": "lg_last_name_optional",
@@ -9970,7 +9966,7 @@
     },
     {
       "name": "lg_qr_step1",
-      "value": "फ़ोन पर Telegram खोलें"
+      "value": "अपने फ़ोन पर ऐप खोलें"
     },
     {
       "name": "lg_qr_step2",
@@ -9990,7 +9986,7 @@
     },
     {
       "name": "lg_qr_body",
-      "value": "किसी दूसरे Telegram लॉगिन डिवाइस से नीचे QR कोड स्कैन करके इस डिवाइस पर सीधे लॉगिन करें।"
+      "value": "किसी दूसरे लॉगिन डिवाइस से नीचे QR कोड स्कैन करके इस डिवाइस पर सीधे लॉगिन करें।"
     },
     {
       "name": "lg_use_phone",
@@ -10242,7 +10238,7 @@
     },
     {
       "name": "cpp_no_boost_slots",
-      "value": "कोई उपलब्ध बूस्ट स्लॉट नहीं (बूस्ट के लिए Telegram Premium आवश्यक)"
+      "value": "कोई उपलब्ध बूस्ट स्लॉट नहीं (बूस्ट के लिए Premium आवश्यक)"
     },
     {
       "name": "cpp_boosted",
@@ -10342,7 +10338,7 @@
     },
     {
       "name": "cpp_telegram_group",
-      "value": "Telegram समूह"
+      "value": "समूह"
     },
     {
       "name": "cpp_invite_invalid",
@@ -10426,7 +10422,7 @@
     },
     {
       "name": "cpp_no_group_call_id",
-      "value": "Telegram ने लाइव रूम पहचान नहीं लौटाई"
+      "value": "सर्वर ने लाइव रूम पहचान नहीं लौटाई"
     },
     {
       "name": "cpp_loading_details",
@@ -10454,7 +10450,7 @@
     },
     {
       "name": "cpp_no_full_subscribers",
-      "value": "Telegram ने वर्तमान खाते को पूरी सदस्य सूची नहीं खोली"
+      "value": "वर्तमान खाता पूरी सदस्य सूची नहीं देख सकता"
     },
     {
       "name": "cpp_no_member_access",
@@ -10582,7 +10578,7 @@
     },
     {
       "name": "pp_pay_with_stars",
-      "value": "Telegram स्टार से भुगतान करें"
+      "value": "स्टार से भुगतान करें"
     },
     {
       "name": "pp_loading_gifts",
@@ -11202,7 +11198,7 @@
     },
     {
       "name": "ar_remove_account_sub",
-      "value": "केवल स्थानीय डेटा हटाता है। आपका Telegram खाता अप्रभावित रहता है।"
+      "value": "केवल स्थानीय डेटा हटाता है। आपका खाता अप्रभावित रहता है।"
     },
     {
       "name": "ga_remove_member",
@@ -13098,7 +13094,7 @@
     },
     {
       "name": "qr_unsupported",
-      "value": "यह कोड समर्थित नहीं है। Telegram संपर्क, समूह या लॉगिन कोड स्कैन करें।"
+      "value": "यह कोड समर्थित नहीं है। संपर्क, समूह या लॉगिन कोड स्कैन करें।"
     },
     {
       "name": "qr_login_title",
@@ -13106,7 +13102,7 @@
     },
     {
       "name": "qr_login_body",
-      "value": "केवल उसी डिवाइस को मंज़ूरी दें जिसमें आप स्वयं लॉगिन कर रहे हैं। उसे आपके Telegram खाते और क्लाउड चैट तक पहुँच मिलेगी।"
+      "value": "केवल उसी डिवाइस को मंज़ूरी दें जिसमें आप स्वयं लॉगिन कर रहे हैं। उसे आपके खाते और क्लाउड चैट तक पहुँच मिलेगी।"
     },
     {
       "name": "qr_login_confirm",
@@ -13130,7 +13126,7 @@
     },
     {
       "name": "about_telegram_group",
-      "value": "Telegram समूह"
+      "value": "समुदाय समूह"
     },
     {
       "name": "cp_show_keyboard",

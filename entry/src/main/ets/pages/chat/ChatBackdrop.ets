@@ -56,7 +56,7 @@ export struct ChatBackdrop {
   @State private areaW: number = 0;
   @State private areaH: number = 0;
 
-  // 第一帧 onAreaChange 还没来，先按窗口尺寸；量到之后立即换成真值。
+  // 第一帧 onSizeChange 还没来，先按窗口尺寸；量到之后立即换成真值。
   private layerW(): number {
     return this.areaW > 0 ? this.areaW : this.screenW;
   }
@@ -127,9 +127,9 @@ export struct ChatBackdrop {
     this.syncRaster();
     this.syncMotion();
     // 窗口变窄（悬浮小窗）时先把内容列宽压到窗口宽以内（issue #138）：内容列不可
-    // 能比窗口宽，而 onAreaChange 那次精确的量要等布局回来；这期间气泡若还按
+    // 能比窗口宽，而 onSizeChange 那次精确的量要等布局回来；这期间气泡若还按
     // 旧的宽算 maxWidth，就会伸出右缘。窗口变宽时 min 取的仍是旧值、同值不写，
-    // 等 onAreaChange 发精确值。
+    // 等 onSizeChange 发精确值。
     publishChatContentWidth(Math.min(this.layerW(), this.screenW));
   }
 
@@ -361,9 +361,10 @@ export struct ChatBackdrop {
       // **必须挂在这层常驻的外层上**：曾经挂在分层版那个 Stack 上，光栅一到那支
       // 就下树，尺寸和内容列宽从此不再更新——#108 的修复只是碰巧赶在光栅落地前
       // 量过一次才成立。
-      .onAreaChange((_old: Area, area: Area): void => {
-        const w: number = area.width as number;
-        const h: number = area.height as number;
+      .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+        const w: Length | undefined = size.width;
+        const h: Length | undefined = size.height;
+        if (typeof w !== 'number' || typeof h !== 'number') { return; }
         if (w > 0 && h > 0 && (w !== this.areaW || h !== this.areaH)) {
           this.areaW = w;
           this.areaH = h;

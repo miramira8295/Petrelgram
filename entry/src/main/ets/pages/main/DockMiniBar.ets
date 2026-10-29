@@ -51,13 +51,16 @@ struct DockMiniBarView {
     return path.startsWith('/') ? `file://${path}` : path;
   }
 
-  // 播放/暂停走全局单例：通道里带了 path，所以不依赖任何页面。
+  // 播放/暂停走全局单例，而且**只认曲目 id**：通道里那条 path 在流式起播时是
+  // 空串，按 path 换出来的 AudioSource 播不了，播放器会直接判为无名可播——
+  // 原来那句 toggleMusic(id, path, dur) 于是点下去毫无反应（与顶栏音乐条同一个
+  // 毛病，2026-10-29 一起改）。
   private toggle(): void {
     const t: NowPlaying | null = this.track;
     if (t === null) {
       return;
     }
-    getVoicePlayback().toggleMusic(t.messageId, t.path, t.durationSec);
+    getVoicePlayback().toggleMusicById(t.messageId);
   }
 
   // 终止：整条收掉，底栏掉回普通页签。

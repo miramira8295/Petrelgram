@@ -110,8 +110,10 @@
         "icon": "$media:layered_image",
         "label": "$string:EntryAbility_label",
         // 新版启动窗配置档：旧字段 startWindowIcon 的显示尺寸被系统钉死，
-        // 给多大的图都渲染成小图标。配置档里的 illustration 是启动页的
-        // 大幅中央插图，用图标原图（1024px）填充。
+        // 给多大的图都渲染成小图标。配置档里现在**只留底色，不配图**：
+        // 启动页要跟着用户选的桌面图标走，而这一帧的任何资源都是打包时定死的、
+        // 没有运行时接口能改，所以图案交给应用内的 StartupSplash 现画（按备用
+        // 图标取 AppScope 里那两层原图）。这一帧保持纯底色，正好能与它接上。
         // 旧字段保留作为低版本回退（系统不认配置档时用）。
         "startWindow": "$profile:start_window",
         // 2026-09-18 换新图标：这里**不能再指 $media:foreground**——那张是老海燕，

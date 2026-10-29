@@ -138,7 +138,7 @@
     },
     {
       "name": "chat_header_kind_user",
-      "value": "Pengguna Telegram"
+      "value": "Pengguna"
     },
     {
       "name": "chat_header_loading",
@@ -194,7 +194,7 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "Petrelgram"
+      "value": "Petrel"
     },
     {
       "name": "file_download_failed",
@@ -414,11 +414,11 @@
     },
     {
       "name": "gift_premium_title",
-      "value": "Hadiah Telegram Premium"
+      "value": "Hadiah Premium"
     },
     {
       "name": "gift_regular_title",
-      "value": "Hadiah Telegram"
+      "value": "Hadiah"
     },
     {
       "name": "gift_special",
@@ -426,7 +426,7 @@
     },
     {
       "name": "gift_stars_title",
-      "value": "Hadiah Bintang Telegram"
+      "value": "Hadiah Bintang"
     },
     {
       "name": "gift_stars_unknown",
@@ -486,7 +486,7 @@
     },
     {
       "name": "gift_unique",
-      "value": "Hadiah Telegram yang unik"
+      "value": "Hadiah yang unik"
     },
     {
       "name": "gift_valued_at",
@@ -562,7 +562,7 @@
     },
     {
       "name": "link_preview_open_in_telegram",
-      "value": "Buka di Telegram"
+      "value": "Buka"
     },
     {
       "name": "link_preview_open_invite",
@@ -1110,15 +1110,15 @@
     },
     {
       "name": "preview_gift",
-      "value": "🎁 Hadiah Telegram"
+      "value": "🎁 Hadiah"
     },
     {
       "name": "preview_gift_collectible",
-      "value": "🎁 Hadiah koleksi Telegram"
+      "value": "🎁 Hadiah koleksi"
     },
     {
       "name": "preview_gift_premium",
-      "value": "💎 Memberikan Telegram Premium"
+      "value": "💎 Memberikan Premium"
     },
     {
       "name": "preview_gift_premium_n",
@@ -1398,7 +1398,7 @@
     },
     {
       "name": "service_contact_registered",
-      "value": "Bergabung ke Telegram"
+      "value": "Bergabung ke Petrel"
     },
     {
       "name": "service_custom_service_action",
@@ -1434,7 +1434,7 @@
     },
     {
       "name": "service_gifted_premium",
-      "value": "Mengirim Telegram Premium"
+      "value": "Mengirim Premium"
     },
     {
       "name": "service_gifted_stars",
@@ -1474,11 +1474,11 @@
     },
     {
       "name": "service_passport_data_received",
-      "value": "Menerima data Passport Telegram"
+      "value": "Menerima data Passport"
     },
     {
       "name": "service_passport_data_sent",
-      "value": "Mengirim data Passport Telegram"
+      "value": "Mengirim data Passport"
     },
     {
       "name": "service_payment_refunded",
@@ -1678,11 +1678,11 @@
     },
     {
       "name": "telegram_giveaway_prize",
-      "value": "Hadiah undian Telegram"
+      "value": "Hadiah undian"
     },
     {
       "name": "telegram_stars",
-      "value": "Bintang Telegram"
+      "value": "Bintang"
     },
     {
       "name": "tglink_added",
@@ -1762,7 +1762,7 @@
     },
     {
       "name": "tglink_kind_unsupported",
-      "value": "Versi ini belum mendukung tautan Telegram %1$s"
+      "value": "Versi ini belum mendukung tautan %1$s"
     },
     {
       "name": "tglink_opened_profile_no_live",
@@ -1802,7 +1802,7 @@
     },
     {
       "name": "tglink_unrecognized",
-      "value": "Tidak dapat mengenali tautan Telegram ini"
+      "value": "Tidak dapat mengenali tautan ini"
     },
     {
       "name": "tglink_use_bottom_bar",
@@ -1994,7 +1994,7 @@
     },
     {
       "name": "settings_telegram_account",
-      "value": "Akun Telegram"
+      "value": "Akun"
     },
     {
       "name": "settings_open_profile_failed",
@@ -2090,7 +2090,7 @@
     },
     {
       "name": "settings_add_account_sub",
-      "value": "Masuk ke akun Telegram lain"
+      "value": "Masuk ke akun lain"
     },
     {
       "name": "settings_search_hint",
@@ -2266,7 +2266,7 @@
     },
     {
       "name": "accent_needs_premium",
-      "value": "Warna ini memerlukan Telegram Premium"
+      "value": "Warna ini memerlukan Premium"
     },
     {
       "name": "apply_failed_retry",
@@ -2283,10 +2283,6 @@
     {
       "name": "accent_waiting_palette",
       "value": "Menunggu palet…"
-    },
-    {
-      "name": "accent_palette_from_server",
-      "value": "Palet diberikan oleh server Telegram setelah masuk"
     },
     {
       "name": "accent_name_colour",
@@ -2314,7 +2310,7 @@
     },
     {
       "name": "accent_premium_note",
-      "value": "Gradasi warna-warni khusus Telegram Premium; server akan menolak jika dipilih non-anggota. Pengaturan akan tersinkron ke semua perangkat Anda."
+      "value": "Gradasi warna-warni khusus Premium; server akan menolak jika dipilih non-anggota. Pengaturan akan tersinkron ke semua perangkat Anda."
     },
     {
       "name": "emoji_status_cleared",
@@ -2326,7 +2322,7 @@
     },
     {
       "name": "emoji_status_needs_premium",
-      "value": "Status emoji memerlukan Telegram Premium"
+      "value": "Status emoji memerlukan Premium"
     },
     {
       "name": "emoji_status_loading",
@@ -2358,7 +2354,7 @@
     },
     {
       "name": "emoji_status_note",
-      "value": "Status emoji tampil di samping nama Anda dan memerlukan Telegram Premium."
+      "value": "Status emoji tampil di samping nama Anda dan memerlukan Premium."
     },
     {
       "name": "bgplay_music",
@@ -2418,7 +2414,7 @@
     },
     {
       "name": "chat_theme_from_server",
-      "value": "Tema diberikan oleh server Telegram setelah masuk"
+      "value": "Tema diberikan oleh server setelah masuk"
     },
     {
       "name": "chat_theme_reset",
@@ -2618,7 +2614,7 @@
     },
     {
       "name": "cw_disconnect_confirm",
-      "value": "Setelah memutus %1$s, Anda perlu masuk ulang dengan Telegram."
+      "value": "Setelah memutus %1$s, Anda perlu masuk ulang."
     },
     {
       "name": "cw_this_site",
@@ -2674,11 +2670,11 @@
     },
     {
       "name": "cw_empty_sub",
-      "value": "Situs yang Anda masuki dengan Telegram akan tampil di sini."
+      "value": "Situs yang Anda masuki akan tampil di sini."
     },
     {
       "name": "cw_note",
-      "value": "Izin situs dan sesi perangkat saling terpisah. Memutus situs tidak akan mengeluarkan perangkat ini atau klien Telegram lain."
+      "value": "Izin situs dan sesi perangkat saling terpisah. Memutus situs tidak akan mengeluarkan perangkat ini atau klien lain."
     },
     {
       "name": "pe_title",
@@ -4118,7 +4114,7 @@
     },
     {
       "name": "ct_no_user",
-      "value": "Tidak ada pengguna Telegram dengan nomor ini"
+      "value": "Tidak ada pengguna dengan nomor ini"
     },
     {
       "name": "network_failed_retry",
@@ -4702,7 +4698,7 @@
     },
     {
       "name": "ps_needs_premium",
-      "value": "Aturan privasi ini memerlukan Telegram Premium"
+      "value": "Aturan privasi ini memerlukan Premium"
     },
     {
       "name": "ps_not_loaded_refresh",
@@ -4814,7 +4810,7 @@
     },
     {
       "name": "ps_note",
-      "value": "Aturan privasi dieksekusi oleh server Telegram sesuai urutan; pengecualian yang ada dipertahankan sepenuhnya saat mengubah aturan umum."
+      "value": "Aturan privasi dieksekusi oleh server sesuai urutan; pengecualian yang ada dipertahankan sepenuhnya saat mengubah aturan umum."
     },
     {
       "name": "tsv_code_sent_note",
@@ -5038,7 +5034,7 @@
     },
     {
       "name": "tsv_note",
-      "value": "Kata sandi hanya dikirim ke Telegram untuk verifikasi dan input langsung dihapus setelah meninggalkan halaman. Pastikan mengatur email pemulihan yang dapat diakses."
+      "value": "Kata sandi hanya dikirim ke server untuk verifikasi dan input langsung dihapus setelah meninggalkan halaman. Pastikan mengatur email pemulihan yang dapat diakses."
     },
     {
       "name": "px_enabled_server",
@@ -5266,7 +5262,7 @@
     },
     {
       "name": "px_from_link",
-      "value": "Terisi dari tautan proxy Telegram, konfirmasi lalu simpan"
+      "value": "Terisi dari tautan proxy, konfirmasi lalu simpan"
     },
     {
       "name": "px_edit_note",
@@ -5358,7 +5354,7 @@
     },
     {
       "name": "fe_needs_premium",
-      "value": "Warna atau kemampuan label ini memerlukan Telegram Premium"
+      "value": "Warna atau kemampuan label ini memerlukan Premium"
     },
     {
       "name": "fe_chat_not_in_list",
@@ -5546,7 +5542,7 @@
     },
     {
       "name": "as_fresh_limit",
-      "value": "Batasan keamanan Telegram: perangkat baru harus menunggu 24 jam, diperkirakan dapat dilakukan %1$s"
+      "value": "Batasan keamanan: perangkat baru harus menunggu 24 jam, diperkirakan dapat dilakukan %1$s"
     },
     {
       "name": "as_terminate_confirm",
@@ -5670,7 +5666,7 @@
     },
     {
       "name": "as_scan_qr",
-      "value": "Pindai kode QR Telegram Desktop atau versi web"
+      "value": "Pindai kode QR Desktop atau versi web"
     },
     {
       "name": "as_current_short",
@@ -5738,7 +5734,7 @@
     },
     {
       "name": "as_accept_calls_sub",
-      "value": "Izinkan menerima panggilan Telegram di perangkat ini"
+      "value": "Izinkan menerima panggilan di perangkat ini"
     },
     {
       "name": "as_needs_2fa",
@@ -5778,7 +5774,7 @@
     },
     {
       "name": "as_fresh_rejected",
-      "value": "Telegram untuk sementara menolak pengakhiran sesi lama dari perangkat ini, coba lagi nanti"
+      "value": "Server untuk sementara menolak pengakhiran sesi lama dari perangkat ini, coba lagi nanti"
     },
     {
       "name": "as_no_others",
@@ -6178,7 +6174,7 @@
     },
     {
       "name": "mp_story_needs_premium",
-      "value": "Akun saat ini memerlukan Telegram Premium untuk mempublikasikan Kisah"
+      "value": "Akun saat ini memerlukan Premium untuk mempublikasikan Kisah"
     },
     {
       "name": "mp_story_limit",
@@ -6474,7 +6470,7 @@
     },
     {
       "name": "cb_telegram_user",
-      "value": "Pengguna Telegram"
+      "value": "Pengguna"
     },
     {
       "name": "cb_unnamed",
@@ -6482,7 +6478,7 @@
     },
     {
       "name": "cb_tap_profile",
-      "value": "Ketuk untuk melihat profil Telegram"
+      "value": "Ketuk untuk melihat profil"
     },
     {
       "name": "cb_contact_card",
@@ -6570,7 +6566,7 @@
     },
     {
       "name": "game_interactive",
-      "value": "Game interaktif Telegram"
+      "value": "Game interaktif"
     },
     {
       "name": "game_unreadable",
@@ -6594,7 +6590,7 @@
     },
     {
       "name": "game_title",
-      "value": "Game Telegram"
+      "value": "Game"
     },
     {
       "name": "lv_leave_title",
@@ -7394,7 +7390,7 @@
     },
     {
       "name": "mb_telegram_link",
-      "value": "Tautan Telegram"
+      "value": "Tautan"
     },
     {
       "name": "mb_web_link",
@@ -7978,7 +7974,7 @@
     },
     {
       "name": "cp_pay_stars_body",
-      "value": "Anda akan membayar %1$d Bintang Telegram. Setelah pembayaran selesai, pesan ini akan diperbarui menjadi status terbuka."
+      "value": "Anda akan membayar %1$d Bintang. Setelah pembayaran selesai, pesan ini akan diperbarui menjadi status terbuka."
     },
     {
       "name": "cp_pay_stars_button",
@@ -8654,7 +8650,7 @@
     },
     {
       "name": "cp_transcribe_premium",
-      "value": "Ubah ke teks adalah fitur Telegram Premium"
+      "value": "Ubah ke teks adalah fitur Premium"
     },
     {
       "name": "cp_stop_poll_body",
@@ -9102,7 +9098,7 @@
     },
     {
       "name": "sm_joined_telegram",
-      "value": "%1$s bergabung ke Telegram"
+      "value": "%1$s bergabung ke Petrel"
     },
     {
       "name": "sm_set_theme",
@@ -9826,7 +9822,7 @@
     },
     {
       "name": "lg_code_call",
-      "value": "Telegram akan menelepon %1$s dan menyampaikan kode"
+      "value": "Server akan menelepon %1$s dan menyampaikan kode"
     },
     {
       "name": "lg_code_flash_call",
@@ -9854,7 +9850,7 @@
     },
     {
       "name": "lg_code_other_device",
-      "value": "Kode dikirim ke Telegram di perangkat lain Anda"
+      "value": "Kode dikirim ke perangkat lain Anda"
     },
     {
       "name": "lg_code_email",
@@ -9866,7 +9862,7 @@
     },
     {
       "name": "lg_code_telegram_or_sms",
-      "value": "Kode dikirim melalui Telegram atau SMS"
+      "value": "Kode dikirim melalui aplikasi atau SMS"
     },
     {
       "name": "lg_no_resend",
@@ -9874,7 +9870,7 @@
     },
     {
       "name": "lg_use_telegram",
-      "value": "Ganti untuk menerima kode via Telegram"
+      "value": "Ganti untuk menerima kode di aplikasi"
     },
     {
       "name": "lg_use_sms",
@@ -9934,7 +9930,7 @@
     },
     {
       "name": "lg_phone_hint",
-      "value": "Pilih negara atau wilayah, dan masukkan nomor telepon untuk masuk ke Telegram."
+      "value": "Pilih negara atau wilayah, dan masukkan nomor telepon untuk masuk."
     },
     {
       "name": "lg_sending_code",
@@ -9958,7 +9954,7 @@
     },
     {
       "name": "lg_no_account_yet",
-      "value": "Nomor ini belum memiliki akun Telegram. Isi nama untuk membuatnya."
+      "value": "Nomor ini belum memiliki akun. Isi nama untuk membuatnya."
     },
     {
       "name": "lg_last_name_optional",
@@ -9970,7 +9966,7 @@
     },
     {
       "name": "lg_qr_step1",
-      "value": "Buka Telegram di ponsel Anda"
+      "value": "Buka aplikasi di ponsel Anda"
     },
     {
       "name": "lg_qr_step2",
@@ -9990,7 +9986,7 @@
     },
     {
       "name": "lg_qr_body",
-      "value": "Pindai kode QR di bawah dengan perangkat lain yang sudah masuk Telegram untuk langsung masuk di perangkat ini."
+      "value": "Pindai kode QR di bawah dengan perangkat lain yang sudah masuk untuk langsung masuk di perangkat ini."
     },
     {
       "name": "lg_use_phone",
@@ -10242,7 +10238,7 @@
     },
     {
       "name": "cpp_no_boost_slots",
-      "value": "Tidak ada slot boost tersedia (boost memerlukan Telegram Premium)"
+      "value": "Tidak ada slot boost tersedia (boost memerlukan Premium)"
     },
     {
       "name": "cpp_boosted",
@@ -10342,7 +10338,7 @@
     },
     {
       "name": "cpp_telegram_group",
-      "value": "Grup Telegram"
+      "value": "Grup"
     },
     {
       "name": "cpp_invite_invalid",
@@ -10426,7 +10422,7 @@
     },
     {
       "name": "cpp_no_group_call_id",
-      "value": "Telegram tidak mengembalikan identitas ruang siaran"
+      "value": "Server tidak mengembalikan identitas ruang siaran"
     },
     {
       "name": "cpp_loading_details",
@@ -10454,7 +10450,7 @@
     },
     {
       "name": "cpp_no_full_subscribers",
-      "value": "Telegram tidak membuka daftar subscriber penuh untuk akun saat ini"
+      "value": "Akun saat ini tidak dapat mengakses daftar subscriber lengkap"
     },
     {
       "name": "cpp_no_member_access",
@@ -10582,7 +10578,7 @@
     },
     {
       "name": "pp_pay_with_stars",
-      "value": "Bayar dengan Bintang Telegram"
+      "value": "Bayar dengan Bintang"
     },
     {
       "name": "pp_loading_gifts",
@@ -11202,7 +11198,7 @@
     },
     {
       "name": "ar_remove_account_sub",
-      "value": "Hanya menghapus data lokal. Akun Telegram Anda tidak terpengaruh."
+      "value": "Hanya menghapus data lokal. Akun Anda tidak terpengaruh."
     },
     {
       "name": "ga_remove_member",
@@ -13098,7 +13094,7 @@
     },
     {
       "name": "qr_unsupported",
-      "value": "Kode ini tidak didukung. Pindai kode kontak, grup, atau masuk Telegram."
+      "value": "Kode ini tidak didukung. Pindai kode kontak, grup, atau masuk."
     },
     {
       "name": "qr_login_title",
@@ -13106,7 +13102,7 @@
     },
     {
       "name": "qr_login_body",
-      "value": "Hanya setujui perangkat yang Anda gunakan untuk masuk. Perangkat itu akan dapat mengakses akun dan obrolan cloud Telegram Anda."
+      "value": "Hanya setujui perangkat yang Anda gunakan untuk masuk. Perangkat itu akan dapat mengakses akun dan obrolan cloud Anda."
     },
     {
       "name": "qr_login_confirm",
@@ -13130,7 +13126,7 @@
     },
     {
       "name": "about_telegram_group",
-      "value": "Grup Telegram"
+      "value": "Grup komunitas"
     },
     {
       "name": "cp_show_keyboard",

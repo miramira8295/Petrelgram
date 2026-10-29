@@ -63,9 +63,10 @@ export interface IconEnabledState {
 //
 // 顺序即界面顺序：三张独立设计排在默认后面，五张换底色的排在最后。
 //
-// 加一张图标要同时动四处：AppScope 里的 bg_/fg_/icon_*.json、app.json5 的
-// alternateIcons、这张表、以及 AppIconPicker 里 name → $r() 的映射。测试挡得住
-// 重名和命名走样，挡不住"四处漏了一处"。
+// 加一张图标要同时动五处：AppScope 里的 bg_/fg_/icon_*.json、app.json5 的
+// alternateIcons、这张表、AppIconPicker 里 name → $r() 的映射，以及启动页的
+// util/appIconArt（图案与桌面图标同源）。测试挡得住重名和命名走样，挡不住
+// "五处漏了一处"。
 const OPTIONS: AppIconOption[] = [
   { name: APP_ICON_DEFAULT, labelKey: 'app_icon_default', preview: 'iconprev_default' },
   // 1.5.0 之前的那张海燕（实色底 + 前景鸟）。2026-09-18 换了新图标，它原样降级成

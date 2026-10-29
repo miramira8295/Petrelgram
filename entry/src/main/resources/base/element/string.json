@@ -138,7 +138,7 @@
     },
     {
       "name": "chat_header_kind_user",
-      "value": "Telegram 用户"
+      "value": "用户"
     },
     {
       "name": "chat_header_loading",
@@ -194,7 +194,7 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "Petrelgram"
+      "value": "Petrel"
     },
     {
       "name": "file_download_failed",
@@ -414,11 +414,11 @@
     },
     {
       "name": "gift_premium_title",
-      "value": "Telegram Premium 礼物"
+      "value": "Premium 礼物"
     },
     {
       "name": "gift_regular_title",
-      "value": "Telegram 礼物"
+      "value": "礼物"
     },
     {
       "name": "gift_special",
@@ -426,7 +426,7 @@
     },
     {
       "name": "gift_stars_title",
-      "value": "Telegram 星星礼物"
+      "value": "星星礼物"
     },
     {
       "name": "gift_stars_unknown",
@@ -486,7 +486,7 @@
     },
     {
       "name": "gift_unique",
-      "value": "独一无二的 Telegram 礼物"
+      "value": "独一无二的礼物"
     },
     {
       "name": "gift_valued_at",
@@ -562,7 +562,7 @@
     },
     {
       "name": "link_preview_open_in_telegram",
-      "value": "在 Telegram 中打开"
+      "value": "打开"
     },
     {
       "name": "link_preview_open_invite",
@@ -1110,15 +1110,15 @@
     },
     {
       "name": "preview_gift",
-      "value": "🎁 Telegram 礼物"
+      "value": "🎁 礼物"
     },
     {
       "name": "preview_gift_collectible",
-      "value": "🎁 Telegram 珍藏礼物"
+      "value": "🎁 珍藏礼物"
     },
     {
       "name": "preview_gift_premium",
-      "value": "💎 赠送了 Telegram Premium"
+      "value": "💎 赠送了 Premium"
     },
     {
       "name": "preview_gift_premium_n",
@@ -1398,7 +1398,7 @@
     },
     {
       "name": "service_contact_registered",
-      "value": "加入了 Telegram"
+      "value": "加入了 Petrel"
     },
     {
       "name": "service_custom_service_action",
@@ -1434,7 +1434,7 @@
     },
     {
       "name": "service_gifted_premium",
-      "value": "赠送了 Telegram 会员"
+      "value": "赠送了会员"
     },
     {
       "name": "service_gifted_stars",
@@ -1474,11 +1474,11 @@
     },
     {
       "name": "service_passport_data_received",
-      "value": "接收了 Telegram 护照数据"
+      "value": "接收了护照数据"
     },
     {
       "name": "service_passport_data_sent",
-      "value": "发送了 Telegram 护照数据"
+      "value": "发送了护照数据"
     },
     {
       "name": "service_payment_refunded",
@@ -1678,11 +1678,11 @@
     },
     {
       "name": "telegram_giveaway_prize",
-      "value": "Telegram 抽奖奖品"
+      "value": "抽奖奖品"
     },
     {
       "name": "telegram_stars",
-      "value": "Telegram 星星"
+      "value": "星星"
     },
     {
       "name": "tglink_added",
@@ -1762,7 +1762,7 @@
     },
     {
       "name": "tglink_kind_unsupported",
-      "value": "当前版本暂不支持%1$s Telegram 链接"
+      "value": "当前版本暂不支持%1$s 链接"
     },
     {
       "name": "tglink_opened_profile_no_live",
@@ -1802,7 +1802,7 @@
     },
     {
       "name": "tglink_unrecognized",
-      "value": "无法识别该 Telegram 链接"
+      "value": "无法识别该链接"
     },
     {
       "name": "tglink_use_bottom_bar",
@@ -1994,7 +1994,7 @@
     },
     {
       "name": "settings_telegram_account",
-      "value": "Telegram 账号"
+      "value": "账号"
     },
     {
       "name": "settings_open_profile_failed",
@@ -2090,7 +2090,7 @@
     },
     {
       "name": "settings_add_account_sub",
-      "value": "登录另一个 Telegram 账号"
+      "value": "登录另一个账号"
     },
     {
       "name": "settings_search_hint",
@@ -2266,7 +2266,7 @@
     },
     {
       "name": "accent_needs_premium",
-      "value": "该颜色需要 Telegram Premium"
+      "value": "该颜色需要 Premium"
     },
     {
       "name": "apply_failed_retry",
@@ -2283,10 +2283,6 @@
     {
       "name": "accent_waiting_palette",
       "value": "正在等待色板…"
-    },
-    {
-      "name": "accent_palette_from_server",
-      "value": "色板由 Telegram 服务器在登录后下发"
     },
     {
       "name": "accent_name_colour",
@@ -2314,7 +2310,7 @@
     },
     {
       "name": "accent_premium_note",
-      "value": "多彩渐变色为 Telegram Premium 专属，非会员选择时服务器会拒绝。设置会同步到你的所有设备。"
+      "value": "多彩渐变色为 Premium 专属，非会员选择时服务器会拒绝。设置会同步到你的所有设备。"
     },
     {
       "name": "emoji_status_cleared",
@@ -2326,7 +2322,7 @@
     },
     {
       "name": "emoji_status_needs_premium",
-      "value": "表情状态需要 Telegram Premium"
+      "value": "表情状态需要 Premium"
     },
     {
       "name": "emoji_status_loading",
@@ -2358,7 +2354,7 @@
     },
     {
       "name": "emoji_status_note",
-      "value": "表情状态显示在你的名字旁边，需要 Telegram Premium。"
+      "value": "表情状态显示在你的名字旁边，需要 Premium。"
     },
     {
       "name": "bgplay_music",
@@ -2418,7 +2414,7 @@
     },
     {
       "name": "chat_theme_from_server",
-      "value": "主题由 Telegram 服务器在登录后下发"
+      "value": "主题由服务器在登录后下发"
     },
     {
       "name": "chat_theme_reset",
@@ -2618,7 +2614,7 @@
     },
     {
       "name": "cw_disconnect_confirm",
-      "value": "断开 %1$s 后，需要重新使用 Telegram 登录。"
+      "value": "断开 %1$s 后，需要重新登录。"
     },
     {
       "name": "cw_this_site",
@@ -2674,11 +2670,11 @@
     },
     {
       "name": "cw_empty_sub",
-      "value": "通过 Telegram 登录的网站会显示在这里。"
+      "value": "通过本应用登录的网站会显示在这里。"
     },
     {
       "name": "cw_note",
-      "value": "网站授权与设备会话彼此独立。断开网站不会退出本机或其他 Telegram 客户端。"
+      "value": "网站授权与设备会话彼此独立。断开网站不会退出本机或其他客户端。"
     },
     {
       "name": "pe_title",
@@ -4118,7 +4114,7 @@
     },
     {
       "name": "ct_no_user",
-      "value": "未找到使用此号码的 Telegram 用户"
+      "value": "未找到使用此号码的用户"
     },
     {
       "name": "network_failed_retry",
@@ -4702,7 +4698,7 @@
     },
     {
       "name": "ps_needs_premium",
-      "value": "此隐私规则需要 Telegram Premium"
+      "value": "此隐私规则需要 Premium"
     },
     {
       "name": "ps_not_loaded_refresh",
@@ -4814,7 +4810,7 @@
     },
     {
       "name": "ps_note",
-      "value": "隐私规则按顺序由 Telegram 服务器执行；修改总规则时会完整保留已有例外。"
+      "value": "隐私规则按顺序由服务器执行；修改总规则时会完整保留已有例外。"
     },
     {
       "name": "tsv_code_sent_note",
@@ -5038,7 +5034,7 @@
     },
     {
       "name": "tsv_note",
-      "value": "密码只会发送给 Telegram 进行验证，页面离开后会立即清除输入内容。请务必设置可访问的恢复邮箱。"
+      "value": "密码只会发送给服务器进行验证，页面离开后会立即清除输入内容。请务必设置可访问的恢复邮箱。"
     },
     {
       "name": "px_enabled_server",
@@ -5266,7 +5262,7 @@
     },
     {
       "name": "px_from_link",
-      "value": "已从 Telegram 代理链接填入，请确认后保存"
+      "value": "已从代理链接填入，请确认后保存"
     },
     {
       "name": "px_edit_note",
@@ -5358,7 +5354,7 @@
     },
     {
       "name": "fe_needs_premium",
-      "value": "该颜色或标签能力需要 Telegram Premium"
+      "value": "该颜色或标签能力需要 Premium"
     },
     {
       "name": "fe_chat_not_in_list",
@@ -5546,7 +5542,7 @@
     },
     {
       "name": "as_fresh_limit",
-      "value": "Telegram 安全限制：新登录设备需等待 24 小时，预计%1$s可操作"
+      "value": "安全限制：新登录设备需等待 24 小时，预计%1$s可操作"
     },
     {
       "name": "as_terminate_confirm",
@@ -5670,7 +5666,7 @@
     },
     {
       "name": "as_scan_qr",
-      "value": "扫描 Telegram 桌面端或网页版二维码"
+      "value": "扫描桌面端或网页版二维码"
     },
     {
       "name": "as_current_short",
@@ -5738,7 +5734,7 @@
     },
     {
       "name": "as_accept_calls_sub",
-      "value": "允许在此设备接听 Telegram 通话"
+      "value": "允许在此设备接听通话"
     },
     {
       "name": "as_needs_2fa",
@@ -5778,7 +5774,7 @@
     },
     {
       "name": "as_fresh_rejected",
-      "value": "Telegram 暂时拒绝从此设备终止较早的会话，请稍后重试"
+      "value": "服务器暂时拒绝从此设备终止较早的会话，请稍后重试"
     },
     {
       "name": "as_no_others",
@@ -6178,7 +6174,7 @@
     },
     {
       "name": "mp_story_needs_premium",
-      "value": "当前账号需要 Telegram Premium 才能发布动态"
+      "value": "当前账号需要 Premium 才能发布动态"
     },
     {
       "name": "mp_story_limit",
@@ -6474,7 +6470,7 @@
     },
     {
       "name": "cb_telegram_user",
-      "value": "Telegram 用户"
+      "value": "用户"
     },
     {
       "name": "cb_unnamed",
@@ -6482,7 +6478,7 @@
     },
     {
       "name": "cb_tap_profile",
-      "value": "点击查看 Telegram 资料"
+      "value": "点击查看资料"
     },
     {
       "name": "cb_contact_card",
@@ -6570,7 +6566,7 @@
     },
     {
       "name": "game_interactive",
-      "value": "Telegram 互动游戏"
+      "value": "互动游戏"
     },
     {
       "name": "game_unreadable",
@@ -6594,7 +6590,7 @@
     },
     {
       "name": "game_title",
-      "value": "Telegram 游戏"
+      "value": "游戏"
     },
     {
       "name": "lv_leave_title",
@@ -7394,7 +7390,7 @@
     },
     {
       "name": "mb_telegram_link",
-      "value": "Telegram 链接"
+      "value": "链接"
     },
     {
       "name": "mb_web_link",
@@ -7978,7 +7974,7 @@
     },
     {
       "name": "cp_pay_stars_body",
-      "value": "将支付 %1$d 颗 Telegram 星星。付款完成后，这条消息会更新为已解锁状态。"
+      "value": "将支付 %1$d 颗星星。付款完成后，这条消息会更新为已解锁状态。"
     },
     {
       "name": "cp_pay_stars_button",
@@ -8654,7 +8650,7 @@
     },
     {
       "name": "cp_transcribe_premium",
-      "value": "转文字是 Telegram Premium 功能"
+      "value": "转文字是 Premium 功能"
     },
     {
       "name": "cp_stop_poll_body",
@@ -9102,7 +9098,7 @@
     },
     {
       "name": "sm_joined_telegram",
-      "value": "%1$s 加入了 Telegram"
+      "value": "%1$s 加入了 Petrel"
     },
     {
       "name": "sm_set_theme",
@@ -9826,7 +9822,7 @@
     },
     {
       "name": "lg_code_call",
-      "value": "Telegram 将致电 %1$s 并告知验证码"
+      "value": "服务器将致电 %1$s 并告知验证码"
     },
     {
       "name": "lg_code_flash_call",
@@ -9854,7 +9850,7 @@
     },
     {
       "name": "lg_code_other_device",
-      "value": "验证码已发送到你另一台设备上的 Telegram"
+      "value": "验证码已发送到你另一台设备上。"
     },
     {
       "name": "lg_code_email",
@@ -9866,7 +9862,7 @@
     },
     {
       "name": "lg_code_telegram_or_sms",
-      "value": "验证码已通过 Telegram 或短信发送给你"
+      "value": "验证码已通过应用内消息或短信发送给你"
     },
     {
       "name": "lg_no_resend",
@@ -9874,7 +9870,7 @@
     },
     {
       "name": "lg_use_telegram",
-      "value": "改用 Telegram 接收验证码"
+      "value": "改用应用内消息接收验证码"
     },
     {
       "name": "lg_use_sms",
@@ -9934,7 +9930,7 @@
     },
     {
       "name": "lg_phone_hint",
-      "value": "请选择国家或地区，并输入用于登录 Telegram 的手机号码。"
+      "value": "请选择国家或地区，并输入用于登录的手机号码。"
     },
     {
       "name": "lg_sending_code",
@@ -9958,7 +9954,7 @@
     },
     {
       "name": "lg_no_account_yet",
-      "value": "这个号码还没有 Telegram 账号。填写姓名即可创建。"
+      "value": "这个号码还没有账号。填写姓名即可创建。"
     },
     {
       "name": "lg_last_name_optional",
@@ -9970,7 +9966,7 @@
     },
     {
       "name": "lg_qr_step1",
-      "value": "在手机上打开 Telegram"
+      "value": "在手机上打开本应用"
     },
     {
       "name": "lg_qr_step2",
@@ -9990,7 +9986,7 @@
     },
     {
       "name": "lg_qr_body",
-      "value": "用另一台已登录 Telegram 的设备扫描下方二维码，即可直接登录本机。"
+      "value": "用另一台已登录的设备扫描下方二维码，即可直接登录本机。"
     },
     {
       "name": "lg_use_phone",
@@ -10242,7 +10238,7 @@
     },
     {
       "name": "cpp_no_boost_slots",
-      "value": "没有可用的助力名额（助力需要 Telegram Premium）"
+      "value": "没有可用的助力名额（助力需要 Premium）"
     },
     {
       "name": "cpp_boosted",
@@ -10342,7 +10338,7 @@
     },
     {
       "name": "cpp_telegram_group",
-      "value": "Telegram 群组"
+      "value": "群组"
     },
     {
       "name": "cpp_invite_invalid",
@@ -10426,7 +10422,7 @@
     },
     {
       "name": "cpp_no_group_call_id",
-      "value": "Telegram 未返回直播间标识"
+      "value": "服务器未返回直播间标识"
     },
     {
       "name": "cpp_loading_details",
@@ -10454,7 +10450,7 @@
     },
     {
       "name": "cpp_no_full_subscribers",
-      "value": "Telegram 未向当前账号开放完整订阅者列表"
+      "value": "当前账号无法获取完整订阅者列表"
     },
     {
       "name": "cpp_no_member_access",
@@ -10582,7 +10578,7 @@
     },
     {
       "name": "pp_pay_with_stars",
-      "value": "使用 Telegram 星币支付"
+      "value": "使用星币支付"
     },
     {
       "name": "pp_loading_gifts",
@@ -11202,7 +11198,7 @@
     },
     {
       "name": "ar_remove_account_sub",
-      "value": "仅删除本机上该账号的缓存数据，不影响 Telegram 账号本身。"
+      "value": "仅删除本机上该账号的缓存数据，不影响账号本身。"
     },
     {
       "name": "ga_remove_member",
@@ -13098,7 +13094,7 @@
     },
     {
       "name": "qr_unsupported",
-      "value": "暂不支持此二维码，请扫描 Telegram 联系人、群组或登录二维码。"
+      "value": "暂不支持此二维码，请扫描联系人、群组或登录二维码。"
     },
     {
       "name": "qr_login_title",
@@ -13106,7 +13102,7 @@
     },
     {
       "name": "qr_login_body",
-      "value": "仅确认你本人正在登录的设备。继续后，该设备将能访问你的 Telegram 账号和云端聊天。"
+      "value": "仅确认你本人正在登录的设备。继续后，该设备将能访问你的账号和云端聊天。"
     },
     {
       "name": "qr_login_confirm",

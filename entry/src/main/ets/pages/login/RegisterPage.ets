@@ -90,7 +90,7 @@ export struct RegisterPage {
   build() {
     Scroll() {
       Column({ space: 14 }) {
-        LoginHero({ mode: 'phone', active: this.firstName !== '' });
+        LoginHero({ active: this.firstName !== '' });
 
         Text($r('app.string.lg_create_account'))
           .fontSize(27).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);

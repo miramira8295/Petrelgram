@@ -77,7 +77,7 @@
       "value": [
         {
           "quantity": "other",
-          "value": "%d 个月 Telegram Premium"
+          "value": "%d 个月 Premium"
         }
       ]
     },
@@ -86,7 +86,7 @@
       "value": [
         {
           "quantity": "other",
-          "value": "%d 颗 Telegram 星星"
+          "value": "%d 颗星星"
         }
       ]
     },
@@ -158,7 +158,7 @@
       "value": [
         {
           "quantity": "other",
-          "value": "将断开 %d 个网站上的 Telegram 登录。"
+          "value": "将断开 %d 个网站上的登录会话。"
         }
       ]
     },

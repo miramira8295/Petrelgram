@@ -1,3 +1,4 @@
+import { ReactionTransitions } from '../../util/reactionTransitions';
 import { TextMeasureCache, textMeasureEnvironment, sharedTextMeasurements } from '../../util/textMeasureCache';
 import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
 import { MessageDragGesture } from '../../util/messageDragGesture';
@@ -313,6 +314,8 @@ export struct MessageBubbleShell {
   private measuredGlassW: number = 0;
 
   private measuredGlassH: number = 0;
+
+  private reactionTransitions: ReactionTransitions = new ReactionTransitions();
 
   private shadowShapeCache: SolidBubbleShadowCache = new SolidBubbleShadowCache();
 
@@ -952,11 +955,7 @@ export struct MessageBubbleShell {
         .gesture(LongPressGesture().onAction(() => {
           this.actions.onShowReactors(this.msg.id, reactionKeyFrom(r.emoji, r.customEmojiId));
         }))
-        .transition(
-          TransitionEffect.scale({ x: 0.6, y: 0.6 })
-            .combine(TransitionEffect.OPACITY)
-            .animation({ duration: this.reactionDuration(180), curve: Curve.EaseOut })
-        );
+        .transition(this.reactionTransitions.prepare(r, this.reactionDuration(180)));
         // key 里带上路径，位图下载完成后 chip 才会重建并显示图片。
       // count 与 isChosen 必须进键：它们是这枚 chip 上**唯一会变的两样**，而键不变
       // 时 ForEach 不重跑子构建函数（同 albumGrid 上方那段推导）——点赞数会停在
@@ -1488,6 +1487,9 @@ export struct MessageBubbleShell {
       // 单个完整轮廓负责外部投影，阴影不再落在主体与尾角之间。
       Column() {}
         .width(this.glassW).height(this.glassH)
+        // Direct decorative child of the outer Row: absolute children do not
+        // contribute to Row measurement, including when a reused bubble shrinks.
+        .position({ x: 0, y: 0 })
         .clipShape(this.shadowShapeCache.prepare(this.glassW, this.glassH, this.msg.isOutgoing,
           this.hasBubbleTail(), this.bubbleCornerRadius()))
         .shadow({ radius: 2, color: '#14000000', offsetX: 0, offsetY: 1, fill: false })
@@ -1499,6 +1501,8 @@ export struct MessageBubbleShell {
   glassOutline() {
     if (this.glassReady()) {
       Path({ width: this.glassW, height: this.glassH })
+        .position({ x: 0, y: 0 })
+        .hitTestBehavior(HitTestMode.None).accessibilityLevel('no')
         .commands(glassOutlineCommands(this.glassW, this.glassH, this.msg.isOutgoing,
           this.hasBubbleTail(), this.bubbleCornerRadius()))
         .fill(Color.Transparent)
@@ -1961,13 +1965,18 @@ export struct MessageBubbleShell {
         Row() {
           if (this.env.bubbleMaterialOn) {
             Row() {
-              this.bubbleCluster();
+              // Direct nodes replace background(builder)'s detached snapshot.
+              // Only the original padded Row contributes to measured geometry.
+              this.glassOutline();
+              Row() {
+                this.bubbleCluster();
+              }
+              .alignItems(VerticalAlign.Bottom)
+              .padding(this.tailGutterPadding());
             }
             // 「尾巴 + 气泡」整块由**上层**渲染：材质挂在这一层，形状由整体轮廓裁剪
             // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
             // 不存在「一边材质一边普通渲染」对不齐的问题。
-            .alignItems(VerticalAlign.Bottom)
-            .padding(this.tailGutterPadding())
             // 容器跨着那 7vp 尾巴留白，形状**只**由 clipShape 给。所以它必须等量到
             // 尺寸才上色，否则没裁剪的一帧会把留白一起涂满、左边缘外扩 7vp。
             // 没量到时它全透明，这一帧的玻璃由气泡本体自己扛；量到后本体同步退为
@@ -1985,7 +1994,6 @@ export struct MessageBubbleShell {
             // 真机上就是用户报的「气泡描边不对」。设成气泡自己的圆角，这条边框就和轮廓
             // 重合（尾巴那侧仍由裁剪负责）。
             .borderRadius(this.glassRadius())
-            .background(this.glassOutline(), { align: Alignment.TopStart })
             .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
               this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius()))
             // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
@@ -2015,12 +2023,15 @@ export struct MessageBubbleShell {
             })
           } else {
             Row() {
-              this.bubbleCluster();
+              this.solidShellShadow();
+              Row() {
+                this.bubbleCluster();
+              }
+              .alignItems(VerticalAlign.Bottom)
+              .padding(this.tailGutterPadding());
             }
-            // 实心外壳统一投影；尺寸仅在实际变化时更新，轮廓命中现有缓存。
-            .alignItems(VerticalAlign.Bottom)
-            .padding(this.tailGutterPadding())
-            .background(this.solidShellShadow(), { align: Alignment.TopStart })
+            // Decoration is absolute, behind content, and cannot grow this Row.
+            // The complete shell keeps the original single continuous shadow.
             .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
               const w: Length | undefined = size.width;
               const h: Length | undefined = size.height;

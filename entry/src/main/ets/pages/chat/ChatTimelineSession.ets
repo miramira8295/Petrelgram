@@ -1,3 +1,4 @@
+import { PreparedMessageKeyCache } from '../../util/preparedMessageKeyCache';
 import { OneShotFrameCallback as ChatPageFrameCallback } from '../../util/oneShotFrameCallback';
 import { initialMessageViewportRows, nextInitialMessageRevealCount, stageInitialMessageGroups, initialTailRevealTarget } from '../../util/initialMessageStage';
 import { ANCHOR_UNREAD, InitialAnchor, initialAnchorOf } from '../../util/initialAnchor';
@@ -227,6 +228,8 @@ export class ChatTimelineSession {
   // ArkUI may ask the same visible/cache row to build again after unrelated
   // page state changes. Keep the immutable render bundle by row fingerprint
   // and the small set of dynamic inputs it actually consumes.
+  private preparedKeyCache: PreparedMessageKeyCache = new PreparedMessageKeyCache();
+
   preparedMessageCache: Map<string, PreparedMessageBubble> =
     new Map<string, PreparedMessageBubble>();
 
@@ -698,20 +701,16 @@ export class ChatTimelineSession {
     // 来的渲染决策**。第三类必须进。
     const lightweightRow: boolean = canRenderLightweightPlainTextRow(
       g.head, g.memberIds.length, g.photoPaths.length);
-    const cacheKey: string = `${this.rowKeyOf(g)}|c${this.bindings!.chatId()}|lw${lightweightRow ? 1 : 0}` +
-      `|u${showUnreadDivider ? 1 : 0}|r${showResumeDivider ? 1 : 0}` +
-      `|editable${menuEditable ? 1 : 0}|poll${pollExpired ? 1 : 0}` +
-      `|pin${isPinnedMsg ? 1 : 0}|paid${paidMediaPending ? 1 : 0}` +
-      `|anim${paused ? 1 : 0}${forcePlay ? 1 : 0}${playbackFailed ? 1 : 0}` +
-      `|fresh${animateIn ? 1 : 0}` +
-      `|slot${rowSlot}|slotms${rowSlotStartMs}` +
-      `|msg${audio ? this.messageListRevision : 0}` +
-      `|bg${this.chatBackgroundRevision}|width${contentWidth}` +
-      `|selm${selectedMemberIds.join(',')}` +
-      // 页面级各段（g / tr / edit / live / call / mute / appearance / material / dark /
-      // select / reply）由 rowPageInputs 算好，取值与原来逐段相同。发言权（reply）变了
-      // 要重建：左滑回复的可用性挂在它上面；翻转很罕见，不会带来滚动期的重建。
-      page.keyPart;
+    // Read the same live decisions before the memo lookup. Only key assembly
+    // is skipped; reuseId and the bounded prepared-result Map remain unchanged.
+    const keyFlags: number = (lightweightRow ? 1 : 0) | (showUnreadDivider ? 2 : 0) |
+      (showResumeDivider ? 4 : 0) | (menuEditable ? 8 : 0) | (pollExpired ? 16 : 0) |
+      (isPinnedMsg ? 32 : 0) | (paidMediaPending ? 64 : 0) | (paused ? 128 : 0) |
+      (forcePlay ? 256 : 0) | (playbackFailed ? 512 : 0) | (animateIn ? 1024 : 0);
+    const cacheKey: string = this.preparedKeyCache.prepare(g, this.rowKeyOf(g),
+      this.bindings!.chatId(), keyFlags, rowSlot, rowSlotStartMs,
+      audio ? this.messageListRevision : 0, this.chatBackgroundRevision, contentWidth,
+      selectedMemberIds, page.keyPart);
     const cached: PreparedMessageBubble | undefined = this.preparedMessageCache.get(cacheKey);
     if (cached !== undefined) {
       return cached;
@@ -790,6 +789,7 @@ export class ChatTimelineSession {
     };
     if (this.preparedMessageCache.size >= PREPARED_MESSAGE_CACHE_LIMIT) {
       this.preparedMessageCache.clear();
+      this.preparedKeyCache.clear();
     }
     this.preparedMessageCache.set(cacheKey, prepared);
     return prepared;

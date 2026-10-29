@@ -144,8 +144,13 @@ export function mainCardFill(wallpaperOn: boolean, pressed: boolean): ResourceCo
 }
 
 // 主界面整页的底。壁纸生效时必须透明，否则壁纸被这层盖死。
+//
+// 没有壁纸时用 app_page_bg 而不是 surface：2026-10-29 用户定「APP 浅色的默认是
+// 当前这个绿」（#E3F2E6，与聊天浅色默认同一个值）。用 surface 的话页面和卡片同色，
+// 浅色下一整屏白、卡片边界全靠描边撑着。深色那份仍等于原来的 surface（#232E3C），
+// 逐像素不变。
 export function mainPageFill(wallpaperOn: boolean): ResourceColor {
-  return wallpaperOn ? Color.Transparent : $r('app.color.surface');
+  return wallpaperOn ? Color.Transparent : $r('app.color.app_page_bg');
 }
 
 // 主界面**标题栏**的底。整页可以全透，标题栏不行：标题和文件夹条直接压在一张

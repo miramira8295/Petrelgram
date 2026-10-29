@@ -173,19 +173,19 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d شهر Telegram Premium"
+          "value": "%d شهر Premium"
         },
         {
           "quantity": "few",
-          "value": "%d أشهر Telegram Premium"
+          "value": "%d أشهر Premium"
         },
         {
           "quantity": "many",
-          "value": "%d شهرًا Telegram Premium"
+          "value": "%d شهرًا Premium"
         },
         {
           "quantity": "other",
-          "value": "%d شهرًا Telegram Premium"
+          "value": "%d شهرًا Premium"
         }
       ]
     },
@@ -194,19 +194,19 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d نجمة Telegram"
+          "value": "%d نجمة"
         },
         {
           "quantity": "few",
-          "value": "%d نجوم Telegram"
+          "value": "%d نجوم"
         },
         {
           "quantity": "many",
-          "value": "%d نجمًا من Telegram"
+          "value": "%d نجمًا"
         },
         {
           "quantity": "other",
-          "value": "%d نجمًا من Telegram"
+          "value": "%d نجمًا"
         }
       ]
     },
@@ -362,19 +362,19 @@
       "value": [
         {
           "quantity": "one",
-          "value": "سيُقطع تسجيل دخول Telegram على %d موقع."
+          "value": "سيُقطع تسجيل الدخول على %d موقع."
         },
         {
           "quantity": "few",
-          "value": "سيُقطع تسجيل دخول Telegram على %d مواقع."
+          "value": "سيُقطع تسجيل الدخول على %d مواقع."
         },
         {
           "quantity": "many",
-          "value": "سيُقطع تسجيل دخول Telegram على %d موقعًا."
+          "value": "سيُقطع تسجيل الدخول على %d موقعًا."
         },
         {
           "quantity": "other",
-          "value": "سيُقطع تسجيل دخول Telegram على %d موقعًا."
+          "value": "سيُقطع تسجيل الدخول على %d موقعًا."
         }
       ]
     },

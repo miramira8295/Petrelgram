@@ -59,15 +59,15 @@
     {
       "name": "prize_premium_months",
       "value": [
-        { "quantity": "one", "value": "%d mois de Telegram Premium" },
-        { "quantity": "other", "value": "%d mois de Telegram Premium" }
+        { "quantity": "one", "value": "%d mois de Premium" },
+        { "quantity": "other", "value": "%d mois de Premium" }
       ]
     },
     {
       "name": "prize_stars",
       "value": [
-        { "quantity": "one", "value": "%d étoile Telegram" },
-        { "quantity": "other", "value": "%d étoiles Telegram" }
+        { "quantity": "one", "value": "%d étoile" },
+        { "quantity": "other", "value": "%d étoiles" }
       ]
     },
     {
@@ -122,8 +122,8 @@
     {
       "name": "cw_disconnect_all_confirm",
       "value": [
-        { "quantity": "one", "value": "La connexion Telegram sera coupée sur %d site." },
-        { "quantity": "other", "value": "La connexion Telegram sera coupée sur %d sites." }
+        { "quantity": "one", "value": "La connexion sera coupée sur %d site." },
+        { "quantity": "other", "value": "La connexion sera coupée sur %d sites." }
       ]
     },
     {

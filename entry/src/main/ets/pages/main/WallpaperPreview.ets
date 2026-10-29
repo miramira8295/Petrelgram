@@ -20,6 +20,13 @@ export struct WallpaperPreview {
   @Prop dark: boolean;
   @Prop previewW: number;
   @Prop previewH: number;
+  // 没有颜色也没有图时垫在底下的那一层。**由调用方按槽位给**（util/solidBackground
+  // 的 systemSlotColor），不能在这里写 $r('app.color.chat_bg')：
+  //   · $r 只认**当前系统**的深浅色，编辑另一模式的槽位时会画错底；
+  //   · 聊天底和 APP 底浅色相同、深色不同（#0E1621 / #232E3C），只写一个必然错一个。
+  // 2026-10-29 用户报「app深色/聊天深色 也按照当前真实背景设置上」就是这两条叠在一起：
+  // 浅色设备上打开深色槽位，预览垫的是绿色的浅色聊天底。
+  @Prop baseColor: string;
 
   private blurRadius(): number {
     return backgroundBlurRadius(
@@ -49,7 +56,7 @@ export struct WallpaperPreview {
           });
       } else {
         Column().width('100%').height('100%')
-          .backgroundColor($r('app.color.chat_bg'));
+          .backgroundColor(this.baseColor);
       }
       if (this.wallpaper.path !== '' && this.wallpaper.isPattern) {
         PatternTileLayer({

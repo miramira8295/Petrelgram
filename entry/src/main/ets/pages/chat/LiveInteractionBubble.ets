@@ -2,6 +2,8 @@ import {
   KEY_POWER_CALL_ANIMATIONS, powerAnimationDuration
 } from '../../store/AppSettings';
 import { LiveInteractionEntry } from '../../util/liveInteractionPresentation';
+import { linkifyRuns } from '../../util/linkify';
+import { RichRun } from '../../util/richText';
 
 const INTERACTION_TEXT: string = '#F3F7F9';
 const INTERACTION_SUBTEXT: string = '#80919D';
@@ -38,6 +40,27 @@ export struct LiveInteractionBubble {
   @Prop message: LiveInteractionEntry;
   // 这条是不是刚到的数据（页面用 KeyedListDataSource.isFresh 判定）。
   @Prop animateIn: boolean = false;
+  onLinkTap: (url: string) => void = (_url: string): void => {};
+
+  @Builder
+  interactionText() {
+    Text() {
+      ForEach(linkifyRuns(this.message.text, []), (run: RichRun) => {
+        Span(run.text)
+          .fontColor(run.link ? INTERACTION_ACCENT : INTERACTION_TEXT)
+          .decoration({
+            type: run.link ? TextDecorationType.Underline : TextDecorationType.None,
+            color: INTERACTION_ACCENT
+          })
+          .onClick((): void => {
+            if (run.link) { this.onLinkTap(run.url); }
+          });
+      }, (run: RichRun, index: number): string => `interaction_${index}_${run.offset}_${run.text}`);
+    }
+    .fontSize(14).fontColor(INTERACTION_TEXT)
+    .lineHeight(19).wordBreak(WordBreak.BREAK_WORD)
+    .constraintSize({ maxWidth: 270 });
+  }
 
   @Builder
   avatar() {
@@ -90,9 +113,7 @@ export struct LiveInteractionBubble {
               .objectFit(ImageFit.Cover).margin({ top: 3 });
           }
           if (this.message.text !== '') {
-            Text(this.message.text).fontSize(14).fontColor(INTERACTION_TEXT)
-              .lineHeight(19).wordBreak(WordBreak.BREAK_WORD)
-              .constraintSize({ maxWidth: 270 });
+            this.interactionText();
           }
           if (this.message.sendState === 'pending') {
             Text($r('app.string.sending')).fontSize(9).fontColor(INTERACTION_SUBTEXT);

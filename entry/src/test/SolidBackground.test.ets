@@ -2,7 +2,7 @@ import { describe, expect, it } from '@ohos/hypium';
 import { emptyChatBackground, ChatBackgroundState } from '../main/ets/store/ChatBackgroundStore';
 import {
   SOLID_DARK_COLORS, SOLID_LIGHT_COLORS, hexColorToInt, isSolidBackgroundOf, isSystemBackground,
-  solidBackgroundState, solidPaletteFor, systemChatColor
+  solidBackgroundState, solidPaletteFor, systemChatColor, systemSlotColor
 } from '../main/ets/util/solidBackground';
 
 // 纯色背景（2026-09-27）：色板、颜色换算，以及设置页「当前选中哪一格」的判据。
@@ -53,8 +53,17 @@ export default function solidBackgroundTest() {
     });
 
     it('跟随系统的色块取 chat_bg 的浅 / 深两值', 0, () => {
-      expect(systemChatColor(false)).assertEqual('#EFEFF4');
+      expect(systemChatColor(false)).assertEqual('#E3F2E6');
       expect(systemChatColor(true)).assertEqual('#0E1621');
+    });
+
+    // 2026-10-29：设置页原来不分槽位，一律拿聊天色画。浅色下两边同为 #E3F2E6
+    // 看不出来，深色下 APP 槽位就画成了聊天的深底。这两条钉住"深色两边不同"。
+    it('槽位底色：APP 与聊天浅色同值、深色不同值', 0, () => {
+      expect(systemSlotColor(false, true)).assertEqual(systemSlotColor(false, false));
+      expect(systemSlotColor(true, true)).assertEqual('#232E3C');
+      expect(systemSlotColor(true, false)).assertEqual('#0E1621');
+      expect(systemSlotColor(true, true) === systemSlotColor(true, false)).assertFalse();
     });
   });
 }

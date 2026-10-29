@@ -77,7 +77,7 @@
       "value": [
         {
           "quantity": "other",
-          "value": "Telegram Premium %d개월"
+          "value": "Premium %d개월"
         }
       ]
     },
@@ -86,7 +86,7 @@
       "value": [
         {
           "quantity": "other",
-          "value": "Telegram 스타 %d개"
+          "value": "스타 %d개"
         }
       ]
     },
@@ -158,7 +158,7 @@
       "value": [
         {
           "quantity": "other",
-          "value": "%d개 웹사이트에서 Telegram 로그인을 해제합니다."
+          "value": "%d개 웹사이트에서 로그인을 해제합니다."
         }
       ]
     },

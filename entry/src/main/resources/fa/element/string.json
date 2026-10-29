@@ -138,7 +138,7 @@
     },
     {
       "name": "chat_header_kind_user",
-      "value": "کاربر تلگرام"
+      "value": "کاربر"
     },
     {
       "name": "chat_header_loading",
@@ -194,7 +194,7 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "Petrelgram"
+      "value": "Petrel"
     },
     {
       "name": "file_download_failed",
@@ -414,11 +414,11 @@
     },
     {
       "name": "gift_premium_title",
-      "value": "هدیه Telegram Premium"
+      "value": "هدیه Premium"
     },
     {
       "name": "gift_regular_title",
-      "value": "هدیه تلگرام"
+      "value": "هدیه"
     },
     {
       "name": "gift_special",
@@ -426,7 +426,7 @@
     },
     {
       "name": "gift_stars_title",
-      "value": "هدیه ستاره‌ای تلگرام"
+      "value": "هدیه ستاره‌ای"
     },
     {
       "name": "gift_stars_unknown",
@@ -486,7 +486,7 @@
     },
     {
       "name": "gift_unique",
-      "value": "یک هدیه بی‌نظیر تلگرام"
+      "value": "یک هدیه بی‌نظیر"
     },
     {
       "name": "gift_valued_at",
@@ -562,7 +562,7 @@
     },
     {
       "name": "link_preview_open_in_telegram",
-      "value": "باز کردن در تلگرام"
+      "value": "باز کردن"
     },
     {
       "name": "link_preview_open_invite",
@@ -1110,15 +1110,15 @@
     },
     {
       "name": "preview_gift",
-      "value": "🎁 هدیه تلگرام"
+      "value": "🎁 هدیه"
     },
     {
       "name": "preview_gift_collectible",
-      "value": "🎁 هدیه کلکسیونی تلگرام"
+      "value": "🎁 هدیه کلکسیونی"
     },
     {
       "name": "preview_gift_premium",
-      "value": "💎 هدیه Telegram Premium"
+      "value": "💎 هدیه Premium"
     },
     {
       "name": "preview_gift_premium_n",
@@ -1398,7 +1398,7 @@
     },
     {
       "name": "service_contact_registered",
-      "value": "به تلگرام پیوست"
+      "value": "به Petrel پیوست"
     },
     {
       "name": "service_custom_service_action",
@@ -1434,7 +1434,7 @@
     },
     {
       "name": "service_gifted_premium",
-      "value": "هدیه Telegram Premium ارسال شد"
+      "value": "هدیه Premium ارسال شد"
     },
     {
       "name": "service_gifted_stars",
@@ -1474,11 +1474,11 @@
     },
     {
       "name": "service_passport_data_received",
-      "value": "داده‌های پاسپورت تلگرام دریافت شد"
+      "value": "داده‌های پاسپورت دریافت شد"
     },
     {
       "name": "service_passport_data_sent",
-      "value": "داده‌های پاسپورت تلگرام ارسال شد"
+      "value": "داده‌های پاسپورت ارسال شد"
     },
     {
       "name": "service_payment_refunded",
@@ -1678,11 +1678,11 @@
     },
     {
       "name": "telegram_giveaway_prize",
-      "value": "جایزه قرعه‌کشی تلگرام"
+      "value": "جایزه قرعه‌کشی"
     },
     {
       "name": "telegram_stars",
-      "value": "ستاره‌های تلگرام"
+      "value": "ستاره‌ها"
     },
     {
       "name": "tglink_added",
@@ -1762,7 +1762,7 @@
     },
     {
       "name": "tglink_kind_unsupported",
-      "value": "نسخه فعلی از لینک Telegram %1$s پشتیبانی نمی‌کند"
+      "value": "نسخه فعلی از لینک %1$s پشتیبانی نمی‌کند"
     },
     {
       "name": "tglink_opened_profile_no_live",
@@ -1802,7 +1802,7 @@
     },
     {
       "name": "tglink_unrecognized",
-      "value": "تشخیص این لینک Telegram ممکن نیست"
+      "value": "تشخیص این لینک ممکن نیست"
     },
     {
       "name": "tglink_use_bottom_bar",
@@ -1994,7 +1994,7 @@
     },
     {
       "name": "settings_telegram_account",
-      "value": "حساب تلگرام"
+      "value": "حساب"
     },
     {
       "name": "settings_open_profile_failed",
@@ -2090,7 +2090,7 @@
     },
     {
       "name": "settings_add_account_sub",
-      "value": "ورود به یک حساب تلگرام دیگر"
+      "value": "ورود به یک حساب دیگر"
     },
     {
       "name": "settings_search_hint",
@@ -2266,7 +2266,7 @@
     },
     {
       "name": "accent_needs_premium",
-      "value": "این رنگ به Telegram Premium نیاز دارد"
+      "value": "این رنگ به Premium نیاز دارد"
     },
     {
       "name": "apply_failed_retry",
@@ -2283,10 +2283,6 @@
     {
       "name": "accent_waiting_palette",
       "value": "در انتظار پالت رنگ…"
-    },
-    {
-      "name": "accent_palette_from_server",
-      "value": "پالت رنگ پس از ورود از سرور تلگرام ارسال می‌شود"
     },
     {
       "name": "accent_name_colour",
@@ -2314,7 +2310,7 @@
     },
     {
       "name": "accent_premium_note",
-      "value": "رنگ‌های گرادیانی چندرنگ مخصوص Telegram Premium است؛ در صورت انتخاب توسط غیرعضو، سرور آن را رد می‌کند. تنظیم در همه دستگاه‌های شما همگام می‌شود."
+      "value": "رنگ‌های گرادیانی چندرنگ مخصوص Premium است؛ در صورت انتخاب توسط غیرعضو، سرور آن را رد می‌کند. تنظیم در همه دستگاه‌های شما همگام می‌شود."
     },
     {
       "name": "emoji_status_cleared",
@@ -2326,7 +2322,7 @@
     },
     {
       "name": "emoji_status_needs_premium",
-      "value": "وضعیت ایموجی به Telegram Premium نیاز دارد"
+      "value": "وضعیت ایموجی به Premium نیاز دارد"
     },
     {
       "name": "emoji_status_loading",
@@ -2358,7 +2354,7 @@
     },
     {
       "name": "emoji_status_note",
-      "value": "وضعیت ایموجی کنار نام شما نمایش داده می‌شود و به Telegram Premium نیاز دارد."
+      "value": "وضعیت ایموجی کنار نام شما نمایش داده می‌شود و به Premium نیاز دارد."
     },
     {
       "name": "bgplay_music",
@@ -2418,7 +2414,7 @@
     },
     {
       "name": "chat_theme_from_server",
-      "value": "تم‌ها پس از ورود از سرور تلگرام ارسال می‌شوند"
+      "value": "تم‌ها پس از ورود از سرور ارسال می‌شوند"
     },
     {
       "name": "chat_theme_reset",
@@ -2618,7 +2614,7 @@
     },
     {
       "name": "cw_disconnect_confirm",
-      "value": "پس از قطع اتصال %1$s، باید دوباره با تلگرام وارد شوید."
+      "value": "پس از قطع اتصال %1$s، باید دوباره وارد شوید."
     },
     {
       "name": "cw_this_site",
@@ -2674,11 +2670,11 @@
     },
     {
       "name": "cw_empty_sub",
-      "value": "وب‌سایت‌هایی که با تلگرام وارد شده‌اید در اینجا نمایش داده می‌شوند."
+      "value": "وب‌سایت‌هایی که وارد شده‌اید در اینجا نمایش داده می‌شوند."
     },
     {
       "name": "cw_note",
-      "value": "مجوزهای وب‌سایت و نشست‌های دستگاه مستقل از هم هستند. قطع اتصال وب‌سایت، این دستگاه یا سایر کلاینت‌های تلگرام را از حساب خارج نمی‌کند."
+      "value": "مجوزهای وب‌سایت و نشست‌های دستگاه مستقل از هم هستند. قطع اتصال وب‌سایت، این دستگاه یا سایر کلاینت‌ها را از حساب خارج نمی‌کند."
     },
     {
       "name": "pe_title",
@@ -4118,7 +4114,7 @@
     },
     {
       "name": "ct_no_user",
-      "value": "کاربر تلگرامی با این شماره پیدا نشد"
+      "value": "کاربری با این شماره پیدا نشد"
     },
     {
       "name": "network_failed_retry",
@@ -4702,7 +4698,7 @@
     },
     {
       "name": "ps_needs_premium",
-      "value": "این قانون حریم خصوصی به Telegram Premium نیاز دارد"
+      "value": "این قانون حریم خصوصی به Premium نیاز دارد"
     },
     {
       "name": "ps_not_loaded_refresh",
@@ -4814,7 +4810,7 @@
     },
     {
       "name": "ps_note",
-      "value": "قوانین حریم خصوصی به ترتیب توسط سرور تلگرام اجرا می‌شوند؛ هنگام تغییر قوانین کلی، استثناهای موجود به‌طور کامل حفظ می‌شوند."
+      "value": "قوانین حریم خصوصی به ترتیب توسط سرور اجرا می‌شوند؛ هنگام تغییر قوانین کلی، استثناهای موجود به‌طور کامل حفظ می‌شوند."
     },
     {
       "name": "tsv_code_sent_note",
@@ -5038,7 +5034,7 @@
     },
     {
       "name": "tsv_note",
-      "value": "رمز عبور فقط برای تأیید به Telegram ارسال می‌شود و پس از ترک صفحه، محتوای واردشده بلافاصله پاک می‌شود. حتماً یک ایمیل بازیابی در دسترس تنظیم کنید."
+      "value": "رمز عبور فقط برای تأیید به سرور ارسال می‌شود و پس از ترک صفحه، محتوای واردشده بلافاصله پاک می‌شود. حتماً یک ایمیل بازیابی در دسترس تنظیم کنید."
     },
     {
       "name": "px_enabled_server",
@@ -5266,7 +5262,7 @@
     },
     {
       "name": "px_from_link",
-      "value": "از لینک پروکسی تلگرام پر شده است؛ پس از بررسی ذخیره کنید"
+      "value": "از لینک پروکسی پر شده است؛ پس از بررسی ذخیره کنید"
     },
     {
       "name": "px_edit_note",
@@ -5358,7 +5354,7 @@
     },
     {
       "name": "fe_needs_premium",
-      "value": "این رنگ یا قابلیت برچسب به Telegram Premium نیاز دارد"
+      "value": "این رنگ یا قابلیت برچسب به Premium نیاز دارد"
     },
     {
       "name": "fe_chat_not_in_list",
@@ -5546,7 +5542,7 @@
     },
     {
       "name": "as_fresh_limit",
-      "value": "محدودیت امنیتی Telegram: دستگاه تازه‌وارد باید ۲۴ ساعت صبر کند، پیش‌بینی می‌شود %1$s قابل انجام باشد"
+      "value": "محدودیت امنیتی: دستگاه تازه‌وارد باید ۲۴ ساعت صبر کند، پیش‌بینی می‌شود %1$s قابل انجام باشد"
     },
     {
       "name": "as_terminate_confirm",
@@ -5670,7 +5666,7 @@
     },
     {
       "name": "as_scan_qr",
-      "value": "اسکن کد QR نسخه دسکتاپ یا وب تلگرام"
+      "value": "اسکن کد QR نسخه دسکتاپ یا وب"
     },
     {
       "name": "as_current_short",
@@ -5738,7 +5734,7 @@
     },
     {
       "name": "as_accept_calls_sub",
-      "value": "اجازه دریافت تماس تلگرام در این دستگاه"
+      "value": "اجازه دریافت تماس در این دستگاه"
     },
     {
       "name": "as_needs_2fa",
@@ -5778,7 +5774,7 @@
     },
     {
       "name": "as_fresh_rejected",
-      "value": "Telegram فعلاً اجازه پایان دادن به نشست‌های قدیمی‌تر را از این دستگاه نمی‌دهد، کمی بعد دوباره تلاش کنید"
+      "value": "سرور فعلاً اجازه پایان دادن به نشست‌های قدیمی‌تر را از این دستگاه نمی‌دهد، کمی بعد دوباره تلاش کنید"
     },
     {
       "name": "as_no_others",
@@ -6178,7 +6174,7 @@
     },
     {
       "name": "mp_story_needs_premium",
-      "value": "حساب فعلی برای انتشار استوری به Telegram Premium نیاز دارد"
+      "value": "حساب فعلی برای انتشار استوری به Premium نیاز دارد"
     },
     {
       "name": "mp_story_limit",
@@ -6474,7 +6470,7 @@
     },
     {
       "name": "cb_telegram_user",
-      "value": "کاربر تلگرام"
+      "value": "کاربر"
     },
     {
       "name": "cb_unnamed",
@@ -6482,7 +6478,7 @@
     },
     {
       "name": "cb_tap_profile",
-      "value": "برای مشاهده پروفایل تلگرام ضربه بزنید"
+      "value": "برای مشاهده پروفایل ضربه بزنید"
     },
     {
       "name": "cb_contact_card",
@@ -6570,7 +6566,7 @@
     },
     {
       "name": "game_interactive",
-      "value": "بازی تعاملی تلگرام"
+      "value": "بازی تعاملی"
     },
     {
       "name": "game_unreadable",
@@ -6594,7 +6590,7 @@
     },
     {
       "name": "game_title",
-      "value": "بازی تلگرام"
+      "value": "بازی"
     },
     {
       "name": "lv_leave_title",
@@ -7394,7 +7390,7 @@
     },
     {
       "name": "mb_telegram_link",
-      "value": "لینک تلگرام"
+      "value": "لینک"
     },
     {
       "name": "mb_web_link",
@@ -7978,7 +7974,7 @@
     },
     {
       "name": "cp_pay_stars_body",
-      "value": "%1$d ستاره تلگرام پرداخت می‌شود. پس از تکمیل پرداخت، این پیام به حالت بازشده به‌روزرسانی می‌شود."
+      "value": "%1$d ستاره پرداخت می‌شود. پس از تکمیل پرداخت، این پیام به حالت بازشده به‌روزرسانی می‌شود."
     },
     {
       "name": "cp_pay_stars_button",
@@ -8654,7 +8650,7 @@
     },
     {
       "name": "cp_transcribe_premium",
-      "value": "تبدیل به متن یک قابلیت Telegram Premium است"
+      "value": "تبدیل به متن یک قابلیت Premium است"
     },
     {
       "name": "cp_stop_poll_body",
@@ -9102,7 +9098,7 @@
     },
     {
       "name": "sm_joined_telegram",
-      "value": "%1$s به تلگرام پیوست"
+      "value": "%1$s به Petrel پیوست"
     },
     {
       "name": "sm_set_theme",
@@ -9826,7 +9822,7 @@
     },
     {
       "name": "lg_code_call",
-      "value": "Telegram با %1$s تماس می‌گیرد و کد را اعلام می‌کند"
+      "value": "سرور با %1$s تماس می‌گیرد و کد را اعلام می‌کند"
     },
     {
       "name": "lg_code_flash_call",
@@ -9854,7 +9850,7 @@
     },
     {
       "name": "lg_code_other_device",
-      "value": "کد تأیید به Telegram روی دستگاه دیگر شما ارسال شد"
+      "value": "کد تأیید به دستگاه دیگر شما ارسال شد"
     },
     {
       "name": "lg_code_email",
@@ -9866,7 +9862,7 @@
     },
     {
       "name": "lg_code_telegram_or_sms",
-      "value": "کد تأیید از طریق Telegram یا پیامک برای شما ارسال شد"
+      "value": "کد تأیید از طریق برنامه یا پیامک برای شما ارسال شد"
     },
     {
       "name": "lg_no_resend",
@@ -9874,7 +9870,7 @@
     },
     {
       "name": "lg_use_telegram",
-      "value": "دریافت کد از طریق Telegram"
+      "value": "دریافت کد از طریق برنامه"
     },
     {
       "name": "lg_use_sms",
@@ -9934,7 +9930,7 @@
     },
     {
       "name": "lg_phone_hint",
-      "value": "کشور یا منطقه را انتخاب کنید و شماره تلفن مورد استفاده برای ورود به Telegram را وارد کنید."
+      "value": "کشور یا منطقه را انتخاب کنید و شماره تلفن مورد استفاده برای ورود را وارد کنید."
     },
     {
       "name": "lg_sending_code",
@@ -9958,7 +9954,7 @@
     },
     {
       "name": "lg_no_account_yet",
-      "value": "این شماره هنوز حساب تلگرامی ندارد. با پر کردن نام می‌توانید حساب بسازید."
+      "value": "این شماره هنوز حسابی ندارد. با پر کردن نام می‌توانید حساب بسازید."
     },
     {
       "name": "lg_last_name_optional",
@@ -9970,7 +9966,7 @@
     },
     {
       "name": "lg_qr_step1",
-      "value": "روی گوشی خود Telegram را باز کنید"
+      "value": "برنامه را روی گوشی خود باز کنید"
     },
     {
       "name": "lg_qr_step2",
@@ -9990,7 +9986,7 @@
     },
     {
       "name": "lg_qr_body",
-      "value": "با دستگاهی که قبلاً وارد Telegram شده است کد QR زیر را اسکن کنید تا مستقیم روی این دستگاه وارد شوید."
+      "value": "با دستگاهی که قبلاً وارد شده است کد QR زیر را اسکن کنید تا مستقیم روی این دستگاه وارد شوید."
     },
     {
       "name": "lg_use_phone",
@@ -10242,7 +10238,7 @@
     },
     {
       "name": "cpp_no_boost_slots",
-      "value": "ظرفیت بوست در دسترس نیست (بوست نیاز به Telegram Premium دارد)"
+      "value": "ظرفیت بوست در دسترس نیست (بوست نیاز به Premium دارد)"
     },
     {
       "name": "cpp_boosted",
@@ -10342,7 +10338,7 @@
     },
     {
       "name": "cpp_telegram_group",
-      "value": "گروه تلگرام"
+      "value": "گروه"
     },
     {
       "name": "cpp_invite_invalid",
@@ -10426,7 +10422,7 @@
     },
     {
       "name": "cpp_no_group_call_id",
-      "value": "Telegram شناسه اتاق پخش را برنگرداند"
+      "value": "سرور شناسه اتاق پخش را برنگرداند"
     },
     {
       "name": "cpp_loading_details",
@@ -10454,7 +10450,7 @@
     },
     {
       "name": "cpp_no_full_subscribers",
-      "value": "Telegram فهرست کامل دنبال‌کنندگان را در اختیار حساب فعلی قرار نداده است"
+      "value": "حساب فعلی به فهرست کامل دنبال‌کنندگان دسترسی ندارد"
     },
     {
       "name": "cpp_no_member_access",
@@ -10582,7 +10578,7 @@
     },
     {
       "name": "pp_pay_with_stars",
-      "value": "پرداخت با ستاره‌های تلگرام"
+      "value": "پرداخت با ستاره‌ها"
     },
     {
       "name": "pp_loading_gifts",
@@ -11202,7 +11198,7 @@
     },
     {
       "name": "ar_remove_account_sub",
-      "value": "فقط داده‌های محلی حذف می‌شود؛ حساب تلگرام تغییری نمی‌کند."
+      "value": "فقط داده‌های محلی حذف می‌شود؛ حساب شما تغییری نمی‌کند."
     },
     {
       "name": "ga_remove_member",
@@ -13098,7 +13094,7 @@
     },
     {
       "name": "qr_unsupported",
-      "value": "این کد پشتیبانی نمی‌شود. کد مخاطب، گروه یا ورود تلگرام را اسکن کنید."
+      "value": "این کد پشتیبانی نمی‌شود. کد مخاطب، گروه یا ورود را اسکن کنید."
     },
     {
       "name": "qr_login_title",
@@ -13106,7 +13102,7 @@
     },
     {
       "name": "qr_login_body",
-      "value": "فقط دستگاهی را تأیید کنید که خودتان وارد آن می‌شوید. این دستگاه به حساب تلگرام و گفتگوهای ابری شما دسترسی خواهد داشت."
+      "value": "فقط دستگاهی را تأیید کنید که خودتان وارد آن می‌شوید. این دستگاه به حساب و گفتگوهای ابری شما دسترسی خواهد داشت."
     },
     {
       "name": "qr_login_confirm",
@@ -13130,7 +13126,7 @@
     },
     {
       "name": "about_telegram_group",
-      "value": "گروه تلگرام"
+      "value": "گروه کاربران"
     },
     {
       "name": "cp_show_keyboard",

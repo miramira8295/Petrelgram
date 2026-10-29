@@ -138,7 +138,7 @@
     },
     {
       "name": "chat_header_kind_user",
-      "value": "Telegram kullanıcısı"
+      "value": "Kullanıcı"
     },
     {
       "name": "chat_header_loading",
@@ -194,7 +194,7 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "Petrelgram"
+      "value": "Petrel"
     },
     {
       "name": "file_download_failed",
@@ -414,11 +414,11 @@
     },
     {
       "name": "gift_premium_title",
-      "value": "Telegram Premium hediyesi"
+      "value": "Premium hediyesi"
     },
     {
       "name": "gift_regular_title",
-      "value": "Telegram hediyesi"
+      "value": "Hediye"
     },
     {
       "name": "gift_special",
@@ -426,7 +426,7 @@
     },
     {
       "name": "gift_stars_title",
-      "value": "Telegram Yıldız hediyesi"
+      "value": "Yıldız hediyesi"
     },
     {
       "name": "gift_stars_unknown",
@@ -486,7 +486,7 @@
     },
     {
       "name": "gift_unique",
-      "value": "Eşsiz bir Telegram hediyesi"
+      "value": "Eşsiz hediye"
     },
     {
       "name": "gift_valued_at",
@@ -562,7 +562,7 @@
     },
     {
       "name": "link_preview_open_in_telegram",
-      "value": "Telegram'da aç"
+      "value": "Aç"
     },
     {
       "name": "link_preview_open_invite",
@@ -1110,15 +1110,15 @@
     },
     {
       "name": "preview_gift",
-      "value": "🎁 Telegram hediyesi"
+      "value": "🎁 Hediye"
     },
     {
       "name": "preview_gift_collectible",
-      "value": "🎁 Telegram koleksiyon hediyesi"
+      "value": "🎁 Koleksiyon hediyesi"
     },
     {
       "name": "preview_gift_premium",
-      "value": "💎 Telegram Premium hediye edildi"
+      "value": "💎 Premium hediye edildi"
     },
     {
       "name": "preview_gift_premium_n",
@@ -1398,7 +1398,7 @@
     },
     {
       "name": "service_contact_registered",
-      "value": "Telegram'a katıldı"
+      "value": "Petrel'e katıldı"
     },
     {
       "name": "service_custom_service_action",
@@ -1434,7 +1434,7 @@
     },
     {
       "name": "service_gifted_premium",
-      "value": "Telegram Premium hediye etti"
+      "value": "Premium hediye etti"
     },
     {
       "name": "service_gifted_stars",
@@ -1474,11 +1474,11 @@
     },
     {
       "name": "service_passport_data_received",
-      "value": "Telegram Passport verilerini aldı"
+      "value": "Passport verilerini aldı"
     },
     {
       "name": "service_passport_data_sent",
-      "value": "Telegram Passport verilerini gönderdi"
+      "value": "Passport verilerini gönderdi"
     },
     {
       "name": "service_payment_refunded",
@@ -1678,11 +1678,11 @@
     },
     {
       "name": "telegram_giveaway_prize",
-      "value": "Telegram çekiliş ödülü"
+      "value": "Çekiliş ödülü"
     },
     {
       "name": "telegram_stars",
-      "value": "Telegram Yıldız"
+      "value": "Yıldız"
     },
     {
       "name": "tglink_added",
@@ -1762,7 +1762,7 @@
     },
     {
       "name": "tglink_kind_unsupported",
-      "value": "Bu sürüm %1$s Telegram bağlantısını desteklemiyor"
+      "value": "Bu sürüm %1$s bağlantısını desteklemiyor"
     },
     {
       "name": "tglink_opened_profile_no_live",
@@ -1802,7 +1802,7 @@
     },
     {
       "name": "tglink_unrecognized",
-      "value": "Bu Telegram bağlantısı tanınamadı"
+      "value": "Bu bağlantı tanınamadı"
     },
     {
       "name": "tglink_use_bottom_bar",
@@ -1994,7 +1994,7 @@
     },
     {
       "name": "settings_telegram_account",
-      "value": "Telegram Hesabı"
+      "value": "Hesap"
     },
     {
       "name": "settings_open_profile_failed",
@@ -2090,7 +2090,7 @@
     },
     {
       "name": "settings_add_account_sub",
-      "value": "Başka bir Telegram hesabıyla giriş yapın"
+      "value": "Başka bir hesapla giriş yapın"
     },
     {
       "name": "settings_search_hint",
@@ -2266,7 +2266,7 @@
     },
     {
       "name": "accent_needs_premium",
-      "value": "Bu renk için Telegram Premium gerekir"
+      "value": "Bu renk için Premium gerekir"
     },
     {
       "name": "apply_failed_retry",
@@ -2283,10 +2283,6 @@
     {
       "name": "accent_waiting_palette",
       "value": "Renk paleti bekleniyor…"
-    },
-    {
-      "name": "accent_palette_from_server",
-      "value": "Renk paleti, giriş sonrasında Telegram sunucusundan gelir"
     },
     {
       "name": "accent_name_colour",
@@ -2314,7 +2310,7 @@
     },
     {
       "name": "accent_premium_note",
-      "value": "Çok renkli degrade renkler yalnızca Telegram Premium'a özeldir; üye olmayanların seçimini sunucu reddeder. Ayar tüm cihazlarınıza senkronize edilir."
+      "value": "Çok renkli degrade renkler yalnızca Premium'a özeldir; üye olmayanların seçimini sunucu reddeder. Ayar tüm cihazlarınıza senkronize edilir."
     },
     {
       "name": "emoji_status_cleared",
@@ -2326,7 +2322,7 @@
     },
     {
       "name": "emoji_status_needs_premium",
-      "value": "Emoji durumu için Telegram Premium gerekir"
+      "value": "Emoji durumu için Premium gerekir"
     },
     {
       "name": "emoji_status_loading",
@@ -2358,7 +2354,7 @@
     },
     {
       "name": "emoji_status_note",
-      "value": "Emoji durumu adınızın yanında görünür ve Telegram Premium gerektirir."
+      "value": "Emoji durumu adınızın yanında görünür ve Premium gerektirir."
     },
     {
       "name": "bgplay_music",
@@ -2418,7 +2414,7 @@
     },
     {
       "name": "chat_theme_from_server",
-      "value": "Temalar, giriş sonrasında Telegram sunucusundan gelir"
+      "value": "Temalar, giriş sonrasında sunucudan gelir"
     },
     {
       "name": "chat_theme_reset",
@@ -2618,7 +2614,7 @@
     },
     {
       "name": "cw_disconnect_confirm",
-      "value": "%1$s ile bağlantıyı keserseniz Telegram ile yeniden giriş yapmanız gerekir."
+      "value": "%1$s ile bağlantıyı keserseniz yeniden giriş yapmanız gerekir."
     },
     {
       "name": "cw_this_site",
@@ -2674,11 +2670,11 @@
     },
     {
       "name": "cw_empty_sub",
-      "value": "Telegram ile giriş yapılan siteler burada görünür."
+      "value": "Giriş yaptığınız siteler burada görünür."
     },
     {
       "name": "cw_note",
-      "value": "Site yetkilendirmeleri cihaz oturumlarından bağımsızdır. Bir site bağlantısını kesmek bu cihazdaki veya diğer Telegram istemcilerindeki oturumu kapatmaz."
+      "value": "Site yetkilendirmeleri cihaz oturumlarından bağımsızdır. Bir site bağlantısını kesmek bu cihazdaki veya diğer istemcilerindeki oturumu kapatmaz."
     },
     {
       "name": "pe_title",
@@ -4118,7 +4114,7 @@
     },
     {
       "name": "ct_no_user",
-      "value": "Bu numarayı kullanan bir Telegram kullanıcısı bulunamadı"
+      "value": "Bu numarayı kullanan bir kullanıcı bulunamadı"
     },
     {
       "name": "network_failed_retry",
@@ -4702,7 +4698,7 @@
     },
     {
       "name": "ps_needs_premium",
-      "value": "Bu gizlilik kuralı için Telegram Premium gerekir"
+      "value": "Bu gizlilik kuralı için Premium gerekir"
     },
     {
       "name": "ps_not_loaded_refresh",
@@ -4814,7 +4810,7 @@
     },
     {
       "name": "ps_note",
-      "value": "Gizlilik kuralları sırayla Telegram sunucusu tarafından uygulanır; genel kural değiştirildiğinde mevcut istisnalar aynen korunur."
+      "value": "Gizlilik kuralları sırayla sunucu tarafından uygulanır; genel kural değiştirildiğinde mevcut istisnalar aynen korunur."
     },
     {
       "name": "tsv_code_sent_note",
@@ -5038,7 +5034,7 @@
     },
     {
       "name": "tsv_note",
-      "value": "Parola yalnızca doğrulama için Telegram'a gönderilir; sayfadan ayrıldıktan sonra girilen içerik hemen temizlenir. Erişilebilir bir kurtarma e-postası ayarlamayı unutmayın."
+      "value": "Parola yalnızca doğrulama için sunucuya gönderilir; sayfadan ayrıldıktan sonra girilen içerik hemen temizlenir. Erişilebilir bir kurtarma e-postası ayarlamayı unutmayın."
     },
     {
       "name": "px_enabled_server",
@@ -5266,7 +5262,7 @@
     },
     {
       "name": "px_from_link",
-      "value": "Telegram proxy bağlantısından dolduruldu; kontrol ettikten sonra kaydedin"
+      "value": "Proxy bağlantısından dolduruldu; kontrol ettikten sonra kaydedin"
     },
     {
       "name": "px_edit_note",
@@ -5358,7 +5354,7 @@
     },
     {
       "name": "fe_needs_premium",
-      "value": "Bu renk veya etiket özelliği için Telegram Premium gerekir"
+      "value": "Bu renk veya etiket özelliği için Premium gerekir"
     },
     {
       "name": "fe_chat_not_in_list",
@@ -5546,7 +5542,7 @@
     },
     {
       "name": "as_fresh_limit",
-      "value": "Telegram güvenlik kısıtlaması: yeni giriş yapılan cihaz 24 saat beklemeli; işlem yaklaşık %1$s sonra yapılabilir"
+      "value": "Güvenlik kısıtlaması: yeni giriş yapılan cihaz 24 saat beklemeli; işlem yaklaşık %1$s sonra yapılabilir"
     },
     {
       "name": "as_terminate_confirm",
@@ -5670,7 +5666,7 @@
     },
     {
       "name": "as_scan_qr",
-      "value": "Telegram masaüstü veya web sürümünün QR kodunu tarayın"
+      "value": "Masaüstü veya web sürümünün QR kodunu tarayın"
     },
     {
       "name": "as_current_short",
@@ -5738,7 +5734,7 @@
     },
     {
       "name": "as_accept_calls_sub",
-      "value": "Bu cihazda Telegram aramalarını kabul et"
+      "value": "Bu cihazda aramaları kabul et"
     },
     {
       "name": "as_needs_2fa",
@@ -5778,7 +5774,7 @@
     },
     {
       "name": "as_fresh_rejected",
-      "value": "Telegram, bu cihazdan eski oturumları sonlandırmayı şu an reddediyor; lütfen biraz sonra tekrar deneyin"
+      "value": "Sunucu, bu cihazdan eski oturumları sonlandırmayı şu an reddediyor; lütfen biraz sonra tekrar deneyin"
     },
     {
       "name": "as_no_others",
@@ -6178,7 +6174,7 @@
     },
     {
       "name": "mp_story_needs_premium",
-      "value": "Hikaye paylaşmak için hesabınızda Telegram Premium gerekir"
+      "value": "Hikaye paylaşmak için hesabınızda Premium gerekir"
     },
     {
       "name": "mp_story_limit",
@@ -6474,7 +6470,7 @@
     },
     {
       "name": "cb_telegram_user",
-      "value": "Telegram kullanıcısı"
+      "value": "Kullanıcı"
     },
     {
       "name": "cb_unnamed",
@@ -6482,7 +6478,7 @@
     },
     {
       "name": "cb_tap_profile",
-      "value": "Telegram profilini görüntülemek için dokunun"
+      "value": "Profili görüntülemek için dokunun"
     },
     {
       "name": "cb_contact_card",
@@ -6570,7 +6566,7 @@
     },
     {
       "name": "game_interactive",
-      "value": "Telegram etkileşimli oyunu"
+      "value": "Etkileşimli oyun"
     },
     {
       "name": "game_unreadable",
@@ -6594,7 +6590,7 @@
     },
     {
       "name": "game_title",
-      "value": "Telegram oyunu"
+      "value": "Oyun"
     },
     {
       "name": "lv_leave_title",
@@ -7394,7 +7390,7 @@
     },
     {
       "name": "mb_telegram_link",
-      "value": "Telegram bağlantısı"
+      "value": "Bağlantı"
     },
     {
       "name": "mb_web_link",
@@ -7978,7 +7974,7 @@
     },
     {
       "name": "cp_pay_stars_body",
-      "value": "%1$d Telegram Yıldızı ödenecek. Ödeme tamamlandığında bu mesaj kilidi açık duruma güncellenecek."
+      "value": "%1$d Yıldız ödenecek. Ödeme tamamlandığında bu mesaj kilidi açık duruma güncellenecek."
     },
     {
       "name": "cp_pay_stars_button",
@@ -8654,7 +8650,7 @@
     },
     {
       "name": "cp_transcribe_premium",
-      "value": "Metne dönüştürme, Telegram Premium özelliğidir"
+      "value": "Metne dönüştürme, Premium özelliğidir"
     },
     {
       "name": "cp_stop_poll_body",
@@ -9102,7 +9098,7 @@
     },
     {
       "name": "sm_joined_telegram",
-      "value": "%1$s Telegram'a katıldı"
+      "value": "%1$s Petrel'e katıldı"
     },
     {
       "name": "sm_set_theme",
@@ -9826,7 +9822,7 @@
     },
     {
       "name": "lg_code_call",
-      "value": "Telegram, %1$s numarasını arayıp doğrulama kodunu söyleyecek"
+      "value": "Sunucu %1$s numarasını arayıp doğrulama kodunu söyleyecek"
     },
     {
       "name": "lg_code_flash_call",
@@ -9854,7 +9850,7 @@
     },
     {
       "name": "lg_code_other_device",
-      "value": "Doğrulama kodu, diğer cihazınızdaki Telegram'a gönderildi"
+      "value": "Doğrulama kodu diğer cihazınıza gönderildi"
     },
     {
       "name": "lg_code_email",
@@ -9866,7 +9862,7 @@
     },
     {
       "name": "lg_code_telegram_or_sms",
-      "value": "Doğrulama kodu Telegram veya SMS ile gönderildi"
+      "value": "Doğrulama kodu uygulama veya SMS ile gönderildi"
     },
     {
       "name": "lg_no_resend",
@@ -9874,7 +9870,7 @@
     },
     {
       "name": "lg_use_telegram",
-      "value": "Kodu Telegram ile almak için değiştir"
+      "value": "Kodu uygulama ile almak için değiştir"
     },
     {
       "name": "lg_use_sms",
@@ -9934,7 +9930,7 @@
     },
     {
       "name": "lg_phone_hint",
-      "value": "Bir ülke veya bölge seçin ve Telegram'a giriş için kullanılacak telefon numarasını girin."
+      "value": "Bir ülke veya bölge seçin ve giriş için kullanılacak telefon numarasını girin."
     },
     {
       "name": "lg_sending_code",
@@ -9958,7 +9954,7 @@
     },
     {
       "name": "lg_no_account_yet",
-      "value": "Bu numaranın Telegram hesabı yok. Adınızı girerek hesap oluşturabilirsiniz."
+      "value": "Bu numaranın henüz hesabı yok. Adınızı girerek hesap oluşturabilirsiniz."
     },
     {
       "name": "lg_last_name_optional",
@@ -9970,7 +9966,7 @@
     },
     {
       "name": "lg_qr_step1",
-      "value": "Telefonunuzda Telegram'ı açın"
+      "value": "Telefonunuzda uygulamayı açın"
     },
     {
       "name": "lg_qr_step2",
@@ -9990,7 +9986,7 @@
     },
     {
       "name": "lg_qr_body",
-      "value": "Aşağıdaki QR kodu, Telegram'da oturum açık olan başka bir cihazla tarayarak doğrudan bu cihazda giriş yapabilirsiniz."
+      "value": "Aşağıdaki QR kodu, oturum açık olan başka bir cihazla tarayarak doğrudan bu cihazda giriş yapabilirsiniz."
     },
     {
       "name": "lg_use_phone",
@@ -10242,7 +10238,7 @@
     },
     {
       "name": "cpp_no_boost_slots",
-      "value": "Kullanılabilir destek hakkı yok (destek için Telegram Premium gerekir)"
+      "value": "Kullanılabilir destek hakkı yok (destek için Premium gerekir)"
     },
     {
       "name": "cpp_boosted",
@@ -10342,7 +10338,7 @@
     },
     {
       "name": "cpp_telegram_group",
-      "value": "Telegram grubu"
+      "value": "Grup"
     },
     {
       "name": "cpp_invite_invalid",
@@ -10426,7 +10422,7 @@
     },
     {
       "name": "cpp_no_group_call_id",
-      "value": "Telegram canlı yayın kimliği döndürmedi"
+      "value": "Sunucu canlı yayın kimliği döndürmedi"
     },
     {
       "name": "cpp_loading_details",
@@ -10454,7 +10450,7 @@
     },
     {
       "name": "cpp_no_full_subscribers",
-      "value": "Telegram, geçerli hesaba tam abone listesini açmadı"
+      "value": "Geçerli hesap tam abone listesine erişemiyor"
     },
     {
       "name": "cpp_no_member_access",
@@ -10582,7 +10578,7 @@
     },
     {
       "name": "pp_pay_with_stars",
-      "value": "Telegram Yıldız ile öde"
+      "value": "Yıldız ile öde"
     },
     {
       "name": "pp_loading_gifts",
@@ -11202,7 +11198,7 @@
     },
     {
       "name": "ar_remove_account_sub",
-      "value": "Yalnızca yerel veriler silinir. Telegram hesabınız etkilenmez."
+      "value": "Yalnızca yerel veriler silinir. Hesabınız etkilenmez."
     },
     {
       "name": "ga_remove_member",
@@ -13098,7 +13094,7 @@
     },
     {
       "name": "qr_unsupported",
-      "value": "Bu kod desteklenmiyor. Telegram kişi, grup veya giriş kodunu tarayın."
+      "value": "Bu kod desteklenmiyor. Kişi, grup veya giriş kodu tarayın."
     },
     {
       "name": "qr_login_title",
@@ -13106,7 +13102,7 @@
     },
     {
       "name": "qr_login_body",
-      "value": "Yalnızca kendiniz giriş yaptığınız cihazı onaylayın. Cihaz Telegram hesabınıza ve bulut sohbetlerinize erişebilecek."
+      "value": "Yalnızca kendiniz giriş yaptığınız cihazı onaylayın. Cihaz hesabınıza ve bulut sohbetlerinize erişebilecek."
     },
     {
       "name": "qr_login_confirm",
@@ -13130,7 +13126,7 @@
     },
     {
       "name": "about_telegram_group",
-      "value": "Telegram grubu"
+      "value": "Topluluk grubu"
     },
     {
       "name": "cp_show_keyboard",

@@ -20,7 +20,7 @@ function withoutScheme(value: string): string {
 export function linkPreviewDomain(url: string): string {
   const raw: string = url.trim();
   if (raw === '' || raw.startsWith('@')) {
-    return raw.startsWith('@') ? 'Telegram' : '';
+    return raw.startsWith('@') ? 'Unknown' : '';
   }
   const rest: string = withoutScheme(raw);
   const endCandidates: number[] = [rest.indexOf('/'), rest.indexOf('?'), rest.indexOf('#')]
@@ -129,28 +129,28 @@ function computeLinkPreviewPresentation(url: string, previewType: string,
   if (chatFolderInviteLinkOf(raw) !== '') {
     return {
       kind: 'telegramResource', actionLabel: str('link_preview_open_folder'),
-      siteLabel: explicitSite !== '' ? explicitSite : 'Telegram',
+      siteLabel: explicitSite !== '' ? explicitSite : 'Unknown',
       isTelegram: true, actionable: true
     };
   }
   if (stickerSetLinkOf(raw) !== null) {
     return {
       kind: 'telegramResource', actionLabel: str('link_preview_open_stickers'),
-      siteLabel: explicitSite !== '' ? explicitSite : 'Telegram',
+      siteLabel: explicitSite !== '' ? explicitSite : 'Unknown',
       isTelegram: true, actionable: true
     };
   }
   if (inviteLinkOf(raw) !== '') {
     return {
       kind: 'telegramInvite', actionLabel: str('link_preview_open_invite'),
-      siteLabel: explicitSite !== '' ? explicitSite : 'Telegram',
+      siteLabel: explicitSite !== '' ? explicitSite : 'Unknown',
       isTelegram: true, actionable: true
     };
   }
   if (isTelegramMessageLink(raw, previewType)) {
     return {
       kind: 'telegramMessage', actionLabel: str('link_preview_open_message'),
-      siteLabel: explicitSite !== '' ? explicitSite : 'Telegram',
+      siteLabel: explicitSite !== '' ? explicitSite : 'Unknown',
       isTelegram: true, actionable: true
     };
   }
@@ -158,7 +158,7 @@ function computeLinkPreviewPresentation(url: string, previewType: string,
   return {
     kind: directUsername !== '' ? 'telegramChat' : 'telegramResource',
     actionLabel: directUsername !== '' ? str('link_preview_open_profile') : str('link_preview_open_in_telegram'),
-    siteLabel: explicitSite !== '' ? explicitSite : 'Telegram',
+    siteLabel: explicitSite !== '' ? explicitSite : 'Unknown',
     isTelegram: true, actionable: true
   };
 }

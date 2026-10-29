@@ -1,6 +1,4 @@
 {
   "startWindowBackgroundColor": "$color:start_window_background",
-  "startWindowBackgroundImage": "$media:start_splash",
-  "startWindowBackgroundImageFit": "Contain",
   "startWindowColorModeType": "FOLLOW_SYSTEM"
 }

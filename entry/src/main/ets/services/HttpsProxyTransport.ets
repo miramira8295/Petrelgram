@@ -421,6 +421,11 @@ export class HttpsProxyRuntime {
     if (this.recoveryTimer !== -1) { clearTimeout(this.recoveryTimer); this.recoveryTimer = -1; }
     this.relay.close();
   }
+  // See HttpsProxyRelay.dropOlderThan: forces native TDLib to redial instead of
+  // waiting out a ping timeout on a connection that died while it was suspended.
+  dropTunnelsBefore(createdBefore: number): number {
+    return this.closed ? 0 : this.relay.dropOlderThan(createdBefore);
+  }
 }
 
 class NativeProxyClient implements ProxyRequestClient {
@@ -445,6 +450,13 @@ export function restoreHttpsProxyRuntime(client: TdClient): Promise<void> {
 export function detachHttpsProxyRuntime(client: TdClient): void {
   runtimes.get(client)?.close();
   runtimes.delete(client);
+}
+
+// Close relay tunnels that predate `createdBefore`. Used after returning to the
+// foreground: native TDLib then redials at once instead of waiting out its ping
+// timeout on connections that died while the process was suspended.
+export function dropRelayTunnelsBefore(client: TdClient, createdBefore: number): number {
+  return runtimes.get(client)?.dropTunnelsBefore(createdBefore) ?? 0;
 }
 
 export function sendProxyRequest(client: TdClient, request: TdRequest, timeoutMs: number = 20000,

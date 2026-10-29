@@ -14,6 +14,13 @@ import {
 const MAX_CONNECTIONS: number = 32;
 const MAX_QUEUED_BYTES: number = 512 * 1024;
 const HANDSHAKE_TIMEOUT: number = 15000;
+// A tunnel that moves no bytes in either direction still owns one of
+// MAX_CONNECTIONS. Handshakes have HANDSHAKE_TIMEOUT; established tunnels had
+// nothing. TDLib pings every 60s by default, so 90s leaves a 30s margin.
+const IDLE_TIMEOUT: number = 90000;
+const IDLE_SWEEP_INTERVAL: number = 15000;
+// Diagnostic bucketing only: "idle this long" is the shape of a zombie slot.
+const IDLE_DIAGNOSTIC_MS: number = 30000;
 const CONNECT_OK: ArrayBuffer = new Uint8Array('HTTP/1.1 200 Connection Established\r\n\r\n'
   .split('').map((c: string): number => c.charCodeAt(0))).buffer as ArrayBuffer;
 
@@ -248,6 +255,12 @@ export class HttpsTunnel {
   private cancelDial: (() => void) | undefined = undefined;
   private closed: boolean = false;
   private phase: string = 'request';
+  private createdAt: number = Date.now();
+  // Zero-byte liveness. Updated at the tunnel's only two inlets, so neither
+  // direction can refresh it by accident.
+  private lastActivity: number = Date.now();
+  private bytesOut: number = 0;
+  private bytesIn: number = 0;
   private request = new ProxyHeaderReader();
   private response = new ProxyHeaderReader();
   private pending: ArrayBuffer[] = [];
@@ -281,6 +294,13 @@ export class HttpsTunnel {
       (): void => this.close(), (): boolean => !this.closed && this.phase !== 'connecting' && this.tls !== undefined);
   }
 
+  diagnosticPhase(): string { return this.phase; }
+  diagnosticAgeMs(now: number): number { return Math.max(0, now - this.createdAt); }
+  diagnosticIdleMs(now: number): number { return Math.max(0, now - this.lastActivity); }
+  diagnosticCreatedAtMs(): number { return this.createdAt; }
+  diagnosticBytesIn(): number { return this.bytesIn; }
+  diagnosticBytesOut(): number { return this.bytesOut; }
+
   start(): void {
     this.timer = setTimeout((): void => this.close(), HANDSHAKE_TIMEOUT);
     this.local.onData((data: ArrayBuffer): void => {
@@ -291,6 +311,7 @@ export class HttpsTunnel {
 
   private receiveLocal(data: ArrayBuffer): void {
     if (this.closed) { return; }
+    this.lastActivity = Date.now(); this.bytesOut += data.byteLength;
     if (this.httpRewriter !== undefined) {
       for (const chunk of this.httpRewriter.push(data)) {
         if (this.phase === 'http-stream') { this.toRemote.write(chunk); } else { this.queue(chunk); }
@@ -457,6 +478,7 @@ export class HttpsTunnel {
 
   private receiveRemote(data: ArrayBuffer): void {
     if (this.closed) { return; }
+    this.lastActivity = Date.now(); this.bytesIn += data.byteLength;
     if (this.phase === 'connecting') {
       this.earlyBytes += data.byteLength;
       if (this.earlyBytes > MAX_QUEUED_BYTES) { this.close(); return; }
@@ -497,6 +519,8 @@ export interface HttpsRelay {
   replace(record: HttpsProxyRecord): void;
   unregister(key: string): void;
   close(): void;
+  // Close tunnels created before this instant; returns how many were closed.
+  dropOlderThan(createdBefore: number): number;
 }
 
 export class HttpsProxyRelay implements HttpsRelay {
@@ -508,6 +532,15 @@ export class HttpsProxyRelay implements HttpsRelay {
   private restart: () => void;
   private listenerGeneration: number = 0;
   private rejectedConnections: number = 0;
+  private completedPhases: Map<string, number> = new Map();
+  // Kept monotonic across tunnel closings, so the summary can report a byte
+  // delta instead of a number that drops whenever a tunnel retires.
+  private completedBytesIn: number = 0;
+  private completedBytesOut: number = 0;
+  private lastSummaryBytes: number = 0;
+  private lastSummaryAt: number = 0;
+  private lastCapacityCheckLog: number = 0;
+  private sweepTimer: number = -1;
   private localClients: Set<LocalRelayEndpoint> = new Set();
   private checkingServer: socket.TCPSocketServer | undefined = undefined;
   private checkingClients: boolean = false;
@@ -528,6 +561,20 @@ export class HttpsProxyRelay implements HttpsRelay {
       if (record.key === key) { this.credentials.delete(authorization); }
     });
     this.tunnels.forEach((tunnel: HttpsTunnel): void => { if (tunnel.recordKey === key) { tunnel.close(); } });
+  }
+
+  // Force-close tunnels that predate `createdBefore`, leaving newer ones alone.
+  // Closing from this side makes native TDLib read EOF at once, so it redials
+  // instead of waiting out a ping timeout on a connection the proxy already
+  // dropped while the process was suspended. Tunnels created after the mark are
+  // the redial in progress and must not be touched.
+  dropOlderThan(createdBefore: number): number {
+    const victims: HttpsTunnel[] = [];
+    this.tunnels.forEach((tunnel: HttpsTunnel): void => {
+      if (tunnel.diagnosticCreatedAtMs() < createdBefore) { victims.push(tunnel); }
+    });
+    for (const tunnel of victims) { tunnel.close(); }
+    return victims.length;
   }
 
   start(): Promise<number> {
@@ -556,13 +603,21 @@ export class HttpsProxyRelay implements HttpsRelay {
         if (this.server === server && !this.closed) { this.checkClients(); }
         this.rejectedConnections++;
         if ((this.rejectedConnections & (this.rejectedConnections - 1)) === 0) {
-          logW(`[proxy-lifecycle] rejected=${this.rejectedConnections} active=${this.tunnels.size} nativePending=${localRelayEndpoints.size}`);
+          logW(`[proxy-lifecycle] rejected=${this.rejectedConnections} active=${this.tunnels.size} nativePending=${localRelayEndpoints.size} ${this.capacitySummary()}`);
         }
         return;
       }
       const tunnel = new HttpsTunnel(endpoint,
         (authorization: string): HttpsProxyRecord | undefined => this.credentials.get(authorization),
-        (done: HttpsTunnel): void => { this.tunnels.delete(done); this.localClients.delete(endpoint); });
+        (done: HttpsTunnel): void => {
+          if (this.tunnels.delete(done)) {
+            const phase = done.diagnosticPhase();
+            this.completedPhases.set(phase, (this.completedPhases.get(phase) ?? 0) + 1);
+            this.completedBytesIn += done.diagnosticBytesIn();
+            this.completedBytesOut += done.diagnosticBytesOut();
+          }
+          this.localClients.delete(endpoint);
+        });
       this.localClients.add(endpoint);
       this.tunnels.add(tunnel);
       try { tunnel.start(); } catch (_error) { tunnel.close(); }
@@ -574,6 +629,7 @@ export class HttpsProxyRelay implements HttpsRelay {
       if (this.closed || this.server !== server || address.address !== '127.0.0.1' || !address.port) {
         throw new Error('invalid proxy listener');
       }
+      this.startSweep();
       return address.port;
     } catch (_error) {
       // stopListener owns the current server; stale listen completions must
@@ -583,13 +639,88 @@ export class HttpsProxyRelay implements HttpsRelay {
     }
   }
 
+  // Aggregate phases/ages/bytes only: never include target addresses,
+  // credentials, request contents or account identifiers in diagnostics.
+  private capacitySummary(): string {
+    const now = Date.now();
+    const phases: Map<string, number> = new Map();
+    let oldest = 0;
+    let liveIn = 0;
+    let liveOut = 0;
+    let idle = 0;
+    this.tunnels.forEach((tunnel: HttpsTunnel): void => {
+      const phase = tunnel.diagnosticPhase();
+      phases.set(phase, (phases.get(phase) ?? 0) + 1);
+      oldest = Math.max(oldest, tunnel.diagnosticAgeMs(now));
+      liveIn += tunnel.diagnosticBytesIn();
+      liveOut += tunnel.diagnosticBytesOut();
+      if (tunnel.diagnosticIdleMs(now) >= IDLE_DIAGNOSTIC_MS) { idle++; }
+    });
+    let active = '';
+    let completed = '';
+    phases.forEach((count: number, phase: string): void => { active += `${phase}:${count},`; });
+    this.completedPhases.forEach((count: number, phase: string): void => { completed += `${phase}:${count},`; });
+    // moved= is the number that separates a working tunnel from a zombie: bytes
+    // carried since the previous summary, over however long that was. Totals are
+    // monotonic (retired tunnels roll into completedBytes*) so the delta cannot
+    // go negative when a tunnel closes.
+    const total = this.completedBytesIn + this.completedBytesOut + liveIn + liveOut;
+    const moved = this.lastSummaryAt === 0 ? 0 : Math.max(0, total - this.lastSummaryBytes);
+    const elapsed = this.lastSummaryAt === 0 ? 0 : Math.max(0, now - this.lastSummaryAt);
+    this.lastSummaryBytes = total;
+    this.lastSummaryAt = now;
+    return `phases=[${active}] oldestMs=${oldest} bytes=[in:${liveIn},out:${liveOut}] `
+      + `moved=${moved}B/${elapsed}ms idle=[>${IDLE_DIAGNOSTIC_MS / 1000}s:${idle}] completed=[${completed}]`;
+  }
+
+  private startSweep(): void {
+    if (this.sweepTimer !== -1) { return; }
+    this.sweepTimer = setInterval((): void => this.sweepIdle(), IDLE_SWEEP_INTERVAL);
+  }
+
+  private stopSweep(): void {
+    if (this.sweepTimer === -1) { return; }
+    clearInterval(this.sweepTimer);
+    this.sweepTimer = -1;
+  }
+
+  // Reclaim established tunnels that have moved no bytes in either direction.
+  // Handshake phases keep their own HANDSHAKE_TIMEOUT; closing them here would
+  // only race it. One interval for the whole relay rather than a per-tunnel
+  // timeout: resetting a timer on every chunk is pure overhead under load.
+  private sweepIdle(): void {
+    if (this.closed) { return; }
+    const now = Date.now();
+    const victims: HttpsTunnel[] = [];
+    this.tunnels.forEach((tunnel: HttpsTunnel): void => {
+      const phase = tunnel.diagnosticPhase();
+      if (phase !== 'tunnel' && phase !== 'http-stream') { return; }
+      if (tunnel.diagnosticIdleMs(now) < IDLE_TIMEOUT) { return; }
+      victims.push(tunnel);
+    });
+    if (victims.length === 0) { return; }
+    let bytes = 0;
+    for (const tunnel of victims) {
+      bytes += tunnel.diagnosticBytesIn() + tunnel.diagnosticBytesOut();
+    }
+    for (const tunnel of victims) { tunnel.close(); }
+    logW(`[proxy-idle] closed=${victims.length} idleMs>=${IDLE_TIMEOUT} theirBytes=${bytes}B `
+      + `remaining=${this.tunnels.size} ${this.capacitySummary()}`);
+  }
+
   private async checkClients(): Promise<void> {
     if (this.checkingClients) { return; }
     this.checkingClients = true;
+    const before = this.tunnels.size;
     try {
       const checks: Promise<void>[] = [];
       this.localClients.forEach((client: LocalRelayEndpoint): void => { checks.push(client.checkAlive()); });
       await Promise.all(checks);
+      const now = Date.now();
+      if (before >= MAX_CONNECTIONS && now - this.lastCapacityCheckLog >= 5000) {
+        this.lastCapacityCheckLog = now;
+        logW(`[proxy-capacity] checked=${before} remaining=${this.tunnels.size} ${this.capacitySummary()}`);
+      }
     } finally { this.checkingClients = false; }
   }
 
@@ -615,6 +746,7 @@ export class HttpsProxyRelay implements HttpsRelay {
   }
 
   private stopListener(): void {
+    this.stopSweep();
     this.tunnels.forEach((tunnel: HttpsTunnel): void => tunnel.close());
     this.tunnels.clear();
     this.localClients.clear();

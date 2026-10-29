@@ -1,5 +1,7 @@
 import { pinnedVisibilityFor } from '../../services/PinnedVisibility';
 import { PinnedVisibility } from '../../util/pinnedVisibilityState';
+import { NowPlaying, subscribeNowPlaying, clearNowPlaying } from '../../util/nowPlayingChannel';
+import { getVoicePlayback, VoiceState } from '../../services/VoicePlayback';
 // 顶栏下挂那张浮卡（置顶消息条 + 直播/群通话条）的状态机。
 // 从 ChatPage 整体搬出（B5 批）。
 //
@@ -115,6 +117,13 @@ export class LiveTopCardController {
   // （搬之前它孤零零声明在页面的另一处、与其余 pinned 字段隔了 170 行，这里
   // 归位到同一块。）
   @Trace pinnedCycle: number = 0;
+  @Trace musicTrack: NowPlaying | null = null;
+  @Trace musicStatus: string = 'idle';
+  @Trace musicPositionMs: number = 0;
+  @Trace musicDurationMs: number = 0;
+  // 音乐条 / 置顶条两张卡当前停在哪一张：'music' | 'pinned'。两条同时可见时由
+  // TopBanners 里的 Swiper 读写，其余时候不参与布局（只决定重开后停在哪一页）。
+  @Trace musicPage: string = 'music';
   // 正在直播入口条:chat.video_chat.group_call_id > 0 时显示("正在直播").
   @Trace liveGroupCallId: number = 0;
   @Trace liveCallIsActive: boolean = false;
@@ -138,6 +147,11 @@ export class LiveTopCardController {
   private liveGroupResolveSeq: number = 0;
   private liveGroupRequestId: number = 0;
   private topCardActionTimer: number = -1;
+  private unsubMusicTrack: (() => void) | null = null;
+  private unsubMusicVoice: (() => void) | null = null;
+  // 上一次回调里"音乐条该亮着"的判定。只用来取边沿（见 applyMusicVoiceState），
+  // 不驱动 UI，所以不进 @Trace。
+  private musicWasLive: boolean = false;
 
   // 未 bind 时的空宿主：字段类型非空，且控制器在 aboutToAppear 之前就已经被
   // 构造出来（页面的字段初始化器 new）。取值器返回的都是「什么都还没有」的值，
@@ -172,6 +186,13 @@ export class LiveTopCardController {
   // 与 applyRouteParams 一样，本方法依赖 beginRouteApply() 的一次性守卫——每个
   // ChatPage 实例只会走到这里一次。句柄不做重入保护是搬之前的原样。
   open(): void {
+    this.unsubMusicTrack = subscribeNowPlaying((state: NowPlaying | null): void => {
+      this.musicTrack = state;
+      if (state !== null && this.musicPage !== 'pinned') { this.musicPage = 'music'; }
+    });
+    this.unsubMusicVoice = getVoicePlayback().subscribe((state: VoiceState): void => {
+      this.applyMusicVoiceState(state.mode, state.status, state.positionMs, state.durationMs);
+    });
     this.livePulseTimer = setInterval((): void => {
       if (!this.liveCallIsActive || !powerFeatureEnabled(KEY_POWER_PARTICLES)) {
         this.livePulseExpanded = false;
@@ -185,6 +206,31 @@ export class LiveTopCardController {
     this.liveStateRefreshTimer = setInterval((): void => {
       this.refreshVideoChat();
     }, 2000);
+  }
+
+  // 音乐播放态的唯一入口（VoicePlayback 的订阅回调只做一次转调，好让这段判定
+  // 能被单测直接钉住）。
+  //
+  // 【用户报的「置顶条和音乐条左右切换不好使」有一半在这里】VoicePlayback 播放
+  // 期间每次 timeUpdate 都推一次状态，几百毫秒一次。原来那行是无条件的
+  // `musicPage = 'music'`：用户刚把卡片划到置顶页，下一次进度回调就把它翻了回来。
+  // 不是手势没识别，是切过去又被自己弹回去。现在两条防线：
+  //   1. 'pinned' 时不写。那是用户自己的选择，自动翻页不覆盖它。
+  //   2. 只在"从没在播变成在播"这一瞬才写（wasLive 取边沿）。播放期间的每一条
+  //      进度回调连 musicPage 都不碰——即使写的是同一个值，@Trace 也要走一遍
+  //      通知路径，而这条回调是全页频率最高的。
+  // wasLive 是普通字段：它只参与判定，不驱动任何节点。
+  //
+  // 另一半（手势本身的阈值与跟手反馈）在 TopBanners 里，由 Swiper 接管。
+  applyMusicVoiceState(mode: string, status: string, positionMs: number, durationMs: number): void {
+    const live: boolean = mode === 'music' && (status === 'playing' || status === 'loading');
+    this.musicStatus = mode === 'music' ? status : 'idle';
+    this.musicPositionMs = mode === 'music' ? positionMs : 0;
+    this.musicDurationMs = mode === 'music' ? durationMs : 0;
+    if (live && !this.musicWasLive && this.musicPage !== 'pinned') {
+      this.musicPage = 'music';
+    }
+    this.musicWasLive = live;
   }
 
   // 页面从后台/被遮挡回到前台。搬之前这是 handleShown 交给
@@ -226,6 +272,10 @@ export class LiveTopCardController {
       clearInterval(this.liveStateRefreshTimer);
       this.liveStateRefreshTimer = -1;
     }
+    if (this.unsubMusicTrack !== null) { this.unsubMusicTrack(); this.unsubMusicTrack = null; }
+    if (this.unsubMusicVoice !== null) { this.unsubMusicVoice(); this.unsubMusicVoice = null; }
+    this.musicTrack = null;
+    this.musicStatus = 'idle';
   }
 
   // ——— 卡片整体 ———
@@ -270,8 +320,40 @@ export class LiveTopCardController {
     // Pinned/live information is optional chrome. If its background probe
     // fails while TDLib is reconnecting and there is no confirmed content,
     // don't turn that transient transport problem into a persistent banner.
-    return this.pinnedVisible() ||
+    return this.musicVisible() || this.pinnedVisible() ||
       (this.liveGroupCallId > 0 && this.liveCallIsActive);
+  }
+
+  // 'paused' 也算可见。暂停是用户自己按的，控制条得留在原地等着他按继续——
+  // 一暂停就收掉的话，会话里就再没有能把这首接着放下去的入口了（底栏那条迷你
+  // 播放条只在会话列表那一页上）。
+  // 'completed' 不算：那是这一条放完了，会话页不该留一张常驻的空控制条。
+  musicVisible(): boolean {
+    const status: string = this.musicStatus;
+    return this.musicTrack !== null &&
+      (status === 'playing' || status === 'loading' || status === 'paused');
+  }
+
+  musicAndPinnedVisible(): boolean { return this.musicVisible() && this.pinnedVisible(); }
+
+  // 两张横幅卡（音乐条 / 置顶条）之间的左右切换。落页来自 Swiper 的 onChange。
+  // 先守 musicAndPinnedVisible：只有一条时压根没有"另一页"，这时候写进 musicPage
+  // 只会留下一个指向不存在页面的值，等另一条重新出现，Swiper 会一上来就开在空白页。
+  setMusicPage(page: string): void {
+    if (!this.musicAndPinnedVisible()) { return; }
+    if (page !== 'music' && page !== 'pinned') { return; }
+    if (this.musicPage !== page) { this.musicPage = page; }
+  }
+  // 只认 id。曲目信息里那条 path 在流式起播时是空串，按 path 走会在
+  // audioSourcePlayable() 那里被挡掉——见 VoicePlayback.toggleMusicById。
+  toggleMusic(): void {
+    const track: NowPlaying | null = this.musicTrack;
+    if (track !== null) { getVoicePlayback().toggleMusicById(track.messageId); }
+  }
+  stopMusic(): void {
+    const track: NowPlaying | null = this.musicTrack;
+    getVoicePlayback().stop();
+    if (track !== null) { clearNowPlaying(track.messageId); }
   }
 
   // ——— 置顶条：订阅入口 ———

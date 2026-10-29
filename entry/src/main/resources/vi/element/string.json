@@ -138,7 +138,7 @@
     },
     {
       "name": "chat_header_kind_user",
-      "value": "Người dùng Telegram"
+      "value": "Người dùng"
     },
     {
       "name": "chat_header_loading",
@@ -194,7 +194,7 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "Petrelgram"
+      "value": "Petrel"
     },
     {
       "name": "file_download_failed",
@@ -414,11 +414,11 @@
     },
     {
       "name": "gift_premium_title",
-      "value": "Quà tặng Telegram Premium"
+      "value": "Quà tặng Premium"
     },
     {
       "name": "gift_regular_title",
-      "value": "Quà tặng Telegram"
+      "value": "Quà tặng"
     },
     {
       "name": "gift_special",
@@ -426,7 +426,7 @@
     },
     {
       "name": "gift_stars_title",
-      "value": "Quà tặng Telegram Star"
+      "value": "Quà tặng Star"
     },
     {
       "name": "gift_stars_unknown",
@@ -486,7 +486,7 @@
     },
     {
       "name": "gift_unique",
-      "value": "Món quà Telegram độc nhất vô nhị"
+      "value": "Món quà độc nhất vô nhị"
     },
     {
       "name": "gift_valued_at",
@@ -562,7 +562,7 @@
     },
     {
       "name": "link_preview_open_in_telegram",
-      "value": "Mở trong Telegram"
+      "value": "Mở"
     },
     {
       "name": "link_preview_open_invite",
@@ -1110,15 +1110,15 @@
     },
     {
       "name": "preview_gift",
-      "value": "🎁 Quà tặng Telegram"
+      "value": "🎁 Quà tặng"
     },
     {
       "name": "preview_gift_collectible",
-      "value": "🎁 Quà tặng sưu tầm Telegram"
+      "value": "🎁 Quà tặng sưu tầm"
     },
     {
       "name": "preview_gift_premium",
-      "value": "💎 Đã tặng Telegram Premium"
+      "value": "💎 Đã tặng Premium"
     },
     {
       "name": "preview_gift_premium_n",
@@ -1398,7 +1398,7 @@
     },
     {
       "name": "service_contact_registered",
-      "value": "Đã tham gia Telegram"
+      "value": "Đã tham gia Petrel"
     },
     {
       "name": "service_custom_service_action",
@@ -1434,7 +1434,7 @@
     },
     {
       "name": "service_gifted_premium",
-      "value": "Đã tặng Telegram Premium"
+      "value": "Đã tặng Premium"
     },
     {
       "name": "service_gifted_stars",
@@ -1474,11 +1474,11 @@
     },
     {
       "name": "service_passport_data_received",
-      "value": "Đã nhận dữ liệu Telegram Passport"
+      "value": "Đã nhận dữ liệu Passport"
     },
     {
       "name": "service_passport_data_sent",
-      "value": "Đã gửi dữ liệu Telegram Passport"
+      "value": "Đã gửi dữ liệu Passport"
     },
     {
       "name": "service_payment_refunded",
@@ -1678,11 +1678,11 @@
     },
     {
       "name": "telegram_giveaway_prize",
-      "value": "Giải thưởng xổ số Telegram"
+      "value": "Giải thưởng xổ số"
     },
     {
       "name": "telegram_stars",
-      "value": "Telegram Star"
+      "value": "Star"
     },
     {
       "name": "tglink_added",
@@ -1762,7 +1762,7 @@
     },
     {
       "name": "tglink_kind_unsupported",
-      "value": "Phiên bản hiện tại chưa hỗ trợ liên kết Telegram %1$s"
+      "value": "Phiên bản hiện tại chưa hỗ trợ liên kết %1$s"
     },
     {
       "name": "tglink_opened_profile_no_live",
@@ -1802,7 +1802,7 @@
     },
     {
       "name": "tglink_unrecognized",
-      "value": "Không thể nhận dạng liên kết Telegram này"
+      "value": "Không thể nhận dạng liên kết này"
     },
     {
       "name": "tglink_use_bottom_bar",
@@ -1994,7 +1994,7 @@
     },
     {
       "name": "settings_telegram_account",
-      "value": "Tài khoản Telegram"
+      "value": "Tài khoản"
     },
     {
       "name": "settings_open_profile_failed",
@@ -2090,7 +2090,7 @@
     },
     {
       "name": "settings_add_account_sub",
-      "value": "Đăng nhập một tài khoản Telegram khác"
+      "value": "Đăng nhập một tài khoản khác"
     },
     {
       "name": "settings_search_hint",
@@ -2266,7 +2266,7 @@
     },
     {
       "name": "accent_needs_premium",
-      "value": "Màu này cần Telegram Premium"
+      "value": "Màu này cần Premium"
     },
     {
       "name": "apply_failed_retry",
@@ -2283,10 +2283,6 @@
     {
       "name": "accent_waiting_palette",
       "value": "Đang đợi bảng màu…"
-    },
-    {
-      "name": "accent_palette_from_server",
-      "value": "Bảng màu được máy chủ Telegram gửi xuống sau khi đăng nhập"
     },
     {
       "name": "accent_name_colour",
@@ -2314,7 +2310,7 @@
     },
     {
       "name": "accent_premium_note",
-      "value": "Màu chuyển sắc đa dạng là đặc quyền của Telegram Premium, máy chủ sẽ từ chối khi người không phải Premium chọn. Cài đặt sẽ đồng bộ đến tất cả thiết bị của bạn."
+      "value": "Màu chuyển sắc đa dạng là đặc quyền của Premium, máy chủ sẽ từ chối khi người không phải Premium chọn. Cài đặt sẽ đồng bộ đến tất cả thiết bị của bạn."
     },
     {
       "name": "emoji_status_cleared",
@@ -2326,7 +2322,7 @@
     },
     {
       "name": "emoji_status_needs_premium",
-      "value": "Trạng thái biểu tượng cảm xúc cần Telegram Premium"
+      "value": "Trạng thái biểu tượng cảm xúc cần Premium"
     },
     {
       "name": "emoji_status_loading",
@@ -2358,7 +2354,7 @@
     },
     {
       "name": "emoji_status_note",
-      "value": "Trạng thái biểu tượng cảm xúc hiển thị bên cạnh tên của bạn, cần Telegram Premium."
+      "value": "Trạng thái biểu tượng cảm xúc hiển thị bên cạnh tên của bạn, cần Premium."
     },
     {
       "name": "bgplay_music",
@@ -2418,7 +2414,7 @@
     },
     {
       "name": "chat_theme_from_server",
-      "value": "Chủ đề được máy chủ Telegram gửi xuống sau khi đăng nhập"
+      "value": "Chủ đề được máy chủ gửi xuống sau khi đăng nhập"
     },
     {
       "name": "chat_theme_reset",
@@ -2618,7 +2614,7 @@
     },
     {
       "name": "cw_disconnect_confirm",
-      "value": "Ngắt kết nối %1$s, sau đó cần đăng nhập lại bằng Telegram."
+      "value": "Ngắt kết nối %1$s, sau đó cần đăng nhập lại."
     },
     {
       "name": "cw_this_site",
@@ -2674,11 +2670,11 @@
     },
     {
       "name": "cw_empty_sub",
-      "value": "Các trang web đăng nhập qua Telegram sẽ hiển thị ở đây."
+      "value": "Các trang web bạn đã đăng nhập sẽ hiển thị ở đây."
     },
     {
       "name": "cw_note",
-      "value": "Ủy quyền trang web và phiên thiết bị độc lập với nhau. Ngắt kết nối trang web sẽ không đăng xuất máy này hoặc các ứng dụng Telegram khác."
+      "value": "Ủy quyền trang web và phiên thiết bị độc lập với nhau. Ngắt kết nối trang web sẽ không đăng xuất máy này hoặc các ứng dụng khác."
     },
     {
       "name": "pe_title",
@@ -4118,7 +4114,7 @@
     },
     {
       "name": "ct_no_user",
-      "value": "Không tìm thấy người dùng Telegram sử dụng số này"
+      "value": "Không tìm thấy người dùng sử dụng số này"
     },
     {
       "name": "network_failed_retry",
@@ -4702,7 +4698,7 @@
     },
     {
       "name": "ps_needs_premium",
-      "value": "Quy tắc quyền riêng tư này cần Telegram Premium"
+      "value": "Quy tắc quyền riêng tư này cần Premium"
     },
     {
       "name": "ps_not_loaded_refresh",
@@ -4814,7 +4810,7 @@
     },
     {
       "name": "ps_note",
-      "value": "Quy tắc quyền riêng tư được máy chủ Telegram thực thi theo thứ tự; khi sửa quy tắc chung sẽ giữ nguyên toàn bộ ngoại lệ hiện có."
+      "value": "Quy tắc quyền riêng tư được máy chủ thực thi theo thứ tự; khi sửa quy tắc chung sẽ giữ nguyên toàn bộ ngoại lệ hiện có."
     },
     {
       "name": "tsv_code_sent_note",
@@ -5038,7 +5034,7 @@
     },
     {
       "name": "tsv_note",
-      "value": "Mật khẩu chỉ được gửi cho Telegram để xác minh, nội dung nhập sẽ bị xóa ngay khi rời trang. Vui lòng đặt email khôi phục có thể truy cập được."
+      "value": "Mật khẩu chỉ được gửi đến máy chủ để xác minh, nội dung nhập sẽ bị xóa ngay khi rời trang. Vui lòng đặt email khôi phục có thể truy cập được."
     },
     {
       "name": "px_enabled_server",
@@ -5266,7 +5262,7 @@
     },
     {
       "name": "px_from_link",
-      "value": "Đã điền từ liên kết proxy Telegram, vui lòng xác nhận rồi lưu"
+      "value": "Đã điền từ liên kết proxy, vui lòng xác nhận rồi lưu"
     },
     {
       "name": "px_edit_note",
@@ -5358,7 +5354,7 @@
     },
     {
       "name": "fe_needs_premium",
-      "value": "Màu hoặc khả năng nhãn này cần Telegram Premium"
+      "value": "Màu hoặc khả năng nhãn này cần Premium"
     },
     {
       "name": "fe_chat_not_in_list",
@@ -5546,7 +5542,7 @@
     },
     {
       "name": "as_fresh_limit",
-      "value": "Giới hạn bảo mật Telegram: thiết bị đăng nhập mới cần chờ 24 giờ, dự kiến %1$s có thể thao tác"
+      "value": "Giới hạn bảo mật: thiết bị đăng nhập mới cần chờ 24 giờ, dự kiến %1$s có thể thao tác"
     },
     {
       "name": "as_terminate_confirm",
@@ -5670,7 +5666,7 @@
     },
     {
       "name": "as_scan_qr",
-      "value": "Quét mã QR của Telegram máy tính hoặc web"
+      "value": "Quét mã QR của máy tính hoặc web"
     },
     {
       "name": "as_current_short",
@@ -5738,7 +5734,7 @@
     },
     {
       "name": "as_accept_calls_sub",
-      "value": "Cho phép nhận cuộc gọi Telegram trên thiết bị này"
+      "value": "Cho phép nhận cuộc gọi trên thiết bị này"
     },
     {
       "name": "as_needs_2fa",
@@ -5778,7 +5774,7 @@
     },
     {
       "name": "as_fresh_rejected",
-      "value": "Telegram tạm thời từ chối chấm dứt phiên cũ từ thiết bị này, vui lòng thử lại sau"
+      "value": "Máy chủ tạm thời từ chối chấm dứt phiên cũ từ thiết bị này, vui lòng thử lại sau"
     },
     {
       "name": "as_no_others",
@@ -6178,7 +6174,7 @@
     },
     {
       "name": "mp_story_needs_premium",
-      "value": "Tài khoản hiện tại cần Telegram Premium để đăng Tin"
+      "value": "Tài khoản hiện tại cần Premium để đăng Tin"
     },
     {
       "name": "mp_story_limit",
@@ -6474,7 +6470,7 @@
     },
     {
       "name": "cb_telegram_user",
-      "value": "Người dùng Telegram"
+      "value": "Người dùng"
     },
     {
       "name": "cb_unnamed",
@@ -6482,7 +6478,7 @@
     },
     {
       "name": "cb_tap_profile",
-      "value": "Chạm để xem hồ sơ Telegram"
+      "value": "Chạm để xem hồ sơ"
     },
     {
       "name": "cb_contact_card",
@@ -6570,7 +6566,7 @@
     },
     {
       "name": "game_interactive",
-      "value": "Trò chơi tương tác Telegram"
+      "value": "Trò chơi tương tác"
     },
     {
       "name": "game_unreadable",
@@ -6594,7 +6590,7 @@
     },
     {
       "name": "game_title",
-      "value": "Trò chơi Telegram"
+      "value": "Trò chơi"
     },
     {
       "name": "lv_leave_title",
@@ -7394,7 +7390,7 @@
     },
     {
       "name": "mb_telegram_link",
-      "value": "Liên kết Telegram"
+      "value": "Liên kết"
     },
     {
       "name": "mb_web_link",
@@ -7978,7 +7974,7 @@
     },
     {
       "name": "cp_pay_stars_body",
-      "value": "Sẽ thanh toán %1$d Telegram Star. Sau khi thanh toán xong, tin nhắn này sẽ được cập nhật sang trạng thái đã mở khóa."
+      "value": "Sẽ thanh toán %1$d Star. Sau khi thanh toán xong, tin nhắn này sẽ được cập nhật sang trạng thái đã mở khóa."
     },
     {
       "name": "cp_pay_stars_button",
@@ -8654,7 +8650,7 @@
     },
     {
       "name": "cp_transcribe_premium",
-      "value": "Chuyển thành văn bản là tính năng của Telegram Premium"
+      "value": "Chuyển thành văn bản là tính năng của Premium"
     },
     {
       "name": "cp_stop_poll_body",
@@ -9102,7 +9098,7 @@
     },
     {
       "name": "sm_joined_telegram",
-      "value": "%1$s đã tham gia Telegram"
+      "value": "%1$s đã tham gia Petrel"
     },
     {
       "name": "sm_set_theme",
@@ -9826,7 +9822,7 @@
     },
     {
       "name": "lg_code_call",
-      "value": "Telegram sẽ gọi đến %1$s và thông báo mã xác minh"
+      "value": "Máy chủ sẽ gọi đến %1$s và báo mã xác minh"
     },
     {
       "name": "lg_code_flash_call",
@@ -9854,7 +9850,7 @@
     },
     {
       "name": "lg_code_other_device",
-      "value": "Mã xác minh đã được gửi đến Telegram trên thiết bị khác của bạn"
+      "value": "Mã xác minh đã được gửi đến thiết bị khác của bạn"
     },
     {
       "name": "lg_code_email",
@@ -9866,7 +9862,7 @@
     },
     {
       "name": "lg_code_telegram_or_sms",
-      "value": "Mã xác minh đã được gửi cho bạn qua Telegram hoặc SMS"
+      "value": "Mã xác minh đã được gửi cho bạn qua ứng dụng hoặc SMS"
     },
     {
       "name": "lg_no_resend",
@@ -9874,7 +9870,7 @@
     },
     {
       "name": "lg_use_telegram",
-      "value": "Đổi sang nhận mã xác minh qua Telegram"
+      "value": "Đổi sang nhận mã xác minh trong ứng dụng"
     },
     {
       "name": "lg_use_sms",
@@ -9934,7 +9930,7 @@
     },
     {
       "name": "lg_phone_hint",
-      "value": "Vui lòng chọn quốc gia hoặc khu vực, và nhập số điện thoại dùng để đăng nhập Telegram."
+      "value": "Vui lòng chọn quốc gia hoặc khu vực, và nhập số điện thoại dùng để đăng nhập."
     },
     {
       "name": "lg_sending_code",
@@ -9958,7 +9954,7 @@
     },
     {
       "name": "lg_no_account_yet",
-      "value": "Số này chưa có tài khoản Telegram. Điền tên là có thể tạo."
+      "value": "Số này chưa có tài khoản. Điền tên là có thể tạo."
     },
     {
       "name": "lg_last_name_optional",
@@ -9970,7 +9966,7 @@
     },
     {
       "name": "lg_qr_step1",
-      "value": "Mở Telegram trên điện thoại"
+      "value": "Mở ứng dụng trên điện thoại"
     },
     {
       "name": "lg_qr_step2",
@@ -9990,7 +9986,7 @@
     },
     {
       "name": "lg_qr_body",
-      "value": "Dùng một thiết bị khác đã đăng nhập Telegram để quét mã QR bên dưới, là có thể đăng nhập trực tiếp vào máy này."
+      "value": "Dùng một thiết bị khác đã đăng nhập để quét mã QR bên dưới, là có thể đăng nhập trực tiếp vào máy này."
     },
     {
       "name": "lg_use_phone",
@@ -10242,7 +10238,7 @@
     },
     {
       "name": "cpp_no_boost_slots",
-      "value": "Không có suất ủng hộ khả dụng (ủng hộ cần Telegram Premium)"
+      "value": "Không có suất ủng hộ khả dụng (ủng hộ cần Premium)"
     },
     {
       "name": "cpp_boosted",
@@ -10342,7 +10338,7 @@
     },
     {
       "name": "cpp_telegram_group",
-      "value": "Nhóm Telegram"
+      "value": "Nhóm"
     },
     {
       "name": "cpp_invite_invalid",
@@ -10426,7 +10422,7 @@
     },
     {
       "name": "cpp_no_group_call_id",
-      "value": "Telegram không trả về định danh phòng phát trực tiếp"
+      "value": "Máy chủ không trả về định danh phòng phát trực tiếp"
     },
     {
       "name": "cpp_loading_details",
@@ -10454,7 +10450,7 @@
     },
     {
       "name": "cpp_no_full_subscribers",
-      "value": "Telegram chưa mở toàn bộ danh sách người đăng ký cho tài khoản hiện tại"
+      "value": "Tài khoản hiện tại không thể truy cập toàn bộ danh sách người đăng ký"
     },
     {
       "name": "cpp_no_member_access",
@@ -10582,7 +10578,7 @@
     },
     {
       "name": "pp_pay_with_stars",
-      "value": "Thanh toán bằng Telegram Star"
+      "value": "Thanh toán bằng Star"
     },
     {
       "name": "pp_loading_gifts",
@@ -11202,7 +11198,7 @@
     },
     {
       "name": "ar_remove_account_sub",
-      "value": "Chỉ xóa dữ liệu cục bộ. Tài khoản Telegram không bị ảnh hưởng."
+      "value": "Chỉ xóa dữ liệu cục bộ. Tài khoản không bị ảnh hưởng."
     },
     {
       "name": "ga_remove_member",
@@ -13098,7 +13094,7 @@
     },
     {
       "name": "qr_unsupported",
-      "value": "Mã này không được hỗ trợ. Hãy quét mã liên hệ, nhóm hoặc đăng nhập Telegram."
+      "value": "Mã này không được hỗ trợ. Hãy quét mã liên hệ, nhóm hoặc đăng nhập."
     },
     {
       "name": "qr_login_title",
@@ -13106,7 +13102,7 @@
     },
     {
       "name": "qr_login_body",
-      "value": "Chỉ xác nhận thiết bị mà chính bạn đang đăng nhập. Thiết bị sẽ có quyền truy cập tài khoản và trò chuyện đám mây Telegram của bạn."
+      "value": "Chỉ xác nhận thiết bị mà chính bạn đang đăng nhập. Thiết bị sẽ có quyền truy cập tài khoản và trò chuyện đám mây của bạn."
     },
     {
       "name": "qr_login_confirm",
@@ -13130,7 +13126,7 @@
     },
     {
       "name": "about_telegram_group",
-      "value": "Nhóm Telegram"
+      "value": "Nhóm cộng đồng"
     },
     {
       "name": "cp_show_keyboard",

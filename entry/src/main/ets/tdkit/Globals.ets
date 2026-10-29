@@ -264,12 +264,22 @@ function createRuntime(slotId: string): void {
 // 需读取即可（AuthService.onStageChange 的回放思路）。
 
 let connectionState: string = '';
+let connectionStateChangedAt: number = 0;
 
 function trackConnectionState(target: TdClient): void {
   connectionState = '';
+  connectionStateChangedAt = 0;
   target.onUpdate('updateConnectionState', (u: TdObject): void => {
     const state = u['state'] as TdObject | undefined;
-    connectionState = (state?.['@type'] as string | undefined) ?? '';
+    const next: string = (state?.['@type'] as string | undefined) ?? '';
+    if (next === connectionState) { return; }
+    // held= 是"上一个状态撑了多久"，也就是连接中卡住的时间。没有这行，
+    // 回前台后到底等了多久只能靠猜。
+    const now: number = Date.now();
+    const held: number = connectionStateChangedAt === 0 ? 0 : now - connectionStateChangedAt;
+    logI(`[Conn] ${connectionState === '' ? 'start' : connectionState} -> ${next} held=${held}ms`);
+    connectionState = next;
+    connectionStateChangedAt = now;
   });
 }
 

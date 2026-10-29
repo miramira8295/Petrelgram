@@ -85,8 +85,21 @@ await test('32 business tunnels survive 1000 rejected connections; rejected clie
     assert.equal(s.closes, 1);s.nativeClose();
   }
   assert.equal(relay.tunnels.size, 32); assert.equal(retained.size, 32);
+  assert.match(relay.capacitySummary(), /phases=\[request:32,\]/);
+  assert(warnings.some(line => line.includes('phases=[request:32,]')));
+  // Differentiate occupied slots without disclosing endpoints or credentials.
+  const mixed = [...relay.tunnels];
+  mixed[0].phase = 'connecting'; mixed[1].phase = 'socks'; mixed[2].phase = 'tunnel';
+  const summary = relay.capacitySummary();
+  for (const phase of ['connecting:1', 'socks:1', 'tunnel:1', 'request:29']) assert(summary.includes(phase));
+  assert(!summary.includes('127.0.0.1'));
+
   active.forEach(s => assert.equal(s.closes, 0));
   relay.close(); active.forEach(s => s.nativeClose());
+  assert.equal(relay.tunnels.size, 0);
+  const ended = relay.capacitySummary();
+  for (const phase of ['connecting:1', 'socks:1', 'tunnel:1', 'request:29']) assert(ended.includes(phase));
+
 });
 await test('listener replacement safely drains late accept without attaching to new generation', async () => {
   const relay = new HttpsProxyRelay(); await relay.start(); const old = latestServer;

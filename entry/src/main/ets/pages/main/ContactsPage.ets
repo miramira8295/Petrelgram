@@ -1,5 +1,5 @@
 import { ContactAlphabetIndex } from '../../services/ContactAlphabetIndex';
-import { pageMarginVp } from '../../util/pageMargin';
+import { homeCardMarginVp } from '../../util/pageMargin';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
@@ -10,11 +10,17 @@ import {
   surfaceGlassBlurStyle, surfaceGlassFill
 } from '../../util/surfaceGlass';
 import { ContactsStore, ContactItem } from '../../store/ContactsStore';
-import { cardDividerStartVp, LIST_CARD_INSET_VP, LIST_CARD_TRAIL_VP } from '../../util/listCardGeometry';
+import {
+  cardDividerStartVp, HOME_CARD_INSET_VP, LIST_CARD_INSET_VP, LIST_CARD_TRAIL_VP
+} from '../../util/listCardGeometry';
 import { ContactRowView } from './ContactRowView';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
-import { COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import {
+  COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
+  ROW_PAD_H
+} from '../../util/theme';
+import { GLASS_OUTLINE_COLOR } from '../../util/bubbleTail';
 import { TdRequest, TdObject, TdError } from '../../tdkit/TdTypes';
 import { ComponentContent, promptAction, router, SymbolGlyphModifier } from '@kit.ArkUI';
 import {
@@ -26,14 +32,12 @@ import { searchPublicUsers } from '../../store/PublicUserSearch';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH, KEY_FORCE_SINGLE_COLUMN
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
-import {
-  overlayBackdropBlur, containerBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
-} from '../../util/overlayMaterial';
+import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { materialModifierWhen } from '../../util/materialModifier';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE, logW } from '../../util/log';
-import { contentSideGutter, readableContentWidth } from '../../util/contentWidth';
+import { readableContentWidth } from '../../util/contentWidth';
 import { registerStack, NavStackLike } from '../../util/navStacks';
 import { navigateToProfile } from '../../util/profileNav';
 import { splitContentMinWidth, splitNavMaxWidth, splitNavMinWidth } from '../../util/splitMetrics';
@@ -50,9 +54,10 @@ import { KEY_APP_BG_ON } from '../../store/AppSettings';
 // cardBlurStyle 返回 undefined，和改动前逐字节等价（见 util/surfaceGlass）。
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
-const PAGE_BG: ResourceColor = $r('app.color.page_bg');
-const TOP_BAR_HEIGHT: number = 56;
-const TOP_ACTION_SIZE: number = 44;
+// 联系人行是**一行一张卡片**（2026-10-29 用户要求与首页同款）：圆角 16、
+// 相邻两张之间 3+3 = 6vp，都与首页会话卡片对齐（见 pages/chatlist/ChatRow）。
+const CONTACT_CARD_RADIUS: number = 16;
+const CONTACT_CARD_GAP_VP: number = 3;
 const SEARCH_BAR_HEIGHT: number = 46;
 const SEARCH_DELAY_MS: number = 350;
 const CONTACT_LONG_PRESS_MS: number = 500;
@@ -138,17 +143,9 @@ export struct ContactsPage {
     return this.glassOn() ? surfaceGlassBlurStyle() : undefined;
   }
 
-  // 分组卡片**内部**的行底色。玻璃档透明（让容器那一块玻璃透上来），
-  // 实底档维持原来的白。
-  private rowInsideCardFill(): ResourceColor {
-    return this.glassOn() ? Color.Transparent : CARD_BG;
-  }
-
   private contactsScroller: ListScroller = new ListScroller();
   private alphabet: ContactAlphabetIndex = new ContactAlphabetIndex();
   private orderedContacts: ContactItem[] = [];
-  @State private indexLetters: string[] = [];
-  @State private selectedLetter: number = 0;
   // 联系人卡片的 LazyForEach 数据源，喂的是 filtered() 那一份（见 onContactListInputChanged）。
   private contactsData: KeyedListDataSource<ContactItem> = new KeyedListDataSource<ContactItem>('contacts');
   // 联系人页签的路由栈。平板（分栏）上点一个联系人会把 ProfilePage 推进这里，
@@ -161,10 +158,6 @@ export struct ContactsPage {
   // ——必须自己丢掉重建，否则夜间模式下左栏和会话页都变深、只有右栏空态还是
   // 浅色（平板实测）。详见 util/splitPlaceholderHolder。
   @StorageProp(KEY_APP_DARK) @Watch('onAppDarkChanged') private appDark: boolean = false;
-  // ⋮ 的菜单。HDS 标题栏的菜单项只给 action 回调、挂不了 bindMenu，所以由它
-  // 翻这个开关，菜单本体绑在右上角一个零尺寸锚点上（见 build）。
-  @State private topMenuShown: boolean = false;
-  @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // 平板上不把一列内容拉满整屏——见 util/contentWidth。窗口宽（不是屏幕宽），
   // 分屏 / 悬浮窗 / 折叠屏改变窗口时 EntryAbility 的 windowSizeChange 会刷新它。
@@ -180,11 +173,6 @@ export struct ContactsPage {
   @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   // 平板分栏下记住的左栏宽度（issue #106），见 util/splitNavWidth。
   @StorageProp(KEY_SPLIT_NAV_WIDTH) private savedNavW: number = 0;
-  // 本页签左栏（navBar）的实际宽度，vp，0 = 还没量到。**写入方就是本页**（下面
-  // 那个 Scroll 的 onAreaChange），这里再读回来是给 FAB 用的：FAB 现在住在
-  // navBar 里，它的「内容列留白」必须按左栏宽度算，不能按窗口宽算。
-  // 与 MainScreen 读的是同一个键，见 CONTACTS_NAV_BAR_WIDTH_KEY。
-  @StorageProp(CONTACTS_NAV_BAR_WIDTH_KEY) private navBarW: number = 0;
   @State @Watch('onContactListInputChanged') contacts: ContactItem[] = [];
   @State loading: boolean = true;
   @State loadError: string = '';
@@ -192,9 +180,6 @@ export struct ContactsPage {
   @State @Watch('onContactListInputChanged') remoteUsers: ContactItem[] = [];
   @State remoteLoading: boolean = false;
   @State searchFocused: boolean = false;
-  // Keyed by the icon name, not the label: a label is display text and
-  // changes with the language, so it cannot serve as an identity.
-  @State pressedAction: string = '';
   @State pressedContactId: number = 0;
   @State openingContactId: number = 0;
   @State deletingContactId: number = 0;
@@ -202,7 +187,6 @@ export struct ContactsPage {
   @State menuContactId: number = 0;
   @State menuContactName: string = '';
   @State skeletonBright: boolean = false;
-  @State fabPressed: boolean = false;
   @State addContactSheetOpen: boolean = false;
   @State addFirstName: string = '';
   @State addLastName: string = '';
@@ -323,11 +307,9 @@ export struct ContactsPage {
     this.splitPlaceholder.dispose();
     this.stopSkeletonPulse();
     this.releaseActionLock();
-    this.pressedAction = '';
     this.pressedContactId = 0;
     this.openingContactId = 0;
     this.deletingContactId = 0;
-    this.fabPressed = false;
     this.addContactSheetOpen = false;
     this.addContactSaving = false;
     this.contextMenuShown = false;
@@ -464,7 +446,6 @@ export struct ContactsPage {
     if (this.contextMenuShown || this.addContactSaving) {
       return;
     }
-    this.fabPressed = false;
     this.addFirstName = '';
     this.addLastName = '';
     this.addPhone = '';
@@ -583,28 +564,6 @@ export struct ContactsPage {
 
   private contentMinWidth(): number {
     return splitContentMinWidth(this.screenW);
-  }
-
-  // ⋮ 菜单锚点的 x。锚点本身留在最外层 Stack 上（y 的基准因此不变），只换 x。
-  //
-  //   单栏（手机）→ 原字面量 '100%'。最外层 Stack 就是整个页签，'100%' = 屏幕
-  //     右缘，与改动前逐字相同。**这里必须是字面量而不是"算出来碰巧等于窗口宽"**：
-  //     readableContentWidth / contentSideGutter 那套按窗口宽算的量在分栏下会
-  //     吃错基准，本项目已经踩过两次，不再让手机路径依赖任何计算。
-  //   分栏（平板）→ 左栏实际宽度 navBarW（vp）。⋮ 按钮住在左栏的标题栏里，
-  //     锚点落在左栏右缘，菜单才贴着按钮弹。navBarW 由本页那个 Scroll 的
-  //     onAreaChange 量出来写进 CONTACTS_NAV_BAR_WIDTH_KEY，dock 用的是同一个值。
-  //   分栏但还没量到（navBarW <= 0，首帧）→ 退回 '100%'，与改动前同。下一帧
-  //     onAreaChange 一到就归位。
-  private topMenuAnchorX(): Length {
-    if (!isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait)) {
-      return '100%';
-    }
-    const w: number = this.navBarW;
-    if (w <= 0) {
-      return '100%';
-    }
-    return w;
   }
 
   // splitPlaceholder 收的是 ComponentContent，不是 @Builder 引用——直接传
@@ -854,81 +813,10 @@ export struct ContactsPage {
       return;
     }
     this.orderedContacts = this.alphabet.sort(this.contacts);
-    this.indexLetters = this.alphabet.positions.map((position): string => position.letter);
-    this.selectedLetter = Math.min(this.selectedLetter, Math.max(0, this.indexLetters.length - 1));
     const list: ContactItem[] = this.filtered();
     this.contactsData.update(list,
       list.map((c: ContactItem): string => `${c.id}`),
       list.map((c: ContactItem): string => this.contactListVersion(c)));
-  }
-
-  @Builder
-  topMenu() {
-    Menu() {
-      MenuItem({ content: $r('app.string.ct_new_group') })
-        .onClick((): void => {
-          router.pushUrl({ url: 'pages/main/NewGroupPage' });
-        });
-      MenuItem({ content: $r('app.string.ct_recent_calls') })
-        .onClick((): void => {
-          router.pushUrl({ url: 'pages/main/CallsPage' });
-        });
-    }
-  }
-
-  @Builder
-  topBar() {
-    Row({ space: 4 }) {
-      Column() {
-        Text($r('app.string.tab_contacts'))
-          .fontSize(28).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1)
-          .translate({ y: this.loading ? 0 : 7 })
-          .animation({
-            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-            curve: Curve.EaseOut
-          });
-        Text($r('app.string.refreshing'))
-          .height(14).fontSize(11).lineHeight(14)
-          .fontColor(COLOR_TEXT_SECONDARY)
-          .maxLines(1)
-          .opacity(this.loading ? 1 : 0)
-          .translate({ y: this.loading ? 0 : -3 })
-          .animation({
-            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-            curve: Curve.EaseOut
-          });
-      }
-      .height(TOP_BAR_HEIGHT)
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1);
-
-      Row() {
-        SymbolGlyph($r('sys.symbol.more'))
-          .fontSize(23).fontColor([COLOR_ICON_SECONDARY]);
-      }
-      .width(TOP_ACTION_SIZE).height(TOP_ACTION_SIZE)
-      .borderRadius(TOP_ACTION_SIZE / 2)
-      .justifyContent(FlexAlign.Center)
-      // 和首页那个顶栏按钮同一套底色逻辑（ChatListPage.topAction）：走 'control'
-      // 这一档的玻璃/材质。原来这里只有按下态、常态是裸透明，两个页面的同一个
-      // 位置长得不一样（用户实测）。
-      .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
-      .backdropBlur(overlayBackdropBlur('control'))
-      .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
-      .clip(true)
-      .stateStyles({
-        normal: this.topActionNormalStyle,
-        pressed: this.topActionPressedStyle
-      })
-      .accessibilityText($r('app.string.ct_more_actions'))
-      .bindMenu(this.topMenu(), { systemMaterial: overlayMaterial('menu') });
-    }
-    .width('100%').height(TOP_BAR_HEIGHT)
-    .padding({ left: 16, right: 12 })
-    .alignItems(VerticalAlign.Center)
-    .backgroundColor(PAGE_BG);
   }
 
   @Builder
@@ -983,7 +871,7 @@ export struct ContactsPage {
           }));
       }
     }
-    .width('calc(100% - 24vp)')
+    .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
     .height(SEARCH_BAR_HEIGHT)
     .padding({ left: 13, right: 9 })
     .backgroundColor(this.cardFill())
@@ -994,101 +882,12 @@ export struct ContactsPage {
       color: this.searchFocused ? this.accent() : COLOR_DIVIDER
     })
     .alignItems(VerticalAlign.Center)
-    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: 4 })
+    // 与下方联系人卡片同一条外沿。
+    .margin({ left: this.cardGutter(), right: this.cardGutter(), top: 4 })
     .animation({
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 160),
       curve: Curve.EaseOut
     });
-  }
-
-  @Builder
-  actionRow(icon: string, bg: string, label: ResourceStr, detail: ResourceStr, onTap: () => void) {
-    Row({ space: 14 }) {
-      Row() {
-        SymbolGlyph($r(icon))
-          .fontSize(20)
-          .fontColor([Color.White])
-          .scale({
-            x: this.pressedAction === icon ? 0.9 : 1,
-            y: this.pressedAction === icon ? 0.9 : 1
-          })
-          .animation({
-            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
-            curve: Curve.EaseOut
-          });
-      }
-      .width(40).height(40).borderRadius(20).backgroundColor(bg)
-      .justifyContent(FlexAlign.Center);
-      Column({ space: 2 }) {
-        Text(label)
-          .fontSize(16)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1);
-        Text(detail)
-          .fontSize(12)
-          .fontColor(COLOR_TEXT_SECONDARY)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis });
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1);
-      SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(16)
-        .fontColor([COLOR_ICON_SECONDARY])
-        .translate({ x: this.pressedAction === icon ? 2 : 0 })
-        .animation({
-          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
-          curve: Curve.EaseOut
-        });
-    }
-    .width('100%')
-    .height(62)
-    // 与联系人行同一条起始线：图标内缩 4、按压底色铺满卡片（见 util/listCardGeometry）。
-    .padding({ left: LIST_CARD_INSET_VP, right: LIST_CARD_TRAIL_VP })
-    .alignItems(VerticalAlign.Center)
-    .backgroundColor(this.pressedAction === icon ? $r('app.color.surface_alt') : Color.Transparent)
-    .scale({
-      x: this.pressedAction === icon ? 0.986 : 1,
-      y: this.pressedAction === icon ? 0.97 : 1
-    })
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
-      curve: Curve.EaseOut
-    })
-    .accessibilityText(`${label}，${detail}`)
-    .onTouch((event: TouchEvent): void => {
-      if (event.type === TouchType.Down) {
-        this.pressedAction = icon;
-      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-        this.pressedAction = '';
-      }
-    })
-    .onClick((): void => {
-      this.pressedAction = '';
-      onTap();
-    });
-  }
-
-  @Builder
-  actionCard() {
-    Column() {
-      Column() {
-        this.actionRow(
-          'sys.symbol.phone_fill',
-          '#34C759',
-          $r('app.string.ct_recent_calls'),
-          str('ct_recent_calls_sub'),
-          (): void => { this.openRecentCalls(); }
-        );
-      }
-      .width('100%')
-      .backgroundColor(this.cardFill())
-    .backgroundBlurStyle(this.cardBlurStyle())
-      .borderRadius(CARD_RADIUS)
-      .clip(true);
-    }
-    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: 12 });
   }
 
   @Builder
@@ -1140,8 +939,8 @@ export struct ContactsPage {
         this.skeletonRow(index);
       }, (index: number): string => `${index}`);
     }
-    .width('calc(100% - 24vp)')
-    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: 12 })
+    .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
+    .margin({ left: this.cardGutter(), right: this.cardGutter(), top: 12 })
     .padding({ bottom: 4 })
     .backgroundColor(this.cardFill())
     .backgroundBlurStyle(this.cardBlurStyle())
@@ -1175,9 +974,9 @@ export struct ContactsPage {
         .fontColor(COLOR_TEXT_SECONDARY)
         .textAlign(TextAlign.Center);
     }
-    .width('calc(100% - 24vp)')
+    .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
     .height(190)
-    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: 12 })
+    .margin({ left: this.cardGutter(), right: this.cardGutter(), top: 12 })
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.cardFill())
     .backgroundBlurStyle(this.cardBlurStyle())
@@ -1226,9 +1025,9 @@ export struct ContactsPage {
       .accessibilityText($r('app.string.ct_reload_contacts'))
       .onClick((): void => { this.retryContacts(); });
     }
-    .width('calc(100% - 24vp)')
+    .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
     .height(220)
-    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: 12 })
+    .margin({ left: this.cardGutter(), right: this.cardGutter(), top: 12 })
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.cardFill())
     .backgroundBlurStyle(this.cardBlurStyle())
@@ -1270,15 +1069,21 @@ export struct ContactsPage {
   @Builder
   listCardHeader() {
     Column() {
+      // 说明行是静态文案（不可点），所以整行走次要色：强调色留给「在线」、FAB 那些
+      // 真能点的东西。原来这一行是蓝色 13sp，和下面的字母分组撞成同一个层级，
+      // 卡片里三项蓝色抢眼（2026-10-29）。
+      //
+      // 底下那条分隔线也拆了：它从卡片内缩起、行分隔线却从名字列起，同一张卡里两套
+      // 缩进；而且紧接着就是分组字母，多一条线只会把头和身切得更碎。头与身靠留白分。
       Row({ space: 6 }) {
         SymbolGlyph(this.query.trim() === ''
           ? $r('sys.symbol.clock')
           : $r('sys.symbol.magnifyingglass'))
-          .fontSize(13)
-          .fontColor([this.accent()]);
+          .fontSize(12)
+          .fontColor([COLOR_TEXT_SECONDARY]);
         Text(this.query.trim() === '' ? $r('app.string.ct_sort_by_last_seen') : $r('app.string.ct_contacts_and_global'))
-          .fontSize(13)
-          .fontColor(this.accent())
+          .fontSize(12)
+          .fontColor(COLOR_TEXT_SECONDARY)
           .fontWeight(FontWeight.Medium)
           .layoutWeight(1);
         Text(this.remoteLoading
@@ -1288,133 +1093,170 @@ export struct ContactsPage {
           .fontColor(COLOR_TEXT_SECONDARY);
       }
       .width('100%')
-      .height(36)
-      .padding({ left: LIST_CARD_INSET_VP, right: LIST_CARD_TRAIL_VP })
+      .height(34)
+      // 与联系人卡片里的文字列对齐：卡片外边距 + 卡片内缩（左），行尾内距（右）。
+      .padding({ left: this.cardGutter() + HOME_CARD_INSET_VP, right: this.cardGutter() + ROW_PAD_H })
       .alignItems(VerticalAlign.Center);
-      Divider()
-        .color(COLOR_DIVIDER)
-        .strokeWidth(0.7)
-        .margin({ left: LIST_CARD_INSET_VP, right: LIST_CARD_TRAIL_VP });
     }
     .width('100%');
   }
 
-  // 联系人卡片：一整块 ListItemGroup，行走 LazyForEach + 复用组件 ContactRowView。
+  // 联系人列表：一行一张卡片，与首页会话列表同款（2026-10-29 用户要求）。
   //
   // 原来是 Scroll 里的 Column + ForEach：几千个联系人一次性全建、全排版，每次上下线
   // 更新都整表比对（2026-09-14 用户：「翻联系人列表也很卡，点资料直接去卡死了」）。
   // 现在只建可视区和 cachedCount 那几行，其余滚动时逐帧补建，滚出去的行进复用池。
   //
-  // 玻璃仍铺在整块卡片（group）上，不下放到行；分隔线交给 group 的 divider，不再每行插
-  // 一个 Divider 节点。点击、按压、长按菜单挂在 ListItem 上（理由见 ContactRowView）。
+  // 卡片几何全部照抄首页（pages/chatlist/ChatRow）：外边距 homeCardMarginVp、上下
+  // 间距 3+3、圆角 16、行内边距左 8 / 右 14 / 上下 8（在 ContactRowView 里）。
+  // 底色与玻璃铺在**每行一个的卡片容器**上，行本身透明（见 ContactRowView.rowFill）：
+  // 行再各铺一块就是两层模糊叠加，又重又灰。
+  // 点击、按压、长按菜单挂在 ListItem 上（理由见 ContactRowView）。
   @Builder
   listCard() {
-    ListItemGroup({ header: this.listCardHeader() }) {
-      LazyForEach(this.contactsData, (c: ContactItem) => {
-        ListItem() {
+    // 标题行（排序说明 + 结果数）。它自己也占一行 ListItem，缩进对齐卡片内的文字列。
+    ListItem() {
+      this.listCardHeader();
+    }
+    .width('100%')
+    .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
+    LazyForEach(this.contactsData, (c: ContactItem) => {
+      ListItem() {
+        Column() {
+          // 字母分组：卡片**外面**的一行路标，缩进 = 卡片外边距 + 卡片内缩，
+          // 与卡片里的头像同一条线。11sp 次要色——分组是「路标」不是内容。
+          if (this.query.trim() === '' && this.alphabet.heading(c.id) !== '') {
+            Text(this.alphabet.heading(c.id)).fontSize(11).fontWeight(FontWeight.Medium)
+              .fontColor(COLOR_TEXT_SECONDARY).width('100%').height(26)
+              .padding({ left: this.cardGutter() + HOME_CARD_INSET_VP, top: 4 })
+              .textAlign(TextAlign.Start);
+          }
           Column() {
-            if (this.query.trim() === '' && this.alphabet.heading(c.id) !== '') {
-              Text(this.alphabet.heading(c.id)).fontSize(13).fontWeight(FontWeight.Medium)
-                .fontColor(this.accent()).width('100%').height(28)
-                .padding({ left: LIST_CARD_INSET_VP }).textAlign(TextAlign.Start);
-            }
-          ContactRowView({
-            contact: c,
-            pressed: this.pressedContactId === c.id,
-            busy: this.openingContactId === c.id || this.deletingContactId === c.id,
-            glassCard: this.glassOn()
-          });
-          }.width('100%');
+            ContactRowView({
+              contact: c,
+              pressed: this.pressedContactId === c.id,
+              busy: this.openingContactId === c.id || this.deletingContactId === c.id
+            });
+          }
+          .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
+          .margin({
+            left: this.cardGutter(), right: this.cardGutter(),
+            top: CONTACT_CARD_GAP_VP, bottom: CONTACT_CARD_GAP_VP
+          })
+          .borderRadius(CONTACT_CARD_RADIUS)
+          // 描边跟着玻璃走：玻璃档用 GLASS_OUTLINE_COLOR（30% 白）——用 divider
+          // 会在壁纸上围一圈发暗的框，圆角处四条边叠起来最明显（首页同类问题的结论）。
+          .border({
+            width: this.glassOn() ? 0.5 : (this.appWallpaperOn ? 0.5 : 0),
+            color: this.glassOn() ? GLASS_OUTLINE_COLOR : COLOR_DIVIDER
+          })
+          .backgroundColor(this.cardFill())
+          .backgroundBlurStyle(this.cardBlurStyle())
+          .clip(true);
         }
-        .accessibilityText(`${c.name}，${c.statusText}`)
-        .onTouch((event: TouchEvent): void => {
-          if (event.type === TouchType.Down) {
-            this.setPressedContact(c.id);
-            this.beginContactPress(c);
-          } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-            if (this.pressedContactId === c.id) {
-              this.setPressedContact(0);
-            }
-            this.endContactPress();
+        .width('100%');
+      }
+      .width('100%')
+      .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
+      .accessibilityText(`${c.name}，${c.statusText}`)
+      .onTouch((event: TouchEvent): void => {
+        if (event.type === TouchType.Down) {
+          this.setPressedContact(c.id);
+          this.beginContactPress(c);
+        } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+          if (this.pressedContactId === c.id) {
+            this.setPressedContact(0);
           }
-        })
-        .onClick((): void => {
-          this.setPressedContact(0);
-          if (this.contactPressConsumedByMenu || this.contextMenuShown) {
-            this.contactPressConsumedByMenu = false;
-            return;
-          }
-          this.openContact(c);
-        })
-        .parallelGesture(
-          LongPressGesture({ fingers: 1, repeat: false, duration: CONTACT_LONG_PRESS_MS })
-            .onAction((): void => { this.openContactMenuIfCurrent(c); })
-            .onActionCancel((): void => { this.endContactPress(); })
-        )
-        .bindContextMenu(
-          this.contextMenuShown && this.menuContactId === c.id,
-          this.contactContextMenu,
-          {
-            preview: MenuPreviewMode.IMAGE,
-            previewBorderRadius: CARD_RADIUS - 2,
-            previewAnimationOptions: {
-              scale: [0.98, 1.035],
-              transition: TransitionEffect.OPACITY
-                .combine(TransitionEffect.scale({ x: 0.98, y: 0.98 }))
-                .animation({
-                  duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-                  curve: Curve.FastOutSlowIn
-                })
-            },
-            borderRadius: 16,
-            backgroundColor: Color.Transparent,
-            backgroundBlurStyle: containerBlur('menu'),
-            systemMaterial: overlayMaterial('menu'),
+          this.endContactPress();
+        }
+      })
+      .onClick((): void => {
+        this.setPressedContact(0);
+        if (this.contactPressConsumedByMenu || this.contextMenuShown) {
+          this.contactPressConsumedByMenu = false;
+          return;
+        }
+        this.openContact(c);
+      })
+      .parallelGesture(
+        LongPressGesture({ fingers: 1, repeat: false, duration: CONTACT_LONG_PRESS_MS })
+          .onAction((): void => { this.openContactMenuIfCurrent(c); })
+          .onActionCancel((): void => { this.endContactPress(); })
+      )
+      .bindContextMenu(
+        this.contextMenuShown && this.menuContactId === c.id,
+        this.contactContextMenu,
+        {
+          preview: MenuPreviewMode.IMAGE,
+          previewBorderRadius: CONTACT_CARD_RADIUS - 2,
+          previewAnimationOptions: {
+            scale: [0.98, 1.035],
             transition: TransitionEffect.OPACITY
-              .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
+              .combine(TransitionEffect.scale({ x: 0.98, y: 0.98 }))
               .animation({
                 duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
                 curve: Curve.FastOutSlowIn
-              }),
-            mask: {
-              color: '#52000000',
-              backgroundBlurStyle: BlurStyle.BACKGROUND_THIN
-            },
-            modalMode: ModalMode.TARGET_WINDOW,
-            hapticFeedbackMode: HapticFeedbackMode.AUTO,
-            onDisappear: (): void => { this.onContactMenuDisappear(); }
-          }
-        );
-      }, (c: ContactItem, index: number): string =>
-        guardKey(this.contactsData.keyTableId, index, this.contactListVersion(c)));
-      if (this.remoteLoading) {
-        ListItem() {
-          Row({ space: 8 }) {
-            LoadingProgress().width(18).height(18).color(this.accent());
-            Text($r('app.string.ct_searching_global')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-          }
-          .width('100%')
-          .height(48)
-          .justifyContent(FlexAlign.Center);
+              })
+          },
+          borderRadius: 16,
+          backgroundColor: Color.Transparent,
+          backgroundBlurStyle: containerBlur('menu'),
+          systemMaterial: overlayMaterial('menu'),
+          transition: TransitionEffect.OPACITY
+            .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
+            .animation({
+              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+              curve: Curve.FastOutSlowIn
+            }),
+          mask: {
+            color: '#52000000',
+            backgroundBlurStyle: BlurStyle.BACKGROUND_THIN
+          },
+          modalMode: ModalMode.TARGET_WINDOW,
+          hapticFeedbackMode: HapticFeedbackMode.AUTO,
+          onDisappear: (): void => { this.onContactMenuDisappear(); }
         }
-      } else if (this.query.trim() !== '' && this.filtered().length === 0) {
-        ListItem() {
+      );
+    }, (c: ContactItem, index: number): string =>
+      guardKey(this.contactsData.keyTableId, index, this.contactListVersion(c)));
+    // 全局搜索中 / 搜不到：也各占一行卡片，与联系人卡片同宽同圆角。
+    if (this.remoteLoading) {
+      ListItem() {
+        Row({ space: 8 }) {
+          LoadingProgress().width(18).height(18).color(this.accent());
+          Text($r('app.string.ct_searching_global')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
+        }
+        .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
+        .height(48)
+        .margin({
+          left: this.cardGutter(), right: this.cardGutter(),
+          top: CONTACT_CARD_GAP_VP, bottom: CONTACT_CARD_GAP_VP
+        })
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor(this.cardFill())
+        .backgroundBlurStyle(this.cardBlurStyle())
+        .borderRadius(CONTACT_CARD_RADIUS);
+      }
+      .width('100%')
+      .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
+    } else if (this.query.trim() !== '' && this.filtered().length === 0) {
+      ListItem() {
+        Column() {
           this.searchEmptyState();
         }
+        .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
+        .margin({
+          left: this.cardGutter(), right: this.cardGutter(),
+          top: CONTACT_CARD_GAP_VP, bottom: CONTACT_CARD_GAP_VP
+        })
+        .backgroundColor(this.cardFill())
+        .backgroundBlurStyle(this.cardBlurStyle())
+        .borderRadius(CONTACT_CARD_RADIUS)
+        .clip(true);
       }
+      .width('100%')
+      .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
     }
-    .divider({
-      strokeWidth: 0.7, color: COLOR_DIVIDER,
-      startMargin: cardDividerStartVp(46, 12), endMargin: LIST_CARD_TRAIL_VP
-    })
-    .width('calc(100% - 24vp)')
-    .constraintSize({ maxWidth: readableContentWidth(this.screenW) - 24 })
-    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: 12 })
-    .padding({ bottom: 4 })
-    .backgroundColor(this.cardFill())
-    .backgroundBlurStyle(this.cardBlurStyle())
-    .borderRadius(CARD_RADIUS)
-    .clip(true);
   }
 
   @Builder
@@ -1593,96 +1435,24 @@ export struct ContactsPage {
     .backgroundBlurStyle(this.cardBlurStyle());
   }
 
-  // FAB 单侧留白。喂给 contentSideGutter 的必须是**FAB 所在那一栏**的宽度，不是
-  // 窗口宽——这正是本次 bug 的根因：contentSideGutter / readableContentWidth 的
-  // 形参名叫 windowWidthVp，但它们要的其实是「内容列所在区域的宽度」，单栏时
-  // 二者恰好相等，分栏时不相等。
+  // 标题栏内容：大标题 + 右上角两个图标——[新建联系人][最近通话]。
   //
-  // 三种取值：
-  //   已量到左栏宽    → 用它。分栏时约 480vp（splitMetrics 的上限是 560），
-  //                     contentSideGutter 在 <600vp 恒为 0，于是 FAB 就是左栏
-  //                     右下角内缩 18——与手机上的观感一致。
-  //   还没量到 + 分栏 → 用 splitNavMinWidth 估一个，同样 <600 → 0。这一支是为了
-  //                     避开首帧闪一下：若退回 screenW，平板上第一帧会按 280 的
-  //                     留白把 FAB 画到左栏中间，量到之后再跳回去。
-  //   还没量到 + 单栏 → 退回 screenW，**与改动前逐字相同**（手机上量没量到都是
-  //                     整屏宽，contentSideGutter 恒为 0）。
-  private fabSideGutter(): number {
-    if (this.navBarW > 0) {
-      return contentSideGutter(this.navBarW);
-    }
-    if (isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait)) {
-      return contentSideGutter(splitNavMinWidth(this.screenW));
-    }
-    return contentSideGutter(this.screenW);
-  }
-
-  @Builder
-  fab() {
-    Row() {
-      SymbolGlyph($r('sys.symbol.person_badge_plus'))
-        .fontSize(24)
-        .fontColor([Color.White])
-        .scale({
-          x: this.fabPressed ? 0.88 : 1,
-          y: this.fabPressed ? 0.88 : 1
-        })
-        .animation({
-          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110),
-          curve: Curve.EaseOut
-        });
-    }
-    .width(56).height(56).borderRadius(28)
-    .backgroundColor(this.accent())
-    .justifyContent(FlexAlign.Center)
-    .shadow({
-      radius: this.fabPressed ? 4 : 10,
-      color: this.fabPressed ? '#22000000' : '#33000000',
-      offsetX: 0,
-      offsetY: this.fabPressed ? 1 : 3
-    })
-    .scale({
-      x: this.addContactSheetOpen ? 0.78 : (this.fabPressed ? 0.9 : 1),
-      y: this.addContactSheetOpen ? 0.78 : (this.fabPressed ? 0.9 : 1)
-    })
-    .opacity(this.addContactSheetOpen ? 0 : 1)
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
-      curve: Curve.EaseOut
-    })
-    .enabled(!this.addContactSheetOpen && !this.contextMenuShown)
-    .accessibilityText($r('app.string.ct_new_contact'))
-    .onTouch((event: TouchEvent): void => {
-      if (event.type === TouchType.Down) {
-        this.fabPressed = true;
-      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-        this.fabPressed = false;
-      }
-    })
-    .onClick((): void => { this.openAddContactSheet(); })
-    // FAB 跟住**内容列**的右下角，不是屏幕的右下角：右边距 = 原来的 18 + 单侧
-    // 留白。2880px 平板上不加这一项，FAB 落在内容列右边缘外约 500px 的空白里
-    // （设备实测），视线在居中的内容列上、手却要够到屏幕最右边。
-    //
-    // 【原注释后半句已失效，保留原文备查】「用 margin 而不是把 FAB 塞进限宽容器：
-    // FAB 必须留在最外层 Stack 上才能悬浮，进了 Scroll 就跟着列表滚走了。手机上
-    // contentSideGutter 恒为 0，这一行逐像素等于改动前的 `right: 18`。」
-    // ——「最外层 Stack」那一半在分栏之后是错的：最外层 Stack 罩着整个
-    // HdsNavigation，**包括右栏**，FAB 于是飘到右栏去压着资料页（1440vp 平板上
-    // 实测 FAB 在 x≈2225px，而分栏线在 x≈958px）。真正的约束只是「不能进
-    // Scroll」，不是「必须在最外层」——现在 FAB 是 navBar 里那个 Stack 的直接
-    // 子节点，既悬浮又天然被左栏框住。margin 的写法不变。
-    .margin({ right: 18 + this.fabSideGutter(), bottom: this.bottomSafe + 88 });
-  }
-
-  // 标题栏内容：大标题 +「刷新中」副标题 + 右上角 ⋮。
+  // 2026-10-29 用户定：原来右上角是 ⋮ 菜单（新建群组 / 最近通话），新建联系人靠
+  // 右下角 FAB；现在 FAB 和「最近通话」入口卡片都去掉了，两个入口并排挪到顶上。
+  // 新建群组随之不再从这里进（用户要求删掉，别再往这个菜单里加别的项）。
   private titleBarContent(): TitleBarContentOptions {
-    const moreIcon: HdsNavigationIconOptions = {
-      icon: $r('sys.symbol.more'),
-      label: $r('app.string.ct_more_actions'),
-      action: (): void => { this.topMenuShown = true; }
+    const addIcon: HdsNavigationIconOptions = {
+      icon: $r('sys.symbol.person_badge_plus'),
+      label: $r('app.string.ct_new_contact'),
+      action: (): void => { this.openAddContactSheet(); }
     };
-    const moreItem: HdsNavigationMenuItemOptions = { content: moreIcon };
+    const recentsIcon: HdsNavigationIconOptions = {
+      // 听筒 + 去电箭头：系统符号里没有「听筒 + 一来一去两箭头」的合成图标，
+      // 这一枚是与「最近通话」最贴的（同族还有 phone_arrow_down_left_fill）。
+      icon: $r('sys.symbol.phone_arrow_up_right_fill'),
+      label: $r('app.string.ct_recent_calls'),
+      action: (): void => { this.openRecentCalls(); }
+    };
     return {
       title: {
         mainTitle: $r('app.string.tab_contacts'),
@@ -1690,13 +1460,15 @@ export struct ContactsPage {
         // HDS 的标题栏自己管这个位置，交给它即可。
         subTitle: this.loading ? $r('app.string.refreshing') : ''
       },
-      menu: { value: [moreItem] }
+      menu: { value: [{ content: addIcon }, { content: recentsIcon }] }
     };
   }
 
-  // 页面边距（util/pageMargin，SPEC-07）：手机 12，折叠屏 16，平板 20。
-  private pageMargin(): number {
-    return pageMarginVp(this.widthBp);
+  // 联系人卡片离内容区边缘的横向留白。从 2026-10-29 起跟首页会话卡片走
+  // （homeCardMarginVp，手机 6），不再是 pageMarginVp 的 12——用户要求
+  // 「下方列表和首页样式一样」，两页的卡片外沿现在逐像素重合。
+  private cardGutter(): number {
+    return homeCardMarginVp(this.widthBp);
   }
 
   build() {
@@ -1712,17 +1484,13 @@ export struct ContactsPage {
         // 再被合成，整条链上任何一层开始裁剪，模糊就没了内容可透。链上新插一层
         // 就得跟着表态一次，别让下一个人去猜默认值。
         Stack({ alignContent: Alignment.BottomEnd }) {
-          // 整页是一个 List（原来是 Scroll > Column > 各卡片）：搜索框和快捷操作占一个
-          // ListItem，联系人卡片是 ListItemGroup，行走 LazyForEach（见 listCard）。
+          // 整页是一个 List（原来是 Scroll > Column > 各卡片）：搜索框占一个
+          // ListItem，联系人是 LazyForEach 逐行的独立卡片（见 listCard）。
           // 限宽改由每一项自己的 constraintSize + alignListItem 居中；List 本身仍铺满窗口，
           // 两侧留白还在它的命中区里，按在留白上照样拖得动。
           List({ scroller: this.contactsScroller }) {
             ListItem() {
-              Column() {
-                this.searchBox();
-                this.actionCard();
-              }
-              .width('100%');
+              this.searchBox();
             }
             .width('100%')
             .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
@@ -1754,22 +1522,12 @@ export struct ContactsPage {
           // Stack 按到底部，观感是"联系人列表整体沉在屏幕下半截"（issue #118）。
           .height('100%')
           .alignListItem(ListItemAlign.Center)
-          .padding({ right: this.query.trim() === '' && this.indexLetters.length > 0 ? 28 : 0 })
           // 第二个参数 true：滚出视口的备用行也画出来——标题栏的渐变模糊糊的正是穿到它底下
           // 的这部分（同首页会话列表，与下面的 clip(false) 是一对）。
           .cachedCount(CONTACT_LIST_CACHED_COUNT, true)
           .contentEndOffset(this.bottomSafe + 88)
           .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .scrollBar(BarState.Off)
-          .onScrollVisibleContentChange((start: VisibleListContentInfo): void => {
-            if (this.query.trim() !== '') { return; }
-            const row = start.index === 1 ? (start.itemIndexInGroup ?? 0) : 0;
-            let selected = 0;
-            this.alphabet.positions.forEach((position, index: number): void => {
-              if (position.index <= row) { selected = index; }
-            });
-            if (selected !== this.selectedLetter) { this.selectedLetter = selected; }
-          })
           .enableScrollInteraction(!this.contextMenuShown)
           // navBar 的实际宽度：分栏时它就是左栏宽，拖分割线会变，MainScreen 的
           // dock 要跟着走。这个 List 是 navBar 内容的根节点、width('100%')，
@@ -1787,27 +1545,6 @@ export struct ContactsPage {
           })
           // 不裁剪，内容才能穿透到标题栏下方——渐变模糊模糊的正是穿过去的这部分。
           .clip(false);
-
-          if (this.query.trim() === '' && this.indexLetters.length > 0) {
-            AlphabetIndexer({ arrayValue: this.indexLetters, selected: this.selectedLetter })
-              .selected(this.selectedLetter)
-              .itemSize(18).font({ size: 11 }).color(COLOR_TEXT_SECONDARY)
-              .selectedColor(this.accent()).selectedBackgroundColor(Color.Transparent)
-              .autoCollapse(true).usingPopup(true)
-              .align(Alignment.End).margin({ right: 2, bottom: this.bottomSafe + 88 })
-              .constraintSize({ maxHeight: '70%' })
-              .enabled(!this.contextMenuShown && !this.contactPressActive)
-              .onSelect((index: number): void => {
-                const position = this.alphabet.positions[index];
-                if (position === undefined || this.contextMenuShown) { return; }
-                this.selectedLetter = index;
-                this.contactsScroller.scrollToItemInGroup(1, position.index, false, ScrollAlign.START);
-              });
-          }
-
-          // FAB 与 Scroll 是**兄弟**，不是 Scroll 的子节点——所以它悬浮、不跟着
-          // 列表滚走。这一点与改动前一致，变的只是它悬浮在哪个盒子里。
-          this.fab();
         }
         .width('100%').height('100%')
         .clip(false);
@@ -1886,20 +1623,6 @@ export struct ContactsPage {
       .titleMode(HdsNavigationTitleMode.MINI)
       .bindToScrollable([this.contactsScroller])
       .width('100%').height('100%');
-
-      // ⋮ 菜单的锚点：零尺寸，只为让菜单弹在右上角。HDS 的菜单项给不了
-      // bindMenu，只能这样把两者接起来。
-      //
-      // x 见 topMenuAnchorX()：分栏时收到左栏右缘，否则菜单会弹在右栏上方、
-      // 离触发它的 ⋮ 按钮半个屏幕远。y 不动——它是**屏幕坐标**（本 Stack 是
-      // 最外层、顶到状态栏），锚点留在这一层就不必换基准，手机上一像素不变。
-      Row()
-        .width(1).height(1)
-        .position({ x: this.topMenuAnchorX(), y: this.topSafe + 44 })
-        .bindMenu(this.topMenuShown, this.topMenu, {
-          systemMaterial: overlayMaterial('menu'),
-          onDisappear: (): void => { this.topMenuShown = false; }
-        });
     }
     .width('100%').height('100%')
     .backgroundColor(mainPageFill(this.appWallpaperOn))

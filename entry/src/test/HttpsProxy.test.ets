@@ -64,6 +64,7 @@ class TestRelay implements HttpsRelay {
   replace(r: HttpsProxyRecord): void { this.register(r); }
   unregister(key: string): void { this.active.delete(key); }
   close(): void { this.closed = true; this.active.clear(); }
+  dropOlderThan(_createdBefore: number): number { return 0; }
 }
 
 class TestProxyClient implements ProxyRequestClient {

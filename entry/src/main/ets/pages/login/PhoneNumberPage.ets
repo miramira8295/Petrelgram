@@ -4,7 +4,9 @@ import {
   canReturnToPreviousTdAccount, getAuthService, returnToPreviousTdAccount, waitForConnection
 } from '../../tdkit/Globals';
 import { TdError } from '../../tdkit/TdTypes';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import {
+  accentSoft, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
+} from '../../util/theme';
 import {
   CountryOption, fallbackCountries, filterCountries, loadCountries
 } from './CountryData';
@@ -229,7 +231,7 @@ export struct PhoneNumberPage {
   build() {
     Scroll() {
       Column({ space: 14 }) {
-        LoginHero({ mode: 'phone' });
+        LoginHero();
 
         Text($r('app.string.lg_your_phone'))
           .fontSize(27).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
@@ -290,24 +292,32 @@ export struct PhoneNumberPage {
             .padding({ left: 4, right: 4 });
         }
 
-        Button(this.continueLabel())
-          .width('100%').height(50)
-          .fontSize(16).fontWeight(FontWeight.Medium)
-          .backgroundColor(COLOR_PRIMARY)
+        // 二维码登录不再是"继续"下面那整行文字入口，而是与它并排的方形按钮：
+        // 同样的 50 高、同样的 14 圆角（就是同一个圆角矩形的形状族），只放一枚
+        // 图标。底色用强调色的淡底 accentSoft()——它不是白底描边的输入框，得看
+        // 得出是个按钮；又比主按钮浅一大截，不跟"继续"抢。
+        // accentSoft() 跟着用户自选的强调色走，写死 #E3F0FB 的话换色后这里会脱节。
+        Row({ space: 10 }) {
+          Button(this.continueLabel())
+            .layoutWeight(1).height(50)
+            .fontSize(16).fontWeight(FontWeight.Medium)
+            .backgroundColor(COLOR_PRIMARY)
+            .borderRadius(14)
+            .enabled(!this.busy && this.phoneDigits.length >= 4)
+            .onClick((): void => this.submitPhone());
+          Button({ type: ButtonType.Normal, stateEffect: true }) {
+            SymbolGlyph($r('sys.symbol.qrcode'))
+              .fontSize(23).fontColor([COLOR_PRIMARY]);
+          }
+          .width(50).height(50)
+          .backgroundColor(accentSoft())
           .borderRadius(14)
-          .enabled(!this.busy && this.phoneDigits.length >= 4)
-          .onClick((): void => this.submitPhone());
-
-        Row({ space: 8 }) {
-          SymbolGlyph($r('sys.symbol.qrcode'))
-            .fontSize(18).fontColor([COLOR_PRIMARY]);
-          Text($r('app.string.lg_qr_sign_in'))
-            .fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY);
+          .enabled(!this.busy)
+          // 按钮上没有字，读屏得能念出它是什么。
+          .accessibilityText($r('app.string.lg_qr_sign_in'))
+          .onClick((): void => this.startQrLogin());
         }
-        .width('100%').height(46)
-        .justifyContent(FlexAlign.Center)
-        .enabled(!this.busy)
-        .onClick((): void => this.startQrLogin());
+        .width('100%');
 
         // 代理入口必须在登录**前**就够得着：网络环境需要代理的用户（以及本地
         // 模拟器调试）连不上 DC 就永远走不到登录后的设置页——先有鸡先有蛋。

@@ -109,11 +109,11 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d mês de Telegram Premium"
+          "value": "%d mês de Premium"
         },
         {
           "quantity": "other",
-          "value": "%d meses de Telegram Premium"
+          "value": "%d meses de Premium"
         }
       ]
     },
@@ -122,11 +122,11 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d estrela do Telegram"
+          "value": "%d estrela"
         },
         {
           "quantity": "other",
-          "value": "%d estrelas do Telegram"
+          "value": "%d estrelas"
         }
       ]
     },
@@ -226,11 +226,11 @@
       "value": [
         {
           "quantity": "one",
-          "value": "O login do Telegram em %d site será desconectado."
+          "value": "O login em %d site será desconectado."
         },
         {
           "quantity": "other",
-          "value": "O login do Telegram em %d sites será desconectado."
+          "value": "O login em %d sites será desconectado."
         }
       ]
     },

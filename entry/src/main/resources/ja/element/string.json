@@ -138,7 +138,7 @@
     },
     {
       "name": "chat_header_kind_user",
-      "value": "Telegram ユーザー"
+      "value": "ユーザー"
     },
     {
       "name": "chat_header_loading",
@@ -194,7 +194,7 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "Petrelgram"
+      "value": "Petrel"
     },
     {
       "name": "file_download_failed",
@@ -414,11 +414,11 @@
     },
     {
       "name": "gift_premium_title",
-      "value": "Telegram Premium ギフト"
+      "value": "Premium ギフト"
     },
     {
       "name": "gift_regular_title",
-      "value": "Telegram ギフト"
+      "value": "ギフト"
     },
     {
       "name": "gift_special",
@@ -426,7 +426,7 @@
     },
     {
       "name": "gift_stars_title",
-      "value": "Telegram スターギフト"
+      "value": "スターギフト"
     },
     {
       "name": "gift_stars_unknown",
@@ -486,7 +486,7 @@
     },
     {
       "name": "gift_unique",
-      "value": "唯一無二の Telegram ギフト"
+      "value": "唯一無二のギフト"
     },
     {
       "name": "gift_valued_at",
@@ -562,7 +562,7 @@
     },
     {
       "name": "link_preview_open_in_telegram",
-      "value": "Telegram で開く"
+      "value": "開く"
     },
     {
       "name": "link_preview_open_invite",
@@ -1110,15 +1110,15 @@
     },
     {
       "name": "preview_gift",
-      "value": "🎁 Telegram ギフト"
+      "value": "🎁 ギフト"
     },
     {
       "name": "preview_gift_collectible",
-      "value": "🎁 Telegram コレクションギフト"
+      "value": "🎁 コレクションギフト"
     },
     {
       "name": "preview_gift_premium",
-      "value": "💎 Telegram Premium を贈りました"
+      "value": "💎 Premium を贈りました"
     },
     {
       "name": "preview_gift_premium_n",
@@ -1398,7 +1398,7 @@
     },
     {
       "name": "service_contact_registered",
-      "value": "Telegram に登録しました"
+      "value": "Petrel に登録しました"
     },
     {
       "name": "service_custom_service_action",
@@ -1434,7 +1434,7 @@
     },
     {
       "name": "service_gifted_premium",
-      "value": "Telegram プレミアムを贈りました"
+      "value": "プレミアムを贈りました"
     },
     {
       "name": "service_gifted_stars",
@@ -1474,11 +1474,11 @@
     },
     {
       "name": "service_passport_data_received",
-      "value": "Telegram パスポートのデータを受信しました"
+      "value": "パスポートのデータを受信しました"
     },
     {
       "name": "service_passport_data_sent",
-      "value": "Telegram パスポートのデータを送信しました"
+      "value": "パスポートのデータを送信しました"
     },
     {
       "name": "service_payment_refunded",
@@ -1678,11 +1678,11 @@
     },
     {
       "name": "telegram_giveaway_prize",
-      "value": "Telegram 抽選賞品"
+      "value": "抽選賞品"
     },
     {
       "name": "telegram_stars",
-      "value": "Telegram スター"
+      "value": "スター"
     },
     {
       "name": "tglink_added",
@@ -1762,7 +1762,7 @@
     },
     {
       "name": "tglink_kind_unsupported",
-      "value": "現在のバージョンは%1$s Telegram リンクに対応していません"
+      "value": "現在のバージョンは%1$s リンクに対応していません"
     },
     {
       "name": "tglink_opened_profile_no_live",
@@ -1802,7 +1802,7 @@
     },
     {
       "name": "tglink_unrecognized",
-      "value": "この Telegram リンクを認識できません"
+      "value": "このリンクを認識できません"
     },
     {
       "name": "tglink_use_bottom_bar",
@@ -1994,7 +1994,7 @@
     },
     {
       "name": "settings_telegram_account",
-      "value": "Telegram アカウント"
+      "value": "アカウント"
     },
     {
       "name": "settings_open_profile_failed",
@@ -2090,7 +2090,7 @@
     },
     {
       "name": "settings_add_account_sub",
-      "value": "別の Telegram アカウントでログイン"
+      "value": "別のアカウントでログイン"
     },
     {
       "name": "settings_search_hint",
@@ -2266,7 +2266,7 @@
     },
     {
       "name": "accent_needs_premium",
-      "value": "この色には Telegram Premium が必要です"
+      "value": "この色には Premium が必要です"
     },
     {
       "name": "apply_failed_retry",
@@ -2283,10 +2283,6 @@
     {
       "name": "accent_waiting_palette",
       "value": "カラーパレットを待機中…"
-    },
-    {
-      "name": "accent_palette_from_server",
-      "value": "カラーパレットはログイン後に Telegram サーバーから配信されます"
     },
     {
       "name": "accent_name_colour",
@@ -2314,7 +2310,7 @@
     },
     {
       "name": "accent_premium_note",
-      "value": "マルチカラーのグラデーションは Telegram Premium 専用で、非会員が選択するとサーバーに拒否されます。設定はすべてのデバイスに同期されます。"
+      "value": "マルチカラーのグラデーションは Premium 専用で、非会員が選択するとサーバーに拒否されます。設定はすべてのデバイスに同期されます。"
     },
     {
       "name": "emoji_status_cleared",
@@ -2326,7 +2322,7 @@
     },
     {
       "name": "emoji_status_needs_premium",
-      "value": "絵文字ステータスには Telegram Premium が必要です"
+      "value": "絵文字ステータスには Premium が必要です"
     },
     {
       "name": "emoji_status_loading",
@@ -2358,7 +2354,7 @@
     },
     {
       "name": "emoji_status_note",
-      "value": "絵文字ステータスは名前の横に表示され、Telegram Premium が必要です。"
+      "value": "絵文字ステータスは名前の横に表示され、Premium が必要です。"
     },
     {
       "name": "bgplay_music",
@@ -2418,7 +2414,7 @@
     },
     {
       "name": "chat_theme_from_server",
-      "value": "テーマはログイン後に Telegram サーバーから配信されます"
+      "value": "テーマはログイン後にサーバーから配信されます"
     },
     {
       "name": "chat_theme_reset",
@@ -2618,7 +2614,7 @@
     },
     {
       "name": "cw_disconnect_confirm",
-      "value": "%1$s との接続を解除すると、再度 Telegram でログインする必要があります。"
+      "value": "%1$s との接続を解除すると、再度ログインする必要があります。"
     },
     {
       "name": "cw_this_site",
@@ -2674,11 +2670,11 @@
     },
     {
       "name": "cw_empty_sub",
-      "value": "Telegram でログインしたサイトがここに表示されます。"
+      "value": "ログインしたサイトがここに表示されます。"
     },
     {
       "name": "cw_note",
-      "value": "サイトの認証とデバイスセッションは独立しています。サイトの接続を解除しても、この端末や他の Telegram クライアントからはログアウトされません。"
+      "value": "サイトの認証とデバイスセッションは独立しています。サイトの接続を解除しても、この端末や他のクライアントからはログアウトされません。"
     },
     {
       "name": "pe_title",
@@ -4118,7 +4114,7 @@
     },
     {
       "name": "ct_no_user",
-      "value": "この番号を使っている Telegram ユーザーが見つかりません"
+      "value": "この番号を使っているユーザーが見つかりません"
     },
     {
       "name": "network_failed_retry",
@@ -4702,7 +4698,7 @@
     },
     {
       "name": "ps_needs_premium",
-      "value": "このプライバシールールには Telegram Premium が必要です"
+      "value": "このプライバシールールには Premium が必要です"
     },
     {
       "name": "ps_not_loaded_refresh",
@@ -4814,7 +4810,7 @@
     },
     {
       "name": "ps_note",
-      "value": "プライバシールールは Telegram サーバーによって順番に実行されます。全体のルールを変更しても既存の例外はすべて保持されます。"
+      "value": "プライバシールールはサーバーによって順番に実行されます。全体のルールを変更しても既存の例外はすべて保持されます。"
     },
     {
       "name": "tsv_code_sent_note",
@@ -5038,7 +5034,7 @@
     },
     {
       "name": "tsv_note",
-      "value": "パスワードは Telegram での検証のみに使用され、ページを離れると入力内容はすぐに消去されます。必ずアクセス可能な復旧用メールアドレスを設定してください。"
+      "value": "パスワードはサーバーでの検証のみに使用され、ページを離れると入力内容はすぐに消去されます。必ずアクセス可能な復旧用メールアドレスを設定してください。"
     },
     {
       "name": "px_enabled_server",
@@ -5266,7 +5262,7 @@
     },
     {
       "name": "px_from_link",
-      "value": "Telegram のプロキシリンクから入力済みです。確認してから保存してください"
+      "value": "プロキシリンクから入力済みです。確認してから保存してください"
     },
     {
       "name": "px_edit_note",
@@ -5358,7 +5354,7 @@
     },
     {
       "name": "fe_needs_premium",
-      "value": "この色またはラベル機能には Telegram Premium が必要です"
+      "value": "この色またはラベル機能には Premium が必要です"
     },
     {
       "name": "fe_chat_not_in_list",
@@ -5546,7 +5542,7 @@
     },
     {
       "name": "as_fresh_limit",
-      "value": "Telegram の安全制限：新しいログイン端末は24時間待つ必要があります。%1$sに操作できます"
+      "value": "安全制限：新しいログイン端末は24時間待つ必要があります。%1$sに操作できます"
     },
     {
       "name": "as_terminate_confirm",
@@ -5670,7 +5666,7 @@
     },
     {
       "name": "as_scan_qr",
-      "value": "Telegram デスクトップまたは Web 版の QR コードをスキャン"
+      "value": "デスクトップまたは Web 版の QR コードをスキャン"
     },
     {
       "name": "as_current_short",
@@ -5738,7 +5734,7 @@
     },
     {
       "name": "as_accept_calls_sub",
-      "value": "この端末で Telegram 通話を受け付けることを許可"
+      "value": "この端末で通話を受け付けることを許可"
     },
     {
       "name": "as_needs_2fa",
@@ -5778,7 +5774,7 @@
     },
     {
       "name": "as_fresh_rejected",
-      "value": "Telegram がこの端末からの早期セッションの終了を一時的に拒否しました。しばらくしてからもう一度お試しください"
+      "value": "サーバーがこの端末からの早期セッションの終了を一時的に拒否しました。しばらくしてからもう一度お試しください"
     },
     {
       "name": "as_no_others",
@@ -6178,7 +6174,7 @@
     },
     {
       "name": "mp_story_needs_premium",
-      "value": "ストーリーを投稿するには現在のアカウントで Telegram Premium が必要です"
+      "value": "ストーリーを投稿するには現在のアカウントで Premium が必要です"
     },
     {
       "name": "mp_story_limit",
@@ -6474,7 +6470,7 @@
     },
     {
       "name": "cb_telegram_user",
-      "value": "Telegram ユーザー"
+      "value": "ユーザー"
     },
     {
       "name": "cb_unnamed",
@@ -6482,7 +6478,7 @@
     },
     {
       "name": "cb_tap_profile",
-      "value": "タップして Telegram のプロフィールを表示"
+      "value": "タップしてプロフィールを表示"
     },
     {
       "name": "cb_contact_card",
@@ -6570,7 +6566,7 @@
     },
     {
       "name": "game_interactive",
-      "value": "Telegram インタラクティブゲーム"
+      "value": "インタラクティブゲーム"
     },
     {
       "name": "game_unreadable",
@@ -6594,7 +6590,7 @@
     },
     {
       "name": "game_title",
-      "value": "Telegram ゲーム"
+      "value": "ゲーム"
     },
     {
       "name": "lv_leave_title",
@@ -7394,7 +7390,7 @@
     },
     {
       "name": "mb_telegram_link",
-      "value": "Telegram リンク"
+      "value": "リンク"
     },
     {
       "name": "mb_web_link",
@@ -7978,7 +7974,7 @@
     },
     {
       "name": "cp_pay_stars_body",
-      "value": "%1$d 個の Telegram スターを支払います。支払いが完了すると、このメッセージはロック解除状態に更新されます。"
+      "value": "%1$d 個のスターを支払います。支払いが完了すると、このメッセージはロック解除状態に更新されます。"
     },
     {
       "name": "cp_pay_stars_button",
@@ -8654,7 +8650,7 @@
     },
     {
       "name": "cp_transcribe_premium",
-      "value": "文字起こしは Telegram Premium の機能です"
+      "value": "文字起こしは Premium の機能です"
     },
     {
       "name": "cp_stop_poll_body",
@@ -9102,7 +9098,7 @@
     },
     {
       "name": "sm_joined_telegram",
-      "value": "%1$s が Telegram に参加しました"
+      "value": "%1$s が Petrel に参加しました"
     },
     {
       "name": "sm_set_theme",
@@ -9826,7 +9822,7 @@
     },
     {
       "name": "lg_code_call",
-      "value": "Telegram が %1$s に電話して確認コードを伝えます"
+      "value": "サーバーが %1$s に電話して確認コードを伝えます"
     },
     {
       "name": "lg_code_flash_call",
@@ -9854,7 +9850,7 @@
     },
     {
       "name": "lg_code_other_device",
-      "value": "確認コードを別の端末の Telegram に送信しました"
+      "value": "確認コードを別の端末に送信しました"
     },
     {
       "name": "lg_code_email",
@@ -9866,7 +9862,7 @@
     },
     {
       "name": "lg_code_telegram_or_sms",
-      "value": "確認コードを Telegram または SMS で送信しました"
+      "value": "確認コードをアプリまたは SMS で送信しました"
     },
     {
       "name": "lg_no_resend",
@@ -9874,7 +9870,7 @@
     },
     {
       "name": "lg_use_telegram",
-      "value": "Telegram で確認コードを受け取る"
+      "value": "アプリで確認コードを受け取る"
     },
     {
       "name": "lg_use_sms",
@@ -9934,7 +9930,7 @@
     },
     {
       "name": "lg_phone_hint",
-      "value": "国または地域を選択し、Telegram にログインする電話番号を入力してください。"
+      "value": "国または地域を選択し、ログインに使用する電話番号を入力してください。"
     },
     {
       "name": "lg_sending_code",
@@ -9958,7 +9954,7 @@
     },
     {
       "name": "lg_no_account_yet",
-      "value": "この番号にはまだ Telegram アカウントがありません。名前を入力すると作成できます。"
+      "value": "この番号にはまだアカウントがありません。名前を入力すると作成できます。"
     },
     {
       "name": "lg_last_name_optional",
@@ -9970,7 +9966,7 @@
     },
     {
       "name": "lg_qr_step1",
-      "value": "スマホで Telegram を開きます"
+      "value": "スマホでアプリを開きます"
     },
     {
       "name": "lg_qr_step2",
@@ -9990,7 +9986,7 @@
     },
     {
       "name": "lg_qr_body",
-      "value": "ログイン済みの別の Telegram 端末で下の QR コードをスキャンすると、この端末に直接ログインできます。"
+      "value": "ログイン済みの別の端末で下の QR コードをスキャンすると、この端末に直接ログインできます。"
     },
     {
       "name": "lg_use_phone",
@@ -10242,7 +10238,7 @@
     },
     {
       "name": "cpp_no_boost_slots",
-      "value": "利用できるブースト枠がありません（ブーストには Telegram Premium が必要です）"
+      "value": "利用できるブースト枠がありません（ブーストには Premium が必要です）"
     },
     {
       "name": "cpp_boosted",
@@ -10342,7 +10338,7 @@
     },
     {
       "name": "cpp_telegram_group",
-      "value": "Telegram グループ"
+      "value": "グループ"
     },
     {
       "name": "cpp_invite_invalid",
@@ -10426,7 +10422,7 @@
     },
     {
       "name": "cpp_no_group_call_id",
-      "value": "Telegram が配信ルームの ID を返しませんでした"
+      "value": "サーバーが配信ルームの ID を返しませんでした"
     },
     {
       "name": "cpp_loading_details",
@@ -10454,7 +10450,7 @@
     },
     {
       "name": "cpp_no_full_subscribers",
-      "value": "Telegram は現在のアカウントに完全な購読者リストを公開していません"
+      "value": "現在のアカウントでは完全な購読者リストを取得できません"
     },
     {
       "name": "cpp_no_member_access",
@@ -10582,7 +10578,7 @@
     },
     {
       "name": "pp_pay_with_stars",
-      "value": "Telegram スターで支払う"
+      "value": "スターで支払う"
     },
     {
       "name": "pp_loading_gifts",
@@ -11202,7 +11198,7 @@
     },
     {
       "name": "ar_remove_account_sub",
-      "value": "端末内のデータのみ削除します。Telegram アカウントには影響しません。"
+      "value": "端末内のデータのみ削除します。アカウントには影響しません。"
     },
     {
       "name": "ga_remove_member",
@@ -13098,7 +13094,7 @@
     },
     {
       "name": "qr_unsupported",
-      "value": "このコードには対応していません。Telegramの連絡先、グループ、ログイン用コードをスキャンしてください。"
+      "value": "このコードには対応していません。連絡先、グループ、ログイン用コードをスキャンしてください。"
     },
     {
       "name": "qr_login_title",
@@ -13106,7 +13102,7 @@
     },
     {
       "name": "qr_login_body",
-      "value": "自分がログインしている端末のみ承認してください。その端末からTelegramアカウントとクラウドチャットにアクセスできるようになります。"
+      "value": "自分がログインしている端末のみ承認してください。その端末からアカウントとクラウドチャットにアクセスできるようになります。"
     },
     {
       "name": "qr_login_confirm",
@@ -13130,7 +13126,7 @@
     },
     {
       "name": "about_telegram_group",
-      "value": "Telegramグループ"
+      "value": "コミュニティグループ"
     },
     {
       "name": "cp_show_keyboard",

@@ -65,10 +65,10 @@ export class CachedImageSession {
     }
   }
 
-  private sameAsHeld(req: PixelRequest): boolean {
+  private sameAsHeld(path: string, width: number, height: number, opaque: boolean): boolean {
     const held = this.heldReq;
-    return held !== null && held.opaque === req.opaque &&
-      sameDecodeTarget(held.path, held.width, held.height, req.path, req.width, req.height);
+    return held !== null && held.opaque === opaque &&
+      sameDecodeTarget(held.path, held.width, held.height, path, width, height);
   }
 
   private swapTo(req: PixelRequest, handle: PixelHandle): void {
@@ -107,18 +107,20 @@ export class CachedImageSession {
       this.publish(undefined, false);
       return;
     }
-    const req: PixelRequest = {
-      path: spec.path, width: vp2px(spec.boxWidth), height: vp2px(spec.boxHeight),
-      opaque: spec.opaque === true
-    };
-    if (shouldBlankBeforeDecode(this.heldReq !== null ? this.heldReq.path : '', req.path,
+    // Reuse must still re-evaluate density and synchronously seed @Local, but
+    // an already owned matching bitmap needs no temporary decode request.
+    const width: number = vp2px(spec.boxWidth);
+    const height: number = vp2px(spec.boxHeight);
+    const opaque: boolean = spec.opaque === true;
+    if (shouldBlankBeforeDecode(this.heldReq !== null ? this.heldReq.path : '', spec.path,
       this.heldKey, spec.sourceKey ?? '')) {
       this.releaseHeld();
     }
-    if (this.sameAsHeld(req) && this.held !== null) {
+    if (this.sameAsHeld(spec.path, width, height, opaque) && this.held !== null) {
       this.publish(this.held.pixelMap, true);
       return;
     }
+    const req: PixelRequest = { path: spec.path, width: width, height: height, opaque: opaque };
     const hit = cachedPixelMap(req);
     if (hit !== undefined) {
       this.swapTo(req, hit);

@@ -138,7 +138,7 @@
     },
     {
       "name": "chat_header_kind_user",
-      "value": "Telegram user"
+      "value": "User"
     },
     {
       "name": "chat_header_loading",
@@ -194,7 +194,7 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "Petrelgram"
+      "value": "Petrel"
     },
     {
       "name": "file_download_failed",
@@ -414,11 +414,11 @@
     },
     {
       "name": "gift_premium_title",
-      "value": "Telegram Premium gift"
+      "value": "Premium gift"
     },
     {
       "name": "gift_regular_title",
-      "value": "Telegram gift"
+      "value": "Gift"
     },
     {
       "name": "gift_special",
@@ -426,7 +426,7 @@
     },
     {
       "name": "gift_stars_title",
-      "value": "Telegram Stars gift"
+      "value": "Stars gift"
     },
     {
       "name": "gift_stars_unknown",
@@ -486,7 +486,7 @@
     },
     {
       "name": "gift_unique",
-      "value": "A one-of-a-kind Telegram gift"
+      "value": "A one-of-a-kind gift"
     },
     {
       "name": "gift_valued_at",
@@ -562,7 +562,7 @@
     },
     {
       "name": "link_preview_open_in_telegram",
-      "value": "Open in Telegram"
+      "value": "Open"
     },
     {
       "name": "link_preview_open_invite",
@@ -1110,15 +1110,15 @@
     },
     {
       "name": "preview_gift",
-      "value": "🎁 Telegram gift"
+      "value": "🎁 Gift"
     },
     {
       "name": "preview_gift_collectible",
-      "value": "🎁 Telegram collectible gift"
+      "value": "🎁 Collectible gift"
     },
     {
       "name": "preview_gift_premium",
-      "value": "💎 Gifted Telegram Premium"
+      "value": "💎 Gifted Premium"
     },
     {
       "name": "preview_gift_premium_n",
@@ -1398,7 +1398,7 @@
     },
     {
       "name": "service_contact_registered",
-      "value": "joined Telegram"
+      "value": "joined Petrel"
     },
     {
       "name": "service_custom_service_action",
@@ -1434,7 +1434,7 @@
     },
     {
       "name": "service_gifted_premium",
-      "value": "gifted Telegram Premium"
+      "value": "gifted Premium"
     },
     {
       "name": "service_gifted_stars",
@@ -1678,11 +1678,11 @@
     },
     {
       "name": "telegram_giveaway_prize",
-      "value": "Telegram giveaway prize"
+      "value": "Giveaway prize"
     },
     {
       "name": "telegram_stars",
-      "value": "Telegram Stars"
+      "value": "Stars"
     },
     {
       "name": "tglink_added",
@@ -1762,7 +1762,7 @@
     },
     {
       "name": "tglink_kind_unsupported",
-      "value": "This version does not support %1$s Telegram links yet"
+      "value": "This version does not support %1$s links yet"
     },
     {
       "name": "tglink_opened_profile_no_live",
@@ -1802,7 +1802,7 @@
     },
     {
       "name": "tglink_unrecognized",
-      "value": "Unrecognized Telegram link"
+      "value": "Unrecognized link"
     },
     {
       "name": "tglink_use_bottom_bar",
@@ -1994,7 +1994,7 @@
     },
     {
       "name": "settings_telegram_account",
-      "value": "Telegram account"
+      "value": "Account"
     },
     {
       "name": "settings_open_profile_failed",
@@ -2090,7 +2090,7 @@
     },
     {
       "name": "settings_add_account_sub",
-      "value": "Sign in to another Telegram account"
+      "value": "Sign in to another account"
     },
     {
       "name": "settings_search_hint",
@@ -2266,7 +2266,7 @@
     },
     {
       "name": "accent_needs_premium",
-      "value": "That colour requires Telegram Premium"
+      "value": "That colour requires Premium"
     },
     {
       "name": "apply_failed_retry",
@@ -2283,10 +2283,6 @@
     {
       "name": "accent_waiting_palette",
       "value": "Waiting for the palette…"
-    },
-    {
-      "name": "accent_palette_from_server",
-      "value": "The palette is sent by Telegram after you sign in"
     },
     {
       "name": "accent_name_colour",
@@ -2314,7 +2310,7 @@
     },
     {
       "name": "accent_premium_note",
-      "value": "Multicolour gradients are Telegram Premium only; the server rejects them otherwise. This setting syncs to all your devices."
+      "value": "Multicolour gradients are Premium only; the server rejects them otherwise. This setting syncs to all your devices."
     },
     {
       "name": "emoji_status_cleared",
@@ -2326,7 +2322,7 @@
     },
     {
       "name": "emoji_status_needs_premium",
-      "value": "Emoji status requires Telegram Premium"
+      "value": "Emoji status requires Premium"
     },
     {
       "name": "emoji_status_loading",
@@ -2358,7 +2354,7 @@
     },
     {
       "name": "emoji_status_note",
-      "value": "An emoji status appears beside your name and requires Telegram Premium."
+      "value": "An emoji status appears beside your name and requires Premium."
     },
     {
       "name": "bgplay_music",
@@ -2418,7 +2414,7 @@
     },
     {
       "name": "chat_theme_from_server",
-      "value": "Themes are sent by Telegram after you sign in"
+      "value": "Themes are sent by the server after you sign in"
     },
     {
       "name": "chat_theme_reset",
@@ -2618,7 +2614,7 @@
     },
     {
       "name": "cw_disconnect_confirm",
-      "value": "After disconnecting %1$s you will need to sign in with Telegram again."
+      "value": "After disconnecting %1$s you will need to sign in again."
     },
     {
       "name": "cw_this_site",
@@ -2674,11 +2670,11 @@
     },
     {
       "name": "cw_empty_sub",
-      "value": "Websites you signed in to with Telegram appear here."
+      "value": "Websites you signed in to appear here."
     },
     {
       "name": "cw_note",
-      "value": "Website authorisations are separate from device sessions. Disconnecting a website does not sign out this device or any other Telegram client."
+      "value": "Website authorisations are separate from device sessions. Disconnecting a website does not sign out this device or any other client."
     },
     {
       "name": "pe_title",
@@ -4118,7 +4114,7 @@
     },
     {
       "name": "ct_no_user",
-      "value": "No Telegram user found with that number"
+      "value": "No user found with that number"
     },
     {
       "name": "network_failed_retry",
@@ -4702,7 +4698,7 @@
     },
     {
       "name": "ps_needs_premium",
-      "value": "This privacy rule requires Telegram Premium"
+      "value": "This privacy rule requires Premium"
     },
     {
       "name": "ps_not_loaded_refresh",
@@ -4814,7 +4810,7 @@
     },
     {
       "name": "ps_note",
-      "value": "Privacy rules are applied in order by Telegram's servers. Changing a rule keeps its existing exceptions intact."
+      "value": "Privacy rules are applied in order by the server. Changing a rule keeps its existing exceptions intact."
     },
     {
       "name": "tsv_code_sent_note",
@@ -5038,7 +5034,7 @@
     },
     {
       "name": "tsv_note",
-      "value": "Your password is sent only to Telegram for verification and the fields are cleared as soon as you leave this page. Do set a recovery email you can access."
+      "value": "Your password is sent only to the server for verification and the fields are cleared as soon as you leave this page. Do set a recovery email you can access."
     },
     {
       "name": "px_enabled_server",
@@ -5266,7 +5262,7 @@
     },
     {
       "name": "px_from_link",
-      "value": "Filled in from a Telegram proxy link. Check the values and save."
+      "value": "Filled in from a proxy link. Check the values and save."
     },
     {
       "name": "px_edit_note",
@@ -5358,7 +5354,7 @@
     },
     {
       "name": "fe_needs_premium",
-      "value": "That colour or tag feature requires Telegram Premium"
+      "value": "That colour or tag feature requires Premium"
     },
     {
       "name": "fe_chat_not_in_list",
@@ -5546,7 +5542,7 @@
     },
     {
       "name": "as_fresh_limit",
-      "value": "Telegram security limit: a newly signed-in device must wait 24 hours; available in about %1$s"
+      "value": "Security limit: a newly signed-in device must wait 24 hours; available in about %1$s"
     },
     {
       "name": "as_terminate_confirm",
@@ -5670,7 +5666,7 @@
     },
     {
       "name": "as_scan_qr",
-      "value": "Scan the QR code from Telegram Desktop or Web"
+      "value": "Scan the QR code from Desktop or Web"
     },
     {
       "name": "as_current_short",
@@ -5738,7 +5734,7 @@
     },
     {
       "name": "as_accept_calls_sub",
-      "value": "Allow Telegram calls on this device"
+      "value": "Allow calls on this device"
     },
     {
       "name": "as_needs_2fa",
@@ -5778,7 +5774,7 @@
     },
     {
       "name": "as_fresh_rejected",
-      "value": "Telegram is refusing to terminate older sessions from this device for now. Please try again later."
+      "value": "The server is refusing to terminate older sessions from this device for now. Please try again later."
     },
     {
       "name": "as_no_others",
@@ -6178,7 +6174,7 @@
     },
     {
       "name": "mp_story_needs_premium",
-      "value": "This account needs Telegram Premium to post stories"
+      "value": "This account needs Premium to post stories"
     },
     {
       "name": "mp_story_limit",
@@ -6474,7 +6470,7 @@
     },
     {
       "name": "cb_telegram_user",
-      "value": "Telegram user"
+      "value": "User"
     },
     {
       "name": "cb_unnamed",
@@ -6482,7 +6478,7 @@
     },
     {
       "name": "cb_tap_profile",
-      "value": "Tap to view the Telegram profile"
+      "value": "Tap to view the profile"
     },
     {
       "name": "cb_contact_card",
@@ -6570,7 +6566,7 @@
     },
     {
       "name": "game_interactive",
-      "value": "Telegram game"
+      "value": "Interactive game"
     },
     {
       "name": "game_unreadable",
@@ -6594,7 +6590,7 @@
     },
     {
       "name": "game_title",
-      "value": "Telegram game"
+      "value": "Game"
     },
     {
       "name": "lv_leave_title",
@@ -7394,7 +7390,7 @@
     },
     {
       "name": "mb_telegram_link",
-      "value": "Telegram link"
+      "value": "Link"
     },
     {
       "name": "mb_web_link",
@@ -7978,7 +7974,7 @@
     },
     {
       "name": "cp_pay_stars_body",
-      "value": "This costs %1$d Telegram Stars. Once paid, the message updates to unlocked."
+      "value": "This costs %1$d Stars. Once paid, the message updates to unlocked."
     },
     {
       "name": "cp_pay_stars_button",
@@ -8654,7 +8650,7 @@
     },
     {
       "name": "cp_transcribe_premium",
-      "value": "Transcription is a Telegram Premium feature"
+      "value": "Transcription is a Premium feature"
     },
     {
       "name": "cp_stop_poll_body",
@@ -9102,7 +9098,7 @@
     },
     {
       "name": "sm_joined_telegram",
-      "value": "%1$s joined Telegram"
+      "value": "%1$s joined Petrel"
     },
     {
       "name": "sm_set_theme",
@@ -9826,7 +9822,7 @@
     },
     {
       "name": "lg_code_call",
-      "value": "Telegram will call %1$s and read out the code"
+      "value": "The server will call %1$s and read out the code"
     },
     {
       "name": "lg_code_flash_call",
@@ -9854,7 +9850,7 @@
     },
     {
       "name": "lg_code_other_device",
-      "value": "The code was sent to Telegram on another of your devices"
+      "value": "The code was sent to your other device"
     },
     {
       "name": "lg_code_email",
@@ -9866,7 +9862,7 @@
     },
     {
       "name": "lg_code_telegram_or_sms",
-      "value": "The code was sent via Telegram or SMS"
+      "value": "The code was sent to you in the app or by SMS"
     },
     {
       "name": "lg_no_resend",
@@ -9874,7 +9870,7 @@
     },
     {
       "name": "lg_use_telegram",
-      "value": "Get the code via Telegram instead"
+      "value": "Get the code in the app instead"
     },
     {
       "name": "lg_use_sms",
@@ -9934,7 +9930,7 @@
     },
     {
       "name": "lg_phone_hint",
-      "value": "Pick your country or region and enter the phone number you use for Telegram."
+      "value": "Pick your country or region and enter the phone number you use to sign in."
     },
     {
       "name": "lg_sending_code",
@@ -9958,7 +9954,7 @@
     },
     {
       "name": "lg_no_account_yet",
-      "value": "There's no Telegram account for this number yet. Enter your name to create one."
+      "value": "There's no account for this number yet. Enter your name to create one."
     },
     {
       "name": "lg_last_name_optional",
@@ -9970,7 +9966,7 @@
     },
     {
       "name": "lg_qr_step1",
-      "value": "Open Telegram on your phone"
+      "value": "Open the app on your phone"
     },
     {
       "name": "lg_qr_step2",
@@ -9990,7 +9986,7 @@
     },
     {
       "name": "lg_qr_body",
-      "value": "Scan the code below with a device already signed in to Telegram to sign in here."
+      "value": "Scan the code below with a device already signed in to sign in here."
     },
     {
       "name": "lg_use_phone",
@@ -10242,7 +10238,7 @@
     },
     {
       "name": "cpp_no_boost_slots",
-      "value": "No boost slots available (boosting requires Telegram Premium)"
+      "value": "No boost slots available (boosting requires Premium)"
     },
     {
       "name": "cpp_boosted",
@@ -10342,7 +10338,7 @@
     },
     {
       "name": "cpp_telegram_group",
-      "value": "Telegram group"
+      "value": "Group"
     },
     {
       "name": "cpp_invite_invalid",
@@ -10426,7 +10422,7 @@
     },
     {
       "name": "cpp_no_group_call_id",
-      "value": "Telegram returned no stream id"
+      "value": "The server returned no stream id"
     },
     {
       "name": "cpp_loading_details",
@@ -10454,7 +10450,7 @@
     },
     {
       "name": "cpp_no_full_subscribers",
-      "value": "Telegram does not expose the full subscriber list to this account"
+      "value": "This account cannot access the full subscriber list"
     },
     {
       "name": "cpp_no_member_access",
@@ -10582,7 +10578,7 @@
     },
     {
       "name": "pp_pay_with_stars",
-      "value": "Pay with Telegram Stars"
+      "value": "Pay with Stars"
     },
     {
       "name": "pp_loading_gifts",
@@ -11202,7 +11198,7 @@
     },
     {
       "name": "ar_remove_account_sub",
-      "value": "Deletes only this account's local data. Your Telegram account is not affected."
+      "value": "Deletes only this account's local data. Your account is not affected."
     },
     {
       "name": "ga_remove_member",
@@ -13098,7 +13094,7 @@
     },
     {
       "name": "qr_unsupported",
-      "value": "This QR code is not supported. Scan a Telegram contact, group or login code."
+      "value": "This QR code is not supported. Scan a contact, group or login code."
     },
     {
       "name": "qr_login_title",
@@ -13106,7 +13102,7 @@
     },
     {
       "name": "qr_login_body",
-      "value": "Only approve a device you are signing in to. It will gain access to your Telegram account and cloud chats."
+      "value": "Only approve a device you are signing in to. It will gain access to your account and cloud chats."
     },
     {
       "name": "qr_login_confirm",
@@ -13130,7 +13126,7 @@
     },
     {
       "name": "about_telegram_group",
-      "value": "Telegram group"
+      "value": "Community group"
     },
     {
       "name": "cp_show_keyboard",

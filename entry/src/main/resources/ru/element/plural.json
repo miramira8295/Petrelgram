@@ -173,19 +173,19 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d месяц Telegram Premium"
+          "value": "%d месяц Premium"
         },
         {
           "quantity": "few",
-          "value": "%d месяца Telegram Premium"
+          "value": "%d месяца Premium"
         },
         {
           "quantity": "many",
-          "value": "%d месяцев Telegram Premium"
+          "value": "%d месяцев Premium"
         },
         {
           "quantity": "other",
-          "value": "%d мес. Telegram Premium"
+          "value": "%d мес. Premium"
         }
       ]
     },
@@ -194,19 +194,19 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d звезда Telegram"
+          "value": "%d звезда"
         },
         {
           "quantity": "few",
-          "value": "%d звезды Telegram"
+          "value": "%d звезды"
         },
         {
           "quantity": "many",
-          "value": "%d звёзд Telegram"
+          "value": "%d звёзд"
         },
         {
           "quantity": "other",
-          "value": "%d звёзд Telegram"
+          "value": "%d звёзд"
         }
       ]
     },
@@ -362,19 +362,19 @@
       "value": [
         {
           "quantity": "one",
-          "value": "Выйти из Telegram на %d сайте"
+          "value": "Выйти из аккаунта на %d сайте"
         },
         {
           "quantity": "few",
-          "value": "Выйти из Telegram на %d сайтах"
+          "value": "Выйти из аккаунта на %d сайтах"
         },
         {
           "quantity": "many",
-          "value": "Выйти из Telegram на %d сайтах"
+          "value": "Выйти из аккаунта на %d сайтах"
         },
         {
           "quantity": "other",
-          "value": "Выйти из Telegram на %d сайтах"
+          "value": "Выйти из аккаунта на %d сайтах"
         }
       ]
     },

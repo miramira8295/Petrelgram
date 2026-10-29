@@ -15,7 +15,7 @@ import {
 } from '../../store/BackgroundApi';
 import {
   hexColorToInt, isSolidBackgroundOf, isSystemBackground, solidBackgroundState, solidPaletteFor,
-  systemChatColor
+  systemSlotColor
 } from '../../util/solidBackground';
 import {
   BackgroundPreview, backgroundPreviewOf, backgroundThumbnailFile
@@ -735,7 +735,8 @@ struct ChatBackgroundPage {
         dimAmount: this.chatDim,
         dark: this.forDark,
         previewW: this.previewWidth(),
-        previewH: PREVIEW_HEIGHT
+        previewH: PREVIEW_HEIGHT,
+        baseColor: systemSlotColor(this.forDark, slotIsApp(this.effectiveSlot()))
       });
     }
     .width('100%').height(PREVIEW_HEIGHT).borderRadius(CARD_RADIUS).clip(true)
@@ -828,23 +829,13 @@ struct ChatBackgroundPage {
     .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
   }
 
-  @Builder
-  solidSwatch(color: string, selected: boolean, busy: boolean) {
-    Stack() {
-      if (busy) {
-        LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
-      } else if (selected) {
-        SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY]);
-      }
-    }
-    .width(SOLID_SWATCH).height(SOLID_SWATCH).borderRadius(SOLID_SWATCH / 2)
-    .backgroundColor(color)
-    .border({
-      width: selected ? 2 : 0.7,
-      color: selected ? COLOR_PRIMARY : $r('app.color.divider')
-    });
-  }
-
+  // 色块**必须写在 solidCard() 里内联**，不能收成带参 @Builder。
+  //
+  // 【为什么】带参 @Builder 的参数是挂载那一刻按值捕获的，之后永不更新——传对象
+  // 也一样（见 2026-09-11 相册那轮的实测）。原来这里是
+  // `solidSwatch(color, selected, busy)`，三个参数，于是 selected 永远是首次
+  // 构建时的那个值：点了别的颜色，底色换了、勾选标记却钉在旧格上（用户 2026-10-29
+  // 实报）。零参 builder 读 this.currentBackground 才跟着重算。
   @Builder
   solidCard() {
     Column({ space: 10 }) {
@@ -853,8 +844,19 @@ struct ChatBackgroundPage {
       Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(12), cross: LengthMetrics.vp(12) } }) {
         // 第一格「跟随系统」：画的是这个槽位对应模式下的 chat_bg，不是当前系统模式的。
         Column({ space: 4 }) {
-          this.solidSwatch(systemChatColor(this.forDark), isSystemBackground(this.currentBackground),
-            this.applyingId === 'reset');
+          Stack() {
+            if (this.applyingId === 'reset') {
+              LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
+            } else if (isSystemBackground(this.currentBackground)) {
+              SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY]);
+            }
+          }
+          .width(SOLID_SWATCH).height(SOLID_SWATCH).borderRadius(SOLID_SWATCH / 2)
+          .backgroundColor(systemSlotColor(this.forDark, slotIsApp(this.effectiveSlot())))
+          .border({
+            width: isSystemBackground(this.currentBackground) ? 2 : 0.7,
+            color: isSystemBackground(this.currentBackground) ? COLOR_PRIMARY : $r('app.color.divider')
+          });
           Text($r('app.string.cb_follow_system')).fontSize(10).fontColor(COLOR_TEXT_SECONDARY)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width(56)
             .textAlign(TextAlign.Center);
@@ -863,8 +865,20 @@ struct ChatBackgroundPage {
         .onClick((): void => this.followSystem());
         ForEach(solidPaletteFor(this.forDark), (color: string) => {
           Column() {
-            this.solidSwatch(color, isSolidBackgroundOf(this.currentBackground, color),
-              this.applyingId === `solid_${color}`);
+            Stack() {
+              if (this.applyingId === `solid_${color}`) {
+                LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
+              } else if (isSolidBackgroundOf(this.currentBackground, color)) {
+                SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY]);
+              }
+            }
+            .width(SOLID_SWATCH).height(SOLID_SWATCH).borderRadius(SOLID_SWATCH / 2)
+            .backgroundColor(color)
+            .border({
+              width: isSolidBackgroundOf(this.currentBackground, color) ? 2 : 0.7,
+              color: isSolidBackgroundOf(this.currentBackground, color)
+                ? COLOR_PRIMARY : $r('app.color.divider')
+            });
           }
           .width(56).height(SOLID_SWATCH)
           .onClick((): void => this.applySolid(color));

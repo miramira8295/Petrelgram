@@ -59,15 +59,15 @@
     {
       "name": "prize_premium_months",
       "value": [
-        { "quantity": "one", "value": "%d mes de Telegram Premium" },
-        { "quantity": "other", "value": "%d meses de Telegram Premium" }
+        { "quantity": "one", "value": "%d mes de Premium" },
+        { "quantity": "other", "value": "%d meses de Premium" }
       ]
     },
     {
       "name": "prize_stars",
       "value": [
-        { "quantity": "one", "value": "%d estrella de Telegram" },
-        { "quantity": "other", "value": "%d estrellas de Telegram" }
+        { "quantity": "one", "value": "%d estrella" },
+        { "quantity": "other", "value": "%d estrellas" }
       ]
     },
     {
@@ -122,8 +122,8 @@
     {
       "name": "cw_disconnect_all_confirm",
       "value": [
-        { "quantity": "one", "value": "Se cerrará la sesión de Telegram en %d sitio." },
-        { "quantity": "other", "value": "Se cerrará la sesión de Telegram en %d sitios." }
+        { "quantity": "one", "value": "Se cerrará la sesión en %d sitio." },
+        { "quantity": "other", "value": "Se cerrará la sesión en %d sitios." }
       ]
     },
     {

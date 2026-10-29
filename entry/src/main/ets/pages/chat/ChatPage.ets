@@ -247,6 +247,7 @@ import {
 } from '../../util/chatResume';
 import { conversationScopeId } from '../../util/messageTopicScope';
 import { navigateToSearch } from '../../util/searchNav';
+import { navigateToSetting } from '../../util/settingsNav';
 import { getActiveTdUserId } from '../../tdkit/Globals';
 import {
   chatChromeHeight, ChatChromeGeometryInput, chatTopBannerHeight, chatTopicBarHeight
@@ -4674,6 +4675,7 @@ export struct ChatPage {
       topSafe: this.topSafe,
       searchMode: this.search.mode,
       pinnedVisible: this.topCard.pinnedVisible(),
+      musicVisible: this.topCard.musicVisible(),
       liveVisible: this.topCard.liveGroupCallId > 0 && this.topCard.liveCallIsActive,
       actionBarVisible: this.actionBarKind !== '',
       topicBarVisible: topicBarShown(this.topicBarCount, this.topicCreateAllowed)
@@ -5938,6 +5940,7 @@ export struct ChatPage {
       onPinnedTap: (): void => { this.topCard.onPinnedTap(); },
       onOpenPinnedList: (): void => { this.overlayState.setSheet('pinnedList', true); },
       onLiveStreamTap: (): void => { this.topCard.onLiveStreamTap(); },
+      onMusicTap: (): void => { navigateToSetting('MusicCenterPage'); },
       actionBarKind: this.actionBarKind,
       actionBarCanUnarchive: this.actionBarCanUnarchive,
       onActionBarAction: (id: string): void => { this.onActionBar(id); },

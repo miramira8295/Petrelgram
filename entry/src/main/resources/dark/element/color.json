@@ -13,6 +13,10 @@
       "value": "#17212B"
     },
     {
+      "name": "app_page_bg",
+      "value": "#232E3C"
+    },
+    {
       "name": "chat_bg",
       "value": "#0E1621"
     },

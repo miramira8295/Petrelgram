@@ -109,11 +109,11 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d महीना Telegram Premium"
+          "value": "%d महीना Premium"
         },
         {
           "quantity": "other",
-          "value": "%d महीने Telegram Premium"
+          "value": "%d महीने Premium"
         }
       ]
     },
@@ -122,11 +122,11 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d Telegram स्टार"
+          "value": "%d स्टार"
         },
         {
           "quantity": "other",
-          "value": "%d Telegram स्टार"
+          "value": "%d स्टार"
         }
       ]
     },
@@ -226,11 +226,11 @@
       "value": [
         {
           "quantity": "one",
-          "value": "%d वेबसाइट पर Telegram लॉगिन डिस्कनेक्ट होगा।"
+          "value": "%d वेबसाइट पर लॉगिन डिस्कनेक्ट होगा।"
         },
         {
           "quantity": "other",
-          "value": "%d वेबसाइटों पर Telegram लॉगिन डिस्कनेक्ट होंगे।"
+          "value": "%d वेबसाइटों पर लॉगिन डिस्कनेक्ट होंगे।"
         }
       ]
     },

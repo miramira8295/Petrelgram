@@ -17,6 +17,7 @@ import {
   localWallpaperState, parseSnapshot, serialiseSnapshot, referencedWallpaperPaths
 } from '../../store/ChatBackgroundStore';
 import { appWallpaperFileName, wallpaperFileStillUsed } from '../../util/localWallpaper';
+import { systemSlotColor } from '../../util/solidBackground';
 import {
   SLOT_APP_DARK, SLOT_APP_LIGHT, SLOT_CHAT_DARK, SLOT_CHAT_LIGHT, WALLPAPER_SLOTS,
   slotHasDim, slotIsApp, slotIsDark, wallpaperSlotKeys
@@ -913,7 +914,8 @@ export struct ChatSettingsPage {
         dimAmount: this.enlargedDim,
         dark: slotIsDark(this.enlargedSlot),
         previewW: Math.max(1, Math.min(520, this.appBgScreenW * 0.88)),
-        previewH: Math.max(220, Math.min(420, this.appBgScreenH * 0.48))
+        previewH: Math.max(220, Math.min(420, this.appBgScreenH * 0.48)),
+        baseColor: systemSlotColor(slotIsDark(this.enlargedSlot), slotIsApp(this.enlargedSlot))
       });
     }
     .width('100%').height('100%');

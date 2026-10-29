@@ -590,7 +590,7 @@ function giveawayPrizeText(prize: TdObject | undefined): string {
   const type = (prize['@type'] as string | undefined) ?? '';
   if (type === 'giveawayPrizePremium') {
     const months = Math.max(0, (prize['month_count'] as number | undefined) ?? 0);
-    return months > 0 ? plural('prize_premium_months', months, months) : 'Telegram Premium';
+    return months > 0 ? plural('prize_premium_months', months, months) : 'Unknown';
   }
   if (type === 'giveawayPrizeStars') {
     const stars = Math.max(0, (prize['star_count'] as number | undefined) ?? 0);
@@ -982,7 +982,7 @@ export function formatMsgContent(message: TdObject): MsgContent {
     const months = Math.max(0, (content!['month_count'] as number | undefined) ?? 0);
     const days = Math.max(0, (content!['day_count'] as number | undefined) ?? 0);
     const duration = months > 0 ? plural('duration_months', months, months)
-      : (days > 0 ? plural('duration_days', days, days) : 'Telegram Premium');
+      : (days > 0 ? plural('duration_days', days, days) : 'Unknown');
     return giftBase(
       'premium', str('gift_premium_title'), duration, str('gift_status_gifted'),
       formattedTextValue(content!['text'] as TdObject | undefined),
@@ -1008,7 +1008,7 @@ export function formatMsgContent(message: TdObject): MsgContent {
     const months = Math.max(0, (content!['month_count'] as number | undefined) ?? 0);
     const days = Math.max(0, (content!['day_count'] as number | undefined) ?? 0);
     const duration = months > 0 ? plural('duration_months_premium', months, months)
-      : (days > 0 ? plural('duration_days_premium', days, days) : 'Telegram Premium');
+      : (days > 0 ? plural('duration_days_premium', days, days) : 'Unknown');
     const unclaimed = (content!['is_unclaimed'] as boolean | undefined) ?? false;
     const result = giftBase(
       'code', str('gift_code_title'), duration,
@@ -1125,7 +1125,7 @@ export function formatMsgContent(message: TdObject): MsgContent {
       'completed',
       (content!['winner_count'] as number | undefined) ?? 0,
       ((content!['is_star_giveaway'] as boolean | undefined) ?? false)
-        ? str('telegram_stars') : 'Telegram Premium',
+        ? str('telegram_stars') : 'Unknown',
       '', 0,
       (content!['unclaimed_prize_count'] as number | undefined) ?? 0,
       (content!['giveaway_message_id'] as number | undefined) ?? 0,

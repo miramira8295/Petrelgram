@@ -18,6 +18,7 @@ export interface ChatChromeGeometryInput {
   topSafe: number;
   searchMode: boolean;
   pinnedVisible: boolean;
+  musicVisible?: boolean;
   liveVisible: boolean;
   // 会话操作条（issue #201 第 8 条）。可选：老调用点不传就是没有。
   actionBarVisible?: boolean;
@@ -27,7 +28,7 @@ export interface ChatChromeGeometryInput {
 
 export function chatTopBannerRows(input: ChatChromeGeometryInput): number {
   let rows: number = 0;
-  if (input.pinnedVisible) {
+  if (input.pinnedVisible || (input.musicVisible ?? false)) {
     rows++;
   }
   if (input.liveVisible) {

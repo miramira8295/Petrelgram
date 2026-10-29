@@ -1,7 +1,7 @@
 import { ContactItem } from '../../store/ContactsStore';
 import { AvatarView } from '../chatlist/AvatarView';
-import { LIST_CARD_INSET_VP, LIST_CARD_TRAIL_VP } from '../../util/listCardGeometry';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { HOME_CARD_INSET_VP } from '../../util/listCardGeometry';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, ROW_PAD_H, ROW_PAD_V } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 
@@ -26,19 +26,17 @@ export struct ContactRowView {
   @Prop pressed: boolean = false;
   // 正在为这个联系人开会话或删除。
   @Prop busy: boolean = false;
-  // 玻璃档：行透明，让外层卡片那块透上来（行各铺一块是两层模糊叠加，又重又灰）。
-  @Prop glassCard: boolean = false;
 
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖。
   private accent(): ResourceColor {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
   }
 
+  // 行本身不再铺底色：2026-10-29 起一行一张卡片（与首页同款），底色、玻璃、
+  // 圆角都由页面那一层的卡片负责，行透明才能让卡片那块透上来（行各铺一块就是
+  // 两层模糊叠加，又重又灰）。只剩按压高亮留在行上，由卡片 clip 裁圆角。
   private rowFill(): ResourceColor {
-    if (this.pressed) {
-      return $r('app.color.surface_alt');
-    }
-    return this.glassCard ? Color.Transparent : CARD_BG;
+    return this.pressed ? $r('app.color.surface_alt') : Color.Transparent;
   }
 
   build() {
@@ -89,9 +87,8 @@ export struct ContactRowView {
     }
     .width('100%')
     .constraintSize({ minHeight: 60 })
-    // 行底色铺满卡片宽度（按压高亮由外层卡片的圆角裁），头像内缩 4、落在顶部标题的起始线上
-    // （2026-09-15 与首页统一，见 util/listCardGeometry）。
-    .padding({ left: LIST_CARD_INSET_VP, right: LIST_CARD_TRAIL_VP, top: 7, bottom: 7 })
+    // 与首页会话行同一套内边距：左 8、右 14、上下 8（util/theme 的 ROW_PAD_*）。
+    .padding({ left: HOME_CARD_INSET_VP, right: ROW_PAD_H, top: ROW_PAD_V, bottom: ROW_PAD_V })
     .alignItems(VerticalAlign.Center)
     .backgroundColor(this.rowFill())
     .scale({ x: this.pressed ? 0.99 : 1, y: this.pressed ? 0.985 : 1 });

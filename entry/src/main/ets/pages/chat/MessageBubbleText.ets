@@ -224,6 +224,15 @@ export struct MessageBubbleText {
         .onClick(() => {
           if (this.context.gestureClaimed) { return; }
           this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url)); });
+    } else if (run.url !== '' && !run.bold && !run.italic && !run.code && !run.underline && !run.strike) {
+      // This branch owns its Span; styled/busy/spoiler branches cannot donate
+      // their node. Owning Text builders leave these font defaults unchanged.
+      Span(run.text)
+        .fontColor(this.accent())
+        .stateStyles({ normal: msgLinkRunNormalStyle, pressed: msgLinkRunPressedStyle })
+        .onClick(() => {
+          if (this.context.gestureClaimed) { return; }
+          this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url)); });
     } else if (run.url !== '' && !run.code && !run.underline && !run.strike) {
       // Idle links without decoration/code use Span's None/transparent defaults.
       // Keep pressed styling and the exact link handler; the busy branch above
@@ -262,6 +271,12 @@ export struct MessageBubbleText {
         .onClick(() => {
           if (this.context.gestureClaimed) { return; }
           this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url)); });
+    } else if (!run.bold && !run.italic && !run.code && !run.underline && !run.strike) {
+      // A separate branch owns an ordinary Span. None of its three owning Text
+      // builders sets weight/style/family; native Normal/Normal/default applies.
+      // Styled branches retain explicit resets and can never donate their node.
+      Span(run.text)
+        .fontColor(run.link ? this.accent() : bubbleTextFor(this.msg.isOutgoing));
     } else if (!run.code && !run.underline && !run.strike) {
       // Plain/bold/italic runs have no background or decoration. Span's native
       // defaults are transparent/0 and None; both owning Text builders leave
