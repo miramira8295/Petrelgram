@@ -3557,10 +3557,6 @@
       "value": "Efectos de desenfoque y escala"
     },
     {
-      "name": "power_background_anim",
-      "value": "Efectos dinámicos del fondo de chat"
-    },
-    {
       "name": "power_call_anim",
       "value": "Animaciones en llamadas"
     },

@@ -3557,10 +3557,6 @@
       "value": "ぼかしと拡大縮小の効果"
     },
     {
-      "name": "power_background_anim",
-      "value": "チャット背景の動的効果"
-    },
-    {
       "name": "power_call_anim",
       "value": "通話中のアニメーション"
     },

@@ -3557,10 +3557,6 @@
       "value": "模糊與縮放效果"
     },
     {
-      "name": "power_background_anim",
-      "value": "聊天背景動態效果"
-    },
-    {
       "name": "power_call_anim",
       "value": "通話中的動畫"
     },

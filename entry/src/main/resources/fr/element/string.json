@@ -3557,10 +3557,6 @@
       "value": "Effets de flou et de zoom"
     },
     {
-      "name": "power_background_anim",
-      "value": "Effets dynamiques d'arrière-plan des discussions"
-    },
-    {
       "name": "power_call_anim",
       "value": "Animations pendant les appels"
     },

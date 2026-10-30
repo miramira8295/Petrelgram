@@ -3557,10 +3557,6 @@
       "value": "Hiệu ứng làm mờ và thu phóng"
     },
     {
-      "name": "power_background_anim",
-      "value": "Hiệu ứng động hình nền trò chuyện"
-    },
-    {
       "name": "power_call_anim",
       "value": "Hoạt ảnh trong cuộc gọi"
     },

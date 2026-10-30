@@ -3557,10 +3557,6 @@
       "value": "Размытие и масштабирование"
     },
     {
-      "name": "power_background_anim",
-      "value": "Анимация фона чата"
-    },
-    {
       "name": "power_call_anim",
       "value": "Анимации во время звонков"
     },

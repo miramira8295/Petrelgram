@@ -8,8 +8,8 @@ import { PatternTileLayer } from '../chat/PatternTileLayer';
 
 // 设置页的实时壁纸预览。
 //
-// 这里故意不用 ChatBackdrop：聊天背景组件还带离屏光栅、氛围光斑和粒子，适合
-// 长时间停留的聊天页，却会让一根正在拖动的 Slider 不断重建整屏缓存。预览只画
+// 这里故意不用 ChatBackdrop：聊天背景组件还带离屏光栅，适合长时间停留的聊天页，
+// 却会让一根正在拖动的 Slider 不断重建整屏缓存。预览只画
 // 与三根滑杆有关的几层，规则仍复用生产渲染的纯函数，避免“预览一套、实际一套”。
 @Component
 export struct WallpaperPreview {

@@ -3557,10 +3557,6 @@
       "value": "흐림 및 확대·축소 효과"
     },
     {
-      "name": "power_background_anim",
-      "value": "채팅 배경 동적 효과"
-    },
-    {
       "name": "power_call_anim",
       "value": "통화 중 애니메이션"
     },
