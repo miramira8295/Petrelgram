@@ -21,7 +21,6 @@ import { clearLinkPreviewPresentationCache } from '../util/linkPreview';
 import { refreshLocale } from '../util/intlFormat';
 import { bumpLanguageEpoch } from '../util/appLanguage';
 import { backgroundGraceTask } from '../services/BackgroundGraceTask';
-import { armForegroundReconnect, cancelForegroundReconnect } from '../services/ForegroundReconnect';
 import { startCrashWatch } from '../services/crashReport';
 import { initDiagLog } from '../util/log';
 import { initSettings, refreshPowerSavingState, KEY_CACHE_LIMIT } from '../store/AppSettings';
@@ -603,14 +602,15 @@ export default class EntryAbility extends UIAbility {
     refreshNetworkState(true);
     AppStorage.setOrCreate('appIsForeground', true);
     mirrorChatEnvKey('appIsForeground', true);
+    // 代理巡检是 30 秒一轮的常驻定时器，后台整条停掉，回前台再起。
+    proxyAutoSwitchService.foregroundChanged(true);
     // 回前台：释放短时任务配额（下次切后台再申请）。
     backgroundGraceTask.end();
     AppStorage.setOrCreate('appForegroundEpoch', Date.now());
     setTdOnlineState(true);
-    // 上面几行只是把网络类型和 online 重新灌给 TDLib，它未必因此重拨；如果
-    // 旧连接已经半死，它会一直卡在连接中直到心跳超时。这里挂一个看门狗，卡住
-    // 就把回前台之前建的那批隧道掐掉，逼它立刻重拨。
-    armForegroundReconnect();
+    // 1.5.5 在这里挂过一个看门狗：卡在连接中就把回前台之前建的中继隧道掐掉，
+    // 逼 TDLib 立刻重拨。中继层删掉之后没有隧道可掐了，看门狗随之删除——重拨
+    // 节奏交回 TDLib 自己的心跳与重连逻辑。
     const limit: number = AppStorage.get<number>(KEY_CACHE_LIMIT) ?? CACHE_LIMIT_DEFAULT;
     const now = Date.now();
     if (shouldTrimNow(limit, this.lastCacheTrimAt, now)) {
@@ -627,7 +627,7 @@ export default class EntryAbility extends UIAbility {
     // Ability has back to background
     AppStorage.setOrCreate('appIsForeground', false);
     mirrorChatEnvKey('appIsForeground', false);
-    cancelForegroundReconnect();
+    proxyAutoSwitchService.foregroundChanged(false);
     // 申请短时任务：切后台后多存活几分钟，这段时间内新消息仍能实时收到并通知。
     // 保持 TDLib 的 online 选项，代理连接也就能复用；宽限期耗尽、进程即将
     // 被挂起时再切 offline，回前台不必每次都重新连代理。

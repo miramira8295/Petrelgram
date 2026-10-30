@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from '@ohos/hypium';
 import {
   normalizeProxySwitchDelay, orderedProxyCandidateIds, ProxySwitchCandidate
 } from '../main/ets/util/proxyAutoSwitch';
+import { ProxyHealthSource } from '../main/ets/util/proxyHealth';
 
 import { ProxyAutoSwitchEntry, ProxyAutoSwitchService } from '../main/ets/services/ProxyAutoSwitchService';
 import { TdClient, TimerFns } from '../main/ets/tdkit/TdClient';
@@ -86,18 +87,37 @@ async function settleProxySwitch(): Promise<void> {
   for (let i = 0; i < 30; i++) { await Promise.resolve(); }
 }
 
+// 单测里没有真实网卡，也不该真去 tcping：喂一张空表就等价于"全都还没测过"，
+// 顺序保持 TDLib 原样、usable 恒为 true —— 和换 tcping 之前的用例期望一致。
+class ProxySwitchHealth implements ProxyHealthSource {
+  started: number = 0;
+  stopped: number = 0;
+  // 被判为"tcping 不通"的代理 id。空集合 = 巡检还没测出任何问题。
+  failing: Set<number> = new Set<number>();
+  start(): void { this.started++; }
+  stop(): void { this.stopped++; }
+  // 直链恒可用：它没有 tcping 目标，判死它等于把自己锁死在代理上。
+  usable(id: number): boolean { return id === 0 || !this.failing.has(id); }
+  sortedForSwitch(entries: ProxySwitchCandidate[]): ProxySwitchCandidate[] { return entries; }
+}
+
 class ProxySwitchFixture {
   ids: number[] = [1, 2];
   clock: ProxySwitchClock = new ProxySwitchClock();
   bridge: ProxySwitchBridge = new ProxySwitchBridge();
   client: TdClient = new TdClient(this.bridge);
   network: ProxySwitchNetwork = new ProxySwitchNetwork();
+  health: ProxySwitchHealth = new ProxySwitchHealth();
   service: ProxyAutoSwitchService;
 
   constructor(realProbe: boolean = false) {
     this.service = new ProxyAutoSwitchService(this.clock,
       (listener: (network: string) => void): () => void => this.network.subscribe(listener),
-      realProbe ? undefined : async (_id: number): Promise<boolean> => true);
+      realProbe ? undefined : async (_id: number): Promise<boolean> => true,
+      // 生产环境这个功能是关的（PROXY_AUTO_SWITCH_AVAILABLE = false），单测要
+      // 继续覆盖状态机就得显式打开它。
+      (): boolean => true,
+      this.health);
     this.client.start();
     this.service.attach(this.client);
     this.publishList();
@@ -333,27 +353,28 @@ export default function proxyAutoSwitchTest() {
       else { AppStorage.setOrCreate(KEY_CURRENT_NETWORK_TYPE, previousNetwork); }
     });
 
-    it('real parallel probes start only after default failure delay and select direct when it wins', 0, async (): Promise<void> => {
+    // 下面这几条原来测的是 pingProxy 的并发探测/取消。判据换成 tcping 表之后，
+    // 探测不再发任何 TDLib 请求，但"谁能被选中、迟到的回复要作废"这些约束仍然成立，
+    // 所以用例保留、判据换成 health 表。
+    it('skips_a_proxy_tcping_says_is_dead_and_selects_direct', 0, async (): Promise<void> => {
       fixture.close(); fixture = new ProxySwitchFixture(true);
+      fixture.health.failing = new Set<number>([2]);
       fixture.state('connectionStateConnecting');
+      // 生产路径不该再出现 pingProxy（issue #31 的假阴性就是它，且卡住时发不出去）。
       expect(fixture.bridge.count('pingProxy')).assertEqual(0);
       fixture.clock.fire(); await fixture.listReply();
-      expect(fixture.bridge.pending.length).assertEqual(2);
-      expect(fixture.bridge.pending[0]['proxy_id']).assertEqual(2);
-      expect(fixture.bridge.pending[1]['proxy_id']).assertEqual(0);
-      fixture.bridge.replyAt(1, 'pingProxy', { '@type': 'seconds', 'seconds': 0.2 }); await settleProxySwitch();
-      fixture.bridge.replyAt(1, 'getProxies', fixture.listResponse(1)); await settleProxySwitch();
-      fixture.bridge.replyAt(1, 'disableProxy', { '@type': 'ok' }); await settleProxySwitch();
-      fixture.bridge.reply('pingProxy', { '@type': 'seconds', 'seconds': 0.1 }); await settleProxySwitch();
-      expect(fixture.bridge.count('disableProxy')).assertEqual(1); expect(fixture.bridge.count('enableProxy')).assertEqual(0);
+      // 候选 [2, 0]：2 判死，落到直链。
+      await fixture.listReply();
+      expect(fixture.bridge.count('disableProxy')).assertEqual(1);
+      expect(fixture.bridge.count('enableProxy')).assertEqual(0);
+      expect(fixture.bridge.count('pingProxy')).assertEqual(0);
     });
-    it('current route recovering during probes prevents every later selection', 0, async (): Promise<void> => {
+    it('ready_before_the_list_reply_prevents_every_later_selection', 0, async (): Promise<void> => {
       fixture.close(); fixture = new ProxySwitchFixture(true); fixture.state('connectionStateConnecting');
-      fixture.clock.fire(); await fixture.listReply();
+      fixture.clock.fire();
       fixture.state('connectionStateReady');
-      fixture.bridge.replyAt(0, 'pingProxy', { '@type': 'seconds', 'seconds': 0.2 });
-      fixture.bridge.replyAt(0, 'pingProxy', { '@type': 'seconds', 'seconds': 0.1 }); await settleProxySwitch();
-      fixture.bridge.reply('getProxies', fixture.listResponse(1)); await settleProxySwitch();
+      await fixture.listReply();
+      await settleProxySwitch();
       expect(fixture.bridge.count('enableProxy')).assertEqual(0); expect(fixture.bridge.count('disableProxy')).assertEqual(0);
       expect(fixture.clock.callbacks.size).assertEqual(0);
     });
@@ -363,26 +384,29 @@ export default function proxyAutoSwitchTest() {
       fixture.state('connectionStateConnecting'); await settleProxySwitch();
       expect(fixture.clock.callbacks.size).assertEqual(0); expect(fixture.bridge.count('pingProxy')).assertEqual(0);
     });
-    it('manual selection cancels native probes and ignores their late success', 0, async (): Promise<void> => {
+    it('manual_selection_during_the_list_request_ignores_its_late_reply', 0, async (): Promise<void> => {
       fixture.close(); fixture = new ProxySwitchFixture(true); fixture.state('connectionStateConnecting');
-      fixture.clock.fire(); await fixture.listReply(); fixture.service.proxySelectionChanged(2);
-      fixture.bridge.reply('pingProxy', { '@type': 'seconds', 'seconds': 0.1 });
-      fixture.bridge.reply('pingProxy', { '@type': 'seconds', 'seconds': 0.1 }); await settleProxySwitch();
+      fixture.clock.fire(); fixture.service.proxySelectionChanged(2);
+      await fixture.listReply();
+      await settleProxySwitch();
       expect(fixture.bridge.count('enableProxy')).assertEqual(0); expect(fixture.bridge.count('disableProxy')).assertEqual(0);
     });
-    it('failed or invalid probe results do not change the default route', 0, async (): Promise<void> => {
-      fixture.close(); fixture = new ProxySwitchFixture(true); fixture.state('connectionStateConnecting');
+    it('skips_a_dead_proxy_and_switches_to_the_next_one', 0, async (): Promise<void> => {
+      fixture.close(); fixture = new ProxySwitchFixture(true);
+      fixture.ids = [1, 2, 3]; fixture.publishList();
+      fixture.health.failing = new Set<number>([2]);
+      fixture.state('connectionStateConnecting');
       fixture.clock.fire(); await fixture.listReply();
-      fixture.bridge.reply('pingProxy', { '@type': 'seconds', 'seconds': -1 });
-      fixture.bridge.reply('pingProxy', { '@type': 'error', 'code': 500, 'message': 'unreachable' }); await settleProxySwitch();
-      expect(fixture.bridge.count('enableProxy')).assertEqual(0); expect(fixture.bridge.count('disableProxy')).assertEqual(0);
-      expect(fixture.clock.callbacks.size).assertEqual(1); expect(fixture.clock.lastDelay).assertEqual(10000);
+      await fixture.listReply();
+      // 候选顺序 [2, 3, 0]，2 判死 → 3。
+      expect(fixture.bridge.pending[0]['@type']).assertEqual('enableProxy');
+      expect(fixture.bridge.pending[0]['proxy_id']).assertEqual(3);
     });
-    it('changing networks cancels probes from the previous network', 0, async (): Promise<void> => {
+    it('changing_networks_cancels_an_attempt_from_the_previous_network', 0, async (): Promise<void> => {
       fixture.close(); fixture = new ProxySwitchFixture(true); fixture.state('connectionStateConnecting');
-      fixture.clock.fire(); await fixture.listReply(); fixture.network.change('cellular');
-      fixture.bridge.reply('pingProxy', { '@type': 'seconds', 'seconds': 0.1 });
-      fixture.bridge.reply('pingProxy', { '@type': 'seconds', 'seconds': 0.1 }); await settleProxySwitch();
+      fixture.clock.fire(); fixture.network.change('cellular');
+      await fixture.listReply();
+      await settleProxySwitch();
       expect(fixture.bridge.count('enableProxy')).assertEqual(0); expect(fixture.bridge.count('disableProxy')).assertEqual(0);
       expect(fixture.clock.callbacks.size).assertEqual(1);
     });
@@ -484,8 +508,9 @@ export default function proxyAutoSwitchTest() {
       fixture.ids = [1, 2, 3];
       fixture.publishList();
       fixture.state('connectionStateConnectingToProxy');
-      const activeIds: number[] = [1, 2, 3, 0];
-      const targetIds: number[] = [2, 3, 0, 1];
+      // 只走一圈：第二个循环会被"绕完就停手"的闸挡下，见下面那条用例。
+      const activeIds: number[] = [1, 2, 3];
+      const targetIds: number[] = [2, 3, 0];
       for (let i = 0; i < activeIds.length; i++) {
         await fixture.nextEnable(activeIds[i]);
         expect((fixture.bridge.pending[0]['proxy_id'] as number | undefined) ?? 0).assertEqual(targetIds[i]);
@@ -505,7 +530,7 @@ export default function proxyAutoSwitchTest() {
       fixture.ids = [1, 2, 3];
       fixture.publishList();
       fixture.state('connectionStateConnecting');
-      const targets: number[] = [2, 3, 0, 2];
+      const targets: number[] = [2, 3, 0];
       for (let i = 0; i < targets.length; i++) {
         await fixture.nextEnable(1);
         expect((fixture.bridge.pending[0]['proxy_id'] as number | undefined) ?? 0).assertEqual(targets[i]);
@@ -516,6 +541,25 @@ export default function proxyAutoSwitchTest() {
         expect(fixture.clock.callbacks.size).assertEqual(1);
         expect(fixture.clock.lastDelay).assertEqual(10000);
       }
+    });
+
+    it('stops_rotating_after_one_full_cycle_until_the_route_recovers', 0, async (): Promise<void> => {
+      fixture.ids = [1, 2, 3];
+      fixture.publishList();
+      fixture.state('connectionStateConnecting');
+      // 3 个代理 + 直链，绕完一圈还连不上就不再重拨：每 10 秒 enableProxy 一次
+      // 就是用户抱怨的"一直连接中"。
+      const targets: number[] = [2, 3, 0, 2];
+      for (let i = 0; i < targets.length; i++) {
+        await fixture.nextEnable(1);
+        await fixture.reject(targets[i] === 0 ? 'disableProxy' : 'enableProxy', 'proxy rejected');
+        await fixture.replySelection(1);
+      }
+      expect(fixture.clock.callbacks.size).assertEqual(0);
+      // 连上之后重新开始计数——下一次断线仍然要能自动切。
+      await fixture.ready();
+      fixture.state('connectionStateConnecting');
+      expect(fixture.clock.callbacks.size).assertEqual(1);
     });
 
     it('read_only_page_refresh_preserves_progress_after_rejection', 0, async (): Promise<void> => {

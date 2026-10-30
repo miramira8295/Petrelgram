@@ -1,6 +1,6 @@
 import { forgetSearchSession } from '../util/searchSession';
 import { attachRecentChatHistory, detachRecentChatHistory } from '../services/RecentChatHistoryService';
-import { attachHttpsProxyRuntime, restoreHttpsProxyRuntime, detachHttpsProxyRuntime } from '../services/HttpsProxyTransport';
+import { attachProxyMigration, ensureProxyMigration, detachProxyMigration } from '../services/ProxyMigration';
 import { closeFloatingVideo } from '../util/floatingVideoRuntime';
 import { SessionSecurityStore } from '../store/SessionSecurityStore';
 import { attachTdLanguage, detachTdLanguage, initTdLanguageContext, syncTdLanguage } from '../services/TdLanguage';
@@ -151,7 +151,7 @@ function createRuntime(slotId: string): void {
   activeTdFilesDirectory = directories.filesDirectory;
   repairTdTempDirectory(directories.filesDirectory);
   client = createTdClientWithBridge();
-  attachHttpsProxyRuntime(client, directories.databaseDirectory);
+  attachProxyMigration(client, directories.databaseDirectory);
   attachRecentChatHistory(client, directories.databaseDirectory);
   // prefer_ipv6 越早越好：它影响的是**第一次**连接走哪个协议族，等连上了再设
   // 就晚了。setOption 在 setTdlibParameters 之前就能收（issue #133）。
@@ -200,7 +200,9 @@ function createRuntime(slotId: string): void {
   const runtimeAuth = auth;
   runtimeAuth.onStageChange((stage: AuthStage): void => {
     if (client === runtimeClient && stage !== AuthStage.Init && stage !== AuthStage.LoggedOut) {
-      restoreHttpsProxyRuntime(runtimeClient).catch((): void => logE('HTTPS proxy restoration failed'));
+      // 一次性迁移：把 1.5.5 及以前留下的 127.0.0.1 假代理还原成真实地址。
+      // 必须在任何连接尝试之前跑完——这些条目指向已经不存在的中继端口。
+      ensureProxyMigration(runtimeClient);
     }
     if (stage === AuthStage.Ready && client === runtimeClient && auth === runtimeAuth) {
       runtimeReady = true;
@@ -234,7 +236,7 @@ function createRuntime(slotId: string): void {
     sessionSecurity = undefined;
     auth.dispose();
     proxyAutoSwitchService.detach(client);
-    detachHttpsProxyRuntime(client);
+    detachProxyMigration(client);
     detachRecentChatHistory(client);
     files?.close();
     client.dispose();
@@ -389,7 +391,7 @@ async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
   files?.close();
   if (currentClient !== undefined) {
     proxyAutoSwitchService.detach(currentClient);
-    detachHttpsProxyRuntime(currentClient);
+    detachProxyMigration(currentClient);
     detachRecentChatHistory(currentClient);
   }
   if (currentClient !== undefined && currentReady) {

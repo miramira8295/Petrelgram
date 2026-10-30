@@ -1,21 +1,30 @@
 import { ProxyCandidateRace, ProxyCandidateProbe } from './ProxyCandidateRace';
 import { ProxyProbeCancellation } from '../util/ProxyProbeCancellation';
-import { sendProxyRequest } from './HttpsProxyTransport';
 import { TdClient, TimerFns } from '../tdkit/TdClient';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
 import {
   KEY_CURRENT_NETWORK_TYPE, KEY_PROXY_AUTO_SWITCH, KEY_PROXY_SWITCH_DELAY_SEC
 } from '../store/AppSettings';
 import {
-  normalizeProxySwitchDelay, orderedProxyCandidateIds, ProxySwitchCandidate
+  normalizeProxySwitchDelay, orderedProxyCandidateIds, PROXY_AUTO_SWITCH_AVAILABLE, ProxySwitchCandidate
 } from '../util/proxyAutoSwitch';
+import { ProxyHealthSource } from '../util/proxyHealth';
 import { logI, logW } from '../util/log';
 import { subscribeNetworkType } from './NetworkStateService';
+import { proxyHealthMonitor } from './ProxyHealthMonitor';
 
 export type ProxyNetworkSubscription = (listener: (network: string) => void) => () => void;
 
 export interface ProxyAutoSwitchEntry extends ProxySwitchCandidate {
   isEnabled: boolean;
+}
+
+// 中继层删掉之后，代理请求就是普通的 TDLib 请求。取消不再需要撤销临时隧道，
+// 由 ProxyProbeCancellation 本身把 promise 拒掉即可。
+function send(target: TdClient, request: TdRequest, timeoutMs: number,
+  cancellation?: ProxyProbeCancellation): Promise<TdObject> {
+  const run = (): Promise<TdObject> => target.send(request, timeoutMs);
+  return cancellation === undefined ? run() : cancellation.run(run);
 }
 
 // One instance follows the active TDLib runtime. The timer must not belong to
@@ -40,33 +49,48 @@ export class ProxyAutoSwitchService {
   private proxyCount: number = 0;
   private activeProxyId: number = 0;
   private lastAttemptedProxyId: number = -1;
+  // 本轮（自上次连上/换网/手动选择以来）已经切过几次。绕完一圈还连不上就停手：
+  // 每 10 秒重连一次代理，用户看到的就是"一直连接中"，那正是这个功能当初被关掉
+  // 的原因。停下来等 Ready 或换网再重新开始，比无休止重拨强。
+  private switchAttempts: number = 0;
   // Selection ownership is independent of the failover timer: Ready may cancel
   // a timer before enableProxy's acknowledgement arrives.
   private selectionIntent: number = 0;
   private selectionRevision: number = 0;
   private confirmedProxyId: number = -1;
   private selectionListeners: Set<(proxyId: number) => void> = new Set();
+  // 注入式的"这个功能开没开"。生产环境恒为 PROXY_AUTO_SWITCH_AVAILABLE（false），
+  // 单测传 true 才能继续覆盖下面这套状态机——功能下线不等于把算法一起删掉。
+  private available: () => boolean;
+  // 候选的顺序和"值不值得试"都来自这里。单测注入假表，生产是 tcping 巡检。
+  private health: ProxyHealthSource;
+  private foreground: boolean = true;
 
-  constructor(clock?: TimerFns, subscribeNetwork?: ProxyNetworkSubscription, probe?: ProxyCandidateProbe) {
+  constructor(clock?: TimerFns, subscribeNetwork?: ProxyNetworkSubscription, probe?: ProxyCandidateProbe,
+    available: () => boolean = (): boolean => PROXY_AUTO_SWITCH_AVAILABLE,
+    health?: ProxyHealthSource) {
     this.clock = clock ?? {
       setTimeout: (callback: () => void, ms: number): number => setTimeout(callback, ms),
       clearTimeout: (id: number): void => clearTimeout(id)
     };
+    this.available = available;
+    this.health = health ?? proxyHealthMonitor;
     this.subscribeNetwork = subscribeNetwork ?? subscribeNetworkType;
-    this.probe = probe ?? (async (id: number, cancellation?: ProxyProbeCancellation): Promise<boolean> => {
-      const target = this.client;
-      if (target === null) { return false; }
-      const request: TdRequest = { '@type': 'pingProxy' };
-      request['proxy_id'] = id;
-      const result = await sendProxyRequest(target, request, 12000, cancellation);
-      const seconds = result['seconds'] as number | undefined;
-      return seconds !== undefined && Number.isFinite(seconds) && seconds >= 0;
-    });
+    // 候选的判据换成本机 tcping 的结果，不再发 pingProxy。
+    //
+    // pingProxy 验的是"经这个代理到 Telegram DC"的端到端路径，比 tcping 真，但
+    // 两个硬伤：假阴性常见（issue #31：代理能用、pingProxy 报错），以及它要占着
+    // TDLib 客户端、一次好几秒——而这时候 TDLib 正卡在连接中，本来就发不出请求。
+    // 代价是 tcping 绿只代表端口开着（认证失败、出不了网它看不出来），所以它只
+    // 用来**排序和排除**，真正的结论由"切过去之后 TDLib 连不连得上"给。
+    this.probe = probe ?? (async (id: number): Promise<boolean> => this.health.usable(id));
   }
 
   attach(target: TdClient): void {
     this.detach();
     this.client = target;
+    this.foreground = AppStorage.get<boolean>('appIsForeground') ?? true;
+    this.syncHealthMonitor();
     this.hadNetwork = this.networkAvailable();
     this.networkType = AppStorage.get<string>(KEY_CURRENT_NETWORK_TYPE) ?? 'other';
     this.unsubscribeNetwork = this.subscribeNetwork((network: string): void => {
@@ -96,9 +120,11 @@ export class ProxyAutoSwitchService {
     this.proxyCount = 0;
     this.activeProxyId = 0;
     this.lastAttemptedProxyId = -1;
+    this.switchAttempts = 0;
     this.listSequence++;
     this.invalidateSelection();
     this.selectionListeners.clear();
+    this.syncHealthMonitor();
   }
 
   runtimeReady(target: TdClient): void {
@@ -106,9 +132,23 @@ export class ProxyAutoSwitchService {
   }
 
   settingsChanged(): void {
-    if (!this.autoSwitchOn()) { this.lastAttemptedProxyId = -1; }
+    if (!this.autoSwitchOn()) {
+      this.lastAttemptedProxyId = -1;
+      this.switchAttempts = 0;
+    }
+    this.syncHealthMonitor();
     this.cancelWork();
     this.armIfNeeded();
+  }
+
+  // 巡检只在"勾了自动切换 + 有客户端"时开。start/stop 自己幂等，这里不做判断，
+  // 免得两处判据（这里和 monitor 内部）走岔。
+  private syncHealthMonitor(): void {
+    if (this.foreground && this.autoSwitchOn() && this.client !== null) {
+      this.health.start();
+    } else {
+      this.health.stop();
+    }
   }
 
   proxyListChanged(entries: ProxyAutoSwitchEntry[]): void {
@@ -158,6 +198,7 @@ export class ProxyAutoSwitchService {
     this.invalidateSelection();
     this.activeProxyId = proxyId;
     this.lastAttemptedProxyId = -1;
+    this.switchAttempts = 0;
     // Selection is intent, not proof that TDLib is still connecting. Add/edit
     // acknowledgements can arrive after Ready/Updating; canArm checks the
     // actual connection state before starting another failover timer.
@@ -176,7 +217,10 @@ export class ProxyAutoSwitchService {
     if (state === 'connectionStateReady' || state === 'connectionStateUpdating' ||
       state === 'connectionStateWaitingForNetwork') {
       this.proxyConnectPending = false;
-      if (state !== 'connectionStateWaitingForNetwork') { this.lastAttemptedProxyId = -1; }
+      if (state !== 'connectionStateWaitingForNetwork') {
+        this.lastAttemptedProxyId = -1;
+        this.switchAttempts = 0;
+      }
       this.cancelWork();
       if (state === 'connectionStateReady' && previous !== state) {
         this.refreshProxyList();
@@ -207,13 +251,24 @@ export class ProxyAutoSwitchService {
       // the network comes back. Recovery starts a fresh, full delay.
       this.cancelWork();
     } else if (recovered || (changed && this.switchingToken !== -1)) {
+      // 换了网络就是换了一批"哪条通"的事实，上一轮试过的那些不算数了。
+      this.switchAttempts = 0;
       this.cancelWork();
       this.resumeConnecting();
     }
   }
 
   private autoSwitchOn(): boolean {
-    return AppStorage.get<boolean>(KEY_PROXY_AUTO_SWITCH) ?? false;
+    // PROXY_AUTO_SWITCH_AVAILABLE 是总闸：新判据（tcping）还没上真机验过，
+    // 在那之前存量的 proxyAutoSwitch=true 也一概不认。
+    return this.available() && (AppStorage.get<boolean>(KEY_PROXY_AUTO_SWITCH) ?? false);
+  }
+
+  // 前后台切换。巡检是常驻的 30 秒定时器，后台必须整条停掉——只靠 pollOnce 里
+  // 那个 foreground() 判断的话，定时器照样每 30 秒醒一次，白耗电。
+  foregroundChanged(value: boolean): void {
+    this.foreground = value;
+    this.syncHealthMonitor();
   }
 
   private canArm(): boolean {
@@ -221,7 +276,10 @@ export class ProxyAutoSwitchService {
     if (!this.autoSwitchOn() || !this.proxyConnectPending || this.client === null) {
       return false;
     }
-    return !this.listKnown || this.proxyCount >= 1;
+    if (!this.listKnown) { return true; }
+    if (this.proxyCount < 1) { return false; }
+    // 一圈 = 所有代理 + 直链。绕完了还连不上就不再加压，等 Ready/换网。
+    return this.switchAttempts < Math.max(2, this.proxyCount + 1);
   }
 
   private armIfNeeded(): void {
@@ -261,7 +319,7 @@ export class ProxyAutoSwitchService {
   }
 
   private async listProxies(target: TdClient): Promise<ProxyAutoSwitchEntry[]> {
-    const result = await sendProxyRequest(target, { '@type': 'getProxies' } as TdRequest);
+    const result = await send(target, { '@type': 'getProxies' } as TdRequest, 20000);
     const raw = (result['proxies'] as TdObject[] | undefined) ?? [];
     return raw.map((entry: TdObject): ProxyAutoSwitchEntry => ({
       id: (entry['id'] as number | undefined) ?? 0,
@@ -272,7 +330,7 @@ export class ProxyAutoSwitchService {
   private selectRoute(target: TdClient, proxyId: number): Promise<void> {
     const request: TdRequest = { '@type': proxyId === 0 ? 'disableProxy' : 'enableProxy' };
     if (proxyId > 0) { request['proxy_id'] = proxyId; }
-    return sendProxyRequest(target, request, 20000).then((): void => {});
+    return send(target, request, 20000).then((): void => {});
   }
 
   private applyProxyList(entries: ProxyAutoSwitchEntry[], manual: boolean): void {
@@ -327,7 +385,9 @@ export class ProxyAutoSwitchService {
       this.proxyCount = initial.length;
       this.activeProxyId = activeId;
       this.publishSelection(activeId);
-      const candidates = orderedProxyCandidateIds(initial, activeId,
+      // 顺序由 tcping 决定（快的在前、正在失败的沉底），轮转规则仍归
+      // orderedProxyCandidateIds：从上次那项的下一项开始、绕一圈、跳过在用的那个。
+      const candidates = orderedProxyCandidateIds(this.health.sortedForSwitch(initial), activeId,
         this.lastAttemptedProxyId >= 0 ? this.lastAttemptedProxyId : activeId);
       if (candidates.length === 0) { return; }
       const race = new ProxyCandidateRace(this.clock);
@@ -351,6 +411,7 @@ export class ProxyAutoSwitchService {
         return;
       }
       this.lastAttemptedProxyId = candidateId;
+      this.switchAttempts++;
       this.listSequence++;
       this.invalidateSelection();
       const intent = this.selectionIntent;

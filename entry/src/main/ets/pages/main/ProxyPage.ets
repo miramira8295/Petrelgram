@@ -3,7 +3,7 @@ import { pasteboard } from '@kit.BasicServicesKit';
 import { TdError, TdObject } from '../../tdkit/TdTypes';
 import { getConnectionState, getTdClient } from '../../tdkit/Globals';
 import {
-  ProxyEntry, PROXY_SOCKS5, PROXY_MTPROTO, PROXY_HTTP, PROXY_HTTPS,
+  ProxyEntry, PROXY_SOCKS5, PROXY_MTPROTO, PROXY_HTTP,
   proxyTypeLabel, listProxies, addProxy, editProxy, enableProxy, disableProxy,
   removeProxy, pingProxy, testProxy, getProxyShareLink
 } from '../../store/ProxyApi';
@@ -17,8 +17,9 @@ import {
   serializeProxyMirror, serializeSyncOff, syncEnabledFor, syncableOf, toggledSyncOff
 } from '../../util/proxyMirror';
 import {
-  KEY_PREFER_IPV6, KEY_PROXY_AUTO_SWITCH, KEY_PROXY_SWITCH_DELAY_SEC, setBoolean, setNumber, setString
+  KEY_PREFER_IPV6, KEY_PROXY_AUTO_SWITCH, setBoolean, setString
 } from '../../store/AppSettings';
+import { PROXY_AUTO_SWITCH_AVAILABLE } from '../../util/proxyAutoSwitch';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
@@ -35,9 +36,6 @@ import { HdsSubDestination } from '../common/HdsSubDestination';
 import {
   ProxyAutoSwitchEntry, proxyAutoSwitchService
 } from '../../services/ProxyAutoSwitchService';
-import {
-  normalizeProxySwitchDelay, PROXY_SWITCH_DELAYS
-} from '../../util/proxyAutoSwitch';
 
 // 回落的 TCP 握手计时上限。5s 内连不上代理服务器，就按不通处理。
 const REACH_TIMEOUT_MS: number = 5000;
@@ -57,8 +55,7 @@ interface TypeOption {
 const TYPES: TypeOption[] = [
   { label: 'SOCKS5', value: PROXY_SOCKS5 },
   { label: 'MTProto', value: PROXY_MTPROTO },
-  { label: 'HTTP', value: PROXY_HTTP },
-  { label: 'HTTPS', value: PROXY_HTTPS }
+  { label: 'HTTP', value: PROXY_HTTP }
 ];
 
 // Proxy settings use native TDLib IDs; HTTPS transport is supplied by the TLS relay.
@@ -90,9 +87,8 @@ export struct ProxyPage {
   @State actionKey: string = '';
   @State preferredProxyId: number = 0;
   @State skeletonBright: boolean = false;
-  @StorageProp(KEY_PROXY_AUTO_SWITCH) private autoSwitch: boolean = false;
   @StorageProp(KEY_PREFER_IPV6) private preferIpv6: boolean = false;
-  @StorageProp(KEY_PROXY_SWITCH_DELAY_SEC) private autoSwitchDelay: number = 10;
+  @StorageProp(KEY_PROXY_AUTO_SWITCH) private autoSwitch: boolean = false;
 
   @State sheetOpen: boolean = false;
   @State editingId: number = 0;
@@ -322,13 +318,11 @@ export struct ProxyPage {
       ? $r('app.string.px_auto_switch_sub') : $r('app.string.px_auto_switch_need_more');
   }
 
-  private autoSwitchDelayIndex(): number {
-    return PROXY_SWITCH_DELAYS.indexOf(normalizeProxySwitchDelay(this.autoSwitchDelay));
-  }
-
   private setAutoSwitch(value: boolean): void {
+    // 一条代理都没有时"自动切换"没有候选，开了也是空转。
     if (value && !this.autoSwitchAvailable()) { return; }
     setBoolean(KEY_PROXY_AUTO_SWITCH, value);
+    // settingsChanged 负责起停 tcping 巡检——巡检只在勾着的时候跑。
     proxyAutoSwitchService.settingsChanged();
   }
 
@@ -339,13 +333,6 @@ export struct ProxyPage {
     applyPreferIpv6().catch((caught: Error): void => {
       logE(`ProxyPage.setPreferIpv6 failed: ${caught.message}`);
     });
-  }
-
-  private setAutoSwitchDelay(index: number): void {
-    const delay = PROXY_SWITCH_DELAYS[index];
-    if (delay === undefined || delay === this.autoSwitchDelay) { return; }
-    setNumber(KEY_PROXY_SWITCH_DELAY_SEC, delay);
-    proxyAutoSwitchService.settingsChanged();
   }
 
   // 换到一个还没有代理的账号时，把本机镜像里的补回去（代理存在 TDLib 里，
@@ -762,7 +749,7 @@ export struct ProxyPage {
   }
 
   private copyShareLink(entry: ProxyEntry): void {
-    if ((entry.type === PROXY_HTTP || entry.type === PROXY_HTTPS) || this.actionKey !== '') { return; }
+    if ((entry.type === PROXY_HTTP) || this.actionKey !== '') { return; }
     this.actionKey = `share_${entry.id}`;
     getProxyShareLink(entry.id).then((url: string): void => {
       if (!this.active) { return; }
@@ -987,19 +974,19 @@ export struct ProxyPage {
 
   private typeTint(type: string): string {
     if (type === PROXY_MTPROTO) { return '#9B6BEA'; }
-    if (type === PROXY_HTTP || type === PROXY_HTTPS) { return '#FF9500'; }
+    if (type === PROXY_HTTP) { return '#FF9500'; }
     return '#3478F6';
   }
 
   private typeIconBackground(type: string): string {
     if (type === PROXY_MTPROTO) { return '#1F9B6BEA'; }
-    if (type === PROXY_HTTP || type === PROXY_HTTPS) { return '#1FFF9500'; }
+    if (type === PROXY_HTTP) { return '#1FFF9500'; }
     return '#1F3478F6';
   }
 
   private typeBadgeBackground(type: string): string {
     if (type === PROXY_MTPROTO) { return '#169B6BEA'; }
-    if (type === PROXY_HTTP || type === PROXY_HTTPS) { return '#16FF9500'; }
+    if (type === PROXY_HTTP) { return '#16FF9500'; }
     return '#163478F6';
   }
 
@@ -1064,48 +1051,38 @@ export struct ProxyPage {
     ).animation({ duration: this.animationDuration(180), curve: Curve.EaseOut }));
   }
 
+  // 自动切换已下线（见 PROXY_AUTO_SWITCH_AVAILABLE）：中继层删除之后，换一次
+  // 代理就是让 TDLib 全量重连，自动切换会把短抖动放大成反复掉线。这张卡片只留
+  // 网络相关的开关，「自动切换」「切换延迟」两行已删，服务代码仍保留。
   @Builder
-  autoSwitchCard() {
+  networkCard() {
     Column() {
-      Row({ space: 12 }) {
-        Stack({ alignContent: Alignment.Center }) {
-          Circle({ width: 42, height: 42 }).fill('#163478F6');
-          SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(21).fontColor([COLOR_PRIMARY]);
+      // 中继层删掉之后自动切换重做过一版（tcping 排序 + 失败触发），但在真机
+      // 验证之前先不露面：PROXY_AUTO_SWITCH_AVAILABLE 是总闸，翻成 true 这一整块
+      // 才渲染，服务端那侧的 autoSwitchOn() 也才认存量的开关值。
+      if (PROXY_AUTO_SWITCH_AVAILABLE) {
+        Row({ space: 12 }) {
+          Stack({ alignContent: Alignment.Center }) {
+            Circle({ width: 42, height: 42 }).fill('#1634C759');
+            SymbolGlyph($r('sys.symbol.arrow_up_left_and_arrow_down_right'))
+              .fontSize(21).fontColor(['#34C759']);
+          }
+          Column({ space: 3 }) {
+            Text($r('app.string.px_auto_switch')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
+            Text(this.autoSwitchSubtitle()).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+              .maxLines(3).textOverflow({ overflow: TextOverflow.Ellipsis });
+          }
+          .layoutWeight(1).alignItems(HorizontalAlign.Start).justifyContent(FlexAlign.Center);
+          Toggle({ type: ToggleType.Switch, isOn: this.autoSwitch && this.autoSwitchAvailable() })
+            .selectedColor(COLOR_PRIMARY)
+            .enabled(this.autoSwitchAvailable())
+            .onChange((value: boolean): void => this.setAutoSwitch(value));
         }
-        Column({ space: 3 }) {
-          Text($r('app.string.px_auto_switch')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
-          Text(this.autoSwitchSubtitle()).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-            .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis });
-        }
-        .layoutWeight(1).alignItems(HorizontalAlign.Start).justifyContent(FlexAlign.Center);
-        Toggle({ type: ToggleType.Switch, isOn: this.autoSwitch })
-          .selectedColor(COLOR_PRIMARY)
-          .enabled(!this.loading && (this.autoSwitchAvailable() || this.autoSwitch))
-          .onChange((value: boolean): void => this.setAutoSwitch(value));
+        .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
+        .alignItems(VerticalAlign.Center);
+
+        Divider().color(COLOR_DIVIDER).strokeWidth(0.5).margin({ left: 14, right: 14 });
       }
-      .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
-      .alignItems(VerticalAlign.Center);
-
-      Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 68 });
-
-      Row({ space: 12 }) {
-        Text($r('app.string.px_auto_switch_delay')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY)
-          .layoutWeight(1);
-        Select(PROXY_SWITCH_DELAYS.map((delay: number): SelectOption => ({
-          value: str('px_auto_switch_seconds', delay)
-        } as SelectOption)))
-          .selected(this.autoSwitchDelayIndex())
-          .value(str('px_auto_switch_seconds', normalizeProxySwitchDelay(this.autoSwitchDelay)))
-          .font({ size: 14 }).fontColor(COLOR_PRIMARY)
-          .enabled(this.autoSwitch && this.autoSwitchAvailable())
-          .onSelect((index: number): void => this.setAutoSwitchDelay(index));
-      }
-      .width('100%').height(52).padding({ left: 16, right: 8 })
-      .alignItems(VerticalAlign.Center)
-      .opacity(this.autoSwitch && this.autoSwitchAvailable() ? 1 : 0.46);
-
-      Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 68 });
-
       // issue #133：纯 IPv6 网络下 TDLib 默认优先找 IPv4，找不到就连不上。
       // 自动探测已经覆盖"本机没有 IPv4"的情形，这个开关给双栈但想强制走 v6 的人。
       Row({ space: 12 }) {
@@ -1154,7 +1131,7 @@ export struct ProxyPage {
     Menu() {
       MenuItem({ content: $r('app.string.px_edit') }).onClick((): void => this.openEdit(entry));
       MenuItem({ content: $r('app.string.px_test') }).onClick((): void => this.retryPing(entry));
-      if (entry.type !== PROXY_HTTP && entry.type !== PROXY_HTTPS) {
+      if (entry.type !== PROXY_HTTP) {
         MenuItem({ content: $r('app.string.px_copy_link') }).onClick((): void => this.copyShareLink(entry));
       }
       MenuItem({
@@ -1538,7 +1515,7 @@ export struct ProxyPage {
         Column({ space: 12 }) {
           if (!this.loading || this.proxies.length > 0) {
             this.connectionCard();
-            this.autoSwitchCard();
+            this.networkCard();
           }
           this.syncWarningCard();
           if (this.loading && this.proxies.length === 0) {

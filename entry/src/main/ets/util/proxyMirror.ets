@@ -56,6 +56,11 @@ export function parseProxyMirror(raw: string): ProxyEntry[] {
     for (const r of rows) {
       const server: string = (r.server ?? '').toString();
       const port: number = Number(r.port);
+      // TLS 代理已经不支持（中继层删除，TDLib 的 ProxyType 只有 socks5/http/mtproto）。
+      // 镜像里留着它们只会在换账号时被补进去、再被 TDLib 拒掉。
+      if ((r.type ?? '').toString() === 'proxyTypeHttps') {
+        continue;
+      }
       if (server === '' || !Number.isFinite(port) || port <= 0) {
         continue;
       }

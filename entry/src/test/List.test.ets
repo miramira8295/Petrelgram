@@ -6,8 +6,6 @@ import wallpaperEditorSessionTest from './WallpaperEditorSession.test';
 import targetSendFilterTest from './TargetSendFilter.test';
 import searchPresentationTest from './SearchPresentation.test';
 import recentChatHistoryTest from './RecentChatHistory.test';
-import httpsProxyRelayTest from './HttpsProxyRelay.test';
-import httpsProxyTest from './HttpsProxy.test';
 import floatingVideoRuntimeTest from './FloatingVideoRuntime.test';
 import messageDragGestureTest from './MessageDragGesture.test';
 import pinnedVisibilityTest from './PinnedVisibility.test';
@@ -131,6 +129,7 @@ import chatMemberInviteTest from './ChatMemberInvite.test';
 import newGroupLogicTest from './NewGroupLogic.test';
 import proxyLogicTest from './ProxyLogic.test';
 import proxyAutoSwitchTest from './ProxyAutoSwitch.test';
+import proxyHealthTest from './ProxyHealth.test';
 import callHistoryPresentationTest from './CallHistoryPresentation.test';
 import callsStoreTest from './CallsStore.test';
 import privacyApiTest from './PrivacyApi.test';
@@ -400,10 +399,8 @@ import contactAddErrorTest from './ContactAddError.test';
 import contactAddRequestTest from './ContactAddRequest.test';
 
 export default function testsuite() {
-  httpsProxyTest();
   searchPresentationTest();
   recentChatHistoryTest();
-  httpsProxyRelayTest();
   floatingVideoRuntimeTest();
   tdLogPolicyTest();
   tdLanguageTest();
@@ -520,6 +517,7 @@ export default function testsuite() {
   chatMemberInviteTest();
   proxyLogicTest();
   proxyAutoSwitchTest();
+  proxyHealthTest();
   callHistoryPresentationTest();
   callsStoreTest();
   privacyApiTest();

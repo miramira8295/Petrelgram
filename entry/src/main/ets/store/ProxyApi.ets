@@ -1,12 +1,9 @@
-import { sendProxyRequest } from '../services/HttpsProxyTransport';
-import { PROXY_HTTPS } from '../util/httpsProxyProtocol';
 import { getTdClient } from '../tdkit/Globals';
+import { ensureProxyMigration } from '../services/ProxyMigration';
 import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
 import { stripIpv6Brackets } from '../util/ipFamily';
 
-export { PROXY_HTTPS };
-
-// Native proxy IDs stay in TDLib; HTTPS uses the account-scoped TLS relay adapter.
+// 代理直接交给 TDLib：本机中继层已删除，代理配置就是 TDLib 自己的配置。
 export const PROXY_SOCKS5: string = 'proxyTypeSocks5';
 export const PROXY_MTPROTO: string = 'proxyTypeMtproto';
 export const PROXY_HTTP: string = 'proxyTypeHttp';
@@ -27,7 +24,6 @@ export interface ProxyEntry {
 export function proxyTypeLabel(type: string): string {
   if (type === PROXY_MTPROTO) { return 'MTProto'; }
   if (type === PROXY_HTTP) { return 'HTTP'; }
-  if (type === PROXY_HTTPS) { return 'HTTPS'; }
   return 'SOCKS5';
 }
 
@@ -69,7 +65,10 @@ export function proxyEntryFromAddedObject(added: TdObject): ProxyEntry {
 }
 
 export async function listProxies(): Promise<ProxyEntry[]> {
-  const result = await sendProxyRequest(getTdClient(), { '@type': 'getProxies' } as TdRequest);
+  // 代理页可能在启动迁移跑完之前就被打开（stage 回调失败会留到下一次重试），
+  // 那时读到的还是 127.0.0.1 的旧条目，用户看到会当成自己的配置。
+  await ensureProxyMigration(getTdClient());
+  const result = await getTdClient().send({ '@type': 'getProxies' } as TdRequest);
   const list = (result['proxies'] as TdObject[] | undefined) ?? [];
   return list.map((added: TdObject): ProxyEntry => proxyEntryFromAddedObject(added));
 }
@@ -78,7 +77,7 @@ export async function addProxy(entry: ProxyEntry, enable: boolean): Promise<Prox
   const request: TdRequest = { '@type': 'addProxy' };
   request['proxy'] = proxyObjectOf(entry);
   request['enable'] = enable;
-  const result = await sendProxyRequest(getTdClient(), request, 20000);
+  const result = await getTdClient().send(request, 20000);
   return proxyEntryFromAddedObject(result);
 }
 
@@ -87,24 +86,24 @@ export async function editProxy(entry: ProxyEntry, enable: boolean): Promise<Pro
   request['proxy_id'] = entry.id;
   request['proxy'] = proxyObjectOf(entry);
   request['enable'] = enable;
-  const result = await sendProxyRequest(getTdClient(), request, 20000);
+  const result = await getTdClient().send(request, 20000);
   return proxyEntryFromAddedObject(result);
 }
 
 export async function enableProxy(id: number): Promise<void> {
   const request: TdRequest = { '@type': 'enableProxy' };
   request['proxy_id'] = id;
-  await sendProxyRequest(getTdClient(), request, 20000);
+  await getTdClient().send(request, 20000);
 }
 
 export async function disableProxy(): Promise<void> {
-  await sendProxyRequest(getTdClient(), { '@type': 'disableProxy' } as TdRequest, 20000);
+  await getTdClient().send({ '@type': 'disableProxy' } as TdRequest, 20000);
 }
 
 export async function removeProxy(id: number): Promise<void> {
   const request: TdRequest = { '@type': 'removeProxy' };
   request['proxy_id'] = id;
-  await sendProxyRequest(getTdClient(), request, 20000);
+  await getTdClient().send(request, 20000);
 }
 
 // Computes Telegram round-trip time through a SAVED proxy. TDLib's pingProxy
@@ -114,7 +113,7 @@ export async function removeProxy(id: number): Promise<void> {
 export async function pingProxy(proxyId: number): Promise<number> {
   const request: TdRequest = { '@type': 'pingProxy' };
   request['proxy_id'] = proxyId;
-  const result = await sendProxyRequest(getTdClient(), request, 12000);
+  const result = await getTdClient().send(request, 12000);
   const seconds = (result['seconds'] as number | undefined) ?? -1;
   if (!Number.isFinite(seconds) || seconds < 0) {
     throw new TdError(-1, 'invalid proxy ping result');
@@ -137,14 +136,14 @@ export async function testProxy(entry: ProxyEntry): Promise<number> {
   // MTProto 还带 secret，一旦 JSON.stringify 进 hilog，任何能连上设备的人
   // 都读得到。当初排查形状问题时加过这行，问题已经定位，日志必须撤掉。
   const startedAt = Date.now();
-  await sendProxyRequest(getTdClient(), request, 12000);
+  await getTdClient().send(request, 12000);
   return (Date.now() - startedAt) / 1000;
 }
 
 export async function getProxyShareLink(id: number): Promise<string> {
   const request: TdRequest = { '@type': 'getProxyLink' };
   request['proxy_id'] = id;
-  const result = await sendProxyRequest(getTdClient(), request);
+  const result = await getTdClient().send(request);
   return (result['url'] as string | undefined) ?? '';
 }
 
