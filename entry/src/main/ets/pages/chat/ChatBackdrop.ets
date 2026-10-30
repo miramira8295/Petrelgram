@@ -38,6 +38,14 @@ const AMBIENT_PHASE_MS: number = BACKDROP_PHASE_MS;
 export struct ChatBackdrop {
   // 可见性只控制动态层，不进入壁纸参数和光栅签名。
   @Prop @Watch('syncMotion') animationsAllowed: boolean = true;
+  // 要不要那两颗氛围光斑。聊天页要（它是聊天的一部分氛围），被
+  // AppBackdrop 借去当「APP 壁纸」的页面不要——会话详情页的用户反馈是
+  // 「背景有个一直在运动的圆」，在那类以玻璃卡片为主的页面上它只会分散
+  // 注意力。默认 true，只有明确不要的调用方传 false。
+  //
+  // 只影响**画不画**和**相位时钟跑不跑**，不影响 canBakeDarkMask：那一支
+  // 决定暗化遮罩烘不烘进光栅，改它会连带改光栅签名，不值得为一个纯装饰开关动。
+  @Prop @Watch('syncMotion') ambient: boolean = true;
   @StorageProp('appIsForeground') @Watch('syncMotion') appForeground: boolean = true;
   @Prop @Watch('onParamsChanged') chatBg: ChatBackgroundState;
   @Prop @Watch('onParamsChanged') screenW: number;
@@ -112,7 +120,7 @@ export struct ChatBackdrop {
   }
 
   private syncMotion(): void {
-    this.phaseClock.setRunning(this.appeared && this.effectsVisible() &&
+    this.phaseClock.setRunning(this.appeared && this.ambient && this.effectsVisible() &&
       this.ambientEnabled() && this.effectDuration(KEY_POWER_EFFECT_BACKGROUND, AMBIENT_PHASE_MS) > 0);
   }
 
@@ -386,7 +394,7 @@ export struct ChatBackdrop {
       this.wallpaperLayer();
       // 只停计时器无法取消已经在 RS 运行的 4200ms 插值；隐藏时直接撤下动态节点。
       // ambientEnabled 仍只表示用户设置，canBakeDarkMask 不受可见性影响。
-      if (this.effectsVisible() && this.ambientEnabled()) {
+      if (this.ambient && this.effectsVisible() && this.ambientEnabled()) {
         Circle({ width: 250, height: 250 })
           .fill('#142A9FE8')
           .position({ x: this.phase ? this.layerW() - 150 : -90, y: 110 })
