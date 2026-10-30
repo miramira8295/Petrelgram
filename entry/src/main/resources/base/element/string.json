@@ -11533,10 +11533,6 @@
       "value": "已暂停，点击继续下载"
     },
     {
-      "name": "app_exit_again",
-      "value": "再按一次返回键退出"
-    },
-    {
       "name": "split_pick_a_chat",
       "value": "选择一个会话开始"
     },

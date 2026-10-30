@@ -353,9 +353,6 @@ struct Index {
     });
   }
 
-  // 双击退出的时间窗。
-  private lastBackAt: number = 0;
-
   onBackPress(): boolean {
     if (collapseFloatingVideo()) { return true; }
     // 分享选择器开着时先吃掉返回键。它是画在 Index 这一层的浮层，不在
@@ -372,9 +369,11 @@ struct Index {
     if (this.stage !== AuthStage.Ready) {
       return false;
     }
-    // 主屏返回键三级递退：设置/联系人/个人资料 → 聊天页签；聊天页签在别的
-    // 文件夹 → 先回"所有"；都在原位了才轮到退出，且要两秒内再按一次（防误触，
-    // issue #71/#48 的诉求）。
+    // 主屏返回键两级递退：设置/联系人/个人资料 → 聊天页签；聊天页签在别的
+    // 文件夹 → 先回"所有"；都在原位了就放行，应用直接退到后台。
+    //
+    // 2026-10-30：原来还有第三级「两秒内再按一次才退出」（issue #71/#48 的防误触）。
+    // 用户要求去掉——回到原位后按一下就该走，不要停在这儿弹提示。
     const tab: number = AppStorage.get<number>('mainTabIndex') ?? 0;
     if (tab !== 0) {
       AppStorage.setOrCreate<number>('mainTabIndex', 0);
@@ -385,13 +384,7 @@ struct Index {
       AppStorage.setOrCreate<number>('chatFolderIndex', 0);
       return true;
     }
-    const now: number = Date.now();
-    if (now - this.lastBackAt < 2000) {
-      return false; // 放行，应用退到后台
-    }
-    this.lastBackAt = now;
-    promptAction.showToast({ message: $r('app.string.app_exit_again'), duration: 1600 });
-    return true;
+    return false;
   }
 
   build() {
