@@ -78,6 +78,12 @@ function flushToDisk(): void {
   }
 }
 
+// 退到后台时把缓冲刷一次。平时攒够 FLUSH_LINES 行才写盘，进程被系统回收时
+// 最后那批还没落盘的日志（往往正好是出事的那几行）就跟着内存一起没了。
+export function flushDiagLog(): void {
+  flushToDisk();
+}
+
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }

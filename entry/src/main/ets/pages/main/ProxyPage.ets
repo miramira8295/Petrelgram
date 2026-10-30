@@ -1051,15 +1051,14 @@ export struct ProxyPage {
     ).animation({ duration: this.animationDuration(180), curve: Curve.EaseOut }));
   }
 
-  // 自动切换已下线（见 PROXY_AUTO_SWITCH_AVAILABLE）：中继层删除之后，换一次
-  // 代理就是让 TDLib 全量重连，自动切换会把短抖动放大成反复掉线。这张卡片只留
-  // 网络相关的开关，「自动切换」「切换延迟」两行已删，服务代码仍保留。
+  // 「切换延迟」那一行不在了：判据改成 tcping 之后延迟由常量决定（默认 10 秒），
+  // 页面只剩「自动切换」一个开关。换一次代理就是让 TDLib 全量重连，所以服务端
+  // 那边绕完一圈就停手（ProxyAutoSwitchService.canArm），不会反复掉线。
   @Builder
   networkCard() {
     Column() {
-      // 中继层删掉之后自动切换重做过一版（tcping 排序 + 失败触发），但在真机
-      // 验证之前先不露面：PROXY_AUTO_SWITCH_AVAILABLE 是总闸，翻成 true 这一整块
-      // 才渲染，服务端那侧的 autoSwitchOn() 也才认存量的开关值。
+      // PROXY_AUTO_SWITCH_AVAILABLE 是总闸：关掉时这一整块不渲染，服务端的
+      // autoSwitchOn() 也不认存量的开关值。
       if (PROXY_AUTO_SWITCH_AVAILABLE) {
         Row({ space: 12 }) {
           Stack({ alignContent: Alignment.Center }) {

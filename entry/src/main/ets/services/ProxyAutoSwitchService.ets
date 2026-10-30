@@ -59,8 +59,8 @@ export class ProxyAutoSwitchService {
   private selectionRevision: number = 0;
   private confirmedProxyId: number = -1;
   private selectionListeners: Set<(proxyId: number) => void> = new Set();
-  // 注入式的"这个功能开没开"。生产环境恒为 PROXY_AUTO_SWITCH_AVAILABLE（false），
-  // 单测传 true 才能继续覆盖下面这套状态机——功能下线不等于把算法一起删掉。
+  // 注入式的"这个功能开没开"。生产走 PROXY_AUTO_SWITCH_AVAILABLE，单测注入
+  // true/false 覆盖开关两端的状态机。
   private available: () => boolean;
   // 候选的顺序和"值不值得试"都来自这里。单测注入假表，生产是 tcping 巡检。
   private health: ProxyHealthSource;
@@ -259,8 +259,8 @@ export class ProxyAutoSwitchService {
   }
 
   private autoSwitchOn(): boolean {
-    // PROXY_AUTO_SWITCH_AVAILABLE 是总闸：新判据（tcping）还没上真机验过，
-    // 在那之前存量的 proxyAutoSwitch=true 也一概不认。
+    // PROXY_AUTO_SWITCH_AVAILABLE 是总闸：关掉时存量的 proxyAutoSwitch=true
+    // 也一概不认——这个开关按"能整体撤回"设计，撤的时候不许有残留生效。
     return this.available() && (AppStorage.get<boolean>(KEY_PROXY_AUTO_SWITCH) ?? false);
   }
 

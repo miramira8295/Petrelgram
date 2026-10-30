@@ -1,23 +1,22 @@
 export const PROXY_SWITCH_DELAYS: number[] = [5, 10, 15, 30, 60];
 export const PROXY_SWITCH_DELAY_DEFAULT: number = 10;
 
-// 自动切换的总闸。false 时：设置里不出现这个开关、存量的 true 也不生效、
-// tcping 巡检不会启动。
+// 自动切换的总闸。true 时：设置里出现这个开关、按 KEY_PROXY_AUTO_SWITCH 的存储
+// 值决定开不开、勾上才启动 tcping 巡检。false 是整体撤回用的（存量的 true 也
+// 一概不认、巡检不启动、UI 整块不渲染）。
 //
-// 【为什么当初关掉】它以前能做到"换上备用代理不掉线"，靠的是中继层在内部换
-// 路由——一个 TDLib 请求都不用发。中继层删掉之后，每次切换都等于
-// enableProxy/disableProxy，TDLib 要全量重连；弱网下连切几次就是用户抱怨的
-// "一直连接中"。
+// 【判据】TDLib 没有"连接失败"事件：updateConnectionState 只有五态，代理死了
+// 就是永远停在 ConnectingToProxy。所谓失败只能按"停在非 Ready 多久"推断——
+// 超过 PROXY_SWITCH_DELAY_SEC（默认 10 秒）就换下一条候选。
 //
-// 【重做成了什么样】判据从"TDLib 端到端 ping（pingProxy）"换成"本机对代理
-// 服务器做 tcping"，30 秒一轮、只在前台且勾选时跑；规则见 util/proxyHealth.ets
-// 和 services/ProxyHealthMonitor.ets。切换仍然只在"连接持续失败"时发生，
-// 但候选的取舍变成"最快的先试、正在失败的沉底"。
+// 【候选从哪来】util/proxyHealth.ets 的 tcping 表：30 秒一轮、仅前台且勾选时跑、
+// 并发 2、单目标 3 秒（services/ProxyHealthMonitor.ets）。快的先试、正在失败的
+// 沉底，直链永远兜底。
 //
-// 【翻成 true 之前还欠什么】真机验证一件事：从"卡住"到"切换"这段延迟
-// （PROXY_SWITCH_DELAY_SEC，默认 10 秒）在弱网下会不会太早——TDLib 慢速重连
-// 时本来就该多等一会儿。判据是 [Conn] 日志里的 held= 值。
-export const PROXY_AUTO_SWITCH_AVAILABLE: boolean = false;
+// 【代价与闸门】没有中继层了，换一次 = enableProxy/disableProxy，TDLib 要全量
+// 重连。所以切换是**有界**的：绕完一圈（代理数 + 直链）还连不上就停手，等 Ready、
+// 换网或用户手动选择再重新计数——见 ProxyAutoSwitchService.canArm。
+export const PROXY_AUTO_SWITCH_AVAILABLE: boolean = true;
 
 export interface ProxySwitchCandidate {
   id: number;

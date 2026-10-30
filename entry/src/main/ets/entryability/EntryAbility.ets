@@ -43,7 +43,7 @@ import { isAutoSend } from '../util/shareSendMode';
 import { ShareHandoff } from '../util/sharedContent';
 import { SharedPayload } from '../util/sharedContent';
 import { initA11yState } from '../util/a11yState';
-import { logE, logW } from '../util/log';
+import { flushDiagLog, logE, logW } from '../util/log';
 import { ColorModeBaseline } from '../util/configChange';
 import { bumpMaterialEpoch } from '../util/overlayMaterial';
 import {
@@ -632,6 +632,9 @@ export default class EntryAbility extends UIAbility {
     // 保持 TDLib 的 online 选项，代理连接也就能复用；宽限期耗尽、进程即将
     // 被挂起时再切 offline，回前台不必每次都重新连代理。
     backgroundGraceTask.begin((): void => setTdOnlineState(false));
+    // 日志平时攒够 300 行才落盘，后台被回收时最后那几行就没了——正好是出事的
+    // 那几行。诊断页现在没有入口，这份落盘就是唯一能拿到的现场。
+    flushDiagLog();
     // 解码后的位图很占内存（几十 MB 量级），后台留着只会抬高被系统查杀的概率。
     // 还挂在组件上的那些由引用计数保住，回前台重新解码代价很小。
     trimPixelCache();

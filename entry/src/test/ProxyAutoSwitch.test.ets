@@ -114,8 +114,7 @@ class ProxySwitchFixture {
     this.service = new ProxyAutoSwitchService(this.clock,
       (listener: (network: string) => void): () => void => this.network.subscribe(listener),
       realProbe ? undefined : async (_id: number): Promise<boolean> => true,
-      // 生产环境这个功能是关的（PROXY_AUTO_SWITCH_AVAILABLE = false），单测要
-      // 继续覆盖状态机就得显式打开它。
+      // 显式注入总闸，不依赖生产常量的当前取值——它翻了也不该让这套用例改语义。
       (): boolean => true,
       this.health);
     this.client.start();
