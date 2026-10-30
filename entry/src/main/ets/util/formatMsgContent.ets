@@ -1235,6 +1235,13 @@ export function formatMsgContent(message: TdObject): MsgContent {
       ? ((pollType['@type'] as string | undefined) ?? '') : '';
     const explanation = pollType !== undefined
       ? (pollType['explanation'] as TdObject | undefined) : undefined;
+    const correctOptionIds = pollType !== undefined
+      ? (pollType['correct_option_ids'] as number[] | undefined) : undefined;
+    const correctOptionId: number = typeName === 'pollTypeQuiz'
+      ? (Array.isArray(correctOptionIds) && correctOptionIds.length > 0
+        ? correctOptionIds[0]
+        : ((pollType!['correct_option_id'] as number | undefined) ?? -1))
+      : -1;
     return {
       contentType: 'poll', text: '', photoFileId: 0, photoWidth: 0, photoHeight: 0,
       placeholderLabel: '', entities: [],
@@ -1252,8 +1259,7 @@ export function formatMsgContent(message: TdObject): MsgContent {
       pollIsQuiz: typeName === 'pollTypeQuiz',
       pollAllowMultiple: typeName === 'pollTypeRegular'
         && ((pollType!['allow_multiple_answers'] as boolean | undefined) ?? false),
-      pollCorrectOptionId: typeName === 'pollTypeQuiz'
-        ? ((pollType!['correct_option_id'] as number | undefined) ?? -1) : -1,
+      pollCorrectOptionId: correctOptionId,
       pollExplanation: explanation !== undefined
         ? ((explanation['text'] as string | undefined) ?? '') : '',
       pollOpenPeriod: poll !== undefined

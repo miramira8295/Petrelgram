@@ -97,13 +97,16 @@ export default function downloadCenterModelTest() {
       expect(onlyDone[0].section).assertEqual(DC_SECTION_DONE);
     });
 
-    it('存储条：缓存占两者之比，已存本地再乘 0.9；都为 0 各半', 0, () => {
-      const w = storageBarWidths(300, 100);
-      expect(Math.round(w.cache * 10)).assertEqual(750);
-      expect(Math.round(w.local * 10)).assertEqual(225);
+    it('存储条：按实际比例计算宽度；都为 0 时均为 0', 0, () => {
+      const w = storageBarWidths(300, 100, 600);
+      expect(Math.round(w.cache * 10)).assertEqual(300);
+      expect(Math.round(w.local * 10)).assertEqual(100);
+      const noFree = storageBarWidths(300, 100);
+      expect(Math.round(noFree.cache * 10)).assertEqual(750);
+      expect(Math.round(noFree.local * 10)).assertEqual(250);
       const empty = storageBarWidths(0, 0);
-      expect(Math.round(empty.cache)).assertEqual(50);
-      expect(Math.round(empty.local * 10)).assertEqual(450);
+      expect(Math.round(empty.cache)).assertEqual(0);
+      expect(Math.round(empty.local)).assertEqual(0);
     });
 
     it('速度平滑与剩余时间', 0, () => {

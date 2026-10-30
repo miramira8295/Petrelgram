@@ -104,12 +104,21 @@ export struct SuggestionPanel {
         ForEach(this.commands, (it: CommandItem) => {
           ListItem() {
             Row({ space: 10 }) {
-              Row() {
-                Text('/').fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_PRIMARY);
+              if (it.botUserId > 0) {
+                LiveUserAvatar({
+                  userId: it.botUserId,
+                  initials: (it.botUsername !== '' ? it.botUsername : it.command).substring(0, 1).toUpperCase(),
+                  avatarSize: 32,
+                  avatarFileId: it.avatarFileId ?? 0
+                });
+              } else {
+                Row() {
+                  Text('/').fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_PRIMARY);
+                }
+                .width(32).height(32).borderRadius(10)
+                .justifyContent(FlexAlign.Center)
+                .backgroundColor($r('app.color.selected_pill'));
               }
-              .width(32).height(32).borderRadius(10)
-              .justifyContent(FlexAlign.Center)
-              .backgroundColor($r('app.color.selected_pill'));
               Column({ space: 2 }) {
                 Text(commandLabel(it))
                   .fontSize(14).fontColor(COLOR_TEXT_PRIMARY).fontWeight(FontWeight.Medium)
@@ -143,7 +152,7 @@ export struct SuggestionPanel {
             })
             .onClick((): void => { this.onPickCommand(it); });
           }
-        }, (it: CommandItem) => `c_${it.command}_${it.botUserId}_${it.botUsername}`);
+        }, (it: CommandItem) => `c_${it.command}_${it.botUserId}_${it.botUsername}_${it.avatarFileId ?? 0}`);
       }
       .width('100%').constraintSize({ maxHeight: 206 })
       .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 54, endMargin: 12 });

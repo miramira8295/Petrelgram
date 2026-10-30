@@ -2177,6 +2177,7 @@ export class MessageStore {
     if (isQuiz) {
       const quizType: TdObject = { '@type': 'pollTypeQuiz' };
       quizType['correct_option_id'] = correctOptionId;
+      quizType['correct_option_ids'] = [correctOptionId];
       content['type'] = quizType;
     } else {
       content['type'] = { '@type': 'pollTypeRegular' } as TdObject;

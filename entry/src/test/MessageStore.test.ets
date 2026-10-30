@@ -1390,6 +1390,7 @@ export default function messageStoreTest() {
       const quizType = content['type'] as TdObject;
       expect(quizType['@type']).assertEqual('pollTypeQuiz');
       expect(quizType['correct_option_id']).assertEqual(0);
+      expect(JSON.stringify(quizType['correct_option_ids'])).assertEqual('[0]');
       expect(content['is_anonymous']).assertEqual(false);
     });
     it('send_location_contact_audio_dice', 0, async () => {
