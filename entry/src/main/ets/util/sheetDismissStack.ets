@@ -38,6 +38,28 @@ export function dismissTopSheet(): boolean {
   return true;
 }
 
+// 关掉**所有**登记过的面板，从最上面往下（LIFO，和用户连续按返回一致）。
+// 返回关掉了几个。
+//
+// 【为什么需要】bindSheet 画在窗口的浮层里，压得住同窗口内的任何在树组件。
+// 「分享到…」（Index 那层 ShareTargetSheet）是普通 Stack 子节点，所以当别的
+// 应用把内容分享进 Petrelgram、而我们正开着贴纸合集/全屏编辑这类 bindSheet 时，
+// 分享选择器被盖在下面（用户 2026-10-30：「系统分享抽屉会显示在添加贴纸抽屉
+// 下方」）。分享进来的那一刻先把面板全收掉，选择器才露得出来。
+//
+// 条目是**边关边弹**的，所以每个 dismiss 回调里那句注销调用都是幂等的空操作；
+// 反过来，注销函数也必须在面板自己关掉时照常调用（见 pushSheetDismiss）。
+export function dismissAllSheets(): number {
+  let closed: number = 0;
+  while (entries.length > 0) {
+    const top: Entry = entries[entries.length - 1];
+    entries = entries.slice(0, entries.length - 1);
+    top.dismiss();
+    closed++;
+  }
+  return closed;
+}
+
 export function openSheetCount(): number {
   return entries.length;
 }

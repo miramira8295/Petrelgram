@@ -11745,6 +11745,14 @@
       "value": "Lưu vào đâu"
     },
     {
+      "name": "ix_hide_folder_bar",
+      "value": "Ẩn thanh thư mục khi cuộn"
+    },
+    {
+      "name": "ix_hide_folder_bar_sub",
+      "value": "Khi cuộn danh sách lên, thanh thư mục thu gọn và mở lại khi về đầu danh sách. Khi tắt, thanh luôn hiển thị"
+    },
+    {
       "name": "ix_row_swipe",
       "value": "Vuốt trên hội thoại"
     },

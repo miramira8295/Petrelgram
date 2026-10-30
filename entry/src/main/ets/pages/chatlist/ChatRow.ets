@@ -33,7 +33,7 @@ import { AvatarView } from './AvatarView';
 import { formatTime } from '../../util/formatTime';
 import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
-  COLOR_DIVIDER, COLOR_MUTED_BADGE, mainCardFill, ROW_PAD_H, ROW_PAD_V
+  COLOR_MUTED_BADGE, mainCardFill, ROW_PAD_H, ROW_PAD_V
 } from '../../util/theme';
 import { A11Y_EPOCH, screenReaderOn } from '../../util/a11yState';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
@@ -739,9 +739,17 @@ export struct ChatRow {
       // 几乎全黑，那一档更糟。
       // GLASS_OUTLINE_COLOR（#4DFFFFFF，30% 白）是玻璃气泡描边用的同一个色，
       // 专门为"玻璃边缘"配的，深浅两种模式下都是提亮而不是压暗。
+      //
+      // 【不走玻璃就**完全不描边**】原来还有一档 `appWallpaperOn ? 0.5 : 0`，
+      // 意思是"卡片浮在壁纸照片上要有一圈边"。问题在 `appWallpaperOn`，它对
+      // **纯色背景也成立**（只判背景串非空，见 util/localWallpaper.appWallpaperActive），
+      // 而行底色在没有玻璃时又退回不透明的 surface。于是背景设成白色的用户
+      // 拿到的是"白卡片 + 白背景 + 一圈灰线"，这圈线成了整页唯一看得见的卡片
+      // 轮廓（2026-10-30 用户："白色背景下 item 带有了个细边框"）。
+      // 不透明卡片本来也不需要边——它旁边没有照片要分隔。只留玻璃那一档。
       .border({
-        width: this.rowGlassEnabled() ? 0.5 : (this.appWallpaperOn ? 0.5 : 0),
-        color: this.rowGlassEnabled() ? GLASS_OUTLINE_COLOR : COLOR_DIVIDER
+        width: this.rowGlassEnabled() ? 0.5 : 0,
+        color: GLASS_OUTLINE_COLOR
       })
       // 用框架容器材质而不是 backdropBlur：后者在节点边缘有采样衰减，四角最明显
       // （见 util/surfaceGlass.surfaceGlassBlurStyle 的说明）。

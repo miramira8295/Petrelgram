@@ -11745,6 +11745,14 @@
       "value": "Simpan di mana"
     },
     {
+      "name": "ix_hide_folder_bar",
+      "value": "Sembunyikan bar folder semasa menatal"
+    },
+    {
+      "name": "ix_hide_folder_bar_sub",
+      "value": "Apabila senarai ditatal ke atas, bar folder melipat dan terbuka semula apabila kembali ke atas. Jika dimatikan, bar sentiasa dipaparkan"
+    },
+    {
       "name": "ix_row_swipe",
       "value": "Tindakan leret pada sembang"
     },

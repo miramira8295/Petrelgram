@@ -68,7 +68,14 @@ function titleMaterialEffect(immersive: boolean): SystemMaterialParams | undefin
   return hdsMaterialEffect(hdsMaterialLevelIndex(), immersive);
 }
 
-function barStyle(background: ResourceColor, mainTitleColor: ResourceColor): HdsNavigationTitleBarStyle {
+// material：这条栏有没有配 systemMaterialEffect。**菜单/返回按钮的底色要看它**：
+// 材质的视觉层级在 backgroundColor **之下**（官方《沉浸光感常见问题》），铺一层
+// 不透明的 surface_alt 就等于把系统那层玻璃整个盖死，只剩一颗实色圆胶囊——
+// overlayMaterial.overlayGlassFill 里记着同一条，这里同一个道理。材质不在（API 23
+// 以下、设备不支持、用户把厚度关掉）时仍然是原来的实底胶囊。
+function barStyle(background: ResourceColor, mainTitleColor: ResourceColor,
+  material: boolean): HdsNavigationTitleBarStyle {
+  const chipFill: ResourceColor = material ? Color.Transparent : $r('app.color.surface_alt');
   return {
     backgroundStyle: { backgroundColor: background },
     contentStyle: {
@@ -77,11 +84,11 @@ function barStyle(background: ResourceColor, mainTitleColor: ResourceColor): Hds
         subTitleColor: $r('app.color.text_secondary')
       },
       menuStyle: {
-        backgroundColor: $r('app.color.surface_alt'),
+        backgroundColor: chipFill,
         iconColor: $r('app.color.text_primary')
       },
       backIconStyle: {
-        backgroundColor: $r('app.color.surface_alt'),
+        backgroundColor: chipFill,
         iconColor: $r('app.color.text_primary')
       }
     }
@@ -96,6 +103,8 @@ function barStyle(background: ResourceColor, mainTitleColor: ResourceColor): Hds
 export function titleBarStyle(background: ResourceColor,
   mainTitleColor: ResourceColor = $r('app.color.text_primary'),
   scrollEffect: boolean = true): TitleBarStyleOptions {
+  // 只算一次：它同时决定 systemMaterialEffect 和按钮底色要不要让位。
+  const material: SystemMaterialParams | undefined = titleMaterialEffect(!scrollEffect);
   return {
     scrollEffectOpts: {
       enableScrollEffect: scrollEffect,
@@ -114,13 +123,13 @@ export function titleBarStyle(background: ResourceColor,
     // ——那两项官方示例里根本没有。结果是两套机制打架：材质要自己的背板，
     // scrollEffect 要按滚动量换背板，最后整块发实，反而比不加还糟。剥回官方
     // 形状之后，滚动时的渐变模糊才是干净的。
-    originalStyle: barStyle(background, mainTitleColor),
-    scrollEffectStyle: barStyle(Color.Transparent, mainTitleColor),
+    originalStyle: barStyle(background, mainTitleColor, material !== undefined),
+    scrollEffectStyle: barStyle(Color.Transparent, mainTitleColor, material !== undefined),
     // **这次只加这一项，背板一个字没动。** 上一次失败是三改齐上（originalStyle
     // 改透明 + systemMaterialEffect + blurStrategy），分不清是谁的锅。官方样例
     // 里连 originalStyle / scrollEffectStyle 都不设、背板整个交给材质——那是
     // 下一步要单独试的，先看这一刀本身够不够。
-    systemMaterialEffect: titleMaterialEffect(!scrollEffect),
+    systemMaterialEffect: material,
     // **模糊恒定，不随滑动变弱。**
     //
     // BlurStrategy 三档 ENABLE(0) / DISABLE(1) / ADAPTIVE(2)，不给时走的是

@@ -22,6 +22,10 @@ import {
 } from '../../util/theme';
 import { GLASS_OUTLINE_COLOR } from '../../util/bubbleTail';
 import { TdRequest, TdObject, TdError } from '../../tdkit/TdTypes';
+import {
+  CONTACT_ERR_BAD_PHONE, CONTACT_ERR_NETWORK, CONTACT_ERR_NO_USER,
+  contactAddErrorKind, contactErrorRecoverable
+} from '../../util/contactAddError';
 import { ComponentContent, promptAction, router, SymbolGlyphModifier } from '@kit.ArkUI';
 import {
   HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
@@ -29,8 +33,16 @@ import {
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
 import { searchPublicUsers } from '../../store/PublicUserSearch';
-import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH, KEY_FORCE_SINGLE_COLUMN
+import {
+  KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH, KEY_FORCE_SINGLE_COLUMN,
+  KEY_POWER_ACTIVE, KEY_POWER_PARTICLES
 } from '../../store/AppSettings';
+import { ConfirmedChatRemoval } from '../../util/confirmedChatRemoval';
+import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
+import { showMenuDialog } from '../common/menuDialog';
+import {
+  addContactRequest, importContactsRequest, searchUserByPhoneNumberRequest
+} from '../../util/contactAddRequest';
 import { plural, str } from '../../util/strings';
 import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { materialModifierWhen } from '../../util/materialModifier';
@@ -183,6 +195,12 @@ export struct ContactsPage {
   @State pressedContactId: number = 0;
   @State openingContactId: number = 0;
   @State deletingContactId: number = 0;
+  // 正在消散的那一行：id + 强度。DissolveDeleteEffect 只认「这一行」，所以强度
+  // 单独放一份，没被删的行拿到 0（见 listCard 里的接线）。
+  @State private deleteLeavingId: number = 0;
+  @State private deleteLeavingStrength: number = 0;
+  @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
+  @StorageProp(KEY_POWER_PARTICLES) particlesEnabled: boolean = true;
   @State contextMenuShown: boolean = false;
   @State menuContactId: number = 0;
   @State menuContactName: string = '';
@@ -201,6 +219,12 @@ export struct ContactsPage {
   private actionNavigationLocked: boolean = false;
   private chatOpenSequence: number = 0;
   private deleteSequence: number = 0;
+  // 删除走的是会话列表那套「先等消散、再提交请求、失败复原」的通道
+  // （util/confirmedChatRemoval + DissolveDeleteEffect），联系人页自己不再写一份。
+  private contactRemoval: ConfirmedChatRemoval = new ConfirmedChatRemoval();
+  private contactLeaveUnsub: (() => void) | null = null;
+  // 对话框弹着 / 消散进行中的同步闸。deletingContactId 是给行看的状态，晚一步再置。
+  private deleteInFlight: boolean = false;
   private addContactSequence: number = 0;
   private skeletonTimer: number = -1;
   private contactPressActive: boolean = false;
@@ -319,6 +343,8 @@ export struct ContactsPage {
     this.listInputDirty = false;
     this.chatOpenSequence++;
     this.deleteSequence++;
+    this.deleteInFlight = false;
+    this.detachContactLeaving();
     this.addContactSequence++;
     this.searchSequence++;
     this.remoteLoading = false;
@@ -464,27 +490,64 @@ export struct ContactsPage {
     return digits;
   }
 
-  private addContactFailureMessage(error: TdError): string {
-    const message = error.message.toUpperCase();
-    if (message.includes('PHONE_NUMBER_INVALID')) {
+  // 归类在 util/contactAddError（纯函数，带单测），这里只负责翻成文案。
+  private contactErrorText(kind: string): string {
+    if (kind === CONTACT_ERR_BAD_PHONE) {
       return str('ct_bad_phone');
     }
-    if (message.includes('USER_NOT_FOUND') || message.includes('PHONE_NUMBER_NOT_OCCUPIED')) {
+    if (kind === CONTACT_ERR_NO_USER) {
       return str('ct_no_user');
     }
-    if (message.includes('NETWORK') || message.includes('TIMEOUT')) {
+    if (kind === CONTACT_ERR_NETWORK) {
       return str('network_failed_retry');
     }
     return str('ct_add_failed');
+  }
+
+  private finishContactAdded(sequence: number, name: string): void {
+    if (sequence !== this.addContactSequence) {
+      return;
+    }
+    this.addContactSaving = false;
+    this.addContactSheetOpen = false;
+    promptAction.showToast({ message: str('ct_added', name), duration: 1800 });
+    if (this.store !== null) {
+      this.store.reload();
+    }
+  }
+
+  private failContactAdd(sequence: number, kind: string): void {
+    if (sequence !== this.addContactSequence) {
+      return;
+    }
+    this.addContactSaving = false;
+    this.addContactError = this.contactErrorText(kind);
+  }
+
+  // 每一步失败的统一出口：能换条路就换，不能就报错收工。
+  //
+  // 日志带上 code——原来只记 message，2026-10-30 查「无法添加联系人，请重试」
+  // 时手上什么错误码都没有，只能回头改代码加日志。
+  private nextContactStep(error: TdError, step: string, sequence: number, next: () => void): void {
+    if (sequence !== this.addContactSequence) {
+      return;
+    }
+    const kind: string = contactAddErrorKind(error.message);
+    logE(`ContactsPage.${step} failed(code=${error.code}) kind=${kind}`);
+    if (contactErrorRecoverable(kind)) {
+      next();
+      return;
+    }
+    this.failContactAdd(sequence, kind);
   }
 
   private submitNewContact(): void {
     if (this.addContactSaving) {
       return;
     }
-    const firstName = this.addFirstName.trim();
-    const lastName = this.addLastName.trim();
-    const phone = this.phoneDigits(this.addPhone);
+    const firstName: string = this.addFirstName.trim();
+    const lastName: string = this.addLastName.trim();
+    const phone: string = this.phoneDigits(this.addPhone);
     if (firstName === '') {
       this.addContactError = str('ct_enter_first_name');
       return;
@@ -495,33 +558,71 @@ export struct ContactsPage {
     }
     this.addContactError = '';
     this.addContactSaving = true;
-    const sequence = ++this.addContactSequence;
-    const contact: TdObject = { '@type': 'contact' };
-    contact['phone_number'] = phone;
-    contact['first_name'] = firstName;
-    contact['last_name'] = lastName;
-    contact['vcard'] = '';
-    contact['user_id'] = 0;
-    const request: TdRequest = { '@type': 'addContact' };
-    request['contact'] = contact;
-    request['share_phone_number'] = false;
-    getTdClient().send(request, 10000).then((): void => {
+    const sequence: number = ++this.addContactSequence;
+    const name: string = firstName + (lastName !== '' ? ' ' + lastName : '');
+    this.stepSearchUser(phone, firstName, lastName, name, sequence);
+  }
+
+  // 加号码到联系人：三步，一步比一步兜底。
+  //
+  //   1. searchUserByPhoneNumber  —— 按号码把人找回来
+  //   2. addContact(user_id)      —— 拿着找到的 id 再加
+  //   3. importContacts           —— 交给服务器按号码导入（官方客户端同款路径）
+  //
+  // 【为什么不是原来那一步】原来直接 addContact(user_id=0, phone)，等于把"按号码
+  // 解析用户"整个甩给 TDLib；解析不到就报 400 User not found，而这条路一层兜底
+  // 都没有。ProfilePage 早就踩过同一个坑（那边注释写着），这里照那边的做法补齐。
+  // 第 3 步返回的 user_ids[0] > 0 才算真的加上了——为 0 表示服务器解析不到这个人
+  // （对方隐私设置或号码没注册），此时该说"未找到使用此号码的用户"。
+  private stepSearchUser(phone: string, first: string, last: string, name: string,
+    sequence: number): void {
+    const lookup: TdRequest = searchUserByPhoneNumberRequest(phone);
+    getTdClient().send(lookup, 10000).then((user: TdObject): void => {
       if (sequence !== this.addContactSequence) {
         return;
       }
-      this.addContactSaving = false;
-      this.addContactSheetOpen = false;
-      promptAction.showToast({ message: str('ct_added', firstName + (lastName !== '' ? ' ' + lastName : '')), duration: 1800 });
-      if (this.store !== null) {
-        this.store.reload();
+      const foundId: number | undefined = user['id'] as number | undefined;
+      if (foundId === undefined || foundId <= 0) {
+        this.stepImportContacts(phone, first, last, name, sequence);
+        return;
       }
+      this.stepAddKnownUser(phone, first, last, name, sequence, foundId);
+    }).catch((error: TdError): void => {
+      this.nextContactStep(error, 'searchUserByPhoneNumber', sequence,
+        (): void => this.stepImportContacts(phone, first, last, name, sequence));
+    });
+  }
+
+  private stepAddKnownUser(phone: string, first: string, last: string, name: string,
+    sequence: number, userId: number): void {
+    const request: TdRequest = addContactRequest(userId, phone, first, last);
+    getTdClient().send(request, 10000).then((): void => {
+      this.finishContactAdded(sequence, name);
+    }).catch((error: TdError): void => {
+      this.nextContactStep(error, 'addContact', sequence,
+        (): void => this.stepImportContacts(phone, first, last, name, sequence));
+    });
+  }
+
+  private stepImportContacts(phone: string, first: string, last: string, name: string,
+    sequence: number): void {
+    const request: TdRequest = importContactsRequest(phone, first, last);
+    getTdClient().send(request, 15000).then((result: TdObject): void => {
+      if (sequence !== this.addContactSequence) {
+        return;
+      }
+      const userIds: number[] = (result['user_ids'] as number[] | undefined) ?? [];
+      if (userIds.length > 0 && userIds[0] > 0) {
+        this.finishContactAdded(sequence, name);
+        return;
+      }
+      this.failContactAdd(sequence, CONTACT_ERR_NO_USER);
     }).catch((error: TdError): void => {
       if (sequence !== this.addContactSequence) {
         return;
       }
-      this.addContactSaving = false;
-      this.addContactError = this.addContactFailureMessage(error);
-      logE(`ContactsPage.addContact failed: ${error.message}`);
+      logE(`ContactsPage.importContacts failed(code=${error.code}): ${error.message}`);
+      this.failContactAdd(sequence, contactAddErrorKind(error.message));
     });
   }
 
@@ -748,41 +849,85 @@ export struct ContactsPage {
     if (userId <= 0 || name === '') {
       return;
     }
-    promptAction.showDialog({
+    // 走 showMenuDialog：菜单收起过程中直接调全局 promptAction.showDialog 会静默
+    // 挂死（详见面数见 pages/common/menuDialog），界面上连确认框都不会出现。
+    showMenuDialog(this.getUIContext(), {
       title: $r('app.string.ct_delete'),
       message: str('ct_delete_confirm', name),
       buttons: [
         { text: $r('app.string.cancel'), color: COLOR_TEXT_SECONDARY as string },
         { text: $r('app.string.delete'), color: '#E64646' }
       ]
-    }).then((result: promptAction.ShowDialogSuccessResponse): void => {
-      if (result.index === 1) {
+    }, 'ContactsPage.deleteContact', (index: number): void => {
+      if (index === 1) {
         this.deleteContact(userId, name);
       }
-    }).catch((): void => {});
+    });
   }
 
+  // 确认删除：先让这一行消散（与会话列表同一套粒子），动画结束再提交请求；
+  // 请求失败把行复原并提示，不留一个已经"看上去没了"却还在的联系人。
   private deleteContact(userId: number, name: string): void {
-    if (this.store === null || this.deletingContactId !== 0) {
+    if (this.store === null || this.deleteInFlight) {
       return;
     }
-    this.deletingContactId = userId;
-    const sequence = ++this.deleteSequence;
     const store = this.store;
-    store.removeContact(userId).then((): void => {
-      if (sequence !== this.deleteSequence) {
-        return;
-      }
-      this.deletingContactId = 0;
-      promptAction.showToast({ message: str('ct_deleted', name), duration: 1600 });
-    }).catch((error: TdError): void => {
-      if (sequence !== this.deleteSequence) {
-        return;
-      }
-      this.deletingContactId = 0;
-      logE(`ContactsPage.removeContact failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.ct_delete_failed'), duration: 1800 });
+    const sequence = this.deleteSequence;
+    this.deleteInFlight = true;
+    this.attachContactLeaving(userId);
+    const animate: boolean = !this.powerSaving && this.particlesEnabled &&
+      powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 550) > 0;
+    this.contactRemoval.perform(userId, animate,
+      (): boolean => this.store === store && this.deleteSequence === sequence,
+      (): Promise<boolean> => {
+        this.deletingContactId = userId;
+        return store.removeContact(userId).then((): boolean => true).catch((error: TdError): boolean => {
+          logE(`ContactsPage.removeContact failed(code=${error.code}): ${error.message}`);
+          return false;
+        });
+      })
+      .then((success: boolean): void => {
+        if (sequence !== this.deleteSequence) {
+          return;
+        }
+        this.finishContactDelete(userId, name, success);
+      })
+      .catch((error: Object): void => {
+        if (sequence !== this.deleteSequence) {
+          return;
+        }
+        logE(`ContactsPage.deleteContact failed: ${JSON.stringify(error)}`);
+        this.finishContactDelete(userId, name, false);
+      });
+  }
+
+  private finishContactDelete(userId: number, name: string, success: boolean): void {
+    this.deleteInFlight = false;
+    this.deletingContactId = 0;
+    // 失败时通道已经把 leaving 撤掉（行复原），这里只需断开订阅。
+    this.detachContactLeaving();
+    promptAction.showToast({
+      message: success ? str('ct_deleted', name) : $r('app.string.ct_delete_failed'),
+      duration: success ? 1600 : 1800
     });
+  }
+
+  // 订阅这一行的消散强度。必须在 perform 之前挂上：通道只等「有订阅者」的行，
+  // 没订阅等于没挂载，play() 会直接返回、动画一步都不走。
+  private attachContactLeaving(userId: number): void {
+    this.detachContactLeaving();
+    this.deleteLeavingId = userId;
+    this.contactLeaveUnsub = this.contactRemoval.channel.subscribe(userId,
+      (strength: number): void => { this.deleteLeavingStrength = strength; });
+  }
+
+  private detachContactLeaving(): void {
+    if (this.contactLeaveUnsub !== null) {
+      this.contactLeaveUnsub();
+      this.contactLeaveUnsub = null;
+    }
+    this.deleteLeavingStrength = 0;
+    this.deleteLeavingId = 0;
   }
 
   private filtered(): ContactItem[] {
@@ -1131,28 +1276,40 @@ export struct ContactsPage {
               .padding({ left: this.cardGutter() + HOME_CARD_INSET_VP, top: 4 })
               .textAlign(TextAlign.Start);
           }
-          Column() {
-            ContactRowView({
-              contact: c,
-              pressed: this.pressedContactId === c.id,
-              busy: this.openingContactId === c.id || this.deletingContactId === c.id
-            });
+          // 删除时这一张卡片整体消散：与会话列表同一套（DissolveDeleteEffect +
+          // 页面上的 RowLeaveChannel）。包的是卡片这一层，不是外面的 Column——
+          // 字母分组标题是路标，不该跟着一起碎。
+          DissolveDeleteEffect({
+            instanceKey: 'contacts',
+            rowId: c.id,
+            leaving: this.deleteLeavingId === c.id ? this.deleteLeavingStrength : 0,
+            channel: this.contactRemoval.channel
+          }) {
+            Column() {
+              ContactRowView({
+                contact: c,
+                pressed: this.pressedContactId === c.id,
+                busy: this.openingContactId === c.id || this.deletingContactId === c.id
+              });
+            }
+            .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
+            .margin({
+              left: this.cardGutter(), right: this.cardGutter(),
+              top: CONTACT_CARD_GAP_VP, bottom: CONTACT_CARD_GAP_VP
+            })
+            .borderRadius(CONTACT_CARD_RADIUS)
+            // 描边跟着玻璃走：玻璃档用 GLASS_OUTLINE_COLOR（30% 白）——用 divider
+            // 会在壁纸上围一圈发暗的框，圆角处四条边叠起来最明显（首页同类问题的结论）。
+            // 非玻璃档一律不描边（理由见 ChatRow）：`appWallpaperOn` 对纯色背景也
+            // 成立，白色背景下这条灰线会变成整页唯一看得见的卡片轮廓。
+            .border({
+              width: this.glassOn() ? 0.5 : 0,
+              color: GLASS_OUTLINE_COLOR
+            })
+            .backgroundColor(this.cardFill())
+            .backgroundBlurStyle(this.cardBlurStyle())
+            .clip(true);
           }
-          .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
-          .margin({
-            left: this.cardGutter(), right: this.cardGutter(),
-            top: CONTACT_CARD_GAP_VP, bottom: CONTACT_CARD_GAP_VP
-          })
-          .borderRadius(CONTACT_CARD_RADIUS)
-          // 描边跟着玻璃走：玻璃档用 GLASS_OUTLINE_COLOR（30% 白）——用 divider
-          // 会在壁纸上围一圈发暗的框，圆角处四条边叠起来最明显（首页同类问题的结论）。
-          .border({
-            width: this.glassOn() ? 0.5 : (this.appWallpaperOn ? 0.5 : 0),
-            color: this.glassOn() ? GLASS_OUTLINE_COLOR : COLOR_DIVIDER
-          })
-          .backgroundColor(this.cardFill())
-          .backgroundBlurStyle(this.cardBlurStyle())
-          .clip(true);
         }
         .width('100%');
       }

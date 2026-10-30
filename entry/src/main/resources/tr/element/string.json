@@ -11745,6 +11745,14 @@
       "value": "Nereye kaydedilsin"
     },
     {
+      "name": "ix_hide_folder_bar",
+      "value": "Kaydırırken klasör çubuğunu gizle"
+    },
+    {
+      "name": "ix_hide_folder_bar_sub",
+      "value": "Liste yukarı kaydırıldığında klasör çubuğu toplanır, en üste dönünce yeniden açılır. Kapalıyken çubuk her zaman görünür"
+    },
+    {
       "name": "ix_row_swipe",
       "value": "Sohbetlerde kaydırma işlemleri"
     },

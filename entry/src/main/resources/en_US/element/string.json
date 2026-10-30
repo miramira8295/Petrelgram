@@ -11745,6 +11745,14 @@
       "value": "Save where"
     },
     {
+      "name": "ix_hide_folder_bar",
+      "value": "Collapse folder bar when scrolling"
+    },
+    {
+      "name": "ix_hide_folder_bar_sub",
+      "value": "Swipe up in the chat list to collapse the folder bar; scroll back to the top to restore it. Turn off to keep it always visible"
+    },
+    {
       "name": "ix_row_swipe",
       "value": "Swipe actions on chats"
     },

@@ -16,7 +16,7 @@ import { pasteboard, deviceInfo } from '@kit.BasicServicesKit';
 import { MessageEntry, ReactionInfo, InlineBtn } from '../../store/MessageEntry';
 import { slotKey } from './playSlot';
 import { TdObject } from '../../tdkit/TdTypes';
-import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
+import { getAccentColorStore, getTdClient, getUserStore } from '../../tdkit/Globals';
 import { senderHasAnimatedPhoto } from '../../services/PhotoAnimationFetch';
 import { SenderAnimatedLayer } from './SenderAnimatedLayer';
 import { CachedImage } from '../common/CachedImage';
@@ -49,6 +49,7 @@ import { AlbumGroup } from '../../util/collapseAlbums';
 import { MessageBubbleActions, MessageBubbleRenderData } from './ReusableMessageBubble';
 import { canBackgroundCache } from '../../util/backgroundCacheEligibility';
 import { editableCached, ensureEditable } from '../../util/messageEditable';
+import { deletableCached, ensureDeletable } from '../../util/messageDeletable';
 import { replyThumbSrc } from '../../util/replyThumb';
 import { DiceEndFrame } from './DiceEndFrame';
 import { menuPreviewCompact } from '../../util/menuPreview';
@@ -351,6 +352,9 @@ export struct MessageBubbleShell {
 
   @Local private editableTick: number = 0;
 
+  // 「能不能删」到货后触发菜单重绘，和 editableTick 同一套机制、同一个理由。
+  @Local private deletableTick: number = 0;
+
   private textMeasureFailed: boolean = false;
   private textMeasureCache: TextMeasureCache = new TextMeasureCache();
   private rxWidthSig: string = '';
@@ -452,6 +456,7 @@ export struct MessageBubbleShell {
     this.swipeFromEdge = false;
     if (this.swipeReplyX !== 0) { this.swipeReplyX = 0; }
     if (this.editableTick !== 0) { this.editableTick = 0; }
+    if (this.deletableTick !== 0) { this.deletableTick = 0; }
   }
 
   aboutToAppear(): void {
@@ -601,6 +606,7 @@ export struct MessageBubbleShell {
       return;
     }
     this.askEditable();
+    this.askDeletable();
     const policy: MessageGesturePolicy = messageGesturePolicy(this.env.gestureScheme);
     if (policy.longPressOpensMenu) {
       this.context.msgContextMenuShown = true;
@@ -1011,6 +1017,22 @@ export struct MessageBubbleShell {
     });
   }
 
+  private canDeleteNow(): boolean {
+    // 和 canEditNow 一样：deletableTick 必须在这一支里被**读到**，否则 V2 不会
+    // 把它登记成依赖，答案到货时菜单就不会重绘。它自身不参与判断。
+    const known: boolean | undefined =
+      this.deletableTick >= 0 ? deletableCached(this.msg.id) : undefined;
+    // **未知时按能删显示。** 查询没回来、失败、或者 TDLib 返回了认不出来的结构，
+    // 都退回修之前的样子——点了才发现删不了，绝不能因为没答案就把「删除」藏掉。
+    return known !== false;
+  }
+
+  private askDeletable(): void {
+    ensureDeletable(getTdClient(), this.data.chatId, this.msg.id, (): void => {
+      this.deletableTick = this.deletableTick + 1;
+    });
+  }
+
   private reactionsRowWidth(): number {
     const environment: string = `${textMeasureEnvironment.epoch}:${this.env.langEpoch}:${this.env.appearanceEpoch}`;
     this.textMeasureCache.prepare(environment);
@@ -1301,10 +1323,15 @@ export struct MessageBubbleShell {
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark_circle')),
         content: $r('app.string.mb_select')
       }).onClick((): void => { this.actions.onSelectMessages(this.group.memberIds); });
-      MenuItem({
-        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.trash')).fontColor([Color.Red]),
-        content: $r('app.string.delete')
-      }).onClick((): void => { this.actions.onDeleteMsg(this.msg.id); });
+      // 不可删的消息（典型是频道里别人发的帖子、而你不是管理员）不出这一项：
+      // 原来它照样出现，点下去要等一次查询、发现两个范围都不给，再弹一句
+      // 「无法确认所选消息的可用删除范围」——等于点了个寂寞。
+      if (this.canDeleteNow()) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.trash')).fontColor([Color.Red]),
+          content: $r('app.string.delete')
+        }).onClick((): void => { this.actions.onDeleteMsg(this.msg.id); });
+      }
     }
     // 百分比宽度的表情行会让未定宽的 Menu 采用整屏约束，随后屏幕边界夹取会
     // 吞掉手指落点带来的横向偏移。固定回原菜单宽度，菜单才能继续贴近落点。
@@ -1886,6 +1913,7 @@ export struct MessageBubbleShell {
         // 单击出菜单的方案下同样跟手。ClickEvent.x 已经是局部坐标。
         this.recordMenuOffset(event.x, Number(event.target.area.width));
         this.askEditable();
+        this.askDeletable();
         this.context.msgContextMenuShown = true;
       }
     })

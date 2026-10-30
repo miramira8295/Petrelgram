@@ -17,6 +17,7 @@ import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overl
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
+import { showMenuDialog } from '../common/menuDialog';
 import { contentSideGutter } from '../../util/contentWidth';
 
 const CARD_RADIUS: number = 14;
@@ -209,15 +210,18 @@ struct CallsPage {
 
   private confirmDelete(call: CallItem): void {
     if (this.actionKey !== '' || this.store === null) { return; }
-    promptAction.showDialog({
+    // 这个确认框是从长按菜单的 onClick 里弹的：直接调全局 promptAction.showDialog
+    // 会静默挂死（菜单是独立子窗口，收起过程中没有可依附的 UI 上下文），
+    // 用户点完「删除」什么都不发生。走 showMenuDialog，详见面数见那边的注释。
+    showMenuDialog(this.getUIContext(), {
       title: $r('app.string.calls_delete_title'),
       message: str('calls_delete_confirm', call.name !== '' ? call.name : str('calls_this_contact')),
       buttons: [
         { text: $r('app.string.cancel'), color: COLOR_TEXT_SECONDARY as string },
         { text: $r('app.string.delete'), color: COLOR_MISSED }
       ]
-    }).then((result: promptAction.ShowDialogSuccessResponse): void => {
-      if (!this.active || result.index !== 1 || this.store === null || this.actionKey !== '') { return; }
+    }, 'CallsPage.delete', (index: number): void => {
+      if (!this.active || index !== 1 || this.store === null || this.actionKey !== '') { return; }
       this.actionKey = `delete_${call.key}`;
       this.store.deleteCall(call).then((): void => {
         if (!this.active) { return; }
@@ -229,7 +233,7 @@ struct CallsPage {
         logE(`CallsPage.deleteCall failed: ${error.message}`);
         promptAction.showToast({ message: $r('app.string.calls_delete_failed'), duration: 1800 });
       });
-    }).catch((): void => {});
+    });
   }
 
   private countLabel(): string {

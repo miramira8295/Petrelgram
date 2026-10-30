@@ -11745,6 +11745,14 @@
       "value": "Simpan di mana"
     },
     {
+      "name": "ix_hide_folder_bar",
+      "value": "Sembunyikan bilah folder saat menggulir"
+    },
+    {
+      "name": "ix_hide_folder_bar_sub",
+      "value": "Saat daftar digulir ke atas, bilah folder melipat dan terbuka lagi saat kembali ke atas. Jika dimatikan, bilah selalu tampil"
+    },
+    {
       "name": "ix_row_swipe",
       "value": "Aksi geser pada obrolan"
     },

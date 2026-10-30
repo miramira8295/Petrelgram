@@ -409,7 +409,11 @@ export struct ShareTargetSheet {
 
   build() {
     Column() {
-      Column().layoutWeight(1).onClick((): void => this.onCancel());
+      // **宽度必须写死 100%**：Column 的交叉轴默认居中、不拉伸，空 Column 量出来
+      // 就是 0 宽——这块遮罩于是只有高度没有宽度，点"抽屉外面"什么都打不中，
+      // 只剩右上角那个 ✕ 能关（用户 2026-10-30）。ForwardSheet 那版一直是对的，
+      // 因为它写的是 width('100%') + height('14%')。
+      Column().width('100%').layoutWeight(1).onClick((): void => this.onCancel());
       Column({ space: 10 }) {
         // 抓手/标题/关闭这一段**逐字照抄 ForwardSheet**：那一份在真机上是
         // 好用的，我原来手写的版本用户反馈"✕ 点不动"。少一层居中的 Row、

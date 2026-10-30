@@ -1,6 +1,6 @@
 import {
-  KEY_EXTERNAL_LINK_ACTION, KEY_MSG_GESTURE, KEY_ROW_SWIPE_ACTIONS, KEY_SHOW_CONTACTS_TAB,
-  KEY_VIEWER_CONTINUOUS_HOP, setBoolean, setString
+  KEY_EXTERNAL_LINK_ACTION, KEY_FOLDER_BAR_SCROLL_HIDE, KEY_MSG_GESTURE, KEY_ROW_SWIPE_ACTIONS,
+  KEY_SHOW_CONTACTS_TAB, KEY_VIEWER_CONTINUOUS_HOP, setBoolean, setString
 } from '../../store/AppSettings';
 import {
   EXT_LINK_ASK, EXT_LINK_COPY, EXT_LINK_DEFAULT, EXT_LINK_OPEN
@@ -74,6 +74,7 @@ export struct InteractionSettingsPage {
   @StorageLink(KEY_MSG_GESTURE) gestureScheme: string = GESTURE_CLASSIC;
   @StorageLink(KEY_SHOW_CONTACTS_TAB) showContactsTab: boolean = true;
   @StorageLink(KEY_ROW_SWIPE_ACTIONS) rowSwipeActions: boolean = false;
+  @StorageLink(KEY_FOLDER_BAR_SCROLL_HIDE) folderBarScrollHide: boolean = true;
   @StorageLink(KEY_VIEWER_CONTINUOUS_HOP) viewerContinuousHop: boolean = true;
   @StorageLink(KEY_EXTERNAL_LINK_ACTION) externalLinkAction: string = EXT_LINK_DEFAULT;
   // 迁移前这里还有 leavingPage/leaveTimer 两个字段、一个 aboutToDisappear 清理，
@@ -251,6 +252,26 @@ export struct InteractionSettingsPage {
         .onChange((v: boolean): void => {
           this.rowSwipeActions = v;
           setBoolean(KEY_ROW_SWIPE_ACTIONS, v);
+        });
+    }
+    .width('100%')
+    .padding({ left: 16, right: 13, top: 12, bottom: 12 })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(CARD_BG)
+    .borderRadius(CARD_RADIUS);
+
+    // 列表滑动时收起文件夹栏（默认开，和加这个开关之前的行为一致）。
+    // 关掉后横条常驻，收起态的缩略块也就不会再出现。
+    Row({ space: 12 }) {
+      Column({ space: 3 }) {
+        Text($r('app.string.ix_hide_folder_bar')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).width('100%');
+        Text($r('app.string.ix_hide_folder_bar_sub')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+      }.layoutWeight(1);
+      Toggle({ type: ToggleType.Switch, isOn: this.folderBarScrollHide })
+        .selectedColor(COLOR_PRIMARY)
+        .onChange((v: boolean): void => {
+          this.folderBarScrollHide = v;
+          setBoolean(KEY_FOLDER_BAR_SCROLL_HIDE, v);
         });
     }
     .width('100%')

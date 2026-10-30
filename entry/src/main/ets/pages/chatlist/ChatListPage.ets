@@ -18,27 +18,32 @@ import { FolderInfo } from '../../store/FolderStore';
 import { ChatListView } from './ChatListView';
 import { MainTabBody } from './MainTabBody';
 import { CHAT_LIST_NOW } from './ChatListFreeze';
-import { ComponentContent, FrameCallback, LengthMetrics } from '@kit.ArkUI';
+import { ComponentContent, FrameCallback, LengthMetrics, componentUtils } from '@kit.ArkUI';
 import {
-  HdsNavigation, HdsNavigationTitleMode, TitleBarContentOptions
+  HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuContentOptions, HdsNavigationTitleMode,
+  TitleBarContentOptions
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
 import { homeCardMarginVp } from '../../util/pageMargin';
 import { APPEARANCE_EPOCH, KEY_STATUS_FOLLOW_TITLE } from '../../util/appearance';
-import { COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_BADGE_BG, COLOR_TAB_PILL_BG } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_BADGE_BG, COLOR_TAB_PILL_BG } from '../../util/theme';
 import { router } from '@kit.ArkUI';
-import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH, KEY_FORCE_SINGLE_COLUMN
+import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH, KEY_FORCE_SINGLE_COLUMN,
+  KEY_FOLDER_BAR_SCROLL_HIDE
 } from '../../store/AppSettings';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import {
-  overlayBackdropBlur, overlayGlassFill, overlayMaterial, plainBackdropBlur, MATERIAL_EPOCH
+  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { materialModifierWhen } from '../../util/materialModifier';
 import { navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
 import { nextTabPreloadIndex, pruneBuiltKeys } from '../../util/tabPreload';
 import { FolderBadge, badgeLabel, folderBadge, setFolderBadge } from '../../util/folderBadges';
+import {
+  FolderBarCollapseState, expandedFolderBar, folderBarForceExpand, folderDragReveals, nextFolderBarCollapse
+} from '../../util/folderBarCollapse';
 import { registerStack, NavStackLike } from '../../util/navStacks';
 import { splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth } from '../../util/splitMetrics';
 import { mainBarFill, mainPageFill } from '../../util/theme';
@@ -65,7 +70,6 @@ interface TabSpec {
 }
 
 const TOP_BAR_HEIGHT: number = 56;
-const TOP_ACTION_SIZE: number = 44;
 const TAB_BADGE_MAX: number = 99;
 const FOLDER_BAR_HEIGHT: number = 36;
 // 文件夹条连同它自己的上下留白占的高度（列表让位用）。
@@ -74,6 +78,51 @@ const FOLDER_BAR_SPACE: number = 42;
 // 指示器托住当前项，避免“外层横条 + 一排胶囊 + 会话卡片”叠出三层容器。
 const FOLDER_CHIP_HEIGHT: number = 28;
 const FOLDER_SWITCH_DURATION: number = 250;
+// 收起态（见 util/folderBarCollapse）：整条横条缩成标题底下的一小块，只留当前
+// 文件夹。高度比展开态小一圈，配合 bottomBuilder 的高度动画就是"落下来放大 /
+// 收上去缩小"那一下。缩略块本身比展开态的 chip 再矮一点，免得看着像没动。
+// 2026-10-30 用户要求再缩一点（22 → 20，字号 12 → 11、左右内边距 6 → 5）。
+const FOLDER_COLLAPSED_CHIP_HEIGHT: number = 20;
+// 连同上下的留白，供 bottomBuilder 高度与列表让位使用。展开态 36+6=42，这里
+// 同样留 6 的余量。
+// 收起态横条整条让出去（缩略块画在标题栏外面，见 collapsedFolderChip），
+// 列表因此多出这一整段。展开态还是 42。
+const FOLDER_COLLAPSED_SPACE: number = 0;
+// 收起态缩略块贴住主标题右下角的间距（vp）：横向离标题文字末端多远、纵向
+// 从文字底部往下压多少——压一点才会看着是"挂在字母右下边"而不是另起一行。
+// 横向几乎不留缝：量到的是标题**文本框**，本身就比字形宽一截（字距、行尾），
+// 再额外加就会离得太远。
+const FOLDER_CHIP_GAP_X: number = 2;
+// 缩略块按**底边**对齐主标题文字的底边。量到的是文本框，它的底边比字形底部
+// 多出这一段 descent，不减掉胶囊就会整个往下坠一截。数值由真机截图反推
+// （文本框底 91vp、字形底 85vp）。这是字体盒子的**事实**，别拿它当设计参数调。
+const FOLDER_CHIP_TEXT_DESCENT: number = 6;
+// 缩略块相对"按文本框底边推算的位置"再往下沉多少。和上面的 descent 分开写：
+// 一个是从截图量出来的、不会变的量，一个是纯观感，要挪只动这一个数。
+// 【2026-10-30 收尾：按字形底边对齐】药丸撤掉之后参照物只剩字形，于是对着当前
+// 装机版本重新逐像素量了一遍：「Petrel」的 P 底边在 y=263px，「所有」底边在
+// y=279px，差 16px≈5.4vp。9 − 5.4 ≈ 3.6，取 4（残留 1px，肉眼看就是齐平）。
+// 之前那些档（10 / 7 / 8 / 9）都是在还有药丸底色的版本上调的，那一版比的是
+// 块的边而不是字形，所以这些数**不能直接沿用**，只能作为"曾经调到过哪"的记录。
+const FOLDER_CHIP_DROP_Y: number = 4;
+// 收起态缩略块与主标题之间的那条竖线（2026-10-30 用户要求"用竖线分割开"）。
+// 竖线画在**胶囊外面**，不借胶囊的实色底板，所以颜色要自己给。**不能用
+// `app.color.divider`**：它在深色下是 #101921，压在同为深色的标题栏上等于没有
+// （用户当场指出深色下颜色不对）。改用自带明暗两档的半透明线，写法和
+// ChatHeader 那几处分隔线一致。
+const FOLDER_CHIP_DIVIDER_WIDTH: number = 1;
+// 16 = 比胶囊(20)略矮，两头各留 2，跟着胶囊中线居中。12 那档用户嫌太短。
+const FOLDER_CHIP_DIVIDER_HEIGHT: number = 16;
+const FOLDER_CHIP_DIVIDER_LIGHT: string = '#26000000';
+const FOLDER_CHIP_DIVIDER_DARK: string = '#33FFFFFF';
+// 竖线两侧各自的留白，同时也是收起态那层 Row 的 spacing。去掉药丸之前这里还有
+// 一层 5vp 的内边距叠着（实际 10），撤掉药丸后就是这一个数说了算，2026-10-30 用户定的 7。
+const FOLDER_CHIP_DIVIDER_GAP: number = 7;
+// 主标题的组件 ID。HDS 的标题栏没有"标题右侧"槽位（stackBuilder / bottomBuilder
+// 都是标题**下方**的一整条），收起态那块缩略只能画在标题栏外面，靠这个 ID 把
+// 主标题的实际矩形量出来定位——见 ChatListPage.measureFolderChipAnchor。
+const TITLE_MAIN_ID: string = 'homeMainTitle';
+const FOLDER_BAR_COLLAPSE_DURATION: number = 220;
 // 邻居页签预载（见 util/tabPreload 的说明）的两个延时。preloadItems 是调用即
 // 一次性构建（单个页签实测 ~60ms），时机全靠这里挑：
 //   切页后：等 onAnimationEnd 确认动画落定，再留 120ms 给尾帧和图片交接；不能
@@ -92,6 +141,15 @@ const TAB_KEEP_RANGE: number = 2;
 // 实测 13 次 >1ms、最大 14.8ms）；旁路后脏区只剩 FolderPill 一个组件。
 const FOLDER_PILL_X: string = 'folderPillX';
 const FOLDER_PILL_W: string = 'folderPillW';
+// 胶囊这一帧该不该"滑过去"。**必须是显式开关**：动画挂在 FolderPill 自己的
+// 隐式 `.animation()` 上（见那里），时长由这个开关决定——拖动时必须关掉（每帧
+// 一个新目标再配 250ms 缓动，胶囊会一直追在手指屁股后面），切页/松手落定时打开。
+// 原来这里是靠页面两处 `animateTo` 包着 moveIndicatorTo 来"滑"的，用户看到的却是
+// 瞬移（2026-10-30 报的「直接跳过去」）。
+//
+// 别拿 uitest dumpLayout 去验这个动画：它读的是**布局结果**，动画帧里量到的
+// 仍然是终点坐标，会让人误判成"没动"。要看就看截图。
+const FOLDER_PILL_ANIMATE: string = 'folderPillAnimate';
 // HdsNavigation reports the nav bar visible near the beginning of a pop. Keep
 // child list publications frozen until the measured ~590 ms transition ends,
 // then apply the newest buffered snapshot once.
@@ -103,6 +161,22 @@ const CHAT_LIST_RETURN_SETTLE_MS: number = 640;
 // frame. ChatPage statically imports ChatHeader, so resolving this import warms
 // both modules. The process-wide guard also covers tab/page recreation.
 let chatModuleWarmupStarted: boolean = false;
+
+// 窗口尺寸/分栏宽度变了之后，等下一帧布局落定再重新量一次缩略块的锚点。
+// 在 onWindowResized 里当场量会拿到变化前的矩形——那一次布局还没跑。
+class FolderChipAnchorFrameCallback extends FrameCallback {
+  // 拿组件本身而不是回调：缩略块的位置是页面自己的 @State，量完直接就是重绘。
+  private owner: ChatListPage;
+
+  constructor(owner: ChatListPage) {
+    super();
+    this.owner = owner;
+  }
+
+  onFrame(_frameTimeInNano: number): void {
+    this.owner.measureFolderChipAnchor();
+  }
+}
 
 class ChatModuleWarmupFrameCallback extends FrameCallback {
   onFrame(_frameTimeInNano: number): void {
@@ -214,9 +288,6 @@ export struct ChatListPage {
   @StorageProp(KEY_APP_DARK) @Watch('onAppDarkChanged') private appDark: boolean = false;
   // 由 MainScreen 算好写进来的「APP 壁纸生效中」，见 store/AppSettings。
   @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
-  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
-  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
-  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   // 大标题的强调色是活绑定，读一次 epoch 才会在用户改色后重绘。
   @StorageProp(APPEARANCE_EPOCH) private appearanceEpoch: number = 0;
   // 状态栏跟不跟标题变色，用户可开（设置 → 聊天 → 自定义强调色）。
@@ -254,6 +325,26 @@ export struct ChatListPage {
   @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   // 小方形屏上滑时隐藏标题栏（SPEC-04，写入方是 MainTabBody 的滚动回调）。
   @StorageProp(KEY_IMMERSIVE_BARS_HIDDEN) immersiveHidden: boolean = false;
+  // 文件夹条是否收成了标题底下那一小块（util/folderBarCollapse，2026-10-30）。
+  // 参与渲染（bottomBuilder 高度 + 横条/缩略块的切换），所以是 @State。
+  @State private folderBarCollapsed: boolean = false;
+  // 「列表滑动隐藏文件夹」开关（设置 → 交互设置，默认开）。订阅放这里而不是
+  // 滚动回调里每次现读：用户可能正收着横条去改设置，回到首页不该还得先滚一下
+  // 才展开。@Watch 见 onFolderBarScrollHideChanged。
+  @StorageProp(KEY_FOLDER_BAR_SCROLL_HIDE) @Watch('onFolderBarScrollHideChanged')
+  private folderBarScrollHide: boolean = true;
+  // 状态机本体。累计量每帧都在变，做成 @State 就是每帧一次整页重绘——它不参与
+  // 渲染，普通字段即可；真正要重绘的只有 collapsed 翻面那一次。
+  private folderBarState: FolderBarCollapseState = expandedFolderBar();
+  // 收起态横拖切换文件夹：拖动期间整条展开（让用户看见自己在切哪一项），
+  // 松手回缩。**单独一个字段而不是直接改状态机**：拖动不属于"滚动"，一旦把它
+  // 揉进累计量，松手后的回缩就得再伪造一次滚动。
+  private folderBarDragReveal: boolean = false;
+  // 收起态缩略块的绝对位置（vp，相对外层 Stack）。
+  @State private folderChipX: number = 0;
+  @State private folderChipY: number = 0;
+  // 量到过一次就不再量：主标题的矩形只在窗口尺寸变化时才会变（见 onWindowResized）。
+  private folderChipAnchored: boolean = false;
   // 平板分栏下记住的左栏宽度（issue #106），见 util/splitNavWidth。
   @StorageProp(KEY_SPLIT_NAV_WIDTH) private savedNavW: number = 0;
   // Sliding selection pill: position/size interpolated between tab frames so it
@@ -262,6 +353,9 @@ export struct ChatListPage {
   // 留作页面逻辑自己的读值（folderLayoutPending 的判据等）。
   private indicatorX: number = 0;
   private indicatorW: number = 0;
+  // 胶囊当前是不是"滑过去"模式（见 FOLDER_PILL_ANIMATE）。页面这一份只是用来
+  // 去重：拖动时每帧都会调 setPillAnimate(false)，不比对就会每帧写一次 AppStorage。
+  private pillAnimateOn: boolean = false;
   private tabXs: number[] = [];
   private tabWs: number[] = [];
   private tabsWidth: number = 0; // Tabs (content) width, for swipe-progress ratio
@@ -312,16 +406,6 @@ export struct ChatListPage {
   @State private warmedVisualTabKeys: string[] = [];
 
   @Styles
-  actionNormalStyle() {
-    .opacity(1)
-  }
-
-  @Styles
-  actionPressedStyle() {
-    .opacity(0.68)
-  }
-
-  @Styles
   tabNormalStyle() {
     .opacity(1)
   }
@@ -329,6 +413,16 @@ export struct ChatListPage {
   @Styles
   tabPressedStyle() {
     .opacity(0.62)
+  }
+
+  // 打开/关闭胶囊的「滑过去」模式（见 FOLDER_PILL_ANIMATE）。只在真的翻面时写
+  // AppStorage：拖动时每帧都会调它。
+  private setPillAnimate(on: boolean): void {
+    if (this.pillAnimateOn === on) {
+      return;
+    }
+    this.pillAnimateOn = on;
+    AppStorage.setOrCreate(FOLDER_PILL_ANIMATE, on);
   }
 
   // Place the pill at a (possibly fractional) tab position: 1.4 = 40% of the
@@ -461,6 +555,12 @@ export struct ChatListPage {
   // 不引入第二套语义，只是把「谁来通知」这件事从框架手里拿回来一份。
   // 值没变时 applyNavBarVisible 是幂等的，所以这条路平时什么都不做。
   private onWindowResized(): void {
+    // 窗口/分栏变了，主标题的位置也变了，缩略块的锚点得重量。缩略块正显示着
+    // 的时候必须马上补量，否则它会停在上一个窗口的位置上，直到下次收起。
+    this.folderChipAnchored = false;
+    if (this.folderBarCollapsed) {
+      this.getUIContext().postFrameCallback(new FolderChipAnchorFrameCallback(this));
+    }
     this.applyNavBarVisible(navBarVisibleOnAppear(
       isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.chatStack.size()) &&
       !this.viewerHidesNavBar());
@@ -931,91 +1031,16 @@ export struct ChatListPage {
     }
   }
 
-  @Builder
-  topAction(icon: string, label: Resource, onTap: () => void) {
-    Row() {
-      SymbolGlyph($r(icon)).fontSize(23).fontColor([COLOR_ICON_SECONDARY]);
-    }
-    .width(TOP_ACTION_SIZE).height(TOP_ACTION_SIZE)
-    .borderRadius(TOP_ACTION_SIZE / 2)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
-    .backdropBlur(overlayBackdropBlur('control'))
-    .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
-    .clip(true)
-    .stateStyles({
-      normal: this.actionNormalStyle,
-      pressed: this.actionPressedStyle
-    })
-    .accessibilityText(label)
-    .onClick((): void => { onTap(); });
-  }
-
-  @Builder
-  searchAction() {
-    Row() {
-      if (this.searchOpening) {
-        LoadingProgress()
-          .width(20)
-          .height(20)
-          .color(this.accent())
-          .transition(TransitionEffect.OPACITY
-            .combine(TransitionEffect.scale({ x: 0.72, y: 0.72 }))
-            .animation({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
-              curve: Curve.EaseOut
-            }));
-      } else {
-        SymbolGlyph($r('sys.symbol.magnifyingglass'))
-          .fontSize(23)
-          .fontColor([COLOR_ICON_SECONDARY])
-          .transition(TransitionEffect.OPACITY
-            .combine(TransitionEffect.scale({ x: 0.84, y: 0.84 }))
-            .animation({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
-              curve: Curve.EaseOut
-            }));
-      }
-    }
-    .width(TOP_ACTION_SIZE)
-    .height(TOP_ACTION_SIZE)
-    .borderRadius(TOP_ACTION_SIZE / 2)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
-    .backdropBlur(overlayBackdropBlur('control'))
-    .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
-    .clip(true)
-    .stateStyles({
-      normal: this.actionNormalStyle,
-      pressed: this.actionPressedStyle
-    })
-    .enabled(!this.searchOpening)
-    .accessibilityText(this.searchOpening ? $r('app.string.cl_opening_search') : $r('app.string.cl_global_search'))
-    .onClick((): void => {
-      this.openGlobalSearch();
-    });
-  }
-
-  // HDS's built-in menu node composites each icon independently. With the
-  // adaptive material level, the sparse search glyph and dense more glyph can
-  // therefore look like two different material strengths even though the same
-  // options were supplied. Draw both actions through one project material
-  // pipeline so size, tint, blur, light level and interaction stay identical.
-  @Builder
-  titleBarActions() {
-    Row({ space: 8 }) {
-      this.searchAction();
-      this.topAction('sys.symbol.more', $r('app.string.cl_more_actions'), (): void => {
-        this.moreMenuShown = true;
-      });
-    }
-    .width('100%')
-    .height(TOP_BAR_HEIGHT)
-    .padding({ right: 16 })
-    .justifyContent(FlexAlign.End)
-    .alignItems(VerticalAlign.Center);
-  }
-
+  // 旧的自绘按钮（topAction / searchAction / titleBarActions）已于 2026-10-30
+  // 删掉，原因见 titleBarMenu()。
+  //
+  // 唯一没接回来的东西：搜索按钮点下后那 520ms 的转圈（searchOpening 现在只剩
+  // 防连点闸门）。HDS 的菜单项只收一个静态 icon，画不出过程中态。
+  //
+  // 已知代价，真机上若是「两颗按钮的玻璃浓淡不一样」就回来这里看：HDS 的菜单
+  // 节点是**每颗图标各合成一次**，同一组 materialType/materialLevel 下，稀疏的
+  // 放大镜和密的 ⋮ 看上去可能厚薄不同。当初自绘就是为了消掉这个差异；现在按
+  // 官方写法走，差异回来也算预期内。
   syncLabel(): ResourceStr {
     if (this.syncState === 'connectionStateUpdating') { return $r('app.string.cl_refreshing'); }
     if (this.syncState === 'connectionStateWaitingForNetwork') { return $r('app.string.cl_waiting_network'); }
@@ -1042,6 +1067,32 @@ export struct ChatListPage {
     return this.tabs().map((spec: TabSpec): ListScroller => this.scrollerFor(spec.key));
   }
 
+  // 顶栏的两颗按钮交给 HDS 自己的菜单位（官方样例就是 `content.menu`）：
+  // 图标、无障碍 label、点击回调全由 HdsNavigationIconOptions 给，按钮的玻璃
+  // 由 `TitleBarStyleOptions.systemMaterialEffect` 统一画。
+  //
+  // 2026-10-30 之前这两颗是自绘的（stackBuilder 里叠 overlayGlassFill +
+  // backdropBlur + materialModifier 那一套），因为 2026-09-03 那轮查 SDK 时
+  // HdsNavigationIconItemStyle 只有 backgroundColor/iconColor，画不出玻璃。从
+  // 6.1.0(23) 起有了 systemMaterialEffect，这条路才通——用户要求「按官方的写」。
+  //
+  // 结构本身仍然高频重建就整条栏重画（见 hds-titlebar-limits 的记录），所以
+  // 这里**只吃结构性状态**：`searchOpening` 那种一点就变的别读进来，连点闸门
+  // 在 openGlobalSearch() 里自己拦。
+  private titleBarMenu(): HdsNavigationMenuContentOptions {
+    const search: HdsNavigationIconOptions = {
+      icon: $r('sys.symbol.magnifyingglass'),
+      label: $r('app.string.cl_global_search'),
+      action: (): void => { this.openGlobalSearch(); }
+    };
+    const more: HdsNavigationIconOptions = {
+      icon: $r('sys.symbol.more'),
+      label: $r('app.string.cl_more_actions'),
+      action: (): void => { this.moreMenuShown = true; }
+    };
+    return { value: [{ content: search }, { content: more }] };
+  }
+
   // 标题栏内容：应用名 + 同步状态副标题 + 搜索/⋮ 两个动作 + 底部的文件夹条。
   //
   // 同步状态原来是顶栏里第二行文字、靠位移动画"挤"出来，现在交给标题栏的
@@ -1050,9 +1101,11 @@ export struct ChatListPage {
     const content: TitleBarContentOptions = {
       title: {
         mainTitle: $r('app.string.app_name'),
-        subTitle: this.syncState === '' ? '' : this.syncLabel()
+        subTitle: this.syncState === '' ? '' : this.syncLabel(),
+        // 收起态缩略块要贴在这串文字的右下角，得能把它量出来（见 TITLE_MAIN_ID）。
+        mainTitleId: TITLE_MAIN_ID
       },
-      stackBuilder: (): void => { this.titleBarActions(); }
+      menu: this.titleBarMenu()
     };
     // 文件夹条挂在 bottomBuilder 上——这是 HDS 给"标题栏底下那一行"准备的槽位，
     // 横条和标题栏因此共用同一块背板与材质，看上去是一整块。
@@ -1063,7 +1116,7 @@ export struct ChatListPage {
     if (this.folders.length > 0 || this.newSessionCount > 0) {
       content.bottomBuilder = {
         builder: (): void => { this.titleBarBottom(); },
-        height: (this.folders.length > 0 ? FOLDER_BAR_SPACE : 0)
+        height: this.folderBarSpace()
           + (this.newSessionCount > 0 ? NEW_SESSION_BAR_HEIGHT : 0)
       };
     }
@@ -1104,63 +1157,142 @@ export struct ChatListPage {
   }
 
   private chromeInset(): number {
-    return this.topSafe + TOP_BAR_HEIGHT +
-      (this.folders.length > 0 ? FOLDER_BAR_SPACE : 0);
+    return this.topSafe + TOP_BAR_HEIGHT + this.folderBarSpace();
   }
 
-  @Builder
-  topBar() {
-    Row({ space: 2 }) {
-      Column() {
-        // The app's own name, from the resource rather than a literal — a
-        // rename should not mean hunting through the UI. It is also the one
-        // place users read the product name, so it must not say "Telegram":
-        // that is a trademark, and this is an unofficial client.
-        Text($r('app.string.app_name'))
-          .fontSize(25).fontWeight(FontWeight.Bold).fontColor(this.accent())
-          .maxLines(1)
-          .translate({ y: this.syncState === '' ? 7 : 0 })
-          .animation({
-            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-            curve: Curve.EaseOut
-          });
-        Text(this.syncLabel())
-          .height(14).fontSize(11).lineHeight(14)
-          .fontColor(COLOR_TEXT_SECONDARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-          .opacity(this.syncState === '' ? 0 : 1)
-          .translate({ y: this.syncState === '' ? -3 : 0 })
-          .animation({
-            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-            curve: Curve.EaseOut
-          });
-      }
-      .height(TOP_BAR_HEIGHT)
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1);
-
-      this.searchAction();
-
-      Row() {
-        SymbolGlyph($r('sys.symbol.more')).fontSize(23).fontColor([COLOR_ICON_SECONDARY]);
-      }
-      .width(TOP_ACTION_SIZE).height(TOP_ACTION_SIZE)
-      .borderRadius(TOP_ACTION_SIZE / 2)
-      .justifyContent(FlexAlign.Center)
-      .stateStyles({
-        normal: this.actionNormalStyle,
-        pressed: this.actionPressedStyle
-      })
-      .accessibilityText($r('app.string.cl_more_actions'))
-      .bindMenu(this.moreMenu(), { systemMaterial: overlayMaterial('menu') });
+  // 文件夹条当前该占多高（不含新建会话横幅）。展开/收起两档，收起态见
+  // util/folderBarCollapse。bottomBuilder 的高度和 chromeInset 都读它，
+  // 两处必须同源，否则列表让位的总量和标题栏实际高度会各说各话。
+  private folderBarSpace(): number {
+    if (this.folders.length === 0) {
+      return 0;
     }
-    .width('100%').height(TOP_BAR_HEIGHT)
-    .padding({ left: this.horizontalPadding() + 4, right: this.horizontalPadding() })
-    .alignItems(VerticalAlign.Center)
-    // 自己不画玻璃：顶栏和文件夹条合成一整块，材质挂在外层那个容器上。
-    // 各画各的时，两块玻璃叠在一起会在交界处显出一条边。
-    .backgroundColor(Color.Transparent);
+    return this.folderBarCollapsed ? FOLDER_COLLAPSED_SPACE : FOLDER_BAR_SPACE;
+  }
+
+  // 量出主标题的实际矩形，把缩略块贴到它右下角（TITLE_MAIN_ID）。
+  //
+  // **为什么是量而不是算**：标题的字号、字重、左内边距、以及它在分栏左栏里的
+  // 起点都由 HDS 自己决定，官方文档只给了标题栏总高（MINI 56vp），没有给这些；
+  // 自己估一个 x 会在换语言、改系统字号、拖分割线之后全部错位。量出来的矩形
+  // 是 px，转 vp 再摆。
+  //
+  // 量不到（还没布局、或 API 不可用）时保持上一次的值；一次都没量到就由
+  // collapsedFolderChip 退回"标题栏左下角"（见那里的三元），难看但不会盖住标题。
+  // 不是 private：FolderChipAnchorFrameCallback 要回调它（窗口尺寸变化后重量）。
+  measureFolderChipAnchor(): void {
+    if (this.folderChipAnchored) {
+      return;
+    }
+    try {
+      const rect: componentUtils.ComponentInfo =
+        this.getUIContext().getComponentUtils().getRectangleById(TITLE_MAIN_ID);
+      const w: number = px2vp(rect.size.width);
+      const h: number = px2vp(rect.size.height);
+      if (!(w > 0) || !(h > 0)) {
+        return;
+      }
+      this.folderChipX = px2vp(rect.windowOffset.x) + w + FOLDER_CHIP_GAP_X;
+      // 纵向按底边对齐：胶囊底边 = 字形底边，于是它整个骑在标题那一行上，
+      // 而不是吊在标题下面。
+      this.folderChipY = px2vp(rect.windowOffset.y) + h - FOLDER_CHIP_TEXT_DESCENT -
+        FOLDER_COLLAPSED_CHIP_HEIGHT + FOLDER_CHIP_DROP_Y;
+      this.folderChipAnchored = true;
+    } catch (_error) {
+      // 取不到就继续用旧值，下一条路径会再试（每次收起都会调一次）。
+    }
+  }
+
+  // 收起态缩略块显示哪一项 = 当前文件夹。tabs() 每次都重建数组，这里只在构建
+  // 时读，不在滚动路径上。
+  private currentTabSpec(): TabSpec | undefined {
+    return this.tabs()[this.selectedIndex];
+  }
+
+  // 子列表每帧报上来的滚动量（见 ChatListView / MainTabBody 的
+  // reportFolderBarScroll），文件夹条据此收起/展开。
+  private noteFolderBarScroll(key: string, delta: number, atTop: boolean): void {
+    // 只认当前页签的列表：别的页签在布局、预载、复原位置时也会滚一下，那些
+    // 不该让横条动。
+    if (key !== (this.tabs()[this.selectedIndex]?.key ?? '')) {
+      return;
+    }
+    const forceExpand: boolean = folderBarForceExpand(atTop, this.folderBarDragReveal,
+      this.folders.length > 0, this.folderBarScrollHide);
+    this.folderBarState = nextFolderBarCollapse(this.folderBarState, delta, forceExpand);
+    this.applyFolderBarState(true);
+  }
+
+  // 关掉「列表滑动隐藏文件夹」时立刻把横条放回来，不等下一次滚动。
+  // 打开时什么都不做：状态从下一帧滚动开始累计，和加开关之前一样。
+  private onFolderBarScrollHideChanged(): void {
+    if (!this.folderBarScrollHide) {
+      this.expandFolderBarNow();
+    }
+  }
+
+  // 切到另一个文件夹之后，按**新列表**的位置补一次「到顶就展开」的判定。
+  //
+  // 没有这一下，"所有"里滚到很下面把横条收起、再横滑到一个停在顶部的文件夹，
+  // 横条会一直缩着——因为状态机只在滚动回调里推进，而新列表一动不动就没人叫它。
+  // 用 delta=0 借同一个入口：forceExpand 为真时它只做展开 + 清零，为假时什么都不改。
+  private syncFolderBarWithActiveList(): void {
+    const spec: TabSpec | undefined = this.tabs()[this.selectedIndex];
+    if (spec === undefined) {
+      return;
+    }
+    // 没建过的页签这里会拿到一个新建的控制器，currentOffset() 为 0——那本来也是
+    // 顶上的位置。所以不需要先判存在。
+    this.noteFolderBarScroll(spec.key, 0, this.scrollerFor(spec.key).currentOffset().yOffset <= 0);
+  }
+
+  // 收起态横拖切换文件夹：拖过阈值就把整条展开——用户得看见自己在切哪一项。
+  private noteFolderBarDrag(offset: number): void {
+    if (!this.folderBarDragReveal && this.folderBarCollapsed && folderDragReveals(offset)) {
+      this.folderBarDragReveal = true;
+      this.applyFolderBarState(true);
+    }
+  }
+
+  // 松手（或切页动画落定）：拖动期间的强制展开撤回，回缩到状态机认定的那一档。
+  private settleFolderBarDrag(): void {
+    if (!this.folderBarDragReveal) {
+      return;
+    }
+    this.folderBarDragReveal = false;
+    this.applyFolderBarState(true);
+  }
+
+  // 点收缩态的缩略块 = 用户明确要求展开，不看累计量。**必须同时复位状态机**，
+  // 否则松手后下一帧同向滚动会立刻把它收回去。
+  private expandFolderBarNow(): void {
+    this.folderBarState = expandedFolderBar();
+    this.folderBarDragReveal = false;
+    this.applyFolderBarState(true);
+  }
+
+  // 把状态机的判定落到渲染上。只有翻面那一次才起动画——每帧都 animateTo 等于
+  // 把动画时长当帧间隔用，反而卡。
+  //
+  // 高度收放和内容切换必须在**同一个** animateTo 里：bottomBuilder 的高度是
+  // HDS 自己量的，晚一帧就跟内容对不上。
+  private applyFolderBarState(animate: boolean): void {
+    const collapsed: boolean = this.folderBarState.collapsed && !this.folderBarDragReveal;
+    if (collapsed === this.folderBarCollapsed) {
+      return;
+    }
+    if (collapsed) {
+      // 缩略块要在收起的同时出现在标题右下角，锚点得先量好。
+      this.measureFolderChipAnchor();
+    }
+    if (!animate) {
+      this.folderBarCollapsed = collapsed;
+      return;
+    }
+    animateTo({
+      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, FOLDER_BAR_COLLAPSE_DURATION),
+      curve: Curve.EaseOut
+    }, (): void => { this.folderBarCollapsed = collapsed; });
   }
 
   @Builder
@@ -1181,6 +1313,8 @@ export struct ChatListPage {
     .padding({ left: 7, right: 7 })
     .borderRadius(FOLDER_CHIP_HEIGHT / 2)
     // 未选项只铺一层轻量 tint，不再各自叠模糊/材质；选中态由下层滑动胶囊表达。
+    // 2026-10-30 试过摘掉这层底、让未选项直接压在玻璃条上：观感发空、可读性也差，
+    // 用户当场让改回来。别再摘。
     .backgroundColor(this.selectedIndex === index
       ? Color.Transparent : $r('app.color.material_tint'))
     .stateStyles({
@@ -1193,11 +1327,11 @@ export struct ChatListPage {
       this.tabWs[index] = area.width as number;
       if (index === this.selectedIndex) {
         if (this.folderLayoutPending) {
+          // 首次布点不滑：胶囊从 pillX=0 出发，动画的话会当着一屏人横穿过去。
+          // 靠 pillAnimate 默认 false 保持不滑，这里什么也不用做（见
+          // FOLDER_PILL_ANIMATE）。
           this.folderLayoutPending = false;
-          animateTo({
-            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220),
-            curve: Curve.EaseOut
-          }, () => { this.moveIndicatorTo(index); });
+          this.moveIndicatorTo(index);
           this.keepOrRevealStrip();
         } else {
           this.moveIndicatorTo(index);
@@ -1216,10 +1350,75 @@ export struct ChatListPage {
       if (this.newSessionCount > 0) {
         NewSessionBanner({ count: this.newSessionCount });
       }
-      if (this.folders.length > 0) {
+      // 收起态整个让出去：缩略块不在这一条里，它画在标题栏外面、贴着主标题
+      // （见 build 里的 collapsedFolderChip）。**不能**让横条以透明身份留着，
+      // 它是全宽可点的，留着会吃掉那一带的触摸，列表就滑不动了。
+      // 过渡感由横条自己的 transition 和 bottomBuilder 的高度动画接着。
+      if (this.folders.length > 0 && !this.folderBarCollapsed) {
         this.tabBar();
       }
-    }.width('100%');
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start);
+  }
+
+  // 收起态的缩略块：只有当前文件夹那一颗，字号和高度都比展开态的 chip 小一圈。
+  // 点它直接展开（2026-10-30 用户明确要求）。
+  //
+  // **它不挂在 bottomBuilder 里，而是画在标题栏外面**（见 build 的 Stack）：
+  // 用户要的位置是"主标题字母的右下边"，而 HDS 的两个自定义槽位都在标题
+  // **下方**一整条，没有"标题右侧"这种位置。所以改为按主标题的实际矩形绝对
+  // 定位（measureFolderChipAnchor），列表此时正好也收回了标题栏底下那一整条。
+  @Builder
+  collapsedFolderChip() {
+    // 整块**不上一底色**（2026-10-30 用户："顶部的时候去掉胶囊"）：就是
+    // 「Petrel │ 所有 88」，文字和角标直接压在标题栏的玻璃上。之前那层实色药丸
+    // 是为了"离了标题栏还能读清"，现在外面有竖线做分隔、字又是强调色，药丸就多余了。
+    // 外层这圈只负责横向排布和绝对定位，高度取 FOLDER_COLLAPSED_CHIP_HEIGHT，
+    // 竖线因此天然对齐整块的中线。
+    Row({ space: FOLDER_CHIP_DIVIDER_GAP }) {
+      // 标题与文件夹名之间的竖线（2026-10-30 用户要求）。用明暗两档半透明色，
+      // 理由见 FOLDER_CHIP_DIVIDER_LIGHT 那段的说明。
+      Divider()
+        .vertical(true)
+        .height(FOLDER_CHIP_DIVIDER_HEIGHT)
+        .strokeWidth(FOLDER_CHIP_DIVIDER_WIDTH)
+        .color(this.appDark ? FOLDER_CHIP_DIVIDER_DARK : FOLDER_CHIP_DIVIDER_LIGHT);
+      // 文件夹名 + 未读角标。
+      Row({ space: 3 }) {
+        Text(this.currentTabSpec()?.title ?? '')
+          .fontSize(11).fontWeight(FontWeight.Medium)
+          .fontColor(COLOR_TAB_SELECTED)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+          .constraintSize({ maxWidth: this.folderTitleMaxWidth() });
+        FolderChipBadge({
+          badge: folderBadge(this.currentTabSpec()?.key ?? 'main'),
+          selected: true,
+          plainTitle: this.currentTabSpec()?.plainTitle ?? ''
+        });
+      }
+      // 只留高度给竖线对齐用；没有底色了，padding / borderRadius 一并去掉，
+      // 左侧那 5vp 的留白改由外层 Row 的 spacing（FOLDER_CHIP_DIVIDER_GAP）给。
+      .height(FOLDER_COLLAPSED_CHIP_HEIGHT);
+    }
+    .height(FOLDER_COLLAPSED_CHIP_HEIGHT)
+    .alignItems(VerticalAlign.Center)
+    // 位置来自量出来的主标题矩形（见 measureFolderChipAnchor）。还没量到时退回
+    // 标题栏左下角——难看，但至少不会压住标题，而且下一次收起会重新量。
+    .position({
+      x: this.folderChipAnchored ? this.folderChipX : homeCardMarginVp(this.widthBp),
+      y: this.folderChipAnchored ? this.folderChipY
+        : this.topSafe + TOP_BAR_HEIGHT - FOLDER_COLLAPSED_CHIP_HEIGHT
+    })
+    .onClick((): void => { this.expandFolderBarNow(); })
+    .transition(
+      TransitionEffect.OPACITY
+        .combine(TransitionEffect.translate({ y: -4 }))
+        .animation({
+          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, FOLDER_BAR_COLLAPSE_DURATION),
+          curve: Curve.EaseOut
+        })
+    );
   }
 
   @Builder
@@ -1264,6 +1463,11 @@ export struct ChatListPage {
     // 横条无独立外框，直接融入标题栏的统一玻璃背板；只有当前项保留胶囊。
     // 满宽外层用对称内边距约束 Scroll 视口，避免满宽内容叠加外边距挤出右侧。
     // 两侧留白沿用首页卡片规则：手机 6vp、折叠屏 10vp、平板 14vp。
+    //
+    // **2026-10-30 试过给整条挂一层 'bar' 玻璃（外框胶囊 + 材质三件套），用户看过
+    // 真机后让改回去。** 那条路本身是通的（材质可用时整条会透出下面的列表），问题
+    // 在观感：文件夹条和它上面那块 HDS 标题栏成了两截玻璃，加上大标题底下的空白，
+    // 首页顶部被切成了三段。维持「无独立外框、只留选中胶囊」这一版，别再给这里加底。
     .width('100%')
     .padding({ left: homeCardMarginVp(this.widthBp), right: homeCardMarginVp(this.widthBp) })
     .margin({ bottom: 2 })
@@ -1316,7 +1520,12 @@ export struct ChatListPage {
                   listScroller: this.scrollerFor(spec.key),
                   effectsActive: this.tabVisualsActive(spec.key),
                   imagesActive: this.tabVisualsActive(spec.key),
-                  updatesActive: this.tabUpdatesActive(spec.key)
+                  updatesActive: this.tabUpdatesActive(spec.key),
+                  // 文件夹条收起/展开的输入（util/folderBarCollapse）。普通成员而非
+                  // @Prop：@Prop 跨边界深拷贝会把函数丢掉。
+                  onScrollForFolderBar: (delta: number, atTop: boolean): void => {
+                    this.noteFolderBarScroll(spec.key, delta, atTop);
+                  }
                 }).layoutWeight(1);
               } else {
                 ChatListView({
@@ -1325,7 +1534,10 @@ export struct ChatListPage {
                   listScroller: this.scrollerFor(spec.key),
                   effectsActive: this.tabVisualsActive(spec.key),
                   imagesActive: this.tabVisualsActive(spec.key),
-                  updatesActive: this.tabUpdatesActive(spec.key)
+                  updatesActive: this.tabUpdatesActive(spec.key),
+                  onScrollForFolderBar: (delta: number, atTop: boolean): void => {
+                    this.noteFolderBarScroll(spec.key, delta, atTop);
+                  }
                 }).layoutWeight(1);
               }
             }
@@ -1372,8 +1584,14 @@ export struct ChatListPage {
           this.companionImageTabIndex = companionIndex;
         }
         if (this.tabsWidth > 0) {
+          // 拖动期间关掉胶囊的隐式动画：每帧一个新目标再配 250ms 缓动，胶囊会
+          // 一直追着手指屁股后面跑，而不是贴着手指走。
+          this.setPillAnimate(false);
           this.moveIndicatorTo(index - event.currentOffset / this.tabsWidth);
         }
+        // 收起态横拖也要能看见整条（2026-10-30 用户要求：滑的过程中走一遍完整
+        // 动画，松手回去）。拖过阈值才展开，轻点时的微小位移不算。
+        this.noteFolderBarDrag(event.currentOffset);
       })
       // Finger released / tab tapped: settle the pill on the target tab and
       // scroll the strip if that tab sits outside the visible range.
@@ -1387,13 +1605,20 @@ export struct ChatListPage {
         this.folderLayoutPending = false;
         this.appliedFolder = targetIndex;
         this.selectedIndex = targetIndex;
-        animateTo({
-          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, FOLDER_SWITCH_DURATION),
-          curve: Curve.EaseOut
-        }, () => { this.moveIndicatorTo(targetIndex); });
+        // 手指已经松开，切页动画开始：横拖期间的强制展开到此为止，横条回缩。
+        // 顺序不能反——先回缩、再按**新列表**的位置补一次到顶判定，否则切到
+        // 一个停在顶部的文件夹时，横条会一直缩着直到用户去滚一下。
+        this.settleFolderBarDrag();
+        this.syncFolderBarWithActiveList();
+        // 松手落定：胶囊从拖动最后的那个分数位置滑到目标 chip。先把拖动期间关掉的
+        // 滑过去动画打开（见 FOLDER_PILL_ANIMATE）。
+        this.setPillAnimate(true);
+        this.moveIndicatorTo(targetIndex);
         this.revealTab(targetIndex);
       })
       .onAnimationEnd((_index: number) => {
+        // 兜底：拖了不到一页又回弹这种情况，不一定会走 onAnimationStart。
+        this.settleFolderBarDrag();
         this.tabAnimationActive = false;
         const companionKey: string | undefined = this.tabs()[this.companionImageTabIndex]?.key;
         if (companionKey !== undefined && this.warmedVisualTabKeys.indexOf(companionKey) < 0) {
@@ -1412,10 +1637,9 @@ export struct ChatListPage {
         if (switched) {
           this.appliedFolder = index;
           this.selectedIndex = index;
-          animateTo({
-            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, FOLDER_SWITCH_DURATION),
-            curve: Curve.EaseOut
-          }, () => { this.moveIndicatorTo(index); });
+          // 点 chip 切页（onAnimationStart 没跑到）时的同一条路：打开滑过去。
+          this.setPillAnimate(true);
+          this.moveIndicatorTo(index);
         } else {
           this.moveIndicatorTo(index);
         }
@@ -1428,6 +1652,8 @@ export struct ChatListPage {
         // 无动画 changeIndex / 省电关闭动画时没有 onAnimationEnd，在这里兜底。
         // 正常动画仍由 onAnimationEnd 排，避免重复改写计时器。
         if (!this.tabAnimationActive) {
+          this.settleFolderBarDrag();
+          this.syncFolderBarWithActiveList();
           this.companionImageTabIndex = -1;
           if (this.unreadRefreshPending) {
             this.refreshUnread([]);
@@ -1460,6 +1686,10 @@ export struct ChatListPage {
         // 标题栏也让位：它和列表同属一张"浮在壁纸上"的面，只有行卡片自己带底。
         // 两颗动作按钮由 stackBuilder 共用 control 材质；标题栏本身继续只负责
         // 滚动模糊，避免整栏与按钮材质叠加后发实。
+        //
+        // 停在 HDS 的标准形状上，别再动（2026-10-30 试过两轮：先关模糊、再全透明，
+        // 用户看下来都改回白色渐变）。`originalStyle` 是实底白（有壁纸时 65% 白），
+        // `scrollEffectStyle` 透明，模糊由滚动量驱动——这套就是官方的模型。
         style: titleBarStyle(mainBarFill(this.appWallpaperOn), this.accent()),
         content: this.titleBarContent()
 
@@ -1536,6 +1766,14 @@ export struct ChatListPage {
       // 壁纸生效时整页底必须透明，否则壁纸被这一层盖死（见 util/theme.mainPageFill）。
       .backgroundColor(mainPageFill(this.appWallpaperOn));
 
+      // 收起态的缩略块。挂在这里而不是标题栏里，理由见 collapsedFolderChip；
+      // 推页时它必须跟着 navBar 一起消失，理由见 FolderChipSlot。
+      // **箭头函数不能省**：直接写 `content: this.collapsedFolderChip` 的话，
+      // @Builder 里的 this 会变成子组件，这里读的 @State 全都落空、还不报错。
+      if (this.folderBarCollapsed && this.folders.length > 0) {
+        FolderChipSlot({ content: (): void => { this.collapsedFolderChip(); } });
+      }
+
       // ⋮ 菜单的锚点：零尺寸，只为让菜单弹在右上角。HDS 的菜单项给不了
       // bindMenu，只能这样把两者接起来。
       Row()
@@ -1557,16 +1795,47 @@ export struct ChatListPage {
 struct FolderPill {
   @StorageProp(FOLDER_PILL_X) pillX: number = 0;
   @StorageProp(FOLDER_PILL_W) pillW: number = 0;
+  // 这一帧要不要"滑过去"（见 FOLDER_PILL_ANIMATE）。
+  @StorageProp(FOLDER_PILL_ANIMATE) private pillAnimate: boolean = false;
+  // 材质档位（厚度/光感）变了要重绘，材质对象才会按新档位重建。订阅放在这里而
+  // 不是 ChatListPage：胶囊有自己的旁路脏区（见 FOLDER_PILL_X），别为了它把整页
+  // 拉进重绘。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
 
   build() {
     Row()
       .width(this.pillW).height(FOLDER_CHIP_HEIGHT)
       .borderRadius(FOLDER_CHIP_HEIGHT / 2)
-      .backgroundColor(COLOR_TAB_PILL_BG)
       .position({
         x: this.pillX,
         y: (FOLDER_BAR_HEIGHT - FOLDER_CHIP_HEIGHT) / 2
-      });
+      })
+      // **位置/宽度的动画挂在胶囊自己身上。** 隐式动画认的是属性变化，跟位置从
+      // 哪条路送进来无关——onAnimationStart、onChange、首次布点都会改 pillX，挂在
+      // 这里一律管住，不用每个调用点各包一层 animateTo。真机截图验证过：点一个
+      // 远处的文件夹，中途那一帧拍到的胶囊确实横在两个 chip 之间。
+      // 拖页签时 setPillAnimate(false) 把它关掉，胶囊才会老老实实贴着手指走。
+      //
+      // `.animation()` 只作用于**它前面**的属性，所以材质三件套必须留在它后面，
+      // 否则换主题、调材质厚度时底色和模糊也会被拖着淡入淡出。
+      .animation(this.pillAnimate
+        ? {
+          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, FOLDER_SWITCH_DURATION),
+          curve: Curve.EaseOut
+        }
+        : { duration: 0 })
+      // 选中胶囊挂 'control' 材质三件套，和顶栏搜索/⋮ 同一套（2026-10-30 用户选定）。
+      // 三档退路和别处一致：材质可用 → 底色透明、观感整个交给材质；设备不支持 →
+      // dock_glass + backdropBlur 自绘玻璃；用户把厚度调到「关闭」→ 强调色实底，
+      // 也就是今天这个样子。
+      //
+      // 注意第一档的副作用：材质在时底色是**透明**的，选中态不再有那层强调色药丸，
+      // 只剩玻璃块 + 强调色文字。这是官方 FAQ「材质的视觉层级在 backgroundColor
+      // 之下」的必然结果——想在材质上保住蓝色，只能在玻璃**上面**再盖一层半透明
+      // 强调色，官方把那种叠法列为「发实」的典型，别这么干。
+      .backgroundColor(overlayGlassFill('control', COLOR_TAB_PILL_BG))
+      .backdropBlur(overlayBackdropBlur('control'))
+      .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0));
   }
 }
 
@@ -1593,6 +1862,30 @@ struct FolderChipBadge {
         .borderRadius(8)
         .accessibilityText(str('cl_tab_unread_a11y', this.plainTitle,
           badgeLabel(this.badge.count, TAB_BADGE_MAX)));
+    }
+  }
+}
+
+// 收起态缩略块的"位置归属"闸门：navBar 不在（单栏推了页、会话页盖上来）时整块
+// 不画。
+//
+// 【为什么需要】缩略块是画在标题栏**外面**的——它是 HdsNavigation 的兄弟节点
+// （见 ChatListPage.build 里的 Stack），推页时 Navigation 盖不住它，于是它会浮
+// 在会话页顶上，还点不掉（2026-10-30 用户报的「其他页面也会存在消不掉」）。
+// 判据直接借 navBar 的显隐：单栏时栈空才可见，分栏恒可见（那时左栏还在，缩略块
+// 本来就该跟着它），正好就是"这块地方此刻归会话列表"。
+//
+// 【为什么是独立组件】订阅要落在订阅者自己身上。若把 CHAT_NAV_BAR_VISIBLE_KEY
+// 读进 ChatListPage 的 @State，推页转场里就会重建整页——正是 navBarVisible
+// 上方那段事故记录在躲的事。这里只重建一个空壳。
+@Component
+struct FolderChipSlot {
+  @StorageProp(CHAT_NAV_BAR_VISIBLE_KEY) private navBarVisible: boolean = true;
+  @BuilderParam content: () => void;
+
+  build() {
+    if (this.navBarVisible) {
+      this.content();
     }
   }
 }

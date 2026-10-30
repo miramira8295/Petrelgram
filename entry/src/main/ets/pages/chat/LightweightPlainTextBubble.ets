@@ -13,11 +13,12 @@ import {
 import { MessageEntry } from '../../store/MessageEntry';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
-import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
+import { getAccentColorStore, getTdClient, getUserStore } from '../../tdkit/Globals';
 import {
   BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth
 } from '../../util/mediaBox';
 import { editableCached, ensureEditable } from '../../util/messageEditable';
+import { deletableCached, ensureDeletable } from '../../util/messageDeletable';
 import {
   animationDurationFor, scrollActiveNow
 } from '../../util/scrollEffects';
@@ -306,6 +307,9 @@ export struct LightweightPlainTextBubble {
   // 「能不能编辑」到货后触发菜单重绘。判据与理由和 MessageBubble 完全一致，
   // 见 util/messageEditable 文件头（issue #179）。
   @Local private editableTick: number = 0;
+  // 「能不能删」到货后触发菜单重绘。判据与理由和 MessageBubble 完全一致，
+  // 见 util/messageDeletable 文件头。
+  @Local private deletableTick: number = 0;
   @Param isGroup: boolean = false;
   @Param themeBubbleOut: string = '';
   @Param showUnreadDivider: boolean = false;
@@ -671,6 +675,20 @@ export struct LightweightPlainTextBubble {
     });
   }
 
+  private canDeleteNow(): boolean {
+    // deletableTick 同 editableTick：必须在这一支里被读到，答案到货才会重绘菜单。
+    const known: boolean | undefined =
+      this.deletableTick >= 0 ? deletableCached(this.msg.id) : undefined;
+    // 未知时按能删显示，理由见 util/messageDeletable 文件头。
+    return known !== false;
+  }
+
+  private askDeletable(): void {
+    ensureDeletable(getTdClient(), this.chatId, this.msg.id, (): void => {
+      this.deletableTick = this.deletableTick + 1;
+    });
+  }
+
   private dragGesture: MessageDragGesture = new MessageDragGesture();
 
   private canDragMessage(): boolean { return !this.editingActive && this.msg.id > 0 && messageDragType(this.msg.contentType) !== ''; }
@@ -700,6 +718,7 @@ export struct LightweightPlainTextBubble {
     }
     this.gestureClaimed = true;
     this.askEditable();
+    this.askDeletable();
     const policy: MessageGesturePolicy = messageGesturePolicy(this.env.gestureScheme);
     // 诊断（issue #114）：和 MessageBubble 那条 [Menu114] 对照。报告人 1.4.2 的日志
     // 里一条菜单相关的行都没有，正是因为长按落在本组件、而本组件什么都不记。
@@ -832,18 +851,24 @@ export struct LightweightPlainTextBubble {
     Column() {
       if (this.msg.replyToMessageId !== 0) { this.replyQuote(); }
       Text() {
+        // **只有链接那一段才挂 onClick。** 给每一段都挂一个（哪怕回调里先判
+        // run.link）会让普通文字变成独立的点击目标，把气泡自己的 onClick 吃掉
+        // ——那个 onClick 才是"打开消息菜单"。真机实测：点气泡的留白弹菜单，
+        // 点字本身毫无反应；长按同样被挡。富文本那条路径（MessageBubbleText
+        // 的 richInlineRun）一直是按 if/else 分开写的，这里照它来。
         ForEach(linkifyRuns(this.msg.text, []), (run: RichRun) => {
-          Span(run.text)
-            .fontColor(run.link ? this.accent() : bubbleTextFor(this.msg.isOutgoing))
-            .decoration({
-              type: run.link ? TextDecorationType.Underline : TextDecorationType.None,
-              color: this.accent()
-            })
-            .onClick((): void => {
-              if (run.link && !this.gestureClaimed) {
-                this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url));
-              }
-            });
+          if (run.link) {
+            Span(run.text)
+              .fontColor(this.accent())
+              .decoration({ type: TextDecorationType.Underline, color: this.accent() })
+              .onClick((): void => {
+                if (!this.gestureClaimed) {
+                  this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url));
+                }
+              });
+          } else {
+            Span(run.text).fontColor(bubbleTextFor(this.msg.isOutgoing));
+          }
         }, (run: RichRun, index: number): string =>
           `light_text_${index}_${run.offset}_${run.text}`);
         if (this.translationStatus === null) {
@@ -972,10 +997,13 @@ export struct LightweightPlainTextBubble {
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark_circle')),
         content: $r('app.string.mb_select')
       }).onClick((): void => { this.actions.onSelectMessages(this.memberIds); });
-      MenuItem({
-        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.trash')).fontColor([Color.Red]),
-        content: $r('app.string.delete')
-      }).onClick((): void => { this.actions.onDeleteMsg(this.msg.id); });
+      // 不可删的消息不出这一项，理由见 MessageBubbleShell 那一处。
+      if (this.canDeleteNow()) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.trash')).fontColor([Color.Red]),
+          content: $r('app.string.delete')
+        }).onClick((): void => { this.actions.onDeleteMsg(this.msg.id); });
+      }
     }
     // 和完整气泡保持同宽，避免表情行的 100% 宽度把菜单撑到屏幕边缘。
     .width(262)
@@ -1064,6 +1092,7 @@ export struct LightweightPlainTextBubble {
     .onClick((event: ClickEvent): void => {
       if (!this.gestureClaimed && messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
         this.recordMenuOffset(event.x, Number(event.target.area.width));
+        this.askDeletable();
         this.menuShown = true;
       }
     });

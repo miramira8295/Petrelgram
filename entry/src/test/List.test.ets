@@ -24,6 +24,7 @@ import sessionSecurityTest from './SessionSecurity.test';
 import qrWorkflowTest from './QrWorkflow.test';
 import sendPermissionsTest from './SendPermissions.test';
 import messageModerationTest from './MessageModeration.test';
+import messageDeletableTest from './MessageDeletable.test';
 import searchSenderTest from './SearchSender.test';
 import pollOptionStateTest from './PollOptionState.test';
 import shareWorkflowTest from './ShareWorkflow.test';
@@ -148,6 +149,7 @@ import tabReTapTest from './TabReTap.test';
 import tabPreloadTest from './TabPreload.test';
 import chatListFreezeTest from './ChatListFreeze.test';
 import folderBadgesTest from './FolderBadges.test';
+import folderBarCollapseTest from './FolderBarCollapse.test';
 import chatEnvMirrorTest from './ChatEnvMirror.test';
 import tdUpdateFilterTest from './TdUpdateFilter.test';
 import proxyMirrorTest from './ProxyMirror.test';
@@ -394,6 +396,8 @@ import netBearerTest from './NetBearer.test';
 import rowTemplateIdTest from './RowTemplateId.test';
 import targetSelectionTest from './TargetSelection.test';
 import shareFanoutTest from './ShareFanout.test';
+import contactAddErrorTest from './ContactAddError.test';
+import contactAddRequestTest from './ContactAddRequest.test';
 
 export default function testsuite() {
   httpsProxyTest();
@@ -535,6 +539,7 @@ export default function testsuite() {
   tabPreloadTest();
   chatListFreezeTest();
   folderBadgesTest();
+  folderBarCollapseTest();
   chatEnvMirrorTest();
   tdUpdateFilterTest();
   proxyMirrorTest();
@@ -784,6 +789,7 @@ export default function testsuite() {
   pollOptionStateTest();
   searchSenderTest();
   messageModerationTest();
+  messageDeletableTest();
   musicTrackModelTest();
   musicCollectionModelTest();
   musicBotSentModelTest();
@@ -794,4 +800,6 @@ export default function testsuite() {
   externalLinkPolicyTest();
   senderAnimationParkTest();
   audioHeaderProbeTest();
+  contactAddErrorTest();
+  contactAddRequestTest();
 }

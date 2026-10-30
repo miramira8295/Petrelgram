@@ -11745,6 +11745,14 @@
       "value": "Enregistrer où"
     },
     {
+      "name": "ix_hide_folder_bar",
+      "value": "Masquer la barre des dossiers au défilement"
+    },
+    {
+      "name": "ix_hide_folder_bar_sub",
+      "value": "En faisant défiler la liste vers le haut, la barre des dossiers se replie et se déplie en revenant tout en haut. Désactivé, elle reste toujours visible"
+    },
+    {
       "name": "ix_row_swipe",
       "value": "Actions par balayage sur les discussions"
     },

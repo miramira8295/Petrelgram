@@ -420,12 +420,19 @@ export const KEY_VIEWER_CONTINUOUS_HOP: string = 'viewerContinuousHop';
 // 信息上，默认关等于把功能藏起来。
 export const KEY_MUSIC_CENTER_ON: string = 'musicCenterOn';
 
+// 会话列表往上滚时收起文件夹栏，滚回顶部再展开（收起态是标题右下那颗
+// 「│ 文件夹名 角标」）。默认**开**：加这个开关之前它一直是这样，关掉只是把
+// 原来那套常驻横条还回去。判据落在 ChatListPage.noteFolderBarScroll（关掉时
+// 每一帧都带 forceExpand，状态机照旧推进，只是永远停在展开档）。
+export const KEY_FOLDER_BAR_SCROLL_HIDE: string = 'folderBarScrollHide';
+
 const DATA_BOOLEAN_TRUE_DEFAULTS: string[] = [
   KEY_VIDEO_AUTO_PRELOAD,
   KEY_BG_CACHE_WIFI_ONLY,
   KEY_CRASH_UPLOAD,
   KEY_VIEWER_CONTINUOUS_HOP,
   KEY_MUSIC_CENTER_ON,
+  KEY_FOLDER_BAR_SCROLL_HIDE,
   KEY_SHOW_CONTACTS_TAB,
   KEY_NOTIFY_PRIVATE,
   KEY_NOTIFY_GROUP,

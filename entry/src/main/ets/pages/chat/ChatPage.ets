@@ -38,6 +38,7 @@ import { rememberRecentSticker } from '../../store/StickerApi';
 import { openMiniAppPage, openMessageMiniApp } from '../../util/miniAppNav';
 import { InlineResultRow, sendInlineResult } from '../../store/BotApi';
 import { clearEditableCache } from '../../util/messageEditable';
+import { clearDeletableCache } from '../../util/messageDeletable';
 import { common } from '@kit.AbilityKit';
 import { PickedContact } from './ContactPickerSheet';
 import { fileIo as fs } from '@kit.CoreFileKit';
@@ -1047,6 +1048,8 @@ export struct ChatPage {
   // 副本去对齐，那条路走了很久也接不上。
   @Local attachPanelOpen: boolean = false;
   @Local diceSheetOpen: boolean = false;
+  // 骰子面板在「返回键该关谁」那张表里的注销函数（见 dock 上的 bindSheet）。
+  private diceSheetOff: (() => void) | null = null;
   // 贴纸合集面板（点消息里的贴纸弹出来的那张）。
   @Local stickerSetSheetOpen: boolean = false;
   @Local stickerSetSheetId: string = '';
@@ -1245,6 +1248,8 @@ export struct ChatPage {
     // 「能不能编辑」的答案按 messageId 缓存，而 messageId 在别的会话里是另一条
     // 消息——换会话必须清，否则会把上一个会话的判断带过来（issue #179）。
     clearEditableCache();
+    // 同一份 messageId 在别的会话里是另一条消息，「能不能删」也必须一起清。
+    clearDeletableCache();
     this.timeline.messageLoadError = '';
     this.timeline.olderLoadState = 'idle';
     this.timeline.newerLoadState = 'idle';
@@ -5575,11 +5580,28 @@ export struct ChatPage {
     })
     // 骰子面板挂在 dock 上，不挂页面根节点：同一个节点上串两个 bindSheet
     // 只有最后一个生效（根节点上已经有翻译面板了，骰子那个就永远弹不出来）。
+    //
+    // 它和贴纸合集一样是 bindSheet，同样要登记：不登记的话分享进来的那一刻
+    // dismissAllSheets() 收不掉它，Index 那层「分享到…」继续被它盖住，返回键也
+    // 关不掉（登记了 handleBackPressed 的第一句就会先收它）。
     .bindSheet($$this.diceSheetOpen, this.diceSheet(), {
       height: 320,
       backgroundColor: Color.Transparent,
       dragBar: false,
-      blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
+      blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog'),
+      onAppear: (): void => {
+        if (this.diceSheetOff === null) {
+          this.diceSheetOff = pushSheetDismiss((): void => { this.diceSheetOpen = false; });
+        }
+      },
+      // 拖动下拉 / 点遮罩关的那一刻不会经过 setDiceSheetOpen，注销只能挂在这里。
+      // 返回键关的那一次登记项已经被弹掉了，这里再注销是幂等的空操作。
+      onDisappear: (): void => {
+        if (this.diceSheetOff !== null) {
+          this.diceSheetOff();
+          this.diceSheetOff = null;
+        }
+      }
     });
   }
 

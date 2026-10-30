@@ -24,7 +24,7 @@ import {
 } from '../../util/surfaceGlass';
 import { GLASS_OUTLINE_COLOR } from '../../util/bubbleTail';
 import { materialModifierWhen } from '../../util/materialModifier';
-import { COLOR_DIVIDER, mainCardFill } from '../../util/theme';
+import { mainCardFill } from '../../util/theme';
 import { formatTime } from '../../util/formatTime';
 import { ChatListDataSource } from './ChatListDataSource';
 import { ChatListRowKeyCache } from './chatListRowKeys';
@@ -135,6 +135,10 @@ export struct MainTabBody {
   // 才能驱动标题栏收缩与渐变模糊；页签里的列表在子组件内部，父层拿不到，
   // 只能这样把控制器递下来。
   listScroller: ListScroller = new ListScroller();
+  // 每帧滚动量往上抱给 ChatListPage，文件夹条据此收起/展开（util/folderBarCollapse）。
+  // **普通成员，不能用 @Prop**：@Prop 跨组件边界是深拷贝，函数会被丢掉，症状是
+  // 回调永远不触发而编译、单测都看不出来（见 memory arkui-prop-deepcopy-drops-closures）。
+  onScrollForFolderBar?: (delta: number, atTop: boolean) => void;
   // Rebuilding rows while a row's context menu is open would close it.
   @StorageProp(CHAT_MENU_OPEN) @Watch('onMenuToggle') menuOpen: boolean = false;
   // 手指按在列表上时同样缓冲发布（长按跑行的根修，见 ChatListFreeze）。
@@ -667,8 +671,10 @@ export struct MainTabBody {
     .padding({ left: HOME_CARD_INSET_VP, right: ROW_PAD_H })
     .borderRadius(16)
     .border({
-      width: this.archiveGlassOn() ? 0.5 : (this.appWallpaperOn ? 0.5 : 0),
-      color: this.archiveGlassOn() ? GLASS_OUTLINE_COLOR : COLOR_DIVIDER
+      // 只有玻璃档才描边，理由见 ChatRow 那一处：`appWallpaperOn` 对纯色背景
+      // 也成立，白色背景下这圈灰线会变成整页唯一看得见的卡片轮廓。
+      width: this.archiveGlassOn() ? 0.5 : 0,
+      color: GLASS_OUTLINE_COLOR
     })
     .backgroundBlurStyle(this.archiveBlurStyle())
     .attributeModifier(materialModifierWhen('card', this.archiveGlassOn() &&
@@ -739,6 +745,11 @@ export struct MainTabBody {
       this.updateScrollActivity(state);
       this.updateImmersiveBars(offset);
       const y: number = this.listScroller.currentOffset().yOffset;
+      // 复用同一帧已经取到的 y，不再多调一次 currentOffset()（这个回调每帧都跑）。
+      const report: ((delta: number, atTop: boolean) => void) | undefined = this.onScrollForFolderBar;
+      if (report !== undefined) {
+        report(offset, y <= 0);
+      }
       if (!this.archiveRevealed && this.archiveRowShown() && y < 0 &&
         state === ScrollState.Scroll) {
         // 展开只吃**手指拖动**的回弹深度（惯性冲进回弹区不算）。回弹自带阻尼，

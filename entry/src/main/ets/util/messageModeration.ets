@@ -81,3 +81,19 @@ export function messageDeleteScope(properties: TdObject[]): MessageDeleteScope {
 export function messageDeleteRevoke(scope: MessageDeleteScope, selected: boolean, deleteAll: boolean): boolean {
   return deleteAll || !scope.self || (scope.all && selected);
 }
+
+// 单条消息"到底能不能删"。消息菜单里那一项要不要出，问的是这个。
+//
+// 和上面的 messageDeleteScope 是两个问题：那个回答"能按哪个范围删"（多选还要
+// 取交集），这个只回答"有没有任何一个范围可用"。两个判据放在一起，免得漂开。
+//
+// **三态是刻意的。** 字段缺席（老 schema、异常返回、还没升级的 so）时返回
+// undefined，由调用方维持现状；只有两个位都明确是 false 才敢说"不能删"。
+// 认不出来就把「删除」从所有人的菜单里藏掉，是比现状更糟的失败模式。
+export function messageDeletableFromProperties(properties: TdObject): boolean | undefined {
+  const self: boolean | undefined = properties['can_be_deleted_only_for_self'] as boolean | undefined;
+  const all: boolean | undefined = properties['can_be_deleted_for_all_users'] as boolean | undefined;
+  if (self === true || all === true) { return true; }
+  if (self === false && all === false) { return false; }
+  return undefined;
+}

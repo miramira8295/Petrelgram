@@ -11745,6 +11745,14 @@
       "value": "儲存到哪裡"
     },
     {
+      "name": "ix_hide_folder_bar",
+      "value": "滑動時收起資料夾列"
+    },
+    {
+      "name": "ix_hide_folder_bar_sub",
+      "value": "向上滑動會話清單時收起資料夾列，捲回頂端自動展開；關閉後資料夾列固定顯示"
+    },
+    {
       "name": "ix_row_swipe",
       "value": "會話列滑動操作"
     },

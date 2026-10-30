@@ -11745,6 +11745,14 @@
       "value": "¿Dónde guardar?"
     },
     {
+      "name": "ix_hide_folder_bar",
+      "value": "Ocultar la barra de carpetas al desplazar"
+    },
+    {
+      "name": "ix_hide_folder_bar_sub",
+      "value": "Al desplazar la lista hacia arriba la barra de carpetas se pliega y se despliega al volver al principio. Desactivado, la barra se muestra siempre"
+    },
+    {
       "name": "ix_row_swipe",
       "value": "Acciones al deslizar en chats"
     },

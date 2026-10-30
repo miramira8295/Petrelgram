@@ -53,6 +53,9 @@ import { common } from '@kit.AbilityKit';
 import { publicLink } from '../../util/telegramLink';
 import { MUTE_LONG, setMute } from '../../store/ChatActions';
 import { str } from '../../util/strings';
+import {
+  addContactRequest, importContactsRequest, searchUserByPhoneNumberRequest
+} from '../../util/contactAddRequest';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
@@ -616,9 +619,7 @@ export struct ProfilePage {
       // addContact 按 id 直发会报 400 User not found。电话可见时按 TDLib 推荐
       // 路径先 searchUserByPhoneNumber 取回完整用户，再重试一次。
       if (e.code === 400 && this.phone !== '') {
-        const lookup: TdRequest = { '@type': 'searchUserByPhoneNumber' };
-        lookup['phone_number'] = this.phone;
-        getTdClient().send(lookup)
+        getTdClient().send(searchUserByPhoneNumberRequest(this.phone))
           .then(() => this.sendAddContact())
           .then(() => {
             this.isContact = true;
@@ -646,13 +647,7 @@ export struct ProfilePage {
   // 服务器能解析该号码时对方直接成为联系人；解析不到（对方隐私限制）则
   // user_ids 返回 0 —— 平台层面无法添加，只能如实提示。
   private importContactFallback(): void {
-    const contact: TdObject = { '@type': 'contact' };
-    contact['phone_number'] = this.phone;
-    contact['first_name'] = this.name !== '' ? this.name : $r('app.string.tab_contacts');
-    contact['last_name'] = '';
-    contact['user_id'] = 0;
-    const req: TdRequest = { '@type': 'importContacts' };
-    req['contacts'] = [contact];
+    const req: TdRequest = importContactsRequest(this.phone, this.contactFirstName(), '');
     getTdClient().send(req).then((res: TdObject) => {
       const userIds: number[] = (res['user_ids'] as number[] | undefined) ?? [];
       if (userIds.length > 0 && userIds[0] > 0) {
@@ -670,15 +665,14 @@ export struct ProfilePage {
   }
 
   private sendAddContact(): Promise<TdObject> {
-    const contact: TdObject = { '@type': 'contact' };
-    contact['phone_number'] = this.phone;
-    contact['first_name'] = this.name !== '' ? this.name : $r('app.string.tab_contacts');
-    contact['last_name'] = '';
-    contact['user_id'] = this.userId;
-    const req: TdRequest = { '@type': 'addContact' };
-    req['contact'] = contact;
-    req['share_phone_number'] = false;
-    return getTdClient().send(req);
+    return getTdClient().send(addContactRequest(this.userId, this.phone, this.contactFirstName(), ''));
+  }
+
+  // importedContact 的 first_name 必须是**非空字符串**（TDLib 会校验），所以资料页
+  // 没有名字时退到一个可读的占位。原来这里写的是 $r(...)——那是个 Resource 对象，
+  // 序列化进 JSON 只会变成空对象，等于既没名字也没提示。
+  private contactFirstName(): string {
+    return this.name !== '' ? this.name : str('tab_contacts');
   }
 
   private toggleMute(): void {

@@ -212,6 +212,11 @@ export struct ChatListView {
   // 只能这样把控制器递下来。
   // ListScroller（不是 Scroller）：滑动操作要用 closeAllSwipeActions。
   listScroller: ListScroller = new ListScroller();
+  // 每帧滚动量往上抱给 ChatListPage，文件夹条据此收起/展开（util/folderBarCollapse）。
+  // **普通成员，不能用 @Prop**：@Prop 跨组件边界是深拷贝，函数会被丢掉，症状是
+  // 回调永远不触发而编译、单测都看不出来（见 memory arkui-prop-deepcopy-drops-closures）。
+  // 没接线时整条路径零开销——守卫在 reportFolderBarScroll 里，连 currentOffset() 都不取。
+  onScrollForFolderBar?: (delta: number, atTop: boolean) => void;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // Rebuilding rows while a row's context menu is open would close it.
   @StorageProp(CHAT_MENU_OPEN) @Watch('onMenuToggle') menuOpen: boolean = false;
@@ -258,6 +263,16 @@ export struct ChatListView {
   // 纯发布闸，不参与绘制：滚动期间只缓存最新会话快照，停下后一次性发布。
   private listMoving: boolean = false;
   private scrollSettleTimer: number = -1;
+
+  // 文件夹条的收起/展开只关心"这一帧滚了多少"和"是不是已经在顶上"，两样都在
+  // 这一个回调里拿得到。先判空再取 currentOffset()：这个回调每帧都跑，没接线
+  // 的页签（归档页等）不该为它多付一次取值。
+  private reportFolderBarScroll(delta: number): void {
+    const report: ((delta: number, atTop: boolean) => void) | undefined = this.onScrollForFolderBar;
+    if (report !== undefined) {
+      report(delta, this.listScroller.currentOffset().yOffset <= 0);
+    }
+  }
 
   private updateScrollActivity(state: ScrollState): void {
     if (state !== ScrollState.Idle) {
@@ -681,8 +696,9 @@ export struct ChatListView {
       .contentEndOffset(this.endInset())
       .contentStartOffset(this.contentTopInset)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
-      .onDidScroll((_offset: number, state: ScrollState): void => {
+      .onDidScroll((offset: number, state: ScrollState): void => {
         this.updateScrollActivity(state);
+        this.reportFolderBarScroll(offset);
       })
       // 指尖按下就关发布闸（抬手/被抢手势即开）：长按窗口里来更新不再挪行，
       // 重排动画顺延到抬手后。数据订阅照常流动。

@@ -11745,6 +11745,14 @@
       "value": "저장 위치"
     },
     {
+      "name": "ix_hide_folder_bar",
+      "value": "스크롤할 때 폴더 바 숨기기"
+    },
+    {
+      "name": "ix_hide_folder_bar_sub",
+      "value": "목록을 위로 스크롤하면 폴더 바가 접히고, 맨 위로 돌아오면 다시 펼쳐집니다. 끄면 항상 표시됩니다"
+    },
+    {
       "name": "ix_row_swipe",
       "value": "채팅 스와이프 동작"
     },

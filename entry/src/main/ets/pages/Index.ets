@@ -28,6 +28,7 @@ import { logE, logW } from '../util/log';
 import { StartupSplash } from './common/StartupSplash';
 import { isStartupStage } from '../util/startupStage';
 import { ShareTargetSheet } from './share/ShareTargetSheet';
+import { dismissAllSheets, pushSheetDismiss } from '../util/sheetDismissStack';
 import {
   hasPendingShare, notifyShareTargeted, peekPendingShare
 } from '../services/ShareInbox';
@@ -64,7 +65,9 @@ struct Index {
   // 面板上选的那一档：true = 进会话就发、发完退回后台（见 util/shareSendMode）。
   @StorageLink('pendingShareAutoSend') pendingShareAutoSend: boolean = false;
   // 选择器开着。载荷本身在 ShareInbox 里，这里只管界面。
-  @State private showShareSheet: boolean = false;
+  @State @Watch('onShareSheetChanged') private showShareSheet: boolean = false;
+  // 选择器在「返回键该关谁」那张表里的登记。开着时登记、关了注销。
+  private shareSheetOff: (() => void) | null = null;
   // 本进程里到达过 Ready。分享名单的清理要靠它区分"换账号"和"刚开机"。
   private hadReadySession: boolean = false;
   private offAuth: (() => void) | null = null;
@@ -173,6 +176,30 @@ struct Index {
     this.consumeShare();
   }
 
+  // 「分享到…」选择器也要进「返回键该关谁」那张表。
+  //
+  // 【为什么只挂在 Index.onBackPress 上不够】那是最外面的兜底。会话页的
+  // HdsNavDestination 自己接管了返回键（ChatPage.handleBackPressed），它不认识
+  // 这个面板就返回 false，框架直接把会话出栈，选择器留在原地——用户 2026-10-30：
+  // 「分享弹窗不会响应返回事件」。登记之后，那个 handler 的第一句
+  // dismissTopSheet() 就会先关它。
+  //
+  // 登记/注销都挂在 showShareSheet 这一个状态上：不管是 ✕、点抽屉外面、
+  // 还是返回键关的，最后都会走回这里，不会留下一条指向已关面板的登记
+  // （那会让下一次返回键"按了没反应"）。
+  private onShareSheetChanged(): void {
+    if (this.showShareSheet) {
+      if (this.shareSheetOff === null) {
+        this.shareSheetOff = pushSheetDismiss((): void => { this.showShareSheet = false; });
+      }
+      return;
+    }
+    if (this.shareSheetOff !== null) {
+      this.shareSheetOff();
+      this.shareSheetOff = null;
+    }
+  }
+
   // 分享进来的内容。目标已经在分享面板里选好了就直接进那个会话；没选就弹
   // 选择器。**只等登录就绪**，不像深链那样还要等连接——内容全在本地，
   // 进会话之后由发送链自己排队重试。
@@ -186,6 +213,10 @@ struct Index {
       return;
     }
     this.pendingShareEpoch = 0;
+    // 先把已经开着的面板收掉再谈进哪个会话。贴纸合集/全屏编辑这些是 bindSheet，
+    // 画在窗口浮层里，会把下面这个「分享到…」整块盖住（用户 2026-10-30：
+    // 「系统分享抽屉应该在最上方吧，现在会显示在添加贴纸抽屉下方」）。
+    dismissAllSheets();
     const chatId: number = this.pendingShareChatId;
     const autoSend: boolean = this.pendingShareAutoSend;
     this.pendingShareChatId = 0;

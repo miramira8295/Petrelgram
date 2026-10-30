@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from '@ohos/hypium';
 import {
-  pushSheetDismiss, dismissTopSheet, openSheetCount, resetSheetDismissForTest
+  pushSheetDismiss, dismissTopSheet, dismissAllSheets, openSheetCount, resetSheetDismissForTest
 } from '../main/ets/util/sheetDismissStack';
 
 export default function sheetDismissStackTest() {
@@ -39,6 +39,36 @@ export default function sheetDismissStackTest() {
       expect(openSheetCount()).assertEqual(1);
       expect(dismissTopSheet()).assertTrue();
       expect(order.join(',')).assertEqual('b');
+    });
+
+    // 分享进来的那一刻要把已经开着的面板全收掉：bindSheet 画在浮层里、盖在
+    // Index 那层「分享到…」之上（用户 2026-10-30）。
+    it('dismissAllSheets 从最上面往下全关，并返回关了几个', 0, (): void => {
+      const order: string[] = [];
+      pushSheetDismiss((): void => { order.push('bottom'); });
+      pushSheetDismiss((): void => { order.push('middle'); });
+      pushSheetDismiss((): void => { order.push('top'); });
+      expect(dismissAllSheets()).assertEqual(3);
+      expect(order.join(',')).assertEqual('top,middle,bottom');
+      expect(openSheetCount()).assertEqual(0);
+    });
+
+    it('没有面板时 dismissAllSheets 返回 0', 0, (): void => {
+      expect(dismissAllSheets()).assertEqual(0);
+    });
+
+    // 面板自己关掉时会调注销函数，而 dismissAllSheets 已经把条目弹走了。
+    // 注销必须是幂等的，否则会顺手删掉别人的登记（表现是那个面板按返回关不掉）。
+    it('被 dismissAllSheets 关掉后，各自的注销函数仍可安全调用', 0, (): void => {
+      const order: string[] = [];
+      const offA: () => void = pushSheetDismiss((): void => { order.push('a'); });
+      const offB: () => void = pushSheetDismiss((): void => { order.push('b'); });
+      expect(dismissAllSheets()).assertEqual(2);
+      offA();
+      offB();
+      expect(openSheetCount()).assertEqual(0);
+      expect(order.join(',')).assertEqual('b,a');
+      expect(dismissTopSheet()).assertFalse();
     });
   });
 }

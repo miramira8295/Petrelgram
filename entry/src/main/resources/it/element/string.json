@@ -11745,6 +11745,14 @@
       "value": "Dove salvare"
     },
     {
+      "name": "ix_hide_folder_bar",
+      "value": "Nascondi la barra delle cartelle durante lo scorrimento"
+    },
+    {
+      "name": "ix_hide_folder_bar_sub",
+      "value": "Scorrendo la lista verso l’alto la barra delle cartelle si comprime e si riapre tornando in cima. Disattivato, resta sempre visibile"
+    },
+    {
       "name": "ix_row_swipe",
       "value": "Azioni con scorrimento nelle chat"
     },

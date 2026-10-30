@@ -301,7 +301,7 @@ export struct AlbumCellView {
       this.liveChip();
     }
     if (this.isVideo() && this.videoMetaText() !== '') {
-      Text(this.videoMetaText())
+      Text(this.metaText)
         .fontSize(10.5)
         .fontColor(Color.White)
         .backgroundColor('#00000066')

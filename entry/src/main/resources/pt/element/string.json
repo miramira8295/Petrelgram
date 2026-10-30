@@ -11745,6 +11745,14 @@
       "value": "Salvar onde"
     },
     {
+      "name": "ix_hide_folder_bar",
+      "value": "Ocultar a barra de pastas ao rolar"
+    },
+    {
+      "name": "ix_hide_folder_bar_sub",
+      "value": "Ao rolar a lista para cima a barra de pastas recolhe e volta a abrir no topo. Desativado, a barra fica sempre visível"
+    },
+    {
       "name": "ix_row_swipe",
       "value": "Ações de deslizar nas conversas"
     },

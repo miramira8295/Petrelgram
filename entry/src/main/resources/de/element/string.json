@@ -11745,6 +11745,14 @@
       "value": "Speicherort"
     },
     {
+      "name": "ix_hide_folder_bar",
+      "value": "Ordnerleiste beim Scrollen ausblenden"
+    },
+    {
+      "name": "ix_hide_folder_bar_sub",
+      "value": "Beim Scrollen nach oben wird die Ordnerleiste eingeklappt, ganz oben wieder ausgeklappt. Deaktiviert bleibt sie immer sichtbar"
+    },
+    {
       "name": "ix_row_swipe",
       "value": "Wischgesten in Chats"
     },
