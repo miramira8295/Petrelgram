@@ -101,6 +101,15 @@ export struct AlbumMessageBubble {
     return rows;
   }
 
+  private isPureAlbumBubble(): boolean {
+    const head = this.group.head;
+    return this.group.caption === '' && head.translatedText === '' &&
+      head.replyToMessageId === 0 && head.reactions.length === 0 &&
+      head.forwardFrom === '' &&
+      !(this.data.isGroup && !head.isOutgoing && head.senderName !== '' && this.group.showSenderName) &&
+      !(this.data.isChannel && head.commentCount > 0);
+  }
+
   @Builder
   grid() {
     Column({ space: 2 }) {
@@ -113,7 +122,9 @@ export struct AlbumMessageBubble {
     }
     .alignItems(HorizontalAlign.Start)
     .width(this.albumWidth())
-    .constraintSize({ maxWidth: this.albumWidth() });
+    .constraintSize({ maxWidth: this.albumWidth() })
+    .borderRadius(this.isPureAlbumBubble() ? 13 : 6)
+    .clip(true);
   }
 
   @Builder

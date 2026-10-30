@@ -554,5 +554,41 @@ export default function rowReuseIdTest() {
       expect(rowReuseId(renderData(), groupOf(a, { album: 2 }), 'coarse'))
         .assertEqual(rowReuseId(renderData(), groupOf(b, { album: 9 }), 'coarse'));
     });
+
+    it('fine_level_splits_polls_by_option_count_and_isolates_from_other', 0, () => {
+      const quizA: MessageEntry = textEntry(810);
+      quizA.contentType = 'poll';
+      quizA.pollIsClosed = true;
+      quizA.pollExplanation = '正确答案：A';
+      quizA.pollOptions = [
+        { text: 'A', voterCount: 1, votePercentage: 100, isChosen: false, isBeingChosen: false },
+        { text: 'B', voterCount: 0, votePercentage: 0, isChosen: false, isBeingChosen: false },
+        { text: 'C', voterCount: 0, votePercentage: 0, isChosen: false, isBeingChosen: false },
+        { text: 'D', voterCount: 0, votePercentage: 0, isChosen: false, isBeingChosen: false }
+      ];
+      const quizB: MessageEntry = textEntry(811);
+      quizB.contentType = 'poll';
+      quizB.pollIsClosed = true;
+      quizB.pollExplanation = '正确答案：D';
+      quizB.pollOptions = [
+        { text: '1', voterCount: 0, votePercentage: 0, isChosen: false, isBeingChosen: false },
+        { text: '2', voterCount: 0, votePercentage: 0, isChosen: false, isBeingChosen: false },
+        { text: '3', voterCount: 1, votePercentage: 50, isChosen: false, isBeingChosen: false },
+        { text: '4', voterCount: 1, votePercentage: 50, isChosen: true, isBeingChosen: false }
+      ];
+      const twoOptPoll: MessageEntry = cloneMessage(quizA);
+      twoOptPoll.pollOptions = quizA.pollOptions.slice(0, 2);
+      const locationMsg: MessageEntry = textEntry(812);
+      locationMsg.contentType = 'location';
+
+      const idA: string = rowReuseId(renderData(), groupOf(quizA), 'fine');
+      const idB: string = rowReuseId(renderData(), groupOf(quizB), 'fine');
+      const idTwo: string = rowReuseId(renderData(), groupOf(twoOptPoll), 'fine');
+      const idLoc: string = rowReuseId(renderData(), groupOf(locationMsg), 'fine');
+
+      expect(idA).assertEqual(idB);
+      expect(idA === idTwo).assertFalse();
+      expect(idA === idLoc).assertFalse();
+    });
   });
 }

@@ -253,8 +253,21 @@ function albumSize(group: AlbumGroup): number {
   return group.photoPaths.length;
 }
 
+// 投票/答题的细粒度结构后缀：按选项数（上限 10）与是否带解析说明分池。
+// 既把 poll 与 contact/location/game 等其它 'other' 卡片隔离，又让规格相同的答题
+// 在滚动复用时保持零分支切换。
+function fineSubShape(group: AlbumGroup): string {
+  const msg: MessageEntry = group.head;
+  if (msg.contentType === 'poll') {
+    const expShown: boolean = msg.pollExplanation.trim() !== '' &&
+      (msg.pollIsClosed || msg.pollOptions.some((o): boolean => o.isChosen));
+    return `p${msg.pollOptions.length}e${expShown ? 1 : 0}`;
+  }
+  return `a${albumSize(group)}`;
+}
+
 function fineBucket(data: MessageBubbleRenderData, group: AlbumGroup): string {
-  return `${mediumBucket(data, group)}:${mediaKind(group.head)}:a${albumSize(group)}`;
+  return `${mediumBucket(data, group)}:${mediaKind(group.head)}:${fineSubShape(group)}`;
 }
 
 // Structure-only reuse-pool key for the ReusableMessageBubble shell. Message

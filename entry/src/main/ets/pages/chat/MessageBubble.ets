@@ -418,26 +418,11 @@ export struct MessageBubble {
       });
     } else if (this.msg.contentType === 'poll') {
       PollBubble({
-        messageId: this.msg.id,
-        question: this.msg.pollQuestion,
-        options: this.msg.pollOptions,
-        totalVoterCount: this.msg.pollTotalVoterCount,
-        isAnonymous: this.msg.pollIsAnonymous,
-        isQuiz: this.msg.pollIsQuiz,
-        allowMultiple: this.msg.pollAllowMultiple,
-        correctOptionId: this.msg.pollCorrectOptionId,
-        explanation: this.msg.pollExplanation,
-        closeDate: this.msg.pollCloseDate,
-        isClosed: this.msg.pollIsClosed,
-        pending: this.msg.pollVotePending,
-        errorText: this.msg.pollVoteError,
+        msg: this.msg,
+        context: this.context,
+        actions: this.actions,
         nowSec: this.nowSec,
-        revision: this.pollRevision(),
-        maxWidth: this.inlineMaxW(),
-        onVote: (messageId: number, optionIds: number[]): void => {
-          if (this.context.gestureClaimed) { return; }
-          this.actions.onPollVote(messageId, optionIds);
-        }
+        maxWidth: this.inlineMaxW()
       });
     } else if (this.msg.contentType === 'dice') {
       DiceBubble({
@@ -553,16 +538,6 @@ export struct MessageBubble {
         Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
       }.fontSize(this.env.msgTextSize);
     }
-  }
-
-  private pollRevision(): string {
-    let revision = `${this.msg.pollId}_${this.msg.pollIsClosed}_${this.msg.pollTotalVoterCount}` +
-      `_${this.msg.pollVotePending}_${this.msg.pollCorrectOptionId}`;
-    this.msg.pollOptions.forEach((option, index: number): void => {
-      revision += `_${index}_${option.voterCount}_${option.votePercentage}` +
-        `_${option.isChosen}_${option.isBeingChosen}`;
-    });
-    return revision;
   }
 
   private locationLabel(): string {

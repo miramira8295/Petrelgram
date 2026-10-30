@@ -1,14 +1,14 @@
 import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { promptAction } from '@kit.ArkUI';
-import { getTdClient } from '../../tdkit/Globals';
+import { getChatStore, getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
-import { formatPreview } from '../../util/formatPreview';
+import { formatPreview, previewThumbOf } from '../../util/formatPreview';
 import {
   ForumTopicRow as TopicRow, applyTopicInfoUpdate, applyTopicUpdate, parseForumTopic,
   sortTopicRows
 } from '../../util/forumTopicModel';
 import {
-  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
+  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -17,14 +17,12 @@ import { logE } from '../../util/log';
 import { HdsNavDestination } from '@kit.UIDesignKit';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
-import { unreadBadgeText } from '../../util/unreadBadge';
-
-const CARD_RADIUS: number = 14;
+import { CHAT_LIST_NOW } from '../chatlist/ChatListFreeze';
+import { ForumSplitTopicRow, forumTopicRowKey } from '../chatlist/ForumSplitView';
 
 // 行 key 带上所有显示用到的字段：LazyForEach 只在 key 变了时重建那一行。
 function topicRowKey(row: TopicRow): string {
-  return `${row.threadId}_${row.name}_${row.iconColor}_${row.isGeneral}_${row.isClosed}_${row.isPinned}` +
-    `_${row.unreadCount}_${row.lastMessageText}`;
+  return forumTopicRowKey(row);
 }
 
 // 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
@@ -49,6 +47,7 @@ export struct ForumTopicsPage {
   // 同一个订阅叠两份，而 aboutToDisappear 只退订它当时看到的那一份。
   private paramsApplied: boolean = false;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
+  @StorageProp(CHAT_LIST_NOW) nowSec: number = Math.floor(Date.now() / 1000);
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @State title: string = str('ft_topics');
@@ -178,8 +177,14 @@ export struct ForumTopicsPage {
   // 解析在 util/forumTopicModel；str() 与 formatPreview() 留在这里——纯函数不读资源、
   // 也不依赖另一层的格式化，那是它能被单测的前提。
   private parseTopic(topic: TdObject): TopicRow {
-    return parseForumTopic(topic, str('ft_topics'),
-      formatPreview(topic['last_message'] as TdObject | undefined ?? null));
+    const last = topic['last_message'] as TdObject | undefined;
+    return parseForumTopic(
+      topic,
+      str('ft_topics'),
+      formatPreview(last ?? null),
+      getChatStore().senderNameOf(last),
+      previewThumbOf(last ?? null)
+    );
   }
 
   // --- 话题管理（长按菜单） ---
@@ -361,14 +366,26 @@ export struct ForumTopicsPage {
         }
         .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center);
       } else {
-        List({ space: 8 }) {
-          // LazyForEach + 复用行（TopicRowView）：大话题群有上百个话题，原来 ForEach 一次全建。
+        List() {
+          // LazyForEach + 复用行（ForumSplitTopicRow）：大话题群有上百个话题，原来 ForEach 一次全建。
           // 点击和长按挂在 ListItem 上，闭包随行 key 重建。
           LazyForEach(this.rowsData, (row: TopicRow) => {
             ListItem() {
-              TopicRowView({
-                name: row.name, iconColor: row.iconColor, isGeneral: row.isGeneral, isClosed: row.isClosed,
-                isPinned: row.isPinned, unreadCount: row.unreadCount, lastMessageText: row.lastMessageText
+              ForumSplitTopicRow({
+                name: row.name,
+                iconColor: row.iconColor,
+                iconCustomEmojiPath: row.iconCustomEmojiPath ?? '',
+                iconEmoji: row.iconEmoji ?? '',
+                isGeneral: row.isGeneral,
+                isClosed: row.isClosed,
+                isPinned: row.isPinned,
+                unreadCount: row.unreadCount,
+                lastMessageText: row.lastMessageText,
+                lastMessageDate: row.lastMessageDate ?? 0,
+                lastSenderName: row.lastSenderName ?? '',
+                lastMessageThumb: row.lastMessageThumb ?? '',
+                topicMuted: row.isMuted ?? false,
+                nowSec: this.nowSec
               });
             }
             .onClick((): void => this.openTopic(row))
@@ -378,7 +395,8 @@ export struct ForumTopicsPage {
             guardKey(this.rowsData.keyTableId, index, topicRowKey(row)));
         }
         .width('100%').layoutWeight(1).cachedCount(4)
-        .padding({ left: 12, right: 12, bottom: this.bottomSafe + 12 });
+        .backgroundColor(COLOR_SURFACE)
+        .padding({ bottom: this.bottomSafe + 12 });
       }
       if (this.showNameInput) {
         Column({ space: 10 }) {
@@ -434,57 +452,5 @@ export struct ForumTopicsPage {
     })
     .onShown((): void => { this.handleShown(); })
     .width('100%').height('100%');
-  }
-}
-
-// 话题列表的一行（原 topicRowView）。复用组件；只画，点击和长按在页面的 ListItem 上。
-@Reusable
-@Component
-struct TopicRowView {
-  @Prop name: string = '';
-  @Prop iconColor: string = '';
-  @Prop isGeneral: boolean = false;
-  @Prop isClosed: boolean = false;
-  @Prop isPinned: boolean = false;
-  @Prop unreadCount: number = 0;
-  @Prop lastMessageText: string = '';
-
-  build() {
-    Row({ space: 12 }) {
-      Row() {
-        Text(this.isGeneral ? '#' : this.name.substring(0, 1).toUpperCase())
-          .fontSize(17).fontWeight(FontWeight.Bold).fontColor(Color.White);
-      }
-      .width(44).height(44).borderRadius(12)
-      .backgroundColor(this.iconColor)
-      .justifyContent(FlexAlign.Center);
-      Column({ space: 4 }) {
-        Row({ space: 6 }) {
-          Text(this.name).fontSize(16).fontWeight(FontWeight.Medium)
-            .fontColor(COLOR_TEXT_PRIMARY)
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
-          if (this.isPinned) {
-            SymbolGlyph($r('sys.symbol.pin_fill')).fontSize(12).fontColor([COLOR_ICON_SECONDARY]);
-          }
-          if (this.isClosed) {
-            SymbolGlyph($r('sys.symbol.lock_fill')).fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
-          }
-        }
-        .width('100%');
-        Text(this.lastMessageText !== '' ? this.lastMessageText : $r('app.string.ft_no_messages'))
-          .fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%');
-      }
-      .alignItems(HorizontalAlign.Start).layoutWeight(1);
-      if (this.unreadCount > 0) {
-        Text(unreadBadgeText(this.unreadCount))
-          .fontSize(12).fontColor(COLOR_ON_PRIMARY)
-          .padding({ left: 7, right: 7, top: 2, bottom: 2 })
-          .borderRadius(10).backgroundColor(COLOR_PRIMARY);
-      }
-    }
-    .width('100%').padding({ left: 14, right: 12, top: 10, bottom: 10 })
-    .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
   }
 }

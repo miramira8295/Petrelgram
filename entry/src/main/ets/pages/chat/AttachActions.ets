@@ -134,6 +134,8 @@ import { cacheDestPath, cacheDestPathFlat, isVideoPath } from '../../util/mediaP
 import { SEND_STAGING_DIR } from '../../util/sendStaging';
 import { ensureStagingDir, sweepStaging } from '../../util/sendStagingFs';
 import { LivePhotoExport, exportLivePhotoMotion } from '../../util/movingPhotoPick';
+import { PreparedLocalVideo, prepareLocalVideoForSend } from '../../util/videoMeta';
+import { ImageSize, imageSizeOf } from '../../util/imageSize';
 import { logE } from '../../util/log';
 import { plural, str } from '../../util/strings';
 import { liveLocation } from '../../services/LiveLocationService';
@@ -394,15 +396,17 @@ export class AttachActions {
         ctx, uri, ctx.filesDir, `${Date.now()}_${++this.mediaCopySeq}`);
       if (live.videoPath !== '') {
         // 几何与封面都由导出那一步算好（见 util/movingPhotoPick）：静图给显示
-        // 宽高，另存的小图给 inputThumbnail。这里只负责搬运。
+        // 宽高，另存的小图给 inputThumbnail，全尺寸静图给本端高清回显。
         items.push({
           path: live.videoPath,
           isVideo: true,
           thumbPath: live.thumbPath,
+          posterPath: live.stillPath,
           thumbWidth: live.thumbWidth,
           thumbHeight: live.thumbHeight,
           width: live.displayWidth,
-          height: live.displayHeight
+          height: live.displayHeight,
+          durationSec: live.durationSec > 0 ? live.durationSec : undefined
         });
         continue;
       }
@@ -411,7 +415,29 @@ export class AttachActions {
         skipped++;
         continue;
       }
-      items.push({ path, isVideo: isVideoPath(path) });
+      if (isVideoPath(path)) {
+        const prepared: PreparedLocalVideo = await prepareLocalVideoForSend(
+          path, ctx.filesDir, `${Date.now()}_${++this.mediaCopySeq}`);
+        items.push({
+          path,
+          isVideo: true,
+          thumbPath: prepared.thumbPath !== '' ? prepared.thumbPath : undefined,
+          posterPath: prepared.posterPath !== '' ? prepared.posterPath : undefined,
+          thumbWidth: prepared.thumbWidth > 0 ? prepared.thumbWidth : undefined,
+          thumbHeight: prepared.thumbHeight > 0 ? prepared.thumbHeight : undefined,
+          width: prepared.displayWidth > 0 ? prepared.displayWidth : undefined,
+          height: prepared.displayHeight > 0 ? prepared.displayHeight : undefined,
+          durationSec: prepared.durationSec > 0 ? prepared.durationSec : undefined
+        });
+      } else {
+        const size: ImageSize = await imageSizeOf(path);
+        items.push({
+          path,
+          isVideo: false,
+          width: size.width > 0 ? size.width : undefined,
+          height: size.height > 0 ? size.height : undefined
+        });
+      }
     }
     return { items, skipped };
   }

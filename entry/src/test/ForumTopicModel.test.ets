@@ -1,8 +1,8 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { TdObject, TdRequest } from '../main/ets/tdkit/TdTypes';
 import {
-  ForumTopicRow, applyTopicInfoUpdate, applyTopicUpdate, parseForumTopic, sortTopicRows,
-  topicAfterDelete, topicBarShown, topicIconColor
+  ForumTopicRow, applyTopicCustomEmoji, applyTopicInfoUpdate, applyTopicUpdate, parseForumTopic, sortTopicRows,
+  startsWithEmojiSymbol, topicAfterDelete, topicBarShown, topicIconColor
 } from '../main/ets/util/forumTopicModel';
 import { BotTopicFlags, botTopicFlagsOf } from '../main/ets/util/botTopicMode';
 import { forumTopicCreateRequest, forumTopicDeleteRequest } from '../main/ets/util/forumTopicRequests';
@@ -211,6 +211,36 @@ export default function forumTopicModelTest() {
       expect(topicAfterDelete(rows, 6, 7)).assertEqual(7);
       expect(topicAfterDelete(rows, 5, 5)).assertEqual(6);
       expect(topicAfterDelete([rows[1]], 6, 6)).assertEqual(0);
+    });
+
+    it('parses_rich_topic_list_fields_and_custom_emoji', 0, () => {
+      const topic: TdObject = topicObject(10, '🎃 小白讨论区', 0x6FB9F0, false, 35);
+      const info = topic['info'] as TdObject;
+      const icon = info['icon'] as TdObject;
+      icon['custom_emoji_id'] = '5373141891321699086';
+      const lastMsg: TdObject = { '@type': 'message', 'date': 1730000000 };
+      topic['last_message'] = lastMsg;
+      const notif: TdObject = { '@type': 'chatNotificationSettings', 'mute_for': 3600 };
+      topic['notification_settings'] = notif;
+
+      const row: ForumTopicRow = parseForumTopic(
+        topic, '话题', 'Unknown command', 'NeoAuthBot', 'data:image/jpeg;base64,abc'
+      );
+      expect(row.iconCustomEmojiId).assertEqual('5373141891321699086');
+      expect(row.lastMessageDate).assertEqual(1730000000);
+      expect(row.lastSenderName).assertEqual('NeoAuthBot');
+      expect(row.lastMessageThumb).assertEqual('data:image/jpeg;base64,abc');
+      expect(row.isMuted).assertTrue();
+
+      const updated: ForumTopicRow[] = applyTopicCustomEmoji([row], '5373141891321699086', '/data/ce.webp', '🎃');
+      expect(updated[0].iconCustomEmojiPath).assertEqual('/data/ce.webp');
+      expect(updated[0].iconEmoji).assertEqual('🎃');
+      // 再次传入相同值返回原数组引用
+      expect(applyTopicCustomEmoji(updated, '5373141891321699086', '/data/ce.webp', '🎃') === updated).assertTrue();
+
+      expect(startsWithEmojiSymbol('📣 公告')).assertTrue();
+      expect(startsWithEmojiSymbol('⁉️ 常见问题')).assertTrue();
+      expect(startsWithEmojiSymbol('Bot Debug')).assertFalse();
     });
   });
 }

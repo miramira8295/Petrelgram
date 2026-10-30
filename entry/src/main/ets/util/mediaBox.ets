@@ -97,9 +97,8 @@ export function mediaBoxFor(
   const maxW = mediaThumbWidth(screenW, avatarGutter, deviceType);
   const maxH = maxW * MEDIA_MAX_HEIGHT_RATIO;
   const ratio = mediaRatio(photoW, photoH, isVideo);
-  // 照片同时适配宽高上限：高度触顶时宽度必须按同一比例缩小。
-  // 横图、竖图及极端长图都完整展示；最大尺寸仍沿用聊天列的既有约束。
-  // 视频的内嵌播放渲染面依赖原来的满宽裁切，保持该分支的几何不变。
+  // 照片与视频同时适配宽高上限：高度触顶时宽度必须按同一比例缩小。
+  // 横图/横视频、竖图/竖视频都按真实比例展示，避免竖屏视频被撑成满宽胖框并裁切上下内容。
   const height: number = Math.min(maxW / ratio, maxH);
-  return { width: isVideo ? maxW : Math.min(maxW, height * ratio), height };
+  return { width: Math.min(maxW, height * ratio), height };
 }

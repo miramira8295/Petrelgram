@@ -4,6 +4,8 @@ import { AlbumGroup } from '../../util/collapseAlbums';
 import { MessageBubbleContext, MessageBubbleShell } from './MessageBubbleShell';
 import { MessageBubbleText } from './MessageBubbleText';
 import { progressForOr, subscribeProgress } from '../../util/mediaProgressChannel';
+import { publishThumbPath, thumbPathFor } from '../../util/mediaThumbChannel';
+import { posterFor, requestPoster, subscribePoster } from '../../util/videoPosterStore';
 import { MessageBubbleActions, MessageBubbleRenderData } from './ReusableMessageBubble';
 import { VideoBubbleSurface } from './VideoBubbleSurface';
 import { SmartLoopVideo } from '../common/SmartLoopVideo';
@@ -39,18 +41,52 @@ export struct SingleMediaBubble {
   private env: ChatEnvMirror = chatEnv;
   @Local private livePhotoProgress: number = 0;
   @Local private liveVideoProgress: number = 0;
+  @Local private localVideoPoster: string = '';
   @Local private mediaVisible: boolean = true;
   private mediaCenterY: number = 0;
   private attachedRowId: number = 0;
   private attachedPhotoFileId: number = 0;
   private attachedVideoFileId: number = 0;
+  private attachedVideoPath: string = '';
   private unsubPhotoProgress: (() => void) | null = null;
   private unsubVideoProgress: (() => void) | null = null;
+  private unsubPoster: (() => void) | null = null;
   private competingMessageId: number = 0;
 
   private seedProgress(): void {
     this.livePhotoProgress = progressForOr(this.msg.photoFileId, this.msg.photoProgress);
     this.liveVideoProgress = progressForOr(this.msg.videoFileId, this.msg.videoProgress);
+  }
+
+  private attachVideoPoster(): void {
+    this.detachVideoPoster();
+    const videoPath: string = this.msg.contentType === 'video' && !this.msg.isAnimation
+      ? this.msg.videoPath : '';
+    this.attachedVideoPath = videoPath;
+    if (videoPath === '') {
+      this.localVideoPoster = '';
+      return;
+    }
+    const known: string = posterFor(videoPath);
+    this.localVideoPoster = known;
+    if (known !== '' && this.msg.photoFileId !== 0) {
+      publishThumbPath(this.msg.photoFileId, known);
+    }
+    this.unsubPoster = subscribePoster(videoPath, (poster: string): void => {
+      this.localVideoPoster = poster;
+      if (this.msg.photoFileId !== 0) {
+        publishThumbPath(this.msg.photoFileId, poster);
+      }
+    });
+    requestPoster(videoPath, this.msg.videoFileSize, 0);
+  }
+
+  private detachVideoPoster(): void {
+    if (this.unsubPoster !== null) {
+      this.unsubPoster();
+      this.unsubPoster = null;
+    }
+    this.attachedVideoPath = '';
   }
 
   private attachProgress(): void {
@@ -64,6 +100,7 @@ export struct SingleMediaBubble {
       this.unsubVideoProgress = subscribeProgress(this.msg.videoFileId,
         (percent: number): void => { this.liveVideoProgress = percent; });
     }
+    this.attachVideoPoster();
     this.attachedRowId = this.msg.rowId;
     this.attachedPhotoFileId = this.msg.photoFileId;
     this.attachedVideoFileId = this.msg.videoFileId;
@@ -78,6 +115,7 @@ export struct SingleMediaBubble {
       this.unsubVideoProgress();
       this.unsubVideoProgress = null;
     }
+    this.detachVideoPoster();
     this.attachedRowId = 0;
   }
 
@@ -128,7 +166,7 @@ export struct SingleMediaBubble {
       if (!this.mediaVisible) { this.mediaVisible = true; }
     }
     if (this.attachedRowId !== this.msg.rowId || this.attachedPhotoFileId !== this.msg.photoFileId ||
-      this.attachedVideoFileId !== this.msg.videoFileId) {
+      this.attachedVideoFileId !== this.msg.videoFileId || this.attachedVideoPath !== this.msg.videoPath) {
       this.attachProgress();
     } else {
       this.seedProgress();
@@ -199,7 +237,13 @@ export struct SingleMediaBubble {
     if (this.msg.videoDuration > 0) {
       parts.push(this.formatDuration(this.msg.videoDuration));
     }
-    if (this.msg.videoPath !== '') {
+    if (this.context.liveSendState === 'sending') {
+      if (this.liveVideoProgress > 0 && this.liveVideoProgress < 100) {
+        parts.push(`${this.liveVideoProgress}%`);
+      } else if (this.msg.videoFileSize > 0) {
+        parts.push(formatFileSize(this.msg.videoFileSize));
+      }
+    } else if (this.msg.videoPath !== '') {
       parts.push(str('mb_video_cached'));
     } else if (this.videoDownloadActive()) {
       parts.push(`${this.liveVideoProgress}%`);
@@ -207,6 +251,28 @@ export struct SingleMediaBubble {
       parts.push(formatFileSize(this.msg.videoFileSize));
     }
     return parts.join(' · ');
+  }
+
+  private isPureMediaBubble(): boolean {
+    return this.msg.text === '' && this.msg.translatedText === '' &&
+      this.msg.replyToMessageId === 0 && this.msg.reactions.length === 0 &&
+      this.msg.forwardFrom === '' &&
+      !(this.data.isGroup && !this.msg.isOutgoing && this.msg.senderName !== '' && this.group.showSenderName) &&
+      !(this.data.isChannel && this.msg.commentCount > 0);
+  }
+
+  private mediaCornerRadius(): number {
+    return this.isPureMediaBubble() ? 13 : 8;
+  }
+
+  private effectivePosterPath(): string {
+    if (this.localVideoPoster !== '') {
+      return this.localVideoPoster;
+    }
+    if (this.msg.photoPath !== '') {
+      return this.msg.photoPath;
+    }
+    return this.msg.photoFileId !== 0 ? thumbPathFor(this.msg.photoFileId) : '';
   }
 
   private videoAccessibilityText(): string {
@@ -279,7 +345,7 @@ export struct SingleMediaBubble {
   @Builder
   singleMediaPlaceholder(hasFile: boolean) {
     Stack() {
-      Column().width(this.mediaBox().width).height(this.mediaBox().height).borderRadius(8)
+      Column().width(this.mediaBox().width).height(this.mediaBox().height).borderRadius(this.mediaCornerRadius())
         .backgroundColor(thumbBackdropColor(this.msg.contentType === 'video'));
       if (this.msg.contentType === 'video') {
         // Wait only when a real thumbnail file exists. Videos without a
@@ -359,7 +425,7 @@ export struct SingleMediaBubble {
           mimeType: this.msg.videoMimeType,
           sourceWidth: this.msg.photoWidth,
           sourceHeight: this.msg.photoHeight,
-          posterPath: this.msg.photoPath,
+          posterPath: this.effectivePosterPath(),
           muted: this.data.autoplayMuted,
           startPositionMs: this.data.playSlotStartMs,
           onPositionChanged: (positionMs: number): void => {
@@ -370,6 +436,7 @@ export struct SingleMediaBubble {
           }
         })
           .width(this.mediaBox().width).height(this.mediaBox().height)
+          .borderRadius(this.mediaCornerRadius())
           // 渲染面在内嵌档是 Cover（填满并溢出，见 StreamingVideoPlayer
           // .surfaceFillsViewport），没有 clip 就会画到气泡外面去。
           // 相册格那处本来就有，这里是补的。
@@ -380,7 +447,7 @@ export struct SingleMediaBubble {
       } else if (this.autoplayInlineVideo()) {
         SmartLoopVideo({
           videoPath: this.msg.videoPath,
-          thumbPath: this.msg.photoPath,
+          thumbPath: this.effectivePosterPath(),
           boxWidth: this.mediaBox().width,
           boxHeight: this.mediaBox().height,
           powerCategory: 'gif',
@@ -397,7 +464,7 @@ export struct SingleMediaBubble {
           // Native texture components can otherwise consume the tap before
           // the media wrapper gets a chance to toggle GIF pause/play.
           .hitTestBehavior(HitTestMode.None);
-      } else if (this.msg.photoFileId !== 0 || this.msg.photoPath !== '') {
+      } else if (this.localVideoPoster !== '' || this.msg.photoFileId !== 0 || this.msg.photoPath !== '') {
         // Keep the thumbnail mounted while fullscreen preview is open. ArkUI's
         // geometry transition can re-parent this Image node; with LazyForEach
         // recycling that occasionally restored only the placeholder/background
@@ -421,11 +488,11 @@ export struct SingleMediaBubble {
           spec: {
             syncDisplay: true,
             fileId: this.msg.photoFileId,
-            initialPath: this.msg.photoPath,
+            initialPath: this.effectivePosterPath(),
             boxWidth: this.mediaBox().width,
             boxHeight: this.mediaBox().height,
-            radius: 8,
-            fit: this.msg.contentType === 'photo' ? ImageFit.Contain : ImageFit.Cover,
+            radius: this.mediaCornerRadius(),
+            fit: ImageFit.Cover,
             // 单张大图不开 565：面积大、渐变明显。
             opaque: false,
             // 和 singleMediaPlaceholder 的底色同源（见 util/thumbBackdrop）。
@@ -460,8 +527,8 @@ export struct SingleMediaBubble {
         // 直接读它会永远是空，播放钮就再也不出现（用户报的正是这个）。
         ThumbReadyGate({
           fileId: this.msg.photoFileId,
-          initialPath: this.msg.photoPath,
-          ready: this.msg.photoFileId === 0 || this.msg.photoFailed,
+          initialPath: this.effectivePosterPath(),
+          ready: this.localVideoPoster !== '' || this.msg.photoFileId === 0 || this.msg.photoFailed,
           content: (): void => {
             this.videoActionBadge(
               Math.min(56, Math.min(this.mediaBox().width, this.mediaBox().height) * 0.34));
@@ -473,9 +540,9 @@ export struct SingleMediaBubble {
       }
       if (this.msg.contentType === 'video' && this.videoMetaText() !== '') {
         Text(this.videoMetaText())
-          .fontSize(11).fontColor(Color.White).backgroundColor('#00000066')
-          .borderRadius(4).padding({ left: 5, right: 5, top: 1, bottom: 1 })
-          .position({ x: 8, y: Math.max(8, this.mediaBox().height - 25) });
+          .fontSize(11).fontColor(Color.White).backgroundColor('#66000000')
+          .borderRadius(8).padding({ left: 6, right: 6, top: 2, bottom: 2 })
+          .position({ x: 6, y: Math.max(6, this.mediaBox().height - 24) });
       }
     }
     .width(this.mediaBox().width).height(this.mediaBox().height)
@@ -551,7 +618,7 @@ export struct SingleMediaBubble {
     if (this.msg.text !== '' || this.msg.translatedText !== '') {
       MessageBubbleText({ actions: this.actions,
         context: this.context, presentation: this.textInputCache.prepare(this.msg, this.group.showSenderName, this.data,
-          this.msg.text, this.msg.textEntities, 0, 'caption') });
+          this.msg.text, this.msg.textEntities, this.mediaBox().width, 'caption') });
     }
   }
 

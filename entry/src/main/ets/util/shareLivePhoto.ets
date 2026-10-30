@@ -1,5 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { LivePhotoExport, exportLivePhotoMotion } from './movingPhotoPick';
+import { PreparedLocalVideo, prepareLocalVideoForSend } from './videoMeta';
 import { SharedItem, SharedPayload } from './sharedContent';
 import { logI } from './log';
 
@@ -24,10 +25,12 @@ import { logI } from './log';
 // 字段只为一种情形不值当；而且这些值只有主应用侧算得出来。
 export interface ShareMediaGeometry {
   thumbPath: string;
+  posterPath?: string;
   thumbWidth: number;
   thumbHeight: number;
   width: number;
   height: number;
+  durationSec?: number;
 }
 
 export interface UpgradedShare {
@@ -45,7 +48,24 @@ export async function upgradeLivePhotos(context: common.Context,
   let seq: number = 0;
   for (let i = 0; i < payload.media.length; i++) {
     const item: SharedItem = payload.media[i];
-    // 只有图片才可能是实况；视频/文档/音频直接过。
+    if (item.kind === 'video' && item.uri !== '') {
+      const prepared: PreparedLocalVideo = await prepareLocalVideoForSend(
+        item.uri, context.filesDir, `share_vid_${Date.now()}_${++seq}`);
+      if (prepared.displayWidth > 0 || prepared.thumbPath !== '' || prepared.posterPath !== '') {
+        geometry.set(item.uri, {
+          thumbPath: prepared.thumbPath,
+          posterPath: prepared.posterPath,
+          thumbWidth: prepared.thumbWidth,
+          thumbHeight: prepared.thumbHeight,
+          width: prepared.displayWidth,
+          height: prepared.displayHeight,
+          durationSec: prepared.durationSec
+        });
+      }
+      media.push(item);
+      continue;
+    }
+    // 只有图片才可能是实况；文档/音频直接过。
     if (item.kind !== 'image' || item.sourceUri === '') {
       media.push(item);
       continue;
@@ -66,10 +86,12 @@ export async function upgradeLivePhotos(context: common.Context,
     });
     geometry.set(live.videoPath, {
       thumbPath: live.thumbPath,
+      posterPath: live.stillPath,
       thumbWidth: live.thumbWidth,
       thumbHeight: live.thumbHeight,
       width: live.displayWidth,
-      height: live.displayHeight
+      height: live.displayHeight,
+      durationSec: live.durationSec
     });
   }
   return { payload: { caption: payload.caption, media: media }, geometry: geometry };

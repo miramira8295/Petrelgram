@@ -750,6 +750,7 @@ export function formatMsgContent(message: TdObject): MsgContent {
     const size: PhotoSize = videoThumbnail(video);
     const videoFile = video !== undefined ? (video['video'] as TdObject | undefined) : undefined;
     const videoSize = videoFile !== undefined ? (((videoFile['size'] as number | undefined) ?? 0) || ((videoFile['expected_size'] as number | undefined) ?? 0)) : 0;
+    const localState: LocalFileState = localFileState(videoFile);
     return {
       contentType: 'video',
       text: captionText(content!),
@@ -766,7 +767,10 @@ export function formatMsgContent(message: TdObject): MsgContent {
       videoVariants: alternativeVideosOf(content!),
       videoMimeType: video !== undefined ? ((video['mime_type'] as string | undefined) ?? '') : '',
       videoFileName: video !== undefined ? ((video['file_name'] as string | undefined) ?? '') : '',
-      photoFullFileId: 0
+      photoFullFileId: 0,
+      videoLocalPath: localState.path,
+      videoInitialProgress: localState.progress,
+      videoInitialActive: localState.active
     };
   }
   // GIFs (messageAnimation) are MP4 loops — render through the video pipeline

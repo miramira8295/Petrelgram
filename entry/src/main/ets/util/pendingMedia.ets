@@ -20,6 +20,9 @@ export interface PendingMediaItem {
   // 封面与旋转后宽高在 sendPendingMedia 那一步被原地丢掉——接收端没有预览图、
   // 竖拍视频还横过来（用户实测「依然不展示」）。字段在这里，就一路活到发送。
   thumbPath?: string;
+  // 本地高清封面（原图分辨率的首帧或实况静图）。inputThumbnail 只能收 <=320px 的
+  // 小图，但本端气泡与全屏过渡直接用这张高清图，避免发完回显糊成马赛克。
+  posterPath?: string;
   thumbWidth?: number;
   thumbHeight?: number;
   width?: number;
@@ -118,6 +121,7 @@ export function toMediaSendItems(current: PendingMediaItem[]): PendingMediaItem[
     path: item.path,
     isVideo: item.isVideo,
     thumbPath: item.thumbPath,
+    posterPath: item.posterPath,
     thumbWidth: item.thumbWidth,
     thumbHeight: item.thumbHeight,
     width: item.width,
@@ -139,6 +143,10 @@ export function pendingThumbSource(item: PendingMediaItem): string {
   const thumb: string = item.thumbPath ?? '';
   if (thumb !== '') {
     return thumb;
+  }
+  const poster: string = item.posterPath ?? '';
+  if (poster !== '') {
+    return poster;
   }
   // 图片本身就是自己的预览；视频没有封面时给不出图。
   return item.isVideo ? '' : item.path;

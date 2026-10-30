@@ -27,7 +27,11 @@ import {
   KEY_THREE_LINES, powerAnimationDuration
 } from '../../store/AppSettings';
 import { CHAT_LIST_NOW, CHAT_MENU_OPEN } from './ChatListFreeze';
-import { navigateToDirectMessagesTopics } from '../../util/profileNav';
+import { navigateToDirectMessagesTopics, navigateToForumTopics } from '../../util/profileNav';
+import {
+  closeForumDrawer, FORUM_DRAWER_CLOSE_MS, FORUM_DRAWER_OPEN_MS,
+  KEY_ACTIVE_FORUM_CHAT_ID, KEY_ACTIVE_FORUM_OPEN, openForumDrawer
+} from '../../util/forumDrawerState';
 import { chatListRowOrigin } from '../../util/splitRouting';
 import { AvatarView } from './AvatarView';
 import { formatTime } from '../../util/formatTime';
@@ -109,6 +113,8 @@ export struct ChatRow {
   @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
   @StorageProp(KEY_POWER_PARTICLES) particlesEnabled: boolean = true;
   @StorageProp(FOLDER_TAGS_ENABLED) folderTagsEnabled: boolean = false;
+  @StorageProp(KEY_ACTIVE_FORUM_OPEN) private forumDrawerOpen: boolean = false;
+  @StorageProp(KEY_ACTIVE_FORUM_CHAT_ID) private activeForumChatId: number = 0;
   @State livePulseExpanded: boolean = false;
   @State contextMenuShown: boolean = false;
   // 长按落点相对行中心的水平偏移，交给 bindContextMenu 的 offset。
@@ -616,108 +622,180 @@ export struct ChatRow {
       rowId: this.row.snapshot.chat.id, leaving: this.deleteLeaving, channel: this.deletion.channel
     }) {
       Row({ space: 12 }) {
-        AvatarView({
-          avatarSize: this.spec().avatar,
-          avatarPath: this.row.snapshot.chat.avatarPath,
-          initials: this.row.snapshot.chat.initials,
-          colorSeed: this.row.snapshot.chat.id,
-          autoDeleteTime: this.row.snapshot.chat.autoDeleteTime,
-          isLive: this.row.snapshot.chat.isLive,
-          livePulseExpanded: this.livePulseExpanded,
-          savedMessages: this.row.snapshot.chat.isSavedMessages,
-          loadImage: this.loadImages
-        });
-        // 标题与预览之间。这个数和行高、头像、预览字号是一组的，见 CHAT_ROW_MIN_HEIGHT。
-        Column({ space: this.spec().titleGap }) {
-          Row() {
-            // 密聊在名字前挂一把锁：这是行里唯一能把它和普通私聊区分开的标记，
-            // 而两者的行为差别很大（端到端、不同步到别的设备、可能已关闭）。
-            // 颜色用绿色而不是强调色——和 Telegram 各端一致，也不会随主题变淡。
-            if (this.row.snapshot.chat.kind === 'secret') {
-              SymbolGlyph($r('sys.symbol.lock_fill'))
-                .fontSize(13).fontColor(['#31C48D'])
-                .margin({ right: 3 }).flexShrink(0);
-            }
-            Text(this.row.snapshot.chat.isSavedMessages
-              ? $r('app.string.cl_saved_messages') : this.row.snapshot.chat.title)
-              .fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
-              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).flexShrink(1);
-            if (this.muted()) {
-              SymbolGlyph($r('sys.symbol.bell_slash')).fontSize(13).fontColor([COLOR_ICON_SECONDARY]).margin({ left: 4 }).flexShrink(0);
-            }
-            if (this.matchingFolders().length > 0) {
-              Text(this.matchingFolders()[0].title)
-                .fontSize(9).fontWeight(FontWeight.Medium)
-                .fontColor(folderColor(this.matchingFolders()[0].colorId))
-                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-                .constraintSize({ maxWidth: 58 })
-                .padding({ left: 5, right: 5, top: 2, bottom: 2 })
-                .margin({ left: 5 })
-                .backgroundColor(`${folderColor(this.matchingFolders()[0].colorId)}18`)
-                .borderRadius(7).flexShrink(0);
-              if (this.matchingFolders().length > 1) {
-                Text(`+${this.matchingFolders().length - 1}`).fontSize(9)
-                  .fontColor(COLOR_TEXT_SECONDARY).margin({ left: 3 }).flexShrink(0);
-              }
-            }
-          }.width('100%');
-          Row() {
-            // 有草稿就顶掉"谁说了什么"（Telegram 各端都是这样）。
-            if (this.draftPreview() !== '') {
-              Text($r('app.string.cl_draft_prefix'))
-                .fontSize(14).fontColor('#E5484D')
-                .maxLines(1).flexShrink(0);
-            } else if (this.row.snapshot.chat.lastSenderName !== '') {
-              Text(`${this.row.snapshot.chat.lastSenderName}: `)
-                .fontSize(14).fontColor(this.accent())
-                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-                .constraintSize({ maxWidth: 112 });
-            }
-            // 预览小图（issue #202）：minithumbnail 的 data URL，18vp，只在有媒体时多这一个节点。
-            if (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== '') {
-              Image(this.row.snapshot.chat.lastMessageThumb).draggable(false)
-                .width(18).height(18).borderRadius(3).objectFit(ImageFit.Cover)
-                .sourceSize({ width: 54, height: 54 }).autoResize(true)
-                .margin({ right: 5, top: 1 }).flexShrink(0);
-            }
-            Text(this.draftPreview() !== '' ? this.draftPreview()
-              : (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== ''
-                ? stripPreviewIcon(this.row.snapshot.chat.lastMessageText) : this.row.snapshot.chat.lastMessageText))
-              .fontSize(this.spec().previewFont).fontColor(COLOR_TEXT_SECONDARY)
-              .maxLines(this.threeLines ? 2 : 1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
-          }.width('100%').alignItems(VerticalAlign.Top);
-        }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-        Column({ space: 6 }) {
-          Row({ space: 3 }) {
-            if (this.isPinned()) {
-              SymbolGlyph($r('sys.symbol.pin')).fontSize(11).fontColor([COLOR_ICON_SECONDARY]);
-            }
-            Text(formatTime(this.row.snapshot.chat.lastMessageDate, this.nowSec))
-              .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+        Stack({ alignContent: Alignment.Center }) {
+          if (this.activeForumChatId === this.row.snapshot.chat.id && this.listKey !== 'archive') {
+            Row()
+              .width(this.spec().avatar + 10)
+              .height(this.spec().avatar + 10)
+              .borderRadius(16)
+              .backgroundColor('#1F007AFF')
+              .margin({ left: -5, right: -5, top: -5, bottom: -5 })
+              .opacity(this.forumDrawerOpen ? 1 : 0)
+              .scale({
+                x: this.forumDrawerOpen ? 1 : 0.85,
+                y: this.forumDrawerOpen ? 1 : 0.85
+              })
+              .animation({
+                duration: powerAnimationDuration(
+                  KEY_POWER_SMOOTH_TRANSITIONS,
+                  this.forumDrawerOpen ? FORUM_DRAWER_OPEN_MS : FORUM_DRAWER_CLOSE_MS
+                ),
+                curve: Curve.FastOutSlowIn
+              });
           }
-          Row({ space: 5 }) {
-            if (this.row.snapshot.chat.unreadMentionCount > 0) {
-              Text('@').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.accent())
-                .height(22).align(Alignment.Center).accessibilityText($r('app.string.cp_unread_mentions'));
-            }
-            if (this.row.snapshot.chat.unreadCount > 0) {
-              // 数字胶囊与独立的重点色 @ 并排，静音只淡化数字。
+          Stack({ alignContent: Alignment.BottomEnd }) {
+            AvatarView({
+              avatarSize: this.spec().avatar,
+              avatarPath: this.row.snapshot.chat.avatarPath,
+              initials: this.row.snapshot.chat.initials,
+              colorSeed: this.row.snapshot.chat.id,
+              autoDeleteTime: this.row.snapshot.chat.autoDeleteTime,
+              isLive: this.row.snapshot.chat.isLive,
+              livePulseExpanded: this.livePulseExpanded,
+              savedMessages: this.row.snapshot.chat.isSavedMessages,
+              loadImage: this.loadImages
+            });
+            if (this.listKey !== 'archive' && this.row.snapshot.chat.unreadCount > 0) {
               Text(this.unreadLabel())
-                .fontSize(12).fontColor(Color.White)
+                .fontSize(10)
                 .fontWeight(FontWeight.Medium)
-                .constraintSize({ minWidth: 22 })
-                .height(22).padding({ left: 7, right: 7 })
-                .align(Alignment.Center).textAlign(TextAlign.Center)
+                .fontColor(Color.White)
+                .constraintSize({ minWidth: 18, maxWidth: 46 })
+                .height(18)
+                .padding({ left: 5, right: 5 })
+                .textAlign(TextAlign.Center)
                 .backgroundColor(this.muted() ? COLOR_MUTED_BADGE : this.accent())
-                .borderRadius(11);
-            } else if (this.row.snapshot.chat.isMarkedUnread) {
-              // Manually flagged unread — a plain dot, like the official clients.
-              Circle({ width: 10, height: 10 })
-                .fill(this.muted() ? COLOR_MUTED_BADGE : this.accent());
+                .borderRadius(9)
+                .border({ width: 1.5, color: $r('app.color.surface') })
+                .margin({ right: -3, bottom: -2 })
+                .opacity(this.forumDrawerOpen ? 1 : 0)
+                .scale({
+                  x: this.forumDrawerOpen ? 1 : 0.7,
+                  y: this.forumDrawerOpen ? 1 : 0.7
+                })
+                .animation({
+                  duration: powerAnimationDuration(
+                    KEY_POWER_SMOOTH_TRANSITIONS,
+                    this.forumDrawerOpen ? FORUM_DRAWER_OPEN_MS : FORUM_DRAWER_CLOSE_MS
+                  ),
+                  curve: Curve.FastOutSlowIn
+                });
             }
           }
-        }.alignItems(HorizontalAlign.End);
+          .width(this.spec().avatar)
+          .height(this.spec().avatar);
+        }
+        .width(this.spec().avatar)
+        .height(this.spec().avatar);
+
+        // 头像右侧内容区：左边界裁剪，打开超级群时向左滑入头像列后方，退出时从头像列后方向右滑出原位还原
+        Row() {
+          Row({ space: 8 }) {
+            // 标题与预览之间。这个数和行高、头像、预览字号是一组的，见 CHAT_ROW_MIN_HEIGHT。
+            Column({ space: this.spec().titleGap }) {
+              Row() {
+                // 密聊在名字前挂一把锁：这是行里唯一能把它和普通私聊区分开的标记，
+                // 而两者的行为差别很大（端到端、不同步到别的设备、可能已关闭）。
+                // 颜色用绿色而不是强调色——和 Telegram 各端一致，也不会随主题变淡。
+                if (this.row.snapshot.chat.kind === 'secret') {
+                  SymbolGlyph($r('sys.symbol.lock_fill'))
+                    .fontSize(13).fontColor(['#31C48D'])
+                    .margin({ right: 3 }).flexShrink(0);
+                }
+                Text(this.row.snapshot.chat.isSavedMessages
+                  ? $r('app.string.cl_saved_messages') : this.row.snapshot.chat.title)
+                  .fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
+                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).flexShrink(1);
+                if (this.muted()) {
+                  SymbolGlyph($r('sys.symbol.bell_slash')).fontSize(13).fontColor([COLOR_ICON_SECONDARY]).margin({ left: 4 }).flexShrink(0);
+                }
+                if (this.matchingFolders().length > 0) {
+                  Text(this.matchingFolders()[0].title)
+                    .fontSize(9).fontWeight(FontWeight.Medium)
+                    .fontColor(folderColor(this.matchingFolders()[0].colorId))
+                    .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .constraintSize({ maxWidth: 58 })
+                    .padding({ left: 5, right: 5, top: 2, bottom: 2 })
+                    .margin({ left: 5 })
+                    .backgroundColor(`${folderColor(this.matchingFolders()[0].colorId)}18`)
+                    .borderRadius(7).flexShrink(0);
+                  if (this.matchingFolders().length > 1) {
+                    Text(`+${this.matchingFolders().length - 1}`).fontSize(9)
+                      .fontColor(COLOR_TEXT_SECONDARY).margin({ left: 3 }).flexShrink(0);
+                  }
+                }
+              }.width('100%');
+              Row() {
+                // 有草稿就顶掉"谁说了什么"（Telegram 各端都是这样）。
+                if (this.draftPreview() !== '') {
+                  Text($r('app.string.cl_draft_prefix'))
+                    .fontSize(14).fontColor('#E5484D')
+                    .maxLines(1).flexShrink(0);
+                } else if (this.row.snapshot.chat.lastSenderName !== '') {
+                  Text(`${this.row.snapshot.chat.lastSenderName}: `)
+                    .fontSize(14).fontColor(this.accent())
+                    .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .constraintSize({ maxWidth: 112 });
+                }
+                // 预览小图（issue #202）：minithumbnail 的 data URL，18vp，只在有媒体时多这一个节点。
+                if (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== '') {
+                  Image(this.row.snapshot.chat.lastMessageThumb).draggable(false)
+                    .width(18).height(18).borderRadius(3).objectFit(ImageFit.Cover)
+                    .sourceSize({ width: 54, height: 54 }).autoResize(true)
+                    .margin({ right: 5, top: 1 }).flexShrink(0);
+                }
+                Text(this.draftPreview() !== '' ? this.draftPreview()
+                  : (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== ''
+                    ? stripPreviewIcon(this.row.snapshot.chat.lastMessageText) : this.row.snapshot.chat.lastMessageText))
+                  .fontSize(this.spec().previewFont).fontColor(COLOR_TEXT_SECONDARY)
+                  .maxLines(this.threeLines ? 2 : 1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
+              }.width('100%').alignItems(VerticalAlign.Top);
+            }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+            Column({ space: 6 }) {
+              Row({ space: 3 }) {
+                if (this.isPinned()) {
+                  SymbolGlyph($r('sys.symbol.pin')).fontSize(11).fontColor([COLOR_ICON_SECONDARY]);
+                }
+                Text(formatTime(this.row.snapshot.chat.lastMessageDate, this.nowSec))
+                  .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+              }
+              Row({ space: 5 }) {
+                if (this.row.snapshot.chat.unreadMentionCount > 0) {
+                  Text('@').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.accent())
+                    .height(22).align(Alignment.Center).accessibilityText($r('app.string.cp_unread_mentions'));
+                }
+                if (this.row.snapshot.chat.unreadCount > 0) {
+                  // 数字胶囊与独立的重点色 @ 并排，静音只淡化数字。
+                  Text(this.unreadLabel())
+                    .fontSize(12).fontColor(Color.White)
+                    .fontWeight(FontWeight.Medium)
+                    .constraintSize({ minWidth: 22 })
+                    .height(22).padding({ left: 7, right: 7 })
+                    .align(Alignment.Center).textAlign(TextAlign.Center)
+                    .backgroundColor(this.muted() ? COLOR_MUTED_BADGE : this.accent())
+                    .borderRadius(11);
+                } else if (this.row.snapshot.chat.isMarkedUnread) {
+                  // Manually flagged unread — a plain dot, like the official clients.
+                  Circle({ width: 10, height: 10 })
+                    .fill(this.muted() ? COLOR_MUTED_BADGE : this.accent());
+                }
+              }
+            }.alignItems(HorizontalAlign.End);
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .translate({ x: (this.forumDrawerOpen && this.listKey !== 'archive') ? -320 : 0 })
+          .animation({
+            duration: powerAnimationDuration(
+              KEY_POWER_SMOOTH_TRANSITIONS,
+              this.forumDrawerOpen ? FORUM_DRAWER_OPEN_MS : FORUM_DRAWER_CLOSE_MS
+            ),
+            curve: Curve.FastOutSlowIn
+          });
+        }
+        .layoutWeight(1)
+        .clip(true);
       }
       // 真卡片外沿 4vp、上下 2vp（相邻两张之间 2+2 = 4vp），头像内缩 8vp
       // ——外边距不折叠，两张卡片之间就是两条 margin 相加。2026-09-18 用户把
@@ -771,16 +849,27 @@ export struct ChatRow {
           this.pressConsumedByMenu = false;
           return;
         }
-        // 话题群**直接进消息流**（2026-09-16）：话题列表那一层去掉了，话题改由
-        // 详情页顶栏的横条切换（pages/chat/ChatTopicBar）。这里不带 forumTopicId，
-        // 页面拿到话题列表后自己落到第一个话题（ChatPage.syncTopicBar）。
-        // 话题列表页本身保留，仍可从别处进入。
         if (getChatStore().isAdministeredDirectMessagesGroup(this.row.snapshot.chat.id)) {
           const directParams: Record<string, Object> = {
             'chatId': this.row.snapshot.chat.id, 'title': this.row.snapshot.chat.title
           };
           navigateToDirectMessagesTopics(
             directParams, chatListRowOrigin(this.listKey));
+          return;
+        }
+        // 论坛超级群：首页列表点击展开「左侧会话头像窄栏 + 右侧话题列表」双栏视图（图 1 形态）；
+        // 归档页内点击进入话题列表页。
+        if (getChatStore().isForumSupergroup(this.row.snapshot.chat.id)) {
+          if (this.listKey === 'archive') {
+            navigateToForumTopics({
+              'chatId': this.row.snapshot.chat.id,
+              'title': this.row.snapshot.chat.title
+            }, chatListRowOrigin(this.listKey));
+          } else if (this.forumDrawerOpen && this.activeForumChatId === this.row.snapshot.chat.id) {
+            closeForumDrawer();
+          } else {
+            openForumDrawer(this.row.snapshot.chat.id, this.listKey);
+          }
           return;
         }
         const params: Record<string, Object> = { 'chatId': this.row.snapshot.chat.id };

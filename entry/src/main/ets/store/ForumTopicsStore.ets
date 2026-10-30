@@ -1,11 +1,45 @@
 import { TdClient } from '../tdkit/TdClient';
+import { getChatStore } from '../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
-import { formatPreview } from '../util/formatPreview';
+import { formatPreview, previewThumbOf } from '../util/formatPreview';
 import {
-  ForumTopicRow, applyTopicInfoUpdate, applyTopicUpdate, parseForumTopic, sortTopicRows
+  ForumTopicRow, applyTopicCustomEmoji, applyTopicInfoUpdate, applyTopicUpdate, parseForumTopic, sortTopicRows
 } from '../util/forumTopicModel';
 import { str } from '../util/strings';
 import { logE } from '../util/log';
+
+function staticEmojiFileOf(sticker: TdObject): TdObject | undefined {
+  const thumb = sticker['thumbnail'] as TdObject | undefined;
+  if (thumb !== undefined) {
+    const thumbFmt = thumb['format'] as TdObject | undefined;
+    const fmtType: string = thumbFmt !== undefined ? ((thumbFmt['@type'] as string | undefined) ?? '') : '';
+    if (fmtType === 'thumbnailFormatWebp' || fmtType === 'thumbnailFormatPng' ||
+        fmtType === 'thumbnailFormatJpeg' || fmtType === 'thumbnailFormatGif') {
+      return thumb['file'] as TdObject | undefined;
+    }
+  }
+  const format = sticker['format'] as TdObject | undefined;
+  const formatName: string = format !== undefined ? ((format['@type'] as string | undefined) ?? '') : '';
+  if (formatName === 'stickerFormatWebp') {
+    return sticker['sticker'] as TdObject | undefined;
+  }
+  return undefined;
+}
+
+function completedLocalPath(file: TdObject | undefined): string {
+  const local = file !== undefined ? (file['local'] as TdObject | undefined) : undefined;
+  if (local === undefined || !((local['is_downloading_completed'] as boolean | undefined) ?? false)) {
+    return '';
+  }
+  return (local['path'] as string | undefined) ?? '';
+}
+
+function customEmojiIdFromSticker(sticker: TdObject, fallback: string): string {
+  const fullType = sticker['full_type'] as TdObject | undefined;
+  const raw = (fullType !== undefined ? fullType['custom_emoji_id'] : undefined) ?? sticker['custom_emoji_id'];
+  const id: string = raw !== undefined && raw !== null ? `${raw}`.trim() : '';
+  return id !== '' && id !== '0' ? id : fallback;
+}
 
 // 一个论坛群的话题列表（2026-09-16）。
 //
@@ -30,6 +64,7 @@ export type ForumTopicsListener = () => void;
 export class ForumTopicsStore {
   private client: TdClient;
   private chatId: number = 0;
+  private query: string = '';
   private rows: ForumTopicRow[] = [];
   // loading | ready | error —— 与话题列表页原来的 loadState 取值一致。
   private state: string = 'loading';
@@ -54,6 +89,19 @@ export class ForumTopicsStore {
     return this.chatId;
   }
 
+  getQuery(): string {
+    return this.query;
+  }
+
+  setQuery(query: string): void {
+    const trimmed: string = query.trim();
+    if (trimmed === this.query) {
+      return;
+    }
+    this.query = trimmed;
+    this.reload();
+  }
+
   subscribe(listener: ForumTopicsListener): () => void {
     this.listeners.push(listener);
     return (): void => {
@@ -71,6 +119,7 @@ export class ForumTopicsStore {
     }
     this.unsubscribe();
     this.chatId = chatId;
+    this.query = '';
     this.rows = [];
     this.state = 'loading';
     if (chatId === 0) {
@@ -99,7 +148,7 @@ export class ForumTopicsStore {
     const chatId: number = this.chatId;
     const req: TdRequest = { '@type': 'getForumTopics' };
     req['chat_id'] = chatId;
-    req['query'] = '';
+    req['query'] = this.query;
     req['offset_date'] = 0;
     req['offset_message_id'] = 0;
     req['offset_forum_topic_id'] = 0;
@@ -114,6 +163,7 @@ export class ForumTopicsStore {
         .filter((row: ForumTopicRow): boolean => row.threadId > 0));
       this.state = 'ready';
       this.notify();
+      this.resolveTopicCustomEmojis(seq, chatId);
     }).catch((e: TdError): void => {
       if (seq !== this.loadSeq || chatId !== this.chatId) {
         return;
@@ -124,17 +174,84 @@ export class ForumTopicsStore {
     });
   }
 
+  private resolveTopicCustomEmojis(seq: number, chatId: number): void {
+    const idSet: Set<string> = new Set();
+    for (const row of this.rows) {
+      const ceId: string = row.iconCustomEmojiId ?? '';
+      if (ceId !== '' && ceId !== '0') {
+        idSet.add(ceId);
+      }
+    }
+    const ids: string[] = Array.from(idSet);
+    if (ids.length === 0) {
+      return;
+    }
+    const req: TdRequest = { '@type': 'getCustomEmojiStickers' };
+    req['custom_emoji_ids'] = ids;
+    this.client.send(req, 15000).then((res: TdObject): void => {
+      if (seq !== this.loadSeq || chatId !== this.chatId) {
+        return;
+      }
+      const stickers: TdObject[] = (res['stickers'] as TdObject[] | undefined) ?? [];
+      stickers.forEach((sticker: TdObject, index: number): void => {
+        const id: string = customEmojiIdFromSticker(sticker, index < ids.length ? ids[index] : '');
+        if (id === '') {
+          return;
+        }
+        const emoji: string = (sticker['emoji'] as string | undefined) ?? '';
+        const fileObj: TdObject | undefined = staticEmojiFileOf(sticker);
+        const cachedPath: string = completedLocalPath(fileObj);
+        if (cachedPath !== '' || emoji !== '') {
+          this.applyUpdate(applyTopicCustomEmoji(this.rows, id, cachedPath, emoji));
+        }
+        if (cachedPath !== '') {
+          return;
+        }
+        const fileId: number = fileObj !== undefined ? ((fileObj['id'] as number | undefined) ?? 0) : 0;
+        if (fileId <= 0) {
+          return;
+        }
+        const dlReq: TdRequest = { '@type': 'downloadFile' };
+        dlReq['file_id'] = fileId;
+        dlReq['priority'] = 1;
+        dlReq['synchronous'] = true;
+        this.client.send(dlReq, 20000).then((file: TdObject): void => {
+          if (seq !== this.loadSeq || chatId !== this.chatId) {
+            return;
+          }
+          const downloadedPath: string = completedLocalPath(file);
+          if (downloadedPath !== '') {
+            this.applyUpdate(applyTopicCustomEmoji(this.rows, id, downloadedPath, emoji));
+          }
+        }).catch((): void => {});
+      });
+    }).catch((): void => {});
+  }
+
   close(): void {
     this.loadSeq++;
     this.unsubscribe();
     this.listeners = [];
     this.rows = [];
     this.chatId = 0;
+    this.query = '';
   }
 
   private parse(topic: TdObject): ForumTopicRow {
     const last = topic['last_message'] as TdObject | undefined;
-    return parseForumTopic(topic, str('ft_topics'), formatPreview(last ?? null));
+    let senderName: string = '';
+    try {
+      senderName = getChatStore().senderNameOf(last);
+    } catch (_e) {
+      senderName = '';
+    }
+    return parseForumTopic(
+      topic,
+      str('ft_topics'),
+      formatPreview(last ?? null),
+      senderName,
+      previewThumbOf(last ?? null)
+    );
   }
 
   // 不是本会话的更新，应用器会原样把同一个数组还回来——据此跳过一次无谓的发布。

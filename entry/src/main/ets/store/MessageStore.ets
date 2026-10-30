@@ -53,7 +53,7 @@ import {
   mediaDownloadPriority
 } from '../util/downloadPriority';
 import { animationShapeRejected } from '../util/animationShape';
-import { isAnimationPath } from '../util/mediaPick';
+import { isAnimationPath, isVideoPath } from '../util/mediaPick';
 import {
   applyMessageTopicScope, messageOutsideTopicScope, messageTopicObject
 } from '../util/messageTopicScope';
@@ -157,6 +157,9 @@ export interface MediaSendItem {
   // 视频封面（本地路径）。**TDLib 的 inputMessageVideo.thumbnail 是发送方提供
   // 封面的唯一入口，不给接收端就没有预览图。** 空串 = 没有，按老行为发。
   thumbPath?: string;
+  // 本端高清封面（原图分辨率的首帧或实况静图）。与 <=320px 的 thumbPath 分开，
+  // 保证自己发出的视频在发送中与发完后始终展示高清封面。
+  posterPath?: string;
   // 封面**自己**的宽高。inputThumbnail.width/height 说的是缩略图的尺寸，不是
   // 视频的——填成视频尺寸等于声明了一张 1440x1920 的内联缩略图，越界。
   thumbWidth?: number;
@@ -2401,27 +2404,50 @@ export class MessageStore {
 
   private rememberLocalMedia(entry: MessageEntry, item: MediaSendItem): MessageEntry {
     const hydrated = cloneMessage(entry);
+    const itemW: number = item.width ?? 0;
+    const itemH: number = item.height ?? 0;
+    if (itemW > 0 && itemH > 0 && (hydrated.photoWidth <= 0 || hydrated.photoHeight <= 0)) {
+      hydrated.photoWidth = itemW;
+      hydrated.photoHeight = itemH;
+    }
     if (item.isVideo) {
       hydrated.videoPath = item.path;
       hydrated.videoProgress = 100;
       hydrated.videoFailed = false;
       hydrated.mediaDownloadActive = false;
+      const itemDur: number = item.durationSec ?? 0;
+      if (itemDur > 0 && hydrated.videoDuration <= 0) {
+        hydrated.videoDuration = itemDur;
+      }
+      // 本端气泡优先展示全分辨率首帧/实况静图（posterPath），其次才退回 320px 缩略图。
+      const poster: string = (item.posterPath ?? '') !== '' ? item.posterPath! : (item.thumbPath ?? '');
+      if (poster !== '') {
+        hydrated.photoPath = poster;
+        hydrated.photoProgress = 100;
+        hydrated.photoFailed = false;
+      }
       if (hydrated.videoFileId > 0) {
         // 播放用的是 mp4 本身。
         this.completedFilePaths.set(hydrated.videoFileId, item.path);
         // **封面不能给 mp4。** 这里原来把 item.path（那段视频）当缩略图发布，
         // 而缩略图那条通道的消费者是 Image——它渲染不了 mp4，于是自己发出去的
         // 视频在本地回显里就是一块空白（用户实测："还是没有预览图"）。
-        // 有真封面（实况导出的静图）就用它；没有就维持原样，至少不比以前差。
-        const poster: string = item.thumbPath ?? '';
+        // 有真封面就用它；没有就维持原样，至少不比以前差。
         if (poster !== '') {
-          hydrated.photoPath = poster;
           // 记进表里，之后每次重建 entry 都会被 hydrateFromFileCache 补回来。
           this.localVideoPosters.set(hydrated.videoFileId, poster);
           publishThumbPath(hydrated.videoFileId, poster);
         } else {
           publishThumbPath(hydrated.videoFileId, item.path);
         }
+        if (hydrated.sendState === 'sending') {
+          publishProgress(hydrated.videoFileId, 0);
+        }
+      }
+      if (hydrated.photoFileId > 0 && poster !== '') {
+        this.localVideoPosters.set(hydrated.photoFileId, poster);
+        this.completedFilePaths.set(hydrated.photoFileId, poster);
+        publishThumbPath(hydrated.photoFileId, poster);
       }
     } else {
       hydrated.photoPath = item.path;
@@ -2431,10 +2457,16 @@ export class MessageStore {
       if (hydrated.photoFileId > 0) {
         this.completedFilePaths.set(hydrated.photoFileId, item.path);
         publishThumbPath(hydrated.photoFileId, item.path);
+        if (hydrated.sendState === 'sending') {
+          publishProgress(hydrated.photoFileId, 0);
+        }
       }
       if (hydrated.photoFullFileId > 0) {
         this.completedFilePaths.set(hydrated.photoFullFileId, item.path);
         publishThumbPath(hydrated.photoFullFileId, item.path);
+        if (hydrated.sendState === 'sending') {
+          publishProgress(hydrated.photoFullFileId, 0);
+        }
       }
     }
     return hydrated;
@@ -3173,27 +3205,78 @@ export class MessageStore {
     this.notifySoon();
   }
 
-  // 发送成功时 TDLib 把整条消息换成真实 id，**视频文件也换一个新的 fileId**
-  // （实测 14889 → 14928，消息 id 同时 11465129985 → 11466178560）。而按旧
-  // fileId 记的两张表不跟着改键就全部落空：
-  //   localVideoPosters   → 本地封面补不回来，自己发的视频从此是一块灰底
-  //                         （用户实测「我这没封面」）；
-  //   completedFilePaths  → 本地那份 mp4 认不出来，等于要重新下一遍自己刚发的视频。
-  // 两张表都在这里跨过替换。
+  // 发送成功时 TDLib 把整条消息换成真实 id，**媒体文件也会换成服务端的新 fileId**
+  // （实测 14889 → 14928，消息 id 同时 11465129985 → 11466178560）。若不把发送中
+  // 已经就绪的本地原图、高清视频首帧、本地 mp4 以及宽高/时长跨过这次替换：
+  //   · 视频：丢失高清首帧或回退到服务端 320px 模糊缩略图，甚至变成无封面灰底；
+  //   · 图片：新 photoFileId 在通道里还没路径，从本地原图瞬间退化成 40px 模糊占位并重下。
   private carryLocalVideoAssets(previous: MessageEntry | undefined,
     arrived: MessageEntry): void {
-    if (previous === undefined || previous.videoFileId === 0 ||
-      arrived.videoFileId === 0 || previous.videoFileId === arrived.videoFileId) {
+    if (previous === undefined) {
       return;
     }
-    const poster: string = this.localVideoPosters.get(previous.videoFileId) ?? '';
-    if (poster !== '') {
-      this.localVideoPosters.set(arrived.videoFileId, poster);
-      publishThumbPath(arrived.videoFileId, poster);
+    if ((arrived.photoWidth <= 0 || arrived.photoHeight <= 0) &&
+      previous.photoWidth > 0 && previous.photoHeight > 0) {
+      arrived.photoWidth = previous.photoWidth;
+      arrived.photoHeight = previous.photoHeight;
     }
-    const localVideo: string = this.completedFilePaths.get(previous.videoFileId) ?? '';
+    if (arrived.videoDuration <= 0 && previous.videoDuration > 0) {
+      arrived.videoDuration = previous.videoDuration;
+    }
+    if (previous.contentType === 'photo' || arrived.contentType === 'photo') {
+      const localPhoto: string = previous.photoFullPath !== ''
+        ? previous.photoFullPath
+        : (previous.photoPath !== ''
+          ? previous.photoPath
+          : (previous.photoFileId !== 0 ? (this.completedFilePaths.get(previous.photoFileId) ?? '') : ''));
+      if (localPhoto !== '') {
+        arrived.photoPath = localPhoto;
+        arrived.photoFullPath = localPhoto;
+        arrived.photoProgress = 100;
+        arrived.photoFailed = false;
+        if (arrived.photoFileId !== 0) {
+          this.completedFilePaths.set(arrived.photoFileId, localPhoto);
+          publishThumbPath(arrived.photoFileId, localPhoto);
+        }
+        if (arrived.photoFullFileId !== 0) {
+          this.completedFilePaths.set(arrived.photoFullFileId, localPhoto);
+          publishThumbPath(arrived.photoFullFileId, localPhoto);
+        }
+      }
+      return;
+    }
+    if (previous.videoFileId === 0 && arrived.videoFileId === 0) {
+      return;
+    }
+    const poster: string = (previous.videoFileId !== 0
+      ? (this.localVideoPosters.get(previous.videoFileId) ?? '') : '') ||
+      (previous.photoFileId !== 0
+        ? (this.localVideoPosters.get(previous.photoFileId) ?? '') : '') ||
+      previous.photoPath;
+    if (poster !== '') {
+      arrived.photoPath = poster;
+      arrived.photoProgress = 100;
+      arrived.photoFailed = false;
+      if (arrived.videoFileId !== 0) {
+        this.localVideoPosters.set(arrived.videoFileId, poster);
+        publishThumbPath(arrived.videoFileId, poster);
+      }
+      if (arrived.photoFileId !== 0) {
+        this.localVideoPosters.set(arrived.photoFileId, poster);
+        this.completedFilePaths.set(arrived.photoFileId, poster);
+        publishThumbPath(arrived.photoFileId, poster);
+      }
+    }
+    const localVideo: string = (previous.videoFileId !== 0
+      ? (this.completedFilePaths.get(previous.videoFileId) ?? '') : '') || previous.videoPath;
     if (localVideo !== '') {
-      this.completedFilePaths.set(arrived.videoFileId, localVideo);
+      arrived.videoPath = localVideo;
+      arrived.videoProgress = 100;
+      arrived.videoFailed = false;
+      arrived.mediaDownloadActive = false;
+      if (arrived.videoFileId !== 0) {
+        this.completedFilePaths.set(arrived.videoFileId, localVideo);
+      }
     }
   }
 
@@ -4756,6 +4839,18 @@ export class MessageStore {
     const uploadPercent: number = uploadPercentOf(file);
     if (uploadPercent >= 0) {
       publishProgress(id, uploadPercent);
+      // 出站照片上传的往往是最大尺寸（photoFullFileId），而气泡内的 LiveProgressRing
+      // 订阅的是内联尺寸（photoFileId）。两边同步镜像，确保图片上传进度环一定能收到。
+      for (const m of this.messages) {
+        if (m.sendState === 'sending' && (m.photoFileId === id || m.photoFullFileId === id)) {
+          if (m.photoFileId !== 0 && m.photoFileId !== id) {
+            publishProgress(m.photoFileId, uploadPercent);
+          }
+          if (m.photoFullFileId !== 0 && m.photoFullFileId !== id) {
+            publishProgress(m.photoFullFileId, uploadPercent);
+          }
+        }
+      }
     }
     const local = file['local'] as TdObject | undefined;
     if (local === undefined) {
@@ -4764,8 +4859,13 @@ export class MessageStore {
     const done = (local['is_downloading_completed'] as boolean | undefined) ?? false;
     const path = (local['path'] as string | undefined) ?? '';
     if (done && path !== '') {
-      this.completedFilePaths.set(id, path);
-      publishThumbPath(id, path);
+      const keepPoster: string = this.localVideoPosters.get(id) ?? '';
+      this.completedFilePaths.set(id, keepPoster !== '' && !isVideoPath(path) ? keepPoster : path);
+      if (keepPoster !== '') {
+        publishThumbPath(id, keepPoster);
+      } else if (!isVideoPath(path)) {
+        publishThumbPath(id, path);
+      }
       this.applyDiceLayerPath(id, path);
       const customEmojiId = this.inlineCustomEmojiFileToId.get(id);
       if (customEmojiId !== undefined) {
@@ -4895,7 +4995,9 @@ export class MessageStore {
       // trace 里那条 CustomNodeUpdate ChatPage → ExecuteRerender 就是它。
       // map 仍然保留：条目里的 photoPath / photoProgress 还要给缓存落盘、
       // 给全尺寸分支的回填判定用，只是不再惊动 UI。
-      publishProgress(id, percent);
+      if (uploadPercent < 0) {
+        publishProgress(id, percent);
+      }
       if (landed) {
         this.thumbAttempts.delete(id);
         this.thumbLastKick.delete(id);
@@ -6417,13 +6519,19 @@ export class MessageStore {
     // （send-succeeded / updateMessageContent）会整条重建 entry 把它冲掉，于是
     // 气泡落到「photoFileId === 0 且 photoPath === ''」那一支——灰底加播放键，
     // 就是用户看到的样子。这里是每次 upsert 都会经过的水合点，补在这儿才活得下来。
-    const localPoster: string = hydrated.videoFileId !== 0
-      ? (this.localVideoPosters.get(hydrated.videoFileId) ?? '') : '';
-    if (localPoster !== '' && hydrated.photoPath === '') {
-      const withPoster: MessageEntry = cloneMessage(hydrated);
+    const localPoster: string = (hydrated.videoFileId !== 0
+      ? (this.localVideoPosters.get(hydrated.videoFileId) ?? '') : '') ||
+      (hydrated.photoFileId !== 0
+        ? (this.localVideoPosters.get(hydrated.photoFileId) ?? '') : '');
+    if (localPoster !== '' && hydrated.photoPath !== localPoster) {
+      const withPoster: MessageEntry = hydrated === entry ? cloneMessage(hydrated) : hydrated;
       withPoster.photoPath = localPoster;
       withPoster.photoProgress = 100;
       withPoster.photoFailed = false;
+      if (withPoster.photoFileId !== 0) {
+        this.completedFilePaths.set(withPoster.photoFileId, localPoster);
+        publishThumbPath(withPoster.photoFileId, localPoster);
+      }
       return withPoster;
     }
     return hydrated;
@@ -6441,10 +6549,14 @@ export class MessageStore {
     // 里，不这样发布就没人知道它变了。通道在状态未变时早退，所以这里不必
     // 挑调用点。
     publishSendState(c.rowId, c.sendState);
-    publishProgress(c.photoFileId, c.photoProgress);
-    publishProgress(c.photoFullFileId, c.photoFullProgress);
+    // 发送中的消息，mediaProgressChannel 承载的是实时**上传**进度；不能用本地文件
+    // 已就绪的 100% 下载进度把它冲掉。
+    if (c.sendState !== 'sending') {
+      publishProgress(c.photoFileId, c.photoProgress);
+      publishProgress(c.photoFullFileId, c.photoFullProgress);
+      publishProgress(c.videoFileId, c.videoProgress);
+    }
     publishProgress(c.linkPhotoFileId, c.linkPhotoProgress);
-    publishProgress(c.videoFileId, c.videoProgress);
     publishProgress(c.stickerFileId, c.stickerProgress);
     const next = this.messages.slice();
     next[idx] = c;
@@ -6471,7 +6583,9 @@ export class MessageStore {
         path: m.videoPath, failed: m.videoFailed, active: m.mediaDownloadActive
       };
       fn(c);
-      publishProgress(c.videoFileId, c.videoProgress);
+      if (c.sendState !== 'sending') {
+        publishProgress(c.videoFileId, c.videoProgress);
+      }
       const after: PatchSignature = {
         path: c.videoPath, failed: c.videoFailed, active: c.mediaDownloadActive
       };

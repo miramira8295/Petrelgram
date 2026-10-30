@@ -325,9 +325,13 @@ export struct ChatTimelineHost {
     });
   }
 
+  private effectivelyHasVisibleRows(): boolean {
+    return this.session.timelineSnapshot.hasVisibleRows && !this.session.initialTimelineMasked;
+  }
+
   private timelinePillMode(): string {
     return timelineStateMode(
-      this.session.timelineSnapshot.hasVisibleRows ? 1 : 0,
+      this.effectivelyHasVisibleRows() ? 1 : 0,
       this.session.timelineSnapshot.messageLoadState,
       this.session.timelineSnapshot.olderLoadState,
       this.session.timelineSnapshot.newerLoadState
@@ -373,16 +377,20 @@ export struct ChatTimelineHost {
         });
       }
 
-      // 0 行 + 正在首次加载：状态卡和胶囊都不管这一档（见 util/initialLoadingHint）。
-      if (showInitialLoadingHint(this.session.timelineSnapshot.hasVisibleRows, this.session.timelineSnapshot.messageLoadState)) {
-        Column() {
-          InitialLoadingHint();
-        }
-        .width('100%').height('100%')
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
-        .padding({ bottom: this.bottomChromeH + 28 })
-        .hitTestBehavior(HitTestMode.Transparent);
+      // 0 行（或首屏仍被遮罩）+ 正在首次加载：以 Telegram 风格的气泡骨架占位。
+      if (showInitialLoadingHint(
+        this.effectivelyHasVisibleRows(),
+        this.session.initialTimelineMasked ? 'loading' : this.session.timelineSnapshot.messageLoadState
+      )) {
+        InitialLoadingHint({
+          immediate: this.session.timelineSnapshot.messageLoadState === 'loading',
+          isGroup: this.session.timelineSnapshot.isGroup,
+          isChannel: this.session.timelineSnapshot.isChannel,
+          screenW: this.screenW,
+          topInset: this.headerStartOffset,
+          bottomInset: this.bottomChromeH,
+          materialEpoch: this.materialEpoch
+        });
       }
 
       FloatingDateOverlay({

@@ -136,6 +136,11 @@ const TAIL_GUTTER_RIGHT: Padding = { right: TAIL_GUTTER_VP };
 const AVATAR_GUTTER: Padding = { left: BUBBLE_AVATAR_GUTTER_VP };
 // 行边距与气泡最大宽同源，见 util/mediaBox.BUBBLE_ROW_SIDE_VP。
 const NO_GUTTER: Padding = {};
+const PURE_MEDIA_CORNER_RADIUS: BorderRadiuses = {
+  topLeft: 15, topRight: 15, bottomLeft: 15, bottomRight: 15
+};
+const MEDIA_TIME_PADDING: Padding = { left: 6, right: 6, top: 2, bottom: 2 };
+const PLAIN_TIME_PADDING: Padding = { left: 0 };
 
 interface SenderAvatarState {
   path: string;
@@ -508,8 +513,20 @@ export struct MessageBubbleShell {
     return this.bubbleMaxW() - 16;
   }
 
+  private isPureMediaBubble(): boolean {
+    const isMedia: boolean = this.msg.contentType === 'photo' ||
+      this.msg.contentType === 'video' || this.group.photoPaths.length > 1;
+    if (!isMedia) {
+      return false;
+    }
+    return this.msg.text === '' && this.msg.translatedText === '' &&
+      this.group.caption === '' && this.msg.replyToMessageId === 0 &&
+      this.msg.reactions.length === 0 && !this.forwardLabelShown() &&
+      !this.senderLabelShown() && !this.commentsRowShown();
+  }
+
   private hasBubbleTail(): boolean {
-    return this.group.showAvatar && !this.isBareEmoji();
+    return this.group.showAvatar && !this.isBareEmoji() && !this.isPureMediaBubble();
   }
 
   private bubbleTailGutter(): number {
@@ -718,13 +735,14 @@ export struct MessageBubbleShell {
           ? 'sys.symbol.exclamationmark_circle' : 'sys.symbol.checkmark')))
         .fontSize(12)
         .fontColor([this.context.liveSendState === 'failed' ? Color.Red
-          : (this.context.liveSendState === 'read' ? this.accent() : COLOR_ICON_SECONDARY)])
+          : (this.timeOnMedia() ? Color.White
+            : (this.context.liveSendState === 'read' ? this.accent() : COLOR_ICON_SECONDARY))])
         .visibility(this.context.liveSendState === 'none' || this.context.liveSendState === ''
           ? Visibility.None : Visibility.Visible);
       // The second, overlapped check is present in every state and only shown
       // for read receipts, so reuse never creates or destroys it.
       SymbolGlyph($r('sys.symbol.checkmark'))
-        .fontSize(12).fontColor([this.accent()]).margin({ left: -8 })
+        .fontSize(12).fontColor([this.timeOnMedia() ? Color.White : this.accent()]).margin({ left: -8 })
         .visibility(this.context.liveSendState === 'read' ? Visibility.Visible : Visibility.None);
     }
   }
@@ -919,8 +937,12 @@ export struct MessageBubbleShell {
   private bubbleCornerRadius(): BorderRadiuses {
     // Read all reactive inputs before the cache lookup, including on hits.
     const group = this.group;
-    return this.cornerCache.prepare(this.env.bubbleRadius, this.msg.isOutgoing,
+    const base = this.cornerCache.prepare(this.env.bubbleRadius, this.msg.isOutgoing,
       group.showSenderName, group.showAvatar);
+    if (this.isPureMediaBubble()) {
+      return PURE_MEDIA_CORNER_RADIUS;
+    }
+    return base;
   }
 
   @Builder
@@ -1608,8 +1630,8 @@ export struct MessageBubbleShell {
         this.statusIcon();
       }
     }
-    .padding(this.timeOnMedia() ? { left: 5, right: 5, top: 1, bottom: 1 } : { left: 0 })
-    .backgroundColor(this.timeOnMedia() ? '#00000066' : Color.Transparent)
+    .padding(this.timeOnMedia() ? MEDIA_TIME_PADDING : PLAIN_TIME_PADDING)
+    .backgroundColor(this.timeOnMedia() ? '#66000000' : Color.Transparent)
     .borderRadius(8)
     .margin(this.timeOnMedia() ? { right: 6, bottom: 6 } : { right: 0, bottom: 2 });
     // 这里**不能**挂 .animation()。时间条几乎每个完整气泡都有，是全 app 最普遍的
@@ -1883,7 +1905,7 @@ export struct MessageBubbleShell {
     // Adjacent rows share a restrained 7vp corner. Only the final row gets
     // the tight tail corner; a single-row run keeps the configured top arc.
     .borderRadius(this.bubbleCornerRadius())
-    .padding(this.isBareEmoji() ? 0 : 8)
+    .padding(this.isBareEmoji() ? 0 : (this.isPureMediaBubble() ? 2 : 8))
     // 实心尾角与主体相邻绘制，主体独立投影会落到尾角根部，形成竖向暗缝。
     // 阴影统一交给外壳的 solidShellShadow，玻璃档仍由外层整体绘制。
     // Controlled mode (mirrors ChatRow.ets bindContextMenu): a manual

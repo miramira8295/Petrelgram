@@ -30,7 +30,7 @@ export struct ChatPageSurface {
   @Param chatBgBlur: number = 0;
   @Param chatBgPattern: number = 0;
   @Param chatBgDim: number = 0;
-  @Event onViewportAreaChange: () => void = (): void => {};
+  @Event onViewportAreaChange: (oldH: number, newH: number) => void = (_oldH: number, _newH: number): void => {};
   @BuilderParam timelineContent: () => void;
   @BuilderParam bottomContent: () => void;
   @BuilderParam overlayContent: () => void;
@@ -162,8 +162,10 @@ export struct ChatPageSurface {
         // RESIZE changes this viewport in step with the system keyboard. The
         // area callback runs after the new List height is known, so pinning
         // here keeps message and composer motion visually locked together.
-        .onAreaChange((_old: Area, _area: Area) => {
-          this.onViewportAreaChange();
+        .onAreaChange((oldArea: Area, newArea: Area) => {
+          const oldH: number = typeof oldArea.height === 'number' ? oldArea.height : 0;
+          const newH: number = typeof newArea.height === 'number' ? newArea.height : 0;
+          this.onViewportAreaChange(oldH, newH);
         });
       }
       .width('100%').height('100%')
