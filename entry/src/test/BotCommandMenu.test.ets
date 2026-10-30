@@ -30,9 +30,16 @@ function full(command: string = 'group'): TdObject {
   const group: TdObject = { '@type': 'botCommands' }; group['bot_user_id'] = 10; group['commands'] = [entry];
   result['bot_commands'] = command === '' ? [] : [group]; return result;
 }
-function user(name: string = 'group_bot'): TdObject {
+function user(name: string = 'group_bot', avatarFileId: number = 42): TdObject {
   const names: TdObject = { '@type': 'usernames' }; names['active_usernames'] = name === '' ? [] : [name];
-  const result: TdObject = { '@type': 'user' }; result['usernames'] = names; return result;
+  const small: TdObject = { '@type': 'file', 'id': avatarFileId };
+  const photo: TdObject = { '@type': 'profilePhoto', 'small': small };
+  const result: TdObject = { '@type': 'user' };
+  result['usernames'] = names;
+  if (avatarFileId > 0) {
+    result['profile_photo'] = photo;
+  }
+  return result;
 }
 async function settle(): Promise<void> { for (let i = 0; i < 20; i++) { await Promise.resolve(); } }
 class CommandHarness {
@@ -64,7 +71,8 @@ export default function botCommandMenuTest() {
         .assertDeepEquals(['getChat', 'getSupergroupFullInfo', 'getUser']);
       expect(h.state.botMenuAvailable).assertTrue();
       expect(h.state.commandItems[0].command).assertEqual('group');
-      expect(h.state.commandItems[0].botUsername).assertEqual('group_bot'); h.close();
+      expect(h.state.commandItems[0].botUsername).assertEqual('group_bot');
+      expect(h.state.commandItems[0].avatarFileId).assertEqual(42); h.close();
     });
     it('基础群使用基础群目录', 0, async (): Promise<void> => {
       const h = new CommandHarness(); const pending = loadBotCommands(h.client, -88, 0);

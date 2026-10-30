@@ -247,13 +247,19 @@ export interface StorageBarWidths {
   local: number; // 百分比
 }
 
-// 存储条两段的宽度（设计稿的算法）：缓存占「缓存 + 已存本地」的比例；已存本地那段再乘 0.9，右端留一截底色。
-// 两者都为 0 时各半。
-export function storageBarWidths(cacheBytes: number, localBytes: number): StorageBarWidths {
+// 存储条两段的宽度：按「缓存 + 已存本地 + 设备可用」的实际比例计算（未拿到设备可用空间时退回两者之和；全为 0 时均为 0）。
+export function storageBarWidths(cacheBytes: number, localBytes: number, freeBytes: number = -1): StorageBarWidths {
   const cache: number = Math.max(0, cacheBytes);
   const local: number = Math.max(0, localBytes);
-  const pc: number = cache + local > 0 ? cache / (cache + local) * 100 : 50;
-  return { cache: pc, local: (100 - pc) * 0.9 };
+  const free: number = freeBytes > 0 ? freeBytes : 0;
+  const total: number = cache + local + free;
+  if (total <= 0) {
+    return { cache: 0, local: 0 };
+  }
+  return {
+    cache: cache / total * 100,
+    local: local / total * 100
+  };
 }
 
 // 速度采样的最小间隔：updateFile 可能一帧来好几条，间隔太短算出来的瞬时速度全是噪声。

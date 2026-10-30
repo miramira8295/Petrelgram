@@ -33,6 +33,7 @@ export interface CommandItem {
   description: string;
   botUserId: number;   // 0 only for malformed/legacy data
   botUsername: string; // group commands send as /command@bot; private chat keeps this empty
+  avatarFileId?: number;
 }
 
 const MENTION_LIMIT: number = 12;
@@ -135,14 +136,41 @@ export interface CommandTarget {
   privateChat: boolean;
 }
 
-function commandRows(commands: TdObject[], botUserId: number, botUsername: string): CommandItem[] {
+function fullInfoPhotoFileId(full: TdObject): number {
+  const photo = (full['photo'] as TdObject | undefined)
+    ?? (full['personal_photo'] as TdObject | undefined)
+    ?? (full['public_photo'] as TdObject | undefined);
+  if (photo === undefined) {
+    return 0;
+  }
+  const small = photo['small'] as TdObject | undefined;
+  const smallId = small !== undefined ? ((small['id'] as number | undefined) ?? 0) : 0;
+  if (smallId > 0) {
+    return smallId;
+  }
+  const sizes = photo['sizes'] as TdObject[] | undefined;
+  if (sizes !== undefined && sizes.length > 0) {
+    const file = sizes[0]['photo'] as TdObject | undefined;
+    return file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
+  }
+  return 0;
+}
+
+function commandRows(commands: TdObject[], botUserId: number, botUsername: string,
+  avatarFileId: number = 0): CommandItem[] {
   const seen: Set<string> = new Set<string>();
   const items: CommandItem[] = [];
   for (const c of commands) {
     const command = (c['command'] as string | undefined) ?? '';
     if (!/^[a-zA-Z0-9_]{1,32}$/.test(command) || seen.has(command)) { continue; }
     seen.add(command);
-    items.push({ command, description: (c['description'] as string | undefined) ?? '', botUserId, botUsername });
+    items.push({
+      command,
+      description: (c['description'] as string | undefined) ?? '',
+      botUserId,
+      botUsername,
+      avatarFileId
+    });
   }
   return items;
 }
@@ -151,7 +179,12 @@ function commandRows(commands: TdObject[], botUserId: number, botUsername: strin
 export async function commandsFromInfo(client: TdClient, target: CommandTarget, full: TdObject): Promise<CommandItem[]> {
   if (target.privateChat) {
     const info = full['bot_info'] as TdObject | undefined;
-    return commandRows((info?.['commands'] as TdObject[] | undefined) ?? [], target.id, '');
+    return commandRows(
+      (info?.['commands'] as TdObject[] | undefined) ?? [],
+      target.id,
+      '',
+      fullInfoPhotoFileId(full)
+    );
   }
   const groups = (full['bot_commands'] as TdObject[] | undefined) ?? [];
   const items: CommandItem[] = [];
@@ -168,7 +201,7 @@ export async function commandsFromInfo(client: TdClient, target: CommandTarget, 
       const user = await getUser(client, id);
       const username = usernameOf(user);
       // A group command without its bot address could target the wrong bot.
-      return username === '' ? [] : commandRows(commands, id, username);
+      return username === '' ? [] : commandRows(commands, id, username, smallPhotoFileId(user));
     }));
     for (const list of lists) { items.push(...list); }
   }

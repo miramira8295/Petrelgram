@@ -705,6 +705,13 @@ export default function formatMsgContentTest() {
       expect(r.pollCorrectOptionId).assertEqual(1);
       expect(r.pollExplanation).assertEqual('B 是正确答案');
       expect(r.pollAllowMultiple).assertFalse();
+      const td1865Msg = pollMsg(true);
+      const td1865Type = ((td1865Msg['content'] as TdObject)['poll'] as TdObject)['type'] as TdObject;
+      delete td1865Type['correct_option_id'];
+      td1865Type['correct_option_ids'] = [1];
+      expect(formatMsgContent(td1865Msg).pollCorrectOptionId).assertEqual(1);
+      td1865Type['correct_option_ids'] = [];
+      expect(formatMsgContent(td1865Msg).pollCorrectOptionId).assertEqual(-1);
     });
     it('dice_maps_pending_and_final_result_states', 0, () => {
       const pending = formatMsgContent(diceMsg(0));
