@@ -40,6 +40,14 @@ export function posterFor(videoPath: string): string {
   return posters.get(videoPath) ?? '';
 }
 
+// 发送侧已经抽好高清首帧（或实况静图）时直接种进表里，免得气泡挂载后又对同一份
+// 本地 mp4 重跑一遍 AVImageGenerator。
+export function seedVideoPoster(videoPath: string, posterPath: string): void {
+  if (videoPath !== '' && posterPath !== '') {
+    publish(videoPath, posterPath);
+  }
+}
+
 export function subscribePoster(videoPath: string, cb: (path: string) => void): () => void {
   let listeners: Set<(path: string) => void> | undefined = subs.get(videoPath);
   if (listeners === undefined) {

@@ -58,8 +58,9 @@ export struct ChatBackdrop {
     return this.areaW > 0 ? this.areaW : this.screenW;
   }
 
+  // 壁纸高度始终锚定完整窗口高度，不随软键盘 RESIZE 收缩而缩小重排，避免调起键盘时背景跟着往上蹿。
   private layerH(): number {
-    return this.areaH > 0 ? this.areaH : this.screenH;
+    return Math.max(this.areaH, this.screenH);
   }
 
   // ── 三根滑杆：由**调用方按槽位传入**，不再自己读全局键 ────────────────────
@@ -97,6 +98,9 @@ export struct ChatBackdrop {
   // 拿到的是种子默认背景——真背景到达后光栅永不重算，轻则缓存全废、每次进
   // 会话都走实时分层绘制，重则一直停在默认背景的旧缓存图上，显示错壁纸。
   private onParamsChanged(): void {
+    if (this.screenH > 0 && this.areaH > this.screenH) {
+      this.areaH = this.screenH;
+    }
     this.syncRaster();
     // 窗口变窄（悬浮小窗）时先把内容列宽压到窗口宽以内（issue #138）：内容列不可
     // 能比窗口宽，而 onSizeChange 那次精确的量要等布局回来；这期间气泡若还按
@@ -237,9 +241,9 @@ export struct ChatBackdrop {
     // （6 路 translate 同时 20s 超时 → 整屏行同时翻「失败」重建 → 一堆头像和
     // 缩略图解码，光栅那张全屏 JPEG 最大最容易被挤掉），用户报的就是这个
     // （issue #90）。现在分层版一直垫在底下，直到光栅像素真正上屏才撤。
-    Stack() {
+    Stack({ alignContent: Alignment.TopStart }) {
       if (!this.rasterShown) {
-      Stack() {
+      Stack({ alignContent: Alignment.TopStart }) {
         if (this.chatBg.colors.length > 0) {
           Column()
             .width('100%').height('100%')
@@ -284,7 +288,7 @@ export struct ChatBackdrop {
             .opacity(this.chatBg.dimming);
         }
       }
-      .width('100%').height('100%');
+      .width(this.layerW()).height(this.layerH());
       }
       if (this.rasterPath !== '') {
       // 走 PixelMap 缓存，而不是 Image(file://…)。这张光栅是整屏 JPEG，解码约
@@ -324,9 +328,13 @@ export struct ChatBackdrop {
         const w: Length | undefined = size.width;
         const h: Length | undefined = size.height;
         if (typeof w !== 'number' || typeof h !== 'number') { return; }
-        if (w > 0 && h > 0 && (w !== this.areaW || h !== this.areaH)) {
+        if (w > 0 && w !== this.areaW) {
           this.areaW = w;
-          this.areaH = h;
+        }
+        // 软键盘 RESIZE 会把容器高度压小，不能把压小后的高度写回 areaH，否则壁纸会跟着键盘重排上移。
+        const fullH: number = Math.max(this.areaH, h);
+        if (fullH > 0 && fullH !== this.areaH) {
+          this.areaH = fullH;
         }
         // 本层铺满聊天列，量到的宽就是内容列宽——气泡按它算宽度（issue #107），
         // 见 util/chatContentWidth。
@@ -341,7 +349,7 @@ export struct ChatBackdrop {
   }
 
   build() {
-    Stack() {
+    Stack({ alignContent: Alignment.TopStart }) {
       this.wallpaperLayer();
       if (this.liveDarkMaskOpacity() > 0) {
         Column().width('100%').height('100%')

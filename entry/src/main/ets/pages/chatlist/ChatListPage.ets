@@ -17,16 +17,22 @@ import { TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { FolderInfo } from '../../store/FolderStore';
 import { ChatListView } from './ChatListView';
 import { MainTabBody } from './MainTabBody';
+import { FORUM_LEFT_RAIL_WIDTH, ForumSplitView, ForumTopHeaderBar } from './ForumSplitView';
+import {
+  closeForumDrawer,
+  FORUM_DRAWER_CLOSE_MS,
+  FORUM_DRAWER_OPEN_MS,
+  KEY_ACTIVE_FORUM_OPEN
+} from '../../util/forumDrawerState';
 import { CHAT_LIST_NOW } from './ChatListFreeze';
 import { ComponentContent, FrameCallback, LengthMetrics, componentUtils } from '@kit.ArkUI';
 import {
-  HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuContentOptions, HdsNavigationTitleMode,
-  TitleBarContentOptions
+  HdsNavigation, HdsNavigationTitleBarOptions, HdsNavigationTitleMode, TitleBarContentOptions
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
 import { homeCardMarginVp } from '../../util/pageMargin';
 import { APPEARANCE_EPOCH, KEY_STATUS_FOLLOW_TITLE } from '../../util/appearance';
-import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_BADGE_BG, COLOR_TAB_PILL_BG } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_BADGE_BG, COLOR_TAB_PILL_BG } from '../../util/theme';
 import { router } from '@kit.ArkUI';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH, KEY_FORCE_SINGLE_COLUMN,
   KEY_FOLDER_BAR_SCROLL_HIDE
@@ -70,6 +76,7 @@ interface TabSpec {
 }
 
 const TOP_BAR_HEIGHT: number = 56;
+const TOP_ACTION_SIZE: number = 40;
 const TAB_BADGE_MAX: number = 99;
 const FOLDER_BAR_HEIGHT: number = 36;
 // 文件夹条连同它自己的上下留白占的高度（列表让位用）。
@@ -404,6 +411,19 @@ export struct ChatListPage {
   // 已经进入视口的页面立刻补齐视觉。横滑结束后由 warmedVisualTabKeys 接管。
   @State private companionImageTabIndex: number = -1;
   @State private warmedVisualTabKeys: string[] = [];
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+
+  @Styles
+  actionNormalStyle() {
+    .scale({ x: 1, y: 1 })
+    .opacity(1)
+  }
+
+  @Styles
+  actionPressedStyle() {
+    .scale({ x: 0.92, y: 0.92 })
+    .opacity(0.75)
+  }
 
   @Styles
   tabNormalStyle() {
@@ -1031,16 +1051,137 @@ export struct ChatListPage {
     }
   }
 
-  // 旧的自绘按钮（topAction / searchAction / titleBarActions）已于 2026-10-30
-  // 删掉，原因见 titleBarMenu()。
-  //
-  // 唯一没接回来的东西：搜索按钮点下后那 520ms 的转圈（searchOpening 现在只剩
-  // 防连点闸门）。HDS 的菜单项只收一个静态 icon，画不出过程中态。
-  //
-  // 已知代价，真机上若是「两颗按钮的玻璃浓淡不一样」就回来这里看：HDS 的菜单
-  // 节点是**每颗图标各合成一次**，同一组 materialType/materialLevel 下，稀疏的
-  // 放大镜和密的 ⋮ 看上去可能厚薄不同。当初自绘就是为了消掉这个差异；现在按
-  // 官方写法走，差异回来也算预期内。
+  @Builder
+  topAction(icon: string, label: Resource, onTap: () => void) {
+    Row() {
+      SymbolGlyph($r(icon)).fontSize(23).fontColor([COLOR_ICON_SECONDARY]);
+    }
+    .width(TOP_ACTION_SIZE).height(TOP_ACTION_SIZE)
+    .borderRadius(TOP_ACTION_SIZE / 2)
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
+    .backdropBlur(overlayBackdropBlur('control'))
+    .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
+    .clip(true)
+    .stateStyles({
+      normal: this.actionNormalStyle,
+      pressed: this.actionPressedStyle
+    })
+    .accessibilityText(label)
+    .onClick((): void => { onTap(); });
+  }
+
+  @Builder
+  searchAction() {
+    Row() {
+      if (this.searchOpening) {
+        LoadingProgress()
+          .width(20)
+          .height(20)
+          .color(this.accent())
+          .transition(TransitionEffect.OPACITY
+            .combine(TransitionEffect.scale({ x: 0.72, y: 0.72 }))
+            .animation({
+              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
+              curve: Curve.EaseOut
+            }));
+      } else {
+        SymbolGlyph($r('sys.symbol.magnifyingglass'))
+          .fontSize(23)
+          .fontColor([COLOR_ICON_SECONDARY])
+          .transition(TransitionEffect.OPACITY
+            .combine(TransitionEffect.scale({ x: 0.84, y: 0.84 }))
+            .animation({
+              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
+              curve: Curve.EaseOut
+            }));
+      }
+    }
+    .width(TOP_ACTION_SIZE)
+    .height(TOP_ACTION_SIZE)
+    .borderRadius(TOP_ACTION_SIZE / 2)
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
+    .backdropBlur(overlayBackdropBlur('control'))
+    .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
+    .clip(true)
+    .stateStyles({
+      normal: this.actionNormalStyle,
+      pressed: this.actionPressedStyle
+    })
+    .enabled(!this.searchOpening)
+    .accessibilityText(this.searchOpening ? $r('app.string.cl_opening_search') : $r('app.string.cl_global_search'))
+    .onClick((): void => {
+      this.openGlobalSearch();
+    });
+  }
+
+  // HDS's built-in menu node composites each icon independently. With the
+  // adaptive material level, the sparse search glyph and dense more glyph can
+  // therefore look like two different material strengths even though the same
+  // options were supplied. Draw both actions through one project material
+  // pipeline so size, tint, blur, light level and interaction stay identical.
+  @Builder
+  homeTopBarContent() {
+    Row({ space: 8 }) {
+      Column() {
+        Text($r('app.string.app_name'))
+          .id(TITLE_MAIN_ID)
+          .fontSize(25)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.accent())
+          .maxLines(1)
+          .translate({ y: this.syncState === '' ? 7 : 0 })
+          .animation({
+            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+            curve: Curve.EaseOut
+          });
+        Text(this.syncLabel())
+          .height(14)
+          .fontSize(11)
+          .lineHeight(14)
+          .fontColor(COLOR_TEXT_SECONDARY)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .opacity(this.syncState === '' ? 0 : 1)
+          .translate({ y: this.syncState === '' ? -3 : 0 })
+          .animation({
+            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+            curve: Curve.EaseOut
+          });
+      }
+      .height(TOP_BAR_HEIGHT)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1);
+
+      Row({ space: 8 }) {
+        this.searchAction();
+        this.topAction('sys.symbol.more', $r('app.string.cl_more_actions'), (): void => {
+          this.moreMenuShown = true;
+        });
+      }
+      .alignItems(VerticalAlign.Center);
+    }
+    .width('100%')
+    .height(TOP_BAR_HEIGHT)
+    .padding({ left: 16, right: 16 })
+    .alignItems(VerticalAlign.Center);
+  }
+
+  @Builder
+  titleBarActions() {
+    Stack({ alignContent: Alignment.Center }) {
+      TopBarSlideContainer({
+        content: (): void => { this.homeTopBarContent(); }
+      });
+      ForumTopHeaderBar();
+    }
+    .width('100%')
+    .height(TOP_BAR_HEIGHT)
+    .clip(true);
+  }
+
   syncLabel(): ResourceStr {
     if (this.syncState === 'connectionStateUpdating') { return $r('app.string.cl_refreshing'); }
     if (this.syncState === 'connectionStateWaitingForNetwork') { return $r('app.string.cl_waiting_network'); }
@@ -1067,60 +1208,55 @@ export struct ChatListPage {
     return this.tabs().map((spec: TabSpec): ListScroller => this.scrollerFor(spec.key));
   }
 
-  // 顶栏的两颗按钮交给 HDS 自己的菜单位（官方样例就是 `content.menu`）：
-  // 图标、无障碍 label、点击回调全由 HdsNavigationIconOptions 给，按钮的玻璃
-  // 由 `TitleBarStyleOptions.systemMaterialEffect` 统一画。
-  //
-  // 2026-10-30 之前这两颗是自绘的（stackBuilder 里叠 overlayGlassFill +
-  // backdropBlur + materialModifier 那一套），因为 2026-09-03 那轮查 SDK 时
-  // HdsNavigationIconItemStyle 只有 backgroundColor/iconColor，画不出玻璃。从
-  // 6.1.0(23) 起有了 systemMaterialEffect，这条路才通——用户要求「按官方的写」。
-  //
-  // 结构本身仍然高频重建就整条栏重画（见 hds-titlebar-limits 的记录），所以
-  // 这里**只吃结构性状态**：`searchOpening` 那种一点就变的别读进来，连点闸门
-  // 在 openGlobalSearch() 里自己拦。
-  private titleBarMenu(): HdsNavigationMenuContentOptions {
-    const search: HdsNavigationIconOptions = {
-      icon: $r('sys.symbol.magnifyingglass'),
-      label: $r('app.string.cl_global_search'),
-      action: (): void => { this.openGlobalSearch(); }
-    };
-    const more: HdsNavigationIconOptions = {
-      icon: $r('sys.symbol.more'),
-      label: $r('app.string.cl_more_actions'),
-      action: (): void => { this.moreMenuShown = true; }
-    };
-    return { value: [{ content: search }, { content: more }] };
-  }
+  private titleBarContentCache: TitleBarContentOptions | null = null;
+  private titleBarBottomHeightCache: number = -1;
+  private titleBarOptionsCache: HdsNavigationTitleBarOptions | null = null;
+  private titleBarWallpaperCache: boolean = false;
+  private titleBarAppearanceCache: number = -1;
+  private titleBarMaterialCache: number = -1;
 
-  // 标题栏内容：应用名 + 同步状态副标题 + 搜索/⋮ 两个动作 + 底部的文件夹条。
-  //
-  // 同步状态原来是顶栏里第二行文字、靠位移动画"挤"出来，现在交给标题栏的
-  // subTitle —— 它自己管这个位置。
+  // 标题栏内容：应用名 + 同步状态副标题 + 搜索/⋮ 两个动作 + 超级群组顶栏抽屉 + 底部的文件夹条。
+  // 引用保持稳定（同 ChatPage.chatTitleBarOptions），避免 HDS 因对象重建销毁重画整条标题栏而闪白。
   private titleBarContent(): TitleBarContentOptions {
+    const bottomHeight: number = this.folderBarSpace()
+      + (this.newSessionCount > 0 ? NEW_SESSION_BAR_HEIGHT : 0);
+    if (this.titleBarContentCache !== null && this.titleBarBottomHeightCache === bottomHeight) {
+      return this.titleBarContentCache;
+    }
     const content: TitleBarContentOptions = {
-      title: {
-        mainTitle: $r('app.string.app_name'),
-        subTitle: this.syncState === '' ? '' : this.syncLabel(),
-        // 收起态缩略块要贴在这串文字的右下角，得能把它量出来（见 TITLE_MAIN_ID）。
-        mainTitleId: TITLE_MAIN_ID
-      },
-      menu: this.titleBarMenu()
+      stackBuilder: (): void => { this.titleBarActions(); }
     };
-    // 文件夹条挂在 bottomBuilder 上——这是 HDS 给"标题栏底下那一行"准备的槽位，
-    // 横条和标题栏因此共用同一块背板与材质，看上去是一整块。
-    //
-    // 试过让它单独浮在内容区上层（Stack）：两者中间断开一道，观感割裂；而且
-    // 标题栏那块玻璃背后只剩一小段列表，透不出东西来，看着几乎是实心的。
-    // 合成一块之后列表从整块底下穿过去，玻璃才有内容可透。
-    if (this.folders.length > 0 || this.newSessionCount > 0) {
+    if (bottomHeight > 0) {
       content.bottomBuilder = {
         builder: (): void => { this.titleBarBottom(); },
-        height: this.folderBarSpace()
-          + (this.newSessionCount > 0 ? NEW_SESSION_BAR_HEIGHT : 0)
+        height: bottomHeight
       };
     }
+    this.titleBarContentCache = content;
+    this.titleBarBottomHeightCache = bottomHeight;
     return content;
+  }
+
+  private mainTitleBarOptions(): HdsNavigationTitleBarOptions {
+    const content: TitleBarContentOptions = this.titleBarContent();
+    if (this.titleBarOptionsCache !== null &&
+      this.titleBarOptionsCache.content === content &&
+      this.titleBarWallpaperCache === this.appWallpaperOn &&
+      this.titleBarAppearanceCache === this.appearanceEpoch &&
+      this.titleBarMaterialCache === this.materialEpoch) {
+      return this.titleBarOptionsCache;
+    }
+    const options: HdsNavigationTitleBarOptions = {
+      avoidLayoutSafeArea: true,
+      enableComponentSafeArea: true,
+      style: titleBarStyle(mainBarFill(this.appWallpaperOn), this.accent()),
+      content: content
+    };
+    this.titleBarOptionsCache = options;
+    this.titleBarWallpaperCache = this.appWallpaperOn;
+    this.titleBarAppearanceCache = this.appearanceEpoch;
+    this.titleBarMaterialCache = this.materialEpoch;
+    return options;
   }
 
   // 左栏宽度按窗口宽度取比例。**minWidth 才是真正决定观感的那个数**：
@@ -1341,7 +1477,12 @@ export struct ChatListPage {
     // 未读部分的读屏文案跟着角标子组件走（FolderChipBadge）：计数在旁路模型
     // 里，chip 这层的绑定读不到它的变化。
     .accessibilityText(spec.plainTitle)
-    .onClick(() => { this.controller.changeIndex(index); });
+    .onClick(() => {
+      if (AppStorage.get<boolean>(KEY_ACTIVE_FORUM_OPEN) === true) {
+        closeForumDrawer();
+      }
+      this.controller.changeIndex(index);
+    });
   }
 
   @Builder
@@ -1504,6 +1645,7 @@ export struct ChatListPage {
   build() {
     Stack({ alignContent: Alignment.TopEnd }) {
       HdsNavigation(this.chatStack) {
+        Stack({ alignContent: Alignment.TopStart }) {
         Tabs({ controller: this.controller }) {
         ForEach(this.tabs(), (spec: TabSpec) => {
           TabContent() {
@@ -1597,6 +1739,9 @@ export struct ChatListPage {
       // scroll the strip if that tab sits outside the visible range.
       .onAnimationStart((_index: number, targetIndex: number) => {
         this.cancelTabPreload();
+        if (_index !== targetIndex && AppStorage.get<boolean>(KEY_ACTIVE_FORUM_OPEN) === true) {
+          closeForumDrawer();
+        }
         // 省电设置可能把动画压到 0；这时 SDK 不触发 onAnimationEnd，onChange
         // 会直接走下面的无动画兜底。
         this.tabAnimationActive =
@@ -1635,6 +1780,9 @@ export struct ChatListPage {
         // same settle animation twice when onChange fires at the end.
         const switched: boolean = this.selectedIndex !== index;
         if (switched) {
+          if (AppStorage.get<boolean>(KEY_ACTIVE_FORUM_OPEN) === true) {
+            closeForumDrawer();
+          }
           this.appliedFolder = index;
           this.selectedIndex = index;
           // 点 chip 切页（onAnimationStart 没跑到）时的同一条路：打开滑过去。
@@ -1665,35 +1813,14 @@ export struct ChatListPage {
       .clip(false)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM]);
 
+        ForumSplitView({
+          navBarVisible: this.navBarVisible
+        });
+        }
+        .width('100%')
+        .height('100%')
       }
-      .titleBar({
-        // 两个都要，各管一头：
-        //
-        //   avoidLayoutSafeArea     标题栏**自己**避让系统安全区
-        //   enableComponentSafeArea 标题栏成为**内容区**的安全区，内容避让它
-        //
-        // 官方示例里只有后者，因为那是个普通非全屏窗口。**本应用整体是全屏沉浸
-        // 布局**（EntryAbility 调了 setWindowLayoutFullScreen(true)），页面的布局区
-        // 本来就覆盖状态栏——这也是全应用每个页面都要手动 padding(topSafe) 的原因。
-        // 所以这里必须自己避让，少了它标题栏就顶进状态栏（真机两次实测）。
-        //
-        // 但**不要**再在 HdsNavigation 根上加 expandSafeArea：那会把标题栏往状态栏
-        // 里推，和这一行正好对着干，两者抵消之后渐变模糊的合成也跟着废掉。状态栏
-        // 那条的底色由 HdsNavigation 自己的 backgroundColor 铺——全屏布局下它本来
-        // 就盖到那儿。
-        avoidLayoutSafeArea: true,
-        enableComponentSafeArea: true,
-        // 标题栏也让位：它和列表同属一张"浮在壁纸上"的面，只有行卡片自己带底。
-        // 两颗动作按钮由 stackBuilder 共用 control 材质；标题栏本身继续只负责
-        // 滚动模糊，避免整栏与按钮材质叠加后发实。
-        //
-        // 停在 HDS 的标准形状上，别再动（2026-10-30 试过两轮：先关模糊、再全透明，
-        // 用户看下来都改回白色渐变）。`originalStyle` 是实底白（有壁纸时 65% 白），
-        // `scrollEffectStyle` 透明，模糊由滚动量驱动——这套就是官方的模型。
-        style: titleBarStyle(mainBarFill(this.appWallpaperOn), this.accent()),
-        content: this.titleBarContent()
-
-      })
+      .titleBar(this.mainTitleBarOptions())
       // 状态栏图标色钉死在深浅色上。不设 systemBarStyle 时 HDS 会按标题栏的
       // 内容色自己推——应用名染了强调色，状态栏的时钟和图标跟着变色（用户报的）。
       // 两个态给同一份：滚动进玻璃态时状态栏也不该跟着换。
@@ -1755,7 +1882,7 @@ export struct ChatListPage {
       // 的话，一开转发面板音视频就停了，这是迁移前没有的行为。
       .attributeModifier(SHEET_LIFECYCLE_MODIFIER)
       .titleMode(HdsNavigationTitleMode.MINI)
-      // 小方形屏沉浸式浏览（SPEC-04）：上滑收起标题栏，带动画；其他形态恒显示。
+      // 小方形屏沉浸式浏览（SPEC-04）：上滑收起标题栏，带动画。
       .hideTitleBar(this.immersiveHidden && isSmallSquare(this.widthBp, this.heightBp), true)
       // 每个文件夹页签的列表控制器都交进去——哪一个在滚，标题栏就跟着哪一个。
       .bindToScrollable(this.allTabScrollers())
@@ -1785,6 +1912,39 @@ export struct ChatListPage {
         });
     }
     .width('100%').height('100%');
+  }
+}
+
+@Component
+struct TopBarSlideContainer {
+  @BuilderParam content: () => void = this.emptyBuilder;
+  @StorageProp(KEY_ACTIVE_FORUM_OPEN) private forumDrawerOpen: boolean = false;
+  @StorageProp(NAV_BAR_WIDTH_KEY) private navBarW: number = 0;
+  @StorageProp('screenWidthVp') private screenW: number = 360;
+
+  @Builder
+  emptyBuilder() {}
+
+  private slideWidth(): number {
+    return this.navBarW > 0 ? this.navBarW : this.screenW;
+  }
+
+  build() {
+    Row() {
+      this.content();
+    }
+    .width('100%')
+    .height(TOP_BAR_HEIGHT)
+    .enabled(!this.forumDrawerOpen)
+    .hitTestBehavior(this.forumDrawerOpen ? HitTestMode.None : HitTestMode.Default)
+    .translate({ x: this.forumDrawerOpen ? -this.slideWidth() : 0 })
+    .animation({
+      duration: powerAnimationDuration(
+        KEY_POWER_SMOOTH_TRANSITIONS,
+        this.forumDrawerOpen ? FORUM_DRAWER_OPEN_MS : FORUM_DRAWER_CLOSE_MS
+      ),
+      curve: Curve.FastOutSlowIn
+    });
   }
 }
 
@@ -1881,10 +2041,11 @@ struct FolderChipBadge {
 @Component
 struct FolderChipSlot {
   @StorageProp(CHAT_NAV_BAR_VISIBLE_KEY) private navBarVisible: boolean = true;
+  @StorageProp(KEY_ACTIVE_FORUM_OPEN) private forumDrawerOpen: boolean = false;
   @BuilderParam content: () => void;
 
   build() {
-    if (this.navBarVisible) {
+    if (this.navBarVisible && !this.forumDrawerOpen) {
       this.content();
     }
   }

@@ -69,16 +69,20 @@ export struct LiveProgressRing {
     Stack() {
       if (this.percent > 0) {
         Progress({ value: this.percent, total: 100, type: ProgressType.Ring })
-          .width(this.ringSize).height(this.ringSize).color(Color.White);
+          .width(this.ringSize).height(this.ringSize).color(Color.White)
+          .style({ strokeWidth: 2.5 });
         Text(`${this.percent}%`)
-          .fontSize(Math.max(9, this.ringSize * 0.24)).fontColor(Color.White);
+          .fontSize(Math.max(10, this.ringSize * 0.25))
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Color.White);
       } else {
         LoadingProgress()
           .width(this.ringSize * 0.72).height(this.ringSize * 0.72).color(Color.White);
       }
     }
     .padding(6)
-    .backgroundColor('#00000066')
+    .backgroundColor('#73000000')
+    .border({ width: 0.5, color: '#24FFFFFF' })
     .borderRadius(this.ringSize);
   }
 }

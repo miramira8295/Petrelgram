@@ -165,6 +165,21 @@ function mediaRowBodyHeight(group: AlbumGroup, screenWidth: number): number {
   return body;
 }
 
+function pollRowBodyHeight(group: AlbumGroup, screenWidth: number): number {
+  const msg = group.head;
+  const pollW: number = Math.max(220, Math.min(278, inlineMaxWidth(screenWidth)));
+  const qLines: number = Math.min(6, estimatedTextLines(msg.pollQuestion, pollW));
+  const optCount: number = Math.max(2, msg.pollOptions.length);
+  // 顶栏 20 + 间距 8 + 题目行 (qLines * 20) + 间距 8 + 选项组 (optCount * 46 + (optCount - 1) * 6) + 底栏 24 + 气泡边距 20
+  let body: number = 72 + qLines * 20 + optCount * 46 + (optCount - 1) * 6;
+  if (msg.pollExplanation.trim() !== '') {
+    body += 42;
+  }
+  if (msg.replyToMessageId !== 0) { body += 40; }
+  if (group.showSenderName && !msg.isOutgoing) { body += 22; }
+  return body;
+}
+
 // Fixed-height placeholders are deliberately approximate. stackFromEnd or the
 // unread START anchor keeps the meaningful edge stable when the real row is
 // swapped in one frame later; the estimate only determines how many cheap rows
@@ -188,7 +203,7 @@ export function initialMessagePlaceholderHeight(
     `|${group.showSenderName ? 1 : 0}|${group.dateLabel !== '' ? 1 : 0}` +
     `|${showUnreadDivider ? 1 : 0}|${msg.photoWidth}x${msg.photoHeight}` +
     `|${group.photoRatios.map((r: number): string => r.toFixed(2)).join(',')}` +
-    `|${group.caption.length}`;
+    `|${group.caption.length}|${msg.pollOptions.length}|${msg.pollQuestion.length}|${msg.pollExplanation.length}`;
   const cached: number | undefined = placeholderHeightCache.get(cacheKey);
   if (cached !== undefined) {
     return cached;
@@ -208,8 +223,10 @@ export function initialMessagePlaceholderHeight(
     body = Math.max(group.showAvatar ? 44 : 0, 22 + lines * 22);
     if (msg.replyToMessageId !== 0) { body += 40; }
     if (group.showSenderName && !msg.isOutgoing) { body += 20; }
+  } else if (msg.contentType === 'poll') {
+    body = pollRowBodyHeight(group, screenWidth);
   } else if (msg.contentType === 'voice' || msg.contentType === 'audio' ||
-    msg.contentType === 'file' || msg.contentType === 'poll') {
+    msg.contentType === 'file') {
     body = 104;
   }
   if (group.dateLabel !== '') { body += 30; }

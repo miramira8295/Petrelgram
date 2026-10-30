@@ -518,11 +518,15 @@ export default function chatStoreTest() {
       const supergroup: TdObject = { '@type': 'supergroup' };
       supergroup['id'] = 77;
       supergroup['is_forum'] = true;
+      supergroup['member_count'] = 10944;
       const upd: TdObject = { '@type': 'updateSupergroup' };
       upd['supergroup'] = supergroup;
       b.onReceive(JSON.stringify(upd));
       expect(store.isForum(-100777)).assertTrue();
+      expect(store.isForumSupergroup(-100777)).assertTrue();
+      expect(store.supergroupMemberCount(-100777)).assertEqual(10944);
       expect(store.isForum(999)).assertFalse();
+      expect(store.isForumSupergroup(999)).assertFalse();
     });
     // issue #206：开了话题模式的 Bot 私聊和论坛群一样按话题展示；是否允许用户建话题只看 Bot。
     it('private_chat_with_topic_bot_detected_as_forum', 0, () => {

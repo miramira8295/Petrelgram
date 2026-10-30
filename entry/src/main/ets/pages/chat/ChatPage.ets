@@ -1,5 +1,6 @@
 import { ChatTimelineBindings, ChatTimelineSession } from './ChatTimelineSession';
 import { subscribeVideoPreload } from '../../util/videoPreloadSetting';
+import { initVideoPosterStore } from '../../util/videoPosterStore';
 import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { ChatDropReceiver } from './ChatDropReceiver';
 import { CHAT_DROP_TYPES } from '../../services/DropData';
@@ -1237,6 +1238,7 @@ export struct ChatPage {
     this.freshSinceId = 0;
     this.freshClearSeq++;
     this.imeTailPinned = false;
+    this.bottomChromeMeasured = false;
     this.imeLayoutSeq++;
     this.lastKeyboardH = this.keyboardH;
     this.flash.cancelFlash();
@@ -1291,6 +1293,7 @@ export struct ChatPage {
     this.composerMountScheduled = false;
     this.composerEditorReady = false;
     this.imeTailPinned = false;
+    this.bottomChromeMeasured = false;
     this.imeLayoutSeq++;
     this.lastKeyboardH = this.keyboardH;
     this.mention.clear();
@@ -2022,6 +2025,7 @@ export struct ChatPage {
       }
     });
     this.subscriptions.set('playSlot', this.playSlot.subscribe());
+    initVideoPosterStore((getContext(this) as common.UIAbilityContext).cacheDir);
     this.nowSec = Math.floor(Date.now() / 1000);
     // 日期条隐藏的那一刻 listUserScrollActive 必须跟着翻假——原来它和显隐写在
     // 同一个定时器体里，定时器下沉之后靠这个回调保住同一时刻。
@@ -3287,6 +3291,7 @@ export struct ChatPage {
     this.inputSwitch.dispose();
     this.bottomChromeLayoutSeq++;
     this.imeTailPinned = false;
+    this.bottomChromeMeasured = false;
     this.imeLayoutSeq++;
     this.closeHeaderMenu();
     // 原 showReactionSheet=false; reactionTargetId=0; closeForwardSheet() 三行
@@ -3492,13 +3497,47 @@ export struct ChatPage {
     this.timeline.glueBottom('L2078');
   }
 
+  private handleViewportHeightChange(oldH: number, newH: number): void {
+    if (oldH <= 0 || newH <= 0 || this.viewerOpen()) {
+      return;
+    }
+    const deltaH: number = oldH - newH;
+    if (Math.abs(deltaH) < 0.5) {
+      return;
+    }
+    if (!this.timeline.didInitialScroll || this.timeline.initialTimelineMasked ||
+      this.timeline.groups.length === 0) {
+      return;
+    }
+    if (deltaH > 0) {
+      // 软键盘升起、视口高度收缩：把当前可见的聊天记录按相同位移往上顶，避免被键盘直接遮挡。
+      if (this.imeTailPinned || this.timeline.atBottom) {
+        this.imeTailPinned = true;
+        this.timeline.atBottom = true;
+        this.timeline.stayAtUnread = false;
+        this.timeline.scroller.scrollBy(0, deltaH);
+        this.timeline.glueBottom('imeResizeOpen');
+      } else {
+        this.timeline.scroller.scrollBy(0, deltaH);
+      }
+    } else {
+      // 软键盘收起、视口高度恢复：聊天记录随键盘平滑下移复位。
+      if (this.imeTailPinned || this.timeline.atBottom) {
+        this.timeline.atBottom = true;
+        this.timeline.glueBottom('imeResizeClose');
+      } else if (!this.timeline.scroller.isAtEnd()) {
+        this.timeline.scroller.scrollBy(0, deltaH);
+      }
+    }
+  }
+
   @Monitor('keyboardH')
   private onKeyboardHeightChanged(): void {
     const wasVisible: boolean = this.lastKeyboardH > 0;
     const visible: boolean = this.keyboardH > 0;
     if (!wasVisible && visible && !this.imeTailPinned) {
       this.imeTailPinned = this.composerFocused && this.timeline.atBottom &&
-        !this.viewerOpen() && !this.timeline.stayAtUnread;
+        !this.viewerOpen();
     }
     this.lastKeyboardH = this.keyboardH;
     if (this.imeTailPinned) {
@@ -4563,6 +4602,7 @@ export struct ChatPage {
   // membership/search bar). The List uses it only as END offset: rows still
   // travel behind the floating input, while the final row can clear it.
   @Local bottomChromeH: number = 76;
+  private bottomChromeMeasured: boolean = false;
   private bottomChromeLayoutSeq: number = 0;
   // Measured bot-keyboard height; with the input bar it makes up the bottom
   // chrome the scroll-to-bottom FAB has to clear.
@@ -4575,11 +4615,13 @@ export struct ChatPage {
   private inputSwitch: ComposerInputSwitch = new ComposerInputSwitch();
   private panelReadySeq: number = 0;
 
-  // 话题横条：只有论坛群才有。判据用现成的 ChatStore.isForum（ChatRow 决定
-  // 「点进去是话题列表还是消息流」用的也是它，两处同源）。
+  // 话题横条：论坛超级群已在会话列表通过双栏话题列表选定具体话题进入，不再挂顶栏话题横条；
+  // 仅开了话题模式的 Bot 私聊（或未带 forumTopicId 直入论坛超级群需要兜底落到首话题时）拉取话题。
   private openTopicBar(): void {
-    this.topicCreateAllowed = getChatStore().canUserCreateTopics(this.chatId);
-    if (!getChatStore().isForum(this.chatId)) {
+    const store = getChatStore();
+    const isSupergroupForum: boolean = store.isForumSupergroup(this.chatId);
+    this.topicCreateAllowed = isSupergroupForum ? false : store.canUserCreateTopics(this.chatId);
+    if (!store.isForum(this.chatId) || (isSupergroupForum && this.forumTopicId > 0)) {
       this.topicsStore.close();
       this.topicBarCount = 0;
       return;
@@ -4597,7 +4639,18 @@ export struct ChatPage {
   }
 
   private syncTopicBar(): void {
+    const store = getChatStore();
+    const isSupergroupForum: boolean = store.isForumSupergroup(this.chatId);
     const rows: ForumTopicRow[] = this.topicsStore.getRows();
+    if (isSupergroupForum) {
+      if (this.topicBarCount !== 0) {
+        this.topicBarCount = 0;
+      }
+      if (this.forumTopicId === 0 && rows.length > 0) {
+        this.switchTopic(rows[0].threadId, rows[0].name);
+      }
+      return;
+    }
     this.topicRowsData.update(rows,
       rows.map((row: ForumTopicRow): string => `${row.threadId}`),
       rows.map((row: ForumTopicRow): string =>
@@ -4605,9 +4658,7 @@ export struct ChatPage {
     if (this.topicBarCount !== rows.length) {
       this.topicBarCount = rows.length;
     }
-    // 论坛群是直接进详情页的（会话列表不再经话题列表那一层）。进来时还不知道
-    // 落哪个话题——列表回来了就落到**第一个**（排序已是置顶优先，与横条一致）。
-    if (this.forumTopicId === 0 && rows.length > 0 && getChatStore().isForum(this.chatId)) {
+    if (this.forumTopicId === 0 && rows.length > 0 && store.isForum(this.chatId)) {
       this.switchTopic(rows[0].threadId, rows[0].name);
     }
   }
@@ -4727,16 +4778,33 @@ export struct ChatPage {
   // 随之删掉的还有 @Event onEditorWidthChange 与 @Param composerEditorHeight。
 
   private updateBottomChromeHeight(height: number): void {
-    if (height <= 0 || Math.abs(height - this.bottomChromeH) < 0.5) {
+    if (height <= 0) {
       return;
     }
-    const keepTailVisible: boolean = this.timeline.atBottom && !this.viewerOpen();
+    const wasMeasured: boolean = this.bottomChromeMeasured;
+    this.bottomChromeMeasured = true;
+    if (Math.abs(height - this.bottomChromeH) < 0.5) {
+      return;
+    }
+    const prevChromeH: number = this.bottomChromeH;
+    const deltaChrome: number = height - prevChromeH;
+    const keepTailVisible: boolean = (this.timeline.atBottom || this.imeTailPinned) && !this.viewerOpen();
     this.bottomChromeH = height;
     if (keepTailVisible) {
+      this.timeline.atBottom = true;
       const seq: number = ++this.bottomChromeLayoutSeq;
       setTimeout((): void => {
-        if (seq === this.bottomChromeLayoutSeq && this.timeline.atBottom) {
+        if (seq === this.bottomChromeLayoutSeq && !this.timeline.listTouchActive && !this.viewerOpen()) {
+          this.timeline.atBottom = true;
           this.timeline.glueBottom('L4617');
+        }
+      }, 0);
+    } else if (wasMeasured && this.timeline.didInitialScroll && !this.timeline.initialTimelineMasked &&
+      this.timeline.groups.length > 0 && !this.viewerOpen() && Math.abs(deltaChrome) >= 0.5) {
+      const seq: number = ++this.bottomChromeLayoutSeq;
+      setTimeout((): void => {
+        if (seq === this.bottomChromeLayoutSeq && !this.timeline.listTouchActive && !this.viewerOpen()) {
+          this.timeline.scroller.scrollBy(0, deltaChrome);
         }
       }, 0);
     }
@@ -5710,8 +5778,7 @@ export struct ChatPage {
         if (this.sendByEnter) { this.doSend(); }
       },
       onEditorFocus: (): void => {
-        this.imeTailPinned = this.timeline.atBottom && !this.viewerOpen() &&
-          !this.timeline.stayAtUnread;
+        this.imeTailPinned = this.timeline.atBottom && !this.viewerOpen();
         this.composerFocused = true;
         holdPlayerJobs(KEYBOARD_SETTLE_MS);
         this.setEmojiPanel(false);
@@ -6236,8 +6303,8 @@ export struct ChatPage {
         onPickInline: (row: InlineResultRow): void => { this.pickInlineResult(row); },
         onPickSticker: (fileId: number): void => { this.sendSuggestedSticker(fileId); },
         onReturnTap: (): void => { this.onScrollFabTap(); },
-        onViewportAreaChange: (): void => {
-          if (this.keyboardH > 0 && this.imeTailPinned) { this.syncTailOnImeFrame(); }
+        onViewportAreaChange: (oldH: number, newH: number): void => {
+          this.handleViewportHeightChange(oldH, newH);
         }
       });
 

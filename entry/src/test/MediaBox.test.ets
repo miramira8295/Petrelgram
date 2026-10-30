@@ -100,9 +100,9 @@ export default function mediaBoxTest() {
         expect(mediaThumbWidth(960, 0, device)).assertEqual(280);
       }
     });
-    it('portrait video retains the existing full width cropping geometry', 0, () => {
+    it('portrait video shrinks both axes at the height limit', 0, () => {
       const box = mediaBoxFor(368, 1080, 1920, true, 0, 'phone');
-      expect(box.width).assertEqual(320);
+      expect(box.width).assertEqual(216);
       expect(box.height).assertEqual(384);
     });
     it('landscape video retains existing geometry', 0, () => {

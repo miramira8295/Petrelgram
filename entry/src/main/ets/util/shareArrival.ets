@@ -62,8 +62,9 @@ export function applyShareArrival(payload: SharedPayload, host: ShareArrivalHost
       }
       return {
         path: item.path, isVideo: item.isVideo,
-        thumbPath: geo.thumbPath, thumbWidth: geo.thumbWidth, thumbHeight: geo.thumbHeight,
-        width: geo.width, height: geo.height
+        thumbPath: geo.thumbPath, posterPath: geo.posterPath,
+        thumbWidth: geo.thumbWidth, thumbHeight: geo.thumbHeight,
+        width: geo.width, height: geo.height, durationSec: geo.durationSec
       };
     });
     plan.dropped += host.appendMedia(items);
@@ -127,7 +128,8 @@ export async function sendShareDirectly(payload: SharedPayload, host: ShareArriv
           const geo: ShareMediaGeometry | undefined = geometry.get(item.uri);
           if (geo === undefined) { return { path: item.uri, isVideo: item.kind === 'video' }; }
           return { path: item.uri, isVideo: item.kind === 'video', thumbPath: geo.thumbPath,
-            thumbWidth: geo.thumbWidth, thumbHeight: geo.thumbHeight, width: geo.width, height: geo.height };
+            posterPath: geo.posterPath, thumbWidth: geo.thumbWidth, thumbHeight: geo.thumbHeight,
+            width: geo.width, height: geo.height, durationSec: geo.durationSec };
         });
         await host.sendMedia(media, step.caption);
       } else if (step.kind === 'text') {

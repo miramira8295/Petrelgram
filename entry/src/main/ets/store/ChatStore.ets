@@ -120,6 +120,7 @@ export class ChatStore {
   private animatedPhotoChats: Set<number> = new Set();
   private groupCallChats: Map<number, number> = new Map();
   private chatSupergroupIds: Map<number, number> = new Map();
+  private supergroupMemberCounts: Map<number, number> = new Map();
   // 私聊 chatId → 对方 userId。Bot 私聊的话题模式标志在用户上（issue #206）。
   private chatPrivateUserIds: Map<number, number> = new Map();
   private forumSupergroupIds: Set<number> = new Set();
@@ -261,6 +262,10 @@ export class ChatStore {
     } else {
       this.forumSupergroupIds.delete(id);
     }
+    const memberCount: number = (supergroup['member_count'] as number | undefined) ?? 0;
+    if (memberCount > 0) {
+      this.supergroupMemberCounts.set(id, memberCount);
+    }
     if ((supergroup['is_administered_direct_messages_group'] as boolean | undefined) ?? false) {
       this.administeredDirectMessagesSupergroupIds.add(id);
     } else {
@@ -268,12 +273,26 @@ export class ChatStore {
     }
   }
 
+  // 是否是论坛超级群（不含开了话题模式的 Bot 私聊）。
+  isForumSupergroup(chatId: number): boolean {
+    const supergroupId = this.chatSupergroupIds.get(chatId);
+    return supergroupId !== undefined && this.forumSupergroupIds.has(supergroupId);
+  }
+
+  supergroupIdOf(chatId: number): number {
+    return this.chatSupergroupIds.get(chatId) ?? 0;
+  }
+
+  supergroupMemberCount(chatId: number): number {
+    const supergroupId = this.chatSupergroupIds.get(chatId);
+    return supergroupId !== undefined ? (this.supergroupMemberCounts.get(supergroupId) ?? 0) : 0;
+  }
+
   // 按话题组织的会话：论坛超级群，或开了话题模式的 Bot 私聊（issue #206）。
   // 详情页据此挂顶栏话题横条、落到第一个话题。
   isForum(chatId: number): boolean {
-    const supergroupId = this.chatSupergroupIds.get(chatId);
-    if (supergroupId !== undefined) {
-      return this.forumSupergroupIds.has(supergroupId);
+    if (this.isForumSupergroup(chatId)) {
+      return true;
     }
     const userId = this.chatPrivateUserIds.get(chatId);
     return userId !== undefined && this.users.botHasTopics(userId);
@@ -712,6 +731,10 @@ export class ChatStore {
       const isPinned = (p['is_pinned'] as boolean | undefined) ?? false;
       this.setPosition(key, id, order, isPinned);
     }
+  }
+
+  senderNameOf(message: TdObject | undefined): string {
+    return this.senderName(message);
   }
 
   private senderName(message: TdObject | undefined): string {

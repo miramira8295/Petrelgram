@@ -22,11 +22,18 @@ export interface ForumTopicRow {
   threadId: number;
   name: string;
   iconColor: string;
+  iconCustomEmojiId?: string;
+  iconCustomEmojiPath?: string;
+  iconEmoji?: string;
   isGeneral: boolean;
   isClosed: boolean;
   isPinned: boolean;
   unreadCount: number;
   lastMessageText: string;
+  lastMessageDate?: number;
+  lastSenderName?: string;
+  lastMessageThumb?: string;
+  isMuted?: boolean;
 }
 
 // 服务端给了六色之外的值也要画得出来：空串会让胶囊变透明。
@@ -34,10 +41,37 @@ export function topicIconColor(colorValue: number): string {
   return TOPIC_COLORS.get(colorValue) ?? TOPIC_COLOR_FALLBACK;
 }
 
+function normalizeCustomEmojiId(raw: Object | undefined): string {
+  if (raw === undefined || raw === null) {
+    return '';
+  }
+  const strVal: string = `${raw}`.trim();
+  return strVal === '' || strVal === '0' ? '' : strVal;
+}
+
+function topicIsMuted(notificationSettings: TdObject | undefined): boolean {
+  if (notificationSettings === undefined) {
+    return false;
+  }
+  return ((notificationSettings['mute_for'] as number | undefined) ?? 0) > 0;
+}
+
+// 话题名本身已经以 Emoji / 特殊符号开头时（例如 "📣 公告"、"⁉️ 常见问题"），
+// 在无自定义 emoji 图标时不再重复叠加首字母彩色方框。
+export function startsWithEmojiSymbol(name: string): boolean {
+  const trimmed: string = name.trim();
+  if (trimmed === '') {
+    return false;
+  }
+  const cp: number = trimmed.codePointAt(0) ?? 0;
+  return cp >= 0x1F000 || (cp >= 0x2000 && cp <= 0x3300);
+}
+
 // 半份 update、老版本服务端都可能缺字段：缺了就给中性值，threadId=0 由调用方过滤，
 // 绝不能让一条坏数据把整条横条搞崩。
 export function parseForumTopic(
-  topic: TdObject, fallbackName: string, preview: string
+  topic: TdObject, fallbackName: string, preview: string,
+  lastSenderName: string = '', lastMessageThumb: string = ''
 ): ForumTopicRow {
   const info = topic['info'] as TdObject | undefined;
   const threadId: number = info !== undefined
@@ -47,17 +81,30 @@ export function parseForumTopic(
   const icon = info !== undefined ? info['icon'] as TdObject | undefined : undefined;
   const colorValue: number = icon !== undefined
     ? ((icon['color'] as number | undefined) ?? 0) : 0;
+  const customEmojiId: string = icon !== undefined
+    ? normalizeCustomEmojiId(icon['custom_emoji_id']) : '';
+  const lastMsg = topic['last_message'] as TdObject | undefined;
+  const lastDate: number = lastMsg !== undefined && lastMsg !== null
+    ? ((lastMsg['date'] as number | undefined) ?? 0) : 0;
+  const notif = topic['notification_settings'] as TdObject | undefined;
   return {
     threadId: threadId,
     name: name !== '' ? name : fallbackName,
     iconColor: topicIconColor(colorValue),
+    iconCustomEmojiId: customEmojiId,
+    iconCustomEmojiPath: '',
+    iconEmoji: '',
     isGeneral: info !== undefined
       ? ((info['is_general'] as boolean | undefined) ?? false) : false,
     isClosed: info !== undefined
       ? ((info['is_closed'] as boolean | undefined) ?? false) : false,
     isPinned: (topic['is_pinned'] as boolean | undefined) ?? false,
     unreadCount: (topic['unread_count'] as number | undefined) ?? 0,
-    lastMessageText: preview
+    lastMessageText: preview,
+    lastMessageDate: lastDate,
+    lastSenderName: lastSenderName,
+    lastMessageThumb: lastMessageThumb,
+    isMuted: topicIsMuted(notif)
   };
 }
 
@@ -87,25 +134,39 @@ export function applyTopicInfoUpdate(
     return rows;
   }
   const topicId: number = (info['forum_topic_id'] as number | undefined) ?? 0;
+  const icon = info['icon'] as TdObject | undefined;
   return sortTopicRows(rows.map((row: ForumTopicRow): ForumTopicRow => {
     if (row.threadId !== topicId) {
       return row;
     }
+    const nextCustomId: string = icon !== undefined && icon['custom_emoji_id'] !== undefined
+      ? normalizeCustomEmojiId(icon['custom_emoji_id'])
+      : (row.iconCustomEmojiId ?? '');
+    const sameCustomId: boolean = nextCustomId === (row.iconCustomEmojiId ?? '');
     const next: ForumTopicRow = {
       threadId: row.threadId,
       name: (info['name'] as string | undefined) ?? row.name,
-      iconColor: row.iconColor,
+      iconColor: icon !== undefined && icon['color'] !== undefined
+        ? topicIconColor((icon['color'] as number | undefined) ?? 0)
+        : row.iconColor,
+      iconCustomEmojiId: nextCustomId,
+      iconCustomEmojiPath: sameCustomId ? (row.iconCustomEmojiPath ?? '') : '',
+      iconEmoji: sameCustomId ? (row.iconEmoji ?? '') : '',
       isGeneral: row.isGeneral,
       isClosed: (info['is_closed'] as boolean | undefined) ?? row.isClosed,
       isPinned: row.isPinned,
       unreadCount: row.unreadCount,
-      lastMessageText: row.lastMessageText
+      lastMessageText: row.lastMessageText,
+      lastMessageDate: row.lastMessageDate ?? 0,
+      lastSenderName: row.lastSenderName ?? '',
+      lastMessageThumb: row.lastMessageThumb ?? '',
+      isMuted: row.isMuted ?? false
     };
     return next;
   }));
 }
 
-// updateForumTopic：置顶状态（未读数由话题列表整体重拉刷新，与原实现一致）。
+// updateForumTopic：置顶状态与未读数/静音状态。
 export function applyTopicUpdate(
   rows: ForumTopicRow[], chatId: number, u: TdObject
 ): ForumTopicRow[] {
@@ -114,18 +175,67 @@ export function applyTopicUpdate(
   }
   const topicId: number = (u['forum_topic_id'] as number | undefined) ?? 0;
   const isPinned: boolean = (u['is_pinned'] as boolean | undefined) ?? false;
+  const unreadRaw = u['unread_count'] as number | undefined;
+  const notifRaw = u['notification_settings'] as TdObject | undefined;
   return sortTopicRows(rows.map((row: ForumTopicRow): ForumTopicRow => {
     if (row.threadId !== topicId) {
       return row;
     }
     const next: ForumTopicRow = {
       threadId: row.threadId, name: row.name, iconColor: row.iconColor,
+      iconCustomEmojiId: row.iconCustomEmojiId ?? '',
+      iconCustomEmojiPath: row.iconCustomEmojiPath ?? '',
+      iconEmoji: row.iconEmoji ?? '',
       isGeneral: row.isGeneral, isClosed: row.isClosed,
       isPinned: isPinned,
-      unreadCount: row.unreadCount, lastMessageText: row.lastMessageText
+      unreadCount: unreadRaw !== undefined ? unreadRaw : row.unreadCount,
+      lastMessageText: row.lastMessageText,
+      lastMessageDate: row.lastMessageDate ?? 0,
+      lastSenderName: row.lastSenderName ?? '',
+      lastMessageThumb: row.lastMessageThumb ?? '',
+      isMuted: notifRaw !== undefined ? topicIsMuted(notifRaw) : (row.isMuted ?? false)
     };
     return next;
   }));
+}
+
+// 自定义 emoji 图标解析回调后就地更新对应行；没有任何行变化时返回原数组引用。
+export function applyTopicCustomEmoji(
+  rows: ForumTopicRow[], customEmojiId: string, path: string, emoji: string
+): ForumTopicRow[] {
+  if (customEmojiId === '') {
+    return rows;
+  }
+  let changed: boolean = false;
+  const next: ForumTopicRow[] = rows.map((row: ForumTopicRow): ForumTopicRow => {
+    if ((row.iconCustomEmojiId ?? '') !== customEmojiId) {
+      return row;
+    }
+    const nextPath: string = path !== '' ? path : (row.iconCustomEmojiPath ?? '');
+    const nextEmoji: string = emoji !== '' ? emoji : (row.iconEmoji ?? '');
+    if (nextPath === (row.iconCustomEmojiPath ?? '') && nextEmoji === (row.iconEmoji ?? '')) {
+      return row;
+    }
+    changed = true;
+    return {
+      threadId: row.threadId,
+      name: row.name,
+      iconColor: row.iconColor,
+      iconCustomEmojiId: row.iconCustomEmojiId ?? '',
+      iconCustomEmojiPath: nextPath,
+      iconEmoji: nextEmoji,
+      isGeneral: row.isGeneral,
+      isClosed: row.isClosed,
+      isPinned: row.isPinned,
+      unreadCount: row.unreadCount,
+      lastMessageText: row.lastMessageText,
+      lastMessageDate: row.lastMessageDate ?? 0,
+      lastSenderName: row.lastSenderName ?? '',
+      lastMessageThumb: row.lastMessageThumb ?? '',
+      isMuted: row.isMuted ?? false
+    };
+  });
+  return changed ? next : rows;
 }
 
 // 顶栏话题横条显不显示：有话题，或者允许用户新建（一个话题都没有时「新建」入口也在横条上）。

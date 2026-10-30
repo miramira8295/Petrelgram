@@ -34,6 +34,7 @@ import {
 } from '../services/ShareInbox';
 import { resetShareTargets } from '../services/ShareTargetService';
 import { clearRecentOutgoing } from '../util/recentOutgoing';
+import { closeForumDrawer } from '../util/forumDrawerState';
 import { SharedPayload, previewOf } from '../util/sharedContent';
 
 // 冷启动时等连接就绪的上限。超过就照常放行——离线时压着链接不处理更糟。
@@ -377,6 +378,9 @@ struct Index {
     const tab: number = AppStorage.get<number>('mainTabIndex') ?? 0;
     if (tab !== 0) {
       AppStorage.setOrCreate<number>('mainTabIndex', 0);
+      return true;
+    }
+    if (closeForumDrawer()) {
       return true;
     }
     const folder: number = AppStorage.get<number>('chatFolderIndex') ?? 0;

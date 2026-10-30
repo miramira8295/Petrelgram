@@ -2,10 +2,10 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { dataSharePredicates } from '@kit.ArkData';
 import { livePhotoFileName } from './livePhoto';
 import { ImageSize, imageSizeOf } from './imageSize';
-import { DisplaySize } from './videoDisplaySize';
-import { videoDisplaySizeOf } from './videoMeta';
+import { LocalVideoMeta, localVideoMetaOf } from './videoMeta';
 import { appendLiveStill } from './livePhotoEmbed';
 import { NO_SEND_THUMB, SendThumb, makeSendThumb } from './sendThumb';
+import { seedVideoPoster } from './videoPosterStore';
 import { logE, logW } from './log';
 
 // 从相册选中的这一项，如果是**实况照片**（鸿蒙「动态照片」，PhotoSubtype.MOVING_PHOTO），
@@ -43,6 +43,7 @@ export interface LivePhotoExport {
   // 读不到视频元信息时才退回静图尺寸——那时朝向至少是对的，比不填强。
   displayWidth: number;
   displayHeight: number;
+  durationSec: number;
   // 真正发出去的封面：静图缩到长边 320 的那一份，以及**它自己**的宽高。
   // inputThumbnail.width/height 说的是缩略图的尺寸，不是视频的。
   thumbPath: string;
@@ -52,7 +53,7 @@ export interface LivePhotoExport {
 
 export const NO_LIVE_PHOTO: LivePhotoExport = {
   videoPath: '', stillPath: '',
-  displayWidth: 0, displayHeight: 0,
+  displayWidth: 0, displayHeight: 0, durationSec: 0,
   thumbPath: '', thumbWidth: 0, thumbHeight: 0
 };
 
@@ -108,12 +109,15 @@ export async function exportLivePhotoMotion(context: Context, uri: string,
     await moving.requestContent(stillPath, videoPath);
     // 静图给封面，视频给几何——两件事，两个来源。
     const size: ImageSize = await imageSizeOf(stillPath);
+    if (size.width > 0) {
+      seedVideoPoster(videoPath, stillPath);
+    }
     const thumb: SendThumb = size.width > 0
       ? await makeSendThumb(stillPath, `${filesDir}/live_thumb_${unique}.jpg`)
       : NO_SEND_THUMB;
     // 视频自己的显示分辨率（含旋转）。读不到就退回静图尺寸——朝向是对的，
     // 只是分辨率偏大；总比不填让接收端按旋转前的值排版强。
-    const shown: DisplaySize = await videoDisplaySizeOf(videoPath);
+    const shown: LocalVideoMeta = await localVideoMetaOf(videoPath);
     const displayW: number = shown.width > 0 ? shown.width : size.width;
     const displayH: number = shown.height > 0 ? shown.height : size.height;
     // ⚠️ 存活实验（2026-09-07）：把全尺寸静图夹带进 mp4 尾部的 free 盒。
@@ -127,6 +131,7 @@ export async function exportLivePhotoMotion(context: Context, uri: string,
     return {
       videoPath, stillPath,
       displayWidth: displayW, displayHeight: displayH,
+      durationSec: shown.durationSec,
       thumbPath: thumb.path, thumbWidth: thumb.width, thumbHeight: thumb.height
     };
   } catch (error) {

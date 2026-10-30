@@ -12,7 +12,6 @@ import { MessageStore, MESSAGE_WINDOW_CAP } from '../../store/MessageStore';
 import { MessageEntry } from '../../store/MessageEntry';
 import { MessageBubbleRenderData } from './ReusableMessageBubble';
 import { PlaySlotDriver } from './PlaySlotDriver';
-import { slotKey } from './playSlot';
 import { ChatBackgroundState } from '../../store/ChatBackgroundStore';
 import { MusicQueue } from '../../services/MusicQueue';
 import { AlbumGroupDataSource, clampPrefetchRange, PrefetchRange, rowIdentity, repeatRowKey, reuseUnchangedRows, sameRowArray } from './AlbumGroupDataSource';
@@ -40,7 +39,7 @@ import { RowPageInputs } from '../../util/rowPageInputs';
 import { logE, logW } from '../../util/log';
 import { reachedNewerPageTrigger, armedPageGate, canFirePageGate, draggedPageGate, firedPageGate, PageGate, pageGateShotIsUserDriven } from '../../util/pageGate';
 import { conversationScopeId } from '../../util/messageTopicScope';
-import { canRenderLightweightPlainTextRow, formattedTextReuseShape, MessageBubbleReuseContext } from '../../util/messageBubbleReuse';
+import { canRenderLightweightPlainTextRow } from '../../util/messageBubbleReuse';
 import { ChatTimelineSnapshot, coalesceChatTimelineSnapshot, emptyChatTimelineSnapshot } from '../../util/chatTimelineSnapshot';
 import { ChatViewportGeometry } from '../../util/chatViewportGeometry';
 import { INITIAL_TIMELINE_REVEAL_ROW_LIMIT, INITIAL_TIMELINE_ROW_FADE_MS, INITIAL_TIMELINE_ROW_STAGGER_MS, PREPARED_MESSAGE_CACHE_LIMIT, INITIAL_BOTTOM_PRESENT_MIN_MS, INITIAL_MESSAGE_RELEASE_DELAY_MS, INITIAL_MESSAGE_TRANSITION_SETTLE_MS, INITIAL_TIMELINE_PRESENT_MIN_MS } from '../../util/chatPageTuning';
@@ -668,17 +667,11 @@ export class ChatTimelineSession {
     const showResumeDivider: boolean = this.resumeDividerId !== 0 &&
       g.memberIds.indexOf(this.resumeDividerId) >= 0;
     const showTimelineDivider: boolean = showUnreadDivider || showResumeDivider;
-    const translationActive: boolean = page.translationActive;
     const isPinnedMsg: boolean = (this.bindings!.store()?.getPinnedIds() ?? []).indexOf(g.head.id) >= 0;
     const paidMediaPending: boolean = page.paidMediaPendingIds.has(g.head.id);
     const editingActive: boolean = page.editingActive;
     const animateIn: boolean = page.freshSinceId !== 0 && g.head.id > page.freshSinceId;
     const liveGroupCallId: number = page.liveGroupCallId;
-    // nowSec changes every second, but only these two reuse decisions cross a
-    // time boundary. Key the decisions instead of invalidating every prepared
-    // row every second; the live clock itself is passed outside the cache.
-    const menuEditable: boolean = g.head.isOutgoing && this.bindings!.nowSec() - g.head.date < 172800;
-    const pollExpired: boolean = g.head.pollCloseDate > 0 && this.bindings!.nowSec() >= g.head.pollCloseDate;
     const contentWidth: number = messageSelectionContentWidth(
       page.chatContentWidth, page.selectionActive, g.head.contentType);
     // 本行已选中的成员（相册逐格勾选用）。**只算本行**：把整个选择集放进 data
@@ -704,7 +697,7 @@ export class ChatTimelineSession {
     // Read the same live decisions before the memo lookup. Only key assembly
     // is skipped; reuseId and the bounded prepared-result Map remain unchanged.
     const keyFlags: number = (lightweightRow ? 1 : 0) | (showUnreadDivider ? 2 : 0) |
-      (showResumeDivider ? 4 : 0) | (menuEditable ? 8 : 0) | (pollExpired ? 16 : 0) |
+      (showResumeDivider ? 4 : 0) |
       (isPinnedMsg ? 32 : 0) | (paidMediaPending ? 64 : 0) | (paused ? 128 : 0) |
       (forcePlay ? 256 : 0) | (playbackFailed ? 512 : 0) | (animateIn ? 1024 : 0);
     const cacheKey: string = this.preparedKeyCache.prepare(g, this.rowKeyOf(g),
@@ -725,36 +718,6 @@ export class ChatTimelineSession {
       ? this.bindings!.musicQueue.hasPrevious(this.messages, g.head.id) : false;
     const audioHasNext: boolean = audio
       ? this.bindings!.musicQueue.hasNext(this.messages, g.head.id) : false;
-    const context: MessageBubbleReuseContext = {
-      albumItemCount: g.photoPaths.length,
-      memberCount: g.memberIds.length,
-      hasDateSeparator: g.dateLabel !== '',
-      showUnreadDivider: showTimelineDivider,
-      isGroup: page.isGroup,
-      isChannel: page.isChannel,
-      showAvatar: g.showAvatar,
-      showSenderName: g.showSenderName,
-      translationActive,
-      menuEditable,
-      albumShape: this.albumReuseShape(g),
-      albumCaptionShape: formattedTextReuseShape(
-        g.caption,
-        g.captionEntities,
-        g.head.inlineCustomEmojiIds,
-        g.head.inlineCustomEmojiPaths
-      ),
-      playSlotActive: rowSlot === slotKey(g.head.id, -1),
-      animationPaused: paused,
-      animationForcePlay: forcePlay,
-      animationPlaybackFailed: playbackFailed,
-      isPinnedMsg,
-      liveSharing: page.liveLocationMessageId === g.head.id,
-      paidMediaPending,
-      liveVideoChatTappable: g.head.isVideoChatStarted && page.liveCallActive,
-      audioQueuePosition,
-      audioQueueLength,
-      pollExpired
-    };
     // 与 cacheKey 里用的是同一个值（canRenderLightweightPlainText 只是把
     // context 的两个计数转发给 …Row，结果必然一致），别再算第二遍。
     const lightweightPlainText: boolean = lightweightRow;
@@ -910,10 +873,10 @@ export class ChatTimelineSession {
 
   handleTimelineScrollIndex(start: number, end: number): void {
     this.bindings!.playSlot.armSettle();
-    this.refreshAtBottom();
     this.curStartIdx = start;
     this.curEndIdx = end;
     this.indexGroupsLen = this.groups.length;
+    this.refreshAtBottom();
     this.fillViewportIfNeeded();
     this.curBottomId = this.bottomVisibleId(end);
     this.bindings!.syncReturnState();
@@ -1602,6 +1565,7 @@ export class ChatTimelineSession {
       return;
     }
     this.scroller.scrollToIndex(this.groups.length - 1, false, ScrollAlign.END);
+    this.scroller.scrollEdge(Edge.Bottom);
   }
 
   scheduleInitialTimelinePresentation(): void {

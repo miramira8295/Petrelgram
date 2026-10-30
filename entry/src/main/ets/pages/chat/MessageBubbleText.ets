@@ -81,6 +81,10 @@ export struct MessageBubbleText {
     return this.bubbleMaxW() - 16;
   }
 
+  private captionMaxW(): number {
+    return this.maxWidth > 0 ? Math.min(this.maxWidth, this.inlineMaxW()) : this.inlineMaxW();
+  }
+
   private avatarReserve(): number {
     return this.data.isGroup && !this.msg.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0;
   }
@@ -394,9 +398,9 @@ export struct MessageBubbleText {
       .fontSize(this.env.msgTextSize)
       .lineHeight(this.env.msgTextSize * 1.34)
       .wordBreak(WordBreak.BREAK_WORD)
-      .constraintSize({ maxWidth: this.inlineMaxW() });
+      .constraintSize({ maxWidth: this.captionMaxW() });
     }
-    .constraintSize({ minWidth: this.measuredTimeLayerWidth(), maxWidth: this.inlineMaxW() })
+    .constraintSize({ minWidth: this.measuredTimeLayerWidth(), maxWidth: this.captionMaxW() })
     .alignItems(HorizontalAlign.Start);
   }
 
@@ -425,7 +429,7 @@ export struct MessageBubbleText {
     .fontColor(bubbleTextFor(this.msg.isOutgoing))
     .lineHeight(this.env.msgTextSize * 1.34)
     .wordBreak(WordBreak.BREAK_WORD)
-    .constraintSize({ minWidth: this.measuredTimeLayerWidth(), maxWidth: this.inlineMaxW() });
+    .constraintSize({ minWidth: this.measuredTimeLayerWidth(), maxWidth: this.captionMaxW() });
   }
 
   @Builder
@@ -679,7 +683,7 @@ export struct MessageBubbleText {
             this.inlineCaptionContent();
           } else {
             this.richContent({ text: this.displayedMessageText(this.text),
-              entities: this.displayedMessageEntities(this.entities), maxWidth: this.inlineMaxW() });
+              entities: this.displayedMessageEntities(this.entities), maxWidth: this.captionMaxW() });
           }
           this.translationBlock();
         }.margin({ top: 6 });

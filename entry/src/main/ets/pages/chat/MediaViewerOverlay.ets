@@ -1497,7 +1497,7 @@ export struct MediaViewerOverlay {
                 }, (playingId: number): string => `${playingId}`);
               } else {
                 Stack() {
-                  Circle({ width: 56, height: 56 }).fill('#00000066');
+                  Circle({ width: 56, height: 56 }).fill('#66000000');
                   Text('▶').fontSize(24).fontColor(Color.White);
                 }.width(56).height(56);
               }

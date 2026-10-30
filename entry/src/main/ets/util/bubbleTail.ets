@@ -100,6 +100,9 @@ function radiusOf(v: Length | undefined): number {
 // 不敏感，而整体清空的实现不会在热路径上多花一次 Map 遍历。
 const OUTLINE_CACHE_MAX: number = 256;
 const outlineCache: Map<string, string> = new Map<string, string>();
+const modifierCache: Map<string, BubbleGlassModifier> = new Map<string, BubbleGlassModifier>();
+const INACTIVE_GLASS_MODIFIER: BubbleGlassModifier = new BubbleGlassModifier(false, null);
+const UNMEASURED_GLASS_MODIFIER: BubbleGlassModifier = new BubbleGlassModifier(true, null);
 let outlineEpoch: number = 0;
 
 function outlineCommands(w: number, h: number, outgoing: boolean,
@@ -127,6 +130,7 @@ function outlineCommands(w: number, h: number, outgoing: boolean,
 // vp2px(1) 没进键，所以必须由外部在这种时刻清一次。
 export function clearOutlineCache(): void {
   outlineCache.clear();
+  modifierCache.clear();
   outlineEpoch++;
 }
 
@@ -138,11 +142,24 @@ export function glassOutlineCommands(w: number, h: number, outgoing: boolean,
 
 export function bubbleGlassModifier(live: boolean, w: number, h: number, outgoing: boolean,
   hasTail: boolean, radii: BorderRadiuses): BubbleGlassModifier {
-  if (!live || w <= 0 || h <= 0) {
-    return new BubbleGlassModifier(live, null);
+  if (!live) {
+    return INACTIVE_GLASS_MODIFIER;
   }
-  return new BubbleGlassModifier(true,
-    new PathShape({ commands: outlineCommands(w, h, outgoing, hasTail, radii, 0) }));
+  if (w <= 0 || h <= 0) {
+    return UNMEASURED_GLASS_MODIFIER;
+  }
+  const commands: string = outlineCommands(w, h, outgoing, hasTail, radii, 0);
+  const hit: BubbleGlassModifier | undefined = modifierCache.get(commands);
+  if (hit !== undefined) {
+    return hit;
+  }
+  const created: BubbleGlassModifier = new BubbleGlassModifier(true,
+    new PathShape({ commands: commands }));
+  if (modifierCache.size >= OUTLINE_CACHE_MAX) {
+    modifierCache.clear();
+  }
+  modifierCache.set(commands, created);
+  return created;
 }
 
 // 实心档尾角的 -2vp 压叠使外壳留白为6vp；无尾角仍保留7vp对齐位。
