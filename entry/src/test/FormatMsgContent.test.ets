@@ -705,12 +705,19 @@ export default function formatMsgContentTest() {
       expect(r.pollCorrectOptionId).assertEqual(1);
       expect(r.pollExplanation).assertEqual('B 是正确答案');
       expect(r.pollAllowMultiple).assertFalse();
+      // 1.8.65 的 pollTypeQuiz 用 correct_option_ids 取代了 correct_option_id。
+      // ArkTS 不支持 delete，所以这里另建一个**没有**该字段的类型对象——
+      // 必须真的缺席：解析侧在 correct_option_ids 为空时会回落到 correct_option_id。
       const td1865Msg = pollMsg(true);
-      const td1865Type = ((td1865Msg['content'] as TdObject)['poll'] as TdObject)['type'] as TdObject;
-      delete td1865Type['correct_option_id'];
-      td1865Type['correct_option_ids'] = [1];
+      const td1865Poll = (td1865Msg['content'] as TdObject)['poll'] as TdObject;
+      const explanation = (td1865Poll['type'] as TdObject)['explanation'] as TdObject;
+      const withIds: TdObject = { '@type': 'pollTypeQuiz', 'explanation': explanation };
+      withIds['correct_option_ids'] = [1];
+      td1865Poll['type'] = withIds;
       expect(formatMsgContent(td1865Msg).pollCorrectOptionId).assertEqual(1);
-      td1865Type['correct_option_ids'] = [];
+      const withoutIds: TdObject = { '@type': 'pollTypeQuiz', 'explanation': explanation };
+      withoutIds['correct_option_ids'] = [];
+      td1865Poll['type'] = withoutIds;
       expect(formatMsgContent(td1865Msg).pollCorrectOptionId).assertEqual(-1);
     });
     it('dice_maps_pending_and_final_result_states', 0, () => {
