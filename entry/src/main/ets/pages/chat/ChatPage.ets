@@ -721,7 +721,6 @@ export struct ChatPage {
   @Param windowPortrait: boolean = true;
   @Require @Param powerSaving: boolean = false;
   @Require @Param powerChatEffects: boolean = true;
-  @Require @Param powerBackgroundEffect: boolean = false;
   @Require @Param powerParticles: boolean = true;
   @Require @Param powerEmoji: boolean = true;
   @Require @Param powerEmojiReactions: boolean = true;
@@ -6207,7 +6206,6 @@ export struct ChatPage {
         timeline: this.timeline,
         viewer: this.viewer,
         overlayState: this.overlayState,
-        contentAnimationsAllowed: this.contentAnimationsAllowed,
         chatBg: this.chatBg,
         screenW: this.screenW,
         screenH: this.screenH,

@@ -103,7 +103,6 @@ export const KEY_POWER_EFFECT_REACTION: string = 'powerEffectReaction';
 export const KEY_POWER_EFFECT_REPLY: string = 'powerEffectReply';
 export const KEY_POWER_EFFECT_MENU: string = 'powerEffectMenu';
 export const KEY_POWER_EFFECT_BLUR: string = 'powerEffectBlur';
-export const KEY_POWER_EFFECT_BACKGROUND: string = 'powerEffectBackground';
 // Data & storage. The current network is supplied by NetworkStateService and
 // is intentionally kept in AppStorage only; user choices below are persisted.
 export const KEY_CURRENT_NETWORK_TYPE: string = 'currentNetworkType'; // none | wifi | mobile | roaming | vpn | other
@@ -197,12 +196,14 @@ const POWER_BOOLEAN_DEFAULTS: string[] = [
   KEY_POWER_EMOJI_STATUS
 ];
 
-// 默认**关**的特效：要么是持续跑的（背景动效、模糊缩放），要么是每条消息都可能
-// 触发的（回应动画）。开销是常态性的，所以由用户主动打开。
+// 默认**关**的特效：要么是持续跑的（模糊缩放），要么是每条消息都可能触发的
+// （回应动画）。开销是常态性的，所以由用户主动打开。
+//
+// 这里原来还有一项 KEY_POWER_EFFECT_BACKGROUND（聊天背景的氛围光斑）。2026-10-30
+// 光斑整个撤掉，键一起删——存量的 'powerEffectBackground' 留在偏好里没人再读。
 export const POWER_BOOLEAN_FALSE_DEFAULTS: string[] = [
   KEY_POWER_EFFECT_REACTION,
-  KEY_POWER_EFFECT_BLUR,
-  KEY_POWER_EFFECT_BACKGROUND
+  KEY_POWER_EFFECT_BLUR
 ];
 
 // 默认**开**的特效：一次交互触发一次、放完就结束的一次性动效。

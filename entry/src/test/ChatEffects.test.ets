@@ -110,10 +110,11 @@ export default function chatEffectsTest() {
       expect(POWER_BOOLEAN_FALSE_DEFAULTS.indexOf(KEY_POWER_EFFECT_REPLY) < 0).assertTrue();
     });
 
-    // 默认关那一组剩下三项是**持续**开销（背景动效、模糊缩放）或**每条消息都
-    // 可能触发**的（回应动画），默认关是有意的，别顺手一起翻。
+    // 默认关那一组剩下两项是**持续**开销（模糊缩放）或**每条消息都可能触发**的
+    // （回应动画），默认关是有意的，别顺手一起翻。（第三项「聊天背景动效」随
+    // 氛围光斑在 2026-10-30 整个删掉了，见 ChatBackdrop 顶上的说明。）
     it('持续型特效仍然默认关', 0, (): void => {
-      expect(POWER_BOOLEAN_FALSE_DEFAULTS.length).assertEqual(3);
+      expect(POWER_BOOLEAN_FALSE_DEFAULTS.length).assertEqual(2);
       expect(POWER_BOOLEAN_FALSE_DEFAULTS.indexOf(KEY_POWER_EFFECT_BLUR) >= 0).assertTrue();
     });
   });

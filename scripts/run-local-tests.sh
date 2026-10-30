@@ -56,7 +56,9 @@ set -u
 # 同一批里 ProxyAutoSwitch.test.ets 有 5 条原来测 pingProxy 并发的用例按 tcping
 # 判据重写（不是删除，总数不变），另补 1 条"绕完一圈就停手"的回归：基线 4209。
 # 同一批里两个轮转循环从 4 轮缩到 3 轮，是被这条新闸限住的，不是删断言。
-MIN_TESTS="${MIN_TESTS:-4209}"
+# 同一批里聊天背景的氛围光斑整个撤掉（用户：背景有个透明圆来回动），它专用的
+# 相位时钟 backdropPhaseClock 连同 3 条用例一并删除：基线 4206。
+MIN_TESTS="${MIN_TESTS:-4206}"
 # ---------------------------------------------------------------------------
 
 # Defaults are the macOS install. On Windows (git-bash) DevEco lives elsewhere,

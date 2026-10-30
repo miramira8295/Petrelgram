@@ -11,42 +11,31 @@ import {
 import { PatternTileLayer } from './PatternTileLayer';
 import { gradientStops } from '../../util/backgroundPresentation';
 import {
-  BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, CHAT_DIM_MAX, KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS,
-  KEY_POWER_EFFECT_BACKGROUND, KEY_POWER_SMOOTH_TRANSITIONS,
-  KEY_REDUCE_ANIM, powerFeatureEnabled, powerGroupAnimationDuration
+  BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, CHAT_DIM_MAX
 } from '../../store/AppSettings';
 import { KEY_APP_DARK } from '../../util/theme';
 import { publishChatContentWidth } from '../../util/chatContentWidth';
-import { BackdropPhaseClock, BACKDROP_PHASE_MS } from '../../util/backdropPhaseClock';
 
-// 聊天页的整层背景：壁纸 / 图案 / 渐变、两颗氛围光斑、深色遮罩。
+// 聊天页的整层背景：壁纸 / 图案 / 渐变、深色遮罩。
+//
+// 2026-10-30：原来还有两颗按相位时钟漂移的氛围光斑（「聊天背景动态效果」这个
+// 省电开关的产物）。聊天页的用户反馈和之前会话详情页一样——「背景有个透明圆
+// 来回动」——装饰撤掉，连带相位时钟、动效时长、那三组省电订阅一起删，别留
+// 一堆只为它存在的空转字段。省电设置里对应的那一行也一并去掉。
 //
 // 从 ChatPage 里搬出来。它自成一体——**只吃输入、不向外回调**，所以搬家不需要
-// 在两边之间牵任何状态：省电开关、模糊度、图案浓度、深色遮罩这些它自己从
-// AppStorage 订阅，离屏光栅的缓存和防抖也一并搬了过来。
+// 在两边之间牵任何状态：深浅主题它自己从 AppStorage 订阅，模糊度、图案浓度、
+// 深色遮罩由调用方传入，离屏光栅的缓存和防抖也一并搬了过来。
 //
-// 页面传入背景参数、屏幕尺寸及当前是否允许运行动画。
+// 页面传入背景参数与屏幕尺寸。
 
 // 光栅防抖窗口。背景解析过程中会连续发布几个中间态（实测首次进入会话有三次
 // 整屏 JPEG 编码，52+68+58ms），只有熬过安静窗口的那一个值得栅格化——期间
 // 实时绘制的分层背景照常显示，视觉上不缺东西。
 const RASTER_DEBOUNCE_MS: number = 280;
-// 氛围光斑的相位周期。
-const AMBIENT_PHASE_MS: number = BACKDROP_PHASE_MS;
 
 @Component
 export struct ChatBackdrop {
-  // 可见性只控制动态层，不进入壁纸参数和光栅签名。
-  @Prop @Watch('syncMotion') animationsAllowed: boolean = true;
-  // 要不要那两颗氛围光斑。聊天页要（它是聊天的一部分氛围），被
-  // AppBackdrop 借去当「APP 壁纸」的页面不要——会话详情页的用户反馈是
-  // 「背景有个一直在运动的圆」，在那类以玻璃卡片为主的页面上它只会分散
-  // 注意力。默认 true，只有明确不要的调用方传 false。
-  //
-  // 只影响**画不画**和**相位时钟跑不跑**，不影响 canBakeDarkMask：那一支
-  // 决定暗化遮罩烘不烘进光栅，改它会连带改光栅签名，不值得为一个纯装饰开关动。
-  @Prop @Watch('syncMotion') ambient: boolean = true;
-  @StorageProp('appIsForeground') @Watch('syncMotion') appForeground: boolean = true;
   @Prop @Watch('onParamsChanged') chatBg: ChatBackgroundState;
   @Prop @Watch('onParamsChanged') screenW: number;
   @Prop @Watch('onParamsChanged') screenH: number;
@@ -86,24 +75,11 @@ export struct ChatBackdrop {
   @Prop @Watch('onParamsChanged') bgPattern: number = BG_PATTERN_DEFAULT;
   @StorageProp(KEY_APP_DARK) @Watch('onParamsChanged') appDark: boolean = false;
   @Prop @Watch('onParamsChanged') chatDim: number = 0;
-  @StorageProp(KEY_POWER_ACTIVE) @Watch('onParamsChanged') powerSaving: boolean = false;
-  @StorageProp(KEY_POWER_CHAT_EFFECTS) @Watch('onParamsChanged') powerChatEffects: boolean = true;
-  @StorageProp(KEY_POWER_EFFECT_BACKGROUND) @Watch('onParamsChanged') powerBackgroundEffect: boolean = false;
-  @StorageProp(KEY_REDUCE_ANIM) @Watch('syncMotion') reduceAnimations: boolean = false;
-  @StorageProp(KEY_POWER_SMOOTH_TRANSITIONS) @Watch('syncMotion') smoothTransitions: boolean = true;
-
   @State private rasterPath: string = '';
-  @State private phase: boolean = false;
   private rasterTimer: number = -1;
-  private appeared: boolean = false;
-  private phaseClock: BackdropPhaseClock = new BackdropPhaseClock((): void => {
-    this.phase = !this.phase;
-  });
 
   aboutToAppear(): void {
     this.syncRaster();
-    this.appeared = true;
-    this.syncMotion();
   }
 
   aboutToDisappear(): void {
@@ -111,17 +87,6 @@ export struct ChatBackdrop {
       clearTimeout(this.rasterTimer);
       this.rasterTimer = -1;
     }
-    this.appeared = false;
-    this.phaseClock.setRunning(false);
-  }
-
-  private effectsVisible(): boolean {
-    return this.animationsAllowed && this.appForeground;
-  }
-
-  private syncMotion(): void {
-    this.phaseClock.setRunning(this.appeared && this.ambient && this.effectsVisible() &&
-      this.ambientEnabled() && this.effectDuration(KEY_POWER_EFFECT_BACKGROUND, AMBIENT_PHASE_MS) > 0);
   }
 
   // 背景状态、屏幕尺寸、模糊度、图案浓度、深浅主题——任何一个变了，合成图都
@@ -133,7 +98,6 @@ export struct ChatBackdrop {
   // 会话都走实时分层绘制，重则一直停在默认背景的旧缓存图上，显示错壁纸。
   private onParamsChanged(): void {
     this.syncRaster();
-    this.syncMotion();
     // 窗口变窄（悬浮小窗）时先把内容列宽压到窗口宽以内（issue #138）：内容列不可
     // 能比窗口宽，而 onSizeChange 那次精确的量要等布局回来；这期间气泡若还按
     // 旧的宽算 maxWidth，就会伸出右缘。窗口变宽时 min 取的仍是旧值、同值不写，
@@ -154,11 +118,11 @@ export struct ChatBackdrop {
     return patternOpacity(this.chatBg.isPattern, this.chatBg.imageOpacity, this.patternStrength());
   }
 
-  // The final mask also darkens ambience. Bake it only when
-  // there is no live decoration above the wallpaper, preserving the current
-  // appearance while removing the common full-screen blend.
+  // 氛围光斑撤掉之后，壁纸之上不再有实时装饰层，用户遮罩可以一直烘进光栅，
+  // 省掉那层整屏合成。函数留着而不是直接写 true：下面两处调用点是同一个判据，
+  // 将来若再引入实时装饰层，改这里一处就够。
   private canBakeDarkMask(): boolean {
-    return !this.ambientEnabled();
+    return true;
   }
 
   private rasterDimming(): number {
@@ -243,21 +207,8 @@ export struct ChatBackdrop {
     this.rasterPath = next;
   }
 
-  private effectDuration(key: string, duration: number): number {
-    if (this.reduceAnimations || !powerFeatureEnabled(KEY_POWER_SMOOTH_TRANSITIONS)) {
-      return 0;
-    }
-    return powerGroupAnimationDuration(KEY_POWER_CHAT_EFFECTS, key, duration);
-  }
-
-  // 自定义背景下不叠氛围效果：用户挑的图就是主角。
-  private ambientEnabled(): boolean {
-    return !this.chatBg.custom &&
-      !this.powerSaving && this.powerChatEffects && this.powerBackgroundEffect;
-  }
-
-  // 深色下的用户遮罩。没有动态背景装饰时，它会与服务端下发的
-  // dark_theme_dimming 合并并烘进最终光栅；缓存生成期间仍由实时层兜底。
+  // 深色下的用户遮罩。它会与服务端下发的 dark_theme_dimming 合并并烘进最终
+  // 光栅；缓存生成期间仍由实时层兜底。
   private darkMaskOpacity(): number {
     // 纯色 / 跟随系统没有遮罩选项（见 wallpaperTakesUserDim），滑杆里留着的旧值不生效。
     if (!this.appDark || !wallpaperTakesUserDim(this.chatBg.colors, this.chatBg.path)) {
@@ -392,26 +343,6 @@ export struct ChatBackdrop {
   build() {
     Stack() {
       this.wallpaperLayer();
-      // 只停计时器无法取消已经在 RS 运行的 4200ms 插值；隐藏时直接撤下动态节点。
-      // ambientEnabled 仍只表示用户设置，canBakeDarkMask 不受可见性影响。
-      if (this.ambient && this.effectsVisible() && this.ambientEnabled()) {
-        Circle({ width: 250, height: 250 })
-          .fill('#142A9FE8')
-          .position({ x: this.phase ? this.layerW() - 150 : -90, y: 110 })
-          .opacity(this.phase ? 0.42 : 0.18)
-          .animation({
-            duration: this.effectDuration(KEY_POWER_EFFECT_BACKGROUND, AMBIENT_PHASE_MS),
-            curve: Curve.EaseInOut
-          });
-        Circle({ width: 210, height: 210 })
-          .fill('#1056C76F')
-          .position({ x: this.phase ? -70 : this.layerW() - 130, y: 500 })
-          .opacity(this.phase ? 0.16 : 0.36)
-          .animation({
-            duration: this.effectDuration(KEY_POWER_EFFECT_BACKGROUND, AMBIENT_PHASE_MS),
-            curve: Curve.EaseInOut
-          });
-      }
       if (this.liveDarkMaskOpacity() > 0) {
         Column().width('100%').height('100%')
           .backgroundColor(Color.Black)

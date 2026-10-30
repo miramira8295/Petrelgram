@@ -24,7 +24,6 @@ export struct ChatPageSurface {
   @Require @Param timeline: ChatTimelineSession;
   @Require @Param viewer: ChatViewerSession;
   @Require @Param overlayState: ChatOverlayState;
-  @Param contentAnimationsAllowed: boolean = false;
   @Param chatBg: ChatBackgroundState = emptyChatBackground();
   @Param screenW: number = 360;
   @Param screenH: number = 0;
@@ -128,11 +127,10 @@ export struct ChatPageSurface {
     // Keep the covered chat mounted: Visibility.Hidden preserves layout,
     // scroll anchors and the thumbnail nodes used by geometryTransition.
     Stack() {
-      // 背景参数和当前聊天列的动画可见性由页面传入，背景内部管理渲染。
+      // 背景参数由页面传入，背景内部管理渲染。
       // 聊天槽位的三根滑杆由页面按当前深浅色挑好传进去——见 ChatBackdrop 里
       // 那段说明：那一层不再自己读全局键。
       ChatBackdrop({
-        animationsAllowed: this.contentAnimationsAllowed,
         chatBg: this.chatBg, screenW: this.screenW, screenH: this.screenH,
         bgBlur: this.chatBgBlur, bgPattern: this.chatBgPattern, chatDim: this.chatBgDim
       });

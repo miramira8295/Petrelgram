@@ -12,7 +12,7 @@ import {
   BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, KEY_AUTOPLAY_MUTED, KEY_BG_BLUR, KEY_BG_BLUR_DARK,
   KEY_BG_PATTERN, KEY_BG_PATTERN_DARK, KEY_CHAT_DIM, KEY_CHAT_DIM_LIGHT,
   KEY_LOCAL_BG_EPOCH, KEY_POWER_ACTIVE, KEY_POWER_AUTOPLAY_VIDEO,
-  KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_BACKGROUND, KEY_POWER_EMOJI,
+  KEY_POWER_CHAT_EFFECTS, KEY_POWER_EMOJI,
   KEY_POWER_EMOJI_REACTIONS, KEY_POWER_PARTICLES, KEY_REDUCE_ANIM,
   KEY_SEND_BY_ENTER, KEY_TRANSLATE_CHATS, KEY_FORCE_SINGLE_COLUMN
 } from '../../store/AppSettings';
@@ -73,7 +73,6 @@ struct ChatPageChrome {
   @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
   @StorageProp(KEY_POWER_CHAT_EFFECTS) powerChatEffects: boolean = true;
-  @StorageProp(KEY_POWER_EFFECT_BACKGROUND) powerBackgroundEffect: boolean = false;
   @StorageProp(KEY_POWER_PARTICLES) powerParticles: boolean = true;
   @StorageProp(KEY_POWER_EMOJI) powerEmoji: boolean = true;
   @StorageProp(KEY_POWER_EMOJI_REACTIONS) powerEmojiReactions: boolean = true;
@@ -111,7 +110,6 @@ struct ChatPageChrome {
       windowPortrait: this.windowPortrait,
       powerSaving: this.powerSaving,
       powerChatEffects: this.powerChatEffects,
-      powerBackgroundEffect: this.powerBackgroundEffect,
       powerParticles: this.powerParticles,
       powerEmoji: this.powerEmoji,
       powerEmojiReactions: this.powerEmojiReactions,

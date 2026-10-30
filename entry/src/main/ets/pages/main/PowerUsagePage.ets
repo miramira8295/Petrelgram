@@ -7,7 +7,6 @@ import {
   KEY_POWER_EMOJI_CHAT,
   KEY_POWER_EMOJI_REACTIONS,
   KEY_POWER_EMOJI_STATUS,
-  KEY_POWER_EFFECT_BACKGROUND,
   KEY_POWER_EFFECT_BLUR,
   KEY_POWER_EFFECT_MENU,
   KEY_POWER_EFFECT_MESSAGE,
@@ -41,8 +40,7 @@ const EFFECT_KEYS: string[] = [
   KEY_POWER_EFFECT_REACTION,
   KEY_POWER_EFFECT_REPLY,
   KEY_POWER_EFFECT_MENU,
-  KEY_POWER_EFFECT_BLUR,
-  KEY_POWER_EFFECT_BACKGROUND
+  KEY_POWER_EFFECT_BLUR
 ];
 
 // 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
@@ -79,7 +77,6 @@ export struct PowerUsagePage {
   @StorageLink(KEY_POWER_EFFECT_REPLY) effectReply: boolean = false;
   @StorageLink(KEY_POWER_EFFECT_MENU) effectMenu: boolean = true;
   @StorageLink(KEY_POWER_EFFECT_BLUR) effectBlur: boolean = false;
-  @StorageLink(KEY_POWER_EFFECT_BACKGROUND) effectBackground: boolean = false;
   @State expandedKey: string = '';
 
   aboutToAppear(): void {
@@ -175,7 +172,10 @@ export struct PowerUsagePage {
     if (key === KEY_POWER_EFFECT_REPLY) { return this.effectReply; }
     if (key === KEY_POWER_EFFECT_MENU) { return this.effectMenu; }
     if (key === KEY_POWER_EFFECT_BLUR) { return this.effectBlur; }
-    return this.effectBackground;
+    // 组里的键都在上面列全了。这里的兜底只为"未知键"存在，返回 false 而不是
+    // 某个具体开关的值——原来它返回的是背景动效那一项，键删掉后就成了随便挑
+    // 一个开关冒充。
+    return false;
   }
 
   private groupKeys(key: string): string[] {
@@ -385,7 +385,7 @@ export struct PowerUsagePage {
         this.subFeatureRow(KEY_POWER_EMOJI, KEY_POWER_EMOJI_STATUS, str('power_emoji_status'));
       }
       Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 58 });
-      this.featureRow('sys.symbol.message', str('power_chat_effects'), KEY_POWER_CHAT_EFFECTS, 6);
+      this.featureRow('sys.symbol.message', str('power_chat_effects'), KEY_POWER_CHAT_EFFECTS, 5);
       if (this.expandedKey === KEY_POWER_CHAT_EFFECTS) {
         this.subFeatureRow(KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_MESSAGE, str('power_new_message_anim'));
         Divider().strokeWidth(0.5).color($r('app.color.divider')).margin({ left: 62 });
@@ -396,8 +396,6 @@ export struct PowerUsagePage {
         this.subFeatureRow(KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_MENU, str('power_menu_anim'));
         Divider().strokeWidth(0.5).color($r('app.color.divider')).margin({ left: 62 });
         this.subFeatureRow(KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_BLUR, str('power_blur_scale'));
-        Divider().strokeWidth(0.5).color($r('app.color.divider')).margin({ left: 62 });
-        this.subFeatureRow(KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_BACKGROUND, str('power_background_anim'));
       }
       Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 58 });
       this.featureRow('sys.symbol.phone', str('power_call_anim'), KEY_POWER_CALL_ANIMATIONS, 0);

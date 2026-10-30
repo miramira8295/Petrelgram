@@ -75,12 +75,7 @@ export struct AppBackdrop {
           screenH: this.screenH,
           bgBlur: this.blurNow(),
           bgPattern: this.patternNow(),
-          chatDim: this.dimNow(),
-          // 那两颗氛围光斑是**聊天壁纸**的装饰，不是 APP 壁纸的。借这层壳的
-          // 页面（会话详情、首页、我的、全局搜索、聊天外观设置）都是列表或
-          // 玻璃卡片，底下再飘一颗圆只会抢注意力——会话详情页的用户反馈就是
-          // 「背景有个一直在运动的圆」。
-          ambient: false
+          chatDim: this.dimNow()
         });
       }
     }

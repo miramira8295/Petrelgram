@@ -1,29 +1,6 @@
 import { describe, expect, it } from '@ohos/hypium';
 import { chatMotionAllowed, chatTimelineSuspended } from '../main/ets/util/chatMotionPolicy';
-import { BackdropPhaseClock, BACKDROP_PHASE_MS } from '../main/ets/util/backdropPhaseClock';
 import { AnimationGate } from '../main/ets/util/animationGate';
-
-interface PhaseTask {
-  id: number;
-  tick: () => void;
-}
-
-class PhaseTimers {
-  tasks: PhaseTask[] = [];
-  cancelled: number[] = [];
-  intervals: number[] = [];
-
-  schedule(tick: () => void, ms: number): number {
-    const id: number = this.tasks.length;
-    this.tasks.push({ id: id, tick: tick });
-    this.intervals.push(ms);
-    return id;
-  }
-
-  cancel(id: number): void {
-    this.cancelled.push(id);
-  }
-}
 
 export default function chatMotionPolicyTest() {
   describe('chatMotionPolicy', () => {
@@ -71,58 +48,6 @@ export default function chatMotionPolicyTest() {
       expect(late.join(',')).assertEqual('true,false');
     });
   });
-
-  describe('backdropPhaseClock', () => {
-    it('重复放行只建一个4200ms时钟，正常回调推进相位', 0, () => {
-      const timers: PhaseTimers = new PhaseTimers();
-      let ticks: number = 0;
-      const clock: BackdropPhaseClock = new BackdropPhaseClock((): void => { ticks++; },
-        (tick: () => void, ms: number): number => timers.schedule(tick, ms),
-        (id: number): void => { timers.cancel(id); });
-      clock.setRunning(true);
-      clock.setRunning(true);
-      expect(timers.tasks.length).assertEqual(1);
-      expect(timers.intervals[0]).assertEqual(BACKDROP_PHASE_MS);
-      timers.tasks[0].tick();
-      expect(ticks).assertEqual(1);
-    });
-
-    it('未运行就暂停不建时钟，停止幂等且废弃排队回调', 0, () => {
-      const timers: PhaseTimers = new PhaseTimers();
-      let ticks: number = 0;
-      const clock: BackdropPhaseClock = new BackdropPhaseClock((): void => { ticks++; },
-        (tick: () => void, ms: number): number => timers.schedule(tick, ms),
-        (id: number): void => { timers.cancel(id); });
-      clock.setRunning(false);
-      expect(timers.tasks.length).assertEqual(0);
-      clock.setRunning(true);
-      clock.setRunning(false);
-      clock.setRunning(false);
-      timers.tasks[0].tick();
-      expect(timers.cancelled.join(',')).assertEqual('0');
-      expect(ticks).assertEqual(0);
-    });
-
-    it('快速开关20轮，每轮只留一个时钟，旧回调不能在恢复后复活', 0, () => {
-      const timers: PhaseTimers = new PhaseTimers();
-      let ticks: number = 0;
-      const clock: BackdropPhaseClock = new BackdropPhaseClock((): void => { ticks++; },
-        (tick: () => void, ms: number): number => timers.schedule(tick, ms),
-        (id: number): void => { timers.cancel(id); });
-      for (let i = 0; i < 20; i++) {
-        clock.setRunning(true);
-        clock.setRunning(false);
-      }
-      clock.setRunning(true);
-      for (let i = 0; i < 20; i++) {
-        timers.tasks[i].tick();
-      }
-      expect(ticks).assertEqual(0);
-      expect(timers.cancelled.length).assertEqual(20);
-      expect(timers.tasks.length).assertEqual(21);
-      timers.tasks[20].tick();
-      expect(ticks).assertEqual(1);
-      clock.setRunning(false);
-    });
-  });
+  // backdropPhaseClock（背景氛围光斑的相位时钟）随光斑一起在 2026-10-30 删除，
+  // 这里原先那三条用例一并去掉。
 }
