@@ -47,12 +47,28 @@ export struct RichMessageView {
   @Param maxWidth: number = 260;
   @Param onOpenUrl: (url: string) => void = (): void => {};
 
+  // 块模型的缓存。键是 rawBlocks 的**数组引用**：同一条消息的块数组在一次发布
+  // 内是稳定的，所以 build 重跑不会重复解析——原来这个文件自己的注释就写着
+  // 「blocks() 每次 build 都重新解析、产出新的块对象」。消息被编辑时
+  // MessageEntry 整体替换，数组引用随之变化，缓存自然失效。
+  //
+  // 富文本那条线（util/richText.parseFormattedText）上游已经用 WeakMap 做过
+  // 同样的记忆化；Markdown 这条之前漏了，这里是补上。
+  private blockSource: TdObject[] | null = null;
+  private blockCache: RichBlock[] = [];
+
   private blocks(): RichBlock[] {
+    if (this.blockSource === this.rawBlocks) {
+      return this.blockCache;
+    }
     const wrapper: TdObject = { '@type': 'messageRichMessage' };
     const inner: TdObject = { '@type': 'richMessage' };
     inner['blocks'] = this.rawBlocks;
     wrapper['message'] = inner;
-    return parseRichMessage(wrapper);
+    const parsed: RichBlock[] = parseRichMessage(wrapper);
+    this.blockSource = this.rawBlocks;
+    this.blockCache = parsed;
+    return parsed;
   }
 
   // 公式排好之后要重绘，而位图存在模块级缓存里、组件订阅不了它。
