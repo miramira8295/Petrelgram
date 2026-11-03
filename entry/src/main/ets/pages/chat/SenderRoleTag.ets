@@ -66,7 +66,16 @@ export struct SenderRoleTag {
       // 压上去看不清。tag_text 按主题各给一档，保证和 selected_pill 有对比。
       .fontSize(11).fontColor($r('app.color.tag_text'))
       .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-      .constraintSize({ maxWidth: 88 })
+      // 上限跟着外层可用宽度走，不再是写死的 88vp（issue #246）。
+      //
+      // 原来固定 88vp，结果是**名字还有富余时标签就先被截断**：自定义头衔
+      // 「超级管理员兼技术顾问」11sp 约 110vp，在手机竖屏的气泡里（可用宽约
+      // 342vp）本可以完整显示，却先被切成「超级管理员兼技…」。
+      //
+      // 改成百分比之后两条都满足：宽气泡里标签尽量显示全（让名字去缩，名字
+      // 那边是 flexShrink(1)），窄气泡里上限自动收窄，加 flexShrink(0) 保证
+      // 它永不超出气泡宽度。
+      .constraintSize({ maxWidth: '55%' })
       .padding({ left: 6, right: 6, top: 1, bottom: 1 })
       .backgroundColor($r('app.color.selected_pill'))
       .borderRadius(7)
