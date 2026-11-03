@@ -333,7 +333,6 @@ import rowReuseIdTest from './RowReuseId.test';
 import messageReusePoolTest from './MessageReusePool.test';
 import performanceBudgetsTest from './PerformanceBudgets.test';
 import initialMessageStageTest from './InitialMessageStage.test';
-import paragraphCacheTest from './ParagraphCache.test';
 import stringsTest from './Strings.test';
 import scrollEffectsTest from './ScrollEffects.test';
 import anchorRestoreTest from './AnchorRestore.test';
@@ -720,7 +719,6 @@ export default function testsuite() {
   messageReusePoolTest();
   performanceBudgetsTest();
   initialMessageStageTest();
-  paragraphCacheTest();
   stringsTest();
   scrollEffectsTest();
   anchorRestoreTest();

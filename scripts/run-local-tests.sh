@@ -58,7 +58,15 @@ set -u
 # 同一批里两个轮转循环从 4 轮缩到 3 轮，是被这条新闸限住的，不是删断言。
 # 同一批里聊天背景的氛围光斑整个撤掉（用户：背景有个透明圆来回动），它专用的
 # 相位时钟 backdropPhaseClock 连同 3 条用例一并删除：基线 4206。
-MIN_TESTS="${MIN_TESTS:-4206}"
+# 2026-11-02 从 4206 降到 4203：**故意删除**被测对象已经不存在的用例。
+#   · ParagraphCache.test.ets（3 条）—— util/paragraphCache 与 pages/chat/
+#     DrawnPlainText 是一整座死岛（互相引用、生产零调用），随死代码一起删除。
+#   · PlainTextBubbleReuse.test.ets 从 9 条瘦到 7 条——它原先主要覆盖
+#     messageBubbleReuseId 那套**生产零调用**的复用键算法，那套已随死代码删除；
+#     文件保留，只覆盖仍然生效的 canRenderLightweightPlainTextRow 判据。
+# 4203 是删完后实跑的结果（脚本自己的输出），不是推算值。
+# 与上面几次同理：这是"确实删了用例"那一档，不是为了让脚本变绿。
+MIN_TESTS="${MIN_TESTS:-4203}"
 # ---------------------------------------------------------------------------
 
 # Defaults are the macOS install. On Windows (git-bash) DevEco lives elsewhere,

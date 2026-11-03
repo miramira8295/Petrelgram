@@ -1,12 +1,19 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { buildMessageEntry, cloneMessage, MessageEntry } from '../main/ets/store/MessageEntry';
+import { buildMessageEntry, MessageEntry } from '../main/ets/store/MessageEntry';
 import { TdBridge, TdObject } from '../main/ets/tdkit/TdTypes';
 import { TdClient } from '../main/ets/tdkit/TdClient';
 import { UserStore } from '../main/ets/store/UserStore';
-import {
-  canRenderLightweightPlainText, canReuseMessageBubble,
-  MessageBubbleReuseContext, messageBubbleReuseId
-} from '../main/ets/util/messageBubbleReuse';
+import { canRenderLightweightPlainTextRow } from '../main/ets/util/messageBubbleReuse';
+
+// `canRenderLightweightPlainTextRow` 的判据单测。
+//
+// 这个文件原来测的是同一模块里那套**生产零调用**的复用键算法
+// （messageBubbleReuseId 等，9 条用例）。那套算法在 2026-11-02 随死代码一起删掉，
+// 文件名与导出名保留下来，只保留仍然活的这条判据的覆盖。
+//
+// 为什么必须留着：它决定一行走轻量纯文本渲染还是完整富文本树，两个调用方
+// （ChatTimelineSession 的 prepare、ChatTimelineHost 的 templateId）必须用同一份
+// 结果，否则模板池和实际渲染树会错配。
 
 class FakeBridge implements TdBridge {
   onReceive: (json: string) => void = (): void => {};
@@ -28,7 +35,7 @@ function usersOf(): UserStore {
   return users;
 }
 
-function textEntry(id: number, outgoing: boolean = false): MessageEntry {
+function textEntry(id: number): MessageEntry {
   const formatted: TdObject = { '@type': 'formattedText' };
   formatted['text'] = `plain-${id}`;
   const content: TdObject = { '@type': 'messageText' };
@@ -37,278 +44,53 @@ function textEntry(id: number, outgoing: boolean = false): MessageEntry {
   sender['user_id'] = 7;
   const message: TdObject = { '@type': 'message' };
   message['id'] = id;
-  message['is_outgoing'] = outgoing;
+  message['is_outgoing'] = false;
   message['sender_id'] = sender;
   message['date'] = 100;
   message['content'] = content;
   return buildMessageEntry(message, usersOf());
 }
 
-function context(
-  isGroup: boolean = false,
-  showAvatar: boolean = false,
-  showSenderName: boolean = false,
-  isChannel: boolean = false
-): MessageBubbleReuseContext {
-  return {
-    albumItemCount: 0,
-    memberCount: 1,
-    hasDateSeparator: false,
-    showUnreadDivider: false,
-    isGroup,
-    isChannel,
-    showAvatar,
-    showSenderName,
-    translationActive: false,
-    menuEditable: false
-  };
-}
-
 export default function plainTextBubbleReuseTest() {
-  describe('MessageBubbleReuse', () => {
-    it('routes_only_simple_text_to_lightweight_renderer', 0, () => {
-      const simple: MessageEntry = textEntry(0);
-      expect(canRenderLightweightPlainText(simple, context())).assertTrue();
-      expect(messageBubbleReuseId(simple, context()).startsWith('plain-text:')).assertTrue();
-
-      const reply: MessageEntry = cloneMessage(simple);
-      reply.replyToMessageId = 99;
-      expect(canRenderLightweightPlainText(reply, context(true, true, true))).assertTrue();
-
-      const linked: MessageEntry = cloneMessage(simple);
-      linked.text = 'https://example.com';
-      expect(canRenderLightweightPlainText(linked, context())).assertFalse();
-      const previewResolving: MessageEntry = cloneMessage(simple);
-      previewResolving.linkPhotoPath = '/tmp/preview.jpg';
-      expect(canRenderLightweightPlainText(previewResolving, context())).assertFalse();
-      const reacted: MessageEntry = cloneMessage(simple);
-      reacted.reactions = [{ emoji: '👍', count: 1, isChosen: false,
-        customEmojiId: '', customEmojiPath: '' }];
-      expect(canRenderLightweightPlainText(reacted, context())).assertFalse();
-      const translating: MessageBubbleReuseContext = context();
-      translating.translationActive = true;
-      // The lightweight component renders the transient translating/error row;
-      // once translatedText arrives, the normal data update promotes the row
-      // to the complete renderer.
-      expect(canRenderLightweightPlainText(simple, translating)).assertTrue();
-    });
-    it('accepts_private_plain_text', 0, () => {
-      expect(canReuseMessageBubble(textEntry(1), context())).assertTrue();
-      expect(canReuseMessageBubble(textEntry(2, true), context())).assertTrue();
+  describe('LightweightPlainTextGate', () => {
+    it('纯文本、单成员、非相册才走轻量渲染', 0, () => {
+      expect(canRenderLightweightPlainTextRow(textEntry(1), 1, 0)).assertTrue();
     });
 
-    it('accepts_text_feature_structures', 0, () => {
-      const base: MessageEntry = textEntry(10);
-      const variants: MessageEntry[] = [];
-      let next: MessageEntry = cloneMessage(base);
-      next.text = '   ';
-      variants.push(next);
-      next = cloneMessage(base);
-      next.replyToMessageId = 9;
-      variants.push(next);
-      next = cloneMessage(base);
-      next.forwardFrom = 'Alice';
-      variants.push(next);
-      next = cloneMessage(base);
-      next.commentCount = 1;
-      variants.push(next);
-      next = cloneMessage(base);
-      next.textEntities = [{ '@type': 'textEntity' }];
-      variants.push(next);
-      next = cloneMessage(base);
-      next.text = 'visit https://example.com';
-      variants.push(next);
-      next = cloneMessage(base);
-      next.text = 'hello @alice';
-      variants.push(next);
-      next = cloneMessage(base);
-      next.text = 'read #topic';
-      variants.push(next);
-      next = cloneMessage(base);
-      next.inlineCustomEmojiIds = ['99'];
-      variants.push(next);
-      next = cloneMessage(base);
-      next.inlineCustomEmojiPaths = ['/tmp/99.webp'];
-      variants.push(next);
-      next = cloneMessage(base);
-      next.linkUrl = 'https://example.com';
-      variants.push(next);
-      next = cloneMessage(base);
-      next.reactions = [{ emoji: '👍', count: 1, isChosen: false,
-        customEmojiId: '', customEmojiPath: '' }];
-      variants.push(next);
-      next = cloneMessage(base);
-      next.inlineButtons = [[{ text: 'Open', url: 'https://example.com', callbackData: '',
-        isGame: false, style: '' }]];
-      variants.push(next);
-      next = cloneMessage(base);
-      next.translatedText = 'translated';
-      next.translatedLang = 'en';
-      variants.push(next);
-
-      for (const candidate of variants) {
-        expect(canReuseMessageBubble(candidate, context())).assertTrue();
-      }
+    it('相册行不走轻量渲染', 0, () => {
+      expect(canRenderLightweightPlainTextRow(textEntry(2), 1, 3)).assertFalse();
     });
 
-    it('accepts_all_fixed_signature_group_positions', 0, () => {
-      const incoming: MessageEntry = textEntry(20);
-      expect(canReuseMessageBubble(incoming, context(true, false, false))).assertTrue();
-      expect(canReuseMessageBubble(incoming, context(true, true, false))).assertTrue();
-      expect(canReuseMessageBubble(incoming, context(true, false, true))).assertTrue();
-      expect(canReuseMessageBubble(incoming, context(true, true, true))).assertTrue();
-      expect(canReuseMessageBubble(textEntry(21, true), context(true, true, true))).assertTrue();
+    it('多成员行不走轻量渲染', 0, () => {
+      expect(canRenderLightweightPlainTextRow(textEntry(3), 2, 0)).assertFalse();
     });
 
-    it('accepts_row_shell_album_and_transient_translation', 0, () => {
-      const entry: MessageEntry = textEntry(30);
-      const dateCtx: MessageBubbleReuseContext = context();
-      dateCtx.hasDateSeparator = true;
-      expect(canReuseMessageBubble(entry, dateCtx)).assertTrue();
-      const unreadCtx: MessageBubbleReuseContext = context();
-      unreadCtx.showUnreadDivider = true;
-      expect(canReuseMessageBubble(entry, unreadCtx)).assertTrue();
-      const albumCtx: MessageBubbleReuseContext = context();
-      albumCtx.albumItemCount = 3;
-      albumCtx.memberCount = 3;
-      albumCtx.albumShape = '3:prfo:vrfo:pnfe';
-      expect(canReuseMessageBubble(entry, albumCtx)).assertTrue();
-      const albumEntry: MessageEntry = cloneMessage(entry);
-      albumEntry.albumId = 'album';
-      expect(canReuseMessageBubble(albumEntry, context())).assertTrue();
-      const translationCtx: MessageBubbleReuseContext = context();
-      translationCtx.translationActive = true;
-      expect(canReuseMessageBubble(entry, translationCtx)).assertTrue();
+    it('转发过的消息不走轻量渲染', 0, () => {
+      const entry: MessageEntry = textEntry(4);
+      entry.forwardFrom = 'someone';
+      expect(canRenderLightweightPlainTextRow(entry, 1, 0)).assertFalse();
     });
 
-    it('accepts_every_message_family', 0, () => {
-      const families: string[] = [
-        'richMessage', 'photo', 'video', 'videoNote', 'voice', 'audio', 'file',
-        'contact', 'location', 'venue', 'poll', 'dice', 'game', 'paidMedia',
-        'gift', 'giveaway', 'emoji', 'customEmoji', 'sticker', 'system', 'hidden',
-        'futureUnsupported'
-      ];
-      for (const family of families) {
-        const entry: MessageEntry = cloneMessage(textEntry(35));
-        entry.contentType = family;
-        entry.isUnsupportedMessage = family === 'futureUnsupported';
-        expect(canReuseMessageBubble(entry, context())).assertTrue();
-      }
+    it('有反应的、带评论的都不走轻量渲染', 0, () => {
+      const reacted: MessageEntry = textEntry(5);
+      reacted.reactions = [{ emoji: '👍', count: 1, isChosen: false, customEmojiId: '', customEmojiPath: '' }];
+      expect(canRenderLightweightPlainTextRow(reacted, 1, 0)).assertFalse();
+
+      const commented: MessageEntry = textEntry(6);
+      commented.commentCount = 2;
+      expect(canRenderLightweightPlainTextRow(commented, 1, 0)).assertFalse();
     });
 
-    it('reuse_id_tracks_structure_not_message_identity', 0, () => {
-      const first: MessageEntry = textEntry(40);
-      const second: MessageEntry = textEntry(41);
-      second.text = 'different content and width';
-      expect(messageBubbleReuseId(first, context()))
-        .assertEqual(messageBubbleReuseId(second, context()));
-      expect(messageBubbleReuseId(first, context()) ===
-        messageBubbleReuseId(textEntry(42, true), context())).assertFalse();
-      expect(messageBubbleReuseId(first, context(false, false, false, false)) ===
-        messageBubbleReuseId(first, context(false, true, false, false))).assertFalse();
-      const edited: MessageEntry = cloneMessage(first);
-      edited.editDate = 101;
-      expect(messageBubbleReuseId(first, context()) ===
-        messageBubbleReuseId(edited, context())).assertFalse();
-      const editableCtx: MessageBubbleReuseContext = context();
-      editableCtx.menuEditable = true;
-      expect(messageBubbleReuseId(first, context()) ===
-        messageBubbleReuseId(first, editableCtx)).assertFalse();
-      const anonymous: MessageEntry = cloneMessage(first);
-      anonymous.senderIsUser = false;
-      anonymous.senderId = 0;
-      expect(messageBubbleReuseId(first, context(true)) ===
-        messageBubbleReuseId(anonymous, context(true))).assertFalse();
-      const reply: MessageEntry = cloneMessage(first);
-      reply.replyToMessageId = 1;
-      expect(messageBubbleReuseId(first, context()) ===
-        messageBubbleReuseId(reply, context())).assertFalse();
-      const linked: MessageEntry = cloneMessage(first);
-      linked.text = 'visit https://example.com';
-      expect(messageBubbleReuseId(first, context()) ===
-        messageBubbleReuseId(linked, context())).assertFalse();
-      const translated: MessageEntry = cloneMessage(first);
-      translated.translatedText = 'translated';
-      translated.translatedLang = 'en';
-      expect(messageBubbleReuseId(first, context()) ===
-        messageBubbleReuseId(translated, context())).assertFalse();
+    it('有译文的消息不走轻量渲染（要显示译文块）', 0, () => {
+      const entry: MessageEntry = textEntry(7);
+      entry.translatedText = '译文';
+      expect(canRenderLightweightPlainTextRow(entry, 1, 0)).assertFalse();
     });
 
-    it('reuse_id_tracks_media_album_and_stateful_child_structure', 0, () => {
-      const video: MessageEntry = cloneMessage(textEntry(50));
-      video.contentType = 'video';
-      video.videoFileId = 100;
-      video.photoFileId = 101;
-      const idleVideoCtx: MessageBubbleReuseContext = context();
-      const playingVideoCtx: MessageBubbleReuseContext = context();
-      playingVideoCtx.playSlotActive = true;
-      expect(messageBubbleReuseId(video, idleVideoCtx) ===
-        messageBubbleReuseId(video, playingVideoCtx)).assertFalse();
-
-      const audio: MessageEntry = cloneMessage(textEntry(51));
-      audio.contentType = 'audio';
-      audio.text = '';
-      const noQueueCtx: MessageBubbleReuseContext = context();
-      const queueCtx: MessageBubbleReuseContext = context();
-      queueCtx.audioQueuePosition = 2;
-      queueCtx.audioQueueLength = 4;
-      expect(messageBubbleReuseId(audio, noQueueCtx) ===
-        messageBubbleReuseId(audio, queueCtx)).assertFalse();
-
-      const albumA: MessageBubbleReuseContext = context();
-      albumA.albumItemCount = 2;
-      albumA.memberCount = 2;
-      albumA.albumShape = '2:prfo:vrfo';
-      albumA.albumCaptionShape = 'caption-plain';
-      const albumB: MessageBubbleReuseContext = context();
-      albumB.albumItemCount = 2;
-      albumB.memberCount = 2;
-      albumB.albumShape = '2:prfo:vrfo';
-      albumB.albumCaptionShape = 'caption-link';
-      expect(messageBubbleReuseId(video, albumA) ===
-        messageBubbleReuseId(video, albumB)).assertFalse();
-    });
-
-    it('reuse_id_tracks_poll_game_and_menu_branches', 0, () => {
-      const poll: MessageEntry = cloneMessage(textEntry(60));
-      poll.contentType = 'poll';
-      poll.text = '';
-      poll.pollIsAnonymous = true;
-      const publicPoll: MessageEntry = cloneMessage(poll);
-      publicPoll.pollIsAnonymous = false;
-      expect(messageBubbleReuseId(poll, context()) ===
-        messageBubbleReuseId(publicPoll, context())).assertFalse();
-
-      const quiz: MessageEntry = cloneMessage(poll);
-      quiz.pollIsQuiz = true;
-      quiz.pollCorrectOptionId = -1;
-      const revealedQuiz: MessageEntry = cloneMessage(quiz);
-      revealedQuiz.pollCorrectOptionId = 1;
-      expect(messageBubbleReuseId(quiz, context()) ===
-        messageBubbleReuseId(revealedQuiz, context())).assertFalse();
-
-      const activePollCtx: MessageBubbleReuseContext = context();
-      const expiredPollCtx: MessageBubbleReuseContext = context();
-      expiredPollCtx.pollExpired = true;
-      expect(messageBubbleReuseId(poll, activePollCtx) ===
-        messageBubbleReuseId(poll, expiredPollCtx)).assertFalse();
-
-      const game: MessageEntry = cloneMessage(textEntry(61));
-      game.contentType = 'game';
-      game.text = '';
-      game.gameDescription = 'description';
-      const detailedGame: MessageEntry = cloneMessage(game);
-      detailedGame.gameText = 'extra game text';
-      expect(messageBubbleReuseId(game, context()) ===
-        messageBubbleReuseId(detailedGame, context())).assertFalse();
-
-      const voice: MessageEntry = cloneMessage(textEntry(62));
-      voice.contentType = 'voice';
-      voice.text = '';
-      const captionedVoice: MessageEntry = cloneMessage(voice);
-      captionedVoice.text = 'translatable caption';
-      expect(messageBubbleReuseId(voice, context()) ===
-        messageBubbleReuseId(captionedVoice, context())).assertFalse();
+    it('任一链接预览字段非空都不走轻量渲染', 0, () => {
+      const entry: MessageEntry = textEntry(8);
+      entry.linkTitle = 'Title';
+      expect(canRenderLightweightPlainTextRow(entry, 1, 0)).assertFalse();
     });
   });
 }

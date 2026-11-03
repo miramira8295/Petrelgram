@@ -273,17 +273,16 @@ function fineBucket(data: MessageBubbleRenderData, group: AlbumGroup): string {
 // Structure-only reuse-pool key for the ReusableMessageBubble shell. Message
 // id, text content, timestamps, sender id and any other value that varies
 // with content but not with row structure must never enter this id: doing so
-// turns every row into a one-entry pool and defeats reuse entirely (see the
-// warning on messageBubbleReuseId in messageBubbleReuse.ets).
+// turns every row into a one-entry pool and defeats reuse entirely.
 //
-// This is deliberately a different, coarser function than
-// messageBubbleReuseId in messageBubbleReuse.ets. That one buckets on ~20
-// dimensions for a different consumer and is documented (per the official
-// component-reuse guidance) as too fine-grained to use as the pool key here:
-// an overly specific reuseId starves every pool of spare nodes and performs
-// worse than no reuse at all. rowReuseId stays deliberately coarse and
-// adjustable (coarse/medium/fine) so the right granularity can be measured
-// instead of assumed.
+// 【2026-11-02】这里原来写着「这是和 messageBubbleReuse.ets 里那套 ~20 维复用键
+// 并存的第二个东西，那个服务于另一个消费者」。那个消费者从来不存在——
+// messageBubbleReuseId 生产侧零调用，只有测试在跑；它连同那套 20 维算法已经随
+// 死代码一起删掉。现在全仓只有这一份复用键。
+//
+// 官方组件复用指南也明说：过细的 reuseId 会让每个池都没有备用节点，比不复用
+// 还慢。rowReuseId 因此刻意保持粗粒度、可调（coarse/medium/fine），让粒度可以
+// 实测而不是靠猜。
 //
 // Takes the whole AlbumGroup (not just its head MessageEntry) because the
 // avatar/sender-name/date-separator flags this function needs are per-row
