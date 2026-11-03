@@ -2175,15 +2175,40 @@ export class MessageStore {
     };
     const content: TdObject = { '@type': 'inputMessagePoll' };
     content['question'] = toFormatted(question);
-    content['options'] = options.map((option: string): TdObject => toFormatted(option));
+    // **options 必须是 inputPollOption，不能直接塞 formattedText。**
+    //
+    // TDLib 从 1.8.30 起把 inputMessagePoll.options 从 vector<formattedText>
+    // 改成了 vector<InputPollOption>（每项 { text: FormattedText, media }）。
+    // 本仓钉的是 1.8.65（scripts/build-tdlib.sh 的 PIN_TDLIB），原生库里能查到
+    // 「inputPollOption」这个类型名，却查不到接受纯 formattedText 的旧路径。
+    //
+    // 旧写法不会报错、也不会抛——sendContent 只 in success 分支里 upsert，
+    // 失败静默。所以症状就是「点了发送没反应」（用户 2026-11-03 报的）。
+    content['options'] = options.map((option: string): TdObject => {
+      const item: TdObject = { '@type': 'inputPollOption' };
+      item['text'] = toFormatted(option);
+      return item;
+    });
     content['is_anonymous'] = isAnonymous;
+    // **输入侧的投票类型是 inputPollType*，不是 pollType*。**
+    //
+    // 2026-11-03 真机连撞两次，两条错误看起来互相矛盾，其实指向同一件事：
+    //   · 传 {"@type":"pollTypeRegular"} → Unknown class "pollTypeRegular"
+    //     （pollTypeRegular 是**输出侧** Poll 的类型，输入侧的 InputPollType 是
+    //      另一套类，1.8.65 的 td_api.tl 里明写：
+    //        inputPollTypeRegular allow_adding_options:Bool = InputPollType;
+    //        inputPollTypeQuiz correct_option_ids:vector<int32> ... = InputPollType;）
+    //   · 干脆不传 type → Poll type must be non-empty（校验要求必填）
+    //
+    // 所以普通投票也要显式给，只是类名不同。
     if (isQuiz) {
-      const quizType: TdObject = { '@type': 'pollTypeQuiz' };
-      quizType['correct_option_id'] = correctOptionId;
+      const quizType: TdObject = { '@type': 'inputPollTypeQuiz' };
       quizType['correct_option_ids'] = [correctOptionId];
       content['type'] = quizType;
     } else {
-      content['type'] = { '@type': 'pollTypeRegular' } as TdObject;
+      const regularType: TdObject = { '@type': 'inputPollTypeRegular' };
+      regularType['allow_adding_options'] = false;
+      content['type'] = regularType;
     }
     this.sendContent(content, 'sendPoll');
   }

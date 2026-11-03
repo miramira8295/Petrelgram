@@ -1377,19 +1377,24 @@ export default function messageStoreTest() {
       let content = req!['input_message_content'] as TdObject;
       expect(content['@type']).assertEqual('inputMessagePoll');
       expect(((content['question'] as TdObject)['text'] as string)).assertEqual('喝什么');
+      // options 每项是 inputPollOption { text: FormattedText }，不是裸 formattedText。
       expect((content['options'] as TdObject[])
-        .map((o: TdObject): string => (o['text'] as string | undefined) ?? '').join(','))
+        .map((o: TdObject): string => ((o['text'] as TdObject)['text'] as string | undefined) ?? '')
+        .join(','))
         .assertEqual('茶,咖啡');
+      expect((content['options'] as TdObject[])[0]['@type']).assertEqual('inputPollOption');
       expect(content['is_anonymous']).assertEqual(true);
-      expect((content['type'] as TdObject)['@type']).assertEqual('pollTypeRegular');
+      // 输入侧的投票类型是 InputPollType 的实现（inputPollType*），不是输出侧
+      // 的 PollType（pollType*）——两套类名各自独立，传错会被 TDLib 当未知类拒。
+      expect((content['type'] as TdObject)['@type']).assertEqual('inputPollTypeRegular');
       store.sendPoll('1+1=?', ['2', '3'], false, true, 0);
       await allowSendChecks(b);
       req = b.sent.map((json: string): TdObject => JSON.parse(json) as TdObject)
         .filter((o: TdObject): boolean => o['@type'] === 'sendMessage').pop();
       content = req!['input_message_content'] as TdObject;
       const quizType = content['type'] as TdObject;
-      expect(quizType['@type']).assertEqual('pollTypeQuiz');
-      expect(quizType['correct_option_id']).assertEqual(0);
+      expect(quizType['@type']).assertEqual('inputPollTypeQuiz');
+      // 只有复数形式；单数 correct_option_id 在 1.8.65 里已不存在。
       expect(JSON.stringify(quizType['correct_option_ids'])).assertEqual('[0]');
       expect(content['is_anonymous']).assertEqual(false);
     });
