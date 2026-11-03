@@ -1,6 +1,6 @@
 import { COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
-  displayFileName, fileStatusText, fileTypeVisual, FileTypeVisual
+  displayFileName, fileStatusText, fileTypeVisual, FileTypeVisual, isAudioFileName
 } from '../../util/fileMessage';
 import { str } from '../../util/strings';
 
@@ -119,7 +119,11 @@ export struct FileBubble {
           .width(40).height(40)
           .color(Color.White)
           .style({ strokeWidth: 2 });
-        SymbolGlyph($r('sys.symbol.play_fill')).fontSize(14).fontColor([Color.White]);
+        // 音频用 ▶（这类文件暂停后点一下就是「继续听」）；文档类用下载箭头，
+        // 在 APP/TXT 上放播放三角语义是错的。
+        SymbolGlyph($r(isAudioFileName(this.fileName, this.mimeType)
+          ? 'sys.symbol.play_fill' : 'sys.symbol.arrow_down'))
+          .fontSize(14).fontColor([Color.White]);
       } else if (this.downloadFailed) {
         Text('!')
           .fontSize(22)
@@ -185,30 +189,11 @@ export struct FileBubble {
         }
         this.onOpen();
       });
-      Stack() {
-        Circle({ width: 30, height: 30 })
-          .fill(this.filePath !== '' ? '#143390EC' : '#0D000000');
-        SymbolGlyph($r(this.uploading ? 'sys.symbol.arrow_up'
-          : (this.filePath !== '' ? 'sys.symbol.arrow_down_circle' : 'sys.symbol.arrow_down')))
-          .fontSize(this.filePath !== '' ? 20 : 16)
-          .fontColor([this.sourceUnavailable() ? '#9EA6AF' : COLOR_ICON_SECONDARY]);
-      }
-      .width(30).height(30)
-      .opacity(this.sourceUnavailable() ? 0.45 : 1)
-      .stateStyles({
-        normal: this.actionNormalStyle,
-        pressed: this.actionPressedStyle
-      })
-      .animation({ duration: 100, curve: Curve.EaseOut })
-      .accessibilityText(this.actionAccessibilityText())
-      .onClick((): void => {
-        if (!this.sourceUnavailable()) {
-          this.onSave();
-        }
-      });
     }
     .width(Math.max(190, Math.min(262, this.maxWidth)))
     .alignItems(VerticalAlign.Center)
-    .padding({ top: 1, bottom: 10, right: 31 });
+    // 右侧原来给 30×30 的动作按钮留位；按钮去掉后文字直接铺到边缘，
+    // 只保留时间浮层的 12vp 余量（再多会压到时间）。
+    .padding({ top: 1, bottom: 10, right: 12 });
   }
 }
