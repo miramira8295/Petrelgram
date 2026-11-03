@@ -66,8 +66,17 @@ function publish(network: string, forceTd: boolean = false): void {
 // the asynchronous capability probe completes. The probe still follows and
 // publishes the actual bearer when Wi-Fi/mobile/VPN has changed.
 export function republishNetworkTypeToTd(): void {
+  // **不要用 forceTd=true。**（issue #248）
+  //
+  // 真机日志：每次回前台 0.3 秒后就出现 Ready -> Connecting，约 0.9 秒后才
+  // 回到 Ready —— 就是我们这条 setNetworkType 引起的。TDLib 收到它会重置
+  // 连接，于是左上角每次都先显示「连接中…」再恢复。
+  //
+  // 承载类型没变时发它没有任何收益；真的换了网络，下面 refreshNetworkState
+  // 的异步探测会把新类型 publish 出去（那条仍然 forceTd=true）。所以这里只
+  // 做「保持 AppStorage 一致」，不再触碰 TDLib。
   publish(lastPublished !== '' ? lastPublished :
-    (AppStorage.get<string>(KEY_CURRENT_NETWORK_TYPE) ?? 'other'), true);
+    (AppStorage.get<string>(KEY_CURRENT_NETWORK_TYPE) ?? 'other'), false);
 }
 
 async function cellularType(): Promise<string> {
