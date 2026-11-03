@@ -202,7 +202,7 @@ import {
   reachedLatest
 } from '../../util/readingReturn';
 import {
-  glassTintHex, containerBlur, overlayMaterial
+  glassTintHex, containerBlur, overlayMaterial, overlayGlassFill
 } from '../../util/overlayMaterial';
 import { BOT_START_COMMAND, composerSlotState } from '../../util/botStart';
 import { getAdministrators, AdminRow } from '../../store/ChatAdminApi';
@@ -5653,7 +5653,12 @@ export struct ChatPage {
     // 关不掉（登记了 handleBackPressed 的第一句就会先收它）。
     .bindSheet($$this.diceSheetOpen, this.diceSheet(), {
       height: 320,
-      backgroundColor: Color.Transparent,
+      // **不能写 Color.Transparent。** 那张表的前提是「材质/模糊一定在」：
+      // 材质全关（设置里把厚度调到关闭）时 blurStyle 和 systemMaterial 都退化，
+      // 底色又透明 → 整个抽屉没有背景，聊天内容直接透上来
+      // （2026-11-03 用户报的「材质全关时贴纸添加抽屉背景消失」）。
+      // overlayGlassFill 在材质关时原样返回石头色，材质在时才交给材质。
+      backgroundColor: overlayGlassFill('dialog', $r('app.color.surface')),
       dragBar: false,
       blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog'),
       onAppear: (): void => {
@@ -6336,7 +6341,12 @@ export struct ChatPage {
     // 挂 dock），同一节点上串两个只有最后一个生效。
     .bindSheet($$this.stickerSetSheetOpen, this.stickerSetSheet(), {
       height: 420,
-      backgroundColor: Color.Transparent,
+      // **不能写 Color.Transparent。** 那张表的前提是「材质/模糊一定在」：
+      // 材质全关（设置里把厚度调到关闭）时 blurStyle 和 systemMaterial 都退化，
+      // 底色又透明 → 整个抽屉没有背景，聊天内容直接透上来
+      // （2026-11-03 用户报的「材质全关时贴纸添加抽屉背景消失」）。
+      // overlayGlassFill 在材质关时原样返回石头色，材质在时才交给材质。
+      backgroundColor: overlayGlassFill('dialog', $r('app.color.surface')),
       dragBar: false,
       blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog'),
       onDisappear: (): void => {
