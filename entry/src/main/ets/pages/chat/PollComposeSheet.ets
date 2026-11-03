@@ -154,9 +154,17 @@ export struct PollComposeSheet {
       .width('100%')
       .padding({ left: 16, right: 16, top: 10, bottom: 24 })
       .backgroundColor(COLOR_SURFACE)
-      .borderRadius({ topLeft: 16, topRight: 16 });
+      .borderRadius({ topLeft: 16, topRight: 16 })
+      // 面板自己吃掉点击：不让它冒到根节点的"点外面关闭"上。
+      .onClick((): void => {});
     }
     .width('100%').height('100%')
-    .backgroundColor('#66000000');
+    .backgroundColor('#66000000')
+    // **点抽屉外面关闭改挂在根节点上。**
+    // 原来只挂在中间那层挡板上（Column().layoutWeight(1)），挡板一旦拿不到点击
+    // （被上面的浮动按钮层盖住、或高度被算成 0），点外面就完全没反应
+    // ——2026-11-03 用户报的「投票抽屉点击抽屉外不会回收」。
+    // 根节点铺满整屏，只要命中测试放行就一定能收到；面板自己再吃掉一次。
+    .onClick((): void => this.onClose());
   }
 }

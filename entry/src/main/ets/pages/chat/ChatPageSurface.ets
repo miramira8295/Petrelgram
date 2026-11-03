@@ -192,8 +192,12 @@ export struct ChatPageSurface {
           .hitTestBehavior(HitTestMode.None);
       }
 
-      this.overlayContent();
+      // **顺序就是 z 序**：Stack 里后画的在上。
+      // 浮动按钮必须在覆盖层**之下**——否则右下角那颗回底箭头会压在投票/转发/
+      // 联系人等底部抽屉上面（2026-11-03 用户报的「箭头盖在抽屉上」）。
+      // 抽屉打开时它本来就该被遮住，而不是浮在抽屉之上。
       this.floatingActions();
+      this.overlayContent();
       if (this.search.resultsOpen) {
         SearchResultsSheet({ search: this.search });
       }
