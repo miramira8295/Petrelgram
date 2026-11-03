@@ -1049,6 +1049,10 @@
       "value": "Il microfono serve per inviare messaggi vocali e parlare in diretta"
     },
     {
+      "name": "background_running_reason",
+      "value": "Riprodurre messaggi vocali, scaricare file ed effettuare chiamate richiede che l'app resti in background"
+    },
+    {
       "name": "module_desc",
       "value": "Client non ufficiale di terze parti che si collega alla rete Telegram, non affiliato a Telegram Messenger LLP."
     },

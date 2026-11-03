@@ -1049,6 +1049,10 @@
       "value": "Mikrofon diperlukan untuk menghantar mesej suara dan bercakap dalam siaran"
     },
     {
+      "name": "background_running_reason",
+      "value": "Main mesej suara, muat turun fail dan panggilan memerlukan aplikasi terus berjalan di latar belakang"
+    },
+    {
       "name": "module_desc",
       "value": "Klien pihak ketiga tidak rasmi yang menyambung ke rangkaian Telegram dan tidak berkaitan dengan Telegram Messenger LLP."
     },

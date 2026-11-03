@@ -1049,6 +1049,10 @@
       "value": "Mengirim pesan suara dan berbicara dalam siaran memerlukan mikrofon"
     },
     {
+      "name": "background_running_reason",
+      "value": "Memutar pesan suara, mengunduh file, dan panggilan memerlukan aplikasi tetap berjalan di latar belakang"
+    },
+    {
       "name": "module_desc",
       "value": "Klien pihak ketiga tidak resmi yang terhubung ke jaringan Telegram, tidak berafiliasi dengan Telegram Messenger LLP."
     },

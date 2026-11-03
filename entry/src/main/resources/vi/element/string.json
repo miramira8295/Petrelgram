@@ -1049,6 +1049,10 @@
       "value": "Gửi tin nhắn thoại và phát biểu trực tiếp cần sử dụng micrô"
     },
     {
+      "name": "background_running_reason",
+      "value": "Phát tin nhắn thoại, tải tệp và gọi thoại cần ứng dụng chạy nền"
+    },
+    {
       "name": "module_desc",
       "value": "Ứng dụng khách bên thứ ba không chính thức kết nối mạng Telegram, không liên quan đến Telegram Messenger LLP."
     },

@@ -1049,6 +1049,10 @@
       "value": "L'envoi de messages vocaux et la prise de parole en direct nécessitent le micro"
     },
     {
+      "name": "background_running_reason",
+      "value": "La lecture de messages vocaux, les téléchargements et les appels nécessitent que l'application reste en arrière-plan"
+    },
+    {
       "name": "module_desc",
       "value": "Client tiers non officiel connecté au réseau Telegram, sans lien avec Telegram Messenger LLP."
     },

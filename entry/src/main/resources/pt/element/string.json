@@ -1049,6 +1049,10 @@
       "value": "Enviar mensagens de voz e falar em transmissões requer o uso do microfone"
     },
     {
+      "name": "background_running_reason",
+      "value": "Reproduzir mensagens de voz, baixar arquivos e chamadas exigem que o app continue em segundo plano"
+    },
+    {
       "name": "module_desc",
       "value": "Cliente de terceiros não oficial que se conecta à rede do Telegram, sem vínculo com o Telegram Messenger LLP."
     },

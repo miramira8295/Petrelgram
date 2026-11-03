@@ -1049,6 +1049,10 @@
       "value": "Sesli mesaj göndermek ve canlı yayında konuşmak için mikrofon gerekir"
     },
     {
+      "name": "background_running_reason",
+      "value": "Sesli mesaj oynatma, dosya indirme ve aramalar için uygulamanın arka planda çalışması gerekir"
+    },
+    {
       "name": "module_desc",
       "value": "Telegram ağına bağlanan resmi olmayan üçüncü taraf istemci. Telegram Messenger LLP ile bağlantısı yoktur."
     },

@@ -1049,6 +1049,10 @@
       "value": "傳送語音訊息和直播發言需要使用麥克風"
     },
     {
+      "name": "background_running_reason",
+      "value": "背景播放語音訊息、下載檔案和進行語音通話需要保持背景執行"
+    },
+    {
       "name": "module_desc",
       "value": "連線 Telegram 網路的非官方第三方客戶端，與 Telegram Messenger LLP 無關聯。"
     },

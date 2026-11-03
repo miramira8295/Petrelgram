@@ -1049,6 +1049,10 @@
       "value": "음성 메시지 전송 및 라이브 방송 발언을 위해 마이크가 필요합니다"
     },
     {
+      "name": "background_running_reason",
+      "value": "음성 메시지 재생, 파일 다운로드 및 통화를 위해 백그라운드 실행이 필요합니다"
+    },
+    {
       "name": "module_desc",
       "value": "Telegram 네트워크에 연결하는 비공식 서드파티 클라이언트이며, Telegram Messenger LLP와 관련이 없습니다."
     },

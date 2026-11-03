@@ -1049,6 +1049,10 @@
       "value": "发送语音消息和直播发言需要使用麦克风"
     },
     {
+      "name": "background_running_reason",
+      "value": "后台播放语音消息、下载文件和进行语音通话需要保持后台运行"
+    },
+    {
       "name": "module_desc",
       "value": "连接 Telegram 网络的非官方第三方客户端，与 Telegram Messenger LLP 无关联。"
     },

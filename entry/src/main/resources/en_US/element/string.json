@@ -1049,6 +1049,10 @@
       "value": "Sending voice messages and speaking in a live stream needs the microphone"
     },
     {
+      "name": "background_running_reason",
+      "value": "Playing voice messages, downloading files and voice calls need the app to keep running in the background"
+    },
+    {
       "name": "module_desc",
       "value": "An unofficial third-party client for the Telegram network. Not affiliated with Telegram Messenger LLP."
     },

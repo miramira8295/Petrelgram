@@ -1049,6 +1049,10 @@
       "value": "音声メッセージの送信と配信での発言にはマイクの使用が必要です"
     },
     {
+      "name": "background_running_reason",
+      "value": "音声メッセージの再生・ファイルのダウンロード・通話にはバックグラウンドでの実行が必要です"
+    },
+    {
       "name": "module_desc",
       "value": "Telegram ネットワークに接続する非公式のサードパーティ製クライアントであり、Telegram Messenger LLP とは関係ありません。"
     },

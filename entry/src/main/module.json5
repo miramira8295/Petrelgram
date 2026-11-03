@@ -59,7 +59,19 @@
         "name": "ohos.permission.GET_NETWORK_INFO"
       },
       {
-        "name": "ohos.permission.KEEP_BACKGROUND_RUNNING"
+        "name": "ohos.permission.KEEP_BACKGROUND_RUNNING",
+        // 上架审核项：后台常驻权限必须说明用途与场景，只写名字会被判「用途不明」。
+        // 实际使用方三处，全部走 EntryAbility 的 context：
+        //   · services/MediaPlaybackKeepAlive     → ['audioPlayback']（语音/音频消息连续播放）
+        //   · services/DownloadSaveNotification   → ['dataTransfer']（保存文件到相册/下载目录）
+        //   · services/LiveStreamBackgroundTask   → 直播与语音通话
+        "reason": "$string:background_running_reason",
+        "usedScene": {
+          "when": "inuse",
+          "abilities": [
+            "EntryAbility"
+          ]
+        }
       },
       {
         "name": "ohos.permission.MICROPHONE",

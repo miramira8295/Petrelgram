@@ -1049,6 +1049,10 @@
       "value": "Zum Senden von Sprachnachrichten und Sprechen im Livestream wird das Mikrofon benötigt"
     },
     {
+      "name": "background_running_reason",
+      "value": "Wiedergabe von Sprachnachrichten, Downloads und Anrufe erfordern den Weiterbetrieb im Hintergrund"
+    },
+    {
       "name": "module_desc",
       "value": "Inoffizieller Drittanbieter-Client für das Telegram-Netzwerk, ohne Verbindung zu Telegram Messenger LLP."
     },
