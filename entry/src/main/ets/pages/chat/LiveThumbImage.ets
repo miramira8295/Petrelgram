@@ -127,8 +127,8 @@ export struct LiveThumbImage {
   onSpecChanged(): void {
     if (shouldReattachThumb(this.spec.fileId, this.spec.initialPath,
       this.attachedFileId, this.path)) {
-      // 可下载文件的实时路径以通道为准；纯路径模式由 initialPath 定义身份。
-      this.attach(this.spec.fileId, this.spec.fileId === 0 ? this.spec.initialPath : '');
+      // 可下载文件的实时路径以通道为准，通道尚未就绪时回退到当前 spec 的 initialPath。
+      this.attach(this.spec.fileId, this.spec.initialPath);
     }
     // 即使文件未变，尺寸/像素格式等输入变化仍需交给同一个图片会话。
     this.imageSession.update(this.imageSpec());

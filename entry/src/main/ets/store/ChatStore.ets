@@ -5,14 +5,21 @@ import { actionBarCanUnarchiveOf, actionBarKindOf } from '../util/chatActionBar'
 import { TdClient, TimerFns } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { UserStore } from './UserStore';
-import { ChatEntry, PositionInfo, cloneEntry, computeInitials, compareOrderDesc, effectiveMuted, isMutedFrom, usesDefaultMuteFrom, chatKindOf } from './ChatEntry';
+import {
+  ChatEntry, ChatKind, PositionInfo, cloneEntry, computeInitials, compareOrderDesc, effectiveMuted,
+  isMutedFrom, usesDefaultMuteFrom, chatKindOf, lastMessageSendStateFrom, refreshOutboxSendState
+} from './ChatEntry';
 import { SCOPE_MUTE_EPOCH, scopeMutedForKind } from './ScopeMuteStore';
 import { listKeyOf, chatListOf } from './ListKey';
 import { formatPreview, previewThumbOf } from '../util/formatPreview';
+import { str } from '../util/strings';
 import { logE, logI, logW } from '../util/log';
 import { photoHasAnimation } from '../util/photoAnimation';
 import { senderChannelKey } from '../util/senderAvatarChannel';
 import { invalidateSenderAnimation } from '../util/senderAnimationChannel';
+import {
+  TypingAction, TYPING_ACTION_TTL_MS, chatActionLabelOf, headerKindForChatKind, typingActionKind
+} from '../util/typingIndicator';
 
 const PAGE_LIMIT: number = 30;
 const MAIN: string = 'main';
@@ -136,6 +143,8 @@ export class ChatStore {
   private lateRowSync: Map<number, LateRowSync> = new Map();
   private dirtyAllLists: boolean = false;
   private dirtyChatIds: Set<number> = new Set();
+  private chatActions: Map<number, Map<number, TypingAction>> = new Map();
+  private chatActionTimers: Map<string, number> = new Map();
 
   constructor(client: TdClient, users: UserStore, timer?: TimerFns) {
     this.client = client;
@@ -150,6 +159,9 @@ export class ChatStore {
     client.onUpdate('updateChatPosition', (u: TdObject) => this.onPosition(u));
     client.onUpdate('updateChatLastMessage', (u: TdObject) => this.onLastMessage(u));
     client.onUpdate('updateChatReadInbox', (u: TdObject) => this.onReadInbox(u));
+    client.onUpdate('updateChatReadOutbox', (u: TdObject) => this.onReadOutbox(u));
+    client.onUpdate('updateChatAction', (u: TdObject) => this.onChatAction(u));
+    client.onUpdate('updateUser', (u: TdObject) => this.onChatActionUser(u));
     client.onUpdate('updateChatUnreadMentionCount', (u: TdObject) => this.onUnreadMentions(u));
     client.onUpdate('updateMessageMentionRead', (u: TdObject) => this.onUnreadMentions(u));
     client.onUpdate('updateChatTitle', (u: TdObject) => this.onTitle(u));
@@ -743,10 +755,14 @@ export class ChatStore {
     }
     const sender = message['sender_id'] as TdObject | undefined;
     if (sender === undefined) {
-      return '';
+      return (message['is_outgoing'] as boolean | undefined) === true ? str('sm_you') : '';
     }
     if (sender['@type'] === 'messageSenderUser') {
-      return this.users.displayName(sender['user_id'] as number);
+      const userId: number = (sender['user_id'] as number | undefined) ?? 0;
+      if ((message['is_outgoing'] as boolean | undefined) === true || (this.selfId > 0 && userId === this.selfId)) {
+        return str('sm_you');
+      }
+      return this.users.displayName(userId);
     }
     if (sender['@type'] === 'messageSenderChat') {
       const c = this.chats.get(sender['chat_id'] as number);
@@ -873,6 +889,9 @@ export class ChatStore {
     const samePhoto = previous !== undefined && previous.photoFileId === photoFileId;
     this.notePhotoAnimation(id, chat['photo'] as TdObject | undefined, previous !== undefined && !samePhoto);
     const sameGroupCall = previous !== undefined && previous.liveGroupCallId === groupCallId;
+    const lastReadOutboxId: number = (chat['last_read_outbox_message_id'] as number | undefined) ?? 0;
+    const isSavedMessages: boolean = this.selfId !== 0 && id === this.selfId;
+    const kind: ChatKind = chatKindOf(chat['type'] as TdObject | undefined);
     const entry: ChatEntry = {
       id,
       revision: previous !== undefined ? previous.revision + 1 : 0,
@@ -886,18 +905,21 @@ export class ChatStore {
       unreadMentionCount: (chat['unread_mention_count'] as number | undefined) ?? 0,
       rawUnreadCount: (chat['unread_count'] as number | undefined) ?? 0,
       lastReadInboxId: (chat['last_read_inbox_message_id'] as number | undefined) ?? 0,
+      lastReadOutboxId,
+      lastMessageSendState: lastMessageSendStateFrom(lastMsg, lastReadOutboxId, isSavedMessages, kind),
+      typingText: previous?.typingText ?? '',
       lastMessageText: formatPreview(lastMsg),
       lastMessageThumb: previewThumbOf(lastMsg),
       lastMessageDate: lastMsg !== null ? ((lastMsg['date'] as number | undefined) ?? 0) : 0,
       lastMessageId: this.messageIdOf(lastMsg),
-      lastSenderName: this.senderName(lastMsg ?? undefined),
+      lastSenderName: isSavedMessages ? '' : this.senderName(lastMsg ?? undefined),
       photoFileId,
       // getChat/updateNewChat may refresh a chat after its avatar has already
       // completed. Preserve the resolved path when the photo itself is unchanged.
       avatarPath: samePhoto ? previous!.avatarPath : '',
       initials: computeInitials(title),
       autoDeleteTime: (chat['message_auto_delete_time'] as number | undefined) ?? 0,
-      kind: chatKindOf(chat['type'] as TdObject | undefined),
+      kind,
       isMarkedUnread: (chat['is_marked_as_unread'] as boolean | undefined) ?? false,
       actionBar: actionBarKindOf(chat['action_bar'] as TdObject | undefined),
       actionBarCanUnarchive: actionBarCanUnarchiveOf(chat['action_bar'] as TdObject | undefined),
@@ -907,7 +929,7 @@ export class ChatStore {
       // 报 "Can't delete history of X only for self" 的入口。
       canDeleteOnlyForSelf: (chat['can_be_deleted_only_for_self'] as boolean | undefined) ?? false,
       canDeleteForAllUsers: (chat['can_be_deleted_for_all_users'] as boolean | undefined) ?? false,
-      isSavedMessages: this.selfId !== 0 && id === this.selfId,
+      isSavedMessages,
       background: this.backgroundOf(chat['background']),
       themeName: (chat['theme_name'] as string | undefined) ?? '',
       liveGroupCallId: groupCallId,
@@ -941,12 +963,27 @@ export class ChatStore {
     // the self-chat identity is known.
     this.commitPendingRowSync(id);
     this.clearLateRowSync(id);
+    const selfName: string = this.users.displayName(id);
+    if (selfName !== '') {
+      const youLabel: string = str('sm_you');
+      this.chats.forEach((entry: ChatEntry, chatId: number): void => {
+        if (chatId !== id && entry.lastSenderName === selfName) {
+          const updated = cloneEntry(entry);
+          updated.lastSenderName = youLabel;
+          this.setChatEntry(chatId, updated);
+          this.notify(chatId);
+        }
+      });
+    }
     const existing = this.chats.get(id);
     if (existing === undefined || existing.isSavedMessages) {
       return;
     }
     const next = cloneEntry(existing);
     next.isSavedMessages = true;
+    next.lastSenderName = '';
+    next.lastMessageSendState = refreshOutboxSendState(
+      next.lastMessageSendState, next.lastMessageId, next.lastReadOutboxId ?? 0, true, next.kind);
     this.setChatEntry(id, next);
     this.notify(id);
   }
@@ -970,13 +1007,14 @@ export class ChatStore {
 
   private onLastMessage(update: TdObject): void {
     const id = update['chat_id'] as number;
-    const e = this.chats.get(id);
+    let e = this.chats.get(id);
     if (e === undefined) {
       return;
     }
     const rawLastMessage = update['last_message'];
     const lastMsg: TdObject | null = rawLastMessage !== undefined && rawLastMessage !== null
       ? rawLastMessage as TdObject : null;
+    e = this.clearTypingForMessage(id, e, lastMsg);
     const positions = update['positions'] as TdObject[] | undefined;
     let pending = this.pendingRowSync.get(id);
     const baselineLastId: number = pending !== undefined && pending.latestIncomingLastId > 0
@@ -1227,6 +1265,142 @@ export class ChatStore {
     this.notify(id);
   }
 
+  private actionTimerKey(chatId: number, uid: number): string {
+    return `${chatId}:${uid}`;
+  }
+
+  private clearActionTimer(chatId: number, uid: number): void {
+    const key = this.actionTimerKey(chatId, uid);
+    const prev = this.chatActionTimers.get(key);
+    if (prev !== undefined) {
+      this.timer.clearTimeout(prev);
+      this.chatActionTimers.delete(key);
+    }
+  }
+
+  private computeTypingText(kind: ChatKind, senders: Map<number, TypingAction> | undefined): string {
+    if (senders === undefined || senders.size === 0) {
+      return '';
+    }
+    return chatActionLabelOf(
+      headerKindForChatKind(kind),
+      senders,
+      (uid: number): string => this.users.displayName(uid)
+    );
+  }
+
+  private publishTypingText(chatId: number): void {
+    const e = this.chats.get(chatId);
+    if (e === undefined) {
+      return;
+    }
+    const senders = this.chatActions.get(chatId);
+    const nextText = this.computeTypingText(e.kind, senders);
+    if ((e.typingText ?? '') === nextText) {
+      return;
+    }
+    const c = cloneEntry(e);
+    c.typingText = nextText;
+    this.setChatEntry(chatId, c);
+    this.notifySoon(chatId, true);
+  }
+
+  private onChatAction(update: TdObject): void {
+    const chatId = (update['chat_id'] as number | undefined) ?? 0;
+    const e = this.chats.get(chatId);
+    if (e === undefined || e.isSavedMessages) {
+      return;
+    }
+    const sender = update['sender_id'] as TdObject | undefined;
+    if (sender === undefined || sender['@type'] !== 'messageSenderUser') {
+      return;
+    }
+    const uid = (sender['user_id'] as number | undefined) ?? 0;
+    if (uid <= 0 || (this.selfId > 0 && uid === this.selfId)) {
+      return;
+    }
+    const action = update['action'] as TdObject | undefined;
+    const type = action !== undefined ? ((action['@type'] as string | undefined) ?? '') : '';
+    if (type === 'chatActionCancel') {
+      this.clearActionTimer(chatId, uid);
+      const senders = this.chatActions.get(chatId);
+      if (senders !== undefined && senders.delete(uid)) {
+        if (senders.size === 0) {
+          this.chatActions.delete(chatId);
+        }
+        this.publishTypingText(chatId);
+      }
+      return;
+    }
+    const kind = typingActionKind(type);
+    if (kind === '') {
+      return;
+    }
+    let senders = this.chatActions.get(chatId);
+    if (senders === undefined) {
+      senders = new Map();
+      this.chatActions.set(chatId, senders);
+    }
+    senders.set(uid, { kind, expiresAt: TYPING_ACTION_TTL_MS });
+    this.users.ensure(uid);
+    this.clearActionTimer(chatId, uid);
+    const key = this.actionTimerKey(chatId, uid);
+    const timerId = this.timer.setTimeout((): void => {
+      this.chatActionTimers.delete(key);
+      const map = this.chatActions.get(chatId);
+      if (map !== undefined && map.delete(uid)) {
+        if (map.size === 0) {
+          this.chatActions.delete(chatId);
+        }
+        this.publishTypingText(chatId);
+      }
+    }, TYPING_ACTION_TTL_MS);
+    this.chatActionTimers.set(key, timerId);
+    this.publishTypingText(chatId);
+  }
+
+  private onChatActionUser(update: TdObject): void {
+    const user = update['user'] as TdObject | undefined;
+    const uid = (user?.['id'] as number | undefined) ?? 0;
+    if (uid <= 0) {
+      return;
+    }
+    this.chatActions.forEach((senders: Map<number, TypingAction>, chatId: number): void => {
+      if (senders.has(uid)) {
+        this.publishTypingText(chatId);
+      }
+    });
+  }
+
+  private clearTypingForMessage(chatId: number, e: ChatEntry, lastMsg: TdObject | null): ChatEntry {
+    if (lastMsg === null) {
+      return e;
+    }
+    const senders = this.chatActions.get(chatId);
+    if (senders === undefined || senders.size === 0) {
+      return e;
+    }
+    const sender = lastMsg['sender_id'] as TdObject | undefined;
+    const uid = sender !== undefined && sender['@type'] === 'messageSenderUser'
+      ? ((sender['user_id'] as number | undefined) ?? 0) : 0;
+    if (uid <= 0 || !senders.has(uid)) {
+      return e;
+    }
+    this.clearActionTimer(chatId, uid);
+    senders.delete(uid);
+    if (senders.size === 0) {
+      this.chatActions.delete(chatId);
+    }
+    const nextText = this.computeTypingText(e.kind, senders);
+    if ((e.typingText ?? '') === nextText) {
+      return e;
+    }
+    const c = cloneEntry(e);
+    c.typingText = nextText;
+    this.setChatEntry(chatId, c);
+    return c;
+  }
+
   private onVideoChat(update: TdObject): void {
     const chatId = (update['chat_id'] as number | undefined) ?? 0;
     const entry = this.chats.get(chatId);
@@ -1425,7 +1599,9 @@ export class ChatStore {
       next.lastMessageDate = pending.lastMessage !== null
         ? ((pending.lastMessage['date'] as number | undefined) ?? 0) : 0;
       next.lastMessageId = this.messageIdOf(pending.lastMessage);
-      next.lastSenderName = this.senderName(pending.lastMessage ?? undefined);
+      next.lastSenderName = next.isSavedMessages ? '' : this.senderName(pending.lastMessage ?? undefined);
+      next.lastMessageSendState = lastMessageSendStateFrom(
+        pending.lastMessage, next.lastReadOutboxId ?? 0, next.isSavedMessages, next.kind);
     }
     if (pending.hasUnread) {
       next.rawUnreadCount = pending.rawUnreadCount;
@@ -1482,7 +1658,9 @@ export class ChatStore {
     next.lastMessageDate = lastMessage !== null
       ? ((lastMessage['date'] as number | undefined) ?? 0) : 0;
     next.lastMessageId = this.messageIdOf(lastMessage);
-    next.lastSenderName = this.senderName(lastMessage ?? undefined);
+    next.lastSenderName = next.isSavedMessages ? '' : this.senderName(lastMessage ?? undefined);
+    next.lastMessageSendState = lastMessageSendStateFrom(
+      lastMessage, next.lastReadOutboxId ?? 0, next.isSavedMessages, next.kind);
     next.unreadCount = ChatStore.effectiveUnread(
       next.rawUnreadCount, next.lastReadInboxId, next.lastMessageId);
     this.setChatEntry(chatId, next);
@@ -1508,6 +1686,27 @@ export class ChatStore {
     next.unreadMentionCount = count;
     this.setChatEntry(chatId, next);
     this.notifySoon(chatId, count < entry.unreadMentionCount);
+  }
+
+  private onReadOutbox(update: TdObject): void {
+    const chatId = update['chat_id'] as number;
+    const entry = this.chats.get(chatId);
+    if (entry === undefined) {
+      return;
+    }
+    const lastReadOutboxId: number =
+      (update['last_read_outbox_message_id'] as number | undefined) ?? 0;
+    const nextSendState: string = refreshOutboxSendState(
+      entry.lastMessageSendState, entry.lastMessageId, lastReadOutboxId, entry.isSavedMessages, entry.kind);
+    const previousSendState: string = entry.lastMessageSendState ?? 'none';
+    if (lastReadOutboxId === (entry.lastReadOutboxId ?? 0) && nextSendState === previousSendState) {
+      return;
+    }
+    const next = cloneEntry(entry);
+    next.lastReadOutboxId = lastReadOutboxId;
+    next.lastMessageSendState = nextSendState;
+    this.setChatEntry(chatId, next);
+    this.notify(chatId, nextSendState !== previousSendState);
   }
 
   private applyReadInbox(chatId: number, entry: ChatEntry, rawUnreadCount: number,

@@ -1,7 +1,9 @@
 // 对方操作状态：页面实例各自持有。仅在最早状态到期时唤醒，不做常驻轮询。
 import { TdObject } from '../../tdkit/TdTypes';
-import { getUserStore } from '../../tdkit/Globals';
-import { TypingAction, applyTypingUpdate, pruneExpiredTyping, chatActionLabelOf } from '../../util/typingIndicator';
+import { getChatStore, getUserStore } from '../../tdkit/Globals';
+import {
+  TypingAction, applyTypingUpdate, clearTypingOnNewMessage, pruneExpiredTyping, chatActionLabelOf
+} from '../../util/typingIndicator';
 
 export interface TypingIndicatorHost {
   chatId: () => number;
@@ -18,6 +20,7 @@ export interface TypingIndicatorDependencies {
   displayName: (uid: number) => string;
   schedule: (callback: () => void, delay: number) => number;
   cancel: (timer: number) => void;
+  myUserId?: () => number;
 }
 
 @ObservedV2
@@ -44,7 +47,14 @@ export class TypingIndicatorState {
       ensureUser: (uid: number): void => { getUserStore().ensure(uid); },
       displayName: (uid: number): string => getUserStore().displayName(uid),
       schedule: (callback: () => void, delay: number): number => setTimeout(callback, delay),
-      cancel: (timer: number): void => { clearTimeout(timer); }
+      cancel: (timer: number): void => { clearTimeout(timer); },
+      myUserId: (): number => {
+        try {
+          return getChatStore().selfUserId();
+        } catch (_e) {
+          return 0;
+        }
+      }
     };
   }
 
@@ -78,12 +88,33 @@ export class TypingIndicatorState {
     this.syncScope();
     const now = this.deps.now();
     const expired = pruneExpiredTyping(this.senders, now);
+    const myUid = this.deps.myUserId !== undefined ? this.deps.myUserId() : 0;
     const uid = applyTypingUpdate(this.senders, update, now, this.host.chatId(),
-      this.host.threadRootId(), this.host.forumTopicId(), this.host.directMessagesTopicId());
+      this.host.threadRootId(), this.host.forumTopicId(), this.host.directMessagesTopicId(), myUid);
     if (uid === 0 && !expired) { return; }
     if (uid > 0 && this.senders.has(uid)) { this.deps.ensureUser(uid); }
     this.refreshLabel();
     this.armExpiry();
+  }
+
+  // 对方发来新消息时立即清掉其输入状态，不等 6s 超时。
+  onNewMessage(update: TdObject): void {
+    if (this.disposed || !this.active) { return; }
+    this.syncScope();
+    const message = update['message'] as TdObject | undefined;
+    if (clearTypingOnNewMessage(this.senders, message, this.host.chatId())) {
+      pruneExpiredTyping(this.senders, this.deps.now());
+      this.refreshLabel();
+      this.armExpiry();
+    }
+  }
+
+  // 头部身份类型解析完成后重算一次文案（如未知切私聊时去掉姓名前缀）。
+  refresh(): void {
+    if (this.disposed || !this.active || this.senders.size === 0) { return; }
+    this.syncScope();
+    pruneExpiredTyping(this.senders, this.deps.now());
+    this.refreshLabel();
   }
 
   // UserStore 先处理 updateUser；姓名补齐后更新当前提示，不必等对方再次输入。

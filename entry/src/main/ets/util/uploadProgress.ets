@@ -13,15 +13,21 @@ export function uploadPercentOf(file: TdObject): number {
   if (remote === undefined) {
     return -1;
   }
+  const local = file['local'] as TdObject | undefined;
+  const localCompleted: boolean = local === undefined ||
+    ((local['is_downloading_completed'] as boolean | undefined) ?? false);
+  const active: boolean = (remote['is_uploading_active'] as boolean | undefined) ?? false;
+  const uploaded: number = (remote['uploaded_size'] as number | undefined) ?? 0;
   if ((remote['is_uploading_completed'] as boolean | undefined) ?? false) {
-    return 100;
+    // 远端已存在但本机尚未下载完成的文件（如入站缩略图或服务端回传的新尺寸）
+    // 在 TDLib 中同样带 is_uploading_completed=true；它们不是本机刚上传完的出站文件。
+    return (active || (localCompleted && uploaded > 0)) ? 100 : -1;
   }
-  if (!((remote['is_uploading_active'] as boolean | undefined) ?? false)) {
+  if (!active) {
     return -1;
   }
   const size: number = ((file['size'] as number | undefined) ?? 0) ||
     ((file['expected_size'] as number | undefined) ?? 0);
-  const uploaded: number = (remote['uploaded_size'] as number | undefined) ?? 0;
   if (size <= 0) {
     return 0;
   }

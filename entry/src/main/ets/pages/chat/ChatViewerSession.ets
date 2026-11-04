@@ -23,6 +23,8 @@ export interface ChatViewerSessionHost {
   resumePrefetch: () => void;
   armPlaySlotSettle: () => void;
   exitLandscape: () => void;
+  restoreSystemBars?: () => Promise<void>;
+  isSystemTopBarReady?: () => boolean;
 
 }
 
@@ -35,10 +37,12 @@ export interface ChatViewerSessionHost {
  */
 @ObservedV2
 export class ChatViewerSession {
-  @Trace viewerMsgId: number = 0;
+  @Trace private openState: boolean = false;
+  viewerMsgId: number = 0;
   @Trace chromeVisible: boolean = VIEWER_CHROME_ON_OPEN;
   @Trace viewerVideoLandscape: boolean = false;
   @Trace viewerClosing: boolean = false;
+  @Trace titleBarRestoring: boolean = false;
   @Trace pausedAnimationIds: number[] = [];
   @Trace forcedAnimationIds: number[] = [];
   @Trace failedAnimationIds: number[] = [];
@@ -54,6 +58,7 @@ export class ChatViewerSession {
   });
 
   private playbackRequestedIds: number[] = [];
+  private titleBarRestoreSeq: number = 0;
   private host: ChatViewerSessionHost = {
     store: (): MessageStore | null => null,
     entryById: (_id: number): MessageEntry | null => null,
@@ -75,10 +80,32 @@ export class ChatViewerSession {
   }
 
   setTarget(messageId: number): void {
+    if (this.viewerClosing && messageId !== 0) {
+      return;
+    }
     if (this.viewerMsgId === messageId) { return; }
+    const wasOpen: boolean = this.openState;
+    const nextOpen: boolean = messageId !== 0;
     this.viewerMsgId = messageId;
     this.viewerPositionMs = 0;
-    this.host.onTargetChanged();
+    if (wasOpen !== nextOpen) {
+      this.openState = nextOpen;
+      this.host.onTargetChanged();
+    }
+  }
+
+  // 查看器内部翻页同步当前消息 id：只更新已打开会话的当前目标，绝不在退场动画期间
+  // 把已经置为 false 的 openState 重新翻回 true（否则侧滑返回带出 Swiper 惯性
+  // onChange 时会把正在关闭的查看器重新打开，表现为主界面第一次手势返回退不出去）。
+  updateTarget(messageId: number): void {
+    if (!this.openState || this.viewerClosing || messageId <= 0) {
+      return;
+    }
+    if (this.viewerMsgId === messageId) {
+      return;
+    }
+    this.viewerMsgId = messageId;
+    this.viewerPositionMs = 0;
   }
 
   setChromeVisible(visible: boolean): void {
@@ -90,7 +117,7 @@ export class ChatViewerSession {
   }
 
   viewerOpen(): boolean {
-    return this.viewerMsgId !== 0;
+    return this.openState;
   }
 
   open(messageId: number): void {
@@ -171,6 +198,21 @@ export class ChatViewerSession {
     if (!this.viewerOpen() || this.viewerClosing) {
       return;
     }
+    const holdTitleBar: boolean = !(this.host.isSystemTopBarReady !== undefined
+      ? this.host.isSystemTopBarReady() : true);
+    const restoreSeq: number = ++this.titleBarRestoreSeq;
+    if (holdTitleBar) {
+      this.titleBarRestoring = true;
+    }
+    const restorePromise: Promise<void> = this.host.restoreSystemBars !== undefined
+      ? this.host.restoreSystemBars() : Promise.resolve();
+    if (holdTitleBar) {
+      restorePromise.then((): void => {
+        if (restoreSeq === this.titleBarRestoreSeq) {
+          this.titleBarRestoring = false;
+        }
+      });
+    }
     this.underlay.prepareClose();
     // ⚠️ [Viewer] 探针（S4）：查看器这一簇此前在 hilog 黄金样本里一个标签都没有，
     // S5/S6 改的是生命周期与挂载方式，本地单测证不了——这三条打点是那两批唯一的
@@ -238,18 +280,13 @@ export class ChatViewerSession {
     // Position the viewer Swiper on the tapped album member.
     const sib = albumSiblingIds(this.host.groups(), messageId);
     this.viewerInitIdx = Math.max(0, sib.indexOf(messageId));
-    // 挂载查看器必须在 animateTo 闭包里：geometryTransition 只在动画闭包中
-    // 改变绑定节点的存在性时才会做几何过渡，直接赋值就是瞬间出现（关闭那侧
-    // 早就这么写了，见 closeViewer）。
-    animateTo({
-      duration: this.host.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300),
-      curve: Curve.Friction
-    }, (): void => {
-      this.setTarget(messageId);
-    });
+    // open() 外层已经包在 animateTo 闭包里，这里直接同步切换目标即可。
+    this.setTarget(messageId);
     this.chromeVisible = VIEWER_CHROME_ON_OPEN;
     this.viewerVideoLandscape = false;
     this.viewerClosing = false;
+    this.titleBarRestoreSeq++;
+    this.titleBarRestoring = false;
   }
 
   notePlaybackRequest(messageId: number): void {

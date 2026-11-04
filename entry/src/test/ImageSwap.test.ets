@@ -68,6 +68,7 @@ export default function imageSwapTest() {
     it('same source key keeps the old bitmap even when the path changes', 0, () => {
       expect(shouldBlankBeforeDecode(PATH_A, PATH_B, 'f1', 'f1')).assertFalse();
       expect(shouldBlankBeforeDecode(PATH_A, PATH_B, 'f1', 'f2')).assertTrue();
+      expect(shouldBlankBeforeDecode(PATH_A, PATH_A, 'f1', 'f2')).assertFalse();
       expect(shouldBlankBeforeDecode(PATH_A, PATH_B, '', 'f2')).assertTrue();   // 没有旧身份：退回路径规则
       expect(shouldBlankBeforeDecode('', PATH_B, '', 'f2')).assertFalse();
     });

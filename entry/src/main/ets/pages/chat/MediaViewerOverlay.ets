@@ -4,7 +4,7 @@ import { common } from '@kit.AbilityKit';
 import { batteryInfo } from '@kit.BasicServicesKit';
 import { viewerSystemBarsOwner } from '../../util/systemBarsHidden';
 import { setSystemBarsHidden } from '../../util/systemBarsWindow';
-import { MEDIA_PREFETCH_PRIORITY, MEDIA_VIEWING_PRIORITY } from '../../util/downloadPriority';
+import { MEDIA_VIEWING_PRIORITY } from '../../util/downloadPriority';
 import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import {
@@ -22,7 +22,8 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { promptAction } from '@kit.ArkUI';
 import { logE } from '../../util/log';
 import { setMediaViewerOrientation } from './LiveViewerUi';
-import { thumbPathFor } from '../../util/mediaThumbChannel';
+import { subscribeThumbPath, thumbPathFor } from '../../util/mediaThumbChannel';
+import { progressFor, subscribeProgress } from '../../util/mediaProgressChannel';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { ViewerFilmstripCell } from './ViewerFilmstripCell';
 import {
@@ -41,7 +42,6 @@ import { startBackgroundCache } from '../../services/BackgroundCache';
 import { ensureCacheRegistry, noteCachedMedia } from '../../store/CacheRegistry';
 import { CacheRecord } from '../../util/cacheRegistryModel';
 import { DC_KIND_PHOTO, DC_KIND_VIDEO } from '../../util/downloadCenterModel';
-import { MediaContext, shouldPrefetchNeighbour } from '../../store/MediaPolicy';
 import { firstFinger } from '../../util/firstFinger';
 import { ViewerVideoChips } from './ViewerVideoChips';
 import { QUALITY_AUTO, VideoVariant, variantLabel } from '../../util/videoVariants';
@@ -170,6 +170,7 @@ export struct MediaViewerOverlay {
   // 能力，正好复现迁移前「普通字段只在构造时赋值一次」的行为。官方《@Event》：
   // 「@Event 装饰的回调方法中参数以及返回值由开发者决定」——带返回值是允许的。
   @Event onRequestClose: () => void = (): void => {};
+  @Param closing: boolean = false;
   @Param underlay: ViewerUnderlay | null = null;
   private underlaySession: number = 0;
   private underlayMotion: number = 0;
@@ -236,9 +237,12 @@ export struct MediaViewerOverlay {
   // 关闭，要么弹回 0。
   @Local private dismissY: number = 0;
   // 越界切组：方向（+1 下一组 / -1 上一组 / 0 无）、拉拽进度 0..1、目标组下标。
-  // 松手时按 hopProgress 是否到 1 决定切还是弹回。
+  // 松手时按 gestureHopProgress 是否到 1 决定切还是弹回。
+  // 连续翻页模式（continuousHop=true）不画气泡，跟手过程只改非响应式字段，避免每帧触发组件重绘。
   @Local private hopDir: number = 0;
   @Local private hopProgress: number = 0;
+  private gestureHopDir: number = 0;
+  private gestureHopProgress: number = 0;
   private hopTargetIdx: number = -1;
   // 看图连续翻页（交互设置，issue #167）。打开查看器时读一次。
   private continuousHop: boolean = true;
@@ -255,19 +259,153 @@ export struct MediaViewerOverlay {
   private filmCells: FilmCellVM[] = [];
   private filmSource: KeyedListDataSource<FilmCellVM> =
     new KeyedListDataSource<FilmCellVM>('viewer-film');
+  // 大图层 Swiper 的懒加载数据源：开启连续翻页（continuousHop=true）时包含当前已加载会话窗口里的全部媒体项，
+  // 使跨消息左右切换与同消息多图相册共用同一套原生跟手滑动与预解码；缩略图条（filmSource）仍只展示当前相册。
+  private pagerCells: FilmCellVM[] = [];
+  private pagerSource: KeyedListDataSource<FilmCellVM> =
+    new KeyedListDataSource<FilmCellVM>('viewer-pager');
+  private pagerIds: number[] = [];
+  private pagerIndex: Map<number, number> = new Map<number, number>();
+  private lastPagerKeys: string[] = [];
   // id → 下标两张表：memberIndex 对当前相册成员，messageIndex 对 this.messages。
   private memberIndex: Map<number, number> = new Map<number, number>();
   private messageIndex: Map<number, number> = new Map<number, number>();
+  private indexedMessages: MessageEntry[] = [];
+  private currentGroupVal: AlbumGroup | null = null;
+  private currentGroupIdx: number = -1;
+  private currentSiblingIds: number[] = [];
+  private lastFilmKeys: string[] = [];
+  @Local private thumbTick: number = 0;
+  private thumbUnsubs: Map<number, () => void> = new Map<number, () => void>();
+  @Local private progressTick: number = 0;
+  private progressUnsubs: Map<number, () => void> = new Map<number, () => void>();
+  @Local private loadingHoldMsgId: number = 0;
+  private loadingHoldTimer: number = -1;
+  private rebuildingPager: boolean = false;
   private swiperCtrl: SwiperController = new SwiperController();
   // 系统栏跟着控制栏走：控制栏收起（沉浸）就把状态栏和导航条一起藏掉，显示控制栏
   // 时放回来，关掉查看器一律恢复（util/systemBarsHidden 仲裁，直播全屏共用同一个
   // 开关）。
   private readonly barsOwner: string = viewerSystemBarsOwner();
+  private initialBarsTimer: number = -1;
+  private disappearing: boolean = false;
+
+  @Monitor('closing')
+  onClosingChanged(): void {
+    if (this.closing) {
+      this.disappearing = true;
+      this.cancelInitialBarsTimer();
+      this.cancelLoadingHoldTimer();
+      this.clearThumbUnsubs();
+      this.clearProgressUnsubs();
+    }
+  }
+
+  private clearThumbUnsubs(): void {
+    this.thumbUnsubs.forEach((unsub: () => void): void => { unsub(); });
+    this.thumbUnsubs.clear();
+  }
+
+  private clearProgressUnsubs(): void {
+    this.progressUnsubs.forEach((unsub: () => void): void => { unsub(); });
+    this.progressUnsubs.clear();
+  }
+
+  private cancelLoadingHoldTimer(): void {
+    if (this.loadingHoldTimer !== -1) {
+      clearTimeout(this.loadingHoldTimer);
+      this.loadingHoldTimer = -1;
+    }
+  }
+
+  private startLoadingHold(msgId: number): void {
+    this.cancelLoadingHoldTimer();
+    if (msgId <= 0 || this.siblingIsVideo(msgId) || this.photoSrcFor(msgId) !== '') {
+      this.loadingHoldMsgId = 0;
+      return;
+    }
+    this.loadingHoldMsgId = msgId;
+    this.loadingHoldTimer = setTimeout((): void => {
+      this.loadingHoldTimer = -1;
+      if (this.loadingHoldMsgId === msgId) {
+        this.loadingHoldMsgId = 0;
+      }
+    }, 1500);
+  }
+
+  // 滑到（或点开）某张未加载的图片时才启动下载并进入加载进度态，不提前预下邻图。
+  private activatePhotoLoad(msgId: number, forceRetry: boolean = false): void {
+    if (msgId <= 0 || this.siblingIsVideo(msgId)) {
+      this.cancelLoadingHoldTimer();
+      this.loadingHoldMsgId = 0;
+      return;
+    }
+    this.startLoadingHold(msgId);
+    if (this.store !== null) {
+      this.store.requestFullPhoto(msgId, forceRetry, MEDIA_VIEWING_PRIORITY);
+    }
+  }
+
+  private liveFileProgress(fileId: number): number {
+    if (fileId === 0) {
+      return 0;
+    }
+    const _tick: number = this.progressTick;
+    if (!this.disappearing && _tick >= 0 && !this.progressUnsubs.has(fileId)) {
+      const unsub: () => void = subscribeProgress(fileId, (_pct: number): void => {
+        this.progressTick = (this.progressTick + 1) & 0x7fffffff;
+      });
+      this.progressUnsubs.set(fileId, unsub);
+    }
+    return progressFor(fileId);
+  }
+
+  private liveThumbPath(fileId: number): string {
+    if (fileId === 0) {
+      return '';
+    }
+    const p: string = thumbPathFor(fileId);
+    if (p !== '') {
+      return p;
+    }
+    if (!this.disappearing && !this.thumbUnsubs.has(fileId)) {
+      const unsub: () => void = subscribeThumbPath(fileId, (_landed: string): void => {
+        const existing: (() => void) | undefined = this.thumbUnsubs.get(fileId);
+        if (existing !== undefined) {
+          existing();
+          this.thumbUnsubs.delete(fileId);
+        }
+        this.thumbTick = (this.thumbTick + 1) & 0x7fffffff;
+      });
+      this.thumbUnsubs.set(fileId, unsub);
+    }
+    return '';
+  }
+
+  private cancelInitialBarsTimer(): void {
+    if (this.initialBarsTimer !== -1) {
+      clearTimeout(this.initialBarsTimer);
+      this.initialBarsTimer = -1;
+    }
+  }
 
   private syncSystemBars(): void {
+    if (this.disappearing) {
+      return;
+    }
     // 竖屏下控制栏展开时保留手机系统状态栏；横屏下全程隐藏系统状态栏，由顶栏内直接展示时间与电量。
     setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner,
       this.videoLandscape || !this.chromeVisible);
+  }
+
+  private requestClose(): void {
+    this.disappearing = true;
+    this.cancelInitialBarsTimer();
+    this.cancelLoadingHoldTimer();
+    this.clearThumbUnsubs();
+    this.clearProgressUnsubs();
+    setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner, false);
+    this.onRequestClose();
   }
 
   aboutToAppear(): void {
@@ -275,19 +413,43 @@ export struct MediaViewerOverlay {
     this.underlaySession = this.underlay?.mount() ?? 0;
     const session: number = this.underlaySession;
     this.underlayEntranceFinished = (transitionIn: boolean): void => {
-      if (transitionIn) { this.underlay?.entranceFinished(session); }
+      if (transitionIn) {
+        this.underlay?.entranceFinished(session);
+        this.cancelInitialBarsTimer();
+        if (!this.disappearing && this.dismissY <= 0) {
+          this.syncSystemBars();
+        }
+      }
     };
     this.continuousHop = AppStorage.get<boolean>(KEY_VIEWER_CONTINUOUS_HOP) ?? true;
     this.rebuildViewerSources();
-    this.pageIdx = this.initIdx;
+    const initialPagerIdx: number = indexOfId(this.pagerIndex, this.viewerMsgId);
+    this.pageIdx = initialPagerIdx >= 0 ? initialPagerIdx : this.initIdx;
     this.initialViewerMsgId = this.viewerMsgId;
-    this.prefetchNeighbours(this.pageIdx);
+    this.activatePhotoLoad(this.viewerMsgId, false);
     this.noteViewedVideo();
-    this.syncSystemBars();
+    const entranceMs: number = this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300);
+    if (this.underlay !== null && entranceMs > 0) {
+      // 等入场黑幕盖住会话页后再藏系统状态栏，避免入场动画中途 TYPE_SYSTEM 变 0
+      // 把底下还没退完的 HdsNavDestination 标题栏往上扯。
+      this.initialBarsTimer = setTimeout((): void => {
+        this.initialBarsTimer = -1;
+        if (!this.disappearing && this.dismissY <= 0) {
+          this.syncSystemBars();
+        }
+      }, entranceMs);
+    } else {
+      this.syncSystemBars();
+    }
   }
 
   // Leaving the viewer in landscape would strand the chat page sideways.
   aboutToDisappear(): void {
+    this.disappearing = true;
+    this.cancelInitialBarsTimer();
+    this.cancelLoadingHoldTimer();
+    this.clearThumbUnsubs();
+    this.clearProgressUnsubs();
     this.underlay?.unmount(this.underlaySession);
     setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner, false);
     if (this.videoLandscape) {
@@ -322,39 +484,17 @@ export struct MediaViewerOverlay {
     return type === 'mobile' || type === 'roaming';
   }
 
-  // Prefetches the left/right neighbours' full-resolution photos so paging
-  // to them lands already-sharp. Gated by the shared media policy: off on
-  // metered networks. Videos/GIFs are never prefetched — requestFullPhoto
-  // only ever fetches photoFullFileId, so this filter just avoids wasted
-  // lookups for entries that can't have one.
+  // 翻到已加载窗口首尾附近时补一页历史，但**不提前预下邻图**：未加载的图片按交互约定
+  // 等用户真正滑到该页时再启动下载并展示实时加载进度，避免后台抢带宽与预取报错污染状态。
   private prefetchNeighbours(index: number): void {
-    if (this.store === null) {
-      return;
-    }
-    const ctx: MediaContext = {
-      inWindow: true,
-      isPlaySlot: false,
-      viewerOpen: true,
-      autoplayEnabled: true,
-      powerSaving: false,
-      networkMetered: this.networkMetered(),
-      // shouldPrefetchNeighbour 不看这个字段，查看器语境下填 false 即可。
-      reduceAnimations: false
-    };
-    if (!shouldPrefetchNeighbour(ctx)) {
-      return;
-    }
-    const ids: number[] = this.siblingIds();
-    const neighbourIndexes: number[] = [index - 1, index + 1];
-    for (const i of neighbourIndexes) {
-      if (i < 0 || i >= ids.length) {
-        continue;
+    const ids: number[] = this.pagerIds.length > 0 ? this.pagerIds : this.siblingIds();
+    if (this.continuousHop && ids.length > 0) {
+      if (index <= 1) {
+        this.onNeedHistory(-1);
       }
-      const id: number = ids[i];
-      if (this.siblingIsVideo(id)) {
-        continue;
+      if (index >= ids.length - 2) {
+        this.onNeedHistory(1);
       }
-      this.store.requestFullPhoto(id, false, MEDIA_PREFETCH_PRIORITY);
     }
   }
 
@@ -385,7 +525,7 @@ export struct MediaViewerOverlay {
       return;
     }
     this.setVideoLandscape(false);
-    this.onRequestClose();
+    this.requestClose();
   }
 
   private setVideoLandscape(landscape: boolean): void {
@@ -399,6 +539,7 @@ export struct MediaViewerOverlay {
     this.onVideoLandscapeChange(landscape);
     this.chromeVisible = true;
     this.onChromeVisibleChange(true);
+    this.cancelInitialBarsTimer();
     this.syncSystemBars();
     setMediaViewerOrientation(getContext(this) as common.UIAbilityContext, landscape);
   }
@@ -407,6 +548,7 @@ export struct MediaViewerOverlay {
     const next: boolean = !this.chromeVisible;
     this.chromeVisible = next;
     this.onChromeVisibleChange(next);
+    this.cancelInitialBarsTimer();
     this.syncSystemBars();
   }
 
@@ -501,7 +643,12 @@ export struct MediaViewerOverlay {
   // 1x 下拖：整层跟着手指走。只跟随向下，往上拖不动——向上没有"退出"的语义，
   // 让它跟手只会让用户以为还有别的东西可以拉出来。
   private onDismissUpdate(event: GestureEvent): void {
-    this.dismissY = Math.max(0, event.offsetY);
+    const nextY: number = Math.max(0, event.offsetY);
+    if (nextY > 0 && this.dismissY <= 0) {
+      this.cancelInitialBarsTimer();
+      setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner, false);
+    }
+    this.dismissY = nextY;
   }
 
   // 松手：越过阈值就关，否则弹回。阈值取视口高度的 1/5，比写死一个 vp 数更
@@ -509,7 +656,7 @@ export struct MediaViewerOverlay {
   private onDismissEnd(): void {
     const threshold: number = Math.max(80, this.areaH / 5);
     if (this.dismissY >= threshold) {
-      this.onRequestClose();
+      this.requestClose();
       return;
     }
     this.restoreDismiss();
@@ -523,11 +670,19 @@ export struct MediaViewerOverlay {
     if (duration <= 0) {
       this.dismissY = 0;
       this.underlay?.settled(session, motion);
+      if (!this.disappearing) {
+        this.syncSystemBars();
+      }
       return;
     }
     animateTo({
       duration, curve: Curve.Friction,
-      onFinish: (): void => { this.underlay?.settled(session, motion); }
+      onFinish: (): void => {
+        this.underlay?.settled(session, motion);
+        if (!this.disappearing && this.dismissY <= 0) {
+          this.syncSystemBars();
+        }
+      }
     }, () => { this.dismissY = 0; });
   }
 
@@ -590,6 +745,10 @@ export struct MediaViewerOverlay {
     if (Date.now() < this.ignoreTapUntilMs) {
       return;
     }
+    if (!this.isVideo() && this.photoSrc() === '' && this.photoEmptyFailed()) {
+      this.retryPhoto();
+      return;
+    }
     this.toggleChrome();
   }
 
@@ -627,19 +786,26 @@ export struct MediaViewerOverlay {
   }
 
   private currentGroupIndex(): number {
+    if (this.currentGroupIdx >= 0 && this.currentGroupIdx < this.groups.length &&
+      this.groups[this.currentGroupIdx].memberIds.indexOf(this.viewerMsgId) >= 0) {
+      return this.currentGroupIdx;
+    }
     return this.groups.findIndex(
       (g: AlbumGroup): boolean => g.memberIds.indexOf(this.viewerMsgId) >= 0);
   }
 
   // Swiper 拖动中：判断有没有越界，以及拉了多少。
   private onSwiperGesture(offset: number): void {
-    const ids: number[] = this.siblingIds();
+    if (this.disappearing || this.closing || this.rebuildingPager) {
+      return;
+    }
+    const ids: number[] = this.pagerIds.length > 0 ? this.pagerIds : this.siblingIds();
     const dir: number = hopDirection(this.pageIdx, ids.length, offset);
     if (dir === 0) {
       this.clearHop();
       return;
     }
-    if (dir !== this.hopDir) {
+    if (dir !== this.gestureHopDir) {
       // 换了方向：重新找目标组。找不到就当没越界——没有下一组时不该弹气泡。
       const from: number = this.currentGroupIndex();
       const target: number = from < 0 ? -1 : nextMediaGroupIndex(
@@ -654,28 +820,46 @@ export struct MediaViewerOverlay {
         return;
       }
       this.hopTargetIdx = target;
-      this.hopDir = dir;
+      this.gestureHopDir = dir;
+      if (!this.continuousHop) {
+        this.hopDir = dir;
+      }
     }
-    this.hopProgress = hopProgress(offset, hopThreshold(this.areaW, this.continuousHop));
+    const nextProgress: number = hopProgress(offset, hopThreshold(this.areaW, this.continuousHop));
+    this.gestureHopProgress = nextProgress;
+    if (!this.continuousHop) {
+      this.hopProgress = nextProgress;
+    }
   }
 
   private clearHop(): void {
+    this.gestureHopDir = 0;
+    this.gestureHopProgress = 0;
+    this.hopTargetIdx = -1;
     if (this.hopDir === 0 && this.hopProgress === 0) {
       return;
     }
     this.hopDir = 0;
     this.hopProgress = 0;
-    this.hopTargetIdx = -1;
   }
 
   // 松手：拉够了就切组，没拉够就把气泡收回去、什么都不做。
   private settleHop(): void {
-    const dir: number = this.hopDir;
+    if (this.disappearing || this.closing || this.rebuildingPager) {
+      this.clearHop();
+      return;
+    }
+    const dir: number = this.gestureHopDir;
     const target: number = this.hopTargetIdx;
-    if (dir === 0 || target < 0 || this.hopProgress < 1) {
-      animateTo({
-        duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 180), curve: Curve.Friction
-      }, () => { this.clearHop(); });
+    const progress: number = this.gestureHopProgress;
+    if (dir === 0 || target < 0 || progress < 1) {
+      if (!this.continuousHop && (this.hopDir !== 0 || this.hopProgress !== 0)) {
+        animateTo({
+          duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 180), curve: Curve.Friction
+        }, () => { this.clearHop(); });
+      } else {
+        this.clearHop();
+      }
       return;
     }
     this.clearHop();
@@ -686,6 +870,7 @@ export struct MediaViewerOverlay {
     // 往后切落在新组的第一张，往前切落在最后一张——都是"接着刚才的方向继续
     // 看下去"的那一张，而不是让用户从组的另一头重新开始。
     const landing: number = dir > 0 ? g.memberIds[0] : g.memberIds[g.memberIds.length - 1];
+    const landingFilmIdx: number = dir > 0 ? 0 : g.memberIds.length - 1;
     this.resetPhotoZoom(false);
     this.dismissY = 0;
     this.underlay?.settled(this.underlaySession, this.underlayMotion);
@@ -696,14 +881,18 @@ export struct MediaViewerOverlay {
     this.livePlaying = false;
     this.viewerMsgId = landing;
     this.onViewerMsgIdChange(landing);
+    this.rebuildViewerSources();
+    const landingPagerIdx: number = indexOfId(this.pagerIndex, landing);
+    this.pageIdx = landingPagerIdx >= 0 ? landingPagerIdx : landingFilmIdx;
     this.ensureLiveDownload(landing);
     this.noteViewedVideo();
-    this.pageIdx = dir > 0 ? 0 : g.memberIds.length - 1;
+    this.activatePhotoLoad(landing, false);
     this.prefetchNeighbours(this.pageIdx);
     // 缩略图条的内容随 viewerMsgId 自动换掉，但滚动偏移不会——手动带回去。
     // 放在下一帧：这一帧新的那批缩略图还没挂上，量不出位置。
-    const landingIdx: number = this.pageIdx;
-    setTimeout((): void => { this.scrollFilmstripTo(landingIdx); }, 0);
+    if (this.chromeVisible && g.memberIds.length > 1) {
+      setTimeout((): void => { this.scrollFilmstripTo(landingFilmIdx); }, 0);
+    }
     if (this.continuousHop) {
       this.slideInFromHop(dir);
     }
@@ -746,9 +935,25 @@ export struct MediaViewerOverlay {
   }
 
   private rebuildViewerSources(): void {
-    this.messageIndex = idIndexMap(this.messages.map((m: MessageEntry): number => m.id));
-    const g: AlbumGroup | null = this.group();
-    const ids: number[] = this.siblingIds();
+    if (this.indexedMessages !== this.messages || this.messageIndex.size !== this.messages.length) {
+      this.indexedMessages = this.messages;
+      this.messageIndex = idIndexMap(this.messages.map((m: MessageEntry): number => m.id));
+    }
+    let foundIdx: number = -1;
+    let g: AlbumGroup | null = null;
+    for (let i = 0; i < this.groups.length; i++) {
+      if (this.groups[i].memberIds.indexOf(this.viewerMsgId) >= 0) {
+        foundIdx = i;
+        g = this.groups[i];
+        break;
+      }
+    }
+    this.currentGroupIdx = foundIdx;
+    this.currentGroupVal = g;
+    const ids: number[] = (g !== null && g.memberIds.length > 1)
+      ? g.memberIds
+      : (this.viewerMsgId !== 0 ? [this.viewerMsgId] : []);
+    this.currentSiblingIds = ids;
     this.memberIndex = idIndexMap(ids);
     // 取值顺序与 siblingPath 一致：先相册行（通道的 fileId 在这儿），再退回 entry。
     const paths: string[] = [];
@@ -781,12 +986,106 @@ export struct MediaViewerOverlay {
           (e !== null ? e.date : 0) * 1000);
       }
     }
-    this.filmSource.update(this.filmCells, filmCellIds(this.filmCells), cellKeys(this.filmCells));
+    const nextKeys: string[] = cellKeys(this.filmCells);
+    let keysSame: boolean = nextKeys.length === this.lastFilmKeys.length;
+    if (keysSame) {
+      for (let i = 0; i < nextKeys.length; i++) {
+        if (nextKeys[i] !== this.lastFilmKeys[i]) {
+          keysSame = false;
+          break;
+        }
+      }
+    }
+    if (!keysSame) {
+      this.lastFilmKeys = nextKeys;
+      this.filmSource.update(this.filmCells, filmCellIds(this.filmCells), nextKeys);
+    }
+
+    // 构造大图层 Swiper 的数据源：开启连续翻页时把当前已加载窗口里的全部媒体项编入同一个 Swiper，
+    // 使跨消息左右切换走原生跟手翻页与邻页预挂载；关闭连续翻页时退回仅含当前相册成员。
+    if (this.continuousHop && this.groups.length > 0) {
+      const pIds: number[] = [];
+      const pPaths: string[] = [];
+      const pFileIds: number[] = [];
+      for (let gi = 0; gi < this.groups.length; gi++) {
+        if (!this.groupIsMedia(gi)) {
+          continue;
+        }
+        const grp: AlbumGroup = this.groups[gi];
+        for (let mi = 0; mi < grp.memberIds.length; mi++) {
+          const mid: number = grp.memberIds[mi];
+          pIds.push(mid);
+          const gPath: string = mi < grp.photoPaths.length ? grp.photoPaths[mi] : '';
+          const gFile: number = mi < grp.photoFileIds.length ? grp.photoFileIds[mi] : 0;
+          if (gFile !== 0 || gPath !== '') {
+            pPaths.push(gPath);
+            pFileIds.push(gFile);
+            continue;
+          }
+          const e: MessageEntry | null = this.entryById(mid);
+          pPaths.push(e !== null ? e.photoPath : '');
+          pFileIds.push(e !== null ? e.photoFileId : 0);
+        }
+      }
+      if (pIds.length > 0 && pIds.indexOf(this.viewerMsgId) >= 0) {
+        this.pagerIds = pIds;
+        this.pagerCells = buildFilmCells(pIds, pPaths, pFileIds,
+          (id: number): boolean => this.siblingIsVideo(id),
+          (id: number): string => {
+            const e: MessageEntry | null = this.entryById(id);
+            return e !== null && e.photoFileId === 0 ? e.videoPath : '';
+          });
+      } else {
+        this.pagerIds = ids;
+        this.pagerCells = this.filmCells;
+      }
+    } else {
+      this.pagerIds = ids;
+      this.pagerCells = this.filmCells;
+    }
+    this.pagerIndex = idIndexMap(this.pagerIds);
+    const nextPageIdx: number = indexOfId(this.pagerIndex, this.viewerMsgId);
+    const nextPagerKeys: string[] = cellKeys(this.pagerCells);
+    let pagerKeysSame: boolean = nextPagerKeys.length === this.lastPagerKeys.length;
+    if (pagerKeysSame) {
+      for (let i = 0; i < nextPagerKeys.length; i++) {
+        if (nextPagerKeys[i] !== this.lastPagerKeys[i]) {
+          pagerKeysSame = false;
+          break;
+        }
+      }
+    }
+    if (nextPageIdx >= 0 && nextPageIdx !== this.pageIdx) {
+      this.pageIdx = nextPageIdx;
+    }
+    if (!pagerKeysSame) {
+      this.lastPagerKeys = nextPagerKeys;
+      this.rebuildingPager = true;
+      this.pagerSource.update(this.pagerCells, filmCellIds(this.pagerCells), nextPagerKeys);
+      this.rebuildingPager = false;
+    }
   }
 
   private entryById(id: number): MessageEntry | null {
+    const len: number = this.messages.length;
+    const _tick: number = this.thumbTick;
+    if (len === 0 || id === 0 || _tick < 0) {
+      return null;
+    }
+    if (this.indexedMessages !== this.messages || this.messageIndex.size !== len) {
+      this.indexedMessages = this.messages;
+      this.messageIndex = idIndexMap(this.messages.map((m: MessageEntry): number => m.id));
+    }
     const idx: number = indexOfId(this.messageIndex, id);
-    return idx >= 0 && idx < this.messages.length ? this.messages[idx] : null;
+    if (idx >= 0 && idx < len && this.messages[idx].id === id) {
+      return this.messages[idx];
+    }
+    const found: number = this.messages.findIndex((m: MessageEntry): boolean => m.id === id);
+    if (found >= 0) {
+      this.messageIndex.set(id, found);
+      return this.messages[found];
+    }
+    return null;
   }
 
   private entry(): MessageEntry | null {
@@ -817,6 +1116,9 @@ export struct MediaViewerOverlay {
 
   // The album (media group) containing the viewer's current message, if any.
   private group(): AlbumGroup | null {
+    if (this.currentGroupVal !== null && this.memberIndex.has(this.viewerMsgId)) {
+      return this.currentGroupVal;
+    }
     for (const g of this.groups) {
       if (g.memberIds.indexOf(this.viewerMsgId) >= 0) {
         return g;
@@ -828,6 +1130,9 @@ export struct MediaViewerOverlay {
   // Sibling message ids for swipe/filmstrip navigation — just the current
   // message when it isn't part of a multi-item album.
   private siblingIds(): number[] {
+    if (this.currentSiblingIds.length > 0 && this.memberIndex.has(this.viewerMsgId)) {
+      return this.currentSiblingIds;
+    }
     const g = this.group();
     if (g !== null && g.memberIds.length > 1) {
       return g.memberIds;
@@ -850,12 +1155,23 @@ export struct MediaViewerOverlay {
   // 修法不是把 photoPaths 塞回 key 或 sameRenderSnapshot——那正是重建风暴的来源。
   // 通道按 fileId 索引、永远是最新的，而 photoFileIds **在** key 里（所以是新鲜的）。
   private siblingPath(id: number): string {
+    const pIdx: number = indexOfId(this.pagerIndex, id);
+    if (pIdx >= 0 && pIdx < this.pagerCells.length) {
+      const cell: FilmCellVM = this.pagerCells[pIdx];
+      const live: string = cell.fileId !== 0 ? this.liveThumbPath(cell.fileId) : '';
+      if (live !== '') {
+        return live;
+      }
+      if (cell.path !== '') {
+        return cell.path;
+      }
+    }
     const g = this.group();
     if (g !== null) {
       const idx: number = indexOfId(this.memberIndex, id);
       if (idx >= 0 && idx < g.photoPaths.length) {
         const fileId: number = idx < g.photoFileIds.length ? g.photoFileIds[idx] : 0;
-        const live: string = fileId !== 0 ? thumbPathFor(fileId) : '';
+        const live: string = fileId !== 0 ? this.liveThumbPath(fileId) : '';
         if (live !== '') {
           return live;
         }
@@ -866,12 +1182,11 @@ export struct MediaViewerOverlay {
         // 的新鲜列表，不受 reuseUnchangedRows 影响）。
       }
     }
-    const idx2 = this.messages.findIndex((m: MessageEntry) => m.id === id);
-    if (idx2 < 0) {
+    const entry: MessageEntry | null = this.entryById(id);
+    if (entry === null) {
       return '';
     }
-    const entry: MessageEntry = this.messages[idx2];
-    const live: string = entry.photoFileId !== 0 ? thumbPathFor(entry.photoFileId) : '';
+    const live: string = entry.photoFileId !== 0 ? this.liveThumbPath(entry.photoFileId) : '';
     if (live !== '') {
       return live;
     }
@@ -902,9 +1217,13 @@ export struct MediaViewerOverlay {
     if (e === null) {
       return '';
     }
-    const live: string = e.photoFileId !== 0 ? thumbPathFor(e.photoFileId) : '';
+    const fullLive: string = e.photoFullFileId !== 0 ? this.liveThumbPath(e.photoFullFileId) : '';
+    const live: string = e.photoFileId !== 0 ? this.liveThumbPath(e.photoFileId) : '';
     const p = e.photoFullPath !== ''
-      ? e.photoFullPath : (e.photoPath !== '' ? e.photoPath : live);
+      ? e.photoFullPath
+      : (fullLive !== ''
+        ? fullLive
+        : (e.photoPath !== '' ? e.photoPath : (live !== '' ? live : this.siblingPath(id))));
     return p.startsWith('/') ? `file://${p}` : p;
   }
 
@@ -920,14 +1239,17 @@ export struct MediaViewerOverlay {
 
   // Filmstrip tap: page the Swiper to the tapped album member.
   private jumpToSibling(id: number): void {
-    const i: number = indexOfId(this.memberIndex, id);
+    const i: number = indexOfId(this.pagerIndex, id);
     if (i >= 0) {
       this.swiperCtrl.changeIndex(i, true);
     }
   }
 
   private onPageChange(index: number): void {
-    const ids = this.siblingIds();
+    if (this.disappearing || this.closing || this.rebuildingPager) {
+      return;
+    }
+    const ids: number[] = this.pagerIds.length > 0 ? this.pagerIds : this.siblingIds();
     if (index < 0 || index >= ids.length) {
       return;
     }
@@ -951,17 +1273,19 @@ export struct MediaViewerOverlay {
     this.pageIdx = index;
     this.viewerMsgId = id;
     this.onViewerMsgIdChange(id);
+    this.rebuildViewerSources();
     this.ensureLiveDownload(id);
     this.noteViewedVideo();
-    if (this.store !== null && !this.siblingIsVideo(id)) {
-      // 翻到的这一张就是用户此刻正盯着的那一个文件——最高档，压过邻图预取(8)
-      // 与后台缩略图(16)。这张多半是刚才以 8 预取过的，store 会补发一次
-      // downloadFile 把它提上来（见 requestFullPhoto 里的说明）。
-      this.store.requestFullPhoto(id, false, MEDIA_VIEWING_PRIORITY);
-    }
-    this.prefetchNeighbours(index);
+    this.activatePhotoLoad(id, false);
+    this.prefetchNeighbours(this.pageIdx);
     // 组内翻页也把缩略图条带过去：不然翻到第七张时高亮的那一格还在条外面。
-    this.scrollFilmstripTo(index);
+    const siblings: number[] = this.siblingIds();
+    if (this.chromeVisible && siblings.length > 1) {
+      const filmIdx: number = indexOfId(this.memberIndex, id);
+      if (filmIdx >= 0) {
+        this.scrollFilmstripTo(filmIdx);
+      }
+    }
   }
 
   // 当前这一项的缓存记录（services/BackgroundCache、store/CacheRegistry）。视频取整段视频文件，图片取原图。
@@ -1235,12 +1559,28 @@ export struct MediaViewerOverlay {
       !e.photoFullFailed;
   }
 
-  private photoProgress(): number {
-    const e = this.entry();
+  private photoProgressFor(id: number): number {
+    const e = this.entryById(id);
     if (e === null) {
       return 0;
     }
-    return e.photoFullProgress > 0 ? e.photoFullProgress : e.photoProgress;
+    const liveFull: number = e.photoFullFileId !== 0 ? this.liveFileProgress(e.photoFullFileId) : 0;
+    const fullPct: number = Math.max(e.photoFullProgress, liveFull);
+    if (fullPct > 0 && fullPct < 100) {
+      return fullPct;
+    }
+    if (e.photoFullPath === '' && e.photoPath === '') {
+      const liveThumb: number = e.photoFileId !== 0 ? this.liveFileProgress(e.photoFileId) : 0;
+      const thumbPct: number = Math.max(e.photoProgress, liveThumb);
+      if (thumbPct > 0 && thumbPct < 100) {
+        return thumbPct;
+      }
+    }
+    return fullPct > 0 ? fullPct : e.photoProgress;
+  }
+
+  private photoProgress(): number {
+    return this.photoProgressFor(this.viewerMsgId);
   }
 
   private photoFailed(): boolean {
@@ -1261,21 +1601,44 @@ export struct MediaViewerOverlay {
       e.photoFileId === 0 && e.photoFullFileId === 0;
   }
 
+  private photoEmptyFailedFor(id: number): boolean {
+    if (id !== this.viewerMsgId || this.loadingHoldMsgId === id) {
+      return false;
+    }
+    const e: MessageEntry | null = this.entryById(id);
+    if (e === null) {
+      return false;
+    }
+    // 空白画面下（预览图与原图都未落地），只要缩略图或原图任意一路还有有效 fileId 且未失败，
+    // 就保持展示居中加载态，避免预取或原图单路报错时直接跳过加载状态显示"图片加载失败"。
+    const thumbPending: boolean = e.photoFileId !== 0 && !e.photoFailed;
+    const fullPending: boolean = e.photoFullFileId !== 0 && !e.photoFullFailed;
+    if (thumbPending || fullPending) {
+      return false;
+    }
+    return true;
+  }
+
+  private photoEmptyFailed(): boolean {
+    return this.photoEmptyFailedFor(this.viewerMsgId);
+  }
+
   private retryPhoto(): void {
     if (this.store === null || this.viewerMsgId === 0) {
       return;
     }
+    this.activatePhotoLoad(this.viewerMsgId, true);
     this.store.retryPhoto(this.viewerMsgId);
   }
 
   @Builder
-  photoLoadingState() {
+  photoLoadingStateFor(id: number) {
     Column({ space: 10 }) {
-      if (this.photoProgress() > 0) {
+      if (this.photoProgressFor(id) > 0 && this.photoProgressFor(id) < 100) {
         Stack() {
-          Progress({ value: this.photoProgress(), total: 100, type: ProgressType.Ring })
+          Progress({ value: this.photoProgressFor(id), total: 100, type: ProgressType.Ring })
             .width(44).height(44).color(Color.White);
-          Text(`${this.photoProgress()}%`).fontSize(10).fontColor(Color.White);
+          Text(`${this.photoProgressFor(id)}%`).fontSize(10).fontColor(Color.White);
         }
       } else {
         LoadingProgress().width(38).height(38).color(Color.White);
@@ -1431,14 +1794,16 @@ export struct MediaViewerOverlay {
   @Builder
   viewerContent() {
     Swiper(this.swiperCtrl) {
-      LazyForEach(this.filmSource, (vm: FilmCellVM) => {
+      LazyForEach(this.pagerSource, (vm: FilmCellVM) => {
         Stack() {
           if (this.siblingIsVideo(vm.id)) {
             Stack() {
               // 原生 Surface 退场/释放时保留海报底图，几何转场仍有可绘制内容。
               if (this.siblingPath(vm.id) !== '') {
                 Image(this.siblingPath(vm.id).startsWith('/')
-                  ? `file://${this.siblingPath(vm.id)}` : this.siblingPath(vm.id)).draggable(false)
+                  ? `file://${this.siblingPath(vm.id)}` : this.siblingPath(vm.id))
+                  .syncLoad(true)
+                  .draggable(false)
                   .objectFit(ImageFit.Contain).width('100%').height('100%');
               }
               // 本地文件在就挂播放器，不能只认 fileId：下载中心磁盘扫出来的视频
@@ -1514,7 +1879,9 @@ export struct MediaViewerOverlay {
             // factor. The Image only carries the scale/translate transform.
             Stack() {
               if (this.photoSrcFor(vm.id) !== '') {
-                Image(this.photoSrcFor(vm.id)).draggable(false)
+                Image(this.photoSrcFor(vm.id))
+                  .syncLoad(true)
+                  .draggable(false)
                   .objectFit(ImageFit.Contain).width('100%').height('100%')
                   .scale({
                     x: vm.id === this.viewerMsgId ? this.photoScale : VIEWER_MIN_SCALE,
@@ -1524,6 +1891,17 @@ export struct MediaViewerOverlay {
                     x: vm.id === this.viewerMsgId ? this.photoOffsetX : 0,
                     y: vm.id === this.viewerMsgId ? this.photoOffsetY : 0
                   });
+              } else {
+                Column() {
+                  if (this.photoEmptyFailedFor(vm.id)) {
+                    this.photoErrorState();
+                  } else {
+                    this.photoLoadingStateFor(vm.id);
+                  }
+                }
+                .width('100%').height('100%')
+                .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+                .hitTestBehavior(HitTestMode.Transparent);
               }
             }
             .width('100%').height('100%')
@@ -1596,12 +1974,12 @@ export struct MediaViewerOverlay {
           }
         }.width('100%').height('100%');
       }, (vm: FilmCellVM, index: number): string =>
-        guardKey(this.filmSource.keyTableId, index, `vm_${vm.id}|${vm.fileId}`));
+        guardKey(this.pagerSource.keyTableId, index, `vm_${vm.id}|${vm.fileId}`));
     }
     .indicator(false)
     .loop(false)
-    // 懒加载之后仍要左右各预建一页，翻页手感不变；再多就回到「整册都建」了。
-    .cachedCount(1)
+    // 懒加载之后左右各预建两页，连续滑动时邻页已提前挂载并完成同步解码。
+    .cachedCount(2)
     .index(this.pageIdx)
     // While enlarged, one-finger movement must not page the album out from
     // under the zoomed photo. Resetting to 1x re-enables normal paging.
@@ -1625,18 +2003,7 @@ export struct MediaViewerOverlay {
     })
     .translate({ x: this.hopSlideX })
     .width('100%').height('100%');
-    if (!this.isVideo() && this.photoSrc() === '') {
-      Column() {
-        if (this.photoFailed()) {
-          this.photoErrorState();
-        } else {
-          this.photoLoadingState();
-        }
-      }
-      .width('100%').height('100%')
-      .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
-      .hitTestBehavior(HitTestMode.Transparent);
-    } else if (!this.isVideo() && this.photoUpgrading() && this.chromeVisible) {
+    if (!this.isVideo() && this.photoSrc() !== '' && this.photoUpgrading() && this.chromeVisible) {
       Row({ space: 7 }) {
         LoadingProgress().width(15).height(15).color(Color.White);
         Text(this.photoProgress() > 0
@@ -1652,7 +2019,7 @@ export struct MediaViewerOverlay {
       .transition(TransitionEffect.OPACITY
         .combine(TransitionEffect.translate({ y: -5 }))
         .animation({ duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 160), curve: Curve.EaseOut }));
-    } else if (!this.isVideo() && this.photoFailed() && this.chromeVisible) {
+    } else if (!this.isVideo() && this.photoSrc() !== '' && this.photoFailed() && this.chromeVisible) {
       Row({ space: 6 }) {
         SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(14).fontColor([Color.White]);
         Text($r('app.string.mv_full_failed')).fontSize(12).fontColor(Color.White);
@@ -1716,7 +2083,8 @@ export struct MediaViewerOverlay {
     // 重建，偏移随之归零——不在这里补一次，回来看到的就是第一张而不是当前这张
     // （用户 2026-09-16 实测）。下一帧再滚：这一帧行还没排版，量不到位置。
     .onAppear((): void => {
-      setTimeout((): void => { this.scrollFilmstripTo(this.pageIdx); }, 0);
+      const filmIdx: number = indexOfId(this.memberIndex, this.viewerMsgId);
+      setTimeout((): void => { this.scrollFilmstripTo(filmIdx >= 0 ? filmIdx : 0); }, 0);
     });
   }
 
@@ -1852,7 +2220,7 @@ export struct MediaViewerOverlay {
           duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
           curve: Curve.EaseOut
         })
-        .onClick(() => { this.onRequestClose(); });
+        .onClick(() => { this.requestClose(); });
         Column({ space: 1 }) {
           Text(this.infoTitle()).fontSize(this.videoLandscape ? 14 : 15).fontColor(Color.White)
             .fontWeight(FontWeight.Medium)

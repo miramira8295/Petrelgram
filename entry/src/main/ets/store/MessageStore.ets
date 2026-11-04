@@ -237,8 +237,12 @@ export class MessageStore {
   // 贴纸本体下载的失败次数（fileId → 次数）。原来失败一次就永久放弃、只等用户
   // 点 ↻；缩略图那边一直是 3 次退避重试，贴纸没理由更脆。
   private stickerAttempts: Map<number, number> = new Map();
+  private fullPhotoAttempts: Map<number, number> = new Map();
   // 已经为它重取过消息的 fileId。重取只做一次：新 id 再失败就是真失败。
   private refreshedFiles: Set<number> = new Set();
+  // 大图下载失败后正在等待 getMessage 刷新新 fileId 的消息（messageId -> priority）。
+  // 刷新期间不把 entry 标成 photoFullFailed，等新 id 拿到后自动按原优先级重发起下载。
+  private fullPhotoPendingRefresh: Map<number, number> = new Map();
   private thumbLastKick: Map<number, number> = new Map();
   private peerUserId: number = 0;
   private peerUserStatus: TdObject | undefined = undefined;
@@ -1872,6 +1876,20 @@ export class MessageStore {
     this.client.send(req).catch((): void => {});
   }
 
+  cancelTyping(): void {
+    if (this.lastTypingAtMs === 0) { return; }
+    this.lastTypingAtMs = 0;
+    const req: TdRequest = { '@type': 'sendChatAction' };
+    req['chat_id'] = this.chatId;
+    this.applyTopicScope(req);
+    req['action'] = { '@type': 'chatActionCancel' } as TdObject;
+    this.client.send(req).catch((): void => {});
+  }
+
+  resetTypingThrottle(): void {
+    this.lastTypingAtMs = 0;
+  }
+
   // Persist (or clear, when text is empty) the chat draft so it syncs to the
   // account's other devices. TDLib clears the draft itself on send.
   saveDraft(text: string, replyToId: number): void {
@@ -2418,6 +2436,15 @@ export class MessageStore {
       // 有宽高才谈得上边下边播；没有几何时保持老行为。
       content['supports_streaming'] = w > 0 && h > 0;
       mediaWrapper['supports_streaming'] = w > 0 && h > 0;
+    } else {
+      const w: number = item.width ?? 0;
+      const h: number = item.height ?? 0;
+      if (w > 0 && h > 0) {
+        content['width'] = w;
+        content['height'] = h;
+        mediaWrapper['width'] = w;
+        mediaWrapper['height'] = h;
+      }
     }
     if (caption !== '') {
       const ft: TdObject = { '@type': 'formattedText' };
@@ -2479,7 +2506,9 @@ export class MessageStore {
       hydrated.photoProgress = 100;
       hydrated.photoFailed = false;
       hydrated.photoFullPath = item.path;
+      hydrated.photoFullProgress = 100;
       if (hydrated.photoFileId > 0) {
+        this.localVideoPosters.set(hydrated.photoFileId, item.path);
         this.completedFilePaths.set(hydrated.photoFileId, item.path);
         publishThumbPath(hydrated.photoFileId, item.path);
         if (hydrated.sendState === 'sending') {
@@ -2487,6 +2516,7 @@ export class MessageStore {
         }
       }
       if (hydrated.photoFullFileId > 0) {
+        this.localVideoPosters.set(hydrated.photoFullFileId, item.path);
         this.completedFilePaths.set(hydrated.photoFullFileId, item.path);
         publishThumbPath(hydrated.photoFullFileId, item.path);
         if (hydrated.sendState === 'sending') {
@@ -2558,7 +2588,13 @@ export class MessageStore {
         : [result];
       for (let i = 0; i < sent.length; i++) {
         const source = items[Math.min(i, items.length - 1)];
-        const entry = this.rememberLocalMedia(buildMessageEntry(sent[i], this.users), source);
+        const rawEntry = buildMessageEntry(sent[i], this.users);
+        const existing = this.messages.find((e: MessageEntry): boolean => e.id === rawEntry.id) ??
+          this.deferredOutgoing.find((e: MessageEntry): boolean => e.id === rawEntry.id);
+        if (existing !== undefined && existing.rowId !== 0) {
+          rawEntry.rowId = existing.rowId;
+        }
+        const entry = this.rememberLocalMedia(rawEntry, source);
         this.publishOutgoing(entry);
       }
       this.resolveReplies();
@@ -3332,10 +3368,12 @@ export class MessageStore {
     // rebuild content by wrapping the new content into a message-like object
     const fake: TdObject = { '@type': 'message' };
     fake['content'] = u['new_content'];
-    const rebuilt = buildMessageEntry(fake, this.users);
+    const rebuilt = this.hydrateFromFileCache(buildMessageEntry(fake, this.users));
     this.patch(id, (c: MessageEntry) => {
       const sameVideoFile: boolean = c.videoFileId !== 0 && c.videoFileId === rebuilt.videoFileId;
       const samePhotoFile: boolean = c.photoFileId !== 0 && c.photoFileId === rebuilt.photoFileId;
+      const samePhotoFullFile: boolean = c.photoFullFileId !== 0 &&
+        c.photoFullFileId === rebuilt.photoFullFileId;
       const sameStickerFile: boolean = c.stickerFileId !== 0 &&
         c.stickerFileId === rebuilt.stickerFileId;
       const sameLinkPhotoFile: boolean = c.linkPhotoFileId !== 0 &&
@@ -3346,6 +3384,9 @@ export class MessageStore {
       const previousPhotoPath: string = c.photoPath;
       const previousPhotoProgress: number = c.photoProgress;
       const previousPhotoFailed: boolean = c.photoFailed;
+      const previousPhotoFullPath: string = c.photoFullPath;
+      const previousPhotoFullProgress: number = c.photoFullProgress;
+      const previousPhotoFullFailed: boolean = c.photoFullFailed;
       const previousVideoPath: string = c.videoPath;
       const previousVideoProgress: number = c.videoProgress;
       const previousVideoFailed: boolean = c.videoFailed;
@@ -3354,18 +3395,22 @@ export class MessageStore {
       const previousLinkPhotoProgress: number = c.linkPhotoProgress;
       const previousLinkPhotoFailed: boolean = c.linkPhotoFailed;
       const previousLinkPhotoActive: boolean = c.linkPhotoDownloadActive;
+      const keepLocalPhoto: boolean = c.isOutgoing && rebuilt.contentType === 'photo' &&
+        rebuilt.photoPath === '' && (previousPhotoFullPath !== '' || previousPhotoPath !== '');
+      const fallbackLocalPhoto: string = previousPhotoFullPath !== ''
+        ? previousPhotoFullPath : previousPhotoPath;
       c.contentType = rebuilt.contentType;
       c.text = rebuilt.text;
       c.textEntities = rebuilt.textEntities;
       c.inlineCustomEmojiIds = rebuilt.inlineCustomEmojiIds;
       c.inlineCustomEmojiPaths = rebuilt.inlineCustomEmojiPaths;
       c.photoFileId = rebuilt.photoFileId;
-      c.photoWidth = rebuilt.photoWidth;
-      c.photoHeight = rebuilt.photoHeight;
+      c.photoWidth = rebuilt.photoWidth > 0 ? rebuilt.photoWidth : c.photoWidth;
+      c.photoHeight = rebuilt.photoHeight > 0 ? rebuilt.photoHeight : c.photoHeight;
       c.placeholderLabel = rebuilt.placeholderLabel;
-      c.photoPath = samePhotoFile ? previousPhotoPath : rebuilt.photoPath;
-      c.photoProgress = samePhotoFile ? previousPhotoProgress : rebuilt.photoProgress;
-      c.photoFailed = samePhotoFile ? previousPhotoFailed : rebuilt.photoFailed;
+      c.photoPath = samePhotoFile ? previousPhotoPath : (keepLocalPhoto ? fallbackLocalPhoto : rebuilt.photoPath);
+      c.photoProgress = samePhotoFile ? previousPhotoProgress : (keepLocalPhoto ? 100 : rebuilt.photoProgress);
+      c.photoFailed = samePhotoFile ? previousPhotoFailed : (keepLocalPhoto ? false : rebuilt.photoFailed);
       c.linkSiteName = rebuilt.linkSiteName;
       c.linkTitle = rebuilt.linkTitle;
       c.linkDescription = rebuilt.linkDescription;
@@ -3381,9 +3426,19 @@ export class MessageStore {
       c.linkPreviewType = rebuilt.linkPreviewType;
       c.linkUrl = rebuilt.linkUrl;
       c.photoFullFileId = rebuilt.photoFullFileId;
-      c.photoFullPath = '';
-      c.photoFullProgress = 0;
-      c.photoFullFailed = false;
+      c.photoFullPath = samePhotoFullFile
+        ? previousPhotoFullPath : (keepLocalPhoto ? fallbackLocalPhoto : rebuilt.photoFullPath);
+      c.photoFullProgress = samePhotoFullFile
+        ? previousPhotoFullProgress : (keepLocalPhoto ? 100 : rebuilt.photoFullProgress);
+      c.photoFullFailed = samePhotoFullFile ? previousPhotoFullFailed : false;
+      if (c.photoFileId !== 0 && c.photoPath !== '') {
+        this.completedFilePaths.set(c.photoFileId, c.photoPath);
+        publishThumbPath(c.photoFileId, c.photoPath);
+      }
+      if (c.photoFullFileId !== 0 && c.photoFullPath !== '') {
+        this.completedFilePaths.set(c.photoFullFileId, c.photoFullPath);
+        publishThumbPath(c.photoFullFileId, c.photoFullPath);
+      }
       c.videoFileId = rebuilt.videoFileId;
       c.videoFileSize = rebuilt.videoFileSize;
       c.videoVariants = rebuilt.videoVariants;
@@ -3738,6 +3793,7 @@ export class MessageStore {
   // 再让 requestPhotos 按新 id 走正常下载。每个 fileId 只重取一次。
   private refreshMessageForFile(fileId: number, messageId: number): void {
     if (fileId === 0 || messageId <= 0 || this.refreshedFiles.has(fileId)) {
+      this.fullPhotoPendingRefresh.delete(messageId);
       return;
     }
     this.refreshedFiles.add(fileId);
@@ -3747,12 +3803,39 @@ export class MessageStore {
     this.client.send(req).then((m: TdObject): void => {
       const rebuilt = buildMessageEntry(m, this.users);
       let changed: boolean = false;
+      let fullChanged: boolean = false;
       this.patch(messageId, (c: MessageEntry): void => {
         if (rebuilt.photoFileId !== 0 && rebuilt.photoFileId !== c.photoFileId) {
           c.photoFileId = rebuilt.photoFileId;
           c.photoFailed = false;
           c.photoProgress = 0;
           changed = true;
+        }
+        if (rebuilt.photoPath !== '' && c.photoPath === '') {
+          c.photoPath = rebuilt.photoPath;
+          c.photoFailed = false;
+          c.photoProgress = 100;
+          if (c.photoFileId !== 0) {
+            publishThumbPath(c.photoFileId, rebuilt.photoPath);
+          }
+          changed = true;
+        }
+        if (rebuilt.photoFullFileId !== 0 && rebuilt.photoFullFileId !== c.photoFullFileId) {
+          c.photoFullFileId = rebuilt.photoFullFileId;
+          c.photoFullFailed = false;
+          c.photoFullProgress = 0;
+          changed = true;
+          fullChanged = true;
+        }
+        if (rebuilt.photoFullPath !== '' && c.photoFullPath === '') {
+          c.photoFullPath = rebuilt.photoFullPath;
+          c.photoFullFailed = false;
+          c.photoFullProgress = 100;
+          if (c.photoFullFileId !== 0) {
+            publishThumbPath(c.photoFullFileId, rebuilt.photoFullPath);
+          }
+          changed = true;
+          fullChanged = true;
         }
         if (rebuilt.stickerFileId !== 0 && rebuilt.stickerFileId !== c.stickerFileId) {
           c.stickerFileId = rebuilt.stickerFileId;
@@ -3763,13 +3846,45 @@ export class MessageStore {
           changed = true;
         }
       });
+      const pendingFullPriority: number | undefined = this.fullPhotoPendingRefresh.get(messageId);
+      this.fullPhotoPendingRefresh.delete(messageId);
       logW(`[StoreDiag] refresh message ${messageId} for file ${fileId}: ` +
-        `photo ${rebuilt.photoFileId} sticker ${rebuilt.stickerFileId} changed=${changed}`);
+        `photo ${rebuilt.photoFileId} full ${rebuilt.photoFullFileId} sticker ${rebuilt.stickerFileId} changed=${changed}`);
       if (changed) {
         this.requestPhotos();
         this.notifySoon();
       }
+      if (pendingFullPriority !== undefined) {
+        if (fullChanged) {
+          this.requestFullPhoto(messageId, true, pendingFullPriority);
+        } else {
+          const curIdx: number = this.indexOf(messageId);
+          const curFullId: number = curIdx >= 0 ? this.messages[curIdx].photoFullFileId : fileId;
+          const attempts: number = this.fullPhotoAttempts.get(curFullId) ?? 0;
+          if (attempts <= 2) {
+            this.fullPhotoPendingRefresh.set(messageId, pendingFullPriority);
+            setTimeout((): void => {
+              this.fullPhotoPendingRefresh.delete(messageId);
+              this.requestFullPhoto(messageId, false, pendingFullPriority);
+            }, 700);
+          } else {
+            this.fullPhotoAttempts.delete(curFullId);
+            this.patch(messageId, (c: MessageEntry): void => {
+              c.photoFullFailed = true;
+              c.photoFullProgress = 0;
+            });
+          }
+        }
+      }
     }).catch((e: TdError): void => {
+      const pendingFullPriority: number | undefined = this.fullPhotoPendingRefresh.get(messageId);
+      this.fullPhotoPendingRefresh.delete(messageId);
+      if (pendingFullPriority !== undefined) {
+        this.patch(messageId, (c: MessageEntry): void => {
+          c.photoFullFailed = true;
+          c.photoFullProgress = 0;
+        });
+      }
       logE(`MessageStore.getMessage(refresh ${messageId} for file ${fileId}) failed: ${e.message}`);
     });
   }
@@ -3814,9 +3929,11 @@ export class MessageStore {
     this.setThumbnailFailed(fileId, false);
     const attempt = (this.thumbAttempts.get(fileId) ?? 0) + 1;
     this.thumbAttempts.set(fileId, attempt);
+    const priority: number = Math.max(THUMBNAIL_PRIORITY, this.sentFilePriority.get(fileId) ?? 0);
+    this.sentFilePriority.set(fileId, priority);
     const req: TdRequest = { '@type': 'downloadFile' };
     req['file_id'] = fileId;
-    req['priority'] = THUMBNAIL_PRIORITY;
+    req['priority'] = priority;
     const settle = (): void => {
       this.thumbActive--;
       this.thumbQueued.delete(fileId);
@@ -4460,13 +4577,94 @@ export class MessageStore {
     if (idx < 0) {
       return;
     }
-    const e = this.messages[idx];
+    let e = this.messages[idx];
+    const cachedThumb: string | undefined = e.photoFileId !== 0 && e.photoPath === ''
+      ? this.completedFilePaths.get(e.photoFileId) : undefined;
+    const cachedFull: string | undefined = e.photoFullFileId !== 0 && e.photoFullPath === ''
+      ? this.completedFilePaths.get(e.photoFullFileId) : undefined;
+    if ((cachedThumb !== undefined && cachedThumb !== '') ||
+      (cachedFull !== undefined && cachedFull !== '')) {
+      this.patch(messageId, (c: MessageEntry): void => {
+        if (cachedThumb !== undefined && cachedThumb !== '') {
+          c.photoPath = cachedThumb;
+          c.photoFailed = false;
+          c.photoProgress = 100;
+          publishThumbPath(c.photoFileId, cachedThumb);
+        }
+        if (cachedFull !== undefined && cachedFull !== '') {
+          c.photoFullPath = cachedFull;
+          c.photoFullFailed = false;
+          c.photoFullProgress = 100;
+          publishThumbPath(c.photoFullFileId, cachedFull);
+        }
+      });
+      const refreshedIdx = this.indexOf(messageId);
+      if (refreshedIdx < 0) {
+        return;
+      }
+      e = this.messages[refreshedIdx];
+    }
+    if (forceRetry || priority >= MEDIA_VIEWING_PRIORITY) {
+      const clearThumbFail: boolean = e.photoPath === '' && e.photoFileId !== 0 &&
+        (forceRetry || e.photoFailed);
+      const clearFullFail: boolean = e.photoFullPath === '' && e.photoFullFileId !== 0 &&
+        (forceRetry || e.photoFullFailed);
+      if (clearThumbFail) {
+        this.fileToMsg.delete(e.photoFileId);
+        this.thumbLastKick.delete(e.photoFileId);
+        this.thumbAttempts.delete(e.photoFileId);
+      } else if (e.photoPath === '' && e.photoFileId !== 0) {
+        this.thumbAttempts.delete(e.photoFileId);
+      }
+      if (clearFullFail) {
+        this.fullPhotoFileToMsg.delete(e.photoFullFileId);
+        this.fullPhotoAttempts.delete(e.photoFullFileId);
+        this.fullPhotoPendingRefresh.delete(messageId);
+      }
+      if (clearThumbFail || clearFullFail) {
+        this.patch(messageId, (c: MessageEntry): void => {
+          if (clearThumbFail) {
+            c.photoFailed = false;
+            c.photoProgress = 0;
+          }
+          if (clearFullFail) {
+            c.photoFullFailed = false;
+            c.photoFullProgress = 0;
+          }
+        });
+        const refreshedAfterClear = this.indexOf(messageId);
+        if (refreshedAfterClear < 0) {
+          return;
+        }
+        e = this.messages[refreshedAfterClear];
+      }
+    }
     if (e.photoFullFileId === 0 || e.photoFullPath !== '') {
+      if (e.photoPath === '' && e.photoFileId !== 0) {
+        this.fileToMsg.set(e.photoFileId, messageId);
+        this.thumbLastKick.set(e.photoFileId, Date.now());
+        if (priority >= MEDIA_VIEWING_PRIORITY) {
+          this.sentFilePriority.set(e.photoFileId, priority);
+          const thumbReq: TdRequest = { '@type': 'downloadFile' };
+          thumbReq['file_id'] = e.photoFileId;
+          thumbReq['priority'] = priority;
+          this.client.send(thumbReq).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+            logW(`MessageStore viewer thumb ${e.photoFileId}: ${err.message}`);
+            this.downloadThumb(e.photoFileId);
+          });
+        } else if (!this.thumbQueued.has(e.photoFileId)) {
+          this.downloadThumb(e.photoFileId);
+          if (priority > MEDIA_PREFETCH_PRIORITY) {
+            this.raiseFilePriority(e.photoFileId, priority);
+          }
+        } else if (priority > MEDIA_PREFETCH_PRIORITY) {
+          this.raiseFilePriority(e.photoFileId, priority);
+        }
+      }
       return;
     }
-    if (forceRetry) {
-      this.fullPhotoFileToMsg.delete(e.photoFullFileId);
-    } else if (this.fullPhotoFileToMsg.has(e.photoFullFileId)) {
+    if (this.fullPhotoFileToMsg.has(e.photoFullFileId) ||
+      this.fullPhotoPendingRefresh.has(messageId)) {
       // 已经在下了。这里过去直接 return，于是「邻图预取以优先级 8 抢先注册、
       // 用户随后划到这张」时，用户正盯着的大图永远留在预取档上——比后台缩略图
       // (16) 还低。TDLib 重新定优先级的唯一手段就是对同一个 file_id 再发一次
@@ -4474,30 +4672,77 @@ export class MessageStore {
       //
       // 这条路径正是"划到这张"的入口，也是 32 那一档最主要的受益点：邻图当初
       // 以 8 注册，划过来之后必须真的抢到带宽，否则用户盯着一张转圈的图。
-      if (priority > MEDIA_PREFETCH_PRIORITY) {
+      const pendingPrio: number | undefined = this.fullPhotoPendingRefresh.get(messageId);
+      if (pendingPrio !== undefined && priority > pendingPrio) {
+        this.fullPhotoPendingRefresh.set(messageId, priority);
+      }
+      if (priority >= MEDIA_VIEWING_PRIORITY && this.fullPhotoFileToMsg.has(e.photoFullFileId)) {
+        this.sentFilePriority.set(e.photoFullFileId, priority);
+        const boostReq: TdRequest = { '@type': 'downloadFile' };
+        boostReq['file_id'] = e.photoFullFileId;
+        boostReq['priority'] = priority;
+        this.client.send(boostReq).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+          logW(`MessageStore boost full photo ${e.photoFullFileId}: ${err.message}`);
+        });
+      } else if (priority > MEDIA_PREFETCH_PRIORITY && this.fullPhotoFileToMsg.has(e.photoFullFileId)) {
         this.raiseFilePriority(e.photoFullFileId, priority);
       }
       return;
     }
-    this.patch(messageId, (c: MessageEntry): void => {
-      c.photoFullFailed = false;
-      c.photoFullProgress = 0;
-    });
-    this.fullPhotoFileToMsg.set(e.photoFullFileId, messageId);
+    if (e.photoFullFailed || e.photoFullProgress !== 0) {
+      this.patch(messageId, (c: MessageEntry): void => {
+        c.photoFullFailed = false;
+        c.photoFullProgress = 0;
+      });
+    }
+    const fullFileId: number = e.photoFullFileId;
+    const attempt: number = (this.fullPhotoAttempts.get(fullFileId) ?? 0) + 1;
+    this.fullPhotoAttempts.set(fullFileId, attempt);
+    this.fullPhotoFileToMsg.set(fullFileId, messageId);
     // 记账：首次下载也要进 sentFilePriority，否则后续 raiseFilePriority 会
     // 拿 sent=0 去比，任何档位都能放行，"只升不降"就形同虚设。
-    this.sentFilePriority.set(e.photoFullFileId, priority);
+    this.sentFilePriority.set(fullFileId, priority);
     const req: TdRequest = { '@type': 'downloadFile' };
-    req['file_id'] = e.photoFullFileId;
+    req['file_id'] = fullFileId;
     req['priority'] = priority;
     this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
-      this.fullPhotoFileToMsg.delete(e.photoFullFileId);
+      this.fullPhotoFileToMsg.delete(fullFileId);
+      // 邻图后台预取（MEDIA_PREFETCH_PRIORITY）失败时不提前把 entry 标成 photoFullFailed：
+      // 否则用户还没划过去，划过去第一帧就跳过 loading 直接显示"图片加载失败"。
+      // 只静默尝试刷新一次过期的 file_id，等用户真正划到该图时再按前景下载与报错流程走。
+      if (priority <= MEDIA_PREFETCH_PRIORITY) {
+        this.fullPhotoAttempts.delete(fullFileId);
+        this.refreshMessageForFile(fullFileId, messageId);
+        logE(`MessageStore prefetch full photo ${fullFileId}: ${err.message}`);
+        return;
+      }
+      if (!this.refreshedFiles.has(fullFileId) && messageId > 0) {
+        this.fullPhotoPendingRefresh.set(messageId, priority);
+        this.refreshMessageForFile(fullFileId, messageId);
+        logE(`MessageStore full photo ${fullFileId} failed, refreshing message ${messageId}: ${err.message}`);
+        return;
+      }
+      if (attempt <= 2 && messageId > 0) {
+        this.fullPhotoPendingRefresh.set(messageId, priority);
+        setTimeout((): void => {
+          this.fullPhotoPendingRefresh.delete(messageId);
+          this.requestFullPhoto(messageId, false, priority);
+        }, 700 * attempt);
+        logW(`MessageStore full photo ${fullFileId} retry ${attempt}: ${err.message}`);
+        return;
+      }
+      this.fullPhotoAttempts.delete(fullFileId);
       this.patch(messageId, (c: MessageEntry): void => {
         c.photoFullFailed = true;
         c.photoFullProgress = 0;
       });
-      logE(`MessageStore full photo ${e.photoFullFileId}: ${err.message}`);
+      logE(`MessageStore full photo ${fullFileId}: ${err.message}`);
     });
+    if (e.photoPath === '' && e.photoFileId !== 0) {
+      this.fileToMsg.set(e.photoFileId, messageId);
+      this.thumbLastKick.set(e.photoFileId, Date.now());
+      this.downloadThumb(e.photoFileId);
+    }
   }
 
   retryPhoto(messageId: number): void {
@@ -4886,6 +5131,22 @@ export class MessageStore {
     return size > 0 ? Math.min(100, Math.floor((downloaded / size) * 100)) : 0;
   }
 
+  private isSendingFile(id: number): boolean {
+    for (const m of this.messages) {
+      if (m.sendState === 'sending' &&
+        (m.photoFileId === id || m.photoFullFileId === id || m.videoFileId === id || m.stickerFileId === id)) {
+        return true;
+      }
+    }
+    for (const m of this.deferredOutgoing) {
+      if (m.sendState === 'sending' &&
+        (m.photoFileId === id || m.photoFullFileId === id || m.videoFileId === id || m.stickerFileId === id)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private applyFile(file: TdObject): void {
     const id = file['id'] as number | undefined;
     if (id === undefined) {
@@ -4894,7 +5155,11 @@ export class MessageStore {
     // 出站上传进度（issue #201 第 6 条）：只发到 mediaProgressChannel，**不碰
     // messages**——气泡按 fileId 订阅通道，环自己刷新，时间线不会因为每个上传
     // tick 被重发一遍。发送中/发完的形态切换由 sendState 决定，不需要这里 patch。
-    const uploadPercent: number = uploadPercentOf(file);
+    // 只在该文件确属正在发送（sendState==='sending'）的出站消息时才作为上传进度发布，
+    // 防止服务端文件（is_uploading_completed=true）在下载缩略图时把进度环冲成 100%。
+    const rawUploadPercent: number = uploadPercentOf(file);
+    const uploadPercent: number = rawUploadPercent >= 0 && this.isSendingFile(id)
+      ? rawUploadPercent : -1;
     if (uploadPercent >= 0) {
       publishProgress(id, uploadPercent);
       // 出站照片上传的往往是最大尺寸（photoFullFileId），而气泡内的 LiveProgressRing
@@ -4987,20 +5252,43 @@ export class MessageStore {
 
     // Full-resolution photo / full video: progress while downloading, path on completion.
     const fullMsgId = this.fullPhotoFileToMsg.get(id);
-    if (fullMsgId !== undefined) {
-      const percent = this.downloadPercent(file, local);
-      this.patch(fullMsgId, (c: MessageEntry) => {
-        if (done && path !== '') {
+    if (fullMsgId !== undefined || (done && path !== '' &&
+      this.messages.some((m: MessageEntry): boolean => m.photoFullFileId === id))) {
+      const targetMsgId: number = fullMsgId !== undefined
+        ? fullMsgId
+        : (this.messages.find((m: MessageEntry): boolean => m.photoFullFileId === id)?.id ?? 0);
+      const landed: boolean = done && path !== '';
+      const percent = landed ? 100 : this.downloadPercent(file, local);
+      if (uploadPercent < 0) {
+        publishProgress(id, percent);
+      }
+      const fullIdx = this.indexOf(targetMsgId);
+      if (fullIdx >= 0) {
+        const cur = this.messages[fullIdx];
+        if (!landed && !cur.photoFullFailed && cur.photoFullProgress === percent) {
+          return;
+        }
+      }
+      this.patch(targetMsgId, (c: MessageEntry) => {
+        if (landed) {
           c.photoFullPath = path;
           c.photoFullFailed = false;
           // Backfill: if the inline thumbnail download failed/stalled, the
           // full-resolution image serves as the bubble thumbnail too.
           if (c.photoPath === '') {
             c.photoPath = path;
+            if (c.photoFileId !== 0) {
+              this.completedFilePaths.set(c.photoFileId, path);
+              publishThumbPath(c.photoFileId, path);
+            }
           }
         }
         c.photoFullProgress = percent;
       });
+      if (landed) {
+        this.fullPhotoFileToMsg.delete(id);
+        this.fullPhotoAttempts.delete(id);
+      }
       return;
     }
     // hasVideoEntry 原来是**无条件先算**的，于是每一条 updateFile 都要扫一遍
@@ -6527,6 +6815,10 @@ export class MessageStore {
       this.completedFilePaths.set(entry.photoFileId, entry.photoPath);
       publishThumbPath(entry.photoFileId, entry.photoPath);
     }
+    if (entry.photoFullFileId !== 0 && entry.photoFullPath !== '') {
+      this.completedFilePaths.set(entry.photoFullFileId, entry.photoFullPath);
+      publishThumbPath(entry.photoFullFileId, entry.photoFullPath);
+    }
     if (entry.stickerFileId !== 0 && entry.stickerPath !== '') {
       this.completedFilePaths.set(entry.stickerFileId, entry.stickerPath);
       publishThumbPath(entry.stickerFileId, entry.stickerPath);
@@ -6552,10 +6844,15 @@ export class MessageStore {
       }
       if (hydrated.photoFullPath === '' && cachedFullPhotoPath !== '') {
         hydrated.photoFullPath = cachedFullPhotoPath;
+        hydrated.photoFullProgress = 100;
         if (hydrated.photoPath === '') {
           hydrated.photoPath = cachedFullPhotoPath;
           hydrated.photoProgress = 100;
           hydrated.photoFailed = false;
+          if (hydrated.photoFileId !== 0) {
+            this.completedFilePaths.set(hydrated.photoFileId, cachedFullPhotoPath);
+            publishThumbPath(hydrated.photoFileId, cachedFullPhotoPath);
+          }
         }
       }
       if (hydrated.videoPath === '' && cachedVideoPath !== '') {
@@ -6580,7 +6877,9 @@ export class MessageStore {
     const localPoster: string = (hydrated.videoFileId !== 0
       ? (this.localVideoPosters.get(hydrated.videoFileId) ?? '') : '') ||
       (hydrated.photoFileId !== 0
-        ? (this.localVideoPosters.get(hydrated.photoFileId) ?? '') : '');
+        ? (this.localVideoPosters.get(hydrated.photoFileId) ?? '') : '') ||
+      (hydrated.photoFullFileId !== 0
+        ? (this.localVideoPosters.get(hydrated.photoFullFileId) ?? '') : '');
     if (localPoster !== '' && hydrated.photoPath !== localPoster) {
       const withPoster: MessageEntry = hydrated === entry ? cloneMessage(hydrated) : hydrated;
       withPoster.photoPath = localPoster;

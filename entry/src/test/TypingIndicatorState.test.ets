@@ -229,5 +229,28 @@ export default function typingIndicatorStateTest() {
       expect(clock.ensured.length).assertEqual(0);
       expect(state.label).assertEqual('');
     });
+    it('收到对方发送的新消息时立即清空其正在输入状态，不残留到6s到期', 0, (): void => {
+      const clock = new FakeClock();
+      clock.names.set(1, 'Ann Lee');
+      const host = new FakeHost();
+      host.kind = '';
+      const state = controllerOn(host, clock);
+      state.onChatAction(chatAction(1));
+      expect(state.label).assertEqual('cp_someone_typing(Ann)');
+      host.kind = 'private';
+      state.refresh();
+      expect(state.label).assertEqual('cp_typing');
+      state.onNewMessage({
+        '@type': 'updateNewMessage',
+        'message': {
+          '@type': 'message',
+          'chat_id': 7,
+          'sender_id': { '@type': 'messageSenderUser', 'user_id': 1 } as TdObject
+        } as TdObject
+      } as TdObject);
+      expect(state.label).assertEqual('');
+      expect(clock.timers.size).assertEqual(0);
+      state.dispose();
+    });
   });
 }

@@ -78,6 +78,8 @@ export interface MsgContent {
   photoLocalPath?: string; // already downloaded inline sticker/thumbnail
   photoInitialProgress?: number;
   photoInitialActive?: boolean;
+  photoFullLocalPath?: string; // already downloaded full-resolution photo (or local outgoing photo)
+  photoFullInitialProgress?: number;
   videoLocalPath?: string; // already downloaded TDLib file from history
   videoInitialProgress?: number;
   videoInitialActive?: boolean;
@@ -154,6 +156,8 @@ interface PhotoSize {
   fileId: number;
   width: number;
   height: number;
+  path?: string;
+  progress?: number;
 }
 
 interface LocalFileState {
@@ -398,18 +402,21 @@ function textEntities(ft: TdObject | undefined): TdObject[] {
 
 function largestPhotoSize(photo: TdObject | undefined): PhotoSize {
   if (photo === undefined) {
-    return { fileId: 0, width: 0, height: 0 };
+    return { fileId: 0, width: 0, height: 0, path: '', progress: 0 };
   }
   const sizes = photo['sizes'] as TdObject[] | undefined;
   if (sizes === undefined || sizes.length === 0) {
-    return { fileId: 0, width: 0, height: 0 };
+    return { fileId: 0, width: 0, height: 0, path: '', progress: 0 };
   }
   const last = sizes[sizes.length - 1];
   const file = last['photo'] as TdObject | undefined;
+  const local: LocalFileState = localFileState(file);
   return {
     fileId: file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0,
     width: (last['width'] as number | undefined) ?? 0,
-    height: (last['height'] as number | undefined) ?? 0
+    height: (last['height'] as number | undefined) ?? 0,
+    path: local.path,
+    progress: local.progress
   };
 }
 
@@ -462,10 +469,13 @@ function inlinePhotoSize(photo: TdObject | undefined): PhotoSize {
   }
   const s = sizes[idx];
   const file = s['photo'] as TdObject | undefined;
+  const local: LocalFileState = localFileState(file);
   return {
     fileId: file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0,
     width: (s['width'] as number | undefined) ?? 0,
-    height: (s['height'] as number | undefined) ?? 0
+    height: (s['height'] as number | undefined) ?? 0,
+    path: local.path,
+    progress: local.progress
   };
 }
 
@@ -735,6 +745,8 @@ export function formatMsgContent(message: TdObject): MsgContent {
     const photo = content!['photo'] as TdObject | undefined;
     const size: PhotoSize = inlinePhotoSize(photo);
     const full: PhotoSize = largestPhotoSize(photo);
+    const inlinePath: string = (size.path ?? '') !== '' ? (size.path ?? '') : (full.path ?? '');
+    const inlineProgress: number = inlinePath !== '' ? 100 : (size.progress ?? 0);
     return {
       contentType: 'photo',
       text: captionText(content!),
@@ -742,6 +754,10 @@ export function formatMsgContent(message: TdObject): MsgContent {
       photoMini: miniThumbUrl(photo),
       photoWidth: size.width,
       photoHeight: size.height,
+      photoLocalPath: inlinePath,
+      photoInitialProgress: inlineProgress,
+      photoFullLocalPath: full.path ?? '',
+      photoFullInitialProgress: (full.path ?? '') !== '' ? 100 : (full.progress ?? 0),
       placeholderLabel: '',
       entities: textEntities(content!['caption'] as TdObject | undefined),
       linkSiteName: '', linkTitle: '', linkDescription: '', linkDescriptionEntities: [], linkPhotoFileId: 0, linkUrl: '',

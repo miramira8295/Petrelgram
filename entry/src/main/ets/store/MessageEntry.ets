@@ -1131,8 +1131,9 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     reactions: reactions(message),
     inlineButtons: parseInlineKeyboard(message['reply_markup'] as TdObject | undefined),
     photoFullFileId: c.photoFullFileId,
-    photoFullPath: '',
-    photoFullProgress: 0,
+    photoFullPath: c.photoFullLocalPath ?? '',
+    photoFullProgress: c.photoFullLocalPath !== undefined && c.photoFullLocalPath !== ''
+      ? 100 : (c.photoFullInitialProgress ?? 0),
     photoFullFailed: false,
     videoFileId: c.videoFileId,
     videoFileSize: c.videoFileSize,

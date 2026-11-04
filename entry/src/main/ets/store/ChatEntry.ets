@@ -20,6 +20,13 @@ export interface ChatEntry {
   // 所以原始值必须留着，任何一个变了都能重算（见 ChatStore.refreshUnread）。
   rawUnreadCount: number;
   lastReadInboxId: number;
+  // 末条出站消息的已读水位（chat.last_read_outbox_message_id）。与 lastMessageId
+  // 分别从不同 update 到达，原始值保留以便任意一侧变化时重算出站状态。
+  lastReadOutboxId?: number;
+  // 末条消息在会话列表里的发送/已读状态：'none' | 'sending' | 'failed' | 'sent' | 'read'。
+  lastMessageSendState?: string;
+  // 会话列表里正在输入/操作的状态文案（空串 = 无）。
+  typingText?: string;
   lastMessageText: string;
   // 预览小图（data URL，空串 = 没有），见 formatPreview.previewThumbOf。
   lastMessageThumb: string;
@@ -62,6 +69,9 @@ export function cloneEntry(e: ChatEntry): ChatEntry {
     title: e.title, isMuted: e.isMuted, usesDefaultMute: e.usesDefaultMute,
     unreadCount: e.unreadCount, unreadMentionCount: e.unreadMentionCount,
     rawUnreadCount: e.rawUnreadCount, lastReadInboxId: e.lastReadInboxId,
+    lastReadOutboxId: e.lastReadOutboxId ?? 0,
+    lastMessageSendState: e.lastMessageSendState ?? 'none',
+    typingText: e.typingText ?? '',
     lastMessageText: e.lastMessageText, lastMessageThumb: e.lastMessageThumb,
     lastMessageDate: e.lastMessageDate,
     lastMessageId: e.lastMessageId,
@@ -143,4 +153,53 @@ export function usesDefaultMuteFrom(notificationSettings: TdObject | undefined):
 // 会话最终是否静音：自身设置优先，否则回落到作用域默认。
 export function effectiveMuted(entry: ChatEntry, scopeMuted: boolean): boolean {
   return entry.usesDefaultMute ? scopeMuted : entry.isMuted;
+}
+
+// 末条消息在会话列表里的发送/已读状态：
+// - 非自己发送（或无末条消息）→ 'none'
+// - 发送中 / 失败 → 'sending' / 'failed'
+// - 「我的收藏」与广播频道没有对方已读回执，发送成功后不挂单勾 → 'none'
+// - 其余会话按 lastReadOutboxId >= lastMessageId 区分 'read'（双勾）与 'sent'（单勾）
+export function lastMessageSendStateFrom(
+  lastMessage: TdObject | null,
+  lastReadOutboxId: number,
+  isSavedMessages: boolean,
+  kind: ChatKind = 'private'
+): string {
+  if (lastMessage === null || (lastMessage['is_outgoing'] as boolean | undefined) !== true) {
+    return 'none';
+  }
+  const sendingState = lastMessage['sending_state'] as TdObject | undefined;
+  if (sendingState !== undefined && sendingState !== null) {
+    const stateType = (sendingState['@type'] as string | undefined) ?? '';
+    if (stateType === 'messageSendingStatePending') {
+      return 'sending';
+    }
+    if (stateType === 'messageSendingStateFailed') {
+      return 'failed';
+    }
+  }
+  if (isSavedMessages || kind === 'channel') {
+    return 'none';
+  }
+  const messageId: number = (lastMessage['id'] as number | undefined) ?? 0;
+  return messageId > 0 && lastReadOutboxId >= messageId ? 'read' : 'sent';
+}
+
+// updateChatReadOutbox 或 my_id 晚到时，在不持有原始 lastMessage 对象的情况下重算出站状态。
+export function refreshOutboxSendState(
+  currentSendState: string | undefined,
+  lastMessageId: number,
+  lastReadOutboxId: number,
+  isSavedMessages: boolean,
+  kind: ChatKind = 'private'
+): string {
+  const state: string = currentSendState ?? 'none';
+  if (state !== 'sent' && state !== 'read') {
+    return state;
+  }
+  if (isSavedMessages || kind === 'channel') {
+    return 'none';
+  }
+  return lastMessageId > 0 && lastReadOutboxId >= lastMessageId ? 'read' : 'sent';
 }

@@ -56,6 +56,7 @@ import { logI } from '../../util/log';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { firstFinger } from '../../util/firstFinger';
 import { ChatListRowState } from './ChatListRowState';
+import { headerTypingTextOf } from '../../util/typingIndicator';
 
 // 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
 // 对话框会挂死（Promise 既不 resolve 也不 reject）。
@@ -116,10 +117,12 @@ export struct ChatRow {
   @StorageProp(KEY_ACTIVE_FORUM_OPEN) private forumDrawerOpen: boolean = false;
   @StorageProp(KEY_ACTIVE_FORUM_CHAT_ID) private activeForumChatId: number = 0;
   @State livePulseExpanded: boolean = false;
+  @State typingDotPhase: number = 0;
   @State contextMenuShown: boolean = false;
   // 长按落点相对行中心的水平偏移，交给 bindContextMenu 的 offset。
   @State menuOffsetX: number = 0;
   private livePulseTimer: number = -1;
+  private typingPulseTimer: number = -1;
   private rowActive: boolean = false;
   private deletion: ConfirmedChatRemoval = new ConfirmedChatRemoval();
   @State private deleteLeaving: number = 0;
@@ -139,6 +142,7 @@ export struct ChatRow {
     this.rowActive = true;
     this.attachDeletion(this.row.snapshot.chat.id);
     this.startLivePulse(this.row.snapshot.chat.isLive);
+    this.syncTypingPulse(this.row.snapshot.chat.typingText ?? '');
   }
 
   // Recycling is NOT destruction: a reused row goes to the pool and
@@ -152,6 +156,7 @@ export struct ChatRow {
     // ObjectLink is rebound by the framework. Do not assign the parent row.
     this.rowActive = true;
     this.livePulseExpanded = false;
+    this.typingDotPhase = 0;
     this.contextMenuShown = false;
     this.pressActive = false;
     this.pressRevision = -1;
@@ -162,6 +167,7 @@ export struct ChatRow {
     const next = params.row as ChatListRowState | undefined;
     this.attachDeletion(next?.snapshot.chat.id ?? this.row.snapshot.chat.id);
     this.syncLivePulse(next !== undefined && next.snapshot.chat.isLive);
+    this.syncTypingPulse(next?.snapshot.chat.typingText ?? this.row.snapshot.chat.typingText ?? '');
   }
 
   aboutToDisappear(): void {
@@ -172,6 +178,7 @@ export struct ChatRow {
     if (this.rowActive) {
       this.attachDeletion(this.row.snapshot.chat.id);
       this.syncLivePulse(this.row.snapshot.chat.isLive);
+      this.syncTypingPulse(this.row.snapshot.chat.typingText ?? '');
     }
   }
 
@@ -213,12 +220,84 @@ export struct ChatRow {
     }, 760);
   }
 
+  private syncTypingPulse(typingText: string): void {
+    if (typingText === '') {
+      if (this.typingPulseTimer !== -1) {
+        clearInterval(this.typingPulseTimer);
+        this.typingPulseTimer = -1;
+      }
+      this.typingDotPhase = 0;
+      return;
+    }
+    if (this.typingPulseTimer !== -1) {
+      return;
+    }
+    this.typingPulseTimer = setInterval((): void => {
+      if (!this.rowActive || this.typingText() === '') {
+        if (this.typingPulseTimer !== -1) {
+          clearInterval(this.typingPulseTimer);
+          this.typingPulseTimer = -1;
+        }
+        this.typingDotPhase = 0;
+        return;
+      }
+      if (this.powerSaving || !this.liveEffects) {
+        this.typingDotPhase = 0;
+        return;
+      }
+      try {
+        this.getUIContext().animateTo({
+          duration: 240,
+          curve: Curve.EaseInOut
+        }, (): void => {
+          this.typingDotPhase = (this.typingDotPhase + 1) % 3;
+        });
+      } catch (_e) {
+        this.typingDotPhase = (this.typingDotPhase + 1) % 3;
+      }
+    }, 280);
+  }
+
+  private typingDotOpacity(index: number): number {
+    if (this.powerSaving || !this.liveEffects) {
+      return 1;
+    }
+    if (this.typingDotPhase === index) {
+      return 1;
+    }
+    if ((this.typingDotPhase + 2) % 3 === index) {
+      return 0.65;
+    }
+    return 0.35;
+  }
+
+  private typingDotScale(index: number): number {
+    if (this.powerSaving || !this.liveEffects) {
+      return 1;
+    }
+    if (this.typingDotPhase === index) {
+      return 1.12;
+    }
+    if ((this.typingDotPhase + 2) % 3 === index) {
+      return 0.92;
+    }
+    return 0.78;
+  }
+
+  private typingText(): string {
+    return this.row.snapshot.chat.typingText ?? '';
+  }
+
   private teardown(): void {
     this.rowActive = false;
     this.detachDeletion();
     if (this.livePulseTimer !== -1) {
       clearInterval(this.livePulseTimer);
       this.livePulseTimer = -1;
+    }
+    if (this.typingPulseTimer !== -1) {
+      clearInterval(this.typingPulseTimer);
+      this.typingPulseTimer = -1;
     }
     if (this.contextMenuShown) {
       this.contextMenuShown = false;
@@ -256,6 +335,21 @@ export struct ChatRow {
 
   private unreadLabel(): string {
     return unreadBadgeText(this.row.snapshot.chat.unreadCount);
+  }
+
+  private lastSendState(): string {
+    return this.row.snapshot.chat.lastMessageSendState ?? 'none';
+  }
+
+  // 自己发的消息展示「你」（跟随语言切换即时刷新）；我的收藏与广播频道不挂前缀。
+  private senderLabel(): string {
+    if (this.row.snapshot.chat.isSavedMessages || this.row.snapshot.chat.kind === 'channel') {
+      return '';
+    }
+    if (this.lastSendState() !== 'none') {
+      return str('sm_you');
+    }
+    return this.row.snapshot.chat.lastSenderName;
   }
 
   // 这一行到底静不静音。**不能直接读 chat.isMuted**：那是 TDLib 的
@@ -726,40 +820,92 @@ export struct ChatRow {
                 }
               }.width('100%');
               Row() {
-                // 有草稿就顶掉"谁说了什么"（Telegram 各端都是这样）。
-                if (this.draftPreview() !== '') {
-                  Text($r('app.string.cl_draft_prefix'))
-                    .fontSize(14).fontColor('#E5484D')
-                    .maxLines(1).flexShrink(0);
-                } else if (this.row.snapshot.chat.lastSenderName !== '') {
-                  Text(`${this.row.snapshot.chat.lastSenderName}: `)
-                    .fontSize(14).fontColor(this.accent())
-                    .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-                    .constraintSize({ maxWidth: 112 });
+                if (this.draftPreview() === '' && this.typingText() !== '') {
+                  Row({ space: 2.5 }) {
+                    Circle({ width: 4.5, height: 4.5 })
+                      .fill(this.accent())
+                      .opacity(this.typingDotOpacity(0))
+                      .scale({ x: this.typingDotScale(0), y: this.typingDotScale(0) });
+                    Circle({ width: 4.5, height: 4.5 })
+                      .fill(this.accent())
+                      .opacity(this.typingDotOpacity(1))
+                      .scale({ x: this.typingDotScale(1), y: this.typingDotScale(1) });
+                    Circle({ width: 4.5, height: 4.5 })
+                      .fill(this.accent())
+                      .opacity(this.typingDotOpacity(2))
+                      .scale({ x: this.typingDotScale(2), y: this.typingDotScale(2) });
+                  }
+                  .alignItems(VerticalAlign.Center)
+                  .margin({ right: 5 })
+                  .flexShrink(0);
+                  Text(headerTypingTextOf(this.typingText()))
+                    .fontSize(this.spec().previewFont)
+                    .fontColor(this.accent())
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .flexShrink(1);
+                  Row({ space: 1.5 }) {
+                    Circle({ width: 2.2, height: 2.2 }).fill(this.accent());
+                    Circle({ width: 2.2, height: 2.2 }).fill(this.accent());
+                    Circle({ width: 2.2, height: 2.2 }).fill(this.accent());
+                  }
+                  .alignItems(VerticalAlign.Center)
+                  .margin({ left: 2, top: 3 })
+                  .flexShrink(0);
+                } else {
+                  // 有草稿就顶掉"谁说了什么"（Telegram 各端都是这样）。
+                  if (this.draftPreview() !== '') {
+                    Text($r('app.string.cl_draft_prefix'))
+                      .fontSize(14).fontColor('#E5484D')
+                      .maxLines(1).flexShrink(0);
+                  } else if (this.senderLabel() !== '') {
+                    Text(`${this.senderLabel()}: `)
+                      .fontSize(14).fontColor(this.accent())
+                      .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .constraintSize({ maxWidth: 112 });
+                  }
+                  // 预览小图（issue #202）：minithumbnail 的 data URL，18vp，只在有媒体时多这一个节点。
+                  if (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== '') {
+                    Image(this.row.snapshot.chat.lastMessageThumb).draggable(false)
+                      .width(18).height(18).borderRadius(3).objectFit(ImageFit.Cover)
+                      .sourceSize({ width: 54, height: 54 }).autoResize(true)
+                      .margin({ right: 5, top: 1 }).flexShrink(0);
+                  }
+                  Text(this.draftPreview() !== '' ? this.draftPreview()
+                    : (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== ''
+                      ? stripPreviewIcon(this.row.snapshot.chat.lastMessageText) : this.row.snapshot.chat.lastMessageText))
+                    .fontSize(this.spec().previewFont).fontColor(COLOR_TEXT_SECONDARY)
+                    .maxLines(this.threeLines ? 2 : 1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
                 }
-                // 预览小图（issue #202）：minithumbnail 的 data URL，18vp，只在有媒体时多这一个节点。
-                if (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== '') {
-                  Image(this.row.snapshot.chat.lastMessageThumb).draggable(false)
-                    .width(18).height(18).borderRadius(3).objectFit(ImageFit.Cover)
-                    .sourceSize({ width: 54, height: 54 }).autoResize(true)
-                    .margin({ right: 5, top: 1 }).flexShrink(0);
-                }
-                Text(this.draftPreview() !== '' ? this.draftPreview()
-                  : (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== ''
-                    ? stripPreviewIcon(this.row.snapshot.chat.lastMessageText) : this.row.snapshot.chat.lastMessageText))
-                  .fontSize(this.spec().previewFont).fontColor(COLOR_TEXT_SECONDARY)
-                  .maxLines(this.threeLines ? 2 : 1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
-              }.width('100%').alignItems(VerticalAlign.Top);
+              }.width('100%').alignItems(this.draftPreview() === '' && this.typingText() !== ''
+                ? VerticalAlign.Center : VerticalAlign.Top);
             }.layoutWeight(1).alignItems(HorizontalAlign.Start);
             Column({ space: 6 }) {
               Row({ space: 3 }) {
                 if (this.isPinned()) {
                   SymbolGlyph($r('sys.symbol.pin')).fontSize(11).fontColor([COLOR_ICON_SECONDARY]);
                 }
+                if (this.lastSendState() !== 'none') {
+                  Row() {
+                    SymbolGlyph($r(this.lastSendState() === 'sending'
+                      ? 'sys.symbol.clock'
+                      : (this.lastSendState() === 'failed'
+                        ? 'sys.symbol.exclamationmark_circle' : 'sys.symbol.checkmark')))
+                      .fontSize(12)
+                      .fontColor([this.lastSendState() === 'failed' ? Color.Red
+                        : (this.lastSendState() === 'read' ? this.accent() : COLOR_ICON_SECONDARY)]);
+                    if (this.lastSendState() === 'read') {
+                      SymbolGlyph($r('sys.symbol.checkmark'))
+                        .fontSize(12)
+                        .fontColor([this.accent()])
+                        .margin({ left: -8 });
+                    }
+                  }.alignItems(VerticalAlign.Center);
+                }
                 Text(formatTime(this.row.snapshot.chat.lastMessageDate, this.nowSec))
                   .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
-              }
+              }.alignItems(VerticalAlign.Center);
               Row({ space: 5 }) {
                 if (this.row.snapshot.chat.unreadMentionCount > 0) {
                   Text('@').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.accent())

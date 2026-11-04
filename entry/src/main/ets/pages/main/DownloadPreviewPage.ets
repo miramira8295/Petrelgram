@@ -10,6 +10,7 @@ import { viewerBaseMessage, viewerEntryFor, viewerIndexOf, viewerMessageIdAt } f
 import { saveFileToDownloads, saveMediaToGallery } from '../../util/mediaSaver';
 import { initVideoPosterStore } from '../../util/videoPosterStore';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
+import { restoreViewerSystemBars } from '../../util/systemBarsWindow';
 import { str } from '../../util/strings';
 import { logE, logI } from '../../util/log';
 
@@ -41,6 +42,7 @@ export struct DownloadPreviewPage {
   }
 
   private close(): void {
+    restoreViewerSystemBars(this.ctx());
     const stack: NavPathStack | undefined = this.navStack;
     if (stack === undefined) {
       logE('DownloadPreviewPage.close: navStack missing');
@@ -142,7 +144,13 @@ export struct DownloadPreviewPage {
       .backgroundColor(Color.Black);
     }
     .hideTitleBar(true)
-    .onBackPressed((): boolean => collapseFloatingVideo())
+    .onBackPressed((): boolean => {
+      if (collapseFloatingVideo()) {
+        return true;
+      }
+      restoreViewerSystemBars(this.ctx());
+      return false;
+    })
     .backgroundColor(Color.Black)
     .onReady((ctx: NavDestinationContext): void => {
       this.navStack = ctx.pathStack;

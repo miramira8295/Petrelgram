@@ -184,6 +184,7 @@ export class HeaderIdentitySession {
   @Trace profileOpening: boolean = false;
   @Trace muteUpdating: boolean = false;
   @Trace isMuted: boolean = false;
+  @Trace autoDeleteTime: number = 0;
   // Peer's premium emoji status (private chats) shown beside the header title.
   @Trace emojiPath: string = '';
   @Trace emojiFormat: string = '';
@@ -281,6 +282,7 @@ export class HeaderIdentitySession {
     this.secretOutbound = false;
     this.avatarPath = '';
     this.initials = '?';
+    this.autoDeleteTime = cached !== undefined ? cached.autoDeleteTime : 0;
     this.title = this.chatHeaderTitleNow('');
     this.isMuted = false;
     if (cached !== undefined) {
@@ -364,6 +366,7 @@ export class HeaderIdentitySession {
     if (localReady && localPath !== '') {
       this.avatarPath = localPath;
     }
+    this.autoDeleteTime = (chat['message_auto_delete_time'] as number | undefined) ?? 0;
     const type = chat['type'] as TdObject | undefined;
     const typeName = type !== undefined ? ((type['@type'] as string | undefined) ?? '') : '';
     if (typeName === 'chatTypePrivate') {
@@ -460,6 +463,7 @@ export class HeaderIdentitySession {
     // Don't clobber a MessageStore-resolved avatar (channels/folders) with an empty one.
     if (e.avatarPath !== '') { this.avatarPath = e.avatarPath; }
     this.initials = e.initials;
+    this.autoDeleteTime = e.autoDeleteTime;
     if (!this.muteUpdating) {
       this.isMuted = e.isMuted;
     }
@@ -515,6 +519,14 @@ export class HeaderIdentitySession {
     }
     this.avatarPath = p;
     getChatStore().setAvatarPath(this.host.chatId(), p);
+  }
+
+  onAutoDeleteUpdate(update: TdObject): void {
+    const chatId = (update['chat_id'] as number | undefined) ?? 0;
+    if (chatId === 0 || chatId !== this.host.chatId()) {
+      return;
+    }
+    this.autoDeleteTime = (update['message_auto_delete_time'] as number | undefined) ?? 0;
   }
 
   // 和自己的私聊就是「我的收藏」。TDLib 对它没有任何标记，标题是自己的昵称、
