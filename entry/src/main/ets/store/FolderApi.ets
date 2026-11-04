@@ -39,6 +39,9 @@ export interface RecommendedFolder {
   description: string;
 }
 
+// 选会话面板最多展示多少候选（防爆上限，不是业务限制）。
+const FOLDER_PICKER_MAX_ROWS: number = 2000;
+
 export interface FolderLimits {
   folderCount: number;
   chosenChatCount: number;
@@ -372,7 +375,17 @@ export async function searchFolderChats(query: string): Promise<FolderChatSummar
     }));
     for (const row of remote) { if (row !== null) { summaries.set(row.id, row); } }
   }
-  return Array.from(summaries.values()).slice(0, 100);
+  // **不要截断到 100。**
+  //
+  // 选会话面板的数据源就是这个函数的返回值。原来 slice(0, 100) 让候选列表
+  // 永远只有前 100 个会话，文件夹里加满 100 个之后，后面的群/频道在面板里
+  // 根本不会出现（2026-11-04 用户报的「到一百就不能继续添加」）。而真正的
+  // 上限是服务端给的 chat_folder_chosen_chat_count_max（当前账号读到 200），
+  // 界面判据用的也是它，跟这里的 100 没有关系。
+  //
+  // 面板走 LazyForEach（FolderEditPage.pickerData），行是虚拟化的，放开不会
+  // 增加首帧成本；这里只留一个防爆上限。
+  return Array.from(summaries.values()).slice(0, FOLDER_PICKER_MAX_ROWS);
 }
 
 function inviteLinkFromTd(row: TdObject): FolderInviteLinkData {
