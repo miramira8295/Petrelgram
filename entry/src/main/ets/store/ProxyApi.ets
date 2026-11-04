@@ -105,7 +105,9 @@ export async function enableProxy(id: number): Promise<void> {
   const request: TdRequest = { '@type': 'enableProxy' };
   request['proxy_id'] = id;
   await getTdClient().send(request, 20000);
-  await syncWebProxyForEnabled();
+  // 不 await：getProxies 排在 ack 后面，TDLib 正忙时可能挂到超时，而 ProxyPage
+  // 在这段时间里一直占着 actionKey（开关点不动）。Web 侧晚一步生效没有后果。
+  syncWebProxyForEnabled();
 }
 
 export async function disableProxy(): Promise<void> {
