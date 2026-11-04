@@ -5,6 +5,7 @@ import { pasteboard } from '@kit.BasicServicesKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { openUrl } from '../../util/openUrl';
 import { webBrowserTarget } from '../../util/webBrowserNav';
+import { ensureWebProxy } from '../../services/WebProxy';
 import { normalizeTelegramLink } from '../../util/linkNav';
 import { openTelegramLink } from '../../util/openTelegramLink';
 import {
@@ -45,6 +46,8 @@ struct InAppBrowserPage {
   private initialUrl: string = '';
 
   aboutToAppear(): void {
+    // Web 引擎可能比 Ability 起得晚，启动时那次代理配置可能没成功，这里补一次。
+    ensureWebProxy();
     const params = router.getParams() as BrowserParams | undefined;
     this.initialUrl = webBrowserTarget(params?.url ?? '');
     this.currentUrl = this.initialUrl;

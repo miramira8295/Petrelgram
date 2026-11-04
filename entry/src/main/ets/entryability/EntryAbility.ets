@@ -15,7 +15,7 @@ import { display, window, KeyboardAvoidMode, UIContext } from '@kit.ArkUI';
 import { applyDefaultOrientation } from '../util/appOrientation';
 import { KEY_APP_DARK, darkResourceMode } from '../util/theme';
 import { recomputeAppearance } from '../util/appearance';
-import { initTdKit, setTdOnlineState, setUiAbilityContext } from '../tdkit/Globals';
+import { getTdClient, initTdKit, setTdOnlineState, setUiAbilityContext } from '../tdkit/Globals';
 import { installStringsFromContext, invalidateStringCache } from '../util/strings';
 import { clearLinkPreviewPresentationCache } from '../util/linkPreview';
 import { refreshLocale } from '../util/intlFormat';
@@ -30,6 +30,7 @@ import { applyCacheLimit } from '../store/StorageApi';
 import { beginNetworkMonitoring, refreshNetworkState, republishNetworkTypeToTd } from '../services/NetworkStateService';
 import { proxyAutoSwitchService } from '../services/ProxyAutoSwitchService';
 import { updateChecker } from '../services/UpdateChecker';
+import { syncWebProxyFromTd } from '../services/WebProxy';
 import { liveLocation } from '../services/LiveLocationService';
 import { setInlinePhotoTargetPx } from '../util/formatMsgContent';
 import { trimPixelCache } from '../util/pixelCache';
@@ -623,6 +624,9 @@ export default class EntryAbility extends UIAbility {
     mirrorChatEnvKey('appIsForeground', true);
     // 代理巡检是 30 秒一轮的常驻定时器，后台整条停掉，回前台再起。
     proxyAutoSwitchService.foregroundChanged(true);
+    // Web 组件（小程序/内置浏览器）有自己的网络栈，TDLib 的代理传不过去。
+    // 启动与回前台各同步一次，覆盖"上次退出时代理还开着"的情况。
+    syncWebProxyFromTd(getTdClient());
     // 回前台：释放短时任务配额（下次切后台再申请）。
     backgroundGraceTask.end();
     AppStorage.setOrCreate('appForegroundEpoch', Date.now());

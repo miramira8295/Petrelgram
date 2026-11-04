@@ -2,6 +2,7 @@ import { getTdClient } from '../tdkit/Globals';
 import { ensureProxyMigration } from '../services/ProxyMigration';
 import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
 import { stripIpv6Brackets } from '../util/ipFamily';
+import { clearWebProxy, syncWebProxyFromTd } from '../services/WebProxy';
 
 // 代理直接交给 TDLib：本机中继层已删除，代理配置就是 TDLib 自己的配置。
 export const PROXY_SOCKS5: string = 'proxyTypeSocks5';
@@ -90,14 +91,26 @@ export async function editProxy(entry: ProxyEntry, enable: boolean): Promise<Pro
   return proxyEntryFromAddedObject(result);
 }
 
+/**
+ * 把 TDLib 当前启用的代理映射到 ArkWeb。
+ *
+ * Web 组件和 TDLib 各有一套网络栈，开代理时两边都要配，否则 Telegram 通了而
+ * 小程序/内置浏览器还是直连。逻辑在 services/WebProxy 里，这里只是补上 client。
+ */
+async function syncWebProxyForEnabled(): Promise<void> {
+  await syncWebProxyFromTd(getTdClient());
+}
+
 export async function enableProxy(id: number): Promise<void> {
   const request: TdRequest = { '@type': 'enableProxy' };
   request['proxy_id'] = id;
   await getTdClient().send(request, 20000);
+  await syncWebProxyForEnabled();
 }
 
 export async function disableProxy(): Promise<void> {
   await getTdClient().send({ '@type': 'disableProxy' } as TdRequest, 20000);
+  clearWebProxy();
 }
 
 export async function removeProxy(id: number): Promise<void> {

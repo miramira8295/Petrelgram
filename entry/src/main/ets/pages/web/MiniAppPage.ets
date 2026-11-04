@@ -12,6 +12,7 @@ import {
 import { openTelegramLink } from '../../util/openTelegramLink';
 import { normalizeTelegramLink } from '../../util/linkNav';
 import { openWebUrl } from '../../util/webBrowserNav';
+import { ensureWebProxy } from '../../services/WebProxy';
 import { str } from '../../util/strings';
 import { relativeLuminance } from '../../util/colorMath';
 import { MATERIAL_EPOCH, materialOff, plainGlassFill, plainBackdropBlur } from '../../util/overlayMaterial';
@@ -52,6 +53,8 @@ struct MiniAppPage {
   private pageVisible: boolean = true;
 
   aboutToAppear(): void {
+    // Web 引擎可能比 Ability 起得晚，启动时那次代理配置可能没成功，这里补一次。
+    ensureWebProxy();
     this.launch = router.getParams() as MiniAppLaunch;
     this.title = this.launch?.title ?? '';
     this.start();
