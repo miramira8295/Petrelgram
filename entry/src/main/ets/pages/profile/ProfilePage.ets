@@ -1,5 +1,6 @@
 import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { TelegramQrScanner } from '../../services/TelegramQrScanner';
+
 import { openMiniAppPage } from '../../util/miniAppNav';
 import { mainAppChatId } from '../../util/botMainApp';
 import { pageMarginVp } from '../../util/pageMargin';
@@ -117,6 +118,7 @@ export struct ProfilePage {
   // 本页所在的 Navigation 栈，onReady 时拿到。返回按钮靠它出栈——本页已不是
   // router 页，router.back() 弹不到自己。
   private navStack: NavPathStack | undefined = undefined;
+
   // 路由参数。router 时代靠 router.getParams() 现取，NavDestination 要在
   // onReady 里从 NavDestinationContext 拿，而 onReady 实测晚于 aboutToAppear
   // （平板 API 26，见 ChatPage 的同名注释），所以吃参数的那一段整体挪进了
@@ -904,14 +906,8 @@ export struct ProfilePage {
   @Builder
   header() {
     Column({ space: 8 }) {
-      Row() {
-        this.circleButton('sys.symbol.chevron_left', () => { this.goBack(); });
-        Blank().layoutWeight(1);
-        // 原来回调是空函数（#219-2：点了没反应）。菜单内容与动作见 ProfileMoreMenu。
-        if (this.moreMenuItems().length > 0) {
-          this.circleButton('sys.symbol.more', () => { this.openMoreMenu(); });
-        }
-      }.width('100%').padding({ left: this.pageMargin(), right: this.pageMargin() });
+      // 返回/更多按钮画在 build() 的 Stack 浮层里，这里只留同高占位。
+      Row().width('100%').height(44).padding({ left: this.pageMargin(), right: this.pageMargin() });
       Column() {
         AvatarView({
           avatarPath: this.avatarPath, initials: this.initials,
@@ -1631,7 +1627,7 @@ export struct ProfilePage {
 
   build() {
     HdsNavDestination() {
-    Stack() {
+    Stack({ alignContent: Alignment.TopStart }) {
       // 壁纸在最底，其余内容画在它之上。分栏下 AppBackdrop 自己什么都不画
       // （见 util/localWallpaper.appWallpaperActive），与主界面同一条规则。
       AppBackdrop({ split: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) });
@@ -1666,6 +1662,8 @@ export struct ProfilePage {
       .width('100%').height('100%')
       .cachedCount(PROFILE_LIST_CACHED_COUNT)
       .contentEndOffset(24)
+      .clip(false)
+
       // 壁纸生效时整页底必须透明，否则壁纸被这一层盖死（同 util/theme.mainPageFill 的理由）。
       // 卡片自己是毛玻璃（profileGlassFill），压在壁纸上仍然读得清。
       .backgroundColor(this.appWallpaperOn ? Color.Transparent : PAGE_BG)
@@ -1687,6 +1685,21 @@ export struct ProfilePage {
       if (this.showGiftPicker) {
         this.giftPicker();
       }
+
+      // 返回 / 更多按钮的浮层：画在 List 之外，不参与列表的边缘虚化。
+      // 位置与原来 header() 里那一行完全一致（topSafe + 8，左右 pageMargin）。
+      Row() {
+        this.circleButton('sys.symbol.chevron_left', () => { this.goBack(); });
+        Blank().layoutWeight(1);
+        if (this.moreMenuItems().length > 0) {
+          this.circleButton('sys.symbol.more', () => { this.openMoreMenu(); });
+        }
+      }
+      .width('100%')
+      .align(Alignment.TopStart)
+      .padding({ left: this.pageMargin(), right: this.pageMargin(), top: this.topSafe + 8 })
+      .zIndex(10)
+      .hitTestBehavior(HitTestMode.Transparent);
     }.width('100%').height('100%');
     }
     // 本页自绘标题栏（头图上那一行返回/更多），不要 HDS 的。

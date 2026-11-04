@@ -102,9 +102,14 @@ function barStyle(background: ResourceColor, mainTitleColor: ResourceColor,
 // 用户往上滑是在翻历史，栏跟着变反而碍事。
 export function titleBarStyle(background: ResourceColor,
   mainTitleColor: ResourceColor = $r('app.color.text_primary'),
-  scrollEffect: boolean = true): TitleBarStyleOptions {
+  scrollEffect: boolean = true,
+  glass: boolean = true): TitleBarStyleOptions {
   // 只算一次：它同时决定 systemMaterialEffect 和按钮底色要不要让位。
-  const material: SystemMaterialParams | undefined = titleMaterialEffect(!scrollEffect);
+  // glass=false：整条栏不要任何玻璃——不挂 systemMaterialEffect、blurStrategy 钉
+  // DISABLE、图标/按钮回到实底胶囊。首页会话列表用这一档：那条列表自己在顶部做
+  // linearGradientBlur，栏再叠一层系统材质就会变成「两条模糊带上下串着」。
+  const material: SystemMaterialParams | undefined =
+    glass ? titleMaterialEffect(!scrollEffect) : undefined;
   return {
     scrollEffectOpts: {
       enableScrollEffect: scrollEffect,
@@ -148,6 +153,8 @@ export function titleBarStyle(background: ResourceColor,
     // （87778879 实测过）；systemMaterialEffect 只有 materialType / materialLevel，自己画不出可读的玻璃，
     // 结果整条栏只剩 ChatHeader 胶囊的自绘玻璃。静态栏若再「发实」，该调的是 materialType
     // （hdsMaterialLevel 的 IMMERSIVE / ADAPTIVE）或按官方样例撤掉 originalStyle / scrollEffectStyle，不是这一项。
-    blurStrategy: BlurStrategy.ENABLE
+    // glass=false 时这一项也要关掉：ENABLE 就是这条栏的毛玻璃本身，留着它
+    // 一样会在标题区糊出一条带子。
+    blurStrategy: glass ? BlurStrategy.ENABLE : BlurStrategy.DISABLE
   };
 }

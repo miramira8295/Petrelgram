@@ -1,5 +1,7 @@
 import { promptAction, router } from '@kit.ArkUI';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { getTdClient, getCallSession } from '../../tdkit/Globals';
+import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
 import {
   CallItem, CallsLoadState, CallsMode, CallsPageState, CallsStore
 } from '../../store/CallsStore';
@@ -74,6 +76,8 @@ struct CallsPage {
   @StorageProp('screenWidthVp') screenW: number = 360;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @State @Watch('syncCallEntries') calls: CallItem[] = [];
+  // 列表实测高度：虚化 stops 按它算，窗口高度一变曲线就错。
+  @State private listViewH: number = 0;
   @State mode: CallsMode = 'all';
   @State loadState: CallsLoadState = 'loading';
   @State pageState: CallsPageState = 'idle';
@@ -471,8 +475,8 @@ struct CallsPage {
         .backgroundColor(COLOR_PRIMARY).borderRadius(18)
         .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
         .onClick((): void => this.store?.retry());
-    }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center)
-      .padding({ left: 28, right: 28, bottom: this.bottomSafe + 28 });
+    }.width('100%').height('100%').justifyContent(FlexAlign.Center)
+      .padding({ left: 28, right: 28, top: this.topSafe + 56 + 50, bottom: this.bottomSafe + 28 });
   }
 
   @Builder
@@ -488,8 +492,8 @@ struct CallsPage {
         .backgroundColor('#145B8FF9').borderRadius(17)
         .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
         .onClick((): void => this.refresh());
-    }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center)
-      .padding({ bottom: this.bottomSafe + 32 });
+    }.width('100%').height('100%').justifyContent(FlexAlign.Center)
+      .padding({ top: this.topSafe + 56 + 50, bottom: this.bottomSafe + 32 });
   }
 
   @Builder
@@ -601,6 +605,19 @@ struct CallsPage {
     // 来的留白因此还在 List 的命中区里，手指按在留白上照样能拖动通话记录。
     // 手机上 contentSideGutter 恒为 0，这两个值逐像素等于改动前的 12。
     .padding({ left: 12 + contentSideGutter(this.screenW), right: 12 + contentSideGutter(this.screenW) })
+    // 列表从屏幕顶端开始（标题栏悬浮在上面），用内容偏移避让
+    // topSafe + topBar(56) + segmentBar(40+2+8)。
+    .contentStartOffset(this.topSafe + 56 + 50)
+    .linearGradientBlur(BLUR_MAX_VP, {
+      fractionStops: edgeBlurStops(this.listViewH),
+      direction: GradientDirection.Bottom
+    })
+    // 模糊带要能画到 List 矩形之外，这里只是让边缘不被裁。
+    .clip(false)
+    .onAreaChange((_o: Area, n: Area): void => {
+      const h: number = n.height as number;
+      if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+    })
     .contentEndOffset(this.bottomSafe + 18)
     .edgeEffect(EdgeEffect.Spring).scrollBar(BarState.Off)
     .onReachEnd((): void => this.store?.loadMore());
@@ -609,27 +626,28 @@ struct CallsPage {
   @Builder
   readyContent() {
     Column() {
-      this.syncWarningBar();
       Refresh({ refreshing: $$this.refreshing }) {
         this.callList();
-      }.layoutWeight(1).width('100%').onRefreshing((): void => this.refresh());
-    }.layoutWeight(1).width('100%');
+      }.width('100%').height('100%').onRefreshing((): void => this.refresh());
+    }.width('100%').height('100%');
   }
 
   @Builder
   body() {
     Column() {
-      if (this.loadState === 'loading') { this.skeleton(); }
+      if (this.loadState === 'loading') {
+        Column() { this.skeleton(); }
+          .width('100%').height('100%').padding({ top: this.topSafe + 56 + 50 });
+      }
       else if (this.loadState === 'error') { this.errorState(); }
       else if (this.loadState === 'empty') {
         Column() {
-          this.syncWarningBar();
           Refresh({ refreshing: $$this.refreshing }) {
             this.emptyState();
-          }.layoutWeight(1).width('100%').onRefreshing((): void => this.refresh());
+          }.width('100%').height('100%').onRefreshing((): void => this.refresh());
         }.layoutWeight(1).width('100%');
       } else { this.readyContent(); }
-    }.layoutWeight(1).width('100%')
+    }.width('100%').height('100%')
       .parallelGesture(
         PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
           .onActionEnd((event: GestureEvent): void => this.handleHorizontalSwipe(event.offsetX))
@@ -637,13 +655,29 @@ struct CallsPage {
   }
 
   build() {
-    Column() {
-      this.topBar();
-      this.segmentBar();
+    // 「标题压内容」结构：滚动区铺满整页、从屏幕顶端开始，标题栏与分段条改成悬浮层。
+    // 这样顶部虚化带盖住的是真正滚进来的内容，而不是一片空白。
+    Stack({ alignContent: Alignment.TopStart }) {
       this.body();
-    }.width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-      .padding({ top: this.topSafe });
+      Column() {
+        this.topBar();
+        this.segmentBar();
+        // 同步失败提示条也放在悬浮层：它出现时不该把列表整体顶下去，
+        // 否则列表顶部的虚化带会变成一条空白。
+        this.syncWarningBar();
+      }
+      .width('100%')
+      .padding({ top: this.topSafe })
+      // 悬浮层要有一层材质：否则列表行会从标题、分段条两侧透出来（分段条的
+      // 胶囊是透明的，后面真实滚动的内容看得一清二楚）。材质关掉时退化成
+      // 纯色 surface，仍然不会漏内容。
+      .backgroundColor(plainGlassFill($r('app.color.surface')))
+      .backdropBlur(plainBackdropBlur('bar'))
+      // 悬浮层只让按钮可点，空白处把触摸漏给下面的列表。
+      .hitTestBehavior(HitTestMode.Transparent)
+    }
+    .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }
 

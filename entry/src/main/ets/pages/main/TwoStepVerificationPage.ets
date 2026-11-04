@@ -12,6 +12,7 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
 import { contentSideGutter } from '../../util/contentWidth';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 
 const CARD_RADIUS: number = 16;
 const COLOR_DANGER: string = '#E5484D';
@@ -22,6 +23,8 @@ struct TwoStepVerificationPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 滚动区实测高度（vp）：linearGradientBlur 的 fractionStops 要按实际高度归一化。
+  @State private listViewH: number = 0;
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
   @StorageProp('screenWidthVp') screenW: number = 360;
   @State loadState: string = 'loading';
@@ -336,16 +339,17 @@ struct TwoStepVerificationPage {
   }
 
   build() {
-    Column() {
-      this.header();
+    // header 画在内容层之上、不占布局高度：滚动区从屏幕最上沿开始铺垫，
+    // 顶部那条渐变模糊才有东西可糊（内容穿过 header 底下）。
+    Stack({ alignContent: Alignment.Top }) {
       if (this.loadState === 'loading') {
         Column() { LoadingProgress().width(34).height(34).color(COLOR_PRIMARY); }
-          .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+          .width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else if (this.loadState === 'error') {
         Column({ space: 10 }) {
           Text($r('app.string.tsv_load_failed')).fontSize(17).fontColor(COLOR_TEXT_PRIMARY);
           Button($r('app.string.settings_reload')).onClick((): void => { this.load(); });
-        }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else {
         Scroll() {
           Column({ space: 12 }) {
@@ -460,15 +464,29 @@ struct TwoStepVerificationPage {
           .padding({
             left: 12 + contentSideGutter(this.screenW),
             right: 12 + contentSideGutter(this.screenW),
-            top: 6,
+            top: this.topSafe + 56 + 12,
             bottom: this.bottomSafe + 24
           });
         }
-        .align(Alignment.Top).layoutWeight(1).width('100%').scrollBar(BarState.Off);
+        .align(Alignment.Top).width('100%').height('100%').scrollBar(BarState.Off)
+        .linearGradientBlur(BLUR_MAX_VP, {
+          fractionStops: edgeBlurStops(this.listViewH),
+          direction: GradientDirection.Bottom
+        })
+        .clip(false)
+        .onAreaChange((_o: Area, n: Area): void => {
+          const h: number = n.height as number;
+          if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+        });
       }
+      Column() {
+        this.header();
+      }
+      .width('100%')
+      .padding({ top: this.topSafe })
+      .hitTestBehavior(HitTestMode.Transparent)
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe });
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }

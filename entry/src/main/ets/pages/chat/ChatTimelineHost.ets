@@ -14,6 +14,7 @@ import { SelectionSession } from './SelectionSession';
 import { RowPageInputs } from '../../util/rowPageInputs';
 import { canRenderLightweightPlainTextRow } from '../../util/messageBubbleReuse';
 import { ChatTimelineSession } from './ChatTimelineSession';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 
 // 完整消息流渲染宿主：List、Repeat、行与覆盖层都归同一组件。
 // 数据发布与视口状态由 ChatTimelineSession 持有。
@@ -58,6 +59,9 @@ export struct ChatTimelineHost {
   @Param langEpoch: number = 0;
   @Param materialEpoch: number = 0;
   @Param timelineTopMargin: number = 0;
+
+  // 列表实测高度（vp）：linearGradientBlur 的 fractionStops 按实际高度归一化。
+  @Local private timelineViewH: number = 0;
 
   @Event onEmptyRetry: () => void = (): void => {};
   // 【第二轮第 12 项】签名从 `() => void` 改成带 mode。
@@ -179,7 +183,13 @@ export struct ChatTimelineHost {
     .width('100%').height('100%')
     .opacity(this.session.initialTimelineMasked ? 0 : 1)
     .contentStartOffset(this.headerStartOffset)
-    .contentEndOffset(this.bottomChromeH + 8)
+    // 【边缘虚化的收尾】linearGradientBlur 是把整个 List 画进离屏层再合成，
+    // 离屏层的最下沿那一行会合成出一条贴边的高亮细线（真机实测在输入框
+    // 上沿 y=1667 处正好 1px、均值 237）。把 List 的下框延伸到输入框底下
+    // （负 margin），让这条边落到屏幕外就看不见了；contentEndOffset 同步
+    // 加回同样的量，否则最后一条消息会跟着一起滑到输入框后面去。
+    .contentEndOffset(this.bottomChromeH * 2 + 8)
+    .margin({ bottom: -this.bottomChromeH })
     .cachedCount(this.listCachedCount)
     // Media-heavy frames can make a short release look like an 8-9k vp/s
     // fling. Cap only the inertial phase; direct finger tracking is unchanged.
@@ -206,7 +216,18 @@ export struct ChatTimelineHost {
     })
     .onScrollStart((): void => { this.session.handleTimelineScrollStart(); })
     .onScrollStop((): void => { this.session.handleTimelineScrollStop(); })
+    // 顶部/底部边缘渐变虚化：与首页会话列表同一套参数（顶/底 118vp、峰 22px）。
+    // 消息 List 的上沿就是屏幕顶（标题栏 enableComponentSafeArea: false、会话头由
+    // 主题栏悬浮在内容之上），所以渐变原点天然对齐，无需再上顶。
+    .linearGradientBlur(BLUR_MAX_VP, {
+      fractionStops: edgeBlurStops(this.timelineViewH),
+      direction: GradientDirection.Bottom
+    })
     .onAreaChange((_old: Area, area: Area): void => {
+      const h: number = Number(area.height);
+      if (h > 0 && Math.abs(h - this.timelineViewH) > 0.5) {
+        this.timelineViewH = h;
+      }
       this.session.handleTimelineAreaChange(area);
     });
   }

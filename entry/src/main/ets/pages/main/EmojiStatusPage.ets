@@ -10,6 +10,7 @@ import {
 } from '../../util/theme';
 import { logE, logW } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 
 const CARD_RADIUS: number = 14;
 const CELL: number = 52;
@@ -33,6 +34,8 @@ export function EmojiStatusPageBuilder(): void {
 @Component
 export struct EmojiStatusPage {
   private hdsScroller: Scroller = new Scroller();
+  // 滚动区实测高度（vp）：linearGradientBlur 的 fractionStops 按实际高度归一化。
+  @State private blurViewH: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @State recent: StatusEmoji[] = [];
@@ -216,7 +219,7 @@ export struct EmojiStatusPage {
             }
             Text($r('app.string.emoji_status_note'))
               .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18).width('100%');
-          }.width('100%').padding({ left: 12, right: 12, bottom: this.bottomSafe + 24 });
+          }.width('100%').padding({ left: 12, right: 12, top: EDGE_OVERLAY_VP, bottom: this.bottomSafe + 24 });
         }
         // **Scroll 的 align 默认是 Center**，内容比视口短时会被垂直居中。
         // 本页在非 Premium 账号下只有"清除当前状态"一行加一句说明，于是整块
@@ -225,7 +228,18 @@ export struct EmojiStatusPage {
         .align(Alignment.Top)
         .layoutWeight(1).width('100%').scrollBar(BarState.Off)
         // 不裁剪，内容才能穿到标题栏底下。
-        .clip(false);
+        .clip(false)
+        // 边缘渐变虚化：与设置页/首页同一套参数（顶/底 118vp、峰 22px）。
+        .linearGradientBlur(BLUR_MAX_VP, {
+          fractionStops: edgeBlurStops(this.blurViewH),
+          direction: GradientDirection.Bottom
+        })
+        .onAreaChange((_old: Area, area: Area): void => {
+          const h: number = Number(area.height);
+          if (h > 0 && Math.abs(h - this.blurViewH) > 0.5) {
+            this.blurViewH = h;
+          }
+        });
       }
       }.width('100%').height('100%');
     }

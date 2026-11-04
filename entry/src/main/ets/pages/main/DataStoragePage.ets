@@ -23,6 +23,7 @@ import { fullDate } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logW } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { changeDownloadDirectory, getDownloadDirectoryPath } from '../../util/mediaSaver';
 import { DOWNLOAD_DIR_CHANGED, downloadDirToast } from '../../util/downloadDirOutcome';
 import { common } from '@kit.AbilityKit';
@@ -46,6 +47,8 @@ export function DataStoragePageBuilder(): void {
 @Component
 export struct DataStoragePage {
   private hdsScroller: Scroller = new Scroller();
+  // 滚动区实测高度（vp）：linearGradientBlur 的 fractionStops 按实际高度归一化。
+  @State private blurViewH: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -566,12 +569,23 @@ export struct DataStoragePage {
           Text($r('app.string.ds_note'))
             .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).width('100%')
             .padding({ left: 14, right: 14, top: 1 });
-        }.width('100%').padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
+        }.width('100%').padding({ left: 12, right: 12, top: EDGE_OVERLAY_VP, bottom: this.bottomSafe + 24 });
       }
       .layoutWeight(1).width('100%').align(Alignment.Top)
       .scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
       // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
-      .clip(false);
+      .clip(false)
+      // 边缘渐变虚化：与设置页/首页同一套参数（顶/底 118vp、峰 22px）。
+      .linearGradientBlur(BLUR_MAX_VP, {
+        fractionStops: edgeBlurStops(this.blurViewH),
+        direction: GradientDirection.Bottom
+      })
+      .onAreaChange((_old: Area, area: Area): void => {
+        const h: number = Number(area.height);
+        if (h > 0 && Math.abs(h - this.blurViewH) > 0.5) {
+          this.blurViewH = h;
+        }
+      });
     }
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)

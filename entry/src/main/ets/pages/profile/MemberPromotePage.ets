@@ -1,5 +1,7 @@
 import { promptAction, router } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
+import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import {
   MemberStatusInfo, demoteMember, getMemberStatus, promoteMember
@@ -66,6 +68,7 @@ struct MemberPromotePage {
   @State loadState: string = 'loading'; // loading | ready | error
   @State busy: boolean = false;
   @State rights: AdminRights = allAdminRights(false);
+  @State private listViewH: number = 0;
   // 自己的权限上限。群主是 allAdminRights(true)，与任何集合相交都是原集合。
   @State ownRights: AdminRights = allAdminRights(false);
   @State customTitle: string = '';
@@ -352,16 +355,34 @@ struct MemberPromotePage {
           // 两侧让出来的留白因此还在它的命中区里，手指按在留白上照样能滚页面。
           // 手机上 contentSideGutter 恒为 0，两个值逐像素等于改动前的 12。
           .padding({
+            top: this.topSafe + 56 + 12,
             left: 12 + contentSideGutter(this.screenW),
             right: 12 + contentSideGutter(this.screenW),
             bottom: this.bottomSafe + 24
           });
         }
-        .align(Alignment.Top).layoutWeight(1).width('100%').scrollBar(BarState.Off);
+        .align(Alignment.Top).width('100%').height('100%').scrollBar(BarState.Off)
+        .linearGradientBlur(BLUR_MAX_VP, {
+          fractionStops: edgeBlurStops(this.listViewH),
+          direction: GradientDirection.Bottom
+        })
+        .clip(false)
+        .onAreaChange((_o: Area, n: Area): void => {
+          const h: number = n.height as number;
+          if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+        });
       }
+      // 悬浮标题层：带材质，否则滚动内容会从标题两侧透出来。
+      Column() {
+        this.header();
+      }
+      .width('100%')
+      .padding({ top: this.topSafe })
+      .backgroundColor(plainGlassFill($r('app.color.surface')))
+      .backdropBlur(plainBackdropBlur('bar'))
+      .hitTestBehavior(HitTestMode.Transparent);
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
-    .padding({ top: this.topSafe })
     // 背景铺进上下安全区，别依赖"全屏布局恰好覆盖"——聊天页深色黑边的教训。
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }

@@ -13,6 +13,7 @@ import {
 import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { birthdayPickerDate } from '../../util/birthdayPicker';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
@@ -33,6 +34,8 @@ export function AccountEditPageBuilder(): void {
 @Component
 export struct AccountEditPage {
   private hdsScroller: Scroller = new Scroller();
+  // 滚动区实测高度（vp）：linearGradientBlur 的 fractionStops 按实际高度归一化。
+  @State private blurViewH: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -797,7 +800,7 @@ export struct AccountEditPage {
             this.logoutCard();
           }
           .width('100%')
-          .padding({ left: 12, right: 12, bottom: this.bottomSafe + 24 });
+          .padding({ left: 12, right: 12, top: EDGE_OVERLAY_VP, bottom: this.bottomSafe + 24 });
         }
         .layoutWeight(1)
         .width('100%')
@@ -805,7 +808,18 @@ export struct AccountEditPage {
         .edgeEffect(EdgeEffect.Spring)
         .scrollBar(BarState.Off)
         // 不裁剪，内容才能穿到标题栏底下。
-        .clip(false);
+        .clip(false)
+        // 边缘渐变虚化：与设置页/首页同一套参数（顶/底 118vp、峰 22px）。
+        .linearGradientBlur(BLUR_MAX_VP, {
+          fractionStops: edgeBlurStops(this.blurViewH),
+          direction: GradientDirection.Bottom
+        })
+        .onAreaChange((_old: Area, area: Area): void => {
+          const h: number = Number(area.height);
+          if (h > 0 && Math.abs(h - this.blurViewH) > 0.5) {
+            this.blurViewH = h;
+          }
+        });
       }
       }.width('100%').height('100%');
     }

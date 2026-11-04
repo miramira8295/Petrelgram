@@ -118,8 +118,8 @@ export struct HdsSubPage {
       // 那条的底色由 HdsNavigation 自己的 backgroundColor 铺——全屏布局下它本来
       // 就盖到那儿。
       avoidLayoutSafeArea: true,
-      enableComponentSafeArea: true,
-      style: titleBarStyle(this.pageBackground),
+      enableComponentSafeArea: false,
+      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false, false),
       content: {
         title: { mainTitle: this.title, subTitle: this.subTitle },
         backIcon: { action: (): void => { this.onBack(); } },

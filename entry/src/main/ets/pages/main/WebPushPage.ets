@@ -23,6 +23,7 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { contentSideGutter } from '../../util/contentWidth';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 
 const CARD_RADIUS: number = 14;
 
@@ -45,6 +46,8 @@ struct WebPushPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 滚动区实测高度（vp）：linearGradientBlur 的 fractionStops 要按实际高度归一化。
+  @State private listViewH: number = 0;
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
   @StorageProp('screenWidthVp') screenW: number = 360;
   @StorageProp(KEY_WEBPUSH_ENABLED) pushEnabled: boolean = false;
@@ -485,15 +488,9 @@ struct WebPushPage {
   }
 
   build() {
-    Column() {
-      Row({ space: 6 }) {
-        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
-          .onClick((): void => { router.back(); });
-        Text($r('app.string.ns_custom_push')).fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
-      }
-      .width('100%').height(52).padding({ left: 12, right: 12 })
-      .alignItems(VerticalAlign.Center);
-
+    // header 画在内容层之上、不占布局高度：滚动区从屏幕最上沿开始铺垫，
+    // 顶部那条渐变模糊才有东西可糊（内容穿过 header 底下）。
+    Stack({ alignContent: Alignment.Top }) {
       Scroll() {
         Column({ space: 12 }) {
           // MeoW 入口只在这台构建配置了中转地址时出现；未配置的构建（比如 clone
@@ -690,20 +687,41 @@ struct WebPushPage {
         // 这一页的说明文字最长，收窄后一行才不用横扫整屏。
         // 手机上 contentSideGutter 恒为 0，两个值逐像素等于改动前的 12。
         .padding({
+          top: this.topSafe + 52 + 12,
           left: 12 + contentSideGutter(this.screenW),
           right: 12 + contentSideGutter(this.screenW),
           bottom: this.bottomSafe + 16
         });
       }
-      .layoutWeight(1).width('100%')
+      .width('100%').height('100%')
       .scrollBar(BarState.Off)
-      .align(Alignment.Top);
+      .align(Alignment.Top)
+      .linearGradientBlur(BLUR_MAX_VP, {
+        fractionStops: edgeBlurStops(this.listViewH),
+        direction: GradientDirection.Bottom
+      })
+      .clip(false)
+      .onAreaChange((_o: Area, n: Area): void => {
+        const h: number = n.height as number;
+        if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+      });
+      Column() {
+          Row({ space: 6 }) {
+        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
+          .onClick((): void => { router.back(); });
+        Text($r('app.string.ns_custom_push')).fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
+      }
+      .width('100%').height(52).padding({ left: 12, right: 12 })
+      .alignItems(VerticalAlign.Center);
+      }
+      .width('100%')
+      .padding({ top: this.topSafe })
+      .hitTestBehavior(HitTestMode.Transparent)
     }
     .width('100%').height('100%')
     // 没有这一行时页面的布局区停在安全区边界，状态栏那一条不归页面画，
     // 露出的是窗口底色。padding 只负责把内容让开，铺满是另一回事。
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe })
     .backgroundColor(COLOR_PAGE_BG)
     .bindSheet($$this.consentShown, this.consentSheet(), {
       height: SheetSize.FIT_CONTENT,

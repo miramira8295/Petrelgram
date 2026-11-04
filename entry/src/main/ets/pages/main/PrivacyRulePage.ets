@@ -9,6 +9,7 @@ import {
   COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { str } from '../../util/strings';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { logE } from '../../util/log';
 import { readableContentWidth } from '../../util/contentWidth';
 
@@ -52,6 +53,7 @@ struct PrivacyRulePage {
   @State allowExceptions: number = 0;
   @State restrictExceptions: number = 0;
   @State loadState: string = 'loading';
+  @State private listViewH: number = 0;
   @State saving: boolean = false;
   @State pressedKey: string = '';
   private preserved: TdObject[] = [];
@@ -164,17 +166,18 @@ struct PrivacyRulePage {
       Button($r('app.string.settings_reload')).height(42).borderRadius(21).fontColor(COLOR_ON_PRIMARY).backgroundColor(COLOR_PRIMARY)
         .onClick((): void => { this.load(); });
     }
-    .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+    .width('100%').height('100%').justifyContent(FlexAlign.Center);
   }
 
   build() {
-    Column() {
-      this.header();
+    // header 画在内容层之上、不占布局高度：滚动区从屏幕最上沿开始铺垫，
+    // 顶部那条渐变模糊才有东西可糊（内容穿过 header 底下）。
+    Stack({ alignContent: Alignment.Top }) {
       if (this.loadState === 'loading') {
         Column({ space: 10 }) {
           LoadingProgress().width(34).height(34).color(COLOR_PRIMARY);
           Text($r('app.string.privacy_rule_loading')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-        }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else if (this.loadState === 'error') {
         this.loadError();
       } else {
@@ -239,17 +242,31 @@ struct PrivacyRulePage {
             }
             .width('100%')
             .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
-            .padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
+            .padding({ left: 12, right: 12, top: this.topSafe + 56 + 12, bottom: this.bottomSafe + 24 });
           }
           .width('100%')
           // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
           .alignItems(HorizontalAlign.Center);
         }
-        .layoutWeight(1).width('100%').align(Alignment.Top).scrollBar(BarState.Off);
+        .width('100%').height('100%').align(Alignment.Top).scrollBar(BarState.Off)
+        .linearGradientBlur(BLUR_MAX_VP, {
+          fractionStops: edgeBlurStops(this.listViewH),
+          direction: GradientDirection.Bottom
+        })
+        .clip(false)
+        .onAreaChange((_o: Area, n: Area): void => {
+          const h: number = n.height as number;
+          if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+        });
       }
+      Column() {
+        this.header();
+      }
+      .width('100%')
+      .padding({ top: this.topSafe })
+      .hitTestBehavior(HitTestMode.Transparent)
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe });
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }

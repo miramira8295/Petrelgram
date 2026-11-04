@@ -581,7 +581,14 @@ function buildMaterial(surface: OverlaySurface): uiMaterial.Material {
     // 要调浓淡改 resources/{base,dark}/element/color.json 的 material_tint 一处。
     materialColor: $r('app.color.material_tint'),
     colorInvert: usesColorInvert(surface),
-    applyShadow: !usesOwnShadow(surface),
+    // 【control 面不画材质阴影】材质会在节点下沿投一层很淡的底板，宽高都比节点
+    // 大一圈——首页文件夹胶囊下方那条灰带就是它（真机实测：y≈274~282、x∈[30,200]，
+    // 最深比背景暗 16 级）。它和胶囊白底同源，出自 systemMaterial 本身，
+    // 组件上的 clip 裁不掉（材质在独立图层）；HDS 侧也没有只关阴影的公开开关。
+    // ImmersiveMaterial 的 applyShadow 就是那个开关：保留材质滤镜、底色、圆角、
+    // 交互，只让它不再往外投这层底板。control 面全是浮在纯色背景上的小胶囊，
+    // 阴影本来就不显眼，关掉之后观感更干净。bar/bubble 早就自己画边缘，一并沿用。
+    applyShadow: !usesOwnShadow(surface) && surface !== 'control',
     // 这两个和材质本体不同：官方注明它们「takes effect for devices with all
     // levels of computing power」，低算力设备上不会被降级掉。
     interactive: usesInteraction(surface),

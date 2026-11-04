@@ -1,4 +1,5 @@
 import { ChatListRowState } from './ChatListRowState';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { ChatListSubscription } from '../../store/ChatListSubscription';
 import { homeCardMarginVp } from '../../util/pageMargin';
 import {
@@ -49,6 +50,7 @@ import {
   RETAP_SMOOTH_SPAN, smoothJumpStage
 } from '../../util/tabReTap';
 import { markAsRead, markUnread, setArchived, setMute, MUTE_LONG } from '../../store/ChatActions';
+
 import {
   CHAT_SWIPE_ACTION_HEIGHT, CHAT_SWIPE_BUTTON_VP, CHAT_SWIPE_COMMIT_DELAY_MS, CHAT_SWIPE_EDGE_EFFECT,
   CHAT_SWIPE_RADIUS_VP, CHAT_SWIPE_TRIGGER_VP, CHAT_SWIPE_VERTICAL_GUTTER_VP,
@@ -135,6 +137,8 @@ export struct MainTabBody {
   // 才能驱动标题栏收缩与渐变模糊；页签里的列表在子组件内部，父层拿不到，
   // 只能这样把控制器递下来。
   listScroller: ListScroller = new ListScroller();
+  // 列表实测高度（vp）：linearGradientBlur 的 fractionStops 要按实际高度归一化。
+  @State private listViewH: number = 0;
   // 每帧滚动量往上抱给 ChatListPage，文件夹条据此收起/展开（util/folderBarCollapse）。
   // **普通成员，不能用 @Prop**：@Prop 跨组件边界是深拷贝，函数会被丢掉，症状是
   // 回调永远不触发而编译、单测都看不出来（见 memory arkui-prop-deepcopy-drops-closures）。
@@ -164,6 +168,7 @@ export struct MainTabBody {
   private unsubArchive: (() => void) | null = null;
   // 归档行的展开高度（0..行高），只由顶部回弹深度驱动。
   @State private archivePullPx: number = 0;
+
   // 拽到全展开后锁定；再往下滚一段自动收起。
   @State private archiveRevealed: boolean = false;
   // 纯发布闸，不参与绘制：滚动期间只缓存最新会话快照，停下后一次性发布。
@@ -725,7 +730,7 @@ export struct MainTabBody {
       }, (_item: ChatListRowState, index: number) =>
         guardKey(this.chatsData.keyTableId, index, this.chatsData.getKey(index)));
     }
-    .layoutWeight(1).width('100%')
+    .width('100%').height('100%')
     // Keep only two painted rows beyond the viewport. The title blur still has
     // enough source content while fast scrolling prepares fewer glass rows.
     .cachedCount(2, true)
@@ -740,7 +745,9 @@ export struct MainTabBody {
     .scrollBar(BarState.Off)
     // 给底部 dock 留 88（手机 HdsTabs 胶囊 / 平板分栏左栏底部的自绘胶囊）。
     .contentEndOffset(this.bottomSafe + 88)
-    .contentStartOffset(this.contentTopInset)
+    // 容器上顶了 EDGE_OVERLAY_VP（见 build 里的负 margin），列表内容的起点跟着
+    // 一起上移了；这里补回来，首行才不会被屏幕顶边切掉（之前只露出未读数角标）。
+    .contentStartOffset(this.contentTopInset + EDGE_OVERLAY_VP)
     .onDidScroll((offset: number, state: ScrollState): void => {
       this.updateScrollActivity(state);
       this.updateImmersiveBars(offset);
@@ -791,7 +798,20 @@ export struct MainTabBody {
     })
     // 指尖按下就关发布闸（抬手/被抢手势即开），见 ChatListView 同款注释。
     .onTouch((event: TouchEvent): void => { updateTouchHold(event.type); })
-    .onReachEnd(() => { getChatStore().loadMore('main'); });
+    .onReachEnd(() => { getChatStore().loadMore('main'); })
+    // 顶部/底部边缘渐变模糊。CFLark 同款参数（峰值 22px、带宽顶 118vp/底 106.7vp），
+    // 之前一直"不生效"是因为挂在了 ChatListView 上——首页真正渲染的是本组件的
+    // 这条 List，那个属性从来没画过。
+    .linearGradientBlur(BLUR_MAX_VP, {
+      fractionStops: edgeBlurStops(this.listViewH),
+      direction: GradientDirection.Bottom
+    })
+    .onAreaChange((_oldArea: Area, newArea: Area): void => {
+      const h: number = Number(newArea.height);
+      if (h > 0 && Math.abs(h - this.listViewH) > 1) {
+        this.listViewH = h;
+      }
+    });
   }
 
   // 小方形屏（SPEC-04）：上滑隐藏标题栏与底部页签，下滑或回到顶部恢复。
@@ -848,9 +868,35 @@ export struct MainTabBody {
           .animation({
             duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200),
             curve: Curve.EaseOut
-          }));
+          }))
+        // 归档条必须画在上移后的列表之上：列表用 offset 上移了 EDGE_OVERLAY_VP，
+        // 而归档仍按 Column 正常流式占位，两者会重叠 EDGE_OVERLAY_VP 那么高一段。
+        // 那段正好是 contentStartOffset 补出来的空白，没有内容，抬 zIndex 不会
+        // 出现"归档盖住聊天"（历史上那次是列表内容真的画进那条带里）。
+        .zIndex(1);
       }
-      this.chatList();
+      // 列表容器：List 撑满。边缘虚化由 List 自己的 linearGradientBlur 承担，
+      // 标题栏（NavBar）和底部胶囊（Tabs 的 bar）都在容器外，不会被糊到。
+      //
+      // margin top 负值：linearGradientBlur 的渐变原点在**这个容器自己的上沿**，
+      // 而 HDS 的 NavBar 在布局里占掉 56vp，容器就从标题栏下沿开始，于是顶部的
+      // 渐隐带落在了标题下方、标题那一带还是清晰的——用户看到的就是「标题下面
+      // 另起一条模糊带，需要挪上去」。把容器上提一个 NavBar 高度，渐变原点就回
+      // 到内容区顶端（状态栏下沿），content 也就能穿到标题底下去糊。
+      // **必须是 offset 不是负 margin。** margin 参与布局：负值会把整个 Stack
+      // 的占位往上吃，归档抽屉（Column 里在它上面）的流式位置随之失效、被列表
+      // 盖住；而 offset 只改绘制原点、布局占位一字不动——归档照旧占它那一行，
+      // 列表再在绘制上顶 EDGE_OVERLAY_VP，两套坐标互不干扰。
+      Stack() {
+        this.chatList();
+      }
+      .width('100%')
+      // 高度要比父容器多出 EDGE_OVERLAY_VP，再用 offset 把整块上提同样的量：
+      // 视觉范围 = [内容区顶 - 95, 屏幕底]，顶部渐变的原点仍在屏幕最上沿、
+      // 底部渐变的终点落到屏幕最底沿。若只用 offset 不改高度，下沿会跟着上移，
+      // 底部虚化就停在悬浮胶囊上方；若改用负 margin 上提，又会把布局高度吃掉。
+      .height('calc(100% + ' + EDGE_OVERLAY_VP + 'vp)')
+      .offset({ y: -EDGE_OVERLAY_VP });
     }
     .width('100%').layoutWeight(1)
     // 本组件的根节点。HdsNavigation → Tabs → TabContent → Column → 这里 →

@@ -88,6 +88,7 @@ const MINI_COVER: number = 34;
 // 底距。一路试下来：bottomSafe + 12（太远）→ max(8, bottomSafe)（还是远）→
 // 半个 bottomSafe（太低）→ 现在取七成，落在后两者中间。别再往下：底部那条是
 // 系统的返回/主页手势带，胶囊下沿贴太近，下半截的点击会被系统先吃掉。
+
 const DOCK_GAP: number = 6;     // minimum gap below the capsule
 const DOCK_ITEM_INSET: number = 5;
 const DOCK_SWITCH_DURATION: number = 240;
@@ -1183,6 +1184,10 @@ export struct MainScreen {
       // 所以胶囊在左栏里居中；外层 Stack 是 BottomStart 对齐，整条贴在左下。
       // 这里用 if 只随分栏/不分栏切换，进出目的页的显隐仍走 dock() 自己的
       // opacity / enabled / visibility（下面那段说明的就是那件事）。
+      // 底部边缘淡化已下放到列表容器本身（见 pages/chatlist/MainTabBody.ets 与
+      // ChatListView.ets 列表容器上的 linearGradientBlur）。这里原来是全屏一条 Column + backdropBlur：它既盖住了底部
+      // 胶囊（把胶囊糊成一片），又因为 position 的 calc 失效被画到屏幕顶部去糊标题。
+      // 渐隐属于可滚动内容，就该画在列表里、只糊列表自己，不在屏幕层压任何东西。
       if (this.leftFloatingDock()) {
         this.dock();
       }

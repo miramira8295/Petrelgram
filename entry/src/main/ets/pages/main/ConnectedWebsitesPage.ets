@@ -11,6 +11,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
 import { readableContentWidth } from '../../util/contentWidth';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 
 const CARD_RADIUS: number = 16;
 const COLOR_DANGER: string = '#E5484D';
@@ -21,6 +22,8 @@ struct ConnectedWebsitesPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 滚动区实测高度（vp）：linearGradientBlur 的 fractionStops 要按实际高度归一化。
+  @State private listViewH: number = 0;
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
   @StorageProp('screenWidthVp') screenW: number = 360;
   @State loadState: string = 'loading';
@@ -157,24 +160,25 @@ struct ConnectedWebsitesPage {
   }
 
   build() {
-    Column() {
-      this.header();
+    // header 画在内容层之上、不占布局高度：滚动区从屏幕最上沿开始铺垫，
+    // 顶部那条渐变模糊才有东西可糊（内容穿过 header 底下）。
+    Stack({ alignContent: Alignment.Top }) {
       if (this.loadState === 'loading') {
         Column({ space: 9 }) {
           LoadingProgress().width(34).height(34).color(COLOR_PRIMARY);
           Text($r('app.string.cw_loading')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-        }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else if (this.loadState === 'error') {
         Column({ space: 10 }) {
           Text($r('app.string.cw_load_failed')).fontSize(17).fontColor(COLOR_TEXT_PRIMARY);
           Button($r('app.string.settings_reload')).onClick((): void => { this.load(); });
-        }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else if (this.websites.length === 0) {
         Column({ space: 9 }) {
           SymbolGlyph($r('sys.symbol.link')).fontSize(50).fontColor([COLOR_ICON_SECONDARY]);
           Text($r('app.string.cw_empty')).fontSize(18).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
           Text($r('app.string.cw_empty_sub')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-        }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else {
         Scroll() {
           // 两层 Column 是故意的：外层铺满、负责居中，内层才是被限宽的内容。
@@ -201,17 +205,31 @@ struct ConnectedWebsitesPage {
             }
             .width('100%')
             .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
-            .padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
+            .padding({ left: 12, right: 12, top: this.topSafe + 56 + 12, bottom: this.bottomSafe + 24 });
           }
           .width('100%')
           // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
           .alignItems(HorizontalAlign.Center);
         }
-        .align(Alignment.Top).layoutWeight(1).width('100%').scrollBar(BarState.Off);
+        .align(Alignment.Top).width('100%').height('100%').scrollBar(BarState.Off)
+        .linearGradientBlur(BLUR_MAX_VP, {
+          fractionStops: edgeBlurStops(this.listViewH),
+          direction: GradientDirection.Bottom
+        })
+        .clip(false)
+        .onAreaChange((_o: Area, n: Area): void => {
+          const h: number = n.height as number;
+          if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+        });
       }
+      Column() {
+        this.header();
+      }
+      .width('100%')
+      .padding({ top: this.topSafe })
+      .hitTestBehavior(HitTestMode.Transparent)
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe });
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }

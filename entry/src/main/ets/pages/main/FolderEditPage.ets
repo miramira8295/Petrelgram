@@ -16,6 +16,7 @@ import { AvatarView } from '../chatlist/AvatarView';
 import { FolderChatPickRow } from './FolderChatPickRow';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
@@ -47,6 +48,7 @@ struct FolderEditPage {
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
   @StorageProp('screenWidthVp') screenW: number = 360;
   @State folderId: number = 0;
+  @State private listViewH: number = 0;
   @State loadState: string = 'loading';
   @State saving: boolean = false;
   @State warning: string = '';
@@ -532,7 +534,7 @@ struct FolderEditPage {
       Text($r('app.string.settings_reload')).fontSize(15).fontColor(COLOR_ON_PRIMARY).fontWeight(FontWeight.Medium)
         .padding({ left: 22, right: 22, top: 10, bottom: 10 }).backgroundColor(COLOR_PRIMARY).borderRadius(18)
         .stateStyles({ normal: this.pressNormal, pressed: this.pressDown }).onClick((): void => this.loadFolder());
-    }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+    }.width('100%').height('100%').justifyContent(FlexAlign.Center);
   }
 
   @Builder
@@ -764,10 +766,19 @@ struct FolderEditPage {
       .padding({
         left: 12 + contentSideGutter(this.screenW),
         right: 12 + contentSideGutter(this.screenW),
-        top: 4,
+        top: this.topSafe + 56 + 12,
         bottom: this.bottomSafe + 28
       });
-    }.layoutWeight(1).width('100%').scrollBar(BarState.Off).align(Alignment.Top);
+    }.width('100%').height('100%').scrollBar(BarState.Off).align(Alignment.Top)
+    .linearGradientBlur(BLUR_MAX_VP, {
+      fractionStops: edgeBlurStops(this.listViewH),
+      direction: GradientDirection.Bottom
+    })
+    .clip(false)
+    .onAreaChange((_o: Area, n: Area): void => {
+      const h: number = n.height as number;
+      if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+    });
   }
 
   @Builder
@@ -798,13 +809,13 @@ struct FolderEditPage {
           Text($r('app.string.fe_search_failed')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
           Text($r('app.string.fe_search_again')).fontSize(14).fontColor(COLOR_PRIMARY)
             .onClick((): void => this.runPickerSearch(this.pickerQuery));
-        }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else if (this.pickerState === 'empty') {
         Column({ space: 7 }) {
           Text('🔍').fontSize(36);
           Text($r('app.string.fe_no_chats')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
           Text($r('app.string.fe_no_chats_sub')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
-        }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else {
         List() {
           // LazyForEach + 复用行（FolderChatPickRow）：候选是整份会话列表，多的账号上千个。
@@ -829,14 +840,20 @@ struct FolderEditPage {
   }
 
   build() {
-    Column() {
-      this.header();
+    // header 画在内容层之上、不占布局高度：滚动区从屏幕最上沿开始铺垫，
+    // 顶部那条渐变模糊才有东西可糊（内容穿过 header 底下）。
+    Stack({ alignContent: Alignment.Top }) {
       if (this.loadState === 'loading') { this.loadSkeleton(); }
       else if (this.loadState === 'error') { this.loadError(); }
       else { this.editor(); }
+      Column() {
+        this.header();
+      }
+      .width('100%')
+      .padding({ top: this.topSafe })
+      .hitTestBehavior(HitTestMode.Transparent)
     }.width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-      .padding({ top: this.topSafe })
       .bindSheet($$this.pickerOpen, this.pickerSheet(), {
         // The sheet's own top-right 完成 button replaces the system close icon,
         // which would otherwise overlap it.

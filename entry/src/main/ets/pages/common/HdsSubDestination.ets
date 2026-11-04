@@ -230,8 +230,8 @@ export struct HdsSubDestination {
       // 但**不要**再在 HdsNavDestination 根上加 expandSafeArea：那会把标题栏往
       // 状态栏里推，和这一行正好对着干，两者抵消之后渐变模糊的合成也跟着废掉。
       avoidLayoutSafeArea: true,
-      enableComponentSafeArea: true,
-      style: titleBarStyle(this.pageBackground),
+      enableComponentSafeArea: false,
+      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false, false),
       content: this.titleBarContent()
     })
     // 只有 MINI 和 MODAL 可选，见文件头。大标题由 bottomBuilder 补。
