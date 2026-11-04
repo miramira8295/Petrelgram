@@ -106,6 +106,9 @@ export interface MsgContent {
   venueType?: string;
   pollId?: string;
   pollQuestion?: string;
+  // messagePoll.description（投票说明，含换行与链接实体）。
+  // 注意它挂在 messagePoll 这一层，**不在 poll 里面**——只查 poll 构造器会漏掉。
+  pollDescription?: string;
   pollOptions?: PollOptionInfo[];
   pollTotalVoterCount?: number;
   pollIsAnonymous?: boolean;
@@ -1271,6 +1274,10 @@ export function formatMsgContent(message: TdObject): MsgContent {
       videoFileName: '', photoFullFileId: 0,
       pollId: poll !== undefined ? `${poll['id'] ?? ''}` : '',
       pollQuestion: question !== undefined ? ((question['text'] as string | undefined) ?? '') : '',
+      pollDescription: ((): string => {
+        const desc = content!['description'] as TdObject | undefined;
+        return desc !== undefined ? ((desc['text'] as string | undefined) ?? '') : '';
+      })(),
       pollOptions: options,
       pollTotalVoterCount: poll !== undefined
         ? Math.max(0, (poll['total_voter_count'] as number | undefined) ?? 0) : 0,

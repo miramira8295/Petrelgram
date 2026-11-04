@@ -4944,10 +4944,35 @@ export class MessageStore {
     }
     this.userRequestedFiles.delete(fileId);
     this.videoFileToMsg.delete(fileId);
+    // **进了 TDLib 下载管理器的文件，光 cancelDownloadFile 停不住。**
+    //
+    // 2026-11-03 真机（issue #245）：在气泡上暂停一个 309MB 的文件，
+    // cancelDownloadFile 返回成功，7 秒后它又在下载 —— 因为 addFileToDownloads
+    // 是持久注册，取消只停了当前这一次传输，管理器条目仍然没被标记为暂停，
+    // TDLib 自己又把它捡起来。
+    //
+    // 下载中心的暂停之所以有效，是因为它走 toggleDownloadIsPaused(is_paused=true)，
+    // 那是 TDLib 记住的暂停位。所以这里对管理器文件补上同一个请求：
+    // 先立暂停位（防止自动续传），再取消当前传输（立即停）。
+    if (this.managedFiles.has(fileId)) {
+      const pauseReq: TdRequest = { '@type': 'toggleDownloadIsPaused' };
+      pauseReq['file_id'] = fileId;
+      pauseReq['is_paused'] = true;
+      this.client.send(pauseReq).catch((err: TdError): void => {
+        logW(`MessageStore.pauseFileDownload: toggleDownloadIsPaused failed ${err.message}`);
+      });
+    }
     const req: TdRequest = { '@type': 'cancelDownloadFile' };
     req['file_id'] = fileId;
     req['only_if_pending'] = false;
     this.client.send(req).catch((): void => { /* 取消失败无副作用 */ });
+    // **不要在这里 publishProgress(e.videoProgress)。**
+    //
+    // 2026-11-03 真机：暂停后进度环画满、文案显示 100%。原因是 videoProgress
+    // 这个字段在下载过程中不跟着走（它是 hydrate/完成时写的），暂停那一刻它
+    // 还是 100；真正准确的是 mediaProgressChannel 里 downloadPercent 写进去的
+    // 值。取消传输之后不会再有人覆盖它，通道里那条就是「停在哪」。
+    // 之前那版用自己的旧值去 publish，反而把正确值盖掉了。
     this.patchVideoEntries(fileId, (c: MessageEntry): void => {
       c.mediaDownloadActive = false;
     });
@@ -5037,6 +5062,14 @@ export class MessageStore {
     }
     if (manage) {
       this.managedFiles.add(e.videoFileId);
+    }
+    // 之前可能在气泡里暂停过（见 pauseFileDownload 里的 toggleDownloadIsPaused）：
+    // 现在要重新下载，必须先把暂停位清掉，否则 downloadFile 不会被真正执行。
+    if (this.managedFiles.has(e.videoFileId)) {
+      const unpause: TdRequest = { '@type': 'toggleDownloadIsPaused' };
+      unpause['file_id'] = e.videoFileId;
+      unpause['is_paused'] = false;
+      this.client.send(unpause).catch((): void => { /* 清除失败不阻断下载 */ });
     }
     this.patchVideoEntries(e.videoFileId, (c: MessageEntry): void => {
       c.videoFailed = false;

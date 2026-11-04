@@ -68,6 +68,13 @@ export function fileExtension(fileName: string, mimeType: string): string {
   return mimeExtension(mimeType);
 }
 
+// 这个文件该不该用「播放」语义：只有音频（歌/语音文件）才用 ▶，
+// 文档类一律用下载箭头——APP/TXT/ZIP 上出现播放三角很奇怪（用户 2026-11-03）。
+export function isAudioFileName(fileName: string, mimeType: string): boolean {
+  const extension: string = fileExtension(fileName, mimeType);
+  return AUDIO_EXTENSIONS.indexOf(extension) >= 0 || extension === 'audio';
+}
+
 export function fileTypeVisual(fileName: string, mimeType: string): FileTypeVisual {
   const extension: string = fileExtension(fileName, mimeType);
   if (extension === 'pdf') {
@@ -188,6 +195,12 @@ export function fileStatusText(
     return downloadProgress > 0
       ? str('file_downloading_pct', sizeLabel, downloadProgress)
       : str('file_downloading', sizeLabel);
+  }
+  // 暂停态：停在某个百分比上。原来这里直接落到「点击下载」，把已经下了一半
+  // 的事实整个抹掉——用户看到的是「从没下过」（2026-11-03 报的「暂停后进度
+  // 位置不对」）。复用群通话已有的 gs_paused 文案，不再新增 20 个语言的条目。
+  if (downloadProgress > 0) {
+    return `${str('gs_paused')} · ${sizeLabel} · ${downloadProgress}%`;
   }
   return str('file_tap_download', sizeLabel);
 }

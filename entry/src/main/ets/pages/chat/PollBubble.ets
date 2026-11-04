@@ -81,7 +81,12 @@ export struct PollBubble {
 
   @Computed
   get isUnavailable(): boolean {
-    return this.msg.pollQuestion.trim() === '' || this.msg.pollOptions.length < 2;
+    // 判据是「一个选项都没有」，不是「少于两个」。
+    //
+    // 2026-11-03 真机 + 桌面端截图对照：服务端确实会下发**单选项**投票
+    // （桌面端正常渲染一行选项 + 单选圈），而这里原来按 < 2 判成不可用，
+    // 气泡于是同时显示「投票内容不可用」和「没有可用的投票选项」。
+    return this.msg.pollQuestion.trim() === '' || this.msg.pollOptions.length === 0;
   }
 
   @Computed
@@ -342,8 +347,9 @@ export struct PollBubble {
           .fontWeight(this.optionMarked(index) ? FontWeight.Medium : FontWeight.Regular)
           .fontColor(this.optionHasText(index) ? COLOR_TEXT_PRIMARY : COLOR_TEXT_SECONDARY)
           .lineHeight(18)
-          .maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis });
+          // 选项同样不截断。推广类投票的选项经常是一整句带 emoji 的文案，
+          // 原来 maxLines(2) 直接省略号收尾（2026-11-03 用户报「文字展示不全」）。
+          // 只改渲染约束，不碰解析：poll 的字段读取次数与分配都不变。
         Text(`${this.optionVotePercentage(index)}%`)
           .fontSize(11.5)
           .fontWeight(FontWeight.Medium)
@@ -390,14 +396,30 @@ export struct PollBubble {
         .lineHeight(20)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.msg.pollQuestion.trim() !== '' ? COLOR_TEXT_PRIMARY : '#B05D58')
-        .maxLines(6)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        // **问题不截断。** 原来钉了 maxLines(6)，而投票问题可以很长——真机
+        // 那个 82.COM 的推广投票问题有十几行，六行之后被省略号吃掉，用户报
+        // 「文字展示的不全」；桌面端是完整展示的。
+        //
+        // 不设 maxLines 让气泡按内容自然撑高：投票本身是低频消息，撑高一次
+        // 比看不全可接受。
         .width('100%');
 
-      if (this.msg.pollOptions.length >= 2) {
+      // 投票说明。它在 messagePoll 这一层（不是 poll 里面），带换行与链接实体；
+      // 官方客户端就渲染在问题和选项之间（2026-11-04 用户报「文字展示不全」的
+      // 真正原因 —— 我们之前根本没读这个字段）。
+      if (this.msg.pollDescription.trim() !== '') {
+        Text(this.msg.pollDescription)
+          .fontSize(13.5)
+          .lineHeight(19)
+          .fontColor(COLOR_TEXT_SECONDARY)
+          .width('100%')
+          .margin({ top: 6 });
+      }
+
+      if (this.msg.pollOptions.length >= 1) {
         Column({ space: 6 }) {
           this.optionSlot(0);
-          this.optionSlot(1);
+          if (this.msg.pollOptions.length > 1) { this.optionSlot(1); }
           if (this.msg.pollOptions.length > 2) { this.optionSlot(2); }
           if (this.msg.pollOptions.length > 3) { this.optionSlot(3); }
           if (this.msg.pollOptions.length > 4) { this.optionSlot(4); }

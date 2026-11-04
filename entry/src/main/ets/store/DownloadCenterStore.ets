@@ -30,7 +30,7 @@ import {
   SPEED_MIN_INTERVAL_MS, DC_STATE_WAITING_NETWORK, DC_STATE_WAITING_WIFI
 } from '../util/downloadCenterModel';
 import { applyDoneWatermark, DcSourceWindow, doneWatermark, oldestMtime } from '../util/downloadCenterPaging';
-import { logE, logI } from '../util/log';
+import { logE, logI, logW } from '../util/log';
 
 // 下载中心的数据（2026-09-15；第三版照设计稿加了速度、排队 / 失败、已存本地、存储占用；第四版分页）。三路来源：
 //   · TDLib 下载管理器（searchFileDownloads）——进行中的（含暂停）一次拉全，已完成的每页 100 条续拉；

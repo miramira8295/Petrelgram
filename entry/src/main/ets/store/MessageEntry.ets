@@ -173,6 +173,8 @@ export interface MessageEntry {
   venueType: string;
   pollId: string;
   pollQuestion: string;
+  // 投票说明（messagePoll.description），可为空。
+  pollDescription: string;
   pollOptions: PollOptionInfo[];
   pollTotalVoterCount: number;
   pollIsAnonymous: boolean;
@@ -331,7 +333,7 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     locationHeading: m.locationHeading, locationProximityRadius: m.locationProximityRadius,
     venueTitle: m.venueTitle, venueAddress: m.venueAddress, venueProvider: m.venueProvider,
     venueId: m.venueId, venueType: m.venueType,
-    pollId: m.pollId, pollQuestion: m.pollQuestion,
+    pollId: m.pollId, pollQuestion: m.pollQuestion, pollDescription: m.pollDescription,
     pollOptions: m.pollOptions.map((option: PollOptionInfo): PollOptionInfo => ({
       text: option.text,
       voterCount: option.voterCount,
@@ -1191,6 +1193,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     venueType: c.venueType ?? '',
     pollId: c.pollId ?? '',
     pollQuestion: c.pollQuestion ?? '',
+    pollDescription: c.pollDescription ?? '',
     pollOptions: c.pollOptions ?? [],
     pollTotalVoterCount: c.pollTotalVoterCount ?? 0,
     pollIsAnonymous: c.pollIsAnonymous ?? true,

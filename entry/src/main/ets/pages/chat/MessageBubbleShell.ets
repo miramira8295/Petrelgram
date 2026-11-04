@@ -1981,6 +1981,8 @@ export struct MessageBubbleShell {
       // 内层这一行按内容宽度，只裹住头像和气泡——消息菜单绑在它身上，
       // 抬起来的预览才是"头像 + 气泡"。绑到外面那层满宽的行上，浮起来的会是
       // 一条通栏横条，右边一大片空白也跟着抬。满宽那层继续负责左滑和对齐。
+      DissolveDeleteEffect({ instanceKey: 'message-' + this.data.chatId, rowId: this.msg.rowId,
+        leaving: this.leaving, channel: this.actions.rowLeave, captureSupported: !this.hasLiveVideoSurface() }) {
       Row() {
       // 群聊来信不显示头像时，头像位由这层 Row 的内边距占（avatarGutterPadding），
       // 不再垫定宽空 Column（原注释：mid-run row keeps the avatar column's width so
@@ -2009,8 +2011,6 @@ export struct MessageBubbleShell {
       // 【按材质开关分两支容器，2026-09-14】理由见 LightweightPlainTextBubble 同一处：
       // 玻璃关着时这串属性全是空值，却每次更新/复用都重算、new 修饰器、建描边背景，
       // 外加一个每帧参与全局遍历的可见区回调。两支气泡必须同改。
-      DissolveDeleteEffect({ instanceKey: 'message-' + this.data.chatId, rowId: this.msg.rowId,
-        leaving: this.leaving, channel: this.actions.rowLeave, captureSupported: !this.hasLiveVideoSurface() }) {
         // 主体、尾角、玻璃和外壳阴影一起响应按压，避免菜单截图留下双色接缝。
         Row() {
           if (this.env.bubbleMaterialOn) {
@@ -2106,7 +2106,6 @@ export struct MessageBubbleShell {
         .attributeModifier(this.suppressBubblePressDim() || this.hasLiveVideoSurface()
           ? BUBBLE_PRESS_NONE : BUBBLE_PRESS_DIM)
       }
-      }
       .alignItems(VerticalAlign.Bottom)
       .padding(this.avatarGutterPadding())
       .draggable(this.canDragMessage())
@@ -2151,6 +2150,7 @@ export struct MessageBubbleShell {
           this.context.msgContextMenuShown = false;
         }
       });
+      }
       }
       .width('100%').padding({
         left: BUBBLE_ROW_SIDE_VP, right: BUBBLE_ROW_SIDE_VP,
