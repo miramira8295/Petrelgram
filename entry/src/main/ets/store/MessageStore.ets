@@ -1876,6 +1876,20 @@ export class MessageStore {
     this.client.send(req).catch((): void => {});
   }
 
+  cancelTyping(): void {
+    if (this.lastTypingAtMs === 0) { return; }
+    this.lastTypingAtMs = 0;
+    const req: TdRequest = { '@type': 'sendChatAction' };
+    req['chat_id'] = this.chatId;
+    this.applyTopicScope(req);
+    req['action'] = { '@type': 'chatActionCancel' } as TdObject;
+    this.client.send(req).catch((): void => {});
+  }
+
+  resetTypingThrottle(): void {
+    this.lastTypingAtMs = 0;
+  }
+
   // Persist (or clear, when text is empty) the chat draft so it syncs to the
   // account's other devices. TDLib clears the draft itself on send.
   saveDraft(text: string, replyToId: number): void {

@@ -40,7 +40,7 @@ export function forumTopicRowKey(row: ForumTopicRow): string {
   return `${row.threadId}_${row.name}_${row.iconColor}_${row.iconCustomEmojiId ?? ''}` +
     `_${row.iconCustomEmojiPath ?? ''}_${row.iconEmoji ?? ''}` +
     `_${row.isGeneral}_${row.isClosed}_${row.isPinned}_${row.unreadCount}` +
-    `_${row.lastMessageDate ?? 0}_${row.lastSenderName ?? ''}` +
+    `_${row.lastMessageDate ?? 0}_${row.lastMessageSendState ?? 'none'}_${row.lastSenderName ?? ''}` +
     `_${row.lastMessageThumb ?? ''}_${row.lastMessageText}_${row.isMuted ?? false}`;
 }
 
@@ -60,6 +60,7 @@ export struct ForumTopHeaderBar {
   @State private chatTitle: string = '';
   @State private chatAvatarPath: string = '';
   @State private chatInitials: string = '';
+  @State private chatAutoDeleteTime: number = 0;
   @State private chatMuted: boolean = false;
   @State private memberCount: number = 0;
   @State private searching: boolean = false;
@@ -129,6 +130,7 @@ export struct ForumTopHeaderBar {
       this.chatTitle = entry.title;
       this.chatAvatarPath = entry.avatarPath;
       this.chatInitials = entry.initials;
+      this.chatAutoDeleteTime = entry.autoDeleteTime;
       this.chatMuted = effectiveMuted(entry, scopeMutedForKind(entry.kind));
     }
     const count: number = store.supergroupMemberCount(this.chatId);
@@ -227,7 +229,8 @@ export struct ForumTopHeaderBar {
               avatarSize: 40,
               avatarPath: this.chatAvatarPath,
               initials: this.chatInitials,
-              colorSeed: this.chatId
+              colorSeed: this.chatId,
+              autoDeleteTime: this.chatAutoDeleteTime
             });
             Column({ space: 2 }) {
               Row({ space: 4 }) {
@@ -647,6 +650,7 @@ export struct ForumSplitView {
                 unreadCount: row.unreadCount,
                 lastMessageText: row.lastMessageText,
                 lastMessageDate: row.lastMessageDate ?? 0,
+                lastMessageSendState: row.lastMessageSendState ?? 'none',
                 lastSenderName: row.lastSenderName ?? '',
                 lastMessageThumb: row.lastMessageThumb ?? '',
                 topicMuted: (row.isMuted ?? false) || this.chatMuted,
@@ -748,6 +752,7 @@ export struct ForumSplitTopicRow {
   @Prop unreadCount: number = 0;
   @Prop lastMessageText: string = '';
   @Prop lastMessageDate: number = 0;
+  @Prop lastMessageSendState: string = 'none';
   @Prop lastSenderName: string = '';
   @Prop lastMessageThumb: string = '';
   @Prop topicMuted: boolean = false;
@@ -788,6 +793,13 @@ export struct ForumSplitTopicRow {
     }
   }
 
+  private senderLabel(): string {
+    if (this.lastMessageSendState !== 'none' && this.lastMessageSendState !== '') {
+      return str('sm_you');
+    }
+    return this.lastSenderName;
+  }
+
   build() {
     Column({ space: 6 }) {
       // 第一行：话题图标 + 话题标题 + 右侧锁定/置顶图标与时间
@@ -811,6 +823,23 @@ export struct ForumSplitTopicRow {
               .fontSize(13)
               .fontColor([COLOR_ICON_SECONDARY]);
           }
+          if (this.lastMessageSendState !== 'none' && this.lastMessageSendState !== '') {
+            Row() {
+              SymbolGlyph($r(this.lastMessageSendState === 'sending'
+                ? 'sys.symbol.clock'
+                : (this.lastMessageSendState === 'failed'
+                  ? 'sys.symbol.exclamationmark_circle' : 'sys.symbol.checkmark')))
+                .fontSize(12)
+                .fontColor([this.lastMessageSendState === 'failed' ? Color.Red
+                  : (this.lastMessageSendState === 'read' ? COLOR_PRIMARY : COLOR_ICON_SECONDARY)]);
+              if (this.lastMessageSendState === 'read') {
+                SymbolGlyph($r('sys.symbol.checkmark'))
+                  .fontSize(12)
+                  .fontColor([COLOR_PRIMARY])
+                  .margin({ left: -8 });
+              }
+            }.alignItems(VerticalAlign.Center);
+          }
           if (this.lastMessageDate > 0) {
             Text(formatTime(this.lastMessageDate, this.nowSec))
               .fontSize(12)
@@ -826,8 +855,8 @@ export struct ForumSplitTopicRow {
       // 第二行：发送者蓝字 + 媒体缩略图 + 消息预览 + 右侧未读胶囊
       Row({ space: 8 }) {
         Row() {
-          if (this.lastSenderName !== '') {
-            Text(`${this.lastSenderName}: `)
+          if (this.senderLabel() !== '') {
+            Text(`${this.senderLabel()}: `)
               .fontSize(14)
               .fontColor(COLOR_PRIMARY)
               .maxLines(1)

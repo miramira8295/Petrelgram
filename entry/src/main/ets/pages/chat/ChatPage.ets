@@ -433,7 +433,7 @@ export struct ChatPage {
     this.viewer.underlay.setActive(this.timeline.pageVisible && this.appIsForeground && this.viewerOpen());
     // 查看器在同一个 Stack 内铺满聊天列；不影响分栏里仍可见的其他区域。
     this.contentAnimationsAllowed = chatMotionAllowed(this.timeline.pageVisible, this.appIsForeground, this.viewerOpen());
-    this.typing.setActive(this.contentAnimationsAllowed);
+    this.typing.setActive(this.timeline.pageVisible && this.appIsForeground);
     const suspended: boolean = chatTimelineSuspended(this.contentAnimationsAllowed,
       this.timeline.initialMessageStageActive, this.timeline.chatTgsScrollActive, this.timeline.chatTgsStageSettling);
     const now: number = (suspended ? 1 : 0) | (this.timeline.pageVisible ? 2 : 0) |
@@ -1640,6 +1640,7 @@ export struct ChatPage {
         this.membershipState = k.membershipState;
         this.unreadBadge = k.unreadBadge;
         this.refreshAdminLabels();
+        this.typing.refresh();
       },
       // header.refresh()（原 refreshHeader）对未读徽标的写入单独一条通道，不
       // 经 onChatKindResolved——它由消息/会话列表更新驱动，触发频率远高于一次
@@ -2281,6 +2282,10 @@ export struct ChatPage {
       (u: TdObject): void => this.typing.onChatAction(u)));
     this.subscriptions.set('chatActionUser', getTdClient().onUpdate('updateUser',
       (u: TdObject): void => this.typing.onUserUpdate(u)));
+    this.subscriptions.set('chatActionNewMsg', getTdClient().onUpdate('updateNewMessage',
+      (u: TdObject): void => this.typing.onNewMessage(u)));
+    this.subscriptions.set('chatAutoDelete', getTdClient().onUpdate('updateChatMessageAutoDeleteTime',
+      (u: TdObject): void => this.header.onAutoDeleteUpdate(u)));
     // 会话已经开着时，navigateToChat 只出栈不传参，跳转目标走旁路送进来
     // （issue #80、#102，见 util/chatJumpChannel 的说明）。
     this.subscriptions.set('jump', subscribeChatJump(this.chatId,
@@ -5085,6 +5090,7 @@ export struct ChatPage {
     // 发 updateNewMessage（自己发的消息在 onNewMessage 里是放行的），列表那边
     // 立刻就有一条 pending 的气泡。
     this.draft = '';
+    store.resetTypingThrottle();
     this.mention.clearPendingNameMentions();
     if (this.composer.replyToId === replyId) {
       this.composer.clearReply();
@@ -5410,6 +5416,7 @@ export struct ChatPage {
       const value = seconds[chosen.index];
       if (value === undefined) { return; }
       this.store?.setAutoDeleteAsync(value).then((): void => {
+        this.header.autoDeleteTime = value;
         promptAction.showToast({
           message: value === 0 ? $r('app.string.cp_auto_delete_off') : str('cp_auto_delete_after', labels[chosen.index]),
           duration: 1800
@@ -5562,7 +5569,7 @@ export struct ChatPage {
   }
 
   private composerPlaceholder(): string {
-    return placeholderOf(this.typing.label, this.replyKbVisible(),
+    return placeholderOf('', this.replyKbVisible(),
       this.replyKeyboard !== null ? this.replyKeyboard.placeholder : '');
   }
 
@@ -5773,10 +5780,16 @@ export struct ChatPage {
         this.command.closePanel();
       },
       onDraftChange: (value: string): void => {
+        const prev = this.draft;
         this.draft = value;
         this.updateSuggestions(value);
-        if (value.trim() !== '' && this.composer.editingId === 0) {
+        if (!this.composerFocused || value === prev || this.composer.editingId !== 0) {
+          return;
+        }
+        if (value.trim() !== '') {
           this.store?.notifyTyping();
+        } else {
+          this.store?.cancelTyping();
         }
       },
       onSubmit: (): void => {
@@ -5983,6 +5996,7 @@ export struct ChatPage {
           // 持有 header、在自己的 build()/@Builder 里读 @Trace，本页不再算
           // titleText/subtitleText 等经 @Param 转手。
           header: this.header,
+          typing: this.typing,
           chatId: this.chatId,
           menuShow: this.headerMenuShow,
           menuAnchorId: this.headerMenuId,

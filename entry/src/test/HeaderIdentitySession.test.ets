@@ -162,7 +162,8 @@ function cachedPrivateEntry(): ChatEntry {
     kind: 'private', isMarkedUnread: false, actionBar: '', actionBarCanUnarchive: false, isSavedMessages: false,
     background: null, themeName: '',
     liveGroupCallId: 0, isLive: false, isRtmpLive: false,
-    canDeleteOnlyForSelf: true, canDeleteForAllUsers: false
+    canDeleteOnlyForSelf: true, canDeleteForAllUsers: false,
+    lastReadOutboxId: 0, lastMessageSendState: 'none'
   };
 }
 
@@ -524,6 +525,35 @@ export default function headerIdentitySessionTest() {
       resolveSenderAnimation('c4', fresh, '/new.mp4', 0);
       expect(senderAnimationFor('c4')).assertEqual('/new.mp4');
       expect(got.join(',')).assertEqual('/new.mp4');
+    });
+    it('onAutoDeleteUpdate 仅更新本会话的自动删除时长，reset 可同步恢复或清零', 0, (): void => {
+      const host: FakeHost = new FakeHost();
+      host.chatIdValue = 42;
+      const controller: HeaderIdentitySession = controllerOn(host);
+      expect(controller.autoDeleteTime).assertEqual(0);
+
+      controller.onAutoDeleteUpdate({
+        '@type': 'updateChatMessageAutoDeleteTime',
+        'chat_id': 99,
+        'message_auto_delete_time': 86400
+      } as TdObject);
+      expect(controller.autoDeleteTime).assertEqual(0);
+
+      controller.onAutoDeleteUpdate({
+        '@type': 'updateChatMessageAutoDeleteTime',
+        'chat_id': 42,
+        'message_auto_delete_time': 604800
+      } as TdObject);
+      expect(controller.autoDeleteTime).assertEqual(604800);
+
+      const cached = cachedPrivateEntry();
+      cached.autoDeleteTime = 86400;
+      untilUnavailableGlobal((): void => { controller.reset(cached); });
+      expect(controller.autoDeleteTime).assertEqual(86400);
+
+      untilUnavailableGlobal((): void => { controller.reset(undefined); });
+      expect(controller.autoDeleteTime).assertEqual(0);
+      controller.dispose();
     });
   });
 }

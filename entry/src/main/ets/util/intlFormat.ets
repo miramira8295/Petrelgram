@@ -130,10 +130,13 @@ export function currentLocale(): string {
     let tag: string = '';
     try {
       tag = i18n.System.getAppPreferredLanguage();
+      if (tag === '' || tag === 'default') {
+        tag = i18n.System.getSystemLanguage();
+      }
     } catch (e) {
       tag = '';
     }
-    localeTag = tag !== '' ? tag : FALLBACK_LOCALE;
+    localeTag = tag !== '' && tag !== 'default' ? tag : FALLBACK_LOCALE;
   }
   return localeTag;
 }

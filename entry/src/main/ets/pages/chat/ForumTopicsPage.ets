@@ -382,6 +382,7 @@ export struct ForumTopicsPage {
                 unreadCount: row.unreadCount,
                 lastMessageText: row.lastMessageText,
                 lastMessageDate: row.lastMessageDate ?? 0,
+                lastMessageSendState: row.lastMessageSendState ?? 'none',
                 lastSenderName: row.lastSenderName ?? '',
                 lastMessageThumb: row.lastMessageThumb ?? '',
                 topicMuted: row.isMuted ?? false,

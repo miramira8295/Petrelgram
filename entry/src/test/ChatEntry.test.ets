@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  ChatEntry, computeInitials, compareOrderDesc, effectiveMuted, isMutedFrom, usesDefaultMuteFrom
+  ChatEntry, computeInitials, compareOrderDesc, effectiveMuted, isMutedFrom, usesDefaultMuteFrom,
+  lastMessageSendStateFrom, refreshOutboxSendState
 } from '../main/ets/store/ChatEntry';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 
@@ -57,6 +58,36 @@ export default function chatEntryTest() {
       expect(effectiveMuted(own, false)).assertEqual(true);
       const ownUnmuted = makeEntry(false, false);
       expect(effectiveMuted(ownUnmuted, true)).assertEqual(false);
+    });
+
+    it('outbox_send_state_covers_sending_failed_sent_read_and_saved_messages', 0, () => {
+      expect(lastMessageSendStateFrom(null, 100, false)).assertEqual('none');
+      const incoming: TdObject = { '@type': 'message', 'id': 10, 'is_outgoing': false };
+      expect(lastMessageSendStateFrom(incoming, 100, false)).assertEqual('none');
+
+      const pending: TdObject = {
+        '@type': 'message', 'id': 10, 'is_outgoing': true,
+        'sending_state': { '@type': 'messageSendingStatePending' }
+      };
+      expect(lastMessageSendStateFrom(pending, 0, false)).assertEqual('sending');
+
+      const failed: TdObject = {
+        '@type': 'message', 'id': 10, 'is_outgoing': true,
+        'sending_state': { '@type': 'messageSendingStateFailed' }
+      };
+      expect(lastMessageSendStateFrom(failed, 0, false)).assertEqual('failed');
+
+      const sent: TdObject = { '@type': 'message', 'id': 10, 'is_outgoing': true };
+      expect(lastMessageSendStateFrom(sent, 9, false)).assertEqual('sent');
+      expect(lastMessageSendStateFrom(sent, 10, false)).assertEqual('read');
+      expect(lastMessageSendStateFrom(sent, 12, false)).assertEqual('read');
+      expect(lastMessageSendStateFrom(sent, 12, true)).assertEqual('none');
+      expect(lastMessageSendStateFrom(sent, 12, false, 'channel')).assertEqual('none');
+
+      expect(refreshOutboxSendState('sent', 10, 10, false)).assertEqual('read');
+      expect(refreshOutboxSendState('read', 10, 9, false)).assertEqual('sent');
+      expect(refreshOutboxSendState('sending', 10, 10, false)).assertEqual('sending');
+      expect(refreshOutboxSendState('sent', 10, 10, true)).assertEqual('none');
     });
   });
 }

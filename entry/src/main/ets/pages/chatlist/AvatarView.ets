@@ -1,5 +1,6 @@
 import { AVATAR_PALETTE, AVATAR_SIZE, COLOR_PRIMARY } from '../../util/theme';
 import { formatTTL } from '../../util/formatTTL';
+import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { AvLoopVideo } from '../common/AvLoopVideo';
 import { CachedImage } from '../common/CachedImage';
 import { KEY_POWER_ACTIVE, KEY_POWER_ANIMATED_AVATAR } from '../../store/AppSettings';
@@ -10,6 +11,7 @@ export struct AvatarView {
   @Prop initials: string;
   @Prop colorSeed: number;
   @Prop autoDeleteTime: number = 0;
+  @StorageProp(LANGUAGE_EPOCH) private languageEpoch: number = 0;
   @Prop isLive: boolean = false;
   @Prop livePulseExpanded: boolean = false;
   // Animated profile photo (MPEG4 loop). Only profile pages pass this —
@@ -123,18 +125,40 @@ export struct AvatarView {
       .borderRadius(this.avatarSize / 2);
   }
 
+  private ttlBadgeSize(): number {
+    return this.avatarSize < 42 ? 18 : 22;
+  }
+
+  private ttlRingSize(): number {
+    return this.avatarSize < 42 ? 15 : 18.5;
+  }
+
+  private ttlFontSize(): number {
+    return this.avatarSize < 42 ? 6.5 : 7.5;
+  }
+
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
       this.base();
       if (this.autoDeleteTime > 0 && !this.isLive) {
-        Text(formatTTL(this.autoDeleteTime))
-          .fontSize(9).fontColor(Color.White).fontWeight(FontWeight.Medium)
-          .textAlign(TextAlign.Center)
-          .backgroundColor(COLOR_PRIMARY)
-          .borderRadius(8)
-          .border({ width: 1.5, color: Color.White })
-          .constraintSize({ minWidth: 16 })
-          .padding({ left: 3, right: 3, top: 1, bottom: 1 });
+        Stack({ alignContent: Alignment.Center }) {
+          Image($r('app.media.ic_auto_delete_ring'))
+            .width(this.ttlRingSize())
+            .height(this.ttlRingSize())
+            .draggable(false);
+          Text(this.languageEpoch >= 0 ? formatTTL(this.autoDeleteTime) : '')
+            .fontSize(this.ttlFontSize())
+            .fontColor(Color.White)
+            .fontWeight(FontWeight.Bold)
+            .textAlign(TextAlign.Center)
+            .maxLines(1);
+        }
+        .width(this.ttlBadgeSize())
+        .height(this.ttlBadgeSize())
+        .backgroundColor(COLOR_PRIMARY)
+        .borderRadius(this.ttlBadgeSize() / 2)
+        .border({ width: 1.5, color: $r('app.color.surface') })
+        .translate({ x: 1, y: 1 });
       }
       if (this.isLive) {
         Stack({ alignContent: Alignment.Center }) {

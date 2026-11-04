@@ -1,4 +1,4 @@
-// 对方操作状态，只用于当前输入框占位提示。动作与到期时间一起保存。
+// 对方操作状态，用于聊天页顶部标题栏副标题提示。动作与到期时间一起保存。
 import { TdObject } from '../tdkit/TdTypes';
 import { plural, str } from './strings';
 
@@ -51,13 +51,14 @@ export function typingActionInScope(update: TdObject, threadRootId: number,
 }
 
 export function applyTypingUpdate(senders: Map<number, TypingAction>, update: TdObject, nowMs: number,
-  chatId: number, threadRootId: number, forumTopicId: number, directMessagesTopicId: number): number {
+  chatId: number, threadRootId: number, forumTopicId: number, directMessagesTopicId: number,
+  myUserId: number = 0, ignoreTopicScope: boolean = false): number {
   if (((update['chat_id'] as number | undefined) ?? 0) !== chatId ||
-    !typingActionInScope(update, threadRootId, forumTopicId, directMessagesTopicId)) { return 0; }
+    (!ignoreTopicScope && !typingActionInScope(update, threadRootId, forumTopicId, directMessagesTopicId))) { return 0; }
   const sender = update['sender_id'] as TdObject | undefined;
   if (sender === undefined || sender['@type'] !== 'messageSenderUser') { return 0; }
   const uid = (sender['user_id'] as number | undefined) ?? 0;
-  if (uid <= 0) { return 0; }
+  if (uid <= 0 || (myUserId > 0 && uid === myUserId)) { return 0; }
   const action = update['action'] as TdObject | undefined;
   const type = action !== undefined ? ((action['@type'] as string | undefined) ?? '') : '';
   if (type === 'chatActionCancel') {
@@ -68,6 +69,29 @@ export function applyTypingUpdate(senders: Map<number, TypingAction>, update: Td
   if (kind === '') { return 0; }
   senders.set(uid, { kind: kind, expiresAt: nowMs + TYPING_ACTION_TTL_MS });
   return uid;
+}
+
+// 收到该发送者的新消息时立即清除其正在输入状态，避免消息已落屏仍残留数秒提示。
+export function clearTypingOnNewMessage(senders: Map<number, TypingAction>, message: TdObject | undefined,
+  chatId: number): boolean {
+  if (senders.size === 0 || message === undefined) { return false; }
+  if (((message['chat_id'] as number | undefined) ?? 0) !== chatId) { return false; }
+  const sender = message['sender_id'] as TdObject | undefined;
+  if (sender !== undefined && sender['@type'] === 'messageSenderUser') {
+    const uid = (sender['user_id'] as number | undefined) ?? 0;
+    if (uid > 0 && senders.has(uid)) {
+      senders.delete(uid);
+      return true;
+    }
+  }
+  return false;
+}
+
+export function headerKindForChatKind(kind: string): string {
+  if (kind === 'private' || kind === 'secret' || kind === 'channel') {
+    return kind;
+  }
+  return 'group';
 }
 
 export function pruneExpiredTyping(senders: Map<number, TypingAction>, nowMs: number): boolean {
@@ -131,4 +155,12 @@ export function typingLabelOf(headerKind: string, ids: number[],
   }
   const name = displayName(ids[0]);
   return str('cp_someone_typing', name !== '' ? name.split(' ')[0] : str('cp_someone'));
+}
+
+// 顶栏左侧已有三颗蓝点（•••），去掉文案末尾的省略号（"正在输入…" → "正在输入"）。
+export function headerTypingTextOf(label: string): string {
+  if (label === '') {
+    return '';
+  }
+  return label.replace(/(?:…|\.{3})\s*$/, '');
 }

@@ -9,6 +9,7 @@
 // 就没法单测。名字兜底与最后一条消息的预览都由调用方算好传进来。
 
 import { TdObject } from '../tdkit/TdTypes';
+import { lastMessageSendStateFrom, refreshOutboxSendState } from '../store/ChatEntry';
 
 // forumTopicIcon.color 的取值集合（TDLib 固定的六色）。从 ForumTopicsPage 原样搬来。
 const TOPIC_COLORS: Map<number, string> = new Map([
@@ -31,6 +32,9 @@ export interface ForumTopicRow {
   unreadCount: number;
   lastMessageText: string;
   lastMessageDate?: number;
+  lastMessageId?: number;
+  lastReadOutboxId?: number;
+  lastMessageSendState?: string;
   lastSenderName?: string;
   lastMessageThumb?: string;
   isMuted?: boolean;
@@ -86,6 +90,9 @@ export function parseForumTopic(
   const lastMsg = topic['last_message'] as TdObject | undefined;
   const lastDate: number = lastMsg !== undefined && lastMsg !== null
     ? ((lastMsg['date'] as number | undefined) ?? 0) : 0;
+  const lastMsgId: number = lastMsg !== undefined && lastMsg !== null
+    ? ((lastMsg['id'] as number | undefined) ?? 0) : 0;
+  const lastReadOutboxId: number = (topic['last_read_outbox_message_id'] as number | undefined) ?? 0;
   const notif = topic['notification_settings'] as TdObject | undefined;
   return {
     threadId: threadId,
@@ -102,6 +109,9 @@ export function parseForumTopic(
     unreadCount: (topic['unread_count'] as number | undefined) ?? 0,
     lastMessageText: preview,
     lastMessageDate: lastDate,
+    lastMessageId: lastMsgId,
+    lastReadOutboxId: lastReadOutboxId,
+    lastMessageSendState: lastMessageSendStateFrom(lastMsg ?? null, lastReadOutboxId, false, 'supergroup'),
     lastSenderName: lastSenderName,
     lastMessageThumb: lastMessageThumb,
     isMuted: topicIsMuted(notif)
@@ -158,6 +168,9 @@ export function applyTopicInfoUpdate(
       unreadCount: row.unreadCount,
       lastMessageText: row.lastMessageText,
       lastMessageDate: row.lastMessageDate ?? 0,
+      lastMessageId: row.lastMessageId ?? 0,
+      lastReadOutboxId: row.lastReadOutboxId ?? 0,
+      lastMessageSendState: row.lastMessageSendState ?? 'none',
       lastSenderName: row.lastSenderName ?? '',
       lastMessageThumb: row.lastMessageThumb ?? '',
       isMuted: row.isMuted ?? false
@@ -176,11 +189,16 @@ export function applyTopicUpdate(
   const topicId: number = (u['forum_topic_id'] as number | undefined) ?? 0;
   const isPinned: boolean = (u['is_pinned'] as boolean | undefined) ?? false;
   const unreadRaw = u['unread_count'] as number | undefined;
+  const readOutboxRaw = u['last_read_outbox_message_id'] as number | undefined;
   const notifRaw = u['notification_settings'] as TdObject | undefined;
   return sortTopicRows(rows.map((row: ForumTopicRow): ForumTopicRow => {
     if (row.threadId !== topicId) {
       return row;
     }
+    const nextReadOutboxId: number = readOutboxRaw !== undefined
+      ? readOutboxRaw : (row.lastReadOutboxId ?? 0);
+    const nextSendState: string = refreshOutboxSendState(
+      row.lastMessageSendState, row.lastMessageId ?? 0, nextReadOutboxId, false, 'supergroup');
     const next: ForumTopicRow = {
       threadId: row.threadId, name: row.name, iconColor: row.iconColor,
       iconCustomEmojiId: row.iconCustomEmojiId ?? '',
@@ -191,6 +209,9 @@ export function applyTopicUpdate(
       unreadCount: unreadRaw !== undefined ? unreadRaw : row.unreadCount,
       lastMessageText: row.lastMessageText,
       lastMessageDate: row.lastMessageDate ?? 0,
+      lastMessageId: row.lastMessageId ?? 0,
+      lastReadOutboxId: nextReadOutboxId,
+      lastMessageSendState: nextSendState,
       lastSenderName: row.lastSenderName ?? '',
       lastMessageThumb: row.lastMessageThumb ?? '',
       isMuted: notifRaw !== undefined ? topicIsMuted(notifRaw) : (row.isMuted ?? false)
@@ -230,6 +251,9 @@ export function applyTopicCustomEmoji(
       unreadCount: row.unreadCount,
       lastMessageText: row.lastMessageText,
       lastMessageDate: row.lastMessageDate ?? 0,
+      lastMessageId: row.lastMessageId ?? 0,
+      lastReadOutboxId: row.lastReadOutboxId ?? 0,
+      lastMessageSendState: row.lastMessageSendState ?? 'none',
       lastSenderName: row.lastSenderName ?? '',
       lastMessageThumb: row.lastMessageThumb ?? '',
       isMuted: row.isMuted ?? false

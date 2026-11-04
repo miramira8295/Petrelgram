@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from '@ohos/hypium';
 import { resetStrings } from '../main/ets/util/strings';
 import {
-  TypingAction, TYPING_ACTION_TTL_MS, applyTypingUpdate, pruneExpiredTyping, typingLabelOf, chatActionLabelOf, typingActionKind
+  TypingAction, TYPING_ACTION_TTL_MS, applyTypingUpdate, pruneExpiredTyping, typingLabelOf, chatActionLabelOf, typingActionKind,
+  headerTypingTextOf, clearTypingOnNewMessage, headerKindForChatKind
 } from '../main/ets/util/typingIndicator';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 
@@ -305,6 +306,28 @@ export default function typingIndicatorTest() {
       applyTypingUpdate(senders, update, NOW + 500, 7, 0, 0, 0);
       expect(chatActionLabelOf('private', senders, (): string => '')).assertEqual(before);
       expect(senders.get(1)?.expiresAt).assertEqual(NOW + 6500);
+    });
+    it('顶栏输入文案自动剥除末尾省略号以配合三颗圆点展示', 0, (): void => {
+      expect(headerTypingTextOf('')).assertEqual('');
+      expect(headerTypingTextOf('正在输入…')).assertEqual('正在输入');
+      expect(headerTypingTextOf('小鬼正在输入...')).assertEqual('小鬼正在输入');
+      expect(headerTypingTextOf('正在录音')).assertEqual('正在录音');
+    });
+    it('收到该发送者的新消息时立即清除其正在输入状态，不影响其他输入者', 0, (): void => {
+      const senders: Map<number, TypingAction> = new Map();
+      applyTypingUpdate(senders, chatAction(7, 42, 'chatActionTyping'), NOW, 7, 0, 0, 0);
+      applyTypingUpdate(senders, chatAction(7, 43, 'chatActionTyping'), NOW, 7, 0, 0, 0);
+      expect(applyTypingUpdate(senders, chatAction(7, 99, 'chatActionTyping'), NOW, 7, 0, 0, 0, 99)).assertEqual(0);
+      const msg: TdObject = {
+        '@type': 'message',
+        'chat_id': 7,
+        'sender_id': { '@type': 'messageSenderUser', 'user_id': 42 } as TdObject
+      };
+      expect(clearTypingOnNewMessage(senders, msg, 7)).assertTrue();
+      expect(senders.has(42)).assertFalse();
+      expect(senders.has(43)).assertTrue();
+      expect(headerKindForChatKind('private')).assertEqual('private');
+      expect(headerKindForChatKind('supergroup')).assertEqual('group');
     });
   });
 }

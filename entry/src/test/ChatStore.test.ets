@@ -1606,5 +1606,68 @@ export default function chatStoreTest() {
       expect(store.entryOf(42)!.isSavedMessages).assertTrue();
       expect(store.entryOf(42)!.revision > before).assertTrue();
     });
+
+    it('自己发送的消息在列表展示“你”而非本人昵称，并跟踪已读/未读状态', 0, () => {
+      const store = make();
+      const b = bridgeOf(store);
+      pushMyId(b, 42);
+      const me: TdObject = { '@type': 'user', 'id': 42, 'first_name': '小鬼', 'last_name': '' };
+      b.onReceive(JSON.stringify({ '@type': 'updateUser', 'user': me }));
+
+      const sender: TdObject = { '@type': 'messageSenderUser', 'user_id': 42 };
+      const outMsg = textMessage('hello', 1783512000, true);
+      outMsg['id'] = 50;
+      outMsg['sender_id'] = sender;
+      pushNewChat(b, 1, 'Friend', [mainPos('100', false)], outMsg, 0);
+
+      expect(store.entryOf(1)!.lastSenderName).assertEqual('sm_you');
+      expect(store.entryOf(1)!.lastMessageSendState).assertEqual('sent');
+
+      const revBeforeRead: number = store.entryOf(1)!.revision;
+      b.onReceive(JSON.stringify({
+        '@type': 'updateChatReadOutbox',
+        'chat_id': 1,
+        'last_read_outbox_message_id': 50
+      }));
+      expect(store.entryOf(1)!.lastMessageSendState).assertEqual('read');
+      expect(store.entryOf(1)!.revision > revBeforeRead).assertTrue();
+    });
+
+    it('会话列表同步展示对方正在输入状态，收到新消息或到期后立即清除', 0, () => {
+      const timer = new ManualTimer();
+      const b = new FakeBridge();
+      const client = new TdClient(b);
+      const users = new UserStore(client);
+      const store = new ChatStore(client, users, timer);
+      pushNewChat(b, 1, 'Friend', [mainPos('100', false)], null, 0);
+
+      b.onReceive(JSON.stringify({
+        '@type': 'updateChatAction',
+        'chat_id': 1,
+        'sender_id': { '@type': 'messageSenderUser', 'user_id': 9 },
+        'action': { '@type': 'chatActionTyping' }
+      }));
+      expect(store.entryOf(1)!.typingText).assertEqual('cp_typing');
+
+      const incoming = textMessage('hi', 1783512000, false);
+      incoming['id'] = 88;
+      incoming['sender_id'] = { '@type': 'messageSenderUser', 'user_id': 9 } as TdObject;
+      b.onReceive(JSON.stringify({
+        '@type': 'updateChatLastMessage',
+        'chat_id': 1,
+        'last_message': incoming
+      }));
+      expect(store.entryOf(1)!.typingText).assertEqual('');
+
+      b.onReceive(JSON.stringify({
+        '@type': 'updateChatAction',
+        'chat_id': 1,
+        'sender_id': { '@type': 'messageSenderUser', 'user_id': 9 },
+        'action': { '@type': 'chatActionTyping' }
+      }));
+      expect(store.entryOf(1)!.typingText).assertEqual('cp_typing');
+      timer.advanceBy(6000);
+      expect(store.entryOf(1)!.typingText).assertEqual('');
+    });
   });
 }

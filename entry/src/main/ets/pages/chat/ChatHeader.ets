@@ -16,6 +16,8 @@ import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
 import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { str } from '../../util/strings';
 import { HeaderIdentitySession } from './HeaderIdentitySession';
+import { TypingIndicatorState } from './TypingIndicatorState';
+import { headerTypingTextOf } from '../../util/typingIndicator';
 import { emojiStatusVisible } from '../../util/emojiStatus';
 
 // 聊天页顶栏：返回、头像+名称+副标题、⋮ 菜单。整条画在 HdsNavDestination 的
@@ -90,6 +92,7 @@ export struct ChatHeader {
   // 引用由 ChatPage 的字段初始化器 new 出来、全生命周期不变，@Require 已保证
   // 调用点必须传，不带默认值（同 TopBanners.topCard / ChatSearchBars 的写法）。
   @Require @Param header: HeaderIdentitySession;
+  @Param typing: TypingIndicatorState = new TypingIndicatorState();
   @Param chatId: number = 0;
   // 菜单展开态：只用来把汉堡切成叉。真正的开关在页面那边（ChatHeaderMenuController）。
   @Param menuShow: boolean = false;
@@ -118,9 +121,82 @@ export struct ChatHeader {
   @Local private backPressed: boolean = false;
   @Local private menuPressed: boolean = false;
   @Local private menuIconOpen: boolean = false;
+  @Local private typingDotPhase: number = 0;
+  private typingAnimTimer: number = -1;
 
   aboutToAppear(): void {
     this.menuIconOpen = this.menuShow;
+    this.syncTypingAnimTimer();
+  }
+
+  aboutToDisappear(): void {
+    this.stopTypingAnimTimer();
+  }
+
+  @Monitor('typing.label', 'animationsAllowed')
+  onTypingAnimStateChanged(): void {
+    this.syncTypingAnimTimer();
+  }
+
+  private stopTypingAnimTimer(): void {
+    if (this.typingAnimTimer !== -1) {
+      clearInterval(this.typingAnimTimer);
+      this.typingAnimTimer = -1;
+    }
+  }
+
+  private syncTypingAnimTimer(): void {
+    const shouldRun = this.typing.label !== '' && this.animationsAllowed;
+    if (!shouldRun) {
+      this.stopTypingAnimTimer();
+      this.typingDotPhase = 0;
+      return;
+    }
+    if (this.typingAnimTimer !== -1) {
+      return;
+    }
+    this.typingAnimTimer = setInterval((): void => {
+      if (this.typing.label === '' || !this.animationsAllowed) {
+        this.stopTypingAnimTimer();
+        return;
+      }
+      try {
+        this.getUIContext().animateTo({
+          duration: 240,
+          curve: Curve.EaseInOut
+        }, (): void => {
+          this.typingDotPhase = (this.typingDotPhase + 1) % 3;
+        });
+      } catch (_e) {
+        this.typingDotPhase = (this.typingDotPhase + 1) % 3;
+      }
+    }, 280);
+  }
+
+  private typingDotOpacity(index: number): number {
+    if (!this.animationsAllowed) {
+      return 1;
+    }
+    if (this.typingDotPhase === index) {
+      return 1;
+    }
+    if ((this.typingDotPhase + 2) % 3 === index) {
+      return 0.65;
+    }
+    return 0.35;
+  }
+
+  private typingDotScale(index: number): number {
+    if (!this.animationsAllowed) {
+      return 1;
+    }
+    if (this.typingDotPhase === index) {
+      return 1.12;
+    }
+    if ((this.typingDotPhase + 2) % 3 === index) {
+      return 0.92;
+    }
+    return 0.78;
   }
 
   @Monitor('menuShow')
@@ -218,6 +294,13 @@ export struct ChatHeader {
     return chromeTextColorOf(this.onLightBg, this.onDarkBg);
   }
 
+  private activeSubtitleText(): string {
+    if (this.typing.label !== '' && this.header.state !== 'error') {
+      return headerTypingTextOf(this.typing.label);
+    }
+    return this.header.subtitleTextOf();
+  }
+
   @Builder
   backButton() {
     Row() {
@@ -312,6 +395,7 @@ export struct ChatHeader {
         initials: this.header.initials,
         colorSeed: this.chatId,
         avatarSize: 38,
+        autoDeleteTime: this.header.autoDeleteTime,
         // 「我的收藏」判定不读任何 @Trace（现查 ChatStore），本来就该在 build
         // 期间现取；不再由页面算好经 @Param 传入。
         savedMessages: this.header.isSavedMessages()
@@ -336,12 +420,51 @@ export struct ChatHeader {
         // 重跑一遍页面的 chatTitleBar 闭包。本组件直接持有控制器引用，这里现读
         // 它的 @Trace 自己合成，翻转只刷新这一个 Text 节点，页面一个字都不读——
         // 这是本批性能收益的关键。
-        Text(this.header.subtitleTextOf())
-          .fontSize(12)
-          .fontColor(this.header.state === 'error' ? '#E64646' : this.fgSecondary())
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (this.typing.label !== '' && this.header.state !== 'error') {
+          Row() {
+            Row({ space: 2.5 }) {
+              Circle({ width: 4.5, height: 4.5 })
+                .fill(this.accent())
+                .opacity(this.typingDotOpacity(0))
+                .scale({ x: this.typingDotScale(0), y: this.typingDotScale(0) });
+              Circle({ width: 4.5, height: 4.5 })
+                .fill(this.accent())
+                .opacity(this.typingDotOpacity(1))
+                .scale({ x: this.typingDotScale(1), y: this.typingDotScale(1) });
+              Circle({ width: 4.5, height: 4.5 })
+                .fill(this.accent())
+                .opacity(this.typingDotOpacity(2))
+                .scale({ x: this.typingDotScale(2), y: this.typingDotScale(2) });
+            }
+            .alignItems(VerticalAlign.Center)
+            .margin({ right: 5 })
+            .flexShrink(0);
+            Text(headerTypingTextOf(this.typing.label))
+              .fontSize(12)
+              .fontColor(this.accent())
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .flexShrink(1);
+            Row({ space: 1.5 }) {
+              Circle({ width: 2.2, height: 2.2 }).fill(this.accent());
+              Circle({ width: 2.2, height: 2.2 }).fill(this.accent());
+              Circle({ width: 2.2, height: 2.2 }).fill(this.accent());
+            }
+            .alignItems(VerticalAlign.Center)
+            .margin({ left: 2, top: 3 })
+            .flexShrink(0);
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
           .margin({ top: 1 });
+        } else {
+          Text(this.header.subtitleTextOf())
+            .fontSize(12)
+            .fontColor(this.header.state === 'error' ? '#E64646' : this.fgSecondary())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ top: 1 });
+        }
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start);
@@ -357,7 +480,7 @@ export struct ChatHeader {
       .visualEffect(hdsVisualEffect('bar', !this.appDark))
       .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
       .clip(this.appDark)
-      .accessibilityText(str('cp_header_a11y', this.header.titleTextOf(), this.header.subtitleTextOf()))
+      .accessibilityText(str('cp_header_a11y', this.header.titleTextOf(), this.activeSubtitleText()))
       .onClick((): void => {
         if (this.header.state === 'error') {
           this.onResolveIdentity();
