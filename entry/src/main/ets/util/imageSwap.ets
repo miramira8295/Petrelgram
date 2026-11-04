@@ -46,7 +46,7 @@ export function shouldStartDecode(
 // 占位的语义），没传就退回路径规则，老调用点逐字不变。
 export function shouldBlankBeforeDecode(heldPath: string, nextPath: string,
   heldKey: string = '', nextKey: string = ''): boolean {
-  if (heldPath === '') {
+  if (heldPath === '' || heldPath === nextPath) {
     return false;
   }
   if (heldKey !== '' && nextKey !== '') {

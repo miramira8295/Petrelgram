@@ -1,7 +1,8 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  SYSTEM_BARS_OWNER_LIVE, requestSystemBarsHidden, resetSystemBarsHiddenForTest,
-  systemBarsApplyFailed, systemBarsOwnerCount, viewerSystemBarsOwner
+  SYSTEM_BARS_OWNER_LIVE, isSystemBarsHiddenApplied, releaseAllViewerSystemBars,
+  requestSystemBarsHidden, resetSystemBarsHiddenForTest, systemBarsApplyFailed,
+  systemBarsOwnerCount, viewerSystemBarsOwner
 } from '../main/ets/util/systemBarsHidden';
 
 export default function systemBarsHiddenTest() {
@@ -53,6 +54,29 @@ export default function systemBarsHiddenTest() {
       expect(requestSystemBarsHidden('a', true)).assertEqual(true);
       systemBarsApplyFailed(true);
       expect(requestSystemBarsHidden('b', true)).assertEqual(true);
+    });
+
+    it('releaseAllViewerSystemBars 立即释放全部 viewer 持有者且保留直播全屏持有者', 0, () => {
+      resetSystemBarsHiddenForTest();
+      const v1: string = viewerSystemBarsOwner();
+      const v2: string = viewerSystemBarsOwner();
+      expect(requestSystemBarsHidden(v1, true)).assertEqual(true);
+      expect(requestSystemBarsHidden(v2, true)).assertNull();
+      expect(isSystemBarsHiddenApplied()).assertTrue();
+      expect(releaseAllViewerSystemBars()).assertEqual(false);
+      expect(isSystemBarsHiddenApplied()).assertFalse();
+      expect(systemBarsOwnerCount()).assertEqual(0);
+      // 随后 aboutToDisappear 再调 requestSystemBarsHidden(v1, false) 是幂等空操作
+      expect(requestSystemBarsHidden(v1, false)).assertNull();
+
+      // 直播全屏与查看器并存时，只释放查看器，不恢复系统栏
+      expect(requestSystemBarsHidden(SYSTEM_BARS_OWNER_LIVE, true)).assertEqual(true);
+      const v3: string = viewerSystemBarsOwner();
+      expect(requestSystemBarsHidden(v3, true)).assertNull();
+      expect(releaseAllViewerSystemBars()).assertNull();
+      expect(isSystemBarsHiddenApplied()).assertTrue();
+      expect(systemBarsOwnerCount()).assertEqual(1);
+      expect(requestSystemBarsHidden(SYSTEM_BARS_OWNER_LIVE, false)).assertEqual(false);
     });
   });
 }

@@ -46,6 +46,8 @@ import { initA11yState } from '../util/a11yState';
 import { flushDiagLog, logE, logW } from '../util/log';
 import { ColorModeBaseline } from '../util/configChange';
 import { bumpMaterialEpoch } from '../util/overlayMaterial';
+import { isSystemBarsHiddenApplied } from '../util/systemBarsHidden';
+import { noteSystemTopAvoidHeight, setSystemBarsMainWindow } from '../util/systemBarsWindow';
 import {
   KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, KEY_WINDOW_PORTRAIT, heightBreakpointOfSize, widthBreakpointOfVp
 } from '../util/layoutBreakpoint';
@@ -387,6 +389,7 @@ export default class EntryAbility extends UIAbility {
       this.windowStageRef = windowStage;
       const win = windowStage.getMainWindowSync();
       this.mainWin = win;
+      setSystemBarsMainWindow(win);
       // 默认旋转策略：手机锁竖屏，大屏可转（util/appOrientation）。折叠屏开合时再算一次。
       applyDefaultOrientation(win);
       try {
@@ -408,7 +411,9 @@ export default class EntryAbility extends UIAbility {
       this.colorMode.seed(this.context.config.colorMode);
       this.applyImmersiveStatusBar();
       const avoid = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
-      AppStorage.setOrCreate('topSafeHeight', px2vp(avoid.topRect.height));
+      const seedTopSafeVp: number = px2vp(avoid.topRect.height);
+      noteSystemTopAvoidHeight(seedTopSafeVp, seedTopSafeVp);
+      AppStorage.setOrCreate('topSafeHeight', seedTopSafeVp);
       // Bottom inset (gesture navigation bar) — pages pad their bottom bars by this.
       const navAvoid = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
       AppStorage.setOrCreate('bottomSafeHeight', px2vp(navAvoid.bottomRect.height));
@@ -448,9 +453,22 @@ export default class EntryAbility extends UIAbility {
       setInlinePhotoTargetPx(mediaThumbWidth(px2vp(rectPx), 0) * density);
       win.on('avoidAreaChange', (data) => {
         if (data.type === window.AvoidAreaType.TYPE_SYSTEM) {
-          AppStorage.setOrCreate('topSafeHeight', px2vp(data.area.topRect.height));
+          const topVp: number = px2vp(data.area.topRect.height);
+          noteSystemTopAvoidHeight(topVp);
+          // 媒体查看器/直播全屏调 setWindowSystemBarEnable([]) 隐藏状态栏时，系统会推一次
+          // topRect.height=0 的 avoidAreaChange。不把 0 写进 topSafeHeight：否则底下的
+          // ChatPage / 首页等 60+ 处 @StorageProp('topSafeHeight') 会集体少掉状态栏高度
+          // 向上跳并在退出时整页同步重排卡顿。
+          if (topVp > 0 || !isSystemBarsHiddenApplied()) {
+            if (topVp > 0) {
+              AppStorage.setOrCreate('topSafeHeight', topVp);
+            }
+          }
         } else if (data.type === window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR) {
-          AppStorage.setOrCreate('bottomSafeHeight', px2vp(data.area.bottomRect.height));
+          const bottomVp: number = px2vp(data.area.bottomRect.height);
+          if (bottomVp > 0) {
+            AppStorage.setOrCreate('bottomSafeHeight', bottomVp);
+          }
         } else if (data.type === window.AvoidAreaType.TYPE_CUTOUT) {
           AppStorage.setOrCreate('cutoutTopSafeHeight', px2vp(data.area.topRect.height));
           AppStorage.setOrCreate('cutoutLeftSafeWidth', px2vp(data.area.leftRect.width));
@@ -551,6 +569,7 @@ export default class EntryAbility extends UIAbility {
     // 注销 onWindowStageCreate 里挂的窗口监听（官方《窗口监听》：防泄漏）。
     const win: window.Window | null = this.mainWin;
     this.mainWin = null;
+    setSystemBarsMainWindow(null);
     const onFold: ((mode: display.FoldDisplayMode) => void) | null = this.foldModeCallback;
     this.foldModeCallback = null;
     if (onFold !== null) {

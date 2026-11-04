@@ -26,6 +26,15 @@ export default function uploadProgressTest(): void {
     it('上传完成 → 100，即使 uploaded_size 没跟上', 0, (): void => {
       expect(uploadPercentOf(fileWith(1000, remote(false, 10, true)))).assertEqual(100);
     });
+    it('远端文件正在下载（local 未完成且 is_uploading_completed=true）不应误判为 100% 上传', 0, (): void => {
+      const f: TdObject = fileWith(1000, remote(false, 1000, true));
+      const local: TdObject = { '@type': 'localFile' };
+      local['is_downloading_completed'] = false;
+      local['is_downloading_active'] = true;
+      local['downloaded_size'] = 0;
+      f['local'] = local;
+      expect(uploadPercentOf(f)).assertEqual(-1);
+    });
     it('总大小未知 → 0（转圈而不是乱算）；越界夹到 0–100', 0, (): void => {
       expect(uploadPercentOf(fileWith(0, remote(true, 500)))).assertEqual(0);
       expect(uploadPercentOf(fileWith(100, remote(true, 5000)))).assertEqual(100);

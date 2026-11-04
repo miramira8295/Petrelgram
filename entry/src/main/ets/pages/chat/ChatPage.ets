@@ -213,6 +213,7 @@ import { hasPrefetchedPage } from '../../util/chatPrefetch';
 import { subscribeChatJump } from '../../util/chatJumpChannel';
 import { clearNowPlaying, NowPlaying, publishNowPlaying } from '../../util/nowPlayingChannel';
 import { viewerFullScreenWanted, viewerHidesTitleBar } from '../../util/navFullScreen';
+import { isSystemTopBarReady, restoreViewerSystemBars } from '../../util/systemBarsWindow';
 import { publishViewerCoversWindow } from '../../util/viewerWindowCover';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, TitleBarContentOptions,
@@ -1514,7 +1515,9 @@ export struct ChatPage {
       },
       resumePrefetch: (): void => { this.videoPrefetch.resume(); },
       armPlaySlotSettle: (): void => { this.playSlot.armSettle(); },
-      exitLandscape: (): void => { setMediaViewerOrientation(getContext(this) as common.UIAbilityContext, false); }
+      exitLandscape: (): void => { setMediaViewerOrientation(getContext(this) as common.UIAbilityContext, false); },
+      restoreSystemBars: (): Promise<void> => restoreViewerSystemBars(getContext(this) as common.UIAbilityContext),
+      isSystemTopBarReady: (): boolean => isSystemTopBarReady()
     });
     this.sessionLifecycle.bind({
       invalidateScrollWork: (): void => { this.timeline.invalidateScrollWork(); },
@@ -3730,6 +3733,16 @@ export struct ChatPage {
       this.overlayState.showVideoNoteRecorder = false;
       return true;
     }
+    if (this.viewerOpen() || this.viewer.viewerClosing) {
+      if (this.viewer.viewerVideoLandscape) {
+        this.exitViewerLandscape();
+        return true;
+      }
+      if (this.viewerOpen()) {
+        this.closeViewer();
+      }
+      return true;
+    }
     if (this.headerMenuShow) {
       this.closeHeaderMenu();
       return true;
@@ -3740,14 +3753,6 @@ export struct ChatPage {
     }
     if (this.overlayState.showReactionSheet) {
       this.overlayState.closeReactionSheet();
-      return true;
-    }
-    if (this.viewerOpen()) {
-      if (this.viewer.viewerVideoLandscape) {
-        this.exitViewerLandscape();
-        return true;
-      }
-      this.closeViewer();
       return true;
     }
     // 表情/贴纸抽屉、附件抽屉开着：返回先收抽屉，不直接退出会话——和系统键盘弹着时
@@ -6107,9 +6112,10 @@ export struct ChatPage {
   mediaViewer() {
     MediaViewerOverlay({
       underlay: this.viewer.underlay,
+      closing: this.viewer.viewerClosing,
       topSafe: this.topSafe,
       viewerMsgId: this.viewer.viewerMsgId,
-      onViewerMsgIdChange: (msgId: number): void => { this.viewer.setTarget(msgId); },
+      onViewerMsgIdChange: (msgId: number): void => { this.viewer.updateTarget(msgId); },
       chromeVisible: this.viewer.chromeVisible,
       onChromeVisibleChange: (visible: boolean): void => { this.viewer.setChromeVisible(visible); },
       videoLandscape: this.viewer.viewerVideoLandscape,
@@ -6357,8 +6363,9 @@ export struct ChatPage {
     .hideBackButton(true)
     // 查看器在内容区里，盖不住框架标题栏：开着就收（见 navFullScreen.viewerHidesTitleBar）。
     // animated 取 true：查看器根节点是 300ms 的黑底渐入，第 0 帧直接摘掉顶栏会
-    // 在还透着的黑底上闪一下。
-    .hideTitleBar(viewerHidesTitleBar(this.viewerOpen()), true)
+    // 在还透着的黑底上闪一下。退出查看器时若状态栏安全区还在恢复，先保持收起直到
+    // TYPE_SYSTEM 恢复，避免 HDS 标题栏在 TYPE_SYSTEM=0 期间先画在 y=0 再跳回状态栏下方。
+    .hideTitleBar(viewerHidesTitleBar(this.viewerOpen() || this.viewer.titleBarRestoring), true)
     // HDS 的标题栏模糊必须绑定实际滚动的同一个 Scroller。
     //
     // **转场期间先不绑**（09-04 GPU trace）。这条绑定给 NavDestination 层挂了一个

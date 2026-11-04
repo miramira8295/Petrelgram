@@ -53,6 +53,30 @@ export function systemBarsOwnerCount(): number {
   return owners.size;
 }
 
+export function isSystemBarsHiddenApplied(): boolean {
+  return applied;
+}
+
+// 关闭查看器时立即释放全部 viewer:* 持有者，无需等 300ms 退场 transition 结束后的
+// aboutToDisappear；直播全屏（SYSTEM_BARS_OWNER_LIVE）不受影响。
+export function releaseAllViewerSystemBars(): boolean | null {
+  const toRemove: string[] = [];
+  owners.forEach((owner: string): void => {
+    if (owner.startsWith('viewer:')) {
+      toRemove.push(owner);
+    }
+  });
+  for (const owner of toRemove) {
+    owners.delete(owner);
+  }
+  const wanted: boolean = owners.size > 0;
+  if (wanted === applied) {
+    return null;
+  }
+  applied = wanted;
+  return wanted;
+}
+
 // 单测用：把记账清零。
 export function resetSystemBarsHiddenForTest(): void {
   owners.clear();
