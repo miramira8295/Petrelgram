@@ -97,7 +97,7 @@ export async function editProxy(entry: ProxyEntry, enable: boolean): Promise<Pro
  * Web 组件和 TDLib 各有一套网络栈，开代理时两边都要配，否则 Telegram 通了而
  * 小程序/内置浏览器还是直连。逻辑在 services/WebProxy 里，这里只是补上 client。
  */
-async function syncWebProxyForEnabled(): Promise<void> {
+export async function syncWebProxyForEnabled(): Promise<void> {
   await syncWebProxyFromTd(getTdClient());
 }
 

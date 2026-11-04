@@ -65,15 +65,15 @@ export default function chatEntryTest() {
       const incoming: TdObject = { '@type': 'message', 'id': 10, 'is_outgoing': false };
       expect(lastMessageSendStateFrom(incoming, 100, false)).assertEqual('none');
 
+      const pendingState: TdObject = { '@type': 'messageSendingStatePending' };
       const pending: TdObject = {
-        '@type': 'message', 'id': 10, 'is_outgoing': true,
-        'sending_state': { '@type': 'messageSendingStatePending' }
+        '@type': 'message', 'id': 10, 'is_outgoing': true, 'sending_state': pendingState
       };
       expect(lastMessageSendStateFrom(pending, 0, false)).assertEqual('sending');
 
+      const failedState: TdObject = { '@type': 'messageSendingStateFailed' };
       const failed: TdObject = {
-        '@type': 'message', 'id': 10, 'is_outgoing': true,
-        'sending_state': { '@type': 'messageSendingStateFailed' }
+        '@type': 'message', 'id': 10, 'is_outgoing': true, 'sending_state': failedState
       };
       expect(lastMessageSendStateFrom(failed, 0, false)).assertEqual('failed');
 

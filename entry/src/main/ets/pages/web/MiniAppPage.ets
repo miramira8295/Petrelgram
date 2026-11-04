@@ -4,6 +4,7 @@ import { common } from '@kit.AbilityKit';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdRequest } from '../../tdkit/TdTypes';
 import { closeMiniApp } from '../../store/BotApi';
+import { syncWebProxyForEnabled } from '../../store/ProxyApi';
 import { MiniAppLaunch, MiniAppSession, miniAppOrigin, miniAppTheme } from '../../util/miniAppModel';
 import {
   MiniAppBridge, MiniAppEvent, MiniAppButton, miniAppButton, miniAppBootstrap,
@@ -12,7 +13,6 @@ import {
 import { openTelegramLink } from '../../util/openTelegramLink';
 import { normalizeTelegramLink } from '../../util/linkNav';
 import { openWebUrl } from '../../util/webBrowserNav';
-import { ensureWebProxy } from '../../services/WebProxy';
 import { str } from '../../util/strings';
 import { relativeLuminance } from '../../util/colorMath';
 import { MATERIAL_EPOCH, materialOff, plainGlassFill, plainBackdropBlur } from '../../util/overlayMaterial';
@@ -53,8 +53,10 @@ struct MiniAppPage {
   private pageVisible: boolean = true;
 
   aboutToAppear(): void {
-    // Web 引擎可能比 Ability 起得晚，启动时那次代理配置可能没成功，这里补一次。
-    ensureWebProxy();
+    // Web 侧代理要跟着当前的 TDLib 状态走：自动切换可能在后台把代理换掉或
+    // 关掉，而它走的是 TDLib 请求、不经过 ProxyApi。这里开页面时刷一次，
+    // 顺带覆盖"Web 引擎比 Ability 起得晚、启动那次没生效"的情况。
+    syncWebProxyForEnabled();
     this.launch = router.getParams() as MiniAppLaunch;
     this.title = this.launch?.title ?? '';
     this.start();

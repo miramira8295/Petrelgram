@@ -4,8 +4,8 @@ import { common } from '@kit.AbilityKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { openUrl } from '../../util/openUrl';
+import { syncWebProxyForEnabled } from '../../store/ProxyApi';
 import { webBrowserTarget } from '../../util/webBrowserNav';
-import { ensureWebProxy } from '../../services/WebProxy';
 import { normalizeTelegramLink } from '../../util/linkNav';
 import { openTelegramLink } from '../../util/openTelegramLink';
 import {
@@ -46,8 +46,10 @@ struct InAppBrowserPage {
   private initialUrl: string = '';
 
   aboutToAppear(): void {
-    // Web 引擎可能比 Ability 起得晚，启动时那次代理配置可能没成功，这里补一次。
-    ensureWebProxy();
+    // Web 侧代理要跟着当前的 TDLib 状态走：自动切换可能在后台把代理换掉或
+    // 关掉，而它走的是 TDLib 请求、不经过 ProxyApi。这里开页面时刷一次，
+    // 顺带覆盖"Web 引擎比 Ability 起得晚、启动那次没生效"的情况。
+    syncWebProxyForEnabled();
     const params = router.getParams() as BrowserParams | undefined;
     this.initialUrl = webBrowserTarget(params?.url ?? '');
     this.currentUrl = this.initialUrl;

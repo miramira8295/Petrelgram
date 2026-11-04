@@ -1,7 +1,8 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   appWallpaperActive, appWallpaperFileName, isLocalWallpaperFile, isUploadedWallpaperFile,
-  localWallpaperFileName, localWallpaperWins, wallpaperFileStillUsed, uploadedThumbPath } from '../main/ets/util/localWallpaper';
+  localWallpaperFileName, localWallpaperWins, wallpaperFileStillUsed, uploadedThumbPath,
+  KEY_SPLIT_UNIFIED_BG } from '../main/ets/util/localWallpaper';
 
 export default function localWallpaperTest() {
   describe('localWallpaper', () => {
@@ -65,9 +66,15 @@ export default function localWallpaperTest() {
     });
 
     // 分栏下不提供这个功能：右栏被聊天壁纸盖住，只能从左栏窄缝里露出来。
-    it('split_layout_disables_the_app_wallpaper', 0, (): void => {
+    // 分栏下默认「整窗一张壁纸」（KEY_SPLIT_UNIFIED_BG=true）：左栏那张 APP 壁纸
+    // 两栏共用，所以分栏不影响它是否存在。关掉这个开关才回到"分栏不用 APP 壁纸"。
+    it('split_layout_keeps_the_unified_app_wallpaper', 0, (): void => {
       expect(appWallpaperActive('/data/x/app_bg_dark_1.jpg', false)).assertTrue();
+      expect(appWallpaperActive('/data/x/app_bg_dark_1.jpg', true)).assertTrue();
+      AppStorage.setOrCreate(KEY_SPLIT_UNIFIED_BG, false);
       expect(appWallpaperActive('/data/x/app_bg_dark_1.jpg', true)).assertFalse();
+      expect(appWallpaperActive('/data/x/app_bg_dark_1.jpg', false)).assertTrue();
+      AppStorage.setOrCreate(KEY_SPLIT_UNIFIED_BG, true);
       expect(appWallpaperActive('', false)).assertFalse();
     });
 

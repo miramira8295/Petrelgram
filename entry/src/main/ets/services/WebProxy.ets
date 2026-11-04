@@ -98,16 +98,6 @@ export function clearWebProxy(): void {
   }
 }
 
-/**
- * 打开 Web 页面前补一次配置。Web 引擎起得比 Ability 晚，启动时的第一次
- * applyProxyOverride 可能失败，这里补上。
- */
-export function ensureWebProxy(): void {
-  if (scheme !== '' && !applied) {
-    apply();
-  }
-}
-
 // TDLib 的 proxy 类型（store/ProxyApi 里那几个字符串常量，这里不 import 它们，
 // 否则 services ↔ store 会绕成环）。
 const TD_PROXY_SOCKS5: string = 'proxyTypeSocks5';

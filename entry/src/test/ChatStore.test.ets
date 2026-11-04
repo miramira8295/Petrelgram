@@ -1639,13 +1639,18 @@ export default function chatStoreTest() {
       const client = new TdClient(b);
       const users = new UserStore(client);
       const store = new ChatStore(client, users, timer);
+      // TdClient 在 start() 里才把 bridge 的投递口接上；不调这一步，后面所有
+      // onReceive 都会被初始的空实现吞掉，断言拿到的就是空 store。
+      client.start();
       pushNewChat(b, 1, 'Friend', [mainPos('100', false)], null, 0);
 
+      const typingSender: TdObject = { '@type': 'messageSenderUser', 'user_id': 9 };
+      const typingAction: TdObject = { '@type': 'chatActionTyping' };
       b.onReceive(JSON.stringify({
         '@type': 'updateChatAction',
         'chat_id': 1,
-        'sender_id': { '@type': 'messageSenderUser', 'user_id': 9 },
-        'action': { '@type': 'chatActionTyping' }
+        'sender_id': typingSender,
+        'action': typingAction
       }));
       expect(store.entryOf(1)!.typingText).assertEqual('cp_typing');
 
@@ -1662,8 +1667,8 @@ export default function chatStoreTest() {
       b.onReceive(JSON.stringify({
         '@type': 'updateChatAction',
         'chat_id': 1,
-        'sender_id': { '@type': 'messageSenderUser', 'user_id': 9 },
-        'action': { '@type': 'chatActionTyping' }
+        'sender_id': typingSender,
+        'action': typingAction
       }));
       expect(store.entryOf(1)!.typingText).assertEqual('cp_typing');
       timer.advanceBy(6000);

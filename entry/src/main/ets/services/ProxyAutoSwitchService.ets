@@ -12,7 +12,6 @@ import { ProxyHealthSource } from '../util/proxyHealth';
 import { logI, logW } from '../util/log';
 import { subscribeNetworkType } from './NetworkStateService';
 import { proxyHealthMonitor } from './ProxyHealthMonitor';
-import { syncWebProxyFromTd } from './WebProxy';
 
 export type ProxyNetworkSubscription = (listener: (network: string) => void) => () => void;
 
@@ -331,8 +330,7 @@ export class ProxyAutoSwitchService {
   private selectRoute(target: TdClient, proxyId: number): Promise<void> {
     const request: TdRequest = { '@type': proxyId === 0 ? 'disableProxy' : 'enableProxy' };
     if (proxyId > 0) { request['proxy_id'] = proxyId; }
-    // 自动切换是绕过 ProxyApi 直接发 TDLib 请求的，Web 侧要单独跟一次。
-    return send(target, request, 20000).then((): void => { syncWebProxyFromTd(target); });
+    return send(target, request, 20000).then((): void => {});
   }
 
   private applyProxyList(entries: ProxyAutoSwitchEntry[], manual: boolean): void {

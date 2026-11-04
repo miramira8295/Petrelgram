@@ -13327,6 +13327,34 @@
     {
       "name": "cp_search_results",
       "value": "Risultati di ricerca"
+    },
+    {
+      "name": "ttl_badge_sec",
+      "value": "s"
+    },
+    {
+      "name": "ttl_badge_min",
+      "value": "min"
+    },
+    {
+      "name": "ttl_badge_hour",
+      "value": "h"
+    },
+    {
+      "name": "ttl_badge_day",
+      "value": "g"
+    },
+    {
+      "name": "ttl_badge_week",
+      "value": "sett"
+    },
+    {
+      "name": "ttl_badge_month",
+      "value": "mese"
+    },
+    {
+      "name": "ttl_badge_year",
+      "value": "a"
     }
   ]
 }
