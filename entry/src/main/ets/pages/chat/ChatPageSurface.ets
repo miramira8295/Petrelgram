@@ -132,7 +132,9 @@ export struct ChatPageSurface {
       // 那段说明：那一层不再自己读全局键。
       ChatBackdrop({
         chatBg: this.chatBg, screenW: this.screenW, screenH: this.screenH,
-        bgBlur: this.chatBgBlur, bgPattern: this.chatBgPattern, chatDim: this.chatBgDim
+        bgBlur: this.chatBgBlur, bgPattern: this.chatBgPattern, chatDim: this.chatBgDim,
+        // 分栏 + 统一背景时这层会让位给整窗那张 APP 壁纸（判据在 ChatBackdrop 里）。
+        isChatSlot: true
       });
       Column() {
         Stack() {

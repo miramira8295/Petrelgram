@@ -2,6 +2,11 @@ import { mediaThumbWidth } from '../../util/mediaBox';
 import { setInlinePhotoTargetPx } from '../../util/formatMsgContent';
 import { common } from '@kit.AbilityKit';
 import { ChatBackgroundState } from '../../store/ChatBackgroundStore';
+import {
+  KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, KEY_WINDOW_PORTRAIT, isSplitByBreakpoint
+} from '../../util/layoutBreakpoint';
+import { KEY_APP_BG_ON, KEY_FORCE_SINGLE_COLUMN } from '../../store/AppSettings';
+import { KEY_SPLIT_UNIFIED_BG } from '../../util/localWallpaper';
 import { CachedImage } from '../common/CachedImage';
 import { cachedPixelMap } from '../../util/pixelCache';
 import {
@@ -36,6 +41,30 @@ const RASTER_DEBOUNCE_MS: number = 280;
 
 @Component
 export struct ChatBackdrop {
+  // 分栏 + 统一背景时，聊天页不再画自己的壁纸（否则会把整窗那张盖掉）。
+  // 只有聊天页这一处传 true；AppBackdrop 用同一个组件画 APP 壁纸，那处保持 false。
+  @Prop isChatSlot: boolean = false;
+  @StorageProp(KEY_SPLIT_UNIFIED_BG) private unifiedBg: boolean = true;
+  @StorageProp(KEY_APP_BG_ON) private appBgOn: boolean = false;
+  @StorageProp(KEY_WIDTH_BREAKPOINT) private widthBp: number = 1;
+  @StorageProp(KEY_HEIGHT_BREAKPOINT) private heightBp: number = 2;
+  @StorageProp(KEY_WINDOW_PORTRAIT) private portrait: boolean = true;
+  @StorageProp(KEY_FORCE_SINGLE_COLUMN) private forceSingle: boolean = false;
+
+  // 分栏且本会话没有自己的壁纸（跟随系统/纯色）时，底色跟左栏对齐。
+  private splitNoWallpaper(): boolean {
+    const split: boolean = isSplitByBreakpoint(
+      this.widthBp, this.heightBp, this.forceSingle, this.portrait);
+    return split && this.chatBg.path === '' && this.chatBg.colors.length === 0;
+  }
+
+  private suppressedByUnifiedBg(): boolean {
+    if (!this.isChatSlot || !this.unifiedBg || !this.appBgOn) {
+      return false;
+    }
+    return isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingle, this.portrait);
+  }
+
   @Prop @Watch('onParamsChanged') chatBg: ChatBackgroundState;
   @Prop @Watch('onParamsChanged') screenW: number;
   @Prop @Watch('onParamsChanged') screenH: number;
@@ -253,7 +282,10 @@ export struct ChatBackdrop {
             });
         } else {
           Column().width('100%').height('100%')
-            .backgroundColor($r('app.color.chat_bg'));
+            // 分栏下没有壁纸时用 page_bg：左栏列表的底色就是它，两边同色
+            // 才像「一片画布」；chat_bg 比它略白，中间那条缝看得出来。
+            .backgroundColor(this.suppressedByUnifiedBg() || this.splitNoWallpaper()
+              ? $r('app.color.page_bg') : $r('app.color.chat_bg'));
         }
         // 图案是可重复的小母题，不是独立照片：官方端按固定密度平铺到边，而不是
         // 把一份实例适配到屏幕（见 patternTileGrid 的注释——用 Contain 适配一份
@@ -368,6 +400,9 @@ export struct ChatBackdrop {
     // 常态路径）没带，于是同一个页面时好时坏。挂在这一层，两条路一起覆盖。
     .expandSafeArea([SafeAreaType.SYSTEM])
     .expandSafeArea([SafeAreaType.KEYBOARD])
+    // 分栏 + 统一背景：整层透明，把位置让给 MainScreen 底下那张 APP 壁纸。
+    // 用 opacity 而不是条件渲染，是为了不改变这层既有的布局与安全区展开行为。
+    .opacity(this.suppressedByUnifiedBg() ? 0 : 1)
     .hitTestBehavior(HitTestMode.None);
   }
 }

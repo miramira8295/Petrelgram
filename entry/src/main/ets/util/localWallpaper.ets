@@ -49,8 +49,25 @@ export function appWallpaperFileName(forDark: boolean, stamp: number): string {
 // 壁纸盖住，这张图只能从左栏那一条窄缝里露出来，既不好看也没意义；设置项在分栏
 // 下也一并藏掉，免得给一个看不出效果的开关。
 export function appWallpaperActive(stateRaw: string, split: boolean): boolean {
-  return stateRaw !== '' && !split;
+  if (stateRaw === '') {
+    return false;
+  }
+  if (!split) {
+    return true;
+  }
+  // 分栏模式（2026-11-04 用户选定方案 B）：原来这里是 `&& !split`，理由是
+  // 「右栏被聊天壁纸盖住，这张图只能从左栏窄缝里露出来」。
+  // 现在改成**整窗一张壁纸**：分栏下 APP 壁纸照常生效，同时 ChatBackdrop
+  // 在分栏时不再画该会话自己的壁纸（见 ChatBackdrop.suppressedByUnifiedBg），
+  // 于是两栏共用这一张。
+  //
+  // 开关 KEY_SPLIT_UNIFIED_BG 留给以后做「分栏时保持各自的聊天壁纸」那一档，
+  // 默认 true = 统一背景。
+  return AppStorage.get<boolean>(KEY_SPLIT_UNIFIED_BG) ?? true;
 }
+
+// 分栏时是否用「整窗一张壁纸」代替每个会话自己的壁纸。默认开。
+export const KEY_SPLIT_UNIFIED_BG: string = 'splitUnifiedBg';
 
 // 上传过的壁纸是**共用的**：同一张图可以同时给多个槽位用，不必重传一遍
 // （用户："上传的壁纸互相区域之间应该可以显示，不需要重新传"）。
