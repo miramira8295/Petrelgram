@@ -62,5 +62,10 @@ export class BubbleFocusChannel {
 //
 // 上限的约束：缩放不能大到把相邻行挤开（气泡是 transform，不占布局，但视觉上会
 // 压进上下两行的留白），亮度不能大到让浅色/强调色气泡过曝。
-export const JUMP_FOCUS_SCALE: number = 0.03;
-export const JUMP_FOCUS_BRIGHTNESS: number = 0.35;
+export const JUMP_FOCUS_SCALE: number = 0.05;
+// **置 0：跳转只用缩放，不再提亮。**
+// 这个脉冲作用在玻璃容器那一层，brightness 会把气泡和它的模糊背板一起提亮
+// 35%——浅色主题下就是整片白闪，用户报的「定位消息时整个背景闪烁」。
+// 缩放幅度相应从 3% 提到 5%，补偿去掉亮度后的可见性（气泡是 transform，
+// 不占布局，5% 只会压进上下行的留白，不会挤开相邻行）。
+export const JUMP_FOCUS_BRIGHTNESS: number = 0;
