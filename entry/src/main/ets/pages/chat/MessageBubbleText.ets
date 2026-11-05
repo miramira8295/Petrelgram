@@ -17,6 +17,9 @@ import { MessageBubbleActions } from './ReusableMessageBubble';
 import { linkTextHidesUrl } from '../../util/messageLinkAction';
 import { MessageBubbleContext } from './MessageBubbleShell';
 
+// 单媒体气泡里说明文字/昵称/时间的左右内边距（vp）。图片贴边，文字往里收。
+const CAPTION_SIDE_PADDING: number = 8;
+
 interface RichRunsBuilderParams {
   runs: RichRun[];
   maxWidth: number;
@@ -82,6 +85,11 @@ export struct MessageBubbleText {
   }
 
   private captionMaxW(): number {
+    // 两侧内边距要从可用宽度里扣掉，否则文字会溢出气泡。
+    return Math.max(0, this.captionMaxWInner() - CAPTION_SIDE_PADDING * 2);
+  }
+
+  private captionMaxWInner(): number {
     return this.maxWidth > 0 ? Math.min(this.maxWidth, this.inlineMaxW()) : this.inlineMaxW();
   }
 
@@ -686,7 +694,12 @@ export struct MessageBubbleText {
               entities: this.displayedMessageEntities(this.entities), maxWidth: this.captionMaxW() });
           }
           this.translationBlock();
-        }.margin({ top: 6 });
+        }
+        // 单媒体 + 文字：图片贴气泡边，但**文字、昵称、时间要往里收**。
+        // 气泡宽度现在由说明文字撑开（见 SingleMediaBubble.captionWidth），
+        // 不给内边距文字就贴着气泡边缘了（用户 2026-11-05）。
+        .padding({ left: CAPTION_SIDE_PADDING, right: CAPTION_SIDE_PADDING })
+        .margin({ top: 6 });
       }
     } else {
       this.richContent({ text: this.text, entities: this.entities, maxWidth: this.maxWidth });
