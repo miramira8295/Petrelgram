@@ -73,6 +73,13 @@ export function backgroundThumbnailFile(background: TdObject): TdObject | null {
   return objectOrNull(thumbnail['file']);
 }
 
+// 图案壁纸的「底」：TDLib 对一部分 pattern 背景给的是 backgroundFillSolid +
+// color=0，fillColorsOf 如实翻成 #000000。这层填充只是**垫在图案下面**的底色，
+// 真正的观感来自 pattern 文档本身（网格瓦片现在会把它叠上去）。
+//
+// 2026-11-06 结论（用户确认）：这些 pattern **本来就是黑色壁纸**，底色就该是黑的。
+// 曾经在这里加过「纯黑填充 → 中性灰 #8C9096」的显示回退，属于误判，已整体删除；
+// 不要再用中性色去"修正"它。
 export function backgroundPreviewOf(background: TdObject): BackgroundPreview | null {
   const type = objectOrNull(background['type']);
   if (type === null) { return null; }

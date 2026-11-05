@@ -690,10 +690,6 @@ export struct ChatSettingsPage {
   @State enlargedPattern: number = BG_PATTERN_DEFAULT;
   @State enlargedDim: number = 0;
 
-  private appBgSplit(): boolean {
-    return isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait);
-  }
-
   private appBgKey(): string {
     return this.appDark ? KEY_APP_BG_STATE_DARK : KEY_APP_BG_STATE_LIGHT;
   }
@@ -1048,13 +1044,13 @@ export struct ChatSettingsPage {
           // ── 壁纸设置：四个独立槽位 ──────────────────────────────────────
           // APP 浅色 / APP 深色 / 聊天浅色 / 聊天深色，各有自己的壁纸和三根滑杆。
           // 右侧是该槽位当前壁纸的缩略图，点它放大看，点整行进去改。
-          // 分栏下不显示 APP 那两行（用户："pad 没有这个选项"）。
+          // 分栏下也显示 APP 那两行：2026-11-06 起 APP 壁纸与聊天壁纸**分栏下各画各的**
+          // （ChatBackdrop 不再把聊天层藏掉，见 suppressedByUnifiedBg），两套互不覆盖，
+          // 于是平板没有理由再藏掉入口。原来这里写的是「分栏下不显示 APP 那两行」。
           Column() {
             this.cardTitle(str('cs_wallpaper_settings'));
-            if (!this.appBgSplit()) {
-              this.wallpaperSlotRow(SLOT_APP_LIGHT, str('cs_slot_app_light'));
-              this.wallpaperSlotRow(SLOT_APP_DARK, str('cs_slot_app_dark'));
-            }
+            this.wallpaperSlotRow(SLOT_APP_LIGHT, str('cs_slot_app_light'));
+            this.wallpaperSlotRow(SLOT_APP_DARK, str('cs_slot_app_dark'));
             this.wallpaperSlotRow(SLOT_CHAT_LIGHT, str('cs_slot_chat_light'));
             this.wallpaperSlotRow(SLOT_CHAT_DARK, str('cs_slot_chat_dark'));
           }
