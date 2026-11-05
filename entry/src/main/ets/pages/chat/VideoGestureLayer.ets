@@ -166,6 +166,14 @@ export struct VideoGestureLayer {
     }, 600);
   }
 
+  // 竖屏（高 > 宽）不接管竖拖手势。
+  //
+  // 【为什么】竖屏播放时这块区域的上下滑属于页面本身（滚动/切换），左调亮度右
+  // 调音量会把它们抢走；横屏全屏才是"沉浸看视频"，那时才该让手势层独占竖拖。
+  private verticalGestureEnabled(): boolean {
+    return this.viewportW > this.viewportH;
+  }
+
   @Builder
   hud() {
     Row({ space: 10 }) {
@@ -195,28 +203,33 @@ export struct VideoGestureLayer {
 
   build() {
     Column() {
-      Stack() {
-        if (this.hudKind !== HUD_KIND_NONE) {
-          this.hud();
+      if (this.verticalGestureEnabled()) {
+        Stack() {
+          if (this.hudKind !== HUD_KIND_NONE) {
+            this.hud();
+          }
+          // 系统音量的**驱动件**，不是界面：给它的 volumeLevel 赋值就会设置设备
+          // 音量。只在调音量时挂，宽高 0 + 不吃手势——手指正压在这块地方继续拖。
+          if (this.hudKind === HUD_KIND_VOLUME && this.volumePanelLevel >= 0) {
+            AVVolumePanel({ volumeLevel: this.volumePanelLevel })
+              .width(0).height(0)
+              .hitTestBehavior(HitTestMode.None);
+          }
         }
-        // 系统音量的**驱动件**，不是界面：给它的 volumeLevel 赋值就会设置设备
-        // 音量。只在调音量时挂，宽高 0 + 不吃手势——手指正压在这块地方继续拖。
-        if (this.hudKind === HUD_KIND_VOLUME && this.volumePanelLevel >= 0) {
-          AVVolumePanel({ volumeLevel: this.volumePanelLevel })
-            .width(0).height(0)
-            .hitTestBehavior(HitTestMode.None);
-        }
+        .width('100%')
+        .layoutWeight(1)
+        .hitTestBehavior(HitTestMode.Transparent)
+        .gesture(
+          PanGesture({ fingers: 1, distance: GESTURE_LOCK_VP, direction: PanDirection.Vertical })
+            .onActionStart((event: GestureEvent): void => { this.beginAdjust(event); })
+            .onActionUpdate((event: GestureEvent): void => { this.updateAdjust(event); })
+            .onActionEnd((): void => { this.endAdjust(); })
+            .onActionCancel((): void => { this.endAdjust(); })
+        );
+      } else {
+        // 竖屏：只占位，不接手势。等高，控制条的预留高度也不变，兄弟节点布局不动。
+        Column().width('100%').layoutWeight(1);
       }
-      .width('100%')
-      .layoutWeight(1)
-      .hitTestBehavior(HitTestMode.Transparent)
-      .gesture(
-        PanGesture({ fingers: 1, distance: GESTURE_LOCK_VP, direction: PanDirection.Vertical })
-          .onActionStart((event: GestureEvent): void => { this.beginAdjust(event); })
-          .onActionUpdate((event: GestureEvent): void => { this.updateAdjust(event); })
-          .onActionEnd((): void => { this.endAdjust(); })
-          .onActionCancel((): void => { this.endAdjust(); })
-      );
       if (this.controlsVisible) {
         Column().width('100%').height(CONTROL_BAR_RESERVE_VP);
       }
