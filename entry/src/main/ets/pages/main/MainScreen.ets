@@ -14,6 +14,7 @@ import { appWallpaperActive } from '../../util/localWallpaper';
 import { DOCK_MODE_LEFT_FLOATING } from '../../util/splitMetrics';
 import { NavStackLike, TabKind, stackOf } from '../../util/navStacks';
 import { dockVisibleForTab, effectiveChatDepth, KEY_CHAT_DETAIL_SHOWN } from '../../util/navBarReset';
+import { CHAT_NAV_BAR_REPORTED_KEY } from '../chatlist/ChatListPage';
 import { KEY_CHAT_VIEWER_COVERS_WINDOW } from '../../util/viewerWindowCover';
 import { router } from '@kit.ArkUI';
 import { getTdClient, getUnreadCountStore, getCallSession, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
@@ -748,25 +749,31 @@ export struct MainScreen {
     if (kind === null) {
       return true;
     }
-    if (kind === 'chat' && this.chatViewerCoversWindow &&
-      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait)) {
+    const split: boolean = isSplitByBreakpoint(
+      this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait);
+    if (kind === 'chat' && this.chatViewerCoversWindow && split) {
       return false;
+    }
+    // 两个条件缺一不可：框架上报 navBar 可见 + 详情页确实不在屏上。
+    //
+    // 只凭上报会踩老 bug——整页路由退回来时框架会补发 visible=true，而那时详情页
+    // 是真在屏上的，dock 会冒出来盖住输入框；只凭详情页标志又会漏掉这次的幽灵
+    // 目的地（栈里有 ChatPage、屏上是列表）。两个信号各自都不足以判定。
+    if (kind === 'chat'
+      && (AppStorage.get<boolean>(CHAT_NAV_BAR_REPORTED_KEY) ?? false)
+      && !(AppStorage.get<boolean>(KEY_CHAT_DETAIL_SHOWN) ?? false)) {
+      return true;
     }
     const stack: NavStackLike | undefined = stackOf(kind);
     if (stack === undefined) {
-      return dockVisibleForTab(
-        isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
-        undefined, this.storedNavBarFlag(this.tab));
+      return dockVisibleForTab(split, undefined, this.storedNavBarFlag(this.tab));
     }
-    // 栈深要和"详情页是否真的在屏上"一起看：整页路由退回来时会留下残留栈项，
+    // 栈深还要和「详情页是否真的在屏上」一起看：整页路由退回来时会留下残留栈项，
     // 只看栈深会让 dock 永久藏着（见 util/navBarReset.effectiveChatDepth）。
     const detailShown: boolean = kind !== 'chat'
-      || (AppStorage.get<boolean>(KEY_CHAT_DETAIL_SHOWN) ?? true);
-    return dockVisibleForTab(
-      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
-      effectiveChatDepth(stack.size(), detailShown),
-      this.storedNavBarFlag(this.tab)
-    );
+      || (AppStorage.get<boolean>(KEY_CHAT_DETAIL_SHOWN) ?? false);
+    return dockVisibleForTab(split, effectiveChatDepth(stack.size(), detailShown),
+      this.storedNavBarFlag(this.tab));
   }
 
   // Floating capsule: outer Column carries the horizontal padding + bottom

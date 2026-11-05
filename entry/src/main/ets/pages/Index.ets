@@ -17,6 +17,7 @@ import { QrLoginPage } from './login/QrLoginPage';
 import { MainScreen } from './main/MainScreen';
 import { handleIncomingLink } from '../util/deepLink';
 import { COLOR_TEXT_PRIMARY } from '../util/theme';
+import { KEY_CHAT_DETAIL_SHOWN } from '../util/navBarReset';
 import { refreshNetworkState } from '../services/NetworkStateService';
 import { logChatNavFailure, navigateToChat } from '../util/chatNav';
 import { getTdClient } from '../tdkit/Globals';
@@ -76,6 +77,13 @@ struct Index {
   private offConn: (() => void) | null = null;
   private connReady: boolean = false;
   private deepLinkTimer: number = -1;
+
+  onPageShow(): void {
+    // 从整页 router 页（浏览器/小程序）退回来时，聊天栈可能留着幽灵目的地：
+    // 它的 onShown 不会再来，标志会停在 true。复位成 false，真在屏上的话
+    // ChatPage 的 onWillShow/onShown 会立刻写回 true。
+    AppStorage.setOrCreate<boolean>(KEY_CHAT_DETAIL_SHOWN, false);
+  }
 
   aboutToAppear(): void {
     this.bindAuthService();

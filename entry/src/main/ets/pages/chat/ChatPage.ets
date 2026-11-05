@@ -6411,9 +6411,6 @@ export struct ChatPage {
     // NavDestinationContext 的 pathInfo 里取——而 onReady 实测晚于 aboutToAppear，
     // 所以吃参数的初始化也在这里触发，不能留在 aboutToAppear。
     .onReady((ctx: NavDestinationContext): void => {
-      // 目的地重建也算"详情页在屏上"：整页路由退回来时 onShown 不一定补发，
-      // 只靠它会让标志停在 false，dock 于是冒到会话详情上。
-      AppStorage.setOrCreate<boolean>(KEY_CHAT_DETAIL_SHOWN, true);
       this.navigationCoordinator.setStack(ctx.pathStack);
       this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;
       // 必须在这里调而不是等 aboutToAppear：实测 onReady 晚于 aboutToAppear。
@@ -6422,6 +6419,10 @@ export struct ChatPage {
     // 下面三条对应迁移前的 onPageShow / onPageHide / onBackPress，方法体一字未动：
     // onBackPress 返回 true「已处理不返回」与 onBackPressed 返回 true「重写返回键
     // 不出栈」语义等价。
+    // onWillShow + onShown 都写 true：整页 router 页退回来时 onShown 可能不补发，
+    // 而真正的显示一定会走 onWillShow。幽灵页（栈里有、屏上没有）两个都不会走，
+    // 标志停在 false，dock 判据据此把它按栈空处理。
+    .onWillShow((): void => { AppStorage.setOrCreate<boolean>(KEY_CHAT_DETAIL_SHOWN, true); })
     .onShown((): void => { this.handleShown(); })
     .onWillHide((): void => { this.handleWillHide(); })
     .onHidden((): void => { this.handleHidden(); })

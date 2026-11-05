@@ -227,6 +227,10 @@ export const NAV_BAR_WIDTH_KEY: string = 'navBarWidth';
 // （含系统返回手势）的信号。默认 true：回调没来（或本页尚未挂树）时退化成
 // 「dock 照常显示」，也就是修复前的行为，不会把 dock 弄丢。
 export const CHAT_NAV_BAR_VISIBLE_KEY: string = 'chatNavBarVisible';
+// 框架自己上报的 navBar 可见性（未经我们按栈深修正）。整页 router 页退出来之后，
+// 栈里会留下幽灵目的地，而这份上报反映的是 Navigation 此刻到底在铺 navBar 还是
+// 铺目的地——dock 判据需要它当地面真值。
+export const CHAT_NAV_BAR_REPORTED_KEY: string = 'chatNavBarReported';
 
 // 分栏且右栏栈空时的占位。官方明确它仅在分栏模式下展示、不受路由栈管理、
 // 不可获焦、不响应事件，是纯展示层；单栏模式（手机）下永远不出现。
@@ -1879,6 +1883,7 @@ export struct ChatListPage {
       // CHAT_NAV_BAR_VISIBLE_KEY 的说明。写入前先比一次：同值 setOrCreate 也会
       // 惊动订阅方，而这个回调在单双栏切换时会连着来几次。
       .onNavBarStateChange((reported: boolean): void => {
+        AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_REPORTED_KEY, reported);
         // 应用内浏览器退掉时会补发 visible=true 而栈里还有详情页，按栈兜底。见 navBarReset。
         this.applyNavBarVisible(navBarVisibleOnChange(reported,
           isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
