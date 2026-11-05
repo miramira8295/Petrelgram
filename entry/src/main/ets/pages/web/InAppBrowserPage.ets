@@ -4,6 +4,7 @@ import { common } from '@kit.AbilityKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { openUrl } from '../../util/openUrl';
+import { refreshWebBridge } from '../../store/ProxyApi';
 import { webBrowserTarget } from '../../util/webBrowserNav';
 import { normalizeTelegramLink } from '../../util/linkNav';
 import { openTelegramLink } from '../../util/openTelegramLink';
@@ -45,6 +46,8 @@ struct InAppBrowserPage {
   private initialUrl: string = '';
 
   aboutToAppear(): void {
+    // 代理可能在后台被自动切换换掉，开页面前让桥跟一次（内部失败只记日志）。
+    refreshWebBridge();
     const params = router.getParams() as BrowserParams | undefined;
     this.initialUrl = webBrowserTarget(params?.url ?? '');
     this.currentUrl = this.initialUrl;
