@@ -246,13 +246,14 @@ export function cachedRaster(sig: string, cacheDir: string = ''): string {
     return '';
   }
   const dest = rasterPathFor(sig, cacheDir);
-  try {
-    if (fileIo.accessSync(dest)) {
-      rasterCache.set(sig, dest);
-      return dest;
-    }
-  } catch (e) {
-    // 盘上没有或不可读都当作未命中，重新合成即可。
+  // 只判存在不够：TRUNC 写入失败留下的 0 字节/半截文件也"存在"，会被永久命中成空图。
+  // rasterUsable 会校验 JPEG 完整性，坏文件当场删掉并让本次走重新合成。
+  const usable: boolean = rasterUsable(dest);
+  // 冷启动第一次查盘时顺手清一次历史垃圾（残留 .tmp、坏图、超额旧图）。
+  scheduleSweep(cacheDir);
+  if (usable) {
+    rasterCache.set(sig, dest);
+    return dest;
   }
   return '';
 }
@@ -347,15 +348,28 @@ export async function rasterizeBackground(
       .createFromComponent(node, SNAPSHOT_DELAY_MS, true,
         { scale: 1, waitUntilRenderFinished: true });
     const dest = rasterPathFor(sig, cacheDir);
+    // 不再直接 TRUNC 正式文件：先写 .tmp，校验完整后再提交。
+    // 这样正式名字下只会出现内容完整的图；写入失败/进程被杀只留下 .tmp 残留，
+    // 由 sweepChatbgCache 清理，绝不会被 cachedRaster 命中。
+    const tmp: string = dest + CHATBG_TMP_SUFFIX;
     packer = image.createImagePacker();
-    const file = await fileIo.open(dest,
-      fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+    rasterWriting.add(dest);
     try {
       // Awaited before the PixelMap is released — releasing during an in-flight
       // encode crashes the process.
-      await packer.packToFile(pixelMap, file.fd, { format: 'image/jpeg', quality: 96 });
-    } finally {
-      await fileIo.close(file);
+      await writeRasterTmp(packer, pixelMap, tmp);
+    } catch (e) {
+      rasterWriting.delete(dest);
+      try {
+        fileIo.unlinkSync(tmp);
+      } catch (e2) {
+        // 没有残留就算了。
+      }
+      throw e as Error;
+    }
+    rasterWriting.delete(dest);
+    if (!publishRaster(tmp, dest, cacheDir)) {
+      return '';
     }
     rasterCache.set(sig, dest);
     return dest;
