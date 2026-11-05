@@ -1,4 +1,5 @@
 import { pageMarginVp } from '../../util/pageMargin';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
@@ -46,7 +47,7 @@ import { KEY_APP_DARK } from '../../util/theme';
 import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
 import { rememberSplitNavWidth, resolveSplitNavWidth } from '../../util/splitNavWidth';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
-import { mainBarFill, mainPageFill } from '../../util/theme';
+import { mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { emojiStatusVisible } from '../../util/emojiStatus';
 
@@ -216,6 +217,8 @@ export struct SettingsPage {
   // HdsNavigation 靠 bindToScrollable 拿到滚动量，才能驱动标题栏的收缩与
   // 动态模糊；没有这个绑定，标题栏就是一块静态的板子。
   private settingsScroller: Scroller = new Scroller();
+  // 滚动区实测高度（vp）：linearGradientBlur 的 fractionStops 按实际高度归一化。
+  @State private settingsViewH: number = 0;
   // 设置页签的路由栈。已迁成 HdsNavDestination 的子页推进这里；平板上它就是
   // 右栏，手机上它盖住整个页签（HdsNavigation 默认 Auto，<600vp 单栏）。
   private settingsStack: NavPathStack = new NavPathStack();
@@ -1534,7 +1537,8 @@ export struct SettingsPage {
     .width('100%')
     // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
     .alignItems(HorizontalAlign.Center)
-    .padding({ bottom: this.bottomSafe + 88 });
+    // 内容区已贴屏幕顶（标题栏不再占布局位置），这里补回状态栏+标题栏那一截。
+    .padding({ top: EDGE_OVERLAY_VP, bottom: this.bottomSafe + 88 });
   }
 
   // 页面边距（util/pageMargin，SPEC-07）：手机 12，折叠屏 16，平板 20。
@@ -1583,6 +1587,10 @@ export struct SettingsPage {
         // 同值不写：onAreaChange 在滚动/键盘/单双栏切换时会连着来几次，而
         // setOrCreate 即便同值也会惊动订阅方。
         .onAreaChange((_old: Area, area: Area): void => {
+          const h: number = Number(area.height);
+          if (h > 0 && Math.abs(h - this.settingsViewH) > 0.5) {
+            this.settingsViewH = h;
+          }
           const w: number = area.width as number;
           if (AppStorage.get<number>(SETTINGS_NAV_BAR_WIDTH_KEY) !== w) {
             AppStorage.setOrCreate<number>(SETTINGS_NAV_BAR_WIDTH_KEY, w);
@@ -1592,6 +1600,13 @@ export struct SettingsPage {
         })
         // 不裁剪超出自身范围的子组件，内容才能穿透到标题栏下方——渐变模糊
         // 模糊的正是穿过去的这部分。官方示例同样这么写。
+        // 边缘渐变虚化：与首页会话列表同一套参数（顶/底 118vp、峰 22px）。
+        // 渐变原点就是这个 Scroll 的上沿，所以标题栏不能占内容区的布局位置——
+        // 见下面 enableComponentSafeArea: false。
+        .linearGradientBlur(BLUR_MAX_VP, {
+          fractionStops: edgeBlurStops(this.settingsViewH),
+          direction: GradientDirection.Bottom
+        })
         .clip(false);
       }
       .titleBar({
@@ -1610,8 +1625,12 @@ export struct SettingsPage {
         // 那条的底色由 HdsNavigation 自己的 backgroundColor 铺——全屏布局下它本来
         // 就盖到那儿。
         avoidLayoutSafeArea: true,
-        enableComponentSafeArea: true,
-        style: titleBarStyle(mainBarFill(this.appWallpaperOn)),
+        // 内容区不再避让标题栏：Scroll 上沿直接贴屏幕顶，linearGradientBlur 的渐变
+        // 原点才落在屏幕最上沿（否则状态栏/标题那一截永远是清晰的）。标题自己仍靠
+        // avoidLayoutSafeArea 避让系统安全区。
+        enableComponentSafeArea: false,
+        // 顶栏去雾：背板全透明 + 关掉 HDS 滚动渐变模糊，理由见 ChatListPage。
+        style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false, false),
         content: this.titleBarContent()
       })
       // 设置是从主界面进来的一级页面，顶部没有返回箭头。

@@ -19,6 +19,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { navigateToSetting } from '../../util/settingsNav';
 
 const CARD_RADIUS: number = 16;
@@ -106,6 +107,8 @@ export struct PrivacySecurityPage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   private hdsScroller: Scroller = new Scroller();
+  // 滚动区实测高度（vp）：linearGradientBlur 的 fractionStops 按实际高度归一化。
+  @State private blurViewH: number = 0;
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -603,11 +606,22 @@ export struct PrivacySecurityPage {
           .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18)
           .width('100%').padding({ left: 16, right: 16, bottom: 4 });
       }
-      .width('100%').padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
+      .width('100%').padding({ left: 12, right: 12, top: EDGE_OVERLAY_VP, bottom: this.bottomSafe + 24 });
     }
     .layoutWeight(1).width('100%').align(Alignment.Top).scrollBar(BarState.Off)
       // 不裁剪，内容才能穿到标题栏底下。
-      .clip(false);
+      .clip(false)
+      // 边缘渐变虚化：与设置页/首页同一套参数（顶/底 118vp、峰 22px）。
+      .linearGradientBlur(BLUR_MAX_VP, {
+        fractionStops: edgeBlurStops(this.blurViewH),
+        direction: GradientDirection.Bottom
+      })
+      .onAreaChange((_old: Area, area: Area): void => {
+        const h: number = Number(area.height);
+        if (h > 0 && Math.abs(h - this.blurViewH) > 0.5) {
+          this.blurViewH = h;
+        }
+      });
   }
 
   build() {

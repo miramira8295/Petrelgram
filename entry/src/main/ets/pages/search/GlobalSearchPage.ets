@@ -30,7 +30,8 @@ import {
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { MATERIAL_EPOCH, plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import {
   SearchSession, forgetSearchSession, rememberSearchSession, takeSearchSession
@@ -171,6 +172,8 @@ export struct GlobalSearchPage {
   // 下载列表和应用榜按 query 过滤，query 变了要同步它们的数据源（见 syncQueryFilteredData）。
   @State @Watch('syncQueryFilteredData') query: string = '';
   @State @Watch('syncTabFilteredData') tab: number = SEARCH_TAB_RECENT;
+  // 「最近」页列表滚到悬浮栏底下时雾化，需要列表自身高度。
+  @State private listViewH: number = 0;
   @State objectScope: string = 'all';
   @State messageScope: string = 'all';
   @State channelId: number = 0;
@@ -1923,6 +1926,16 @@ export struct GlobalSearchPage {
     .scrollBar(BarState.Off)
     .cachedCount(4)
     .maintainVisibleContentPosition(true)
+    .contentStartOffset(this.headerHeight())
+    .linearGradientBlur(BLUR_MAX_VP, {
+      fractionStops: edgeBlurStops(this.listViewH),
+      direction: GradientDirection.Bottom
+    })
+    .clip(false)
+    .onAreaChange((_o: Area, n: Area): void => {
+      const h: number = n.height as number;
+      if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+    })
     // 底部留白原来是内容列的 padding（随内容滚动），在 List 上对应 contentEndOffset。
     .contentEndOffset(8);
   }
@@ -2969,12 +2982,38 @@ export struct GlobalSearchPage {
     .backgroundColor(mainPageFill(this.appWallpaperOn));
   }
 
+  // 搜索框(48) + 页签条(40 + 上间距 8) + 顶部安全区与内边距(10)。
+  private headerHeight(): number {
+    return this.topSafe + 10 + 48 + 8 + 40;
+  }
+
   @Builder
   body() {
     Stack({ alignContent: Alignment.TopStart }) {
     // NavDestination 自带的页面层会隔断 MainScreen 的壁纸，和资料详情页一样在
     // 当前目的页内重画一层；分栏时 AppBackdrop 会按统一规则自动停止绘制。
     AppBackdrop({ split: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) });
+    // 内容层：铺满整页、从 y=0 起，「最近」页的列表会从悬浮搜索栏底下穿过。
+    Column() {
+      Column() {
+        this.tabBody();
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
+      // 「最近」页的 List 用 contentStartOffset 自己让位；其余页签的列表还没逐一套
+      // 偏移，先整体下移，避免内容被悬浮栏压住。
+      .padding({
+        left: SEARCH_PAGE_INSET, right: SEARCH_PAGE_INSET,
+        top: this.tab === SEARCH_TAB_RECENT ? 0 : this.headerHeight()
+      });
+    }
+    .width('100%').height('100%')
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(mainPageFill(this.appWallpaperOn))
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+
+    // 悬浮搜索栏 + 页签：玻璃底压最上层，滚上来的内容在它后面雾化。
     Column() {
       Column() {
         this.searchBar();
@@ -2989,19 +3028,12 @@ export struct GlobalSearchPage {
       .width('100%')
       .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
       .padding({ left: SEARCH_PAGE_INSET, right: SEARCH_PAGE_INSET, top: this.topSafe + 10 });
-
-      Column() {
-        this.tabBody();
-      }
-      .width('100%')
-      .layoutWeight(1)
-      .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
-      .padding({ left: SEARCH_PAGE_INSET, right: SEARCH_PAGE_INSET });
     }
-    .width('100%').height('100%')
+    .width('100%')
     .alignItems(HorizontalAlign.Center)
-    .backgroundColor(mainPageFill(this.appWallpaperOn))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+    .backgroundColor(plainGlassFill($r('app.color.surface')))
+    .backdropBlur(plainBackdropBlur('bar'))
+    .hitTestBehavior(HitTestMode.Transparent);
 
     }
     .width('100%').height('100%')

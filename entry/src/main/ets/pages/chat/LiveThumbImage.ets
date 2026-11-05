@@ -43,6 +43,9 @@ export interface LiveThumbSpec {
   boxWidth: number;
   boxHeight: number;
   radius: number;
+  // 四角可分别设置时优先用它；调用方需要和外层气泡四角同心时传这个。
+  // 缺省保持单值 radius 的旧行为。
+  radii?: BorderRadiuses;
   fit: ImageFit;
   // 不透明源，允许 RGB_565 解码（见 pixelCache.PixelRequest.opaque）。
   // 相册格 true，单张大图与查看器缩略图条 false。
@@ -127,8 +130,8 @@ export struct LiveThumbImage {
   onSpecChanged(): void {
     if (shouldReattachThumb(this.spec.fileId, this.spec.initialPath,
       this.attachedFileId, this.path)) {
-      // 可下载文件的实时路径以通道为准，通道尚未就绪时回退到当前 spec 的 initialPath。
-      this.attach(this.spec.fileId, this.spec.initialPath);
+      // 可下载文件的实时路径以通道为准；纯路径模式由 initialPath 定义身份。
+      this.attach(this.spec.fileId, this.spec.fileId === 0 ? this.spec.initialPath : '');
     }
     // 即使文件未变，尺寸/像素格式等输入变化仍需交给同一个图片会话。
     this.imageSession.update(this.imageSpec());
@@ -210,6 +213,12 @@ export struct LiveThumbImage {
 
   // 与 CachedImage 的原生图片属性保持一致。成员零参 Builder 直接读当前输入，
   // 省去每格一层自定义组件及其复用/参数登记，仍保留同步显示与圆角抗锯齿。
+  // 圆角取值：给了四角就按四角画，否则沿用单值。
+  private effectiveRadii(): Length | BorderRadiuses {
+    const radii: BorderRadiuses | undefined = this.spec.radii;
+    return radii !== undefined ? radii : this.spec.radius;
+  }
+
   @Builder
   imageContent() {
     Stack() {
@@ -217,7 +226,7 @@ export struct LiveThumbImage {
         Image(this.spec.mini)
           .draggable(false)
           .width(this.spec.boxWidth).height(this.spec.boxHeight)
-          .borderRadius(this.spec.radius).clip(true)
+          .borderRadius(this.effectiveRadii()).clip(true)
           .objectFit(this.spec.fit)
           .blur(MINI_PLACEHOLDER_BLUR);
       }
@@ -226,7 +235,7 @@ export struct LiveThumbImage {
         .draggable(false)
         .width(this.spec.boxWidth).height(this.spec.boxHeight)
         .backgroundColor(this.spec.backdrop !== '' ? this.spec.backdrop : Color.Transparent)
-        .borderRadius(this.spec.radius).clip(true)
+        .borderRadius(this.effectiveRadii()).clip(true)
         .interpolation(ImageInterpolation.High)
         .objectFit(this.spec.fit);
     }.width(this.spec.boxWidth).height(this.spec.boxHeight);

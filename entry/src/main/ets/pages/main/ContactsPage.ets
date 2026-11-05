@@ -1,5 +1,6 @@
 import { ContactAlphabetIndex } from '../../services/ContactAlphabetIndex';
 import { homeCardMarginVp } from '../../util/pageMargin';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
@@ -59,7 +60,7 @@ import { KEY_APP_DARK } from '../../util/theme';
 import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
 import { rememberSplitNavWidth, resolveSplitNavWidth } from '../../util/splitNavWidth';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
-import { mainBarFill, mainPageFill } from '../../util/theme';
+import { mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 
 // 卡片底色 + 毛玻璃。开关关着时 surfaceGlassFill 原样返回实色、
@@ -156,6 +157,8 @@ export struct ContactsPage {
   }
 
   private contactsScroller: ListScroller = new ListScroller();
+  // 列表实测高度（vp）：linearGradientBlur 的 fractionStops 要按实际高度归一化。
+  @State private contactsViewH: number = 0;
   private alphabet: ContactAlphabetIndex = new ContactAlphabetIndex();
   private orderedContacts: ContactItem[] = [];
   // 联系人卡片的 LazyForEach 数据源，喂的是 filtered() 那一份（见 onContactListInputChanged）。
@@ -1693,6 +1696,10 @@ export struct ContactsPage {
           // 同值不写：onAreaChange 在滚动/键盘/单双栏切换时会连着来几次，而
           // setOrCreate 即便同值也会惊动订阅方。
           .onAreaChange((_old: Area, area: Area): void => {
+            const h: number = Number(area.height);
+            if (h > 0 && Math.abs(h - this.contactsViewH) > 0.5) {
+              this.contactsViewH = h;
+            }
             const w: number = area.width as number;
             if (AppStorage.get<number>(CONTACTS_NAV_BAR_WIDTH_KEY) !== w) {
               AppStorage.setOrCreate<number>(CONTACTS_NAV_BAR_WIDTH_KEY, w);
@@ -1701,6 +1708,12 @@ export struct ContactsPage {
             }
           })
           // 不裁剪，内容才能穿透到标题栏下方——渐变模糊模糊的正是穿过去的这部分。
+          .contentStartOffset(EDGE_OVERLAY_VP)
+          // 顶部/底部边缘渐变虚化（与首页会话列表同一套参数）。
+          .linearGradientBlur(BLUR_MAX_VP, {
+            fractionStops: edgeBlurStops(this.contactsViewH),
+            direction: GradientDirection.Bottom
+          })
           .clip(false);
         }
         .width('100%').height('100%')
@@ -1722,8 +1735,11 @@ export struct ContactsPage {
         // 那条的底色由 HdsNavigation 自己的 backgroundColor 铺——全屏布局下它本来
         // 就盖到那儿。
         avoidLayoutSafeArea: true,
-        enableComponentSafeArea: true,
-        style: titleBarStyle(mainBarFill(this.appWallpaperOn)),
+        // 内容区不再避让标题栏：List 上沿直接贴屏幕顶，linearGradientBlur 的渐变
+        // 原点才落在屏幕最上沿。标题自己仍靠 avoidLayoutSafeArea 避让系统安全区。
+        enableComponentSafeArea: false,
+        // 顶栏去雾：背板全透明 + 关掉 HDS 滚动渐变模糊，理由见 ChatListPage。
+        style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false, false),
         content: this.titleBarContent()
       })
       .hideBackButton(true)

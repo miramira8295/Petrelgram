@@ -12,6 +12,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
 
@@ -48,6 +49,8 @@ export function StickerSetsPageBuilder(): void {
 @Component
 export struct StickerSetsPage {
   private hdsScroller: Scroller = new Scroller();
+  // 滚动区实测高度（vp）：linearGradientBlur 的 fractionStops 按实际高度归一化。
+  @State private blurViewH: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -291,7 +294,23 @@ export struct StickerSetsPage {
         // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
         .clip(false);
       }
-      }.width('100%').height('100%');
+      }
+      .width('100%').height('100%')
+      .padding({ top: EDGE_OVERLAY_VP })
+      // 边缘渐变虚化：与设置页/首页同一套参数（顶/底 118vp、峰 22px）。
+      // 挂在内容根上而不是 List 上：本页搜索框是固定行（不入滚动区），List 的上沿
+      // 在标题栏下方约 145vp 处，直接挂在 List 上会让第一行常驻约 22 的糊。挂在
+      // 满屏的内容根上，渐变原点才和其它页一致（屏幕最上沿）。
+      .linearGradientBlur(BLUR_MAX_VP, {
+        fractionStops: edgeBlurStops(this.blurViewH),
+        direction: GradientDirection.Bottom
+      })
+      .onAreaChange((_old: Area, area: Area): void => {
+        const h: number = Number(area.height);
+        if (h > 0 && Math.abs(h - this.blurViewH) > 0.5) {
+          this.blurViewH = h;
+        }
+      });
     }
     }.width('100%').height('100%');
   }

@@ -15,6 +15,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
 import { readableContentWidth } from '../../util/contentWidth';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
 
@@ -49,6 +50,8 @@ struct StorageUsagePage {
   @State loadError: string = '';
   @State syncWarning: string = '';
   @State actionKey: string = '';
+  // 列表实测高度（vp）：linearGradientBlur 的 fractionStops 要按实际高度归一化。
+  @State private listViewH: number = 0;
   private active: boolean = false;
   private sequence: number = 0;
   // 按会话那张卡的 LazyForEach 数据源（见 syncChatsData）。
@@ -316,8 +319,9 @@ struct StorageUsagePage {
   }
 
   build() {
-    Column() {
-      this.header();
+    // header 画在内容层之上、不占布局高度：列表从屏幕最上沿开始铺垫，
+    // 顶部那条渐变模糊才有东西可糊（内容穿过 header 底下）。
+    Stack({ alignContent: Alignment.Top }) {
       // 每张卡片占一项，按会话那张是 ListItemGroup（见 chatsCard）。限宽改由每一项自己的
       // constraintSize + alignListItem 居中：List 仍铺满窗口，边缘回弹不跟着缩进来，侧边
       // 留白也还在它的命中区里。分类占比条按父宽的百分比算，跟着卡片一起收窄。
@@ -360,16 +364,31 @@ struct StorageUsagePage {
           }
         }
       }
-      .layoutWeight(1).width('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+      .width('100%').height('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
       .cachedCount(4)
       .alignListItem(ListItemAlign.Center)
       .padding({ left: SIDE_PADDING, right: SIDE_PADDING })
       // 上下留白原来是内容列的 padding（随内容滚动），在 List 上对应两个 contentOffset。
-      .contentStartOffset(6)
-      .contentEndOffset(this.bottomSafe + 24);
+      // 上沿让出状态栏 + 56vp header，否则第一张卡会被 header 压住。
+      .contentStartOffset(this.topSafe + 56 + 6)
+      .contentEndOffset(this.bottomSafe + 24)
+      .linearGradientBlur(BLUR_MAX_VP, {
+        fractionStops: edgeBlurStops(this.listViewH),
+        direction: GradientDirection.Bottom
+      })
+      .clip(false)
+      .onAreaChange((_o: Area, n: Area): void => {
+        const h: number = n.height as number;
+        if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+      });
+      Column() {
+        this.header();
+      }
+      .width('100%')
+      .padding({ top: this.topSafe })
+      .hitTestBehavior(HitTestMode.Transparent)
     }.width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-      .padding({ top: this.topSafe });
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }
 

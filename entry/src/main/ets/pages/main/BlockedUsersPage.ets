@@ -4,6 +4,7 @@ import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { AvatarView } from '../chatlist/AvatarView';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
@@ -44,6 +45,8 @@ struct BlockedUsersPage {
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
+  // 列表实测高度（vp）：linearGradientBlur 的 fractionStops 要按实际高度归一化。
+  @State private listViewH: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
   @StorageProp('screenWidthVp') screenW: number = 360;
@@ -403,8 +406,10 @@ struct BlockedUsersPage {
   }
 
   build() {
+    // header 画在内容层之上、不占布局高度：列表从屏幕最上沿开始铺垫，
+    // 顶部那条渐变模糊才有东西可糊（内容穿过 header 底下）。
+    Stack({ alignContent: Alignment.Top }) {
     Column() {
-      this.header();
       if (this.loadState === 'loading') {
         Column({ space: 9 }) {
           LoadingProgress().width(34).height(34).color(COLOR_PRIMARY);
@@ -453,6 +458,18 @@ struct BlockedUsersPage {
         }
         .layoutWeight(1).width('100%').backgroundColor(COLOR_SURFACE).scrollBar(BarState.Off)
         .cachedCount(4)
+        // 列表上沿贴屏幕顶（header 已改成上层浮层），首项让出状态栏 + 52vp header，
+        // 否则第一条会被 header 压住。
+        .contentStartOffset(this.topSafe + 52)
+        .linearGradientBlur(BLUR_MAX_VP, {
+          fractionStops: edgeBlurStops(this.listViewH),
+          direction: GradientDirection.Bottom
+        })
+        .clip(false)
+        .onAreaChange((_o: Area, n: Area): void => {
+          const h: number = n.height as number;
+          if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+        })
         .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 68 })
         // 限宽做在 List 的内边距上而不是 List 的宽度上：List 仍铺满窗口，两侧
         // 让出来的留白因此还在 List 的命中区里，手指按在留白上照样能拖动列表。
@@ -465,9 +482,16 @@ struct BlockedUsersPage {
         .onReachEnd((): void => { this.load(false); });
       }
     }
+    .width('100%').height('100%')
+      Column() {
+        this.header();
+      }
+      .width('100%')
+      .padding({ top: this.topSafe })
+      .hitTestBehavior(HitTestMode.Transparent)
+    }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe })
     .bindSheet($$this.pickerOpen, this.pickerSheet(), {
       height: SheetSize.LARGE,
       backgroundColor: COLOR_SURFACE,

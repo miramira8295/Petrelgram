@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { HdsSubDestination } from '../common/HdsSubDestination';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { initVideoPosterStore } from '../../util/videoPosterStore';
 import { DownloadCenterList } from './DownloadCenterList';
@@ -624,13 +625,19 @@ export struct DownloadCenterPage {
             .height(Math.max(0, this.viewportHeight - PILL_BAR_HEIGHT))
             .onChange((index: number): void => { this.onTabChanged(index); });
           }
-          .width('100%');
+          .width('100%')
+          .padding({ top: EDGE_OVERLAY_VP });
         }
         .width('100%')
         .height('100%')
         .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.Spring)
-        .onAreaChange((_old: Area, area: Area): void => { this.viewportHeight = area.height as number; });
+        .onAreaChange((_old: Area, area: Area): void => { this.viewportHeight = area.height as number; })
+        // 边缘渐变虚化：与设置页/首页同一套参数（顶/底 118vp、峰 22px）。
+        .linearGradientBlur(BLUR_MAX_VP, {
+          fractionStops: edgeBlurStops(this.viewportHeight),
+          direction: GradientDirection.Bottom
+        });
         if (this.undoMessage !== '' || this.batch) {
           Column({ space: 8 }) {
             if (this.undoMessage !== '') {

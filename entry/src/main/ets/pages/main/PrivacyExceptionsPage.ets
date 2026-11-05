@@ -6,6 +6,7 @@ import { PrivacyExceptionsParams } from './PrivacyRulePage';
 import { AvatarView } from '../chatlist/AvatarView';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
@@ -78,6 +79,7 @@ struct PrivacyExceptionsPage {
   @State setting: string = '';
   @State title: string = '';
   @State loadState: string = 'loading';
+  @State private listViewH: number = 0;
   @State allowUsers: ExceptionUser[] = [];
   @State restrictUsers: ExceptionUser[] = [];
   @State allowChatCount: number = 0;
@@ -337,17 +339,17 @@ struct PrivacyExceptionsPage {
         .padding({ left: 13, right: 13 }).onChange((value: string): void => { this.query = value; });
       if (this.candidateState === 'loading') {
         Column() { LoadingProgress().width(30).height(30).color(COLOR_PRIMARY); }
-          .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+          .width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else if (this.candidateState === 'error') {
         Column({ space: 10 }) {
           Text($r('app.string.contacts_load_failed')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
           Button($r('app.string.settings_retry')).onClick((): void => { this.loadCandidates(); });
-        }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else if (this.filteredCandidates().length === 0) {
         Column({ space: 6 }) {
           Text($r('app.string.pe_no_contacts')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
           Text($r('app.string.pe_no_contacts_sub')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
-        }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else {
         List() {
           // LazyForEach + 复用行（PrivacyCandidateRow）：候选是全部联系人，几千个时只建
@@ -367,16 +369,17 @@ struct PrivacyExceptionsPage {
   }
 
   build() {
-    Column() {
-      this.header();
+    // header 画在内容层之上、不占布局高度：滚动区从屏幕最上沿开始铺垫，
+    // 顶部那条渐变模糊才有东西可糊（内容穿过 header 底下）。
+    Stack({ alignContent: Alignment.Top }) {
       if (this.loadState === 'loading') {
         Column() { LoadingProgress().width(34).height(34).color(COLOR_PRIMARY); }
-          .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+          .width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else if (this.loadState === 'error') {
         Column({ space: 10 }) {
           Text($r('app.string.pe_load_failed')).fontSize(17).fontColor(COLOR_TEXT_PRIMARY);
           Button($r('app.string.settings_reload')).onClick((): void => { this.load(); });
-        }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else {
         Scroll() {
           // 两层 Column 是故意的：外层铺满、负责居中，内层才是被限宽的内容。
@@ -392,18 +395,32 @@ struct PrivacyExceptionsPage {
             }
             .width('100%')
             .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
-            .padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
+            .padding({ left: 12, right: 12, top: this.topSafe + 56 + 12, bottom: this.bottomSafe + 24 });
           }
           .width('100%')
           // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
           .alignItems(HorizontalAlign.Center);
         }
-        .align(Alignment.Top).layoutWeight(1).width('100%').scrollBar(BarState.Off);
+        .align(Alignment.Top).width('100%').height('100%').scrollBar(BarState.Off)
+        .linearGradientBlur(BLUR_MAX_VP, {
+          fractionStops: edgeBlurStops(this.listViewH),
+          direction: GradientDirection.Bottom
+        })
+        .clip(false)
+        .onAreaChange((_o: Area, n: Area): void => {
+          const h: number = n.height as number;
+          if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+        });
       }
+      Column() {
+        this.header();
+      }
+      .width('100%')
+      .padding({ top: this.topSafe })
+      .hitTestBehavior(HitTestMode.Transparent)
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe })
     .bindSheet($$this.sheetOpen, this.pickerSheet(), {
       height: SheetSize.LARGE,
       backgroundColor: COLOR_SURFACE,

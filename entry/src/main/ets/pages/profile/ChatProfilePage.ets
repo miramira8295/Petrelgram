@@ -1,5 +1,6 @@
 import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { QrDialog } from '../common/QrDialog';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { InviteJoinResolver } from '../../util/inviteJoinResolver';
 import { joinChat as submitChatJoin, ChatJoinOutcome } from '../../util/chatJoin';
@@ -119,6 +120,9 @@ export struct ChatProfilePage {
   // 本页所在的 Navigation 栈，onReady 时拿到。返回按钮靠它出栈——本页已不是
   // router 页，router.back() 弹不到自己。
   private navStack: NavPathStack | undefined = undefined;
+  // 顶/底虚化四件套：半径随滚动量渐入，静止时 0（头图在列表里，常开会糊头像）。
+  @State private listViewH: number = 0;
+  @State private blurRadius: number = 0;
   // 路由参数。router 时代靠 router.getParams() 现取，NavDestination 要在
   // onReady 里从 NavDestinationContext 拿，而 onReady 实测晚于 aboutToAppear
   // （平板 API 26，见 ChatPage 的同名注释），所以吃参数的那一段整体挪进了
@@ -2044,6 +2048,21 @@ export struct ChatProfilePage {
     .width('100%').height('100%')
     .scrollBar(BarState.Off)
     .cachedCount(PROFILE_LIST_CACHED_COUNT)
+    // 头图与大头像就在列表第一项里、随内容滚走，所以顶部虚化不能常开（常开会
+    // 糊掉静止状态的头像上沿）。跟着滚动量渐入：静止半径 0，一滚就雾化上边缘。
+    .linearGradientBlur(this.blurRadius, {
+      fractionStops: edgeBlurStops(this.listViewH),
+      direction: GradientDirection.Bottom
+    })
+    .clip(false)
+    .onAreaChange((_o: Area, n: Area): void => {
+      const h: number = n.height as number;
+      if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+    })
+    .onDidScroll((offset: number): void => {
+      const target: number = Math.max(0, Math.min(BLUR_MAX_VP, offset * 2));
+      if (Math.abs(target - this.blurRadius) > 1) { this.blurRadius = target; }
+    })
     // 壁纸生效时整页底必须透明，否则壁纸被这一层盖死（同 util/theme.mainPageFill
     // 的理由）。卡片自己是毛玻璃（overlayGlassFill），压在壁纸上仍然读得清。
     .backgroundColor(this.appWallpaperOn ? Color.Transparent : $r('app.color.page_bg'))

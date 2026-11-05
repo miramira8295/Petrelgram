@@ -1,4 +1,5 @@
 import { showProfileStoryActions } from '../../services/ProfileStoryActions';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { pageMarginVp } from '../../util/pageMargin';
 import {
@@ -46,7 +47,7 @@ import { readableContentWidth } from '../../util/contentWidth';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
-import { mainBarFill, mainPageFill } from '../../util/theme';
+import { mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { emojiStatusVisible } from '../../util/emojiStatus';
 
@@ -167,6 +168,8 @@ export struct MyProfilePage {
   @State photoUploading: boolean = false;
   @State openingEditor: boolean = false;
   private profileScroller: Scroller = new Scroller();
+  // 滚动区实测高度（vp）：linearGradientBlur 的 fractionStops 按实际高度归一化。
+  @State private profileViewH: number = 0;
   @State photoMenuOpen: boolean = false;
   @State switchingToSettings: boolean = false;
   @State pressedQuickAction: string = '';
@@ -2133,12 +2136,25 @@ export struct MyProfilePage {
         // Column 默认左对齐：限了宽不居中就是把「设置照片 / 编辑信息 / 设置」
         // 那三个卡堆在屏幕左边，比不限还难看。
         .alignItems(HorizontalAlign.Center)
-        .padding({ bottom: this.bottomSafe + 88 });
+        // 容器上顶了 EDGE_OVERLAY_VP，内容起点跟着上移，这里补回来。
+        .padding({ top: EDGE_OVERLAY_VP, bottom: this.bottomSafe + 88 });
       }
       .width('100%')
       .align(Alignment.Top)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollBar(BarState.Off)
+      // 边缘渐变虚化：与首页会话列表同一套参数（顶/底 118vp、峰 22px）。
+      // 上沿已贴屏幕顶（见 titleBar 的 enableComponentSafeArea: false）。
+      .linearGradientBlur(BLUR_MAX_VP, {
+        fractionStops: edgeBlurStops(this.profileViewH),
+        direction: GradientDirection.Bottom
+      })
+      .onAreaChange((_old: Area, area: Area): void => {
+        const h: number = Number(area.height);
+        if (h > 0 && Math.abs(h - this.profileViewH) > 0.5) {
+          this.profileViewH = h;
+        }
+      })
       // 不裁剪，头像块才能穿到标题栏底下——渐变模糊模糊的正是这部分。
       .clip(false);
     }
@@ -2158,8 +2174,11 @@ export struct MyProfilePage {
       // 那条的底色由 HdsNavigation 自己的 backgroundColor 铺——全屏布局下它本来
       // 就盖到那儿。
       avoidLayoutSafeArea: true,
-      enableComponentSafeArea: true,
-      style: titleBarStyle(mainBarFill(this.appWallpaperOn)),
+      // 内容区不再避让标题栏：Scroll 上沿直接贴屏幕顶，linearGradientBlur 的渐变
+      // 原点才落在屏幕最上沿。标题自己仍靠 avoidLayoutSafeArea 避让系统安全区。
+      enableComponentSafeArea: false,
+      // 顶栏去雾：背板全透明 + 关掉 HDS 滚动渐变模糊，理由见 ChatListPage。
+      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false, false),
       content: this.titleBarContent()
     })
     // 一级页签，没有返回键。

@@ -23,6 +23,8 @@ import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { currentNowPlaying, NowPlaying } from '../../util/nowPlayingChannel';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { COLOR_ON_PRIMARY, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
 import { str } from '../../util/strings';
 import { MusicPlayerView } from './MusicPlayerView';
 import { MusicCollectionsView } from './MusicCollectionsView';
@@ -88,6 +90,8 @@ export struct MusicCenterPage {
   @StorageLink(KEY_MUSIC_CENTER_ON) centerOn: boolean = true;
 
   @State private tab: number = TAB_PLAY;
+  // 列表滚到顶栏底下时要雾化，需要滚动区自身高度。
+  @State private listViewH: number = 0;
   // '' = 不在合集详情里。
   @State private detailId: string = '';
   @State private sheet: string = SHEET_NONE;
@@ -547,6 +551,11 @@ export struct MusicCenterPage {
       });
   }
 
+  // 顶栏(44) + 页签行(38) + 页签上方留白(14)。
+  private barHeight(): number {
+    return this.topSafe + 96;
+  }
+
   @Builder
   body() {
     if (this.detailId !== '' && this.detailCollection() !== null) {
@@ -567,9 +576,18 @@ export struct MusicCenterPage {
             onDelete: (): void => { this.deleteDetail(); }
           });
         }
-        .width('100%').padding({ top: 8, bottom: 50 });
+        .width('100%').padding({ top: this.barHeight() + 8, bottom: 50 });
       }
       .layoutWeight(1).width('100%')
+      .linearGradientBlur(BLUR_MAX_VP, {
+        fractionStops: edgeBlurStops(this.listViewH),
+        direction: GradientDirection.Bottom
+      })
+      .clip(false)
+      .onAreaChange((_o: Area, n: Area): void => {
+        const h: number = n.height as number;
+        if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+      })
       .scrollBar(BarState.Off).align(Alignment.Top);
     } else if (this.tab === TAB_MINE) {
       Scroll() {
@@ -586,11 +604,21 @@ export struct MusicCenterPage {
             }
           });
         }
-        .width('100%').padding({ top: 18, bottom: 50 });
+        .width('100%').padding({ top: this.barHeight() + 18, bottom: 50 });
       }
       .layoutWeight(1).width('100%')
+      .linearGradientBlur(BLUR_MAX_VP, {
+        fractionStops: edgeBlurStops(this.listViewH),
+        direction: GradientDirection.Bottom
+      })
+      .clip(false)
+      .onAreaChange((_o: Area, n: Area): void => {
+        const h: number = n.height as number;
+        if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+      })
       .scrollBar(BarState.Off).align(Alignment.Top);
     } else {
+      Column() {
       MusicPlayerView({
         track: this.current,
         snapshot: this.snapshot,
@@ -611,6 +639,9 @@ export struct MusicCenterPage {
         },
         onOpenInChat: (): void => { this.openInChat(); }
       });
+      }
+      .width('100%').height('100%')
+      .padding({ top: this.barHeight() });
     }
   }
 
@@ -712,30 +743,43 @@ export struct MusicCenterPage {
     HdsNavDestination() {
       Stack({ alignContent: Alignment.Bottom }) {
         this.glow();
-        Column() {
-          MusicCenterTopBar({
-            centerOn: this.centerOn,
-            onBack: (): void => {
-              if (!this.onBack()) {
-                this.goBack();
-              }
-            },
-            onToggleCenter: (): void => {
-              setBoolean(KEY_MUSIC_CENTER_ON, !this.centerOn);
-              this.closeSheet();
-            },
-            onSearch: (): void => { this.sheet = SHEET_SEARCH; }
+        // 内层 Stack 顶部对齐：内容铺满整页（从 y=0 起，滚动时才从顶栏底下穿过），
+        // 顶栏与页签改成悬浮层压在上面。
+        Stack({ alignContent: Alignment.TopStart }) {
+          Column() {
+            this.body();
+          }
+          .width('100%').height('100%')
+          // 底部只留系统安全区 + 一点余量：本页是推进设置栈的子页，底栏 dock 不在
+          // 它上面（同 ArchivePage 的 reserveDockSpace: false）。
+          .padding({
+            left: PAGE_INSET, right: PAGE_INSET,
+            bottom: this.bottomSafe + PAGE_BOTTOM_GAP
           });
-          this.tabsBar();
-          this.body();
+
+          Column() {
+            MusicCenterTopBar({
+              centerOn: this.centerOn,
+              onBack: (): void => {
+                if (!this.onBack()) {
+                  this.goBack();
+                }
+              },
+              onToggleCenter: (): void => {
+                setBoolean(KEY_MUSIC_CENTER_ON, !this.centerOn);
+                this.closeSheet();
+              },
+              onSearch: (): void => { this.sheet = SHEET_SEARCH; }
+            });
+            this.tabsBar();
+          }
+          .width('100%')
+          .padding({ left: PAGE_INSET, right: PAGE_INSET, top: this.topSafe })
+          .backgroundColor(plainGlassFill($r('app.color.surface')))
+          .backdropBlur(plainBackdropBlur('bar'))
+          .hitTestBehavior(HitTestMode.Transparent);
         }
-        .width('100%').height('100%')
-        // 底部只留系统安全区 + 一点余量：本页是推进设置栈的子页，底栏 dock 不在
-        // 它上面（同 ArchivePage 的 reserveDockSpace: false）。
-        .padding({
-          left: PAGE_INSET, right: PAGE_INSET,
-          top: this.topSafe, bottom: this.bottomSafe + PAGE_BOTTOM_GAP
-        });
+        .width('100%').height('100%');
         this.overlays();
       }
       .width('100%').height('100%')

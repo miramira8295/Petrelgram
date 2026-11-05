@@ -1,6 +1,7 @@
 import { HOLD_SPEED_LIMIT_OPTIONS, HOLD_SPEED_LIMIT_DEFAULT, normalizeHoldSpeedLimit } from '../../util/holdSpeedLimit';
 import { router } from '@kit.ArkUI';
 import { HdsSubDestination } from '../common/HdsSubDestination';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import {
   setBoolean, setNumber, KEY_VIDEO_AUTO_PRELOAD,
   KEY_POWER_AUTOPLAY_VIDEO, KEY_POWER_AUTOPLAY_GIF, KEY_AUTOPLAY_MUTED,
@@ -31,6 +32,8 @@ export struct MediaSettingsPage {
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   private pageScroller: Scroller = new Scroller();
+  // 滚动区实测高度（vp）：linearGradientBlur 的 fractionStops 按实际高度归一化。
+  @State private blurViewH: number = 0;
   @StorageProp(KEY_VIDEO_AUTO_PRELOAD) videoAutoPreload: boolean = true;
   @StorageProp(KEY_POWER_AUTOPLAY_VIDEO) autoplayVideo: boolean = true;
   @StorageProp(KEY_POWER_AUTOPLAY_GIF) autoplayGif: boolean = true;
@@ -170,13 +173,24 @@ export struct MediaSettingsPage {
           Text($r('app.string.bgplay_note'))
             .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
             .width('100%').padding({ left: 14, right: 14 });
-        }.width('100%').padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
+        }.width('100%').padding({ left: 12, right: 12, top: EDGE_OVERLAY_VP, bottom: this.bottomSafe + 24 });
       }
       .align(Alignment.Top)
       .width('100%').scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
-      .clip(false);
+      .clip(false)
+      // 边缘渐变虚化：与设置页/首页同一套参数（顶/底 118vp、峰 22px）。
+      .linearGradientBlur(BLUR_MAX_VP, {
+        fractionStops: edgeBlurStops(this.blurViewH),
+        direction: GradientDirection.Bottom
+      })
+      .onAreaChange((_old: Area, area: Area): void => {
+        const h: number = Number(area.height);
+        if (h > 0 && Math.abs(h - this.blurViewH) > 0.5) {
+          this.blurViewH = h;
+        }
+      });
     }
     }.width('100%').height('100%');
   }

@@ -53,7 +53,7 @@ import {
 } from '../../util/folderBarCollapse';
 import { registerStack, NavStackLike } from '../../util/navStacks';
 import { splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth } from '../../util/splitMetrics';
-import { mainBarFill, mainPageFill } from '../../util/theme';
+import { mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
@@ -1262,7 +1262,16 @@ export struct ChatListPage {
     const options: HdsNavigationTitleBarOptions = {
       avoidLayoutSafeArea: true,
       enableComponentSafeArea: true,
-      style: titleBarStyle(mainBarFill(this.appWallpaperOn), this.accent()),
+      // 【顶栏去雾】不再用 mainBarFill 那层半透明白，也不再开 HDS 的滚动渐变模糊
+      // （scrollEffect=false）。那两项合起来就是用户说的「顶部淡化和白雾」：内容一滑
+      // 到标题栏底下，HDS 就按滚动量爬升模糊并换背板，而白色的行底被糊开、再叠一层
+      // #33FFFFFF，顶部就成了一片发白发虚的带子。现在背板全透明、模糊关掉，列表
+      // 滚上去就是它本来的样子。会话页（ChatPage:6126）早就是这个写法。
+      // 2026-11-01：材质/blurStrategy 的猜测已排除——手机上标题糊掉的真正原因是
+      // MainScreen 那条「底部边缘淡化」用 calc 定位失效、被画到了屏幕顶部
+      // （它的 backdropBlur(18) 正好压在标题栏上）。那里修好后这条栏不必摘材质，
+      // 仍按 titleBarStyle(..., false) 走：透明背板 + 关掉滚动渐变模糊。
+      style: titleBarStyle(Color.Transparent, this.accent(), false, false),
       content: content
     };
     this.titleBarOptionsCache = options;

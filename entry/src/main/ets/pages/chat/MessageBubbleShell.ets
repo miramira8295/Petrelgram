@@ -22,6 +22,7 @@ import { SenderAnimatedLayer } from './SenderAnimatedLayer';
 import { CachedImage } from '../common/CachedImage';
 import { CachedImageSpec } from '../../util/cachedImageSpec';
 import { BubbleCornerCache, SenderAvatarSpec, SenderAvatarSpecCache } from '../../util/messageBubblePresentation';
+import { cornerPx, senderLeadInset } from '../../util/bubbleCornerInset';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { rememberLabelWidth, recallLabelWidth } from '../../util/labelWidthMemory';
 import { SenderRoleTag } from './SenderRoleTag';
@@ -513,6 +514,13 @@ export struct MessageBubbleShell {
     return this.bubbleMaxW() - 16;
   }
 
+  // 只要是图片/视频气泡，不管有没有说明文字、转发标签，白框一律 2vp；
+  // 之前只有「纯图」才 2vp，带说明的走 8vp，图片四周留出一大圈白边。
+  private isMediaBubble(): boolean {
+    return this.msg.contentType === 'photo' ||
+      this.msg.contentType === 'video' || this.group.photoPaths.length > 1;
+  }
+
   private isPureMediaBubble(): boolean {
     const isMedia: boolean = this.msg.contentType === 'photo' ||
       this.msg.contentType === 'video' || this.group.photoPaths.length > 1;
@@ -576,6 +584,14 @@ export struct MessageBubbleShell {
 
   private recordMenuOffset(localX: number, width: number): void {
     this.context.recordMenuOffset(localX, width);
+  }
+
+  // 整行热区用：点在气泡左右空白处时，x 是相对**整行**的，而菜单锚点是气泡。
+  // 这里把 x 夹进气泡宽度再套原公式，空白区域点得再偏，菜单也不会飞到隔壁行。
+  private recordRowMenuOffset(localX: number): void {
+    const w: number = this.measuredBubbleW > 0 ? this.measuredBubbleW : 1;
+    const x: number = Math.max(0, Math.min(localX, w));
+    this.recordMenuOffset(x, w);
   }
 
   private canDragMessage(): boolean { return !this.data.selectionActive && !this.data.editingActive && this.group.memberIds.length === 1 && this.msg.id > 0 && messageDragType(this.msg.contentType) !== ''; }
@@ -1594,6 +1610,27 @@ export struct MessageBubbleShell {
     return this.msg.forwardFrom !== '';
   }
 
+  // 内容区基础内边距：图片/视频走紧贴的 2vp，其它走 8vp。
+  private contentBasePadding(): number {
+    return this.isMediaBubble() ? 2 : 8;
+  }
+
+  // 收到带昵称的消息时，昵称行贴在左上角圆弧里会被切掉一截。
+  //
+  // 只在**纵向**把它压到弧线以下（深度 ≥ R - √(R² - (R-base)²) 之后横向
+  // 切宽就小于 base 了），不在横向加左缩进：横向加缩进会把图片左白边撑大，
+  // 右白边不变，图片在气泡里就不居中了。纵向让开则昵称、正文、图片仍共用
+  // 同一个左基准，左右白边也保持对称。
+  private senderLeadPadding(): number {
+    // 转发标签与昵称同样贴在左上角，两者都要让开弧线。
+    if (!this.senderLabelShown() && !this.forwardLabelShown()) {
+      return 0;
+    }
+    const base: number = this.contentBasePadding();
+    const radius: number = cornerPx(this.bubbleCornerRadius().topLeft);
+    return senderLeadInset(radius, base);
+  }
+
   private senderLabelShown(): boolean {
     return this.data.isGroup && !this.msg.isOutgoing && this.msg.senderName !== '' && this.group.showSenderName;
   }
@@ -1905,7 +1942,12 @@ export struct MessageBubbleShell {
     // Adjacent rows share a restrained 7vp corner. Only the final row gets
     // the tight tail corner; a single-row run keeps the configured top arc.
     .borderRadius(this.bubbleCornerRadius())
-    .padding(this.isBareEmoji() ? 0 : (this.isPureMediaBubble() ? 2 : 8))
+    .padding(this.isBareEmoji() ? 0 : {
+      left: this.contentBasePadding(),
+      right: this.contentBasePadding(),
+      top: this.contentBasePadding() + this.senderLeadPadding(),
+      bottom: this.contentBasePadding()
+    })
     // 实心尾角与主体相邻绘制，主体独立投影会落到尾角根部，形成竖向暗缝。
     // 阴影统一交给外壳的 solidShellShadow，玻璃档仍由外层整体绘制。
     // Controlled mode (mirrors ChatRow.ets bindContextMenu): a manual
@@ -1981,8 +2023,6 @@ export struct MessageBubbleShell {
       // 内层这一行按内容宽度，只裹住头像和气泡——消息菜单绑在它身上，
       // 抬起来的预览才是"头像 + 气泡"。绑到外面那层满宽的行上，浮起来的会是
       // 一条通栏横条，右边一大片空白也跟着抬。满宽那层继续负责左滑和对齐。
-      DissolveDeleteEffect({ instanceKey: 'message-' + this.data.chatId, rowId: this.msg.rowId,
-        leaving: this.leaving, channel: this.actions.rowLeave, captureSupported: !this.hasLiveVideoSurface() }) {
       Row() {
       // 群聊来信不显示头像时，头像位由这层 Row 的内边距占（avatarGutterPadding），
       // 不再垫定宽空 Column（原注释：mid-run row keeps the avatar column's width so
@@ -2011,6 +2051,8 @@ export struct MessageBubbleShell {
       // 【按材质开关分两支容器，2026-09-14】理由见 LightweightPlainTextBubble 同一处：
       // 玻璃关着时这串属性全是空值，却每次更新/复用都重算、new 修饰器、建描边背景，
       // 外加一个每帧参与全局遍历的可见区回调。两支气泡必须同改。
+      DissolveDeleteEffect({ instanceKey: 'message-' + this.data.chatId, rowId: this.msg.rowId,
+        leaving: this.leaving, channel: this.actions.rowLeave, captureSupported: !this.hasLiveVideoSurface() }) {
         // 主体、尾角、玻璃和外壳阴影一起响应按压，避免菜单截图留下双色接缝。
         Row() {
           if (this.env.bubbleMaterialOn) {
@@ -2106,6 +2148,7 @@ export struct MessageBubbleShell {
         .attributeModifier(this.suppressBubblePressDim() || this.hasLiveVideoSurface()
           ? BUBBLE_PRESS_NONE : BUBBLE_PRESS_DIM)
       }
+      }
       .alignItems(VerticalAlign.Bottom)
       .padding(this.avatarGutterPadding())
       .draggable(this.canDragMessage())
@@ -2151,7 +2194,6 @@ export struct MessageBubbleShell {
         }
       });
       }
-      }
       .width('100%').padding({
         left: BUBBLE_ROW_SIDE_VP, right: BUBBLE_ROW_SIDE_VP,
         top: this.rowTopPadding(), bottom: this.rowBottomPadding()
@@ -2174,6 +2216,28 @@ export struct MessageBubbleShell {
           .onActionUpdate((event: GestureEvent): void => { this.onSwipeReplyUpdate(event.offsetX); })
           .onActionEnd((): void => { this.onSwipeReplyEnd(); })
           .onActionCancel((): void => { this.onSwipeReplyEnd(); })
+      )
+      // 【整行热区】菜单原来只挂在气泡上，气泡两侧的空白点不到。这里在**满宽行**
+      // 上再挂一套：子组件（气泡、头像、图片、链接、内联按钮）自己有 onClick 时
+      // ArkUI 由子组件优先、父组件不触发，所以只有点在空白处才轮到这一层；
+      // 长按用 gesture（非 parallelGesture）与气泡身上的那一支互斥，气泡上长按
+      // 仍走气泡自己的分支，不会两边同时响应。
+      .onClick((event: ClickEvent): void => {
+        if (this.context.gestureClaimed || this.data.selectionActive) { return; }
+        if (!messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) { return; }
+        this.recordRowMenuOffset(event.x);
+        this.askEditable();
+        this.askDeletable();
+        this.context.msgContextMenuShown = true;
+      })
+      .parallelGesture(
+        LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+          .onAction((event: GestureEvent): void => {
+            if (this.context.gestureClaimed) { return; }
+            const fingers = event.fingerList;
+            this.recordRowMenuOffset(fingers.length > 0 ? fingers[0].localX : 0);
+            this.onLongPress(event);
+          })
       )
       // 每次按下先把认领标记清掉。onTouch 是冒泡事件，落在任何子元素上都会
       // 走到这里，所以这一下一定发生在子元素的点击判定之前。

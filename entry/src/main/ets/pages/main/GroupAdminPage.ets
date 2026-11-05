@@ -4,6 +4,7 @@ import { getTdClient, getUserStore } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import {
   AdminRow, InviteLinkRow, JoinRequestRow, banMember, createInviteLink,
   demoteMember, deleteMessagesFromSender, getAdministrators, getInviteLinks,
@@ -74,6 +75,7 @@ struct GroupAdminPage {
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
   @StorageProp('screenWidthVp') screenW: number = 360;
   @State title: string = '';
+  @State private listViewH: number = 0;
   @State description: string = '';
   @State permissions: GroupPermissions = defaultPermissions();
   @State slowModeIndex: number = 0;
@@ -397,18 +399,19 @@ struct GroupAdminPage {
   }
 
   build() {
-    Column() {
-      this.header();
+    // header 画在内容层之上、不占布局高度：列表从屏幕最上沿开始铺垫，
+    // 顶部那条渐变模糊才有东西可糊（内容穿过 header 底下）。
+    Stack({ alignContent: Alignment.Top }) {
       if (this.loadState === 'loading') {
         Column({ space: 9 }) {
           LoadingProgress().width(32).height(32).color(COLOR_PRIMARY);
           Text($r('app.string.ga_loading')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-        }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else if (this.loadState === 'error') {
         Column({ space: 10 }) {
           Text($r('app.string.load_failed')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
           Button($r('app.string.settings_reload')).onClick((): void => this.load());
-        }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else {
         // 每张卡片各占一项；三张名单卡是 ListItemGroup，行走 LazyForEach + 复用行——
         // 大群的管理员、入群申请、邀请链接可以上百条，原来 ForEach 一次全建。
@@ -522,7 +525,7 @@ struct GroupAdminPage {
               .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18).width('100%');
           }
         }
-        .layoutWeight(1).width('100%').scrollBar(BarState.Off).cachedCount(4)
+        .width('100%').height('100%').scrollBar(BarState.Off).cachedCount(4)
         // 限宽做在 List 的内边距上而不是 List 的宽度上：List 仍铺满窗口，
         // 两侧让出来的留白因此还在它的命中区里，手指按在留白上照样能滚页面。
         // 手机上 contentSideGutter 恒为 0，两个值逐像素等于改动前的 12。
@@ -531,14 +534,29 @@ struct GroupAdminPage {
           right: 12 + contentSideGutter(this.screenW)
         })
         // 底部留白原来是内容列的 padding（随内容滚动），在 List 上对应 contentEndOffset。
-        .contentEndOffset(this.bottomSafe + 24);
+        .contentEndOffset(this.bottomSafe + 24)
+        .contentStartOffset(this.topSafe + 56 + 12)
+        .linearGradientBlur(BLUR_MAX_VP, {
+          fractionStops: edgeBlurStops(this.listViewH),
+          direction: GradientDirection.Bottom
+        })
+        .clip(false)
+        .onAreaChange((_o: Area, n: Area): void => {
+          const h: number = n.height as number;
+          if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+        });
       }
+      Column() {
+        this.header();
+      }
+      .width('100%')
+      .padding({ top: this.topSafe })
+      .hitTestBehavior(HitTestMode.Transparent)
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
     // 没有这一行时页面的布局区停在安全区边界，状态栏那一条不归页面画，
     // 露出的是窗口底色。padding 只负责把内容让开，铺满是另一回事。
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe });
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }
 

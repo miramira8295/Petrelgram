@@ -14,6 +14,7 @@ import { guardKey } from '../../util/keyGuard';
 import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, chatListInForeground, chatListPublicationMode, ChatListFreeze, chatOrderUnchanged, contentOnlyUpdate, updateTouchHold } from './ChatListFreeze';
 import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
 import { rememberListPosition, recallListPosition } from '../../util/chatListPosition';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_ROW_SWIPE_ACTIONS, powerAnimationDuration
 } from '../../store/AppSettings';
@@ -245,6 +246,8 @@ export struct ChatListView {
   // Store publishes immutable snapshots. Keep the full array out of ArkUI's
   // observed state; LazyForEach receives changes through chatsData.
   private chats: ChatEntry[] = [];
+  // 列表实测高度（vp）：linearGradientBlur 的 fractionStops 按实际高度归一化。
+  @State private listViewH: number = 0;
   @State private chatsEmpty: boolean = true;
   @State loading: boolean = true;
   @State loadFailed: boolean = false;
@@ -599,6 +602,10 @@ export struct ChatListView {
     if (this.chatsEmpty) {
       this.emptyState();
     } else {
+      // 外面套一层 Stack：linearGradientBlur 是**容器级**属性，挂在这层容器上，
+      // 让整棵列表（含溢出到标题栏底下的那一截）一起参与边缘渐变虚化。
+      // 之前挂在 List 上时 22 与 60 两版截图一模一样——不是属性无效，是挂错了对象。
+      Stack() {
       // initialIndex：本页签若曾被 Tabs.cachedMaxCount 释放过，重建时回到
       // 原来的行（归档页不参与，见 util/chatListPosition）。
       List({
@@ -678,7 +685,7 @@ export struct ChatListView {
           }
         }
       }
-      .layoutWeight(1).width('100%')
+      .width('100%').height('100%')
       // Keep enough painted cache for the floating title blur without asking
       // every hidden/adjacent tab to prepare a full extra screen of ChatRows.
       .cachedCount(2, true)
@@ -694,7 +701,10 @@ export struct ChatListView {
       .enableScrollInteraction(!this.menuOpen)
       .scrollBar(BarState.Off)
       .contentEndOffset(this.endInset())
-      .contentStartOffset(this.contentTopInset)
+      // 容器上顶了 EDGE_OVERLAY_VP，内容起点跟着上移，这里补回来，首行才不会被切。
+      // 上顶量随「状态栏 + 标题栏 + 文件夹条」实时变：文件夹条展开时列表区整体下移，
+      // 这里不减掉那截，拉开的那条带就没有虚化（下拉出现文件夹时最明显）。
+      .contentStartOffset(EDGE_OVERLAY_VP + this.contentTopInset)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
       .onDidScroll((offset: number, state: ScrollState): void => {
         this.updateScrollActivity(state);
@@ -710,6 +720,20 @@ export struct ChatListView {
         this.topVisible = start <= 0;
         if (this.listKey !== 'archive') {
           rememberListPosition(this.listKey, start);
+        }
+      })
+      }
+      .layoutWeight(1).width('100%')
+      // 上顶 EDGE_OVERLAY_VP（标题栏 56 + 状态栏 39），让渐变原点回到屏幕最上沿。
+      .margin({ top: -EDGE_OVERLAY_VP })
+      .linearGradientBlur(BLUR_MAX_VP, {
+        fractionStops: edgeBlurStops(this.listViewH),
+        direction: GradientDirection.Bottom
+      })
+      .onAreaChange((_o: Area, n: Area) => {
+        const h: number = Number(n.height);
+        if (h > 0 && Math.abs(h - this.listViewH) > 0.5) {
+          this.listViewH = h;
         }
       });
     }

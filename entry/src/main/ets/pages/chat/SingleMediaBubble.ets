@@ -22,8 +22,16 @@ import { formatMediaDuration } from '../../util/mediaDuration';
 import { str } from '../../util/strings';
 
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
+import { BubbleCornerCache } from '../../util/messageBubblePresentation';
+import { cornerPx as cornerPxOf } from '../../util/bubbleCornerInset';
+
 import { animationDurationFor, scrollActiveNow } from '../../util/scrollEffects';
 import { PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, slotKey } from './playSlot';
+
+// BorderRadiuses 的四角是 Length | undefined；这里只接受数字（vp）。
+function cornerPx(value: Length | undefined): number {
+  return typeof value === 'number' ? value : 0;
+}
 
 // 完整的单图片/视频/GIF 路径：公共壳 + 媒体 + 配文。
 // 只订阅自身的缩略图/视频进度，播放可见性与候选生命周期也在此归属。
@@ -39,6 +47,7 @@ export struct SingleMediaBubble {
   @Param leaving: number = 0;
   private context: MessageBubbleContext = new MessageBubbleContext();
   private env: ChatEnvMirror = chatEnv;
+  private mediaCornerCache: BubbleCornerCache = new BubbleCornerCache();
   @Local private livePhotoProgress: number = 0;
   @Local private liveVideoProgress: number = 0;
   @Local private localVideoPoster: string = '';
@@ -261,8 +270,22 @@ export struct SingleMediaBubble {
       !(this.data.isChannel && this.msg.commentCount > 0);
   }
 
-  private mediaCornerRadius(): number {
-    return this.isPureMediaBubble() ? 13 : 8;
+  // 图片圆角必须与外框同心：外框四角可能不对称（来信左下 2~7、右下 17），
+  // 所以这里逐角取「外框对应角半径 − 2vp 内边距」，与 MessageBubbleShell 的
+  // bubbleCornerRadius() 用同一套 BubbleCornerCache 计算，避免两处公式漂移。
+  // 纯图外框固定 15（PURE_MEDIA_CORNER_RADIUS），15 − 2 = 13，与改前完全一致。
+  private mediaCornerRadii(): BorderRadiuses {
+    const inset: number = 2;
+    const outer: BorderRadiuses = this.isPureMediaBubble()
+      ? { topLeft: 15, topRight: 15, bottomLeft: 15, bottomRight: 15 }
+      : this.mediaCornerCache.prepare(this.env.bubbleRadius, this.msg.isOutgoing,
+        this.group.showSenderName, this.group.showAvatar);
+    return {
+      topLeft: Math.max(0, cornerPx(outer.topLeft) - inset),
+      topRight: Math.max(0, cornerPx(outer.topRight) - inset),
+      bottomLeft: Math.max(0, cornerPx(outer.bottomLeft) - inset),
+      bottomRight: Math.max(0, cornerPx(outer.bottomRight) - inset)
+    };
   }
 
   private effectivePosterPath(): string {
@@ -345,7 +368,7 @@ export struct SingleMediaBubble {
   @Builder
   singleMediaPlaceholder(hasFile: boolean) {
     Stack() {
-      Column().width(this.mediaBox().width).height(this.mediaBox().height).borderRadius(this.mediaCornerRadius())
+      Column().width(this.mediaBox().width).height(this.mediaBox().height).borderRadius(this.mediaCornerRadii())
         .backgroundColor(thumbBackdropColor(this.msg.contentType === 'video'));
       if (this.msg.contentType === 'video') {
         // Wait only when a real thumbnail file exists. Videos without a
@@ -436,7 +459,7 @@ export struct SingleMediaBubble {
           }
         })
           .width(this.mediaBox().width).height(this.mediaBox().height)
-          .borderRadius(this.mediaCornerRadius())
+          .borderRadius(this.mediaCornerRadii())
           // 渲染面在内嵌档是 Cover（填满并溢出，见 StreamingVideoPlayer
           // .surfaceFillsViewport），没有 clip 就会画到气泡外面去。
           // 相册格那处本来就有，这里是补的。
@@ -491,7 +514,8 @@ export struct SingleMediaBubble {
             initialPath: this.effectivePosterPath(),
             boxWidth: this.mediaBox().width,
             boxHeight: this.mediaBox().height,
-            radius: this.mediaCornerRadius(),
+            radius: Math.max(0, this.mediaCornerRadii().topLeft as number),
+            radii: this.mediaCornerRadii(),
             fit: ImageFit.Cover,
             // 单张大图不开 565：面积大、渐变明显。
             opaque: false,

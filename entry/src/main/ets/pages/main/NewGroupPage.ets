@@ -2,6 +2,7 @@ import { router, promptAction } from '@kit.ArkUI';
 import { ContactsStore, ContactItem } from '../../store/ContactsStore';
 import { TD_SESSION_EPOCH, TD_ACCOUNT_SWITCHING } from '../../tdkit/AccountRegistry';
 import { loadMemberInviteContext, submitMemberInvites } from '../../util/chatMemberInvite';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { requestOutcomeUncertain } from '../../util/tdRequestTimeout';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdClient } from '../../tdkit/TdClient';
@@ -47,6 +48,7 @@ struct NewGroupPage {
   @StorageProp('screenWidthVp') screenW: number = 360;
   @State @Watch('syncContactsData') contacts: ContactItem[] = [];
   @State loading: boolean = true;
+  @State private listViewH: number = 0;
   @State loadError: string = '';
   @State @Watch('syncContactsData') query: string = '';
   @State @Watch('syncContactsData') remoteUsers: ContactItem[] = [];
@@ -854,7 +856,16 @@ struct NewGroupPage {
     .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
     .scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
     .cachedCount(4)
-    .contentEndOffset(this.bottomSafe + 12);
+    .contentEndOffset(this.bottomSafe + 12)
+    .linearGradientBlur(BLUR_MAX_VP, {
+      fractionStops: edgeBlurStops(this.listViewH),
+      direction: GradientDirection.Bottom
+    })
+    .clip(false)
+    .onAreaChange((_o: Area, n: Area): void => {
+      const h: number = n.height as number;
+      if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+    });
   }
 
   @Builder
@@ -907,7 +918,10 @@ struct NewGroupPage {
       this.selectedSummary();
       this.memberContent();
     }
-    .layoutWeight(1).width('100%')
+    .width('100%').height('100%')
+    // 选人页顶部是搜索框（不是滚动内容），所以要自己让开 header；否则搜索框会
+    // 钻到状态栏下面、压在标题上方。
+    .padding({ top: this.topSafe + 56 })
     // 限了宽不居中就是把卡片全堆在屏幕左边，比不限还难看。手机上卡片宽度
     // 加左右 margin 正好铺满，居中与否没有区别。
     .alignItems(HorizontalAlign.Center)
@@ -1047,22 +1061,38 @@ struct NewGroupPage {
       .padding({
         left: 12 + contentSideGutter(this.screenW),
         right: 12 + contentSideGutter(this.screenW),
-        top: 4, bottom: this.bottomSafe + 24
+        top: this.topSafe + 56 + 12, bottom: this.bottomSafe + 24
       });
     }
     .align(Alignment.Top)
-    .layoutWeight(1).width('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+    .width('100%').height('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+    .linearGradientBlur(BLUR_MAX_VP, {
+      fractionStops: edgeBlurStops(this.listViewH),
+      direction: GradientDirection.Bottom
+    })
+    .clip(false)
+    .onAreaChange((_o: Area, n: Area): void => {
+      const h: number = n.height as number;
+      if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+    })
     .transition(TransitionEffect.OPACITY.combine(
       TransitionEffect.translate({ x: 18 })
     ).animation({ duration: this.animationDuration(210), curve: Curve.EaseOut }));
   }
 
   build() {
-    Column() {
-      this.header();
+    // header 画在内容层之上、不占布局高度：滚动区从屏幕最上沿开始铺垫，
+    // 顶部那条渐变模糊才有东西可糊（内容穿过 header 底下）。
+    Stack({ alignContent: Alignment.Top }) {
       if (this.naming) { this.namingPage(); } else { this.memberPicker(); }
+      Column() {
+        this.header();
+      }
+      .width('100%')
+      .padding({ top: this.topSafe })
+      .hitTestBehavior(HitTestMode.Transparent)
     }
-    .width('100%').height('100%').padding({ top: this.topSafe })
+    .width('100%').height('100%')
     .backgroundColor(PAGE_BG)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }

@@ -1,5 +1,7 @@
 import { promptAction, router } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
+import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { MemberStatusInfo, getMemberStatus, restrictMember } from '../../store/ChatAdminApi';
 import {
@@ -80,6 +82,7 @@ struct MemberRestrictPage {
   @State chatPerms: GroupPermissions = allPermissions(true);
   @State mediaExpanded: boolean = false;
   @State durationIndex: number = 0;
+  @State private listViewH: number = 0;
   @State memberName: string = '';
   @State memberInitials: string = '?';
   @State memberAvatar: string = '';
@@ -305,16 +308,34 @@ struct MemberRestrictPage {
           // 两侧让出来的留白因此还在它的命中区里，手指按在留白上照样能滚页面。
           // 手机上 contentSideGutter 恒为 0，两个值逐像素等于改动前的 12。
           .padding({
+            top: this.topSafe + 56 + 12,
             left: 12 + contentSideGutter(this.screenW),
             right: 12 + contentSideGutter(this.screenW),
             bottom: this.bottomSafe + 24
           });
         }
-        .align(Alignment.Top).layoutWeight(1).width('100%').scrollBar(BarState.Off);
+        .align(Alignment.Top).width('100%').height('100%').scrollBar(BarState.Off)
+        .linearGradientBlur(BLUR_MAX_VP, {
+          fractionStops: edgeBlurStops(this.listViewH),
+          direction: GradientDirection.Bottom
+        })
+        .clip(false)
+        .onAreaChange((_o: Area, n: Area): void => {
+          const h: number = n.height as number;
+          if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+        });
       }
+      // 悬浮标题层：带材质，否则滚动内容会从标题两侧透出来。
+      Column() {
+        this.header();
+      }
+      .width('100%')
+      .padding({ top: this.topSafe })
+      .backgroundColor(plainGlassFill($r('app.color.surface')))
+      .backdropBlur(plainBackdropBlur('bar'))
+      .hitTestBehavior(HitTestMode.Transparent);
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
-    .padding({ top: this.topSafe })
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }
