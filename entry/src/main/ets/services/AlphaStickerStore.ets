@@ -166,6 +166,27 @@ async function pruneFrameCache(): Promise<void> {
   }
 }
 
+// 滑动时暂停解码线程（含贴纸帧缓存的 zlib 压缩落盘）。
+//
+// 真机 insight 2026-11-05：滑动期间这条 worker 单独吃掉 13.15% 进程 CPU
+// （libentry 里 std::vector<unsigned char> 构造/析构 + zlib 的 compress2），
+// 和 UI 线程抢核。贴纸动画在滑动中本来也看不清，暂停没有观感代价。
+//
+// 只在**状态翻转**时下发给 native；同一状态重复调用直接返回，避免滚动回调
+// （每秒几十次）反复跨 NAPI 边界。
+let decodePaused = false;
+export function setStickerDecodePaused(paused: boolean): void {
+  if (decodePaused === paused || !nativeAvailable()) {
+    return;
+  }
+  decodePaused = paused;
+  try {
+    nativeWebm.stickerDecodeSetPaused(paused);
+  } catch (e) {
+    console.error(`AlphaStickerStore: setPaused(${paused}) failed: ${e}`);
+  }
+}
+
 function nativeAvailable(): boolean {
   if (nativeSupported === null) {
     try {

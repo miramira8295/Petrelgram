@@ -285,6 +285,22 @@ napi_value WebmAlphaDecodeStream(napi_env env, napi_callback_info info) {
 
 } // namespace
 
+
+// 滑动时暂停贴纸解码/帧缓存线程，见 sticker_decode_queue.h 的 SetPaused。
+static napi_value StickerDecodeSetPaused(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value argv[1] = {nullptr};
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    bool paused = false;
+    if (argc >= 1) {
+        napi_get_value_bool(env, argv[0], &paused);
+    }
+    sticker_decode::SetPaused(paused);
+    napi_value result = nullptr;
+    napi_get_undefined(env, &result);
+    return result;
+}
+
 void WebmAlphaRegister(napi_env env, napi_value exports) {
     napi_property_descriptor desc[] = {
         {"webmAlphaAvailable", nullptr, WebmAlphaAvailable, nullptr, nullptr, nullptr, napi_default,
@@ -295,6 +311,8 @@ void WebmAlphaRegister(napi_env env, napi_value exports) {
          napi_default, nullptr},
         {"stickerDecodeCancel", nullptr, StickerDecodeCancel, nullptr, nullptr, nullptr, napi_default,
          nullptr},
+        {"stickerDecodeSetPaused", nullptr, StickerDecodeSetPaused, nullptr, nullptr, nullptr,
+         napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
 }

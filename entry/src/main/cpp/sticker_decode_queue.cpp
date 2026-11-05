@@ -67,6 +67,9 @@ std::condition_variable gCv;
 std::list<std::unique_ptr<Job>> gJobs;
 int32_t gNextId = 1;
 bool gWorkerStarted = false;
+// 见 sticker_decode_queue.h 的 SetPaused 说明。用 atomic 是为了让 WorkerLoop
+// 的等待条件能直接读，不必每次都抓锁再判。
+std::atomic<bool> gPaused{false};
 
 bool InitOptions(Job &job, int32_t w, int32_t h, int32_t bytesPerPixel) {
     const int32_t format = bytesPerPixel == 2 ? kPixelFormatRgb565 : kPixelFormatRgba8888;
@@ -290,7 +293,9 @@ void WorkerLoop() {
         Job *job = nullptr;
         {
             std::unique_lock<std::mutex> lock(gMutex);
-            gCv.wait(lock, [] { return !gJobs.empty(); });
+            // 暂停期间不取新任务：等「有任务且没暂停」。恢复时 SetPaused 会
+            // notify_all 把这条线程叫醒。
+            gCv.wait(lock, [] { return !gJobs.empty() && !gPaused.load(); });
             job = PickLocked(dropped);
         }
         // 收尾放在锁外：Finish 会碰 napi 线程安全函数，别让它卡住 Submit/Cancel。
@@ -334,6 +339,14 @@ int32_t Enqueue(std::unique_ptr<Job> job) {
 }
 
 } // namespace
+
+void SetPaused(bool paused) {
+    gPaused.store(paused);
+    if (!paused) {
+        std::lock_guard<std::mutex> lock(gMutex);
+        gCv.notify_all();
+    }
+}
 
 void ReleaseBatch(Batch *batch) {
     if (batch == nullptr) {

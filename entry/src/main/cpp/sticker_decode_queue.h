@@ -67,6 +67,16 @@ int32_t SubmitLoad(std::string cachePath, int64_t maxBytes, Deliver deliver, Fin
 // 取消。已经交出去的帧照旧归接收方；之后不再 Deliver，随后调用 Finish。
 void Cancel(int32_t id);
 
+// 暂停 / 恢复调度。
+//
+// 【为什么需要】贴纸帧缓存落盘要做 zlib 压缩 + std::vector 扩容（见
+// sticker_frame_cache.cpp 的 compress2），真机 2026-11-05 的 insight 采样里，
+// 这条 worker 在滑动期间白烧了 13.15% 的进程 CPU，和 UI 线程抢核抢带宽。
+// 滑动时用户看不到贴纸动画，把这部分压掉不影响观感。
+//
+// 语义：只挡**新任务**；已经在跑的 Step 会跑完，不会把半截帧丢给接收方。
+void SetPaused(bool paused);
+
 } // namespace sticker_decode
 
 #endif // PETRELGRAM_STICKER_DECODE_QUEUE_H

@@ -108,6 +108,10 @@ export const stickerFramesLoadStream: (cachePath: string, maxBytes: number,
 // 取消一个任务。已经交出的帧照旧归调用方；取消后可能还会收到之前排好的回调。
 export const stickerDecodeCancel: (jobId: number) => void;
 
+// 暂停/恢复贴纸解码线程（含帧缓存的 zlib 压缩落盘）。滚动期间调用 true，
+// 停稳后 false。只挡新任务，已在跑的会跑完。
+export const stickerDecodeSetPaused: (paused: boolean) => void;
+
 // --- TGS 贴纸的原生渲染（rlottie） ---
 //
 // 为什么不继续用 @ohos/lottie：它的 renderer 只能是 'canvas'，每帧在 UI 线程上
