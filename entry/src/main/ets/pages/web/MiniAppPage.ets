@@ -4,7 +4,6 @@ import { common } from '@kit.AbilityKit';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdRequest } from '../../tdkit/TdTypes';
 import { closeMiniApp } from '../../store/BotApi';
-import { refreshWebBridge } from '../../store/ProxyApi';
 import { MiniAppLaunch, MiniAppSession, miniAppOrigin, miniAppTheme } from '../../util/miniAppModel';
 import {
   MiniAppBridge, MiniAppEvent, MiniAppButton, miniAppButton, miniAppBootstrap,
@@ -53,8 +52,6 @@ struct MiniAppPage {
   private pageVisible: boolean = true;
 
   aboutToAppear(): void {
-    // 代理可能在后台被自动切换换掉，开页面前让桥跟一次（内部失败只记日志）。
-    refreshWebBridge();
     this.launch = router.getParams() as MiniAppLaunch;
     this.title = this.launch?.title ?? '';
     this.start();

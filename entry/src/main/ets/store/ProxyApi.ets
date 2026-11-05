@@ -2,7 +2,6 @@ import { getTdClient } from '../tdkit/Globals';
 import { ensureProxyMigration } from '../services/ProxyMigration';
 import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
 import { stripIpv6Brackets } from '../util/ipFamily';
-import { stopWebBridge, syncWebBridgeFromTd } from '../services/WebProxyBridge';
 
 // 代理直接交给 TDLib：本机中继层已删除，代理配置就是 TDLib 自己的配置。
 export const PROXY_SOCKS5: string = 'proxyTypeSocks5';
@@ -91,25 +90,14 @@ export async function editProxy(entry: ProxyEntry, enable: boolean): Promise<Pro
   return proxyEntryFromAddedObject(result);
 }
 
-/**
- * 把当前启用的代理接给小程序/内置浏览器（见 services/WebProxyBridge）。
- * 不 await：TDLib 正忙时 getProxies 可能挂到超时，而 ProxyPage 在 enableProxy
- * 返回前一直占着 actionKey（开关点不动）。Web 侧晚一步生效没有后果。
- */
-export function refreshWebBridge(): void {
-  syncWebBridgeFromTd(getTdClient());
-}
-
 export async function enableProxy(id: number): Promise<void> {
   const request: TdRequest = { '@type': 'enableProxy' };
   request['proxy_id'] = id;
   await getTdClient().send(request, 20000);
-  refreshWebBridge();
 }
 
 export async function disableProxy(): Promise<void> {
   await getTdClient().send({ '@type': 'disableProxy' } as TdRequest, 20000);
-  stopWebBridge();
 }
 
 export async function removeProxy(id: number): Promise<void> {
