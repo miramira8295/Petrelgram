@@ -45,19 +45,97 @@ import {
   SLOT_CHAT_DARK, SLOT_CHAT_LIGHT, slotHasDim, slotIsApp, slotIsDark,
   wallpaperSlotKeys, WallpaperSlotKeys
 } from '../../util/wallpaperSlot';
-import { logE } from '../../util/log';
+import { logE, logI } from '../../util/log';
 import { contentSideGutter } from '../../util/contentWidth';
 import { BLUR_MAX_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 import { WallpaperPreview } from './WallpaperPreview';
+import { GalleryRow } from '../../util/backgroundRow';
 
 const CARD_RADIUS: number = 14;
 const TILE_HEIGHT: number = 118;
 const PREVIEW_HEIGHT: number = 188;
 const SOLID_SWATCH: number = 40;
+// 三条滑杆改成「常显」之后的不可用态：文字、轨道、滑块一起降透明度，并且 .enabled(false)
+// 让它拖不动。以前是条件渲染（用不到就整行不画），于是切背景时卡片高度跳、偶发整张卡片
+// 不出现；改成常显+置灰后，布局恒定，用户也能看出「这项跟当前背景无关」。
+const COLOR_TEXT_DISABLED: ResourceColor = '#59000000';
+const COLOR_TRACK_DISABLED: ResourceColor = '#1F000000';
+const COLOR_BLOCK_DISABLED: ResourceColor = '#3D000000';
+// 缩略图下载并发上限。TDLib 的 downloadFile 由 native 侧串行处理并回收回调，
+// 把整页几十张壁纸一次性发出去，等于在收包路径上排队，页面刚进来就整段卡住。
+const THUMB_CONCURRENCY: number = 3;
 
-interface GalleryRow {
-  preview: BackgroundPreview;
-  raw: TdObject;
+// 一格的缩略图。**必须是 @ComponentV2**：V1 的 @Component 订阅不了 @ObservedV2
+// 类上的 @Trace（同 pages/chat/ChatHeader.ets 里那条约束），只有 V2 子组件才会
+// 因为本行的 thumb / applying 变化被单独标记重绘 —— 父级 ForEach 的项 builder
+// 因此一次都不用重算（v2sample 两轮小样实测 24/24 → 0）。
+@ComponentV2
+struct GalleryTile {
+  @Require @Param row: GalleryRow;
+  // 一格在布局里的实际宽度（vp）。图案按真实背景的平铺密度铺，需要它来算列数。
+  @Param cellW: number = 0;
+  @Event onTap: () => void = () => {};
+
+  build() {
+    Stack({ alignContent: Alignment.BottomStart }) {
+      if (this.row.preview.kind === 'wallpaper') {
+        if (this.row.thumb !== '') {
+          Image(`file://${this.row.thumb}`).draggable(false)
+            .autoResize(true)
+            .width('100%').height('100%').objectFit(ImageFit.Cover);
+        } else {
+          Column() {
+            LoadingProgress().width(22).height(22).color(COLOR_ICON_SECONDARY);
+          }.width('100%').height('100%').justifyContent(FlexAlign.Center)
+          .backgroundColor(COLOR_SURFACE);
+        }
+      } else if (this.row.preview.colors.length === 1) {
+        Column().width('100%').height('100%')
+          .backgroundColor(this.row.preview.colors[0]);
+      } else {
+        Column().width('100%').height('100%')
+          .linearGradient({
+            angle: this.row.preview.angle,
+            colors: this.row.preview.colors.map((color: string, index: number): [string, number] =>
+              [color, this.row.preview.colors.length > 1 ? index / (this.row.preview.colors.length - 1) : 0])
+          });
+      }
+      // 图案背景的「底」只是垫在图案下面的填充色，真正的观感来自 pattern 文档本身。
+      // 以前瓦片只画这层填充、不画图案，于是 fill 为黑色的那几条图案壁纸整格渲染成
+      // 纯 #000000 —— 用户报的「异常黑瓦片」其实是**黑色壁纸**缺了图案本体。
+      // 底色仍然照 TDLib 给的 fill 画（不要改成中性灰：用户 2026-11-06 确认这些背景
+      // 本来就是黑的），下面这层把图案本体叠上去即可。
+      if (this.row.preview.kind === 'pattern' && this.row.thumb !== '') {
+        // 图案在真实背景里是**按 patternTileGrid 平铺**的（一屏约 10 列），而
+        // document.thumbnail 只有 155×320 —— 直接 Cover 一张铺满整格，等于把单个图元
+        // 放大 2 倍多，主观上就是「图案太粗、不够细腻」（用户 2026-11-06 实报）。
+        // 这里改成同样按格高铺：格高 118vp → 每列 57.4vp，一张 155px 的缩略图被**缩小**
+        // 而不是放大，图元大小和真实背景一致，线稿也回到细腻。
+        if (this.cellW > 0) {
+          patternTileGridLayer(this.row.thumb, 1, patternTileGrid(this.cellW, TILE_HEIGHT), NO_BLUR_RADIUS);
+        } else {
+          // 首帧还没量到宽度时的兜底（下一帧就会换成平铺）。
+          Image(`file://${this.row.thumb}`).draggable(false)
+            .autoResize(true)
+            .width('100%').height('100%').objectFit(ImageFit.Cover);
+        }
+      }
+      if (this.row.preview.kind === 'pattern') {
+        Text($r('app.string.cb_pattern')).fontSize(10).fontColor('#D9FFFFFF')
+          .padding({ left: 7, right: 7, top: 2, bottom: 2 })
+          .borderRadius(9).backgroundColor('#59000000').margin(7);
+      }
+      if (this.row.applying) {
+        Column() {
+          LoadingProgress().width(26).height(26).color(Color.White);
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center)
+        .backgroundColor('#40000000');
+      }
+    }
+    .width('100%').height(TILE_HEIGHT).borderRadius(12).clip(true)
+    .renderGroup(true)
+    .onClick((): void => { this.onTap(); });
+  }
 }
 
 interface BackgroundPageParams {
@@ -850,48 +928,70 @@ struct ChatBackgroundPage {
   }
 
   @Builder
+  @Builder
   blurAdjustment() {
     Column({ space: 6 }) {
       Row() {
-        Text($r('app.string.cb_blur_amount')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-        Text(`${this.bgBlur}`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+        Text($r('app.string.cb_blur_amount')).fontSize(15)
+          .fontColor(this.showsBlur() ? COLOR_TEXT_PRIMARY : COLOR_TEXT_DISABLED).layoutWeight(1);
+        Text(`${this.bgBlur}`).fontSize(14)
+          .fontColor(this.showsBlur() ? COLOR_TEXT_SECONDARY : COLOR_TEXT_DISABLED);
       }.width('100%');
       Slider({ value: this.bgBlur, min: BG_BLUR_MIN, max: BG_BLUR_MAX, step: 1, style: SliderStyle.OutSet })
-        .width('100%').trackColor($r('app.color.divider')).selectedColor(COLOR_PRIMARY).blockColor(COLOR_PRIMARY)
+        .width('100%')
+        .trackColor(this.showsBlur() ? $r('app.color.divider') : COLOR_TRACK_DISABLED)
+        .selectedColor(this.showsBlur() ? COLOR_PRIMARY : COLOR_BLOCK_DISABLED)
+        .blockColor(this.showsBlur() ? COLOR_PRIMARY : COLOR_BLOCK_DISABLED)
+        .enabled(this.showsBlur())
         .onChange((value: number, mode: SliderChangeMode): void => { this.setBlur(value, mode); });
     }
     .width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 });
   }
 
   @Builder
+  @Builder
   patternAdjustment() {
     Column({ space: 6 }) {
       Row() {
-        Text($r('app.string.cb_pattern_strength')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-        Text(`${Math.round(this.patternPct * 100)}%`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+        Text($r('app.string.cb_pattern_strength')).fontSize(15)
+          .fontColor(this.currentIsPattern() ? COLOR_TEXT_PRIMARY : COLOR_TEXT_DISABLED).layoutWeight(1);
+        Text(`${Math.round(this.patternPct * 100)}%`).fontSize(14)
+          .fontColor(this.currentIsPattern() ? COLOR_TEXT_SECONDARY : COLOR_TEXT_DISABLED);
       }.width('100%');
       Slider({ value: Math.round(this.patternPct * 100), min: Math.round(BG_PATTERN_MIN * 100), max: 100,
         step: 5, style: SliderStyle.OutSet })
-        .width('100%').trackColor($r('app.color.divider')).selectedColor(COLOR_PRIMARY).blockColor(COLOR_PRIMARY)
+        .width('100%')
+        .trackColor(this.currentIsPattern() ? $r('app.color.divider') : COLOR_TRACK_DISABLED)
+        .selectedColor(this.currentIsPattern() ? COLOR_PRIMARY : COLOR_BLOCK_DISABLED)
+        .blockColor(this.currentIsPattern() ? COLOR_PRIMARY : COLOR_BLOCK_DISABLED)
+        .enabled(this.currentIsPattern())
         .onChange((value: number, mode: SliderChangeMode): void => { this.setPattern(value, mode); });
     }
     .width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 });
   }
 
   @Builder
+  @Builder
   dimAdjustment() {
     Column({ space: 6 }) {
       Row() {
         Column({ space: 2 }) {
-        Text($r('app.string.chat_settings_dark_dim')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
-        Text($r('app.string.chat_settings_dark_dim_sub')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY)
+        Text($r('app.string.chat_settings_dark_dim')).fontSize(15)
+          .fontColor(this.showsDim() ? COLOR_TEXT_PRIMARY : COLOR_TEXT_DISABLED);
+        Text($r('app.string.chat_settings_dark_dim_sub')).fontSize(11)
+          .fontColor(this.showsDim() ? COLOR_TEXT_SECONDARY : COLOR_TEXT_DISABLED)
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
         }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-        Text(`${Math.round(this.chatDim * 100)}%`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+        Text(`${Math.round(this.chatDim * 100)}%`).fontSize(14)
+          .fontColor(this.showsDim() ? COLOR_TEXT_SECONDARY : COLOR_TEXT_DISABLED);
       }.width('100%');
       Slider({ value: Math.round(this.chatDim * 100), min: 0, max: Math.round(CHAT_DIM_MAX * 100),
         step: 5, style: SliderStyle.OutSet })
-        .width('100%').trackColor($r('app.color.divider')).selectedColor(COLOR_PRIMARY).blockColor(COLOR_PRIMARY)
+        .width('100%')
+        .trackColor(this.showsDim() ? $r('app.color.divider') : COLOR_TRACK_DISABLED)
+        .selectedColor(this.showsDim() ? COLOR_PRIMARY : COLOR_BLOCK_DISABLED)
+        .blockColor(this.showsDim() ? COLOR_PRIMARY : COLOR_BLOCK_DISABLED)
+        .enabled(this.showsDim())
         .onChange((value: number, mode: SliderChangeMode): void => { this.setDim(value, mode); });
     }
     .width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 });
@@ -908,28 +1008,15 @@ struct ChatBackgroundPage {
       wallpaperTakesUserDim(this.currentBackground.colors, this.currentBackground.path);
   }
 
-  private hasAdjustments(): boolean {
-    return this.showsBlur() || this.currentIsPattern() || this.showsDim();
-  }
-
+  @Builder
   @Builder
   adjustmentsCard() {
     Column() {
-      if (this.showsBlur()) {
-        this.blurAdjustment();
-      }
-      if (this.currentIsPattern()) {
-        if (this.showsBlur()) {
-          Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 8, right: 4 });
-        }
-        this.patternAdjustment();
-      }
-      if (this.showsDim()) {
-        if (this.showsBlur() || this.currentIsPattern()) {
-          Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 8, right: 4 });
-        }
-        this.dimAdjustment();
-      }
+      this.blurAdjustment();
+      Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 8, right: 4 });
+      this.patternAdjustment();
+      Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 8, right: 4 });
+      this.dimAdjustment();
     }
     .width('100%').padding({ top: 2, bottom: 2 })
     .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
@@ -1054,14 +1141,20 @@ struct ChatBackgroundPage {
             .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
             .onClick((): void => this.reset());
             this.solidCard();
-            if (this.hasAdjustments()) {
-              this.adjustmentsCard();
-            }
+            // 三条滑杆常显（不可用时置灰、拖不动）：以前这里按当前背景条件渲染，
+            // 切背景时卡片高度会跳，还出现过整张卡片偶发不画。
+            this.adjustmentsCard();
             GridRow({ columns: 3, gutter: 10 }) {
               ForEach(this.rows, (row: GalleryRow) => {
-                GridCol({ span: 1 }) { this.tile(row); }
-              }, (row: GalleryRow): string => `bg_${row.preview.backgroundId}`);
+                GridCol({ span: 1 }) {
+                  GalleryTile({ row: row, cellW: this.cellWidth(), onTap: (): void => { this.apply(row); } })
+                }
+              }, (row: GalleryRow): string => row.key);
             }
+            .onAreaChange((_oldArea: Area, newArea: Area): void => {
+              const w: number = Number(newArea.width);
+              if (w > 0 && w !== this.gridWidth) { this.gridWidth = w; }
+            })
             Text(this.chatId !== 0
               ? $r('app.string.cb_chat_note')
               : $r('app.string.cb_global_note'))
