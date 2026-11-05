@@ -1055,6 +1055,13 @@ export struct ChatPage {
   // 贴纸合集面板（点消息里的贴纸弹出来的那张）。
   @Local stickerSetSheetOpen: boolean = false;
   @Local stickerSetSheetId: string = '';
+  // 面板内容的挂载态，和"抽屉是否可见"分开。
+  //
+  // 【为什么要分开】点格子会先发贴纸、再把 stickerSetSheetOpen 置 false 收起
+  // 抽屉。原来 builder 里的 if 读的是同一个标志，于是内容在收起动画之前就被摘掉
+  // ——用户看到的就是一个空白白抽屉（2026-11-05 实报）。现在收起期间内容继续
+  // 挂着，等 onDisappear 真正消失后再卸载。
+  @Local stickerSetSheetMounted: boolean = false;
 
   // 当前打开的底部抽屉占据的高度（附件或表情，两者互斥）。supportAvoidance
   // 只保证输入框不被挡，列表内容它不管——官方《自定义键盘》文档明说这一段
@@ -3594,6 +3601,7 @@ export struct ChatPage {
       return;
     }
     this.stickerSetSheetId = setId;
+    this.stickerSetSheetMounted = true;
     this.stickerSetSheetOpen = true;
     // 登记给返回键（见 util/sheetDismissStack）。onDisappear 里注销。
     this.stickerSheetOff = pushSheetDismiss((): void => {
@@ -3619,7 +3627,8 @@ export struct ChatPage {
   @Builder
   private stickerSetSheet() {
     // 每次打开都重建：合集内容与"已添加"状态都得重新问一遍服务端。
-    if (this.stickerSetSheetOpen) {
+    // 判据用 mounted 而不是 open：收起动画期间内容要保持，否则是白抽屉。
+    if (this.stickerSetSheetMounted) {
       StickerSetSheet({
         setId: this.stickerSetSheetId,
         onPick: (item: StickerSetItem): void => {
@@ -6373,6 +6382,7 @@ export struct ChatPage {
       dragBar: false,
       blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog'),
       onDisappear: (): void => {
+        this.stickerSetSheetMounted = false;
         this.stickerSetSheetId = '';
         if (this.stickerSheetOff !== null) {
           this.stickerSheetOff();
