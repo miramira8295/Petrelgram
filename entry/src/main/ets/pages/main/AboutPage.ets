@@ -111,6 +111,22 @@ export struct AboutPage {
     .onClick(onTap);
   }
 
+  // 鸣谢的一行：圆形头像 + 昵称。头像是随包资源，不依赖网络。
+  @Builder
+  creditRow(avatar: Resource, name: string) {
+    Row({ space: 12 }) {
+      Image(avatar)
+        .width(34).height(34).borderRadius(17)
+        .objectFit(ImageFit.Cover).draggable(false);
+      Text(name)
+        .fontSize(16).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1);
+    }
+    .width('100%').height(56)
+    .padding({ left: 14, right: 14 });
+  }
+
   // 发布说明按块渲染。整段纯文本会把 ## 和 ** 原样显示出来，很难看。
   @Builder
   noteBlock(block: MdBlock) {
@@ -190,6 +206,23 @@ export struct AboutPage {
               (): void => { navigateToChatProfile({ 'inviteLink': COMMUNITY_GROUP_LINK }); });
           }
           .width('100%')
+          .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
+
+          Column({ space: 0 }) {
+            Row({ space: 8 }) {
+              SymbolGlyph($r('sys.symbol.heart'))
+                .fontSize(15).fontColor([COLOR_PRIMARY]);
+              Text($r('app.string.settings_about_credits'))
+                .fontSize(13).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
+                .layoutWeight(1);
+            }
+            .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 4 });
+            // 昵称是专有名词，不进翻译目录。
+            this.creditRow($r('app.media.credit_bailin'), 'Bailin'); // i18n-exempt: 用户昵称
+            Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 60 });
+            this.creditRow($r('app.media.credit_haibianbao'), '海绵宝'); // i18n-exempt: 用户昵称
+          }
+          .width('100%').padding({ bottom: 6 })
           .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
 
           if (this.noteBlocks.length > 0) {

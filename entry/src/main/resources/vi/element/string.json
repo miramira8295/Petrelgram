@@ -13355,6 +13355,10 @@
     {
       "name": "ttl_badge_year",
       "value": "năm"
+    },
+    {
+      "name": "settings_about_credits",
+      "value": "Lời cảm ơn"
     }
   ]
 }

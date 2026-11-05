@@ -13355,6 +13355,10 @@
     {
       "name": "ttl_badge_year",
       "value": "年"
+    },
+    {
+      "name": "settings_about_credits",
+      "value": "鸣谢"
     }
   ]
 }

@@ -13355,6 +13355,10 @@
     {
       "name": "ttl_badge_year",
       "value": "y"
+    },
+    {
+      "name": "settings_about_credits",
+      "value": "Teşekkürler"
     }
   ]
 }
