@@ -63,6 +63,14 @@ export struct ChatTimelineHost {
   // 列表实测高度（vp）：linearGradientBlur 的 fractionStops 按实际高度归一化。
   @Local private timelineViewH: number = 0;
 
+  // 滑动中把上下两端渐隐模糊关掉（用户 2026-11-05）。
+  //
+  // linearGradientBlur 是离屏渲染：整条列表先进离屏层、再按渐变合成，滑动时
+  // 每一帧都要重做一次。会话页行高、图片、视频都在动，这一层叠上去会直接掉帧。
+  // onScrollStart/Stop 正好包住"手指按住 + 惯性滑动"整段，停稳后（含惯性结束）
+  // 自动恢复，不需要额外定时器。
+  @Local private scrollActive: boolean = false;
+
   @Event onEmptyRetry: () => void = (): void => {};
   // 【第二轮第 12 项】签名从 `() => void` 改成带 mode。
   // 原来页面收到这个事件之后**自己重算一遍** timelinePillMode()，但它读的是
@@ -213,12 +221,19 @@ export struct ChatTimelineHost {
     .onDidScroll((offset: number, state: ScrollState): void => {
       this.session.handleTimelineDidScroll(offset, state);
     })
-    .onScrollStart((): void => { this.session.handleTimelineScrollStart(); })
-    .onScrollStop((): void => { this.session.handleTimelineScrollStop(); })
+    .onScrollStart((): void => {
+      this.scrollActive = true;
+      this.session.handleTimelineScrollStart();
+    })
+    .onScrollStop((): void => {
+      this.scrollActive = false;
+      this.session.handleTimelineScrollStop();
+    })
     // 顶部/底部边缘渐变虚化：与首页会话列表同一套参数（顶/底 118vp、峰 22px）。
     // 消息 List 的上沿就是屏幕顶（标题栏 enableComponentSafeArea: false、会话头由
     // 主题栏悬浮在内容之上），所以渐变原点天然对齐，无需再上顶。
-    .linearGradientBlur(BLUR_MAX_VP, {
+    // 半径传 0 = 完全不糊（stops 仍然有效，只是没有模糊半径）。
+    .linearGradientBlur(this.scrollActive ? 0 : BLUR_MAX_VP, {
       fractionStops: edgeBlurStops(this.timelineViewH),
       direction: GradientDirection.Bottom
     })

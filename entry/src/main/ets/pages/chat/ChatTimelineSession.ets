@@ -1,5 +1,6 @@
 import { PreparedMessageKeyCache } from '../../util/preparedMessageKeyCache';
 import { OneShotFrameCallback as ChatPageFrameCallback } from '../../util/oneShotFrameCallback';
+import { setStickerDecodePaused } from '../../services/AlphaStickerStore';
 import { initialMessageViewportRows, nextInitialMessageRevealCount, stageInitialMessageGroups, initialTailRevealTarget } from '../../util/initialMessageStage';
 import { ANCHOR_UNREAD, InitialAnchor, initialAnchorOf } from '../../util/initialAnchor';
 import { ScrollAnchorController } from './ScrollAnchorController';
@@ -945,6 +946,8 @@ export class ChatTimelineSession {
   handleTimelineScrollStart(): void {
     this.timelineScrollActive = true;
     setScrollActive(true);
+    // 滑动期间停掉贴纸解码/帧缓存线程，理由见 AlphaStickerStore.setStickerDecodePaused。
+    setStickerDecodePaused(true);
     this.finishInitialMessageStageForInteraction();
     this.pauseChatTgsForScroll();
     this.bindings!.dismissKeyboardOnUserScroll();
@@ -1012,6 +1015,7 @@ export class ChatTimelineSession {
     this.timelineScrollActive = false;
     this.nextDidScrollIsUserDriven = false;
     setScrollActive(false);
+    setStickerDecodePaused(false);
     // 滚动中冻结的 update 发布在这里冲刷（调度中枢批 1）。先于
     // driveVisibleWork：让本轮可见性工作拿到冲刷后的最新行。
     this.bindings!.store()?.flushScrollDeferredUpdate();
