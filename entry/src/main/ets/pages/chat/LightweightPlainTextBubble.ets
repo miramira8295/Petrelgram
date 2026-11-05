@@ -15,7 +15,8 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { getAccentColorStore, getTdClient, getUserStore } from '../../tdkit/Globals';
 import {
-  BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth
+  BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth,
+  hitSenderAvatarColumn
 } from '../../util/mediaBox';
 import { editableCached, ensureEditable } from '../../util/messageEditable';
 import { deletableCached, ensureDeletable } from '../../util/messageDeletable';
@@ -1315,6 +1316,12 @@ export struct LightweightPlainTextBubble {
           if (this.gestureClaimed || this.menuShown) { return; }
           const fingers: FingerInfo[] = event.fingerList;
           const x: number = fingers && fingers.length > 0 ? fingers[0].localX : 0;
+          // 这一下按在发送者头像上：整手归头像（长按 = @ 对方），满宽行不弹菜单。
+          // 头像自己的 gesture 拦不住这里的 parallelGesture（父子并行触发）。
+          if (fingers && fingers.length > 0
+            && hitSenderAvatarColumn(x, this.isGroup, this.msg.isOutgoing, this.showAvatar)) {
+            return;
+          }
           this.recordRowMenu(x, Number(event.target.area.width));
           this.askEditable();
           this.askDeletable();

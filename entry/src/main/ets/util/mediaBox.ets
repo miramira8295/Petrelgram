@@ -65,6 +65,33 @@ export function inlineMaxWidth(screenW: number,
   return Math.max(0, bubbleMaxWidth(screenW, avatarGutter) - 16);
 }
 
+// 长按的落点是不是按在「发送者头像」那一列上。
+//
+// 【为什么要在祖先那一层判】满宽消息行上的长按挂的是 parallelGesture，按
+// ArkUI 定义它与子孙手势**并行**触发（见知识库 G20）：头像自己挂了
+// LongPressGesture（长按 @ 对方），祖先那一支照样会跑，于是同一次长按既 @
+// 了人、又弹了消息菜单 / 进了多选（用户 2026-11-05 报的两种情况）。子节点
+// 没有任何属性能让祖先的 parallelGesture 让路，只能反过来由祖先读落点让路。
+//
+// localX 是相对满宽消息行的坐标：行内边距 BUBBLE_ROW_SIDE_VP 之后就是头像，
+// 头像直径 BUBBLE_AVATAR_SIZE_VP，再隔 BUBBLE_AVATAR_GAP_VP 才是气泡本体。
+// 容差 4vp 是为了手指按在圆形头像的边上、坐标落到方框外的角上时仍算按头像。
+//
+// 只有「群聊 + 来信 + 这行真的画头像」三件事同时成立，头像列才存在；其余
+// 情况（私聊、自己发的、关闭头像）这一列要么是行内边距、要么直接就是气泡，
+// 长按照常走菜单。
+export const AVATAR_TOUCH_SLOP_VP: number = 4;
+
+export function hitSenderAvatarColumn(localX: number, isGroup: boolean,
+  isOutgoing: boolean, showAvatar: boolean): boolean {
+  if (!isGroup || isOutgoing || !showAvatar) {
+    return false;
+  }
+  const left: number = BUBBLE_ROW_SIDE_VP - AVATAR_TOUCH_SLOP_VP;
+  const right: number = BUBBLE_ROW_SIDE_VP + BUBBLE_AVATAR_SIZE_VP + AVATAR_TOUCH_SLOP_VP;
+  return localX >= left && localX <= right;
+}
+
 // 手机媒体铺满可用气泡宽；其他设备保留原来的 280vp 上限。
 // 展示、预取、估高及源图档位统一走这里，避免同一媒体出现两套目标尺寸。
 export function mediaThumbWidth(screenW: number,
