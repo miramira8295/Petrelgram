@@ -36,15 +36,15 @@ export default function messageBubblePresentationTest() {
       two.prepare(11, true, '/b', '?', 22, false);
       expect(one.prepare(10, true, '/a', '?', 22, false) === previous).assertTrue();
     });
-    it('incoming_and_outgoing_corners_keep_the_tail_on_the_original_side', 0, () => {
+    it('tail_bubbles_use_the_same_radius_for_both_bottom_corners', 0, () => {
       const cache = new BubbleCornerCache();
       const incoming = cache.prepare(18, false, true, true);
       const outgoing = cache.prepare(18, true, true, true);
       expect(incoming.topLeft).assertEqual(18);
-      expect(incoming.bottomLeft).assertEqual(2);
+      expect(incoming.bottomLeft).assertEqual(18);
       expect(incoming.bottomRight).assertEqual(18);
       expect(outgoing.bottomLeft).assertEqual(18);
-      expect(outgoing.bottomRight).assertEqual(2);
+      expect(outgoing.bottomRight).assertEqual(18);
     });
     it('middle_run_corners_keep_the_seven_vp_limit', 0, () => {
       const cache = new BubbleCornerCache();
@@ -62,7 +62,7 @@ export default function messageBubblePresentationTest() {
       expect(small === first).assertFalse();
       expect(small.topLeft).assertEqual(1);
       expect(small.bottomLeft).assertEqual(1);
-      expect(first.bottomLeft).assertEqual(2);
+      expect(first.bottomLeft).assertEqual(18);
       const square = cache.prepare(0, true, false, false);
       expect(square.topLeft).assertEqual(0);
       expect(square.bottomRight).assertEqual(0);
@@ -76,7 +76,7 @@ export default function messageBubblePresentationTest() {
       expect(middle.topLeft).assertEqual(7);
       expect(start.topLeft).assertEqual(18);
       expect(start.bottomLeft).assertEqual(7);
-      expect(end.bottomLeft).assertEqual(2);
+      expect(end.bottomLeft).assertEqual(18);
     });
   });
 }

@@ -41,9 +41,8 @@ export class BubbleCornerCache {
       return this.previous;
     }
     const run: number = Math.min(radius, 7);
-    const tail: number = Math.min(radius, 2);
     const top: number = showSenderName ? radius : run;
-    const bottom: number = showAvatar ? tail : run;
+    const bottom: number = showAvatar ? radius : run;
     const next: BorderRadiuses = {
       topLeft: outgoing ? radius : top,
       topRight: outgoing ? top : radius,
