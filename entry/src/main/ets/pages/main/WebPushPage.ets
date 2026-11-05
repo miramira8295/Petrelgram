@@ -19,6 +19,7 @@ import {
   getMeowSubKey, meowRelayEnabled, resolveWebPushMode, startMeowRegistration
 } from '../../services/MeowPushRegistration';
 import { HuaweiPushResult, registerHuaweiPush } from '../../services/HuaweiPushRegistration';
+import { ensureHmsPushRegistered } from '../../services/HmsRelayRegistration';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
@@ -146,7 +147,13 @@ struct WebPushPage {
   private acceptConsent(): void {
     this.consentShown = false;
     setBoolean(KEY_WEBPUSH_ACCEPTED, true);
-    this.saveAndRegister();
+    // 同意之后先试华为通道：它走系统推送，应用被杀了也能到，比手动配置那条好。
+    // 拿不到（未签名包、中转没开华为通道）再回到原来的手动流程。
+    ensureHmsPushRegistered(getTdClient()).then((ok: boolean): void => {
+      if (!ok) {
+        this.saveAndRegister();
+      }
+    }).catch((): void => { this.saveAndRegister(); });
   }
 
   private disable(): void {

@@ -8,7 +8,7 @@ import { hmsSubKeyToAdopt } from '../util/pushSubKeyMigration';
 import { registerWebPush, setWebPushChannel, WebPushConfig } from './WebPushRegistration';
 import {
   KEY_HMS_PUSH_TOKEN, KEY_HMS_SUBKEY, KEY_MEOW_SUBKEY,
-  KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED,
+  KEY_WEBPUSH_ACCEPTED, KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED,
   KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_MODE, KEY_WEBPUSH_P256DH, setBoolean, setString
 } from '../store/AppSettings';
 import { logE, logI, logW } from '../util/log';
@@ -195,6 +195,16 @@ export async function ensureHmsPushRegistered(client: TdClient): Promise<boolean
   // ApiCredentials），而现象都是"日志里什么都没有"。一条 info 就把这个岔口消掉。
   logI(`[HMS] ensure start, relay configured=${pushRelayBase !== ''}`);
   if (pushRelayBase === '') {
+    return false;
+  }
+  // **必须先拿到用户的同意。**
+  //
+  // 这条通道会把设备推送 token 交给中转，而它原来是"登录就绪就自动注册"——用户
+  // 从没在推送设置页点过同意，却已经有一台第三方服务器拿到了他的设备推送标识
+  // （2026-11-05 隐私扫描的第一号问题）。现在统一以推送设置页那个同意标记为准：
+  // 没点过就不注册，点了以后由 WebPushPage.acceptConsent 立刻补一次。
+  if ((AppStorage.get<boolean>(KEY_WEBPUSH_ACCEPTED) ?? false) !== true) {
+    logI('[HMS] skipped: push consent not given');
     return false;
   }
   const tokenResult: HmsTokenResult = await fetchHmsToken();
