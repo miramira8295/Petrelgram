@@ -13,6 +13,8 @@ export default function debugListPerfTest() {
     // 而降它的理由（预算装不下）已被 RGB_565 + 共享预算消掉。
     // 完整理由写在 debugListPerf 的常量上方。
     // 这条仍然钉着值——改它必须是有意的。
+    // 2026-11-05 曾抬到 12，真机三次采样显示 GC 与 stateMgmt 双双翻倍，
+    // 已回退。理由写在 debugListPerf 的常量上方。
     it('默认档位是 8', 0, () => {
       expect(LIST_CACHED_COUNT_DEFAULT).assertEqual(8);
     });

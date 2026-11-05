@@ -57,9 +57,16 @@ export const LIST_CACHED_COUNT_DEFAULT: number = 8;
 //
 // 为什么下限是 4 而不是 2：P2 的 10:43 真机 trace 里，两行缓存被一次 90Hz
 // 快速 fling 直接吃穿。4 是"还值得一测"的下界。
-// 为什么上限是 8：cachedCount 越大，LazyForEach/Repeat 的预加载（trace 里的
-// predict）要提前建的行越多 —— 而 P6 要治的正是 predict 占掉的那 1759ms。
-// 8 已经是一屏短消息（10~16 行）的半屏往上，再大只是把重建成本前移。
+// 【2026-11-05 抬到 12 又被数据打回来，别再试】
+//
+// 动机是 insight trace 里主线程最热的链是复用重置（aboutToReuseInternal →
+// resetStateVarsOnReuse → fireChange），想着"池里多留实例就少重置"。
+// 真机三次采样（18:43 基线 / 19:04 / 19:12）对照，三项指标全线恶化：
+//     GC 线程占比      4.89% → 11.87% → 16.22%
+//     主线程 stateMgmt 14.11% → 21.61% → 28.23%
+//     主线程周期/秒    0.77G → 1.18G → 1.58G
+// 池子变大 = 每条消息的 MessageEntry 与参数对象都多活一段，ArkTS 堆 GC 压力
+// 直接翻三倍，"少重置"省下的远不够赔。值改回 8。
 export const LIST_CACHED_COUNT_OPTIONS: number[] = [4, 6, 8];
 
 // 【别再试：把 Repeat 模板缓存调大治不了 churn —— 2026-09-21 实测】
