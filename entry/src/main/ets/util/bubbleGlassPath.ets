@@ -25,11 +25,6 @@ const TAIL_CTRL_NEAR_TIP: number = 0.5;
 const TAIL_CTRL_NEAR_BODY: number = 0.92;
 const TAIL_HOOK_X: number = 0.85;
 const TAIL_HOOK_LIFT: number = 0.3;
-// 尾尖圆角（vp）。原来尾巴是「勾回曲线 + 外侧曲线」两条三次曲线在尖上交成
-// 一个直角，放大看是个极尖的毛刺。这里把两段合成**一段**三次曲线：起点落在
-// 底边上（切线与底边水平），终点落在左边缘（切线与左边缘垂直），尾巴往外甩
-// 再勾回来的走向由两个控制点给足——所以尖没了，但尾巴形态还是那条反曲线。
-const TAIL_TIP_RADIUS: number = 0.8;
 
 export function glassBubbleCommands(w: number, h: number, outgoing: boolean, hasTail: boolean,
   tl: number, tr: number, br: number, bl: number, tailW: number, tailH: number, scale: number,
@@ -54,9 +49,6 @@ export function glassBubbleCommands(w: number, h: number, outgoing: boolean, has
   const cBody = yBottom - tailH * TAIL_CTRL_NEAR_BODY;
   const hookX = tailW * TAIL_HOOK_X;
   const hookLift = tailH * TAIL_HOOK_LIFT;
-  const tipR = Math.min(TAIL_TIP_RADIUS, tailW * 0.4, tailH * 0.4) * scale;
-  // 尾尖真圆弧半径：A 指令用它，保证起点/终点两处同时相切。
-  const rTail = Math.min(TAIL_TIP_RADIUS, tailW * 0.4, tailH * 0.4) * scale;
   const s = scale;
   const parts: string[] = [];
   parts.push(`M${n((x0 + rTL) * s)} ${n(yTop * s)}`);
@@ -64,23 +56,25 @@ export function glassBubbleCommands(w: number, h: number, outgoing: boolean, has
   parts.push(`A${n(rTR * s)} ${n(rTR * s)} 0 0 1 ${n(x1 * s)} ${n((yTop + rTR) * s)}`);
   if (outgoing && hasTail) {
     // 右边缘走到 yTail，一段曲线甩出到尖，底边再直着回到左下角。
-    // 反曲线：从气泡右边缘下来 → 向外鼓 → 收到尾尖上方的圆弧起点（切线竖直）。
     parts.push(`L${n(x1 * s)} ${n(yTail * s)}`);
-    parts.push(`C${n(x1 * s)} ${n((yTail + tailH * 0.52) * s)} ` +
-      `${n(xTip * s)} ${n((yTail + tailH * 0.86) * s)} ` +
-      `${n(xTip * s)} ${n((yBottom - rTail) * s)}`);
-    // 尾尖 0.8vp 真圆弧：与上面的竖直切线、下面的水平底边同时相切。
-    parts.push(`A${n(rTail * s)} ${n(rTail * s)} 0 0 0 ${n((xTip - rTail) * s)} ${n(yBottom * s)}`);
+    parts.push(`C${n(x1 * s)} ${n(cBody * s)} ${n(xTip * s)} ${n(cNear * s)} ` +
+      `${n(xTip * s)} ${n(yBottom * s)}`);
+    // 尾尖 → 底边：抬高的两个控制点让这一段向上兜，尾巴底下是勾回来的。
+    parts.push(`C${n((xTip + (x1 - xTip) * 0.25) * s)} ${n((yBottom - hookLift * 0.2) * s)} ` +
+      `${n((x1 - hookX * 0.2) * s)} ${n((yBottom - hookLift) * s)} ` +
+      `${n((x1 - hookX) * s)} ${n(yBottom * s)}`);
     parts.push(`L${n((x0 + rBL) * s)} ${n(yBottom * s)}`);
   } else {
     parts.push(`L${n(x1 * s)} ${n((yBottom - rBR) * s)}`);
     parts.push(`A${n(rBR * s)} ${n(rBR * s)} 0 0 1 ${n((x1 - rBR) * s)} ${n(yBottom * s)}`);
     if (hasTail) {
-      // 倒着走轮廓：底边先到圆弧起点，圆弧转到尾尖的竖直切线，再反曲线收回气泡边。
-      parts.push(`L${n((xTip + rTail) * s)} ${n(yBottom * s)}`);
-      parts.push(`A${n(rTail * s)} ${n(rTail * s)} 0 0 1 ${n(xTip * s)} ${n((yBottom - rTail) * s)}`);
-      parts.push(`C${n(xTip * s)} ${n((yTail + tailH * 0.86) * s)} ` +
-        `${n(x0 * s)} ${n((yTail + tailH * 0.52) * s)} ` +
+      // 底边 → 尾尖：抬高的两个控制点让这一段向上兜，尾巴底下是勾回来的。
+      parts.push(`L${n((x0 + hookX) * s)} ${n(yBottom * s)}`);
+      parts.push(`C${n((x0 + hookX * 0.2) * s)} ${n((yBottom - hookLift) * s)} ` +
+        `${n((xTip + (x0 - xTip) * 0.25) * s)} ${n((yBottom - hookLift * 0.2) * s)} ` +
+        `${n(xTip * s)} ${n(yBottom * s)}`);
+      // 尾尖 → 气泡左边缘的外侧曲线。
+      parts.push(`C${n(xTip * s)} ${n(cNear * s)} ${n(x0 * s)} ${n(cBody * s)} ` +
         `${n(x0 * s)} ${n(yTail * s)}`);
     } else {
       parts.push(`L${n((x0 + rBL) * s)} ${n(yBottom * s)}`);
@@ -100,27 +94,20 @@ export function glassBubbleCommands(w: number, h: number, outgoing: boolean, has
 // 坐标原点是尾巴自己那个 tailW × tailH 的盒子。
 export function tailShapeCommands(outgoing: boolean, tailW: number, tailH: number,
   scale: number): string {
-  // 尾巴自己的盒子：贴气泡那条边在 xBody，尾尖在外侧 xTip。
   const xBody = (outgoing ? 0 : tailW) * scale;
   const xTip = (outgoing ? tailW : 0) * scale;
   const bottom = tailH * scale;
-  const r = Math.min(TAIL_TIP_RADIUS, tailW * 0.4, tailH * 0.4) * scale;
-  // 圆弧终点落在底边上、离尾尖 r；发出的气泡镜像到另一侧。
-  const arcEnd = outgoing ? xTip - r : xTip + r;
-  // sweep：收到的从竖直切到水平取 0，发出的镜像取 1。
-  const sweep = outgoing ? 1 : 0;
-
-  // ① 贴气泡的上端
-  // ② 反曲线：先沿气泡边下来（控制点 1 在 xBody），再向外扬到尾尖上方（控制点 2 在 xTip）
-  // ③ 尾尖 0.8vp 真圆弧：起点切线与②竖直相切、终点切线与底边水平相切
-  // ④ 底边回到气泡边，再沿气泡边回到起点闭合
-  return `M${n(xBody)} 0 ` +
-    `C${n(xBody)} ${n(bottom * 0.52)} ` +
-    `${n(xTip)} ${n(bottom * 0.86)} ` +
-    `${n(xTip)} ${n(bottom - r)} ` +
-    `A${n(r)} ${n(r)} 0 0 ${sweep} ${n(arcEnd)} ${n(bottom)} ` +
-    `L${n(xBody)} ${n(bottom)} ` +
-    `L${n(xBody)} 0 Z`;
+  const cNear = tailH * (1 - TAIL_CTRL_NEAR_TIP) * scale;
+  const cBody = tailH * (1 - TAIL_CTRL_NEAR_BODY) * scale;
+  const hookLift = tailH * TAIL_HOOK_LIFT * scale;
+  // 实心档的尾巴自己占一个盒子，底边就在盒子底：从贴气泡那条竖边下来，向上兜
+  // 回尾尖（勾），再沿外侧曲线回到起点。和整体轮廓里那两段是同一组参数。
+  const span = xTip - xBody;
+  return `M${n(xBody)} 0 L${n(xBody)} ${n(bottom)} ` +
+    `C${n(xBody + span * 0.15)} ${n(bottom - hookLift)} ` +
+    `${n(xBody + span * 0.75)} ${n(bottom - hookLift * 0.2)} ` +
+    `${n(xTip)} ${n(bottom)} ` +
+    `C${n(xTip)} ${n(cNear)} ${n(xBody)} ${n(cBody)} ${n(xBody)} 0 Z`;
 }
 
 // 玻璃档分三段点亮，判据集中在这里。
