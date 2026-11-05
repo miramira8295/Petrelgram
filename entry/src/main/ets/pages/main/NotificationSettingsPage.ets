@@ -14,7 +14,7 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
-import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 
 const CARD_RADIUS: number = 14;
 
@@ -273,7 +273,7 @@ export struct NotificationSettingsPage {
         .clip(false)
         // 边缘渐变虚化：与设置页/首页同一套参数（顶/底 118vp、峰 22px）。
         .linearGradientBlur(BLUR_MAX_VP, {
-          fractionStops: edgeBlurStops(this.blurViewH),
+          fractionStops: topEdgeBlurStops(this.blurViewH),
           direction: GradientDirection.Bottom
         })
         .onAreaChange((_old: Area, area: Area): void => {

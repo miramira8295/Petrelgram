@@ -15,7 +15,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
 import { readableContentWidth } from '../../util/contentWidth';
-import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
 
@@ -373,7 +373,7 @@ struct StorageUsagePage {
       .contentStartOffset(this.topSafe + 56 + 6)
       .contentEndOffset(this.bottomSafe + 24)
       .linearGradientBlur(BLUR_MAX_VP, {
-        fractionStops: edgeBlurStops(this.listViewH),
+        fractionStops: topEdgeBlurStops(this.listViewH),
         direction: GradientDirection.Bottom
       })
       .clip(false)

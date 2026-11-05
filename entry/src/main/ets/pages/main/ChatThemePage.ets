@@ -11,7 +11,7 @@ import {
 } from '../../util/theme';
 import { logE } from '../../util/log';
 import { contentSideGutter } from '../../util/contentWidth';
-import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 
 const CARD_RADIUS: number = 14;
 const TILE_HEIGHT: number = 128;
@@ -176,7 +176,7 @@ struct ChatThemePage {
         }
         .align(Alignment.Top).width('100%').height('100%').scrollBar(BarState.Off)
         .linearGradientBlur(BLUR_MAX_VP, {
-          fractionStops: edgeBlurStops(this.listViewH),
+          fractionStops: topEdgeBlurStops(this.listViewH),
           direction: GradientDirection.Bottom
         })
         .clip(false)

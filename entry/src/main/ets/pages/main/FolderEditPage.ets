@@ -16,7 +16,7 @@ import { AvatarView } from '../chatlist/AvatarView';
 import { FolderChatPickRow } from './FolderChatPickRow';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
-import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
@@ -771,7 +771,7 @@ struct FolderEditPage {
       });
     }.width('100%').height('100%').scrollBar(BarState.Off).align(Alignment.Top)
     .linearGradientBlur(BLUR_MAX_VP, {
-      fractionStops: edgeBlurStops(this.listViewH),
+      fractionStops: topEdgeBlurStops(this.listViewH),
       direction: GradientDirection.Bottom
     })
     .clip(false)

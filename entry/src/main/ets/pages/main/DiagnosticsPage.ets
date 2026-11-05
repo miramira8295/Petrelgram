@@ -1,7 +1,7 @@
 import { probeMusicSequence, probeRemoteSequence } from '../../services/InlineMusicProbe';
 import { promptAction } from '@kit.ArkUI';
 import { HdsSubDestination } from '../common/HdsSubDestination';
-import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
@@ -291,7 +291,7 @@ export struct DiagnosticsPage {
         .clip(false)
         // 边缘渐变虚化：与设置页/首页同一套参数（顶/底 118vp、峰 22px）。
         .linearGradientBlur(BLUR_MAX_VP, {
-          fractionStops: edgeBlurStops(this.blurViewH),
+          fractionStops: topEdgeBlurStops(this.blurViewH),
           direction: GradientDirection.Bottom
         })
         .onAreaChange((_old: Area, area: Area): void => {

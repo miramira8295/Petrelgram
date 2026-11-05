@@ -45,7 +45,7 @@ import {
 } from '../../util/wallpaperSlot';
 import { logE } from '../../util/log';
 import { contentSideGutter } from '../../util/contentWidth';
-import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 import { WallpaperPreview } from './WallpaperPreview';
 
 const CARD_RADIUS: number = 14;
@@ -1022,7 +1022,7 @@ struct ChatBackgroundPage {
         }
         .align(Alignment.Top).width('100%').height('100%').scrollBar(BarState.Off)
         .linearGradientBlur(BLUR_MAX_VP, {
-          fractionStops: edgeBlurStops(this.listViewH),
+          fractionStops: topEdgeBlurStops(this.listViewH),
           direction: GradientDirection.Bottom
         })
         .clip(false)

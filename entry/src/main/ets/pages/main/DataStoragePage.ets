@@ -23,7 +23,7 @@ import { fullDate } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logW } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
-import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 import { changeDownloadDirectory, getDownloadDirectoryPath } from '../../util/mediaSaver';
 import { DOWNLOAD_DIR_CHANGED, downloadDirToast } from '../../util/downloadDirOutcome';
 import { common } from '@kit.AbilityKit';
@@ -577,7 +577,7 @@ export struct DataStoragePage {
       .clip(false)
       // 边缘渐变虚化：与设置页/首页同一套参数（顶/底 118vp、峰 22px）。
       .linearGradientBlur(BLUR_MAX_VP, {
-        fractionStops: edgeBlurStops(this.blurViewH),
+        fractionStops: topEdgeBlurStops(this.blurViewH),
         direction: GradientDirection.Bottom
       })
       .onAreaChange((_old: Area, area: Area): void => {

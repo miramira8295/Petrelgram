@@ -2,7 +2,7 @@ import { router, promptAction } from '@kit.ArkUI';
 import { ContactsStore, ContactItem } from '../../store/ContactsStore';
 import { TD_SESSION_EPOCH, TD_ACCOUNT_SWITCHING } from '../../tdkit/AccountRegistry';
 import { loadMemberInviteContext, submitMemberInvites } from '../../util/chatMemberInvite';
-import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 import { requestOutcomeUncertain } from '../../util/tdRequestTimeout';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdClient } from '../../tdkit/TdClient';
@@ -858,7 +858,7 @@ struct NewGroupPage {
     .cachedCount(4)
     .contentEndOffset(this.bottomSafe + 12)
     .linearGradientBlur(BLUR_MAX_VP, {
-      fractionStops: edgeBlurStops(this.listViewH),
+      fractionStops: topEdgeBlurStops(this.listViewH),
       direction: GradientDirection.Bottom
     })
     .clip(false)
@@ -1067,7 +1067,7 @@ struct NewGroupPage {
     .align(Alignment.Top)
     .width('100%').height('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
     .linearGradientBlur(BLUR_MAX_VP, {
-      fractionStops: edgeBlurStops(this.listViewH),
+      fractionStops: topEdgeBlurStops(this.listViewH),
       direction: GradientDirection.Bottom
     })
     .clip(false)

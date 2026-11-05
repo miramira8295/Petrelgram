@@ -1,7 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { HdsSubDestination } from '../common/HdsSubDestination';
-import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { initVideoPosterStore } from '../../util/videoPosterStore';
 import { DownloadCenterList } from './DownloadCenterList';
@@ -635,7 +635,7 @@ export struct DownloadCenterPage {
         .onAreaChange((_old: Area, area: Area): void => { this.viewportHeight = area.height as number; })
         // 边缘渐变虚化：与设置页/首页同一套参数（顶/底 118vp、峰 22px）。
         .linearGradientBlur(BLUR_MAX_VP, {
-          fractionStops: edgeBlurStops(this.viewportHeight),
+          fractionStops: topEdgeBlurStops(this.viewportHeight),
           direction: GradientDirection.Bottom
         });
         if (this.undoMessage !== '' || this.batch) {

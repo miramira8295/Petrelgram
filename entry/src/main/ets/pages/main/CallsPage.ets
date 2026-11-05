@@ -1,5 +1,5 @@
 import { promptAction, router } from '@kit.ArkUI';
-import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 import { getTdClient, getCallSession } from '../../tdkit/Globals';
 import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
 import {
@@ -609,7 +609,7 @@ struct CallsPage {
     // topSafe + topBar(56) + segmentBar(40+2+8)。
     .contentStartOffset(this.topSafe + 56 + 50)
     .linearGradientBlur(BLUR_MAX_VP, {
-      fractionStops: edgeBlurStops(this.listViewH),
+      fractionStops: topEdgeBlurStops(this.listViewH),
       direction: GradientDirection.Bottom
     })
     // 模糊带要能画到 List 矩形之外，这里只是让边缘不被裁。

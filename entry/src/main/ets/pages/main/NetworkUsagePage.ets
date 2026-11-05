@@ -8,7 +8,7 @@ import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
-import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 import { str } from '../../util/strings';
 import { fullDate } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -264,7 +264,7 @@ struct NetworkUsagePage {
       }
       .align(Alignment.Top).layoutWeight(1).width('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
       .linearGradientBlur(BLUR_MAX_VP, {
-        fractionStops: edgeBlurStops(this.scrollViewH),
+        fractionStops: topEdgeBlurStops(this.scrollViewH),
         direction: GradientDirection.Bottom
       })
       .clip(false)

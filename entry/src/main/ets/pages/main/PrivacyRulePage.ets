@@ -9,7 +9,7 @@ import {
   COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { str } from '../../util/strings';
-import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 import { logE } from '../../util/log';
 import { readableContentWidth } from '../../util/contentWidth';
 
@@ -250,7 +250,7 @@ struct PrivacyRulePage {
         }
         .width('100%').height('100%').align(Alignment.Top).scrollBar(BarState.Off)
         .linearGradientBlur(BLUR_MAX_VP, {
-          fractionStops: edgeBlurStops(this.listViewH),
+          fractionStops: topEdgeBlurStops(this.listViewH),
           direction: GradientDirection.Bottom
         })
         .clip(false)

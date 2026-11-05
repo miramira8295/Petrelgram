@@ -24,7 +24,7 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { contentSideGutter } from '../../util/contentWidth';
-import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 
 const CARD_RADIUS: number = 14;
 
@@ -704,7 +704,7 @@ struct WebPushPage {
       .scrollBar(BarState.Off)
       .align(Alignment.Top)
       .linearGradientBlur(BLUR_MAX_VP, {
-        fractionStops: edgeBlurStops(this.listViewH),
+        fractionStops: topEdgeBlurStops(this.listViewH),
         direction: GradientDirection.Bottom
       })
       .clip(false)

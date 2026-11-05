@@ -12,7 +12,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
-import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
 
@@ -302,7 +302,7 @@ export struct StickerSetsPage {
       // 在标题栏下方约 145vp 处，直接挂在 List 上会让第一行常驻约 22 的糊。挂在
       // 满屏的内容根上，渐变原点才和其它页一致（屏幕最上沿）。
       .linearGradientBlur(BLUR_MAX_VP, {
-        fractionStops: edgeBlurStops(this.blurViewH),
+        fractionStops: topEdgeBlurStops(this.blurViewH),
         direction: GradientDirection.Bottom
       })
       .onAreaChange((_old: Area, area: Area): void => {

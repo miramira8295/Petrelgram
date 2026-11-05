@@ -4,7 +4,7 @@ import { getTdClient, getUserStore } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
-import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 import {
   AdminRow, InviteLinkRow, JoinRequestRow, banMember, createInviteLink,
   demoteMember, deleteMessagesFromSender, getAdministrators, getInviteLinks,
@@ -537,7 +537,7 @@ struct GroupAdminPage {
         .contentEndOffset(this.bottomSafe + 24)
         .contentStartOffset(this.topSafe + 56 + 12)
         .linearGradientBlur(BLUR_MAX_VP, {
-          fractionStops: edgeBlurStops(this.listViewH),
+          fractionStops: topEdgeBlurStops(this.listViewH),
           direction: GradientDirection.Bottom
         })
         .clip(false)

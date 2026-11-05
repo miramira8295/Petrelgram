@@ -93,3 +93,24 @@ export function edgeBlurStops(viewH: number, fallbackH: number = 780, topOffsetV
   out.push([1, 1]);
   return out;
 }
+
+/**
+ * 只有顶部带、没有底部带的版本。
+ *
+ * 设置类二级页面的内容通常不长、底部紧跟着导航/按钮区，底部再糊一条会显得
+ * 页面"往下陷"（用户 2026-11-05）。顶部那条保留：内容仍然穿到标题栏底下。
+ */
+export function topEdgeBlurStops(viewH: number, fallbackH: number = 780): FractionStop[] {
+  const vh: number = viewH > 0 ? viewH : (fallbackH > 0 ? fallbackH : 780);
+  const topCut: number = Math.min(TOP_BAND_VP / vh, 0.45);
+  const out: FractionStop[] = [];
+  out.push([1, 0]);
+  out.push([0.86, topCut * 0.18]);
+  out.push([0.66, topCut * 0.38]);
+  out.push([0.44, topCut * 0.58]);
+  out.push([0.22, topCut * 0.78]);
+  out.push([0.08, topCut * 0.92]);
+  out.push([0, topCut]);
+  out.push([0, 1]);
+  return out;
+}
