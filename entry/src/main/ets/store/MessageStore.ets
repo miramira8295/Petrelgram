@@ -1251,6 +1251,8 @@ export class MessageStore {
     const cutOlder: number = from;
     const cutNewer: number = msgs.length - 1 - to;
     this.messages = msgs.slice(from, to + 1);
+    // 窗口整体换掉：任何没走 noteCustomEmoji 的路径由这次兜底扫一遍。
+    this.customEmojiFullScanPending = true;
     if (cutOlder > 0) {
       this.hasMoreOlder = true;
       this.olderLoadState = 'idle';
@@ -4050,24 +4052,52 @@ export class MessageStore {
   private scrollDeferFlushTimer: number = -1;
   private hydrateDeferStart: number = 0;
 
-  private resolveCustomEmojis(): void {
-    this.hydrateCustomEmojiPaths();
-    for (const e of this.messages) {
-      if (e.contentType === 'customEmoji' && e.customEmojiId !== '') {
-        this.resolveCustomEmojiId(e.customEmojiId, e.id);
-      }
-      for (const id of e.inlineCustomEmojiIds) {
-        this.resolveCustomEmojiId(id, e.id);
-      }
-      // 自定义 emoji 反应复用同一条解析/下载管线：拿到的静态位图正好是
-      // 反应 chip 需要的尺寸，无需第二套缓存。
-      for (const r of e.reactions) {
-        if (r.customEmojiId !== '') {
-          this.resolveCustomEmojiId(r.customEmojiId, e.id);
-        }
+  // 【增量解析，别再全表扫描】
+  //
+  // 以前这里是"遍历全部消息、每行再遍历 inline ids 与 reactions"。它被
+  // requestPhotos 调用，而 requestPhotos 每次缩略图到货都跑一遍——2026-11-05
+  // 的 insight 采样里，resolveCustomEmojis 占我们代码的 3.93%（两个热点行
+  // 2.55% + 1.38%），仅次于 indexOf 和 requestPhotos 自己。
+  //
+  // 现在改成：新消息入库时把还没解析过的 id 记进 pendingCustomEmoji，解析时
+  // 只遍历这一小撮（通常 0~3 个）。窗口整体换掉（历史重载）时置一次全表兜底
+  // 标记，保证任何没走 noteCustomEmoji 的路径也不会漏。
+  private pendingCustomEmoji: Map<string, number> = new Map();
+  private customEmojiFullScanPending: boolean = true;
+
+  // 把一条消息里所有还没解析过的自定义 emoji id 收进待办。
+  private noteCustomEmoji(m: MessageEntry): void {
+    if (m.contentType === 'customEmoji' && m.customEmojiId !== '') {
+      this.pendingCustomEmoji.set(m.customEmojiId, m.id);
+    }
+    for (const id of m.inlineCustomEmojiIds) {
+      this.pendingCustomEmoji.set(id, m.id);
+    }
+    for (const r of m.reactions) {
+      if (r.customEmojiId !== '') {
+        this.pendingCustomEmoji.set(r.customEmojiId, m.id);
       }
     }
   }
+
+  private resolveCustomEmojis(): void {
+    if (this.customEmojiFullScanPending) {
+      this.customEmojiFullScanPending = false;
+      for (const e of this.messages) {
+        this.noteCustomEmoji(e);
+      }
+    }
+    if (this.pendingCustomEmoji.size === 0) {
+      return;
+    }
+    const pending: Map<string, number> = this.pendingCustomEmoji;
+    this.pendingCustomEmoji = new Map();
+    pending.forEach((messageId: number, ceId: string): void => {
+      this.resolveCustomEmojiId(ceId, messageId);
+    });
+  }
+
+
 
   // 已下载的位图路径同时回填到「文本内联自定义 emoji」和「自定义 emoji 反应」，
   // 一次遍历一次 notify，避免两条路径各自刷新列表。
@@ -6786,6 +6816,7 @@ export class MessageStore {
   private upsert(entry: MessageEntry): void {
     const hydrated = this.hydrateFromFileCache(entry);
     this.rememberMessageUsers(hydrated);
+    this.noteCustomEmoji(hydrated);
     const idx = this.indexOf(hydrated.id);
     if (idx >= 0) {
       const next = this.messages.slice();
@@ -6902,6 +6933,8 @@ export class MessageStore {
     const c = cloneMessage(this.messages[idx]);
     fn(c);
     this.rememberMessageUsers(c);
+    // 反应更新可能首次带来自定义 emoji：记进待办，别等下次全表扫描。
+    this.noteCustomEmoji(c);
     // 发送状态走旁路直达气泡的状态图标（见 sendStateChannel）：它不在行 key
     // 里，不这样发布就没人知道它变了。通道在状态未变时早退，所以这里不必
     // 挑调用点。
