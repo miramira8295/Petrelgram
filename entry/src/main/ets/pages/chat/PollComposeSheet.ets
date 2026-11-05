@@ -102,7 +102,8 @@ export struct PollComposeSheet {
 
   build() {
     Column() {
-      Column().layoutWeight(1).onClick((): void => this.onClose());
+      // 空 Column 默认按内容宽度排（0 宽），必须显式撑满，否则点空白关不掉。
+      Column().width('100%').layoutWeight(1).onClick((): void => this.onClose());
       Column({ space: 10 }) {
         Row().width(40).height(4).borderRadius(2).backgroundColor('#D0D0D0');
         Text($r('app.string.poll_new')).fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);

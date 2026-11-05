@@ -113,7 +113,8 @@ export struct ScheduledSheet {
 
   build() {
     Column() {
-      Column().layoutWeight(1).onClick((): void => {
+      // 空 Column 默认按内容宽度排（0 宽），必须显式撑满，否则点空白关不掉。
+      Column().width('100%').layoutWeight(1).onClick((): void => {
         this.show = false;
         this.onShowChange(false);
       });

@@ -220,7 +220,11 @@ export struct ReactionSheet {
 
   build() {
     Column() {
-      Column().layoutWeight(1)
+      // 【必须显式 width('100%')】空 Column 在父 Column 里按内容宽度排（默认
+      // HorizontalAlign.Center），没有子节点就是 0 宽——只剩高度、点不着。
+      // 之前这块遮罩实际是隐形的，点空白关不掉抽屉，只有返回键能关
+      // （用户 2026-11-05）。
+      Column().width('100%').layoutWeight(1)
         .onClick(() => { this.onShowChange(false); });
       Column({ space: 8 }) {
         Row().width(40).height(4).borderRadius(2).backgroundColor('#D0D0D0');
