@@ -601,20 +601,6 @@ export struct LightweightPlainTextBubble {
   }
   // 头像位：群聊来信不显示头像时由挂菜单的那层 Row 的内边距占（原来是定宽空 Column）。
   // 那层 Row 是长按菜单预览截图的范围，原来就包着这块透明的 44vp，截图边界不变。
-  // 【整行热区】纯文本行走的是本组件（LightweightPlainTextBubble），不经过
-  // MessageBubbleShell —— 那边加的行级 onClick 对纯文字消息完全不会生效
-  // （真机实测：只有带图/带壳的消息能点空白弹菜单）。这里补上同一套：
-  // 行容器满宽，气泡只占其中一段，把点击换算回气泡内坐标再交给 recordMenuOffset。
-  // 命中范围与菜单锚点是两件事：先保证整行都能唤起，再谈锚点精度。
-  private recordRowMenu(eventX: number, rowW: number): void {
-    const w: number = this.glassW > 0 ? this.glassW : Math.max(1, rowW - BUBBLE_ROW_SIDE_VP * 2);
-    const gutter: number = BUBBLE_ROW_SIDE_VP + (this.isGroup && !this.msg.isOutgoing && this.showAvatar
-      ? BUBBLE_AVATAR_GUTTER_VP : 0);
-    const left: number = this.msg.isOutgoing ? rowW - BUBBLE_ROW_SIDE_VP - w : gutter;
-    const local: number = Math.max(0, Math.min(eventX - left, w));
-    this.recordMenuOffset(local, w);
-  }
-
   private avatarGutterPadding(): Padding {
     return this.isGroup && !this.msg.isOutgoing && !this.showAvatar ? AVATAR_GUTTER : NO_GUTTER;
   }
@@ -1288,25 +1274,6 @@ export struct LightweightPlainTextBubble {
         .onActionUpdate((event: GestureEvent): void => { this.onSwipeUpdate(event.offsetX); })
         .onActionEnd((): void => { this.onSwipeEnd(); })
         .onActionCancel((): void => { this.onSwipeEnd(); }))
-      // 整行热区：空白处也要能唤出本条消息的菜单（与 MessageBubbleShell 同策略）。
-      .onClick((event: ClickEvent): void => {
-        if (this.gestureClaimed || this.menuShown) { return; }
-        if (!messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) { return; }
-        this.recordRowMenu(event.x, Number(event.target.area.width));
-        this.askEditable();
-        this.askDeletable();
-        this.menuShown = true;
-      })
-      .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
-        .onAction((event: GestureEvent): void => {
-          if (this.gestureClaimed || this.menuShown) { return; }
-          const fingers: FingerInfo[] = event.fingerList;
-          const x: number = fingers && fingers.length > 0 ? fingers[0].localX : 0;
-          this.recordRowMenu(x, Number(event.target.area.width));
-          this.askEditable();
-          this.askDeletable();
-          this.menuShown = true;
-        }))
       .onTouch((event: TouchEvent): void => {
         if (event.type === TouchType.Down) {
           this.gestureClaimed = false;
