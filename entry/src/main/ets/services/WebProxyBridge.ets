@@ -40,10 +40,10 @@ export interface WebProxyTarget {
 const BRIDGE_HOST: string = '127.0.0.1';
 const BRIDGE_PORT: number = 7891;
 const HEAD_LIMIT: number = 8192;
-const DIAL_TIMEOUT_MS: number = 12000;
+const DIAL_TIMEOUT_MS: number = 8000;
 const MAX_PEERS: number = 96;
 const IDLE_TIMEOUT_MS: number = 120000;
-const DIAL_FAILURE_LIMIT: number = 3;
+const DIAL_FAILURE_LIMIT: number = 2;
 // 字节泵的节流参数。每条 socket 消息都单独 send 一次会把 UI 线程排满——
 // 实测一个图片多的页面能把它堵到 6 秒，系统 watchdog 直接杀进程
 // （THREAD_BLOCK_6S）。所以攒一小会儿再一次性发。
@@ -489,15 +489,6 @@ function bytesOf(values: number[]): ArrayBuffer {
   return out.buffer as ArrayBuffer;
 }
 
-let diagDial: number = 0;
-
-function diagDialLog(text: string): void {
-  diagDial++;
-  if (diagDial <= 12) {
-    logW(`[WebBridge] socks5 ${text}`);
-  }
-}
-
 async function dialSocks5(target: WebProxyTarget, host: string, port: number): Promise<BridgeTunnel> {
   const sock: socket.TCPSocket = socket.constructTCPSocketInstance();
   const stream = new ByteStream();
@@ -509,13 +500,11 @@ async function dialSocks5(target: WebProxyTarget, host: string, port: number): P
     timeout: DIAL_TIMEOUT_MS
   };
   await sock.connect(options);
-  diagDialLog('tcp connected');
 
   // 1) 问候：同时声明"匿名"和"用户名密码"，让代理挑。
   const wantAuth: boolean = target.username !== '';
   await sock.send({ data: bytesOf(wantAuth ? [0x05, 0x02, 0x00, 0x02] : [0x05, 0x01, 0x00]) });
   const greeting = await stream.read(2);
-  diagDialLog(`method=0x${greeting[1].toString(16)}`);
   if (greeting[0] !== 0x05) {
     sock.close().catch((): void => {});
     throw new Error('socks5: bad version');
@@ -536,7 +525,6 @@ async function dialSocks5(target: WebProxyTarget, host: string, port: number): P
     auth.set(pass, 3 + user.length);
     await sock.send({ data: auth.buffer as ArrayBuffer });
     const result = await stream.read(2);
-    diagDialLog(`auth status=0x${result[1].toString(16)}`);
     if (result[1] !== 0x00) {
       sock.close().catch((): void => {});
       throw new Error('socks5: auth rejected');
@@ -571,10 +559,8 @@ async function dialSocks5(target: WebProxyTarget, host: string, port: number): P
   }
   request.push((port >> 8) & 0xff, port & 0xff);
   await sock.send({ data: bytesOf(request) });
-  diagDialLog(`connect sent atyp=0x${request[3].toString(16)}`);
 
   const head = await stream.read(4);
-  diagDialLog(`reply rep=0x${head[1].toString(16)} atyp=0x${head[3].toString(16)}`);
   if (head[1] !== 0x00) {
     sock.close().catch((): void => {});
     throw new Error(`socks5: connect rejected (0x${head[1].toString(16)})`);
@@ -588,7 +574,6 @@ async function dialSocks5(target: WebProxyTarget, host: string, port: number): P
     const len = await stream.read(1);
     await stream.read(len[0] + 2);
   }
-  diagDialLog(`tunnel ready -> ${host}:${port}`);
   return new StreamingTunnel(sock, stream);
 }
 
@@ -723,24 +708,15 @@ function parseTarget(head: string): RequestTarget | null {
   return result;
 }
 
-// 【临时诊断·验完删】
-let diagUp: number = 0;
-let diagDown: number = 0;
-let diagPump: number = 0;
-
 function pump(peer: Peer, client: socket.TCPSocketConnection, tunnel: BridgeTunnel): void {
   let upBytes: number = 0;
   let downBytes: number = 0;
   const toTunnel = new ByteRelay((data: ArrayBuffer): Promise<void> => {
     upBytes += data.byteLength;
-    diagUp += data.byteLength;
-    if (diagPump < 16) { diagPump++; logW(`[WebBridge] up +${data.byteLength} total=${diagUp}`); }
     return tunnel.sendBytes(data);
   });
   const toClient = new ByteRelay((data: ArrayBuffer): Promise<void> => {
     downBytes += data.byteLength;
-    diagDown += data.byteLength;
-    if (diagPump < 16) { diagPump++; logW(`[WebBridge] down +${data.byteLength} total=${diagDown}`); }
     const options: socket.TCPSendOptions = { data: data };
     return client.send(options);
   });
@@ -780,29 +756,7 @@ function pump(peer: Peer, client: socket.TCPSocketConnection, tunnel: BridgeTunn
   });
 }
 
-// 【临时诊断·验完删】看是不是连接风暴/异常请求把主线程拖死。
-let diagAccepts: number = 0;
-let diagLogged: number = 0;
-
-function diagLogAccept(): void {
-  diagAccepts++;
-  if (diagAccepts === 1 || diagAccepts % 50 === 0) {
-    logW(`[WebBridge] accepts=${diagAccepts} peers=${peers.size}`);
-  }
-}
-
-function diagLogRequest(head: string): void {
-  if (diagLogged >= 120) {
-    return;
-  }
-  diagLogged++;
-  const lineEnd: number = head.indexOf('\r\n');
-  const firstLine: string = lineEnd >= 0 ? head.substring(0, lineEnd) : head.substring(0, 80);
-  logW(`[WebBridge] req#${diagLogged} ${firstLine}`);
-}
-
 function handleClient(client: socket.TCPSocketConnection, target: WebProxyTarget): void {
-  diagLogAccept();
   const peer: Peer = {
     client: client, tunnel: null, closed: false,
     lastActive: Date.now(), toTunnel: null, toClient: null
@@ -829,7 +783,6 @@ function handleClient(client: socket.TCPSocketConnection, target: WebProxyTarget
       return;
     }
     handshaking = true;
-    diagLogRequest(head);
     const request: RequestTarget | null = parseTarget(head);
     if (request === null) {
       const bad: socket.TCPSendOptions = { data: 'HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n' };
