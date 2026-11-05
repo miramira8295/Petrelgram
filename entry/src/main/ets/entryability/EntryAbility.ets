@@ -34,6 +34,7 @@ import { syncWebBridgeFromTd } from '../services/WebProxyBridge';
 import { liveLocation } from '../services/LiveLocationService';
 import { setInlinePhotoTargetPx } from '../util/formatMsgContent';
 import { trimPixelCache } from '../util/pixelCache';
+import { settleParkedWallpaperPins } from '../util/wallpaperPins';
 import { startShareTargetService } from '../services/ShareTargetService';
 import {
   contactChatIdOf, isShareWant, parseShareWant, stashPendingShare
@@ -659,6 +660,10 @@ export default class EntryAbility extends UIAbility {
     flushDiagLog();
     // 解码后的位图很占内存（几十 MB 量级），后台留着只会抬高被系统查杀的概率。
     // 还挂在组件上的那些由引用计数保住，回前台重新解码代价很小。
+    // 后台不拖着"已无 owner、还在 2 秒宽限期里"的壁纸光栅：先把它们结清，
+    // 再让 trimPixelCache 按引用计数回收。仍挂在组件上的那些由 refs 保住，
+    // 回前台代价只是重新 pin（缓存命中，不重解码）。
+    settleParkedWallpaperPins();
     trimPixelCache();
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
   }

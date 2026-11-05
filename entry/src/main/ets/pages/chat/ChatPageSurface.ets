@@ -28,6 +28,8 @@ export struct ChatPageSurface {
   @Require @Param emojiDrawer: EmojiDrawerState;
   @Param chatBg: ChatBackgroundState = emptyChatBackground();
   @Param screenW: number = 360;
+  // 页面是否在屏上（NavDestination.onShown/onHidden）→ 背景层的 pin 生命周期。
+  @Param surfaceActive: boolean = true;
   @Param screenH: number = 0;
   @Param chatBgBlur: number = 0;
   @Param chatBgPattern: number = 0;
@@ -138,7 +140,8 @@ export struct ChatPageSurface {
         chatBg: this.chatBg, screenW: this.screenW, screenH: this.screenH,
         bgBlur: this.chatBgBlur, bgPattern: this.chatBgPattern, chatDim: this.chatBgDim,
         // 分栏 + 统一背景时这层会让位给整窗那张 APP 壁纸（判据在 ChatBackdrop 里）。
-        isChatSlot: true
+        isChatSlot: true,
+        active: this.surfaceActive
       });
       Column() {
         Stack() {

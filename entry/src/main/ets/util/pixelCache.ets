@@ -404,7 +404,7 @@ export function pinPixelMap(handle: PixelHandle): void {
   }
 }
 
-function unpinPixelMap(handle: PixelHandle): void {
+export function unpinPixelMap(handle: PixelHandle): void {
   if (!handle.pinned) {
     return;
   }
@@ -464,4 +464,10 @@ export function trimPixelCache(targetBytes: number = 0,
 
 export function pixelCacheBytes(): number {
   return usedBytes;
+}
+
+// 钉住部分单独记账，诊断用：真机上用它与 pixelCacheBytes 一起确认
+// 「壁纸光栅确实被松开」。pinnedBytes 只统计 pinned 的条目。
+export function pinnedCacheBytes(): number {
+  return pinnedBytes;
 }
