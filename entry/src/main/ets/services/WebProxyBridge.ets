@@ -44,6 +44,20 @@ const DIAL_TIMEOUT_MS: number = 12000;
 const MAX_PEERS: number = 96;
 const IDLE_TIMEOUT_MS: number = 120000;
 const DIAL_FAILURE_LIMIT: number = 3;
+// 字节泵的节流参数。每条 socket 消息都单独 send 一次会把 UI 线程排满——
+// 实测一个图片多的页面能把它堵到 6 秒，系统 watchdog 直接杀进程
+// （THREAD_BLOCK_6S）。所以攒一小会儿再一次性发。
+const FLUSH_DELAY_MS: number = 16;
+const FLUSH_BYTES: number = 256 * 1024;
+const MAX_PENDING_BYTES: number = 2 * 1024 * 1024;
+const REAP_INTERVAL_MS: number = 30000;
+// 固定用字节而不是字符串发：send() 的 string 分支依赖编码，出问题时是静默
+// 断连，页面只会看到 reset。
+const CONNECT_ESTABLISHED: number[] = [
+  0x48, 0x54, 0x54, 0x50, 0x2f, 0x31, 0x2e, 0x31, 0x20, 0x32, 0x30, 0x30, 0x20,
+  0x43, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x20, 0x45, 0x73,
+  0x74, 0x61, 0x62, 0x6c, 0x69, 0x73, 0x68, 0x65, 0x64, 0x0d, 0x0a, 0x0d, 0x0a
+];
 
 // 一条已经打通到上游的字节隧道。TCPSocket / TLSSocket 的方法签名不一样，
 // 用这层薄封装让后面的搬运代码只写一份。
@@ -119,11 +133,140 @@ class TlsTunnel implements BridgeTunnel {
   }
 }
 
+// 握手阶段用 ByteStream 逐字段读，握手完成后同一条 socket 直接当隧道用，
+// 剩余字节不能丢，所以这里把流交给字节泵。
+class StreamingTunnel implements BridgeTunnel {
+  private sock: socket.TCPSocket;
+  private stream: ByteStream;
+  private sink: ((data: ArrayBuffer) => void) | null = null;
+  private closedCb: (() => void) | null = null;
+
+  constructor(sock: socket.TCPSocket, stream: ByteStream) {
+    this.sock = sock;
+    this.stream = stream;
+    this.stream.release((data: ArrayBuffer): void => {
+      if (this.sink !== null) {
+        this.sink(data);
+      }
+    });
+  }
+
+  sendText(text: string): Promise<void> {
+    const options: socket.TCPSendOptions = { data: text };
+    return this.sock.send(options);
+  }
+
+  sendBytes(data: ArrayBuffer): Promise<void> {
+    const options: socket.TCPSendOptions = { data: data };
+    return this.sock.send(options);
+  }
+
+  close(): void {
+    this.sock.close().catch((): void => {});
+  }
+
+  onMessage(cb: (data: ArrayBuffer) => void): void {
+    this.sink = cb;
+  }
+
+  onClosed(cb: () => void): void {
+    this.closedCb = cb;
+    this.sock.on('close', (): void => {
+      const resolved = this.closedCb;
+      if (resolved !== null) { resolved(); }
+    });
+    this.sock.on('error', (): void => {
+      const resolved = this.closedCb;
+      if (resolved !== null) { resolved(); }
+    });
+  }
+}
+
 interface Peer {
   client: socket.TCPSocketConnection | null;
   tunnel: BridgeTunnel | null;
   closed: boolean;
-  idle: number;
+  lastActive: number;
+  toTunnel: ByteRelay | null;
+  toClient: ByteRelay | null;
+}
+
+// 把零碎的 socket 消息攒成少数几次 send。
+//
+// 【为什么必须攒】socket 回调跑在主线程上，一个页面几百上千条消息就是几百上千
+// 个 JS 任务 + 同样多次 send。线程没机会让出去，UI 卡到 6 秒就会触发系统
+// watchdog 把整个应用杀掉。攒批之后任务数降到每秒几十个。
+class ByteRelay {
+  private chunks: ArrayBuffer[] = [];
+  private bytes: number = 0;
+  private timer: number = -1;
+  private stopped: boolean = false;
+  private sink: (data: ArrayBuffer) => Promise<void>;
+
+  constructor(sink: (data: ArrayBuffer) => Promise<void>) {
+    this.sink = sink;
+  }
+
+  pending(): number {
+    return this.bytes;
+  }
+
+  push(data: ArrayBuffer): void {
+    if (this.stopped) {
+      return;
+    }
+    this.chunks.push(data);
+    this.bytes += data.byteLength;
+    if (this.bytes >= FLUSH_BYTES || this.bytes >= MAX_PENDING_BYTES) {
+      this.flush();
+      return;
+    }
+    if (this.timer < 0) {
+      this.timer = setTimeout((): void => {
+        this.timer = -1;
+        this.flush();
+      }, FLUSH_DELAY_MS);
+    }
+  }
+
+  flush(): void {
+    if (this.stopped) {
+      return;
+    }
+    if (this.timer >= 0) {
+      clearTimeout(this.timer);
+      this.timer = -1;
+    }
+    if (this.bytes === 0) {
+      return;
+    }
+    let payload: ArrayBuffer;
+    if (this.chunks.length === 1) {
+      payload = this.chunks[0];
+    } else {
+      const joined = new Uint8Array(this.bytes);
+      let offset: number = 0;
+      for (let i = 0; i < this.chunks.length; i++) {
+        const part = new Uint8Array(this.chunks[i]);
+        joined.set(part, offset);
+        offset += part.length;
+      }
+      payload = joined.buffer as ArrayBuffer;
+    }
+    this.chunks = [];
+    this.bytes = 0;
+    this.sink(payload).catch((): void => { this.stopped = true; });
+  }
+
+  stop(): void {
+    this.stopped = true;
+    if (this.timer >= 0) {
+      clearTimeout(this.timer);
+      this.timer = -1;
+    }
+    this.chunks = [];
+    this.bytes = 0;
+  }
 }
 
 interface RequestTarget {
@@ -144,6 +287,9 @@ let sawFirstRequest: boolean = false;
 let dialFailures: number = 0;
 let configured: WebProxyTarget | null = null;
 const peers: Set<Peer> = new Set<Peer>();
+// 空闲回收用「一个定时器扫一遍」，而不是每条消息重置一次定时器——后者在
+// 大页面上等于给主线程又加了几千次 timer 分配。
+let reaper: number = -1;
 
 function addrOf(host: string, port: number): socket.NetAddress {
   const bare: string = stripIpv6Brackets(host);
@@ -160,11 +306,15 @@ function closePeer(peer: Peer): void {
     return;
   }
   peer.closed = true;
-  if (peer.idle >= 0) {
-    clearTimeout(peer.idle);
-    peer.idle = -1;
-  }
   peers.delete(peer);
+  if (peer.toTunnel !== null) {
+    peer.toTunnel.stop();
+    peer.toTunnel = null;
+  }
+  if (peer.toClient !== null) {
+    peer.toClient.stop();
+    peer.toClient = null;
+  }
   if (peer.tunnel !== null) {
     peer.tunnel.close();
     peer.tunnel = null;
@@ -173,16 +323,6 @@ function closePeer(peer: Peer): void {
     peer.client.close().catch((): void => {});
     peer.client = null;
   }
-}
-
-function touchPeer(peer: Peer): void {
-  if (peer.closed) {
-    return;
-  }
-  if (peer.idle >= 0) {
-    clearTimeout(peer.idle);
-  }
-  peer.idle = setTimeout((): void => { closePeer(peer); }, IDLE_TIMEOUT_MS);
 }
 
 // Basic 凭据。密码只在内存里拼一次，不进日志。
@@ -236,24 +376,239 @@ function readProxyHead(tunnel: BridgeTunnel): Promise<string> {
   });
 }
 
-async function dialSocks5(target: WebProxyTarget, host: string, port: number): Promise<BridgeTunnel> {
-  const proxy: socket.ProxyOptions = {
-    type: socket.ProxyTypes.SOCKS5,
-    address: addrOf(target.host, target.port)
-  };
-  // NetStack 的 SOCKS5 客户端自己完成 RFC1929 握手，我们不用手搓。
-  if (target.username !== '') {
-    proxy.username = target.username;
-    proxy.password = target.password;
+// SOCKS5 握手自己来，不用 TCPConnectOptions.proxy。
+//
+// 【为什么】用它跑第一条 CONNECT 时主线程会卡死 6 秒以上（真机日志：accept 到
+// 请求后不再有任何输出，紧接着 THREAD_BLOCK_6S 把进程杀掉）。那条路径是 NetStack
+// 内部的，我们既看不到也改不了，所以退回普通 TCP + 手写握手：多几十行，但每一步
+// 都在自己的控制里，也能顺带把 RFC1929 鉴权做完整。
+class ByteStream {
+  private chunks: Uint8Array[] = [];
+  private size: number = 0;
+  private resolveRead: ((data: Uint8Array) => void) | null = null;
+  private rejectRead: ((e: Error) => void) | null = null;
+  private want: number = 0;
+  private closed: boolean = false;
+  private forward: ((data: ArrayBuffer) => void) | null = null;
+
+  push(data: ArrayBuffer): void {
+    if (this.forward !== null) {
+      this.forward(data);
+      return;
+    }
+    this.chunks.push(new Uint8Array(data));
+    this.size += data.byteLength;
+    this.pump();
   }
-  const options: socket.TCPConnectOptions = {
-    address: addrOf(host, port),
-    timeout: DIAL_TIMEOUT_MS,
-    proxy: proxy
-  };
+
+  onClosed(): void {
+    this.closed = true;
+    this.pump();
+  }
+
+  // 握手完成后把流交给字节泵；此前攒下的剩余字节先补发出去。
+  release(cb: (data: ArrayBuffer) => void): void {
+    this.forward = cb;
+    while (this.chunks.length > 0) {
+      const head = this.chunks.shift();
+      if (head !== undefined) {
+        cb(head.buffer as ArrayBuffer);
+      }
+    }
+    this.size = 0;
+  }
+
+  read(count: number): Promise<Uint8Array> {
+    this.want = count;
+    return new Promise<Uint8Array>((resolve: (v: Uint8Array) => void,
+      reject: (e: Error) => void): void => {
+      this.resolveRead = resolve;
+      this.rejectRead = reject;
+      // 没有超时的话上游不吭声就会一直挂着，页面只会白屏，看不到任何错误。
+      const timer: number = setTimeout((): void => {
+        if (this.resolveRead === null) {
+          return;
+        }
+        const current = this.rejectRead;
+        this.resolveRead = null;
+        this.rejectRead = null;
+        if (current !== null) {
+          current(new Error(`upstream timeout after ${this.size} bytes`));
+        }
+      }, DIAL_TIMEOUT_MS);
+      const wrappedResolve = (v: Uint8Array): void => {
+        clearTimeout(timer);
+        resolve(v);
+      };
+      this.resolveRead = wrappedResolve;
+      this.pump();
+    });
+  }
+
+  private pump(): void {
+    if (this.resolveRead === null) {
+      return;
+    }
+    if (this.size >= this.want) {
+      const out = new Uint8Array(this.want);
+      let offset: number = 0;
+      while (offset < this.want) {
+        const head = this.chunks[0];
+        const take: number = Math.min(head.length, this.want - offset);
+        out.set(head.subarray(0, take), offset);
+        offset += take;
+        if (take === head.length) {
+          this.chunks.shift();
+        } else {
+          this.chunks[0] = head.subarray(take);
+        }
+      }
+      this.size -= this.want;
+      const resolve = this.resolveRead;
+      this.resolveRead = null;
+      this.rejectRead = null;
+      resolve(out);
+      return;
+    }
+    if (this.closed) {
+      const reject = this.rejectRead;
+      this.resolveRead = null;
+      this.rejectRead = null;
+      if (reject !== null) {
+        reject(new Error('upstream closed during handshake'));
+      }
+    }
+  }
+}
+
+function bytesOf(values: number[]): ArrayBuffer {
+  const out = new Uint8Array(values.length);
+  for (let i = 0; i < values.length; i++) {
+    out[i] = values[i];
+  }
+  return out.buffer as ArrayBuffer;
+}
+
+let diagDial: number = 0;
+
+function diagDialLog(text: string): void {
+  diagDial++;
+  if (diagDial <= 12) {
+    logW(`[WebBridge] socks5 ${text}`);
+  }
+}
+
+async function dialSocks5(target: WebProxyTarget, host: string, port: number): Promise<BridgeTunnel> {
   const sock: socket.TCPSocket = socket.constructTCPSocketInstance();
+  const stream = new ByteStream();
+  sock.on('message', (info: socket.SocketMessageInfo): void => { stream.push(info.message); });
+  sock.on('close', (): void => { stream.onClosed(); });
+  sock.on('error', (): void => { stream.onClosed(); });
+  const options: socket.TCPConnectOptions = {
+    address: addrOf(target.host, target.port),
+    timeout: DIAL_TIMEOUT_MS
+  };
   await sock.connect(options);
-  return new TcpTunnel(sock);
+  diagDialLog('tcp connected');
+
+  // 1) 问候：同时声明"匿名"和"用户名密码"，让代理挑。
+  const wantAuth: boolean = target.username !== '';
+  await sock.send({ data: bytesOf(wantAuth ? [0x05, 0x02, 0x00, 0x02] : [0x05, 0x01, 0x00]) });
+  const greeting = await stream.read(2);
+  diagDialLog(`method=0x${greeting[1].toString(16)}`);
+  if (greeting[0] !== 0x05) {
+    sock.close().catch((): void => {});
+    throw new Error('socks5: bad version');
+  }
+  const method: number = greeting[1];
+  if (method === 0x02) {
+    if (!wantAuth) {
+      sock.close().catch((): void => {});
+      throw new Error('socks5: proxy requires auth but none configured');
+    }
+    const user = new util.TextEncoder().encodeInto(target.username);
+    const pass = new util.TextEncoder().encodeInto(target.password);
+    const auth = new Uint8Array(3 + user.length + pass.length);
+    auth[0] = 0x01;
+    auth[1] = user.length;
+    auth.set(user, 2);
+    auth[2 + user.length] = pass.length;
+    auth.set(pass, 3 + user.length);
+    await sock.send({ data: auth.buffer as ArrayBuffer });
+    const result = await stream.read(2);
+    diagDialLog(`auth status=0x${result[1].toString(16)}`);
+    if (result[1] !== 0x00) {
+      sock.close().catch((): void => {});
+      throw new Error('socks5: auth rejected');
+    }
+  } else if (method !== 0x00) {
+    sock.close().catch((): void => {});
+    throw new Error(`socks5: no acceptable auth method (0x${method.toString(16)})`);
+  }
+
+  // 2) CONNECT：只用域名/IPv4/IPv6 三种地址形态。
+  const bare = stripIpv6Brackets(host);
+  const request: number[] = [0x05, 0x01, 0x00];
+  if (isIpv6Literal(bare)) {
+    request.push(0x04);
+    const parts = bare.split(':');
+    // 完整 IPv6 展开交给正则不现实，这里只处理已压缩的常见写法：用 8 组补齐。
+    const expanded: number[] = expandIpv6(bare);
+    for (let i = 0; i < expanded.length; i++) {
+      request.push(expanded[i]);
+    }
+  } else if (/^\d+\.\d+\.\d+\.\d+$/.test(bare)) {
+    request.push(0x01);
+    const octets = bare.split('.');
+    request.push(Number(octets[0]) & 0xff, Number(octets[1]) & 0xff,
+      Number(octets[2]) & 0xff, Number(octets[3]) & 0xff);
+  } else {
+    const name = new util.TextEncoder().encodeInto(bare);
+    request.push(0x03, name.length);
+    for (let i = 0; i < name.length; i++) {
+      request.push(name[i]);
+    }
+  }
+  request.push((port >> 8) & 0xff, port & 0xff);
+  await sock.send({ data: bytesOf(request) });
+  diagDialLog(`connect sent atyp=0x${request[3].toString(16)}`);
+
+  const head = await stream.read(4);
+  diagDialLog(`reply rep=0x${head[1].toString(16)} atyp=0x${head[3].toString(16)}`);
+  if (head[1] !== 0x00) {
+    sock.close().catch((): void => {});
+    throw new Error(`socks5: connect rejected (0x${head[1].toString(16)})`);
+  }
+  const atyp: number = head[3];
+  if (atyp === 0x01) {
+    await stream.read(4 + 2);
+  } else if (atyp === 0x04) {
+    await stream.read(16 + 2);
+  } else {
+    const len = await stream.read(1);
+    await stream.read(len[0] + 2);
+  }
+  diagDialLog(`tunnel ready -> ${host}:${port}`);
+  return new StreamingTunnel(sock, stream);
+}
+
+// 已压缩的 IPv6 字面量 → 16 字节。只做协议需要的最小子集：支持 "::" 压缩。
+function expandIpv6(bare: string): number[] {
+  const out: number[] = [];
+  const halves: string[] = bare.split('::');
+  const headParts: string[] = halves[0] === '' ? [] : halves[0].split(':');
+  const tailParts: string[] = halves.length > 1 && halves[1] !== '' ? halves[1].split(':') : [];
+  const missing: number = Math.max(0, 8 - headParts.length - tailParts.length);
+  const groups: string[] = [];
+  for (let i = 0; i < headParts.length; i++) { groups.push(headParts[i]); }
+  for (let i = 0; i < missing; i++) { groups.push('0'); }
+  for (let i = 0; i < tailParts.length; i++) { groups.push(tailParts[i]); }
+  while (groups.length < 8) { groups.push('0'); }
+  for (let i = 0; i < groups.length; i++) {
+    const value = parseInt(groups[i] === '' ? '0' : groups[i], 16) & 0xffff;
+    out.push((value >> 8) & 0xff, value & 0xff);
+  }
+  return out;
 }
 
 async function dialHttpProxy(target: WebProxyTarget, host: string, port: number,
@@ -368,36 +723,96 @@ function parseTarget(head: string): RequestTarget | null {
   return result;
 }
 
+// 【临时诊断·验完删】
+let diagUp: number = 0;
+let diagDown: number = 0;
+let diagPump: number = 0;
+
 function pump(peer: Peer, client: socket.TCPSocketConnection, tunnel: BridgeTunnel): void {
+  let upBytes: number = 0;
+  let downBytes: number = 0;
+  const toTunnel = new ByteRelay((data: ArrayBuffer): Promise<void> => {
+    upBytes += data.byteLength;
+    diagUp += data.byteLength;
+    if (diagPump < 16) { diagPump++; logW(`[WebBridge] up +${data.byteLength} total=${diagUp}`); }
+    return tunnel.sendBytes(data);
+  });
+  const toClient = new ByteRelay((data: ArrayBuffer): Promise<void> => {
+    downBytes += data.byteLength;
+    diagDown += data.byteLength;
+    if (diagPump < 16) { diagPump++; logW(`[WebBridge] down +${data.byteLength} total=${diagDown}`); }
+    const options: socket.TCPSendOptions = { data: data };
+    return client.send(options);
+  });
+  peer.toTunnel = toTunnel;
+  peer.toClient = toClient;
+  peer.lastActive = Date.now();
   client.on('message', (info: socket.SocketMessageInfo): void => {
     if (peer.closed) {
       return;
     }
-    touchPeer(peer);
-    tunnel.sendBytes(info.message).catch((): void => { closePeer(peer); });
+    peer.lastActive = Date.now();
+    // 单条隧道积压太多就直接断：继续攒会把内存和主线程一起拖死。
+    if (toTunnel.pending() >= MAX_PENDING_BYTES) {
+      closePeer(peer);
+      return;
+    }
+    toTunnel.push(info.message);
   });
   tunnel.onMessage((data: ArrayBuffer): void => {
     if (peer.closed) {
       return;
     }
-    touchPeer(peer);
-    const options: socket.TCPSendOptions = { data: data };
-    client.send(options).catch((): void => { closePeer(peer); });
+    peer.lastActive = Date.now();
+    if (toClient.pending() >= MAX_PENDING_BYTES) {
+      closePeer(peer);
+      return;
+    }
+    toClient.push(data);
   });
-  client.on('close', (): void => { closePeer(peer); });
-  tunnel.onClosed((): void => { closePeer(peer); });
-  touchPeer(peer);
+  client.on('close', (): void => {
+    logW(`[WebBridge] client closed up=${upBytes} down=${downBytes}`);
+    closePeer(peer);
+  });
+  tunnel.onClosed((): void => {
+    logW(`[WebBridge] tunnel closed up=${upBytes} down=${downBytes}`);
+    closePeer(peer);
+  });
+}
+
+// 【临时诊断·验完删】看是不是连接风暴/异常请求把主线程拖死。
+let diagAccepts: number = 0;
+let diagLogged: number = 0;
+
+function diagLogAccept(): void {
+  diagAccepts++;
+  if (diagAccepts === 1 || diagAccepts % 50 === 0) {
+    logW(`[WebBridge] accepts=${diagAccepts} peers=${peers.size}`);
+  }
+}
+
+function diagLogRequest(head: string): void {
+  if (diagLogged >= 120) {
+    return;
+  }
+  diagLogged++;
+  const lineEnd: number = head.indexOf('\r\n');
+  const firstLine: string = lineEnd >= 0 ? head.substring(0, lineEnd) : head.substring(0, 80);
+  logW(`[WebBridge] req#${diagLogged} ${firstLine}`);
 }
 
 function handleClient(client: socket.TCPSocketConnection, target: WebProxyTarget): void {
-  const peer: Peer = { client: client, tunnel: null, closed: false, idle: -1 };
+  diagLogAccept();
+  const peer: Peer = {
+    client: client, tunnel: null, closed: false,
+    lastActive: Date.now(), toTunnel: null, toClient: null
+  };
   if (peers.size >= MAX_PEERS) {
     logW(`[WebBridge] too many peers (${peers.size}), refusing`);
     client.close().catch((): void => {});
     return;
   }
   peers.add(peer);
-  touchPeer(peer);
   let head: string = '';
   let handshaking: boolean = false;
   const decoder = util.TextDecoder.create('utf-8');
@@ -405,7 +820,7 @@ function handleClient(client: socket.TCPSocketConnection, target: WebProxyTarget
     if (peer.closed || handshaking) {
       return;
     }
-    touchPeer(peer);
+    peer.lastActive = Date.now();
     head += decoder.decodeToString(new Uint8Array(info.message));
     if (head.indexOf('\r\n\r\n') < 0) {
       if (head.length > HEAD_LIMIT) {
@@ -414,6 +829,7 @@ function handleClient(client: socket.TCPSocketConnection, target: WebProxyTarget
       return;
     }
     handshaking = true;
+    diagLogRequest(head);
     const request: RequestTarget | null = parseTarget(head);
     if (request === null) {
       const bad: socket.TCPSendOptions = { data: 'HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n' };
@@ -431,15 +847,23 @@ function handleClient(client: socket.TCPSocketConnection, target: WebProxyTarget
       }
       peer.tunnel = tunnel;
       dialFailures = 0;
+      // 先把两个方向的泵接上再回 200：Web 内核收到 200 会立刻发 ClientHello，
+      // 泵晚一步接就把它丢了（TLS 握手直接 reset）。
+      pump(peer, client, tunnel);
       if (request.isConnect) {
-        const reply: socket.TCPSendOptions = { data: 'HTTP/1.1 200 Connection Established\r\n\r\n' };
-        client.send(reply).catch((): void => { closePeer(peer); });
+        const reply: socket.TCPSendOptions = { data: bytesOf(CONNECT_ESTABLISHED) };
+        client.send(reply).catch((e: Error): void => {
+          logW(`[WebBridge] 200 reply failed: ${e.message}`);
+          closePeer(peer);
+        });
       } else {
         // 非 CONNECT 的 http：把请求行改写成 origin-form 再灌进隧道。绝对 URI
         // 直接发给源服务器是错的，而 WebView 对 http 页面就是这么发的。
-        tunnel.sendText(`${request.rewritten}${request.rest}`).catch((): void => { closePeer(peer); });
+        tunnel.sendText(`${request.rewritten}${request.rest}`).catch((e: Error): void => {
+          logW(`[WebBridge] head forward failed: ${e.message}`);
+          closePeer(peer);
+        });
       }
-      pump(peer, client, tunnel);
     }).catch((e: Error): void => {
       logW(`[WebBridge] dial ${request.host}:${request.port} failed: ${e.message}`);
       const fail: socket.TCPSendOptions = { data: 'HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n' };
@@ -514,6 +938,10 @@ export function stopWebBridge(): void {
   }
   running = false;
   configured = null;
+  if (reaper >= 0) {
+    clearInterval(reaper);
+    reaper = -1;
+  }
   try {
     const empty: connection.HttpProxy = { host: '', port: 0, exclusionList: [] };
     connection.setAppHttpProxy(empty);
