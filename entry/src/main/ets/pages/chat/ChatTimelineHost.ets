@@ -183,13 +183,12 @@ export struct ChatTimelineHost {
     .width('100%').height('100%')
     .opacity(this.session.initialTimelineMasked ? 0 : 1)
     .contentStartOffset(this.headerStartOffset)
-    // 【边缘虚化的收尾】linearGradientBlur 是把整个 List 画进离屏层再合成，
-    // 离屏层的最下沿那一行会合成出一条贴边的高亮细线（真机实测在输入框
-    // 上沿 y=1667 处正好 1px、均值 237）。把 List 的下框延伸到输入框底下
-    // （负 margin），让这条边落到屏幕外就看不见了；contentEndOffset 同步
-    // 加回同样的量，否则最后一条消息会跟着一起滑到输入框后面去。
-    .contentEndOffset(this.bottomChromeH * 2 + 8)
-    .margin({ bottom: -this.bottomChromeH })
+    // 【PR 那笔补偿只留一半】List 和输入框在同一个 Stack 里，List 本来就铺满整屏，
+    // 负 margin 没有"下边界可延伸"、不起作用，而 contentEndOffset 是实打实生效的。
+    // PR 写的是 `chrome * 2 + 8`（比上游的 `chrome + 8` 多了一整个输入框高度），
+    // 实测最后一条消息被抬得偏高；用户 2026-11-05 要求"距离缩回一半"，即只保留
+    // 多出来那一半。
+    .contentEndOffset(this.bottomChromeH * 1.5 + 8)
     .cachedCount(this.listCachedCount)
     // Media-heavy frames can make a short release look like an 8-9k vp/s
     // fling. Cap only the inertial phase; direct finger tracking is unchanged.
