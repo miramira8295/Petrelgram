@@ -1469,6 +1469,15 @@ export struct MessageBubbleShell {
     return COLOR_BUBBLE_IN;
   }
 
+  private tailCornerRadius(): number {
+    const corners = this.bubbleCornerRadius();
+    const radius = cornerPx(this.msg.isOutgoing ? corners.bottomRight : corners.bottomLeft);
+    if (this.glassW <= 0 || this.glassH <= 0) {
+      return radius;
+    }
+    return Math.max(0, Math.min(radius, (this.glassW - (TAIL_W - 2)) / 2, this.glassH / 2));
+  }
+
   @Builder
   bubbleTail(outgoing: boolean) {
     if (this.glassBodyOn()) {
@@ -1480,15 +1489,15 @@ export struct MessageBubbleShell {
       // 和玻璃档同一条曲线（tailShapeCommands），两档尾巴必须长得一样。
       // strokeWidth(0)：Path 不显式关描边就会沿轮廓画一圈黑线，尾巴看着像被
       // 勾了边（真机实拍确认）。填充色由 fill 给，描边一律不要。
-      Path({ width: TAIL_W, height: TAIL_H })
-        .commands(tailShapeCommands(outgoing, TAIL_W, TAIL_H, vp2px(1)))
+      Path({ width: TAIL_W + this.tailCornerRadius(), height: Math.max(TAIL_H, this.tailCornerRadius()) })
+        .commands(tailShapeCommands(outgoing, TAIL_W, TAIL_H, vp2px(1), this.tailCornerRadius(), 2))
         .fill(this.bubbleFillColor())
         .stroke(Color.Transparent)
         .strokeWidth(0)
         // 压叠 2px 而不是 1px：去掉黑描边之后，尾巴和气泡是两个相邻节点，
         // 1px 压叠下拼缝的抗锯齿会露出一条细线（之前被那圈黑边盖住了）。
         // 只影响实心档——玻璃档整块是一条轮廓裁出来的，没有拼缝。
-        .margin(outgoing ? { left: -2 } : { right: -2 });
+        .margin(outgoing ? { left: -2 - this.tailCornerRadius() } : { right: -2 - this.tailCornerRadius() });
     }
   }
 
@@ -1956,7 +1965,7 @@ export struct MessageBubbleShell {
     .backgroundColor(this.isBareEmoji() ? Color.Transparent : this.bubbleBg())
     .backgroundBlurStyle(this.glassBlurStyle())
     // Adjacent rows share a restrained 7vp corner. Only the final row gets
-    // the tight tail corner; a single-row run keeps the configured top arc.
+    // the full bottom corner; a single-row run keeps the configured top arc.
     .borderRadius(this.bubbleCornerRadius())
     .padding(this.isBareEmoji() ? 0 : {
       left: this.contentBasePadding(),

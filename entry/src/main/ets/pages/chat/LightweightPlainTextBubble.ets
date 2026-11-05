@@ -33,6 +33,7 @@ import {
   glassBodyFallbackPainted, glassBodyPainted, glassPaintReady, tailShapeCommands
 } from '../../util/bubbleGlassPath';
 import { timeLayerMinWidth } from '../../util/timeLayerWidth';
+import { cornerPx } from '../../util/bubbleCornerInset';
 import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
 } from '../../util/senderAvatarChannel';
@@ -306,10 +307,12 @@ export struct LightweightPlainTextBubble {
   @Param contentWidth: number = 360;
   // 「能不能编辑」到货后触发菜单重绘。判据与理由和 MessageBubble 完全一致，
   // 见 util/messageEditable 文件头（issue #179）。
-  @Local private editableTick: number = 0;
+  // 菜单「能否编辑/删除」的异步答案到达计数。两个用途合成一个：**每多一个
+  // @Local，复用重置就多一次 fireChange**，而这两个计数的语义完全相同——都只是
+  // "答案到了、重算一遍"。读到它 >= 0 即建立依赖（值本身无意义）。
+  @Local private menuTick: number = 0;
   // 「能不能删」到货后触发菜单重绘。判据与理由和 MessageBubble 完全一致，
   // 见 util/messageDeletable 文件头。
-  @Local private deletableTick: number = 0;
   @Param isGroup: boolean = false;
   @Param themeBubbleOut: string = '';
   @Param showUnreadDivider: boolean = false;
@@ -350,6 +353,15 @@ export struct LightweightPlainTextBubble {
     return COLOR_BUBBLE_IN;
   }
 
+  private tailCornerRadius(): number {
+    const corners = this.bubbleCorners();
+    const radius = cornerPx(this.msg.isOutgoing ? corners.bottomRight : corners.bottomLeft);
+    if (this.glassW <= 0 || this.glassH <= 0) {
+      return radius;
+    }
+    return Math.max(0, Math.min(radius, (this.glassW - (TAIL_W - 2)) / 2, this.glassH / 2));
+  }
+
   @Builder
   bubbleTail(outgoing: boolean) {
     if (this.glassBodyOn()) {
@@ -361,15 +373,15 @@ export struct LightweightPlainTextBubble {
       // 和玻璃档同一条曲线（tailShapeCommands），两档尾巴必须长得一样。
       // strokeWidth(0)：Path 不显式关描边就会沿轮廓画一圈黑线，尾巴看着像被
       // 勾了边（真机实拍确认）。填充色由 fill 给，描边一律不要。
-      Path({ width: TAIL_W, height: TAIL_H })
-        .commands(tailShapeCommands(outgoing, TAIL_W, TAIL_H, vp2px(1)))
+      Path({ width: TAIL_W + this.tailCornerRadius(), height: Math.max(TAIL_H, this.tailCornerRadius()) })
+        .commands(tailShapeCommands(outgoing, TAIL_W, TAIL_H, vp2px(1), this.tailCornerRadius(), 2))
         .fill(this.bubbleFillColor())
         .stroke(Color.Transparent)
         .strokeWidth(0)
         // 压叠 2px 而不是 1px：去掉黑描边之后，尾巴和气泡是两个相邻节点，
         // 1px 压叠下拼缝的抗锯齿会露出一条细线（之前被那圈黑边盖住了）。
         // 只影响实心档——玻璃档整块是一条轮廓裁出来的，没有拼缝。
-        .margin(outgoing ? { left: -2 } : { right: -2 });
+        .margin(outgoing ? { left: -2 - this.tailCornerRadius() } : { right: -2 - this.tailCornerRadius() });
     }
   }
 
@@ -589,7 +601,6 @@ export struct LightweightPlainTextBubble {
   }
   private inlineMaxW(): number { return this.bubbleMaxW() - 16; }
   private runRadius(): number { return Math.min(this.env.bubbleRadius, 7); }
-  private tailRadius(): number { return Math.min(this.env.bubbleRadius, 2); }
   private hasTail(): boolean { return this.showAvatar; }
   // 尾巴位：有尾巴时由尾巴节点自己占；没有时由「尾巴 + 气泡」容器的内边距占（原来是
   // bubbleCluster 里的定宽空 Column）。容器尺寸不变，玻璃的量值与裁剪轮廓也就不变。
@@ -639,9 +650,9 @@ export struct LightweightPlainTextBubble {
       topRight: this.msg.isOutgoing ?
         (this.showSenderName ? this.env.bubbleRadius : this.runRadius()) : this.env.bubbleRadius,
       bottomLeft: this.msg.isOutgoing ? this.env.bubbleRadius :
-        (this.showAvatar ? this.tailRadius() : this.runRadius()),
+        (this.showAvatar ? this.env.bubbleRadius : this.runRadius()),
       bottomRight: this.msg.isOutgoing ?
-        (this.showAvatar ? this.tailRadius() : this.runRadius()) : this.env.bubbleRadius
+        (this.showAvatar ? this.env.bubbleRadius : this.runRadius()) : this.env.bubbleRadius
     };
   }
 
@@ -676,7 +687,7 @@ export struct LightweightPlainTextBubble {
 
   private canEditNow(): boolean {
     const known: boolean | undefined =
-      this.editableTick >= 0 ? editableCached(this.msg.id) : undefined;
+      this.menuTick >= 0 ? editableCached(this.msg.id) : undefined;
     if (known !== undefined) {
       return known;
     }
@@ -685,21 +696,21 @@ export struct LightweightPlainTextBubble {
 
   private askEditable(): void {
     ensureEditable(this.chatId, this.msg.id, (): void => {
-      this.editableTick = this.editableTick + 1;
+      this.menuTick = this.menuTick + 1;
     });
   }
 
   private canDeleteNow(): boolean {
-    // deletableTick 同 editableTick：必须在这一支里被读到，答案到货才会重绘菜单。
+    // 同 menuTick：必须在这一支里被读到，答案到货才会重绘菜单。
     const known: boolean | undefined =
-      this.deletableTick >= 0 ? deletableCached(this.msg.id) : undefined;
+      this.menuTick >= 0 ? deletableCached(this.msg.id) : undefined;
     // 未知时按能删显示，理由见 util/messageDeletable 文件头。
     return known !== false;
   }
 
   private askDeletable(): void {
     ensureDeletable(getTdClient(), this.chatId, this.msg.id, (): void => {
-      this.deletableTick = this.deletableTick + 1;
+      this.menuTick = this.menuTick + 1;
     });
   }
 
