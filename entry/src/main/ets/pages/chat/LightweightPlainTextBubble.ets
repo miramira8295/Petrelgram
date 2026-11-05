@@ -1110,6 +1110,8 @@ export struct LightweightPlainTextBubble {
     .backgroundColor(this.bubbleBg())
     .backgroundBlurStyle(this.glassBlurStyle())
     .borderRadius(this.bubbleCorners()).padding(8)
+    // 与富气泡一致：内容层高于尾巴，避免尾巴伸入主体的部分盖住文字。
+    .zIndex(1)
     // 主体不能单独投影到尾角上，避免连接处出现竖向暗缝（与富气泡壳一致）。
     .parallelGesture(this.canDragMessage() ? undefined : LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
       .onAction((event: GestureEvent): void => { this.onLongPress(event); }))

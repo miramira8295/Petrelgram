@@ -1967,6 +1967,8 @@ export struct MessageBubbleShell {
     // Adjacent rows share a restrained 7vp corner. Only the final row gets
     // the full bottom corner; a single-row run keeps the configured top arc.
     .borderRadius(this.bubbleCornerRadius())
+    // 主体与内容绘制在尾巴上方，防止发出消息的尾巴压住正文或时间角标。
+    .zIndex(1)
     .padding(this.isBareEmoji() ? 0 : {
       left: this.contentBasePadding(),
       right: this.contentBasePadding(),
