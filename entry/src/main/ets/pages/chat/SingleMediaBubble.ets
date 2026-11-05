@@ -645,7 +645,12 @@ export struct SingleMediaBubble {
 
   @Builder
   content() {
-    this.media();
+    // 气泡比图片宽时（有说明文字、气泡被文字撑开）图片要居中。
+    // 外壳的内容 Column 是 alignItems(Start)，直接放会把图片顶在左边；
+    // 这里包一层并 alignSelf(Center)。纯图片气泡的 Column 宽度就等于图片宽度，
+    // 居中是空操作。
+    Column() { this.media(); }
+      .alignSelf(ItemAlign.Center);
     if (this.msg.text !== '' || this.msg.translatedText !== '') {
       MessageBubbleText({ actions: this.actions,
         context: this.context, presentation: this.textInputCache.prepare(this.msg, this.group.showSenderName, this.data,
