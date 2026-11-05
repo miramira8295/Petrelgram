@@ -189,11 +189,38 @@ export struct FileBubble {
         }
         this.onOpen();
       });
+    // 右侧动作按钮：**没下载 = 下载图标，下载完 = 保存图标**，两者都是图标
+    // （用户 2026-11-05）。下载中/上传中不显示，让左侧的进度环独占表达状态。
+    if (!this.uploading && !this.downloadActive && !this.sourceUnavailable()) {
+      Row() {
+        if (this.filePath === '') {
+          SymbolGlyph($r('sys.symbol.arrow_down_to_line'))
+            .fontSize(18).fontColor([COLOR_ICON_SECONDARY]);
+        } else {
+          SymbolGlyph($r('sys.symbol.square_and_arrow_down'))
+            .fontSize(18).fontColor([COLOR_ICON_SECONDARY]);
+        }
+      }
+      .width(28).height(28).borderRadius(14)
+      .justifyContent(FlexAlign.Center)
+      .stateStyles({
+        normal: this.actionNormalStyle,
+        pressed: this.actionPressedStyle
+      })
+      .animation({ duration: 110, curve: Curve.EaseOut })
+      .accessibilityText(this.actionAccessibilityText())
+      .onClick((): void => {
+        if (this.filePath === '') {
+          this.onOpen();
+        } else {
+          this.onSave();
+        }
+      });
     }
-    .width(Math.max(190, Math.min(262, this.maxWidth)))
-    .alignItems(VerticalAlign.Center)
-    // 右侧原来给 30×30 的动作按钮留位；按钮去掉后文字直接铺到边缘，
-    // 只保留时间浮层的 12vp 余量（再多会压到时间）。
-    .padding({ top: 1, bottom: 10, right: 12 });
   }
+  .width(Math.max(190, Math.min(262, this.maxWidth)))
+  .alignItems(VerticalAlign.Center)
+  // 右侧给动作按钮留位（28vp + 间距），其余交给时间浮层。
+  .padding({ top: 1, bottom: 10, right: this.uploading || this.downloadActive ? 12 : 4 });
+}
 }
