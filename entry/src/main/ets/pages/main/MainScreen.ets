@@ -13,7 +13,7 @@ import { navigateToSetting } from '../../util/settingsNav';
 import { appWallpaperActive } from '../../util/localWallpaper';
 import { DOCK_MODE_LEFT_FLOATING } from '../../util/splitMetrics';
 import { NavStackLike, TabKind, stackOf } from '../../util/navStacks';
-import { dockVisibleForTab } from '../../util/navBarReset';
+import { dockVisibleForTab, effectiveChatDepth, KEY_CHAT_DETAIL_SHOWN } from '../../util/navBarReset';
 import { KEY_CHAT_VIEWER_COVERS_WINDOW } from '../../util/viewerWindowCover';
 import { router } from '@kit.ArkUI';
 import { getTdClient, getUnreadCountStore, getCallSession, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
@@ -62,7 +62,7 @@ import { DOCK_SIDE_PADDING, dockSidePadding } from '../../util/mainTabsWidth';
 import { publishTabReTap } from '../../util/tabReTap';
 import { KEY_SHOW_CONTACTS_TAB } from '../../store/AppSettings';
 import { materialModifier, materialModifierWhen } from '../../util/materialModifier';
-import { logE } from '../../util/log';
+import { logE, logW } from '../../util/log';
 import { TD_ACCOUNT_SWITCHING, TdAccountSummary, accountRegistry } from '../../tdkit/AccountRegistry';
 import { PopupRect, accountPopupRect, accountRowAt } from '../../util/accountSwitchLayout';
 import { switchAccountOrToast } from '../../util/accountSwitch';
@@ -270,6 +270,11 @@ export struct MainScreen {
     // 所以对齐必须在这里显式做一次。appliedTab 一并跟上，否则 select() 的
     // 去重基准从一开始就是错的。
     this.appliedTab = this.tab;
+    // 这棵树不只冷启动建一次：从整页 router 页（应用内浏览器、小程序）返回时
+    // 也会重建。重建后各页签的 navBar 标志要等它们再次上报才更新，中间这段时间
+    // dock 只能按旧值渲染——用户报的"看过网页回来 dock 没了"就是这个窗口。
+    // 这里按真实栈深先算一次，上报回调随后只会再确认一遍。
+    this.syncDock();
     // 已登录才查更新（MainScreen 只在登录后渲染），内部按 6 小时节流。
     updateChecker.check(false).catch((): void => {});
     // 背景（尤其是图案）要下载并解压 .tgv，放到开会话时做就是点击到首帧之间
@@ -748,9 +753,18 @@ export struct MainScreen {
       return false;
     }
     const stack: NavStackLike | undefined = stackOf(kind);
+    if (stack === undefined) {
+      return dockVisibleForTab(
+        isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
+        undefined, this.storedNavBarFlag(this.tab));
+    }
+    // 栈深要和"详情页是否真的在屏上"一起看：整页路由退回来时会留下残留栈项，
+    // 只看栈深会让 dock 永久藏着（见 util/navBarReset.effectiveChatDepth）。
+    const detailShown: boolean = kind !== 'chat'
+      || (AppStorage.get<boolean>(KEY_CHAT_DETAIL_SHOWN) ?? true);
     return dockVisibleForTab(
       isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
-      stack === undefined ? undefined : stack.size(),
+      effectiveChatDepth(stack.size(), detailShown),
       this.storedNavBarFlag(this.tab)
     );
   }

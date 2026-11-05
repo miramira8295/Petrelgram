@@ -57,3 +57,22 @@ export function dockVisibleForTab(
   }
   return navBarVisibleOnAppear(splitLayout, stackDepth);
 }
+
+// 会话详情页此刻是否真的在屏上。
+//
+// 【为什么还需要这一路信号】栈深本身不可靠：整页 router 页（应用内浏览器、
+// 小程序）退回来之后，聊天页签的 NavPathStack 里会留着详情页那条记录，而屏幕上
+// 已经是列表根页。dock 的判据若只看栈深，就会一直认为"在详情页里"，永远藏着——
+// 用户实报「看过网页回来 dock 没了」。
+//
+// 写入方是 ChatPage 自己的 onShown / onHidden（那是"这条目的地到底显示没有"的
+// 第一手信号），读取方是 ChatListPage 与 MainScreen 的 dock 判据。
+export const KEY_CHAT_DETAIL_SHOWN: string = 'chatDetailShown';
+
+// 栈深 + 详情页实显 一起决定"算几层"。栈里有东西但详情页不在屏上 = 残留项。
+//
+// 默认值取 detailShown=true（即保留原行为）：拿不到信号时宁可继续藏着 dock，
+// 也不要在真正的详情页上把它放出来盖住输入框——那个方向更难解释。
+export function effectiveChatDepth(stackDepth: number, detailShown: boolean): number {
+  return stackDepth > 0 && !detailShown ? 0 : stackDepth;
+}

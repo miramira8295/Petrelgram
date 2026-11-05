@@ -5,6 +5,7 @@ import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { SCOPE_MUTE_EPOCH } from '../../store/ScopeMuteStore';
 import { chatListInForeground, chatListPageCanRun } from './ChatListFreeze';
 import { KEY_IMMERSIVE_BARS_HIDDEN } from '../../util/immersiveBars';
+import { effectiveChatDepth, KEY_CHAT_DETAIL_SHOWN } from '../../util/navBarReset';
 import {
   BreakpointType, HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM,
   isSmallSquare, isSplitByBreakpoint
@@ -582,8 +583,15 @@ export struct ChatListPage {
       this.getUIContext().postFrameCallback(new FolderChipAnchorFrameCallback(this));
     }
     this.applyNavBarVisible(navBarVisibleOnAppear(
-      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.chatStack.size()) &&
+      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
+      effectiveChatDepth(this.chatStack.size(), this.chatDetailShown())) &&
       !this.viewerHidesNavBar());
+  }
+
+  // 会话详情页是否真的在屏上（由 ChatPage 的 onShown/onHidden 写）。栈里留着
+  // 一条记录但详情页已经不在屏上时，栈深不可信，见 util/navBarReset。
+  private chatDetailShown(): boolean {
+    return AppStorage.get<boolean>(KEY_CHAT_DETAIL_SHOWN) ?? true;
   }
 
   // 只在分栏时生效：单栏（手机）下 navBar 本来就被会话页整页盖住，不需要这一手。
@@ -617,7 +625,8 @@ export struct ChatListPage {
     // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
     // 判据见 util/navBarReset。
     this.navBarVisible = navBarVisibleOnAppear(
-      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.chatStack.size());
+      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
+      effectiveChatDepth(this.chatStack.size(), this.chatDetailShown()));
     AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, this.navBarVisible);
     this.listRenderActive = chatListPageCanRun(this.pageActive, this.navBarVisible);
     setChatListRenderActive(this.listRenderActive);
@@ -1872,7 +1881,8 @@ export struct ChatListPage {
       .onNavBarStateChange((reported: boolean): void => {
         // 应用内浏览器退掉时会补发 visible=true 而栈里还有详情页，按栈兜底。见 navBarReset。
         this.applyNavBarVisible(navBarVisibleOnChange(reported,
-          isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.chatStack.size()) &&
+          isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
+          effectiveChatDepth(this.chatStack.size(), this.chatDetailShown())) &&
           !this.viewerHidesNavBar());
       })
       .enableDragBar(true)

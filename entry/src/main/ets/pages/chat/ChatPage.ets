@@ -213,6 +213,7 @@ import { hasPrefetchedPage } from '../../util/chatPrefetch';
 import { subscribeChatJump } from '../../util/chatJumpChannel';
 import { clearNowPlaying, NowPlaying, publishNowPlaying } from '../../util/nowPlayingChannel';
 import { viewerFullScreenWanted, viewerHidesTitleBar } from '../../util/navFullScreen';
+import { KEY_CHAT_DETAIL_SHOWN } from '../../util/navBarReset';
 import { isSystemTopBarReady, restoreViewerSystemBars } from '../../util/systemBarsWindow';
 import { publishViewerCoversWindow } from '../../util/viewerWindowCover';
 import {
@@ -3168,6 +3169,7 @@ export struct ChatPage {
   }
 
   private handleHidden(): void {
+    AppStorage.setOrCreate<boolean>(KEY_CHAT_DETAIL_SHOWN, false);
     this.inputSwitch.cancel();
     coordinateChatPageHidden({
       stopScrollActivity: (): void => { setScrollActive(false); },
@@ -3203,6 +3205,7 @@ export struct ChatPage {
   }
 
   private handleShown(): void {
+    AppStorage.setOrCreate<boolean>(KEY_CHAT_DETAIL_SHOWN, true);
     // 回到这一页（或者退场被取消了）：放开停车闸，头像该动的继续动。
     parkSenderAnimations(false);
     this.videoPrefetch.resume();
@@ -6408,6 +6411,9 @@ export struct ChatPage {
     // NavDestinationContext 的 pathInfo 里取——而 onReady 实测晚于 aboutToAppear，
     // 所以吃参数的初始化也在这里触发，不能留在 aboutToAppear。
     .onReady((ctx: NavDestinationContext): void => {
+      // 目的地重建也算"详情页在屏上"：整页路由退回来时 onShown 不一定补发，
+      // 只靠它会让标志停在 false，dock 于是冒到会话详情上。
+      AppStorage.setOrCreate<boolean>(KEY_CHAT_DETAIL_SHOWN, true);
       this.navigationCoordinator.setStack(ctx.pathStack);
       this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;
       // 必须在这里调而不是等 aboutToAppear：实测 onReady 晚于 aboutToAppear。

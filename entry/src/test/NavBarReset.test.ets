@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  dockVisibleForTab, navBarVisibleOnAppear, navBarVisibleOnChange
+  dockVisibleForTab, effectiveChatDepth, navBarVisibleOnAppear, navBarVisibleOnChange
 } from '../main/ets/util/navBarReset';
 
 export default function navBarResetTest() {
@@ -76,6 +76,18 @@ export default function navBarResetTest() {
     it('栈还没注册时才回落到存下来的布尔', 0, () => {
       expect(dockVisibleForTab(false, undefined, true)).assertTrue();
       expect(dockVisibleForTab(false, undefined, false)).assertFalse();
+    });
+
+    // 用户实报「看过网页回来 dock 没了」：整页 router 页退回来时，聊天栈里会留着
+    // 详情页那条记录，而屏幕上已经是列表根页。栈深这时不可信，要靠详情页自己的
+    // onShown/onHidden 信号把残留项按 0 处理。
+    it('栈里有残留项但详情页不在屏上时按栈空处理', 0, () => {
+      expect(effectiveChatDepth(1, false)).assertEqual(0);
+      expect(effectiveChatDepth(2, false)).assertEqual(0);
+      // 详情页真的在屏上时，栈深照旧。
+      expect(effectiveChatDepth(1, true)).assertEqual(1);
+      // 栈是空的时候信号不该反向制造深度。
+      expect(effectiveChatDepth(0, false)).assertEqual(0);
     });
 
   });

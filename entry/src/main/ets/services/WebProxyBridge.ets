@@ -291,6 +291,43 @@ const peers: Set<Peer> = new Set<Peer>();
 // 大页面上等于给主线程又加了几千次 timer 分配。
 let reaper: number = -1;
 
+// 域名 → IP 的短期缓存。SOCKS5 里我们只发 IP：
+//
+// 【为什么】实测这条代理对**域名**形式的 CONNECT 是"接受但不干活"——返回
+// rep=0x00，之后一个字节都不回；而 TDLib 走同一条代理是通的（它连的是
+// Telegram 的 IP）。很多免费 SOCKS5 只做 IP 白名单、或者根本不替客户端做
+// 远端 DNS，收到域名就悬在那儿。先在本地解析再发 IP，绕开这个差异。
+interface ResolvedHost {
+  ip: string;
+  at: number;
+}
+
+const DNS_TTL_MS: number = 300000;
+const dnsCache: Map<string, ResolvedHost> = new Map<string, ResolvedHost>();
+
+async function resolveHost(host: string): Promise<string> {
+  const bare: string = stripIpv6Brackets(host);
+  if (isIpv6Literal(bare) || /^\d+\.\d+\.\d+\.\d+$/.test(bare)) {
+    return bare;
+  }
+  const cached = dnsCache.get(bare);
+  if (cached !== undefined && Date.now() - cached.at < DNS_TTL_MS) {
+    return cached.ip;
+  }
+  try {
+    const list = await connection.getAddressesByName(bare);
+    if (list.length > 0) {
+      const ip: string = stripIpv6Brackets(list[0].address);
+      dnsCache.set(bare, { ip: ip, at: Date.now() });
+      return ip;
+    }
+  } catch (e) {
+    logW(`[WebBridge] dns failed for ${bare}: ${(e as Error).message}`);
+  }
+  // 解析不出来就退回域名，让代理自己试。
+  return bare;
+}
+
 function addrOf(host: string, port: number): socket.NetAddress {
   const bare: string = stripIpv6Brackets(host);
   const addr: socket.NetAddress = {
@@ -534,8 +571,8 @@ async function dialSocks5(target: WebProxyTarget, host: string, port: number): P
     throw new Error(`socks5: no acceptable auth method (0x${method.toString(16)})`);
   }
 
-  // 2) CONNECT：只用域名/IPv4/IPv6 三种地址形态。
-  const bare = stripIpv6Brackets(host);
+  // 2) CONNECT：先用本地解析出来的 IP，失败再退回域名。
+  const bare = await resolveHost(host);
   const request: number[] = [0x05, 0x01, 0x00];
   if (isIpv6Literal(bare)) {
     request.push(0x04);
