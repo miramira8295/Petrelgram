@@ -178,8 +178,15 @@ export class ChatStore {
       setTimeout: (cb: () => void, ms: number): number => setTimeout(cb, ms),
       clearTimeout: (id: number): void => clearTimeout(id)
     };
-    // V2：整个 V1 数据面不工作——不在更新流上注册任何 handler，实体、位置、
-    // 角标全部由 worker 投递的镜像与排序快照驱动。
+    // V2：V1 的实体/位置/角标生产全部不工作，由 worker 投递的镜像与排序快照
+    // 驱动。**唯一保留**的是「输入中」这条子系统：它要发送者显示名（UI 侧
+    // UserStore）与 TTL 计时器，worker 那边没有用户表；它也不产生会话实体，
+    // 只是把文案写进镜像。selfId 同理（my_id 决定 Saved Messages 与"自己"过滤）。
+    if (chatListV2Enabled()) {
+      client.onUpdate('updateChatAction', (u: TdObject) => this.onChatAction(u));
+      client.onUpdate('updateUser', (u: TdObject) => this.onChatActionUser(u));
+      client.onUpdate('updateOption', (u: TdObject) => this.onOption(u));
+    }
     if (!chatListV2Enabled()) {
     client.onUpdate('updateOption', (u: TdObject) => this.onOption(u));
     client.onUpdate('updateNewChat', (u: TdObject) => this.onNewChat(u));
@@ -258,9 +265,10 @@ export class ChatStore {
   subscribeAvatars(listener: (chatIds: number[]) => void): () => void {
     this.avatarListeners = [...this.avatarListeners, listener];
     const ids: number[] = [];
-    this.chats.forEach((entry: ChatEntry): void => {
+    const source: Iterable<ChatEntry> = chatListV2Enabled() ? this.mirror.values() : this.chats.values();
+    for (const entry of source) {
       if (entry.photoFileId !== 0 && entry.avatarPath === '') { ids.push(entry.id); }
-    });
+    }
     if (ids.length > 0) { listener(ids); }
     return (): void => {
       this.avatarListeners = this.avatarListeners.filter((value: (chatIds: number[]) => void): boolean =>
@@ -441,7 +449,15 @@ export class ChatStore {
     const changed: number = this.mirror.apply(entries);
     if (chatListV2Enabled()) {
       // V2：镜像就是唯一真身，收到变化必须发布（V1 的 handler 不在）。
+      // 头像解析那条链也靠这里：新会话/换图的条目要重新进 dirty 集，否则
+      // subscribeAvatars 只会在某次发布的快照里看见 id（V1 里这是 setChatEntry 干的）。
       if (changed > 0) {
+        for (const incoming of entries) {
+          const mirrored = this.mirror.get(incoming.id);
+          if (mirrored !== undefined && mirrored.photoFileId !== 0 && mirrored.avatarPath === '') {
+            this.dirtyAvatarChatIds.add(incoming.id);
+          }
+        }
         this.notify();
       }
       return;
@@ -648,7 +664,9 @@ export class ChatStore {
   }
 
   photoFileIdOf(chatId: number): number {
-    const e = this.chats.get(chatId);
+    // 走 entryOf：V2 下实体在镜像里，直接查 chats 会永远返回 0——头像下载完成的
+    // 回调正是靠它比对"这张图还是不是这个会话的"，返回 0 就等于永不落地。
+    const e = this.entryOf(chatId);
     return e !== undefined ? e.photoFileId : 0;
   }
 
@@ -807,6 +825,17 @@ export class ChatStore {
   }
 
   setAvatarPath(chatId: number, path: string): void {
+    if (chatListV2Enabled()) {
+      // V2：头像路径落在镜像上。原来是先查 chats——那里是空的，V2 下头像永远
+      // 不会落地（真机首测：整列退化成彩色首字母）。
+      const mirrored = this.mirror.get(chatId);
+      if (mirrored === undefined || mirrored.avatarPath === path) {
+        return;
+      }
+      this.mirror.setAvatarPath(chatId, path);
+      this.notify(chatId);
+      return;
+    }
     const e = this.chats.get(chatId);
     if (e === undefined || e.avatarPath === path) {
       return;
@@ -1336,8 +1365,13 @@ export class ChatStore {
     );
   }
 
+  // 输入中的状态载体：V1 读 chats，V2 读镜像（V1 的实体生产已关闭）。
+  private typingEntryOf(chatId: number): ChatEntry | undefined {
+    return chatListV2Enabled() ? this.mirror.get(chatId) : this.chats.get(chatId);
+  }
+
   private publishTypingText(chatId: number): void {
-    const e = this.chats.get(chatId);
+    const e = this.typingEntryOf(chatId);
     if (e === undefined) {
       return;
     }
@@ -1346,17 +1380,19 @@ export class ChatStore {
     if ((e.typingText ?? '') === nextText) {
       return;
     }
-    const c = cloneEntry(e);
-    c.typingText = nextText;
-    this.setChatEntry(chatId, c);
-    // 输入中是本地独有字段（worker 不处理 updateChatAction）：镜像也要写回。
+    if (!chatListV2Enabled()) {
+      const c = cloneEntry(e);
+      c.typingText = nextText;
+      this.setChatEntry(chatId, c);
+    }
+    // 输入中是本地独有字段：V2 下实体只在镜像里，写这份；V1 下两份都写。
     this.mirror.setTyping(chatId, nextText);
     this.notifySoon(chatId, true);
   }
 
   private onChatAction(update: TdObject): void {
     const chatId = (update['chat_id'] as number | undefined) ?? 0;
-    const e = this.chats.get(chatId);
+    const e = this.typingEntryOf(chatId);
     if (e === undefined || e.isSavedMessages) {
       return;
     }
