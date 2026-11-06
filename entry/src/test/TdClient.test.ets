@@ -22,6 +22,31 @@ class FakeBridge implements TdBridge {
   }
 }
 
+// 能自己序列化的桥（worker 路径）：TdClient 应当把对象交出去，
+// 一个字节的 JSON 都不在调用线程上拼。
+class SerializingBridge implements TdBridge {
+  onReceive: (json: string) => void = (_json: string): void => {};
+  sentStrings: string[] = [];
+  sentObjects: TdObject[] = [];
+  destroyed: number = 0;
+
+  init(cb: (json: string) => void): void {
+    this.onReceive = cb;
+  }
+
+  send(json: string): void {
+    this.sentStrings.push(json);
+  }
+
+  sendObject(request: TdObject): void {
+    this.sentObjects.push(request);
+  }
+
+  destroy(): void {
+    this.destroyed += 1;
+  }
+}
+
 function mkObj(): TdObject {
   const result: Record<string, Object> = {};
   return result;
@@ -185,6 +210,25 @@ export default function tdClientTest() {
       expect(request['@extra'] === undefined).assertTrue();
       const sent = parseJson(bridge.sent[0]);
       expect((sent['@extra'] as string).startsWith('req_')).assertTrue();
+      client.dispose();
+    });
+
+    it('send_hands_object_to_bridge_that_serializes', 0, () => {
+      // A 批 1 发送侧：桥有这个能力时，序列化归桥（worker），调用线程不拼字符串。
+      const bridge = new SerializingBridge();
+      const client = new TdClient(bridge);
+      client.start();
+      const request: TdRequest = { '@type': 'sendMessage' };
+      request['chat_id'] = 42;
+      client.send(request).catch((): void => {});
+      expect(bridge.sentStrings.length).assertEqual(0);
+      expect(bridge.sentObjects.length).assertEqual(1);
+      const sent = bridge.sentObjects[0];
+      expect(sent['@type'] as string).assertEqual('sendMessage');
+      expect(sent['chat_id'] as number).assertEqual(42);
+      expect((sent['@extra'] as string).startsWith('req_')).assertTrue();
+      // 调用方的对象同样不被写入 @extra。
+      expect(request['@extra'] === undefined).assertTrue();
       client.dispose();
     });
 

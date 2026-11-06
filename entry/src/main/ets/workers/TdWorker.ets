@@ -27,6 +27,7 @@ function postSafe(event: object): void {
 interface TdWorkerCommand {
   kind: string;
   json?: string;
+  request?: object;
 }
 
 interface TdWorkerEvent {
@@ -106,6 +107,24 @@ function handleCommand(msg: TdWorkerCommand): void {
       deliver(obj);
     });
   } else if (msg.kind === 'send') {
-    testNapi.tdSend(msg.json ?? '');
+    // 请求以对象跨线程（A 批 1 的发送侧）：序列化在**本线程**、tdSend 之前。
+    // json 分支留给 TdBridge.send 的直通形态，两条路互斥。
+    const payload: string = msg.request !== undefined
+      ? JSON.stringify(msg.request)
+      : (msg.json ?? '');
+    testNapi.tdSend(payload);
+  } else if (msg.kind === 'destroy') {
+    // 账号切换：tdDestroy 也必须排在本队列里，和 tdSend/tdInit 串行。
+    //
+    // UI 线程直接调的那版会 join 接收线程、清 g_clientId，而本线程可能正有
+    // 一条 tdSend 已越过 g_created 检查——napi_init.cpp 里这两步之间没有同步。
+    // 上一个运行时的积压一并清掉：它们属于旧账号，不该在新运行时里落地
+    // （init 分支同样会清，这里清是为了不依赖下一条 init 到达的时机）。
+    pendingCoalesced.clear();
+    if (flushTimer !== -1) {
+      clearTimeout(flushTimer);
+      flushTimer = -1;
+    }
+    testNapi.tdDestroy();
   }
 }

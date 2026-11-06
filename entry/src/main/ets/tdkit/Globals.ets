@@ -144,6 +144,23 @@ function createTdClientWithBridge(): TdClient {
   return new TdClient({ init: testNapi.tdInit, send: testNapi.tdSend });
 }
 
+// tdDestroy 的线程归属。
+//
+// worker 路径下 td* 全部串行在 worker 队列里（tdInit/tdSend/tdDestroy 三条命令
+// 同一个队列 FIFO），销毁也必须回到那条队列——UI 线程直接调会 join 接收线程、
+// 清 g_clientId，而 worker 里可能正有一条 tdSend 已越过 g_created 检查。
+// 直连路径没有独占线程，保持原来的同步调用。
+//
+// 【顺序】销毁与下一条 init 的相对次序由队列 FIFO 保证：stopRuntime 先投
+// destroy、createRuntime 后投 init，worker 一定先看到前者。
+function destroyTdNative(): void {
+  if (workerBridge !== undefined) {
+    workerBridge.destroy();
+    return;
+  }
+  testNapi.tdDestroy();
+}
+
 function createRuntime(slotId: string): void {
   forgetSearchSession();
   runtimeReady = false;
@@ -251,7 +268,7 @@ function createRuntime(slotId: string): void {
     accentColors = undefined;
     storyStore = undefined;
     try {
-      testNapi.tdDestroy();
+      destroyTdNative();
     } catch (_cleanupError) {
       // Preserve the original startup error; it names the failed resource.
     }
@@ -412,7 +429,7 @@ async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
   }
   currentClient?.dispose();
   try {
-    testNapi.tdDestroy();
+    destroyTdNative();
   } catch (caught) {
     logE(`Globals.stopRuntime tdDestroy failed: ${caught}`);
   }

@@ -84,7 +84,17 @@ export class TdClient {
       const deadlineMs: number = this.nowMs() + window;
       this.pending.set(extra, { resolve, reject, deadlineMs, timeoutMs: window });
       this.scheduleTimeoutTimer();
-      this.bridge.send(JSON.stringify(requestObj));
+      // 能自己序列化的桥（worker）拿到的是对象：stringify 在 worker 线程、
+      // tdSend 之前发生，UI 线程只剩一次浅拷贝。直连桥没有这个能力，照旧在
+      // 这里序列化——它背后的 testNapi.tdSend 只接受字符串。
+      //
+      // 必须走成员调用的形态（this.bridge.sendObject?.(...)）：抽成局部函数再
+      // 调用会丢接收者，桥里的 this 变 undefined。
+      if (this.bridge.sendObject !== undefined) {
+        this.bridge.sendObject?.(requestObj);
+      } else {
+        this.bridge.send(JSON.stringify(requestObj));
+      }
     });
   }
 

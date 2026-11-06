@@ -23,6 +23,7 @@ interface TdWorkerEvent {
 interface TdWorkerCommand {
   kind: string;
   json?: string;
+  request?: TdObject;
 }
 
 export class TdWorkerBridge implements TdBridge {
@@ -57,8 +58,22 @@ export class TdWorkerBridge implements TdBridge {
     this.post({ kind: 'init' });
   }
 
+  // 接口要求的字符串路径。TdClient 一旦发现本桥有 sendObject 就不会走这里，
+  // 保留它是为了 TdBridge 的实现完整（直连语义下 send 仍是唯一入口）。
   send(json: string): void {
     this.post({ kind: 'send', json: json });
+  }
+
+  // 发送侧的序列化搬进 worker：UI 线程只做浅拷贝 + 投递，stringify 在
+  // TdWorker 里、tdSend 之前完成。
+  sendObject(request: TdObject): void {
+    this.post({ kind: 'send', request: request });
+  }
+
+  // 销毁也走同一条队列（见 TdTypes.TdBridge.destroy 的说明）。post 失败时
+  // worker 已经不在了，那边的 td* 调用同样不可能再发生。
+  destroy(): void {
+    this.post({ kind: 'destroy' });
   }
 
   // postMessage 会抛（worker 已终止 10200004 / 序列化失败 10200006）。请求发
