@@ -46,6 +46,19 @@ export class ChatMirror {
     this.entries.set(chatId, next);
   }
 
+  // 打开会话时本地先清角标（乐观更新）。worker 随后的 updateChatReadInbox
+  // 会把它覆盖成同一结果，这条只是让用户当场看到已读。
+  markRead(chatId: number): void {
+    const entry: ChatEntry | undefined = this.entries.get(chatId);
+    if (entry === undefined || (entry.unreadCount === 0 && !entry.isMarkedUnread)) {
+      return;
+    }
+    const next: ChatEntry = cloneEntry(entry);
+    next.unreadCount = 0;
+    next.isMarkedUnread = false;
+    this.entries.set(chatId, next);
+  }
+
   setTyping(chatId: number, text: string): void {
     const entry: ChatEntry | undefined = this.entries.get(chatId);
     if (entry === undefined || entry.typingText === text) {

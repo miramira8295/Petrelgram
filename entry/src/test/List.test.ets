@@ -156,6 +156,8 @@ import chatListRowStateTest from './ChatListRowState.test';
 import chatEntryFactoryTest from './ChatEntryFactory.test';
 import chatMirrorTest from './ChatMirror.test';
 import chatListV2Test from './ChatListV2.test';
+import { setChatListSourceForTest } from '../main/ets/util/chatListV2';
+import chatStoreV2Test from './ChatStoreV2.test';
 import proxyMirrorTest from './ProxyMirror.test';
 import mainTabsWidthTest from './MainTabsWidth.test';
 import appearanceTest from './Appearance.test';
@@ -403,6 +405,9 @@ import contactAddErrorTest from './ContactAddError.test';
 import contactAddRequestTest from './ContactAddRequest.test';
 
 export default function testsuite() {
+  // 既有用例验证的是 V1（喂 update → store 怎么变）。V2 的用例在自己内部
+  // 把源切过去再切回来，所以这里先钉住默认。
+  setChatListSourceForTest(false);
   searchPresentationTest();
   recentChatHistoryTest();
   floatingVideoRuntimeTest();
@@ -549,6 +554,7 @@ export default function testsuite() {
   chatEntryFactoryTest();
   chatMirrorTest();
   chatListV2Test();
+  chatStoreV2Test();
   proxyMirrorTest();
   mainTabsWidthTest();
   appearanceTest();

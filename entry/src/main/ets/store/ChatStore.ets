@@ -667,6 +667,16 @@ export class ChatStore {
   // updateChatReadInbox; this only bridges its delay (and the local join-service
   // edge case where that update can otherwise stay at unread_count = 1).
   markReadLocally(chatId: number, readThroughId: number): void {
+    if (chatListV2Enabled()) {
+      // V2：实体在镜像里，乐观清角标也得写镜像（worker 的更新随后覆盖成同一结果）。
+      const mirrored = this.mirror.get(chatId);
+      if (mirrored !== undefined && readThroughId >= mirrored.lastMessageId &&
+        (mirrored.unreadCount > 0 || mirrored.isMarkedUnread)) {
+        this.mirror.markRead(chatId);
+        this.notify();
+      }
+      return;
+    }
     const entry = this.chats.get(chatId);
     const pending = this.pendingRowSync.get(chatId);
     const newestKnownId: number = pending !== undefined && pending.latestIncomingLastId > 0
