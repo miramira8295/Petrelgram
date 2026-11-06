@@ -15,6 +15,8 @@ import { TdIngestBatch, BatchTimerFns } from '../tdkit/tdIngestBatch';
 import { ChatListOrder, OrderSnapshot } from '../store/chatListOrder';
 import { listKeyOf } from '../store/ListKey';
 import { TdObject } from '../tdkit/TdTypes';
+import { ChatEntry } from '../store/ChatEntry';
+import { buildChatEntry } from '../store/chatEntryFactory';
 
 const scope: ThreadWorkerGlobalScope = worker.workerPort;
 
@@ -41,6 +43,8 @@ interface TdWorkerEvent {
   items?: object[];
   // kind==='order' 时的排序快照（第二层 B2，影子索引对账用）。
   lists?: OrderSnapshot[];
+  // kind==='chatEntry' 时由本线程构建的会话实体（第二层 B4b 影子）。
+  entries?: ChatEntry[];
   head?: string;
 }
 
@@ -80,6 +84,7 @@ function deliver(obj: object): void {
   // 影子索引：先按到达顺序喂一遍，再走投递（投递可能被合并/批处理推迟，
   // 而位置语义必须按到达顺序落地）。
   trackOrder(record);
+  trackChatEntry(record);
   const key: string = coalesceKeyOf(record);
   if (key === '') {
     // 直通事件发出前先冲积压：与不可交换事件的相对顺序必须保持。
@@ -198,6 +203,78 @@ function trackOrder(obj: Record<string, Object>): void {
   }
 }
 
+// ── 第二层 B4b：影子实体 ────────────────────────────────────────────────────
+//
+// 用 updateNewChat 的完整 chat 对象在本线程构建 ChatEntry（同一份
+// chatEntryFactory），发回 UI 逐字段对账。**不切权威**：UI 仍按自己的路径建库，
+// 这里只证明「工厂能在 worker 里跑，且算出来的字段与 UI 一致」。
+//
+// 已知的对不上的字段（本批不比）：lastSenderName（要 UserStore）、avatarPath
+// （UI 侧异步解析）、typingText（UI 侧暂存事务）、isLive/isRtmpLive（来自通话
+// 状态）、revision（各自口径）。
+const shadowEntries: Map<number, ChatEntry> = new Map<number, ChatEntry>();
+const entryDirty: Set<number> = new Set<number>();
+let entryTimer: number = -1;
+const ENTRY_POST_MS: number = 200;
+let shadowSelfId: number = 0;
+
+function flushEntries(): void {
+  if (entryDirty.size === 0) {
+    return;
+  }
+  const entries: ChatEntry[] = [];
+  entryDirty.forEach((id: number): void => {
+    const entry = shadowEntries.get(id);
+    if (entry !== undefined) {
+      entries.push(entry);
+    }
+  });
+  entryDirty.clear();
+  const event: TdWorkerEvent = { kind: 'chatEntry', entries: entries };
+  postSafe(event);
+}
+
+function trackChatEntry(obj: Record<string, Object>): void {
+  const type: string | undefined = obj['@type'] as string | undefined;
+  if (type === 'updateOption') {
+    if (((obj['name'] as string | undefined) ?? '') === 'my_id') {
+      const value = obj['value'] as Record<string, Object> | undefined;
+      const raw = value !== undefined ? value['value'] : undefined;
+      const id: number = typeof raw === 'number' ? raw as number : Number(`${raw ?? 0}`);
+      if (Number.isFinite(id) && id > 0) {
+        shadowSelfId = id;
+      }
+    }
+    return;
+  }
+  if (type !== 'updateNewChat') {
+    return;
+  }
+  const chat = obj['chat'] as TdObject | undefined;
+  if (chat === undefined) {
+    return;
+  }
+  const id = chat['id'] as number | undefined;
+  if (id === undefined) {
+    return;
+  }
+  const entry: ChatEntry = buildChatEntry({
+    chat,
+    previous: shadowEntries.get(id),
+    selfId: shadowSelfId,
+    // 本批还没有 worker 侧用户表：这一列不参与对账。
+    senderName: (_message: TdObject | undefined): string => ''
+  });
+  shadowEntries.set(id, entry);
+  entryDirty.add(id);
+  if (entryTimer === -1) {
+    entryTimer = setTimeout((): void => {
+      entryTimer = -1;
+      flushEntries();
+    }, ENTRY_POST_MS);
+  }
+}
+
 scope.onmessage = (e: MessageEvents): void => {
   const msg = e.data as TdWorkerCommand;
   // td* 的 native 实现在 g_created 翻转窗口会抛 JS 异常（"tdSend before
@@ -221,6 +298,9 @@ function handleCommand(msg: TdWorkerCommand): void {
     knownChats.clear();
     orderIndex.clear();
     orderDirty.clear();
+    shadowEntries.clear();
+    entryDirty.clear();
+    shadowSelfId = 0;
     testNapi.tdInit((json: string): void => {
       let obj: object | null = null;
       try {

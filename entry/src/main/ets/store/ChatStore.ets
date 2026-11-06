@@ -1,7 +1,8 @@
 import { ChatListSubscription, ChatListPublicationMode } from './ChatListSubscription';
 import { ChatListOrder, PositionChange, OrderSnapshot, OrderDiff, compareOrderIds } from './chatListOrder';
 import {
-  buildChatEntry, effectiveUnread, messageIdOf, smallPhotoIdOf, videoChatIdOf, backgroundOf
+  buildChatEntry, effectiveUnread, messageIdOf, smallPhotoIdOf, videoChatIdOf, backgroundOf,
+  compareChatEntries
 } from './chatEntryFactory';
 import { groupCallGone, groupCallIsLive } from '../util/liveCallState';
 import { UnreadBadgeCounts } from '../util/unreadBadgeRule';
@@ -100,6 +101,8 @@ export class ChatStore {
   private orderShadowMatch: number = 0;
   private orderShadowMismatch: number = 0;
   private orderShadowSkew: number = 0;
+  private entryShadowMatch: number = 0;
+  private entryShadowMismatch: number = 0;
   // 位置最近一次「落地」的时刻。UI 的位置更新会被行级配对事务压后最多 ~320ms，
   // 所以只有当自己安静下来之后，拿 worker 的快照比对才有意义。
   private positionAppliedAt: number = 0;
@@ -399,6 +402,32 @@ export class ChatStore {
       }
     });
     this.orderShadowPending.clear();
+  }
+
+  // 第二层 B4b：worker 侧影子实体的对账入口。**只记日志，不改本地数据。**
+  //
+  // 一致的字段集合见 compareChatEntries 的注释（revision/头像/发送者名等
+  // 本来就各算各的，不参与比较）。
+  compareWorkerEntries(entries: ChatEntry[]): void {
+    for (const workerEntry of entries) {
+      const local: ChatEntry | undefined = this.chats.get(workerEntry.id);
+      if (local === undefined) {
+        // UI 还没物化这条会话：时差，不算差异。
+        continue;
+      }
+      const diff: string = compareChatEntries(local, workerEntry);
+      if (diff === '') {
+        this.entryShadowMatch += 1;
+        if (this.entryShadowMatch % 200 === 0) {
+          logI(`[EntryShadow] match#${this.entryShadowMatch} chat=${workerEntry.id}`);
+        }
+        continue;
+      }
+      this.entryShadowMismatch += 1;
+      if (this.entryShadowMismatch <= 5 || this.entryShadowMismatch % 50 === 0) {
+        logW(`[EntryShadow] diff#${this.entryShadowMismatch} chat=${workerEntry.id} ${diff}`);
+      }
+    }
   }
 
   getChats(listKey: string = MAIN): ChatEntry[] {

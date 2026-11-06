@@ -195,6 +195,10 @@ function createRuntime(slotId: string): void {
   if (workerBridge !== undefined) {
     const shadowTarget: ChatStore = chats;
     workerBridge.onOrder((lists: OrderSnapshot[]): void => { shadowTarget.compareWorkerOrder(lists); });
+    // 第二层 B4b：worker 侧影子实体对账（只比字段，不改本地）。
+    workerBridge.onChatEntries((entries: ChatEntry[]): void => {
+      shadowTarget.compareWorkerEntries(entries);
+    });
   }
   files = new FileService(client, chats);
   folders = new FolderStore(client);

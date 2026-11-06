@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { buildChatEntry, effectiveUnread, ChatEntryBuildInput } from '../main/ets/store/chatEntryFactory';
+import { buildChatEntry, effectiveUnread, compareChatEntries, ChatEntryBuildInput } from '../main/ets/store/chatEntryFactory';
 import { ChatEntry } from '../main/ets/store/ChatEntry';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 
@@ -117,6 +117,36 @@ export default function chatEntryFactoryTest() {
       const entry = build(chat, undefined, 0);
       expect(entry.canDeleteOnlyForSelf).assertTrue();
       expect(entry.canDeleteForAllUsers).assertFalse();
+    });
+
+    it('对账：可比值全等时无差异，各算各的字段不参与', 0, (): void => {
+      const chat = chatOf(6, (c: TdObject): void => {
+        c['last_message'] = messageOf(70, 1700000000, false);
+      });
+      const a = build(chat, undefined, 0);
+      const b = build(chat, undefined, 0);
+      // revision / 头像 / 发送者名 / 输入中 / 直播位：两边本来就不同。
+      b.revision = 999;
+      b.avatarPath = '/cache/x.jpg';
+      b.lastSenderName = 'someone';
+      b.typingText = '正在输入';
+      b.isLive = true;
+      expect(compareChatEntries(a, b)).assertEqual('');
+    });
+
+    it('对账：可比字段不同要报出字段名与两侧值', 0, (): void => {
+      const chat = chatOf(7, (c: TdObject): void => {
+        c['unread_count'] = 3;
+        c['last_read_inbox_message_id'] = 1;
+        c['last_message'] = messageOf(9, 1700000000, false);
+      });
+      const a = build(chat, undefined, 0);
+      const b = build(chat, undefined, 0);
+      b.unreadCount = 0;
+      const diff: string = compareChatEntries(a, b);
+      expect(diff.indexOf('unread') >= 0).assertTrue();
+      expect(diff.indexOf('local=3') >= 0).assertTrue();
+      expect(diff.indexOf('worker=0') >= 0).assertTrue();
     });
 
     it('effectiveUnread 的边界', 0, (): void => {

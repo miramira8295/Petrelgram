@@ -129,3 +129,45 @@ export function buildChatEntry(input: ChatEntryBuildInput): ChatEntry {
   };
   return entry;
 }
+
+// 第二层 B4b 的对账判据：两份 ChatEntry 逐字段比。
+//
+// 【哪些字段不比】它们是「各算各的」，不是同一条规则：
+//   revision     —— 两边各自递增，本来就不该相等；
+//   lastSenderName —— worker 侧还没有用户表；
+//   avatarPath   —— UI 侧异步解析头像路径，worker 不知道；
+//   typingText   —— UI 侧的暂存事务产物；
+//   isLive / isRtmpLive —— 来自通话状态，不在这条数据链上。
+// 其余字段必须逐字相同，否则说明工厂在两边的输入或规则分叉了。
+export function compareChatEntries(local: ChatEntry, remote: ChatEntry): string {
+  if (local.title !== remote.title) { return `title local=${local.title} worker=${remote.title}`; }
+  if (local.isMuted !== remote.isMuted) { return 'isMuted'; }
+  if (local.usesDefaultMute !== remote.usesDefaultMute) { return 'usesDefaultMute'; }
+  if (local.unreadCount !== remote.unreadCount) {
+    return `unread local=${local.unreadCount} worker=${remote.unreadCount}`;
+  }
+  if (local.unreadMentionCount !== remote.unreadMentionCount) { return 'unreadMentionCount'; }
+  if (local.rawUnreadCount !== remote.rawUnreadCount) { return 'rawUnreadCount'; }
+  if (local.lastReadInboxId !== remote.lastReadInboxId) { return 'lastReadInboxId'; }
+  if ((local.lastReadOutboxId ?? 0) !== (remote.lastReadOutboxId ?? 0)) { return 'lastReadOutboxId'; }
+  if ((local.lastMessageSendState ?? '') !== (remote.lastMessageSendState ?? '')) {
+    return 'lastMessageSendState';
+  }
+  if (local.lastMessageText !== remote.lastMessageText) { return 'lastMessageText'; }
+  if (local.lastMessageThumb !== remote.lastMessageThumb) { return 'lastMessageThumb'; }
+  if (local.lastMessageDate !== remote.lastMessageDate) { return 'lastMessageDate'; }
+  if (local.lastMessageId !== remote.lastMessageId) { return 'lastMessageId'; }
+  if (local.photoFileId !== remote.photoFileId) { return 'photoFileId'; }
+  if (local.initials !== remote.initials) { return 'initials'; }
+  if (local.autoDeleteTime !== remote.autoDeleteTime) { return 'autoDeleteTime'; }
+  if (local.kind !== remote.kind) { return 'kind'; }
+  if (local.isMarkedUnread !== remote.isMarkedUnread) { return 'isMarkedUnread'; }
+  if (local.actionBar !== remote.actionBar) { return 'actionBar'; }
+  if (local.actionBarCanUnarchive !== remote.actionBarCanUnarchive) { return 'actionBarCanUnarchive'; }
+  if (local.canDeleteOnlyForSelf !== remote.canDeleteOnlyForSelf) { return 'canDeleteOnlyForSelf'; }
+  if (local.canDeleteForAllUsers !== remote.canDeleteForAllUsers) { return 'canDeleteForAllUsers'; }
+  if (local.isSavedMessages !== remote.isSavedMessages) { return 'isSavedMessages'; }
+  if (local.themeName !== remote.themeName) { return 'themeName'; }
+  if (local.liveGroupCallId !== remote.liveGroupCallId) { return 'liveGroupCallId'; }
+  return '';
+}
