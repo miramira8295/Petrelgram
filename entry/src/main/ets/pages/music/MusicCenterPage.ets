@@ -20,7 +20,7 @@ import { MusicTrack, musicTrackKey, trackKeyOf } from '../../util/musicTrackMode
 import { musicGlowColors } from '../../util/musicCenterStyle';
 import { AudioOutputDevice, buildCastRows, MusicCastRow, castChipName } from '../../util/musicCastDevices';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
-import { currentNowPlaying, NowPlaying } from '../../util/nowPlayingChannel';
+import { currentNowPlaying, NowPlaying, subscribeNowPlaying } from '../../util/nowPlayingChannel';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { COLOR_ON_PRIMARY, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
@@ -131,6 +131,11 @@ export struct MusicCenterPage {
   private unsubPlayer: (() => void) | null = null;
   private unsubCollections: (() => void) | null = null;
   private unsubDevices: (() => void) | null = null;
+  // 底栏迷你条/会话页起播时，本页要能"认回来"（见 adoptNowPlaying）。
+  // 只在 aboutToAppear 认一次是不够的：分栏下这一页常驻在设置栈里，
+  // 空闲状态打开过一次之后，再在会话里点播一首，回到这一页仍显示「还没有歌曲」
+  // （2026-11-07 平板实报）。所以订阅通道，曲目一变就再认一次。
+  private unsubNowPlaying: (() => void) | null = null;
   // 已经探过音源的那首歌，避免每帧都去问。
   private probedKey: string = '';
   // 详情页正在解析的合集，晚到的结果不能盖掉后点开的那个。
@@ -167,6 +172,10 @@ export struct MusicCenterPage {
     this.unsubDevices = audioOutputDevices().subscribe((): void => { this.refreshDevices(); });
     this.refreshDevices();
     this.adoptNowPlaying();
+    // 订阅通道：页面存活期间换了曲目（底栏迷你条、会话页起播）也要认回来。
+    this.unsubNowPlaying = subscribeNowPlaying((): void => {
+      this.adoptNowPlaying();
+    });
     this.library.search('');
   }
 
@@ -176,6 +185,7 @@ export struct MusicCenterPage {
     if (this.unsubPlayer !== null) { this.unsubPlayer(); this.unsubPlayer = null; }
     if (this.unsubCollections !== null) { this.unsubCollections(); this.unsubCollections = null; }
     if (this.unsubDevices !== null) { this.unsubDevices(); this.unsubDevices = null; }
+    if (this.unsubNowPlaying !== null) { this.unsubNowPlaying(); this.unsubNowPlaying = null; }
     this.library.close();
     // 控制器只解绑订阅，**不停播**：用户退出这一页时音乐该继续放（底栏迷你条接手）。
     this.player.dispose();
@@ -220,7 +230,13 @@ export struct MusicCenterPage {
   // 通道里只有曲名/演唱者/路径，文件 id、大小、格式都没有，所以按曲目键去把原消息取回来。
   private adoptNowPlaying(): void {
     const playing: NowPlaying | null = currentNowPlaying();
-    if (playing === null || this.player.current() !== null) {
+    if (playing === null) {
+      return;
+    }
+    // 已经是同一首就不动（避免每次通道回调都重取消息）。
+    const current: MusicTrack | null = this.player.current();
+    if (current !== null && current.chatId === playing.chatId
+      && current.messageId === playing.messageId) {
       return;
     }
     const key: string = musicTrackKey(playing.chatId, playing.messageId);

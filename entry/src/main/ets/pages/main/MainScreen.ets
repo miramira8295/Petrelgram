@@ -43,7 +43,7 @@ import { str } from '../../util/strings';
 import { getVoicePlayback, VoiceState } from '../../services/VoicePlayback';
 import { clearNowPlaying, NowPlaying, subscribeNowPlaying } from '../../util/nowPlayingChannel';
 import {
-  DOCK_EXPANDED, dockMiniBarState, dockShowsAlbumBall, dockShowsPlayer, dockShowsTabs,
+  DOCK_EXPANDED, DOCK_FULL, dockMiniBarState, dockShowsAlbumBall, dockShowsPlayer, dockShowsTabs,
   nowPlayingTitle
 } from '../../util/dockMiniBar';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
@@ -53,7 +53,7 @@ import { ChatBackgroundState, preloadDefaultChatBackground } from '../../store/C
 import { rasterizeBackground, patternOpacity } from '../../util/chatBackgroundRaster';
 import { KEY_BG_BLUR, BG_BLUR_DEFAULT } from '../../store/AppSettings';
 import {
-  overlayBackdropBlur, overlayGlassFill, materialOff, MATERIAL_EPOCH
+  overlayBackdropBlur, overlayGlassFill, materialOff, plainBackdropBlur, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { DOCK_SIDE_PADDING, dockSidePadding } from '../../util/mainTabsWidth';
@@ -200,6 +200,7 @@ export struct MainScreen {
   // changeIndex 是和 `this.tab = index` 成对写的，本来就是双保险。
   // 类本身是 6.0.0(20)，构造安全。
   private controller: HdsTabsController = new HdsTabsController();
+  private railController: HdsTabsController = new HdsTabsController();
   private store: ProfileStore | null = null;
   private unsubStore: (() => void) | null = null;
   private unsubUnread: (() => void) | null = null;
@@ -935,29 +936,22 @@ export struct MainScreen {
       .alignItems(VerticalAlign.Center)
       .width('100%').height(DOCK_H)
       .backgroundColor(this.dockBg())
-      // backdropBlur over a light tint: COMPONENT_* material styles carry an
-      // opaque built-in backboard that reads as solid gray, so blur the
-      // backdrop directly instead. The immersive material has no such backboard
-      // and supersedes this — overlayBackdropBlur() drops to 0 where it applies.
+      // 自绘玻璃：dock_glass 底色 + 自己画的背景模糊。COMPONENT_* 材质档自带
+      // 不透明底板，会把自绘面压成一块死灰，所以用 backdropBlur 而不是
+      // backgroundBlurStyle。半径由 dockBlur() 给（见该函数的说明）。
       .backdropBlur(this.dockBlur())
       .borderRadius(DOCK_H / 2)
       .clip(true)
       .border({ width: 0.5, color: COLOR_DIVIDER })
-      .shadow({ radius: 14, color: '#24000000', offsetX: 0, offsetY: 4 })
-      // **有播放条时胶囊自己不挂材质。**
+      // **胶囊不挂 systemMaterial。**
       //
-      // 材质套材质会互相抵消/发实——首页那边早就避开了这件事（ChatListPage
-      // titleBar 的注释：「标题栏本身继续只负责滚动模糊，避免整栏与按钮材质
-      // 叠加后发实」，它是"栏不挂、按钮挂"）。我们这里原本是"胶囊挂、格子不挂"，
-      // 四个页签格子只有 stateStyles，所以一直没露馅；把播放条那几个控件塞进来
-      // 之后，里外两层材质撞上，表现就是控件上一点光感都没有（用户实测：首页
-      // 搜索键有流光/形变，这里没有）。
-      //
-      // 于是按播放条在不在切换承载者：没有播放条时维持原样（胶囊挂材质，
-      // 观感不变）；有播放条时胶囊让出来，材质交给里面的控件，光感才出得来。
-      .attributeModifier(materialModifierWhen('bar',
-        this.materialEpoch >= 0 && !dockShowsPlayer(this.miniState()) && !dockShowsAlbumBall(this.miniState())))
-      ;
+      // 这里是内容区的 Row，系统沉浸材质不在此渲染（官方日志原文：Material
+      // inactive: out of scope. Use component in navigation title bar or Tabbar.
+      // 见 util/overlayMaterial 里 overlayBlur 上方那段与 pages/chat/ChatHeader
+      // 文件头）。以前挂了两层：这里挂材质、dockBlur() 又把模糊让给它，结果
+      // 两层都落空。现在玻璃完全收回自绘，材质属性一并去掉——留着既是死代码，
+      // 一旦哪天它真生效还会和自绘模糊叠成"双份 GPU"。
+      .shadow({ radius: 14, color: '#24000000', offsetX: 0, offsetY: 4 });
     }
     .width(this.dockWidth())
     // 两侧留白 16 → 28 → 40，胶囊再窄一档。四个格子是 layoutWeight 均分的，
@@ -1009,7 +1003,19 @@ export struct MainScreen {
   }
 
   private dockBlur(): number {
-    return this.materialEpoch < 0 ? 0 : overlayBackdropBlur('bar');
+    // **自绘面必须自己画模糊，不能把观感让给材质。**
+    //
+    // 原来这里走 overlayBackdropBlur('bar')：它在 materialAvailable()==true 时
+    // 恒返回 0，把观感整个让给组件级 systemMaterial。但系统沉浸材质只在
+    // 导航标题栏 / TabBar / 弹窗这些白名单宿主上渲染，本 dock 是**内容区的 Row**
+    // （平板分栏才构建，见 leftFloatingDock()），材质根本不会画——于是模糊 0 与
+    // 材质缺失同时成立，只剩 dockBg() 那层 55% 白，平板端看上去就是"材质丢失"
+    // （2026-11-06 真机：MatePad Pro 分栏，胶囊背后会话文字清晰透出）。
+    //
+    // plainBackdropBlur 是项目给自绘面准备的另一套（2026-09 已迁移 20+ 处，
+    // ChatHeader / BottomDrawerShell / ChatTopicBar 等），只吃"厚度关闭"，与
+    // 材质探测结果无关，按面分档给半径。手机端不执行 dock()，不受影响。
+    return this.materialEpoch < 0 ? 0 : plainBackdropBlur('bar');
   }
 
   build() {
@@ -1123,8 +1129,51 @@ export struct MainScreen {
       // 胶囊（把胶囊糊成一片），又因为 position 的 calc 失效被画到屏幕顶部去糊标题。
       // 渐隐属于可滚动内容，就该画在列表里、只糊列表自己，不在屏幕层压任何东西。
       if (this.leftFloatingDock()) {
-        this.dock();
+        HdsTabs({ controller: this.railController, index: physicalTabIndex(this.tab, this.showContactsTab) }) {
+          TabContent() { Column().width(0).height(0); }.tabBar(this.tabBarChats())
+          if (this.showContactsTab) {
+            TabContent() { Column().width(0).height(0); }.tabBar(this.tabBarContacts())
+          }
+          TabContent() { Column().width(0).height(0); }.tabBar(this.tabBarSettings())
+          TabContent() { Column().width(0).height(0); }.tabBar(this.tabBarProfile())
+        }
+        .barOverlap(true)
+        .vertical(false)
+        .barMode(BarMode.Fixed)
+        .barPosition(BarPosition.End)
+        .barHeight(DOCK_H)
+        .attributeModifier(new HdsTabsFloatingModifier({
+          bottomMargin: Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.7)),
+          sideBarWidth: null,
+          // 与手机端同一套留白规则：有迷你条时放开到 MINI_SIDE_MARGIN，否则页签和播放条叠在一起。
+          sideMargin: this.miniBarActive() ? MINI_SIDE_MARGIN : this.dockPadding(),
+          // **音乐中心/迷你播放条直接复用手机端那一份**（DockMiniBar 的 miniBar 槽），
+          // 不再由平板自绘 dock() 画专辑球/播放条（用户 2026-11-07 修正：
+          // 统一两端音乐中心实现，不是恢复平板旧 Dock）。
+          miniBar: this.miniBarActive()
+            ? this.miniBarHolder.content(this.getUIContext(), wrapBuilder(dockMiniBarLayer))
+            : null,
+          adaptToHandedness: true,
+          floating: true,
+          gradientMaskColor: Color.Transparent,
+          epoch: this.materialEpoch
+        }))
+        .scrollable(false)
+        .onChange((index: number) => {
+          const logical: number = logicalTabIndex(index, this.showContactsTab);
+          if (this.tab !== logical) {
+            this.appliedTab = logical;
+            this.tab = logical;
+          }
+        })
+        .width(this.dockWidth())
+        .height(DOCK_H + 24);
       }
+
+      // 分栏下不再调用 dock()：普通页签走上面的系统胶囊，音乐中心/迷你播放条走同一颗
+      // 胶囊的 miniBar 槽（与手机端同一份 DockMiniBar 实现，用户 2026-11-07 修正）。
+      // dock() 方法本体本轮不删除（避免扩大改动面），但已无调用点；要恢复旧平板 Dock
+      // 只需在此处重新加回 `if (this.leftFloatingDock()) { this.dock(); }`。
 
       // dock 常驻在树上，藏与不藏由它自己的 opacity / enabled / visibility 决定
       // （见 dock() 末尾与 syncDock()）。这里**不能**用 `if`：条件渲染摘掉的子树
