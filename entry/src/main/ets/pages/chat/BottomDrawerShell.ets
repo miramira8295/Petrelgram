@@ -19,7 +19,20 @@ export struct BottomDrawerShell {
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @Prop bottomSafe: number;
   @Prop drawerHeight: number = BOTTOM_DRAWER_HEIGHT;
+  @Prop shellHeight: number = -1;
+  @Prop cardOffsetY: number = 0;
+  @Prop cardOpacity: number = 1;
+  @Prop imeOverlapRatio: number = 0;
   @BuilderParam content: () => void;
+
+  private visibleShellHeight(): number {
+    if (this.shellHeight >= 0) {
+      return Math.max(0, this.shellHeight);
+    }
+    const full: number = this.drawerHeight + drawerBottomInset(this.bottomSafe);
+    const ratio: number = Math.min(1, Math.max(0, this.imeOverlapRatio));
+    return Math.max(0, full * (1 - ratio));
+  }
 
   @Styles
   drawerCard() {
@@ -58,10 +71,12 @@ export struct BottomDrawerShell {
       // 键盘时做不到这一点（另一个图层，背后没有页面背景），才被迫齐边。
       .width('calc(100% - 16vp)')
       .height(this.drawerHeight)
+      .translate({ y: this.cardOffsetY })
+      .opacity(this.cardOpacity)
       .drawerCard();
     }
     .width('100%')
-    .height(this.drawerHeight + drawerBottomInset(this.bottomSafe))
+    .height(this.visibleShellHeight())
     // **必须裁剪**。背景层内部按整屏尺寸绘制（CachedImage 的 box 是
     // screenW × screenH），限了高度但不裁的话图会溢出到键盘区外面，把输入框
     // 整个盖住——实测就是这样，中间还多出一条颜色对不上的壁纸。

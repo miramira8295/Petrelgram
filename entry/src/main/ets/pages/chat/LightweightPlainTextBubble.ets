@@ -1266,7 +1266,7 @@ export struct LightweightPlainTextBubble {
         .onDragEnd((): void => { this.draggingMessage = false; })
         .bindContextMenu(this.menuShown, this.contextMenu(), {
           offset: { x: this.menuOffsetX, y: 0 },
-          preview: menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp)
+          preview: (this.menuShown && menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp))
             ? MenuPreviewMode.NONE : MenuPreviewMode.IMAGE,
           previewBorderRadius: this.bubbleCorners(),
           // 两条动效链按实例缓存（见 util/messageMenuTransitions）。

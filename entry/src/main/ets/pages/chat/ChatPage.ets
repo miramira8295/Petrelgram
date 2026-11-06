@@ -111,7 +111,8 @@ import {
 } from '../../util/shareLivePhoto';
 import { SharedPayload } from '../../util/sharedContent';
 import { onShareTargeted, takePendingShare } from '../../services/ShareInbox';
-import { ChatComposerHost } from './ChatComposerHost';
+import { ChatComposerHost, ChatBottomDrawerHost } from './ChatComposerHost';
+import { BOTTOM_DRAWER_HEIGHT, drawerBottomInset } from '../../util/drawerMetrics';
 import { ChatSessionLifecycle } from './ChatSessionLifecycle';
 import { ChatViewerSession } from './ChatViewerSession';
 import { ChatMessageActionCoordinator } from './ChatMessageActionCoordinator';
@@ -976,6 +977,16 @@ export struct ChatPage {
   private imeTailPinned: boolean = false;
   private imeLayoutSeq: number = 0;
   private lastKeyboardH: number = 0;
+  private fullViewportH: number = 0;
+  private curViewportH: number = 0;
+  private knownImeH: number = 0;
+  private imeClosingToDrawer: boolean = false;
+  private imeBridgeTimer: number = -1;
+  private pendingImeBridgeFromEmoji: boolean = false;
+  private drawerAnimSeq: number = 0;
+  private drawerClosingToIme: boolean = false;
+  private viewportResizeSettleTimer: number = -1;
+  private lastComposerBottomGap: number = -1;
   // 媒体保存/下载簇（查看器"保存到相册"单槽等待 + 新消息自动保存队列 + 文档
   // 下载后自动打开）整体搬进 MediaSaveState（B15 批），原六个字段
   // （pendingGallerySaveId/pendingGallerySaveProgress/autoSavePendingIds/
@@ -1248,6 +1259,7 @@ export struct ChatPage {
     this.freshClearSeq++;
     this.imeTailPinned = false;
     this.bottomChromeMeasured = false;
+    this.lastComposerBottomGap = -1;
     this.imeLayoutSeq++;
     this.lastKeyboardH = this.keyboardH;
     this.flash.cancelFlash();
@@ -1288,6 +1300,16 @@ export struct ChatPage {
     // 是同一种模式。
     this.recording.cancel();
     this.inputSwitch.cancel();
+    this.clearViewportResizeSettleTimer();
+    this.clearImeBridge(false);
+    this.drawerAnimSeq++;
+    this.drawerClosingToIme = false;
+    this.emojiDrawer.shellHeight = 0;
+    this.emojiDrawer.activeSlot = '';
+    this.emojiDrawer.cardOffsetY = 0;
+    this.emojiDrawer.cardOpacity = 1;
+    this.emojiDrawer.closingImeToDrawer = false;
+    this.emojiDrawer.closingExpanded = false;
     this.panelReadySeq++;
     this.showEmojiPanel = false;
     this.panelContentReady = false;
@@ -1303,6 +1325,7 @@ export struct ChatPage {
     this.composerEditorReady = false;
     this.imeTailPinned = false;
     this.bottomChromeMeasured = false;
+    this.lastComposerBottomGap = -1;
     this.imeLayoutSeq++;
     this.lastKeyboardH = this.keyboardH;
     this.mention.clear();
@@ -1865,8 +1888,19 @@ export struct ChatPage {
         !this.recording.isRecording && !membershipLosesComposer(this.membershipState) &&
         this.chatId !== 0 && getTdClient() === inputClient,
       contextKey: (): number => this.chatId,
-      emojiOpen: (): boolean => this.showEmojiPanel,
-      setEmoji: (show: boolean): void => { this.setEmojiPanel(show); },
+      emojiOpen: (): boolean => this.showEmojiPanel && !this.emojiPanelClosing,
+      setEmoji: (show: boolean): void => {
+        if (!show) {
+          if (this.showEmojiPanel) {
+            this.pendingImeBridgeFromEmoji = true;
+          } else if (this.attachPanelOpen) {
+            this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_ATTACH));
+            this.startDrawerToImeBridge(SLOT_ATTACH);
+          }
+        }
+        this.setEmojiPanel(show);
+        this.pendingImeBridgeFromEmoji = false;
+      },
       prepareEditor: (): void => { this.prepareComposerEditor(); },
       focusEditor: (): void => { focusControl.requestFocus('chat_composer'); }
     });
@@ -3127,6 +3161,31 @@ export struct ChatPage {
     }), INITIAL_MESSAGE_RELEASE_DELAY_MS);
   }
 
+  private clearViewportResizeSettleTimer(): void {
+    if (this.viewportResizeSettleTimer !== -1) {
+      clearTimeout(this.viewportResizeSettleTimer);
+      this.viewportResizeSettleTimer = -1;
+    }
+  }
+
+  private onViewportResizeFrame(): void {
+    this.timeline.pauseForViewportResize();
+    if (this.viewportResizeSettleTimer !== -1) {
+      clearTimeout(this.viewportResizeSettleTimer);
+    }
+    this.viewportResizeSettleTimer = setTimeout((): void => {
+      this.viewportResizeSettleTimer = -1;
+      this.timeline.resumeAfterViewportResize();
+      if (this.keyboardH <= 0 && this.emojiDrawer.shellHeight <= 0 &&
+        !this.drawerClosingToIme && !this.emojiDrawer.closingImeToDrawer) {
+        if (this.imeTailPinned) {
+          this.imeTailPinned = false;
+          this.timeline.driveVisibleWork();
+        }
+      }
+    }, 150);
+  }
+
   private prepareComposerEditor(): void {
     // Automatic mounting remains outside the transition-critical path, but a
     // user tap always wins over that scheduler. Replace the text shell now and
@@ -3176,7 +3235,7 @@ export struct ChatPage {
   }
 
   private handleHidden(): void {
-
+    AppStorage.setOrCreate<boolean>('chatDetailHiding', false);
     this.inputSwitch.cancel();
     coordinateChatPageHidden({
       stopScrollActivity: (): void => { setScrollActive(false); },
@@ -3195,6 +3254,7 @@ export struct ChatPage {
   }
 
   private handleWillHide(): void {
+    AppStorage.setOrCreate<boolean>('chatDetailHiding', true);
     this.inputSwitch.cancel();
     // 退场一开始就把群聊动态头像卸下来：播放器于是在转场那 600ms 里逐个释放，
     // 而不是全挤在转场结束那一帧（真机 trace：那一帧 47–57ms，
@@ -3212,7 +3272,7 @@ export struct ChatPage {
   }
 
   private handleShown(): void {
-
+    AppStorage.setOrCreate<boolean>('chatDetailHiding', false);
     // 回到这一页（或者退场被取消了）：放开停车闸，头像该动的继续动。
     parkSenderAnimations(false);
     this.videoPrefetch.resume();
@@ -3228,7 +3288,7 @@ export struct ChatPage {
       setPageVisible: (visible: boolean): void => { if (!visible) { this.dropReceiver.cancel(); } this.timeline.pageVisible = visible; },
       armInitialTransitionSettle: (): void => { this.timeline.armInitialMessageTransitionSettle(); },
       scheduleInitialTimelinePresentation: (): void => { this.timeline.scheduleInitialTimelinePresentation(); },
-      scheduleChatTgsResume: (): void => { this.timeline.scheduleChatTgsResume(); },
+      scheduleChatTgsResume: (): void => { this.timeline.scheduleInitialChatTgsResume(); },
       endLinkNavigation: (): void => { endLinkNav(); },
       armPlaySlotSettle: (): void => { this.playSlot.armSettle(); },
       resyncListAfterHidden: (): void => { this.timeline.resyncListAfterHidden(); },
@@ -3250,6 +3310,7 @@ export struct ChatPage {
   }
 
   aboutToDisappear(): void {
+    AppStorage.setOrCreate<boolean>('chatDetailHiding', false);
     this.messageActionsState.reset();
     this.sessionLifecycle.dispose();
   }
@@ -3298,8 +3359,11 @@ export struct ChatPage {
     const draftText: string = this.composer.draftToPersist(this.draft);
     // 本地先落一份：服务端那条是 fire-and-forget，"返回再进来"这条最快的往返会
     // 抢在草稿落地之前（真机日志 1.4.7.2：save len=3 → 同一会话 restore serverLen=0）。
-    rememberLocalDraft(this.chatId, draftText);
-    bumpDraftEpoch();
+    // 仅当草稿文本真发生改变时才递增 DRAFT_EPOCH，避免退出会话（aboutToDisappear）
+    // 最后一帧无条件唤醒会话列表全部 ChatRow 同步重绘导致退场尾帧掉帧。
+    if (rememberLocalDraft(this.chatId, draftText)) {
+      bumpDraftEpoch();
+    }
     this.store?.saveDraft(draftText, this.composer.replyToId);
     this.exitViewerLandscape();
     this.captureScrollResume();
@@ -3307,9 +3371,14 @@ export struct ChatPage {
 
   private disposeTimersAndSeqGuards(): void {
     this.inputSwitch.dispose();
+    this.clearViewportResizeSettleTimer();
+    this.clearImeBridge(false);
+    this.drawerAnimSeq++;
+    this.drawerClosingToIme = false;
     this.bottomChromeLayoutSeq++;
     this.imeTailPinned = false;
     this.bottomChromeMeasured = false;
+    this.lastComposerBottomGap = -1;
     this.imeLayoutSeq++;
     this.closeHeaderMenu();
     // 原 showReactionSheet=false; reactionTargetId=0; closeForwardSheet() 三行
@@ -3502,6 +3571,7 @@ export struct ChatPage {
       this.timeline.atBottom = true;
       if (releaseAfter) {
         this.imeTailPinned = false;
+        this.timeline.driveVisibleWork();
       }
     }, releaseAfter ? 180 : 80);
   }
@@ -3515,7 +3585,225 @@ export struct ChatPage {
     this.timeline.glueBottom('L2078');
   }
 
+  private currentImeOverlap(): number {
+    if (this.fullViewportH > 0 && this.curViewportH > 0) {
+      return Math.max(0, this.fullViewportH - this.curViewportH);
+    }
+    return this.keyboardH > 0 ? this.keyboardH : 0;
+  }
+
+  private refImeHeight(): number {
+    if (this.knownImeH > 0) {
+      return this.knownImeH;
+    }
+    if (this.keyboardH > 0) {
+      return this.keyboardH;
+    }
+    return this.emojiDrawer.totalHeight(this.headerChromeHeight(), this.bottomSafe);
+  }
+
+  private targetDrawerTotalHeight(slot: string): number {
+    if (slot === SLOT_EMOJI) {
+      return this.emojiDrawer.totalHeight(this.headerChromeHeight(), this.bottomSafe);
+    }
+    if (slot === SLOT_ATTACH) {
+      return BOTTOM_DRAWER_HEIGHT + drawerBottomInset(this.bottomSafe);
+    }
+    return 0;
+  }
+
+  private finishDrawerToImeBridge(): void {
+    if (this.imeBridgeTimer !== -1) {
+      clearTimeout(this.imeBridgeTimer);
+      this.imeBridgeTimer = -1;
+    }
+    this.drawerAnimSeq++;
+    this.drawerClosingToIme = false;
+    this.imeClosingToDrawer = false;
+    this.emojiDrawer.closingImeToDrawer = false;
+    this.emojiDrawer.closingExpanded = false;
+    this.emojiDrawer.shellHeight = 0;
+    this.emojiDrawer.activeSlot = '';
+    this.emojiDrawer.cardOffsetY = 0;
+    this.emojiDrawer.cardOpacity = 1;
+    this.emojiDrawer.imeBridgeSlot = '';
+    this.emojiDrawer.setImeOverlapRatio(0);
+    if (!this.showEmojiPanel) {
+      this.panelContentReady = false;
+    }
+    this.syncComposerBottomGap();
+  }
+
+  private armImeBridgeTimer(ms: number): void {
+    if (this.imeBridgeTimer !== -1) {
+      clearTimeout(this.imeBridgeTimer);
+    }
+    this.imeBridgeTimer = setTimeout((): void => {
+      this.imeBridgeTimer = -1;
+      this.imeClosingToDrawer = false;
+      this.emojiDrawer.closingImeToDrawer = false;
+      if (this.drawerClosingToIme) {
+        this.finishDrawerToImeBridge();
+      }
+    }, ms);
+  }
+
+  private startDrawerToImeBridge(slot: string): void {
+    if (this.currentImeOverlap() > 10 && this.emojiDrawer.shellHeight <= 0) {
+      return;
+    }
+    this.imeClosingToDrawer = false;
+    this.emojiDrawer.closingImeToDrawer = false;
+    this.drawerClosingToIme = true;
+    const settle: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 190);
+    const startH: number = this.emojiDrawer.shellHeight > 0
+      ? this.emojiDrawer.shellHeight
+      : this.targetDrawerTotalHeight(slot);
+    const targetH: number = this.refImeHeight();
+    this.armImeBridgeTimer(Math.max(340, settle + 140));
+    this.animateDrawerTo(slot, targetH, settle, startH, 0, 14, 1, 0, true);
+  }
+
+  private clearImeBridge(keepContentReady: boolean): void {
+    if (this.imeBridgeTimer !== -1) {
+      clearTimeout(this.imeBridgeTimer);
+      this.imeBridgeTimer = -1;
+    }
+    this.imeClosingToDrawer = false;
+    this.drawerClosingToIme = false;
+    this.emojiDrawer.closingImeToDrawer = false;
+    if (this.emojiDrawer.imeBridgeSlot !== '') {
+      this.emojiDrawer.imeBridgeSlot = '';
+    }
+    this.emojiDrawer.setImeOverlapRatio(0);
+    if (!keepContentReady && !this.showEmojiPanel) {
+      this.panelContentReady = false;
+    }
+  }
+
+  private animateDrawerTo(
+    slot: string,
+    targetH: number,
+    durationMs: number,
+    startH: number,
+    fromOffsetY: number,
+    toOffsetY: number,
+    fromOpacity: number,
+    toOpacity: number,
+    closingToIme: boolean = false,
+    onDone?: () => void
+  ): void {
+    const seq: number = ++this.drawerAnimSeq;
+    this.drawerClosingToIme = closingToIme;
+    if (slot !== '') {
+      this.emojiDrawer.activeSlot = slot;
+    }
+    if (this.fullViewportH <= 0 && this.emojiDrawer.viewport > 0) {
+      this.fullViewportH = this.emojiDrawer.viewport;
+      this.emojiDrawer.fullViewportH = this.fullViewportH;
+    }
+    if (this.timeline.atBottom && !this.viewerOpen()) {
+      this.imeTailPinned = true;
+    }
+    holdPlayerJobs(Math.max(KEYBOARD_SETTLE_MS, durationMs + 80));
+    if (durationMs <= 0 || (Math.abs(targetH - startH) < 0.5 &&
+      Math.abs(toOffsetY - fromOffsetY) < 0.5 && Math.abs(toOpacity - fromOpacity) < 0.01)) {
+      this.emojiDrawer.shellHeight = Math.max(0, targetH);
+      this.emojiDrawer.cardOffsetY = toOffsetY;
+      this.emojiDrawer.cardOpacity = toOpacity;
+      this.emojiDrawer.closingExpanded = false;
+      if (!closingToIme && targetH <= 0) {
+        this.emojiDrawer.activeSlot = '';
+      }
+      if (onDone !== undefined) {
+        onDone();
+      }
+      if (!closingToIme) {
+        this.imeTailPinned = false;
+        this.timeline.driveVisibleWork();
+      }
+      return;
+    }
+    this.emojiDrawer.shellHeight = Math.max(0, startH);
+    this.emojiDrawer.cardOffsetY = fromOffsetY;
+    this.emojiDrawer.cardOpacity = fromOpacity;
+    const startMs: number = Date.now();
+    const step = (): void => {
+      if (seq !== this.drawerAnimSeq) {
+        return;
+      }
+      const elapsed: number = Date.now() - startMs;
+      const u: number = Math.min(1, Math.max(0, elapsed / durationMs));
+      const eased: number = 1 - Math.pow(1 - u, 3.2);
+      this.emojiDrawer.shellHeight = Math.max(0, startH + (targetH - startH) * eased);
+      this.emojiDrawer.cardOffsetY = fromOffsetY + (toOffsetY - fromOffsetY) * eased;
+      this.emojiDrawer.cardOpacity = fromOpacity + (toOpacity - fromOpacity) * eased;
+      if (u < 1) {
+        this.getUIContext().postFrameCallback(new ChatPageFrameCallback(step));
+        return;
+      }
+      this.emojiDrawer.closingExpanded = false;
+      if (onDone !== undefined) {
+        onDone();
+      }
+      if (!closingToIme) {
+        if (targetH <= 0) {
+          this.emojiDrawer.shellHeight = 0;
+          this.emojiDrawer.activeSlot = '';
+          this.emojiDrawer.cardOffsetY = 0;
+          this.emojiDrawer.cardOpacity = 1;
+          this.syncComposerBottomGap();
+        }
+        if (this.keyboardH <= 0 && this.viewportResizeSettleTimer === -1) {
+          this.imeTailPinned = false;
+          this.timeline.driveVisibleWork();
+        }
+      } else {
+        const overlap: number = this.currentImeOverlap();
+        if (overlap >= Math.max(10, targetH - 4)) {
+          this.finishDrawerToImeBridge();
+        }
+      }
+    };
+    this.getUIContext().postFrameCallback(new ChatPageFrameCallback(step));
+  }
+
+  private handleResizeAreaChange(_oldH: number, newH: number): void {
+    if (newH <= 0) {
+      return;
+    }
+    this.curViewportH = newH;
+    this.emojiDrawer.curResizeH = newH;
+    if (newH > this.fullViewportH ||
+      (this.keyboardH <= 0 && !this.imeTailPinned && !this.emojiDrawer.closingImeToDrawer &&
+        !this.drawerClosingToIme && this.emojiDrawer.shellHeight <= 0)) {
+      this.fullViewportH = Math.max(this.fullViewportH, newH);
+    }
+    if (this.fullViewportH > 0) {
+      this.emojiDrawer.fullViewportH = this.fullViewportH;
+    }
+    const overlap: number = Math.max(0, this.fullViewportH - newH);
+    if (overlap > this.knownImeH) {
+      this.knownImeH = overlap;
+    }
+    if (this.emojiDrawer.closingImeToDrawer && overlap <= 1 && this.keyboardH <= 0) {
+      this.imeClosingToDrawer = false;
+      this.emojiDrawer.closingImeToDrawer = false;
+      if (this.imeBridgeTimer !== -1) {
+        clearTimeout(this.imeBridgeTimer);
+        this.imeBridgeTimer = -1;
+      }
+    } else if (this.drawerClosingToIme && this.emojiDrawer.shellHeight > 0 &&
+      overlap >= Math.max(10, this.emojiDrawer.shellHeight - 4)) {
+      this.finishDrawerToImeBridge();
+    }
+  }
+
   private handleViewportHeightChange(oldH: number, newH: number): void {
+    if (newH > 0 && this.fullViewportH <= 0) {
+      this.fullViewportH = newH;
+      this.emojiDrawer.fullViewportH = newH;
+    }
     if (oldH <= 0 || newH <= 0 || this.viewerOpen()) {
       return;
     }
@@ -3527,20 +3815,21 @@ export struct ChatPage {
       this.timeline.groups.length === 0) {
       return;
     }
+    this.onViewportResizeFrame();
     if (deltaH > 0) {
-      // 软键盘升起、视口高度收缩：把当前可见的聊天记录按相同位移往上顶，避免被键盘直接遮挡。
+      // 软键盘或底部抽屉升起、视口高度收缩：把当前可见的聊天记录按相同位移往上顶，避免被直接遮挡。
       if (this.imeTailPinned || this.timeline.atBottom) {
         this.imeTailPinned = true;
         this.timeline.atBottom = true;
         this.timeline.stayAtUnread = false;
-        this.timeline.scroller.scrollBy(0, deltaH);
         this.timeline.glueBottom('imeResizeOpen');
       } else {
         this.timeline.scroller.scrollBy(0, deltaH);
       }
     } else {
-      // 软键盘收起、视口高度恢复：聊天记录随键盘平滑下移复位。
+      // 软键盘或底部抽屉收起、视口高度恢复：聊天记录随视口平滑下移复位。
       if (this.imeTailPinned || this.timeline.atBottom) {
+        this.imeTailPinned = true;
         this.timeline.atBottom = true;
         this.timeline.glueBottom('imeResizeClose');
       } else if (!this.timeline.scroller.isAtEnd()) {
@@ -3553,18 +3842,26 @@ export struct ChatPage {
   private onKeyboardHeightChanged(): void {
     const wasVisible: boolean = this.lastKeyboardH > 0;
     const visible: boolean = this.keyboardH > 0;
-    if (!wasVisible && visible && !this.imeTailPinned) {
-      this.imeTailPinned = this.composerFocused && this.timeline.atBottom &&
-        !this.viewerOpen();
+    if (this.keyboardH > this.knownImeH) {
+      this.knownImeH = this.keyboardH;
+    }
+    if (wasVisible !== visible) {
+      holdPlayerJobs(KEYBOARD_SETTLE_MS);
+    }
+    if (!this.imeTailPinned && this.timeline.atBottom && !this.viewerOpen()) {
+      if ((!wasVisible && visible && this.composerFocused) || (wasVisible && !visible)) {
+        this.imeTailPinned = true;
+      }
     }
     this.lastKeyboardH = this.keyboardH;
+    this.syncComposerBottomGap();
     if (this.imeTailPinned) {
       if (visible) {
         // keyboardHeightChange follows the system IME animation. Keep the
         // message tail on the same layout frame instead of adding a separate
         // delayed scroll animation with a visibly different velocity.
         this.syncTailOnImeFrame();
-      } else {
+      } else if (this.emojiDrawer.shellHeight <= 0 && !this.emojiDrawer.closingImeToDrawer) {
         // Closing already tracks naturally; retain one settled correction for
         // the final navigation-inset layout.
         this.syncTailAfterImeResize(true);
@@ -3774,7 +4071,10 @@ export struct ChatPage {
     }
     // 表情/贴纸抽屉、附件抽屉开着：返回先收抽屉，不直接退出会话——和系统键盘弹着时
     // 返回先收键盘是同一个手感。排在查看器之后：查看器盖在抽屉上面，要先收它。
-    if (this.showEmojiPanel && this.emojiDrawer.collapse()) { return true; }
+    if (this.showEmojiPanel && this.emojiDrawer.expanded) {
+      this.setEmojiExpanded(false);
+      return true;
+    }
     if (slotIsDrawer(this.bottomSlot)) {
       this.closeBottomPanels();
       return true;
@@ -4791,7 +5091,25 @@ export struct ChatPage {
   }
 
   private composerBottomGap(): number {
-    return bottomGapOf(this.keyboardH, this.bottomPanelOpen(), this.bottomSafe);
+    return bottomGapOf(
+      this.keyboardH,
+      this.bottomPanelOpen() || this.emojiDrawer.activeSlot !== '' || this.drawerClosingToIme,
+      this.bottomSafe
+    );
+  }
+
+  private syncComposerBottomGap(): void {
+    const nextGap: number = this.composerBottomGap();
+    if (this.lastComposerBottomGap < 0) {
+      this.lastComposerBottomGap = nextGap;
+      return;
+    }
+    const deltaGap: number = nextGap - this.lastComposerBottomGap;
+    this.lastComposerBottomGap = nextGap;
+    if (!this.bottomChromeMeasured || Math.abs(deltaGap) < 0.5) {
+      return;
+    }
+    this.bottomChromeH = Math.max(0, this.bottomChromeH + deltaGap);
   }
 
   // 输入框高度的测量整段下沉到了 ChatComposerInput（第二轮第 9 项）：三个几何
@@ -4803,6 +5121,7 @@ export struct ChatPage {
     if (height <= 0) {
       return;
     }
+    this.lastComposerBottomGap = this.composerBottomGap();
     const wasMeasured: boolean = this.bottomChromeMeasured;
     this.bottomChromeMeasured = true;
     if (Math.abs(height - this.bottomChromeH) < 0.5) {
@@ -4811,24 +5130,35 @@ export struct ChatPage {
     const prevChromeH: number = this.bottomChromeH;
     const deltaChrome: number = height - prevChromeH;
     const keepTailVisible: boolean = (this.timeline.atBottom || this.imeTailPinned) && !this.viewerOpen();
+    const drawerActive: boolean = this.emojiDrawer.shellHeight > 0 ||
+      this.emojiDrawer.closingImeToDrawer || this.drawerClosingToIme;
     this.bottomChromeH = height;
     if (keepTailVisible) {
       this.timeline.atBottom = true;
-      const seq: number = ++this.bottomChromeLayoutSeq;
-      setTimeout((): void => {
-        if (seq === this.bottomChromeLayoutSeq && !this.timeline.listTouchActive && !this.viewerOpen()) {
-          this.timeline.atBottom = true;
-          this.timeline.glueBottom('L4617');
-        }
-      }, 0);
-    } else if (wasMeasured && this.timeline.didInitialScroll && !this.timeline.initialTimelineMasked &&
-      this.timeline.groups.length > 0 && !this.viewerOpen() && Math.abs(deltaChrome) >= 0.5) {
-      const seq: number = ++this.bottomChromeLayoutSeq;
-      setTimeout((): void => {
-        if (seq === this.bottomChromeLayoutSeq && !this.timeline.listTouchActive && !this.viewerOpen()) {
-          this.timeline.scroller.scrollBy(0, deltaChrome);
-        }
-      }, 0);
+      if (drawerActive) {
+        this.timeline.glueBottom('L4617_sync');
+      } else {
+        const seq: number = ++this.bottomChromeLayoutSeq;
+        setTimeout((): void => {
+          if (seq === this.bottomChromeLayoutSeq && !this.timeline.listTouchActive && !this.viewerOpen()) {
+            this.timeline.atBottom = true;
+            this.timeline.glueBottom('L4617');
+          }
+        }, 0);
+      }
+    } else if (wasMeasured && this.timeline.didInitialScroll &&
+      !this.timeline.initialTimelineMasked && this.timeline.groups.length > 0 &&
+      !this.viewerOpen() && Math.abs(deltaChrome) >= 0.5) {
+      if (drawerActive) {
+        this.timeline.scroller.scrollBy(0, deltaChrome);
+      } else {
+        const seq: number = ++this.bottomChromeLayoutSeq;
+        setTimeout((): void => {
+          if (seq === this.bottomChromeLayoutSeq && !this.timeline.listTouchActive && !this.viewerOpen()) {
+            this.timeline.scroller.scrollBy(0, deltaChrome);
+          }
+        }, 0);
+      }
     }
   }
 
@@ -4857,52 +5187,110 @@ export struct ChatPage {
   // chatEffectDuration 经 host 转发。调用点改为
   // this.overlayState.flyStickerGhost(path, x, y)。
 
+  private setEmojiExpanded(expanded: boolean): void {
+    if (this.emojiDrawer.expanded === expanded) {
+      return;
+    }
+    const startH: number = this.emojiDrawer.shellHeight > 0
+      ? this.emojiDrawer.shellHeight
+      : this.emojiDrawer.totalHeight(this.headerChromeHeight(), this.bottomSafe);
+    this.emojiDrawer.closingExpanded = !expanded;
+    this.emojiDrawer.expanded = expanded;
+    const targetH: number = this.emojiDrawer.totalHeight(this.headerChromeHeight(), this.bottomSafe);
+    const settle: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 210);
+    this.animateDrawerTo(SLOT_EMOJI, targetH, settle, startH, 0, 0, 1, 1, false);
+  }
+
   private setEmojiPanel(show: boolean): void {
     if (!show) { this.emojiDrawer.collapse(); }
     this.inputSwitch.cancel();
-    if (this.showEmojiPanel === show && !this.emojiPanelClosing) {
+    if (this.showEmojiPanel === show && !this.emojiPanelClosing &&
+      (show ? this.emojiDrawer.activeSlot === SLOT_EMOJI : this.emojiDrawer.activeSlot !== SLOT_EMOJI)) {
       return;
     }
-    if (show) {
-      // 两个底部面板互斥：同一块高度不能有两个主人。
-      this.closeAttachPanel();
-    }
     const seq = ++this.panelReadySeq;
-    // 抽屉是 dock 里的一段布局，出现/消失由 dock 的高度变化带动，这里只管
-    // 内容的分帧挂载。
-    const settle: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 220);
+    const settle: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 210);
     if (show) {
       this.emojiPanelClosing = false;
       this.composerFocused = false;
+      this.drawerClosingToIme = false;
+      const overlap: number = this.currentImeOverlap();
+      const fromIme: boolean = overlap > 1 || this.keyboardH > 0;
+      const wasDrawerOpen: boolean = this.emojiDrawer.shellHeight > 0;
+      if (fromIme) {
+        if (overlap > this.knownImeH) {
+          this.knownImeH = overlap;
+        } else if (this.keyboardH > this.knownImeH) {
+          this.knownImeH = this.keyboardH;
+        }
+        this.emojiDrawer.closingImeToDrawer = true;
+        this.armImeBridgeTimer(Math.max(320, settle + 120));
+      } else {
+        this.emojiDrawer.closingImeToDrawer = false;
+      }
+      const startH: number = wasDrawerOpen
+        ? this.emojiDrawer.shellHeight
+        : (fromIme ? Math.max(this.bottomSafe, overlap > 1 ? overlap : this.keyboardH) : this.bottomSafe);
+      const fromOffsetY: number = wasDrawerOpen ? 8 : (fromIme ? 14 : Math.max(18, this.bottomSafe));
+      const fromOpacity: number = wasDrawerOpen ? 0.92 : (fromIme ? 0.86 : 0.88);
       this.applyBottomSlot(openSlot(this.bottomSlot, SLOT_EMOJI));
       this.showEmojiPanel = true;
+      this.emojiDrawer.activeSlot = SLOT_EMOJI;
+      this.syncComposerBottomGap();
       // 收起系统键盘，把这块高度让给抽屉。
       this.composerController.stopEditing();
-      if (settle === 0) {
-        this.panelContentReady = true;
+      const targetH: number = this.targetDrawerTotalHeight(SLOT_EMOJI);
+      this.animateDrawerTo(SLOT_EMOJI, targetH, settle, startH, fromOffsetY, 0, fromOpacity, 1, false);
+      if (!this.panelContentReady) {
+        this.getUIContext().postFrameCallback(new ChatPageFrameCallback((): void => {
+          if (seq === this.panelReadySeq && this.showEmojiPanel) {
+            this.panelContentReady = true;
+          }
+        }));
+      }
+    } else if (this.pendingImeBridgeFromEmoji) {
+      this.emojiPanelClosing = false;
+      this.showEmojiPanel = false;
+      this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_EMOJI));
+      this.startDrawerToImeBridge(SLOT_EMOJI);
+      this.syncComposerBottomGap();
+    } else {
+      this.clearImeBridge(true);
+      this.showEmojiPanel = false;
+      this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_EMOJI));
+      if (this.emojiDrawer.activeSlot !== SLOT_EMOJI || this.emojiDrawer.shellHeight <= 0) {
+        this.emojiPanelClosing = false;
+        this.panelContentReady = false;
+        this.syncComposerBottomGap();
         return;
       }
-      // 先让壳落地，内容下一拍再进来。三个 picker 一次性挂上实测 ~51ms，
-      // 和键盘的滑入挤在一起就是开场即掉帧。
-      setTimeout(() => {
-        if (seq === this.panelReadySeq && this.showEmojiPanel) {
-          this.panelContentReady = true;
-        }
-      }, settle + 20);
-    } else {
       this.emojiPanelClosing = true;
-      // 卸载重内容和解绑键盘同样要分帧，理由同上：卸掉三个 picker 是 ~51ms，
-      // 和键盘的滑出撞在一帧里，动画一开场就掉。先在静止状态下卸掉内容
-      // （观感是内容一闪而空），下一帧再对着一个空壳解绑。
-      this.panelContentReady = false;
-      setTimeout((): void => {
-        if (seq !== this.panelReadySeq) {
-          return;
+      const closeDur: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 190);
+      const startH: number = this.emojiDrawer.shellHeight;
+      const endH: number = Math.max(0, this.bottomSafe);
+      this.animateDrawerTo(
+        SLOT_EMOJI,
+        endH,
+        closeDur,
+        startH,
+        this.emojiDrawer.cardOffsetY,
+        Math.max(16, this.bottomSafe),
+        this.emojiDrawer.cardOpacity,
+        0.82,
+        false,
+        (): void => {
+          if (seq !== this.panelReadySeq) {
+            return;
+          }
+          this.emojiDrawer.shellHeight = 0;
+          this.emojiDrawer.activeSlot = '';
+          this.emojiDrawer.cardOffsetY = 0;
+          this.emojiDrawer.cardOpacity = 1;
+          this.panelContentReady = false;
+          this.emojiPanelClosing = false;
+          this.syncComposerBottomGap();
         }
-        this.showEmojiPanel = false;
-        this.emojiPanelClosing = false;
-        this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_EMOJI));
-      }, 0);
+      );
     }
   }
 
@@ -5612,25 +6000,90 @@ export struct ChatPage {
   }
 
   private closeBottomPanels(): void {
-    this.closeAttachPanel();
+    this.clearImeBridge(true);
+    this.closeAttachPanel(true);
     this.setEmojiPanel(false);
   }
 
   private toggleAttachPanel(): void {
     const next: string = toggleSlot(this.bottomSlot, SLOT_ATTACH);
     if (next !== SLOT_ATTACH) {
-      this.closeAttachPanel();
+      this.clearImeBridge(true);
+      this.closeAttachPanel(true);
       return;
     }
-    // 打开抽屉要收起系统键盘，把这块高度让出来。表情面板由状态机顶掉，
-    // 但它的卸载分帧仍要走 setEmojiPanel。
-    this.setEmojiPanel(false);
+    this.inputSwitch.cancel();
+    this.emojiDrawer.collapse();
+    this.showEmojiPanel = false;
+    this.emojiPanelClosing = false;
+    this.composerFocused = false;
+    this.drawerClosingToIme = false;
+    const settle: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 210);
+    const overlap: number = this.currentImeOverlap();
+    const fromIme: boolean = overlap > 1 || this.keyboardH > 0;
+    const wasDrawerOpen: boolean = this.emojiDrawer.shellHeight > 0;
+    if (fromIme) {
+      if (overlap > this.knownImeH) {
+        this.knownImeH = overlap;
+      } else if (this.keyboardH > this.knownImeH) {
+        this.knownImeH = this.keyboardH;
+      }
+      this.emojiDrawer.closingImeToDrawer = true;
+      this.armImeBridgeTimer(Math.max(320, settle + 120));
+    } else {
+      this.emojiDrawer.closingImeToDrawer = false;
+    }
+    const startH: number = wasDrawerOpen
+      ? this.emojiDrawer.shellHeight
+      : (fromIme ? Math.max(this.bottomSafe, overlap > 1 ? overlap : this.keyboardH) : this.bottomSafe);
+    const fromOffsetY: number = wasDrawerOpen ? 8 : (fromIme ? 14 : Math.max(18, this.bottomSafe));
+    const fromOpacity: number = wasDrawerOpen ? 0.92 : (fromIme ? 0.86 : 0.88);
     this.composerController.stopEditing();
     this.applyBottomSlot(next);
+    this.emojiDrawer.activeSlot = SLOT_ATTACH;
+    this.syncComposerBottomGap();
+    const targetH: number = this.targetDrawerTotalHeight(SLOT_ATTACH);
+    this.animateDrawerTo(SLOT_ATTACH, targetH, settle, startH, fromOffsetY, 0, fromOpacity, 1, false);
   }
 
-  private closeAttachPanel(): void {
+  private closeAttachPanel(animate: boolean = false): void {
+    if (!animate || this.emojiDrawer.activeSlot !== SLOT_ATTACH || this.emojiDrawer.shellHeight <= 0) {
+      this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_ATTACH));
+      if (this.emojiDrawer.activeSlot === SLOT_ATTACH) {
+        this.emojiDrawer.shellHeight = 0;
+        this.emojiDrawer.activeSlot = '';
+        this.emojiDrawer.cardOffsetY = 0;
+        this.emojiDrawer.cardOpacity = 1;
+      }
+      this.syncComposerBottomGap();
+      return;
+    }
+    const seq: number = ++this.panelReadySeq;
     this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_ATTACH));
+    const closeDur: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 190);
+    const startH: number = this.emojiDrawer.shellHeight;
+    const endH: number = Math.max(0, this.bottomSafe);
+    this.animateDrawerTo(
+      SLOT_ATTACH,
+      endH,
+      closeDur,
+      startH,
+      this.emojiDrawer.cardOffsetY,
+      Math.max(16, this.bottomSafe),
+      this.emojiDrawer.cardOpacity,
+      0.82,
+      false,
+      (): void => {
+        if (seq !== this.panelReadySeq) {
+          return;
+        }
+        this.emojiDrawer.shellHeight = 0;
+        this.emojiDrawer.activeSlot = '';
+        this.emojiDrawer.cardOffsetY = 0;
+        this.emojiDrawer.cardOpacity = 1;
+        this.syncComposerBottomGap();
+      }
+    );
   }
 
   // 表情/贴纸抽屉。和附件抽屉同一套机制（dock 里的一段布局），两者在同一块
@@ -5749,10 +6202,7 @@ export struct ChatPage {
       appDark: this.appDark,
       attachPanelOpen: this.attachPanelOpen,
       pendingMedia: this.pendingMedia,
-      showEmojiPanel: this.showEmojiPanel,
-      panelContentReady: this.panelContentReady,
-      emojiPanelClosing: this.emojiPanelClosing,
-      emojiPanelTab: this.emojiPanelTab,
+      showEmojiPanel: this.showEmojiPanel && !this.emojiPanelClosing,
       composerEditorReady: this.composerEditorReady,
       editorFocused: this.composerFocused,
       keyboardVisible: this.keyboardH > 0,
@@ -5767,14 +6217,9 @@ export struct ChatPage {
       replyKeyboardVisible: this.replyKbVisible(),
       replyKeyboardSendingKey: this.replyKeyboardSendingKey,
       bottomGap: this.composerBottomGap(),
-      bottomSafe: this.bottomSafe,
-      drawerHeight: this.emojiDrawer.height(this.headerChromeHeight(), this.bottomSafe),
       hasDraft: pendingMediaCanSend(this.pendingMedia, this.draft),
       accentColor: this.accent(),
       chromeIconColor: this.chromeIcon(),
-      chatId: this.chatId,
-      isGroup: this.isGroup,
-      isChannel: this.isChannel,
       onToggleAttach: (): void => { this.toggleAttachPanel(); },
       onRemoveMedia: (index: number): void => {
         this.pendingMedia = removePendingMedia(this.pendingMedia, index);
@@ -5814,7 +6259,14 @@ export struct ChatPage {
         this.imeTailPinned = this.timeline.atBottom && !this.viewerOpen();
         this.composerFocused = true;
         holdPlayerJobs(KEYBOARD_SETTLE_MS);
-        this.setEmojiPanel(false);
+        if (this.showEmojiPanel) {
+          this.pendingImeBridgeFromEmoji = true;
+          this.setEmojiPanel(false);
+          this.pendingImeBridgeFromEmoji = false;
+        } else if (this.attachPanelOpen) {
+          this.applyBottomSlot(closeAllSlots());
+          this.startDrawerToImeBridge(SLOT_ATTACH);
+        }
         this.applyBottomSlot(closeAllSlots());
         this.command.closeMenu();
         if (this.keyboardH > 0) { this.syncTailOnImeFrame(); }
@@ -5827,33 +6279,6 @@ export struct ChatPage {
       onRecord: (): void => { this.recording.start(); },
       onSend: (): void => { this.doSend(); },
       onSendOptions: (): void => { this.showSendOptions(); },
-      onAttachPick: (key: string): void => { this.attach.runAttachAction(key); },
-      onEmojiPick: (emoji: string): void => { this.insertEmoji(emoji); },
-      onCustomEmojiPick: (emoji: string, customEmojiId: string): void => {
-        if (this.store === null || !this.sendAccess.check('sendMessages')) { return; }
-        this.timeline.atBottom = true;
-        this.store.sendCustomEmoji(emoji, customEmojiId);
-        this.overlayState.flyStickerGhost('', 0, 0);
-      },
-      onStickerPick: (sticker: StickerItem, x: number, y: number): void => {
-        if (!this.sendAccess.check('sendOtherMessages') || this.store === null) { return; }
-        this.timeline.atBottom = true;
-        this.store.sendSticker(sticker.fileId, sticker.width, sticker.height);
-        this.overlayState.flyStickerGhost(sticker.thumbPath, x, y);
-      },
-      onGifPick: (gif: GifItem): void => {
-        if (!this.sendAccess.check('sendOtherMessages') || this.store === null) { return; }
-        this.timeline.atBottom = true;
-        if (gif.resultId !== '') {
-          sendInlineResult(this.chatId, gif.queryId, gif.resultId, 0, true)
-            .catch((e: TdError): void => { logE(`ChatPage.sendInlineGif failed: ${e.message}`); });
-        } else {
-          this.store.sendAnimation(gif.fileId, gif.width, gif.height, gif.duration);
-        }
-        this.overlayState.flyStickerGhost('', 0, 0);
-      },
-      onEmojiTabChange: (tab: number): void => { this.emojiPanelTab = tab; },
-      onEmojiExpanded: (expanded: boolean): void => { this.emojiDrawer.expanded = expanded; },
       onReplyKeyboardButton: (button: KeyboardBtn, key: string): void => {
         this.onReplyKeyboardTap(button, key);
       },
@@ -5865,6 +6290,56 @@ export struct ChatPage {
       smoothEffectDuration: (duration: number): number =>
         powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, duration)
     });
+  }
+
+  @Builder
+  private bottomDrawerDock() {
+    if (!this.search.mode && !this.selection.active && this.composerSlot() === 'writable') {
+      ChatBottomDrawerHost({
+        emojiDrawer: this.emojiDrawer,
+        sendAccess: this.sendAccess,
+        attachPanelOpen: this.attachPanelOpen,
+        showEmojiPanel: this.showEmojiPanel && !this.emojiPanelClosing,
+        panelContentReady: this.panelContentReady,
+        emojiPanelClosing: this.emojiPanelClosing,
+        emojiPanelTab: this.emojiPanelTab,
+        bottomSafe: this.bottomSafe,
+        drawerHeight: this.emojiDrawer.cardHeight(this.headerChromeHeight(), this.bottomSafe),
+        accentColor: this.accent(),
+        chatId: this.chatId,
+        isGroup: this.isGroup,
+        isChannel: this.isChannel,
+        onAttachPick: (key: string): void => { this.attach.runAttachAction(key); },
+        onEmojiPick: (emoji: string): void => { this.insertEmoji(emoji); },
+        onCustomEmojiPick: (emoji: string, customEmojiId: string): void => {
+          if (this.store === null || !this.sendAccess.check('sendMessages')) { return; }
+          this.timeline.atBottom = true;
+          this.store.sendCustomEmoji(emoji, customEmojiId);
+          this.overlayState.flyStickerGhost('', 0, 0);
+        },
+        onStickerPick: (sticker: StickerItem, x: number, y: number): void => {
+          if (!this.sendAccess.check('sendOtherMessages') || this.store === null) { return; }
+          this.timeline.atBottom = true;
+          this.store.sendSticker(sticker.fileId, sticker.width, sticker.height);
+          this.overlayState.flyStickerGhost(sticker.thumbPath, x, y);
+        },
+        onGifPick: (gif: GifItem): void => {
+          if (!this.sendAccess.check('sendOtherMessages') || this.store === null) { return; }
+          this.timeline.atBottom = true;
+          if (gif.resultId !== '') {
+            sendInlineResult(this.chatId, gif.queryId, gif.resultId, 0, true)
+              .catch((e: TdError): void => { logE(`ChatPage.sendInlineGif failed: ${e.message}`); });
+          } else {
+            this.store.sendAnimation(gif.fileId, gif.width, gif.height, gif.duration);
+          }
+          this.overlayState.flyStickerGhost('', 0, 0);
+        },
+        onEmojiTabChange: (tab: number): void => { this.emojiPanelTab = tab; },
+        onEmojiExpanded: (expanded: boolean): void => { this.setEmojiExpanded(expanded); },
+        menuEffectDuration: (duration: number): number =>
+          this.chatEffectDuration(KEY_POWER_EFFECT_MENU, duration)
+      });
+    }
   }
 
   // pendingScrollBottom 是"点了 ↓，等页回来就贴底"这个意图。它在往返期间被谁
@@ -6024,11 +6499,6 @@ export struct ChatPage {
     }
     .width('100%')
     .opacity(this.timeline.initialMessageTransitionSettled ? 1 : 0)
-    .translate({ y: this.timeline.initialMessageTransitionSettled ? 0 : -2 })
-    .scale({
-      x: this.timeline.initialMessageTransitionSettled ? 1 : 0.99,
-      y: this.timeline.initialMessageTransitionSettled ? 1 : 0.99
-    })
     .animation({
       duration: powerAnimationDuration(
         KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
@@ -6101,8 +6571,9 @@ export struct ChatPage {
       avoidLayoutSafeArea: true,
       // 消息 List 自己用 contentStartOffset 保留稳定锚点；这里不重复挤内容区。
       enableComponentSafeArea: false,
-      // 第三个参数 false = 静态栏：滑动时不变（见 util/hdsTitleBar）。
-      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false),
+      // 第三个参数 false = 静态栏：滑动时不变；第四个参数 false = 不挂 HDS 整条栏系统材质与
+      // BlurStrategy.ENABLE（顶栏三颗胶囊已在 ChatHeader 里自绘毛玻璃，避免再挂整页滤镜节点）。
+      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false, false),
       content: content
     };
     this.titleBarOptionsCache = options;
@@ -6308,6 +6779,7 @@ export struct ChatPage {
         timeline: this.timeline,
         viewer: this.viewer,
         overlayState: this.overlayState,
+        emojiDrawer: this.emojiDrawer,
         chatBg: this.chatBg,
         screenW: this.screenW,
         screenH: this.screenH,
@@ -6316,6 +6788,7 @@ export struct ChatPage {
         chatBgDim: this.chatBgDim,
         timelineContent: (): void => { this.surfaceTimeline(); },
         bottomContent: (): void => { this.bottomDock(); },
+        drawerContent: (): void => { this.bottomDrawerDock(); },
         overlayContent: (): void => { this.surfaceOverlays(); },
         mention: this.mention,
         command: this.command,
@@ -6340,6 +6813,9 @@ export struct ChatPage {
         onReturnTap: (): void => { this.onScrollFabTap(); },
         onViewportAreaChange: (oldH: number, newH: number): void => {
           this.handleViewportHeightChange(oldH, newH);
+        },
+        onResizeAreaChange: (oldH: number, newH: number): void => {
+          this.handleResizeAreaChange(oldH, newH);
         }
       });
 
@@ -6352,7 +6828,10 @@ export struct ChatPage {
     }
     .width('100%').height('100%')
     .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
-      if (typeof size.height === 'number') { this.emojiDrawer.measureViewport(size.height); }
+      if (typeof size.height === 'number' &&
+        (this.keyboardH <= 0 || this.emojiDrawer.viewport <= 0 || size.height > this.emojiDrawer.viewport)) {
+        this.emojiDrawer.measureViewport(size.height);
+      }
     })
     .allowDrop(CHAT_DROP_TYPES)
     .onDrop((event: DragEvent, extraParams?: string): void => {
@@ -6401,18 +6880,13 @@ export struct ChatPage {
     // 在还透着的黑底上闪一下。退出查看器时若状态栏安全区还在恢复，先保持收起直到
     // TYPE_SYSTEM 恢复，避免 HDS 标题栏在 TYPE_SYSTEM=0 期间先画在 y=0 再跳回状态栏下方。
     .hideTitleBar(viewerHidesTitleBar(this.viewerOpen() || this.viewer.titleBarRestoring), true)
-    // HDS 的标题栏模糊必须绑定实际滚动的同一个 Scroller。
-    //
-    // **转场期间先不绑**（09-04 GPU trace）。这条绑定给 NavDestination 层挂了一个
-    // 覆盖整页的滤镜节点；推入动画期间 RS 要为整页开一张 1378×2832 的离屏缓存，
-    // 而滤镜缓存被动画反复判失效（`forceClearCache_:1, hashChange`），于是整页
-    // 内容被 CPU 重新光栅化两遍——实测两帧 98.7ms + 89.1ms，而同期 GPU 活跃度
-    // 只有 6%，是纯 CPU 打满。那 170ms 是整次进会话卡顿的绝对大头。
-    //
-    // 模糊本身很便宜（那 79.6ms 里 DrawFilter 只占 0.57ms），**贵的是它触发的
-    // 整页离屏缓存重建**。首屏揭幕之后再绑，那时页面已经静止，绑上不再有
-    // 转场动画去反复作废缓存。
-    .bindToScrollable(this.timeline.initialMessageTransitionSettled ? [this.timeline.scroller] : [])
+    // **不绑定 Scroller 到 HdsNavDestination**：
+    // 聊天页顶栏是 scrollEffect=false 且 glass=false 的静态自绘三胶囊（ChatHeader），不需要
+    // HDS 根据滚动位置驱动标题栏收缩或渐变模糊。若把 Scroller 传给 bindToScrollable，
+    // HdsNavDestination 会为整页挂一个 1378×2832 的离屏滤镜节点；一旦会话内有动态头像
+    // 或动态贴纸/表情按 30~60fps 刷新，该整页滤镜缓存就会每帧失效（`forceClearCache_:1, hashChange`），
+    // 导致整页离屏重绘并把 GPU 负载推高到 90%~100%。
+    .bindToScrollable([])
     // 查看器**不走 bindContentCover**：全模态里视频画面显示不出来（#201，平板分栏黑屏）。
     // 分栏下盖满窗口改由收左栏 + 侧边页签实现，见 util/viewerWindowCover。
     // 入参：router 时代是 aboutToAppear 里 router.getParams() 现取，现在从

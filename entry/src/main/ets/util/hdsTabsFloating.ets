@@ -67,6 +67,9 @@ export interface HdsTabsFloatingOptions {
   // build() 的依赖里，用户改了厚度/光感这条属性才会重新 apply（和
   // materialModifierWhen 的缓存分代是同一个理由）。
   epoch: number;
+  // 底栏当前是否可见（barHeight > 0）。进入会话页收起底栏时一并卸掉 systemMaterialEffect，
+  // 避免 HdsTabs 在会话页底下维持常驻系统材质滤镜。
+  barVisible?: boolean;
 }
 
 export class HdsTabsFloatingModifier implements AttributeModifier<HdsTabsAttribute> {
@@ -94,7 +97,7 @@ export class HdsTabsFloatingModifier implements AttributeModifier<HdsTabsAttribu
     // **用户把材质厚度调到「关闭」时不挂 systemMaterialEffect**：那个开关的
     // 语义就是"所有面都不要材质"，HDS 自己画的栏不该是例外。胶囊形态和
     // barBottomMargin 保留——那是布局，不是材质。
-    const off: boolean = materialOff();
+    const off: boolean = materialOff() || this.options.barVisible === false;
     // 等级接用户在「外观」里调的光感档，不再写死 ADAPTIVE。
     const effect: SystemMaterialParams | undefined =
       off ? undefined : hdsMaterialEffect(hdsMaterialLevelIndex());

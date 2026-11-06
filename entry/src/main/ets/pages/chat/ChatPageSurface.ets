@@ -12,6 +12,7 @@ import { ChatBackdrop } from './ChatBackdrop';
 import { ChatTimelineSession } from './ChatTimelineSession';
 import { ChatViewerSession } from './ChatViewerSession';
 import { ChatOverlayState } from './ChatOverlayState';
+import { EmojiDrawerState } from './EmojiDrawerState';
 import { ChatBackgroundState, emptyChatBackground } from '../../store/ChatBackgroundStore';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { INITIAL_TIMELINE_ROW_FADE_MS, STICKER_FLY_MS, STICKER_GHOST_SIDE } from '../../util/chatPageTuning';
@@ -24,6 +25,7 @@ export struct ChatPageSurface {
   @Require @Param timeline: ChatTimelineSession;
   @Require @Param viewer: ChatViewerSession;
   @Require @Param overlayState: ChatOverlayState;
+  @Require @Param emojiDrawer: EmojiDrawerState;
   @Param chatBg: ChatBackgroundState = emptyChatBackground();
   @Param screenW: number = 360;
   @Param screenH: number = 0;
@@ -31,8 +33,10 @@ export struct ChatPageSurface {
   @Param chatBgPattern: number = 0;
   @Param chatBgDim: number = 0;
   @Event onViewportAreaChange: (oldH: number, newH: number) => void = (_oldH: number, _newH: number): void => {};
+  @Event onResizeAreaChange: (oldH: number, newH: number) => void = (_oldH: number, _newH: number): void => {};
   @BuilderParam timelineContent: () => void;
   @BuilderParam bottomContent: () => void;
+  @BuilderParam drawerContent: () => void;
   @BuilderParam overlayContent: () => void;
   @Require @Param mention: MentionSuggestionState;
   @Require @Param command: CommandSuggestionState;
@@ -99,7 +103,7 @@ export struct ChatPageSurface {
     // 显隐跟着"有没有可返回的位置"走，而不是"在不在底部"：站在最新消息上
     // 但引用链还没退完时，箭头仍然该在。
     if ((this.hasReturnTarget || this.unreadMentions.count > 0) &&
-      !this.search.mode && !this.showEmojiPanel) {
+      !this.search.mode && !this.showEmojiPanel && this.emojiDrawer.shellHeight <= 0) {
       Column({ space: 4 }) {
         if (this.unreadMentions.count > 0) {
           ScrollFab({ unreadCount: 0, mention: true,
@@ -143,23 +147,19 @@ export struct ChatPageSurface {
             this.bottomSuggestions();
             this.bottomContent();
           }
-          .width('100%').height('100%')
-          .justifyContent(FlexAlign.End)
           .opacity(this.timeline.initialMessageTransitionSettled ? 1 : 0)
-          .translate({ y: this.timeline.initialMessageTransitionSettled ? 0 : 2 })
-          .scale({
-            x: this.timeline.initialMessageTransitionSettled ? 1 : 0.99,
-            y: this.timeline.initialMessageTransitionSettled ? 1 : 0.99
-          })
           .animation({
             duration: powerAnimationDuration(
               KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
             curve: Curve.EaseOut
           })
+          .width('100%').height('100%')
+          .justifyContent(FlexAlign.End)
           .hitTestBehavior(HitTestMode.None);
 
         }
-        .layoutWeight(1).width('100%')
+        .width('100%')
+        .height(this.emojiDrawer.topViewportHeight())
         .alignContent(Alignment.TopStart)
         // RESIZE changes this viewport in step with the system keyboard. The
         // area callback runs after the new List height is known, so pinning
@@ -169,10 +169,18 @@ export struct ChatPageSurface {
           const newH: number = typeof newArea.height === 'number' ? newArea.height : 0;
           this.onViewportAreaChange(oldH, newH);
         });
+        this.drawerContent();
       }
       .width('100%').height('100%')
+      .justifyContent(FlexAlign.Start)
+      .clip(false)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-      .backgroundColor(Color.Transparent);
+      .backgroundColor(Color.Transparent)
+      .onAreaChange((oldArea: Area, newArea: Area) => {
+        const oldH: number = typeof oldArea.height === 'number' ? oldArea.height : 0;
+        const newH: number = typeof newArea.height === 'number' ? newArea.height : 0;
+        this.onResizeAreaChange(oldH, newH);
+      });
 
       // 贴纸飞出的残影。叠在最外层、不参与命中测试，纯视觉。
       if (this.overlayState.stickerGhostPath !== '') {

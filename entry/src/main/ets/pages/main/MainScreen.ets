@@ -126,7 +126,10 @@ export struct MainScreen {
   // 聊天页签的 navBar 此刻可不可见。false 只可能出现在「单栏 **且** 聊天栈非空」
   // ——也就是手机上打开了会话/资料/话题列表/归档的时候。见 CHAT_NAV_BAR_VISIBLE_KEY。
   @StorageProp(CHAT_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private chatNavBarVisible: boolean = false;
-
+  // 单栏从 ChatPage 返回列表时，onNavBarStateChange(true) 在退场第 0 帧即触发，
+  // 此时 ChatPage 仍在做 ~600ms 的退场滑出动画（onWillHide -> onHidden）。
+  // 在此期间保持底栏隐藏，等 ChatPage 真正退场消失（onHidden / aboutToDisappear）后再放行底栏。
+  @StorageProp('chatDetailHiding') @Watch('syncDock') private chatDetailHiding: boolean = false;
   // 设置页签分栏时左栏的实际宽度（vp，0 = 还没量到）。与聊天页签分开存：两个
   // 页签各自 enableDragBar(true)，拖过之后两边不再相等。见
   // SETTINGS_NAV_BAR_WIDTH_KEY。
@@ -683,7 +686,7 @@ export struct MainScreen {
   }
 
   private dockVisible(): boolean {
-    return this.dockActive && this.appIsForeground && this.storedNavBarFlag(this.tab);
+    return this.dockActive && this.appIsForeground && !(this.tab === 0 && this.chatDetailHiding) && this.storedNavBarFlag(this.tab);
   }
 
   // Floating capsule: outer Column carries the horizontal padding + bottom
@@ -1080,7 +1083,8 @@ export struct MainScreen {
         floating: !this.leftFloatingDock(),
         // 关掉 HdsTabs 默认那层浅色渐变遮罩：压在壁纸上是一大片白雾。
         gradientMaskColor: Color.Transparent,
-        epoch: this.materialEpoch
+        epoch: this.materialEpoch,
+        barVisible: this.dockBarOpen && !this.leftFloatingDock() && !this.immersiveDockHidden()
       }))
       .scrollable(false)
       .animationDuration(powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, DOCK_SWITCH_DURATION))

@@ -24,13 +24,14 @@ export function localDraft(chatId: number): string {
   return cache.get(chatId);
 }
 
-export function rememberLocalDraft(chatId: number, text: string): void {
+export function rememberLocalDraft(chatId: number, text: string): boolean {
   ensureLoaded();
   if (cache.get(chatId) === text) {
-    return;
+    return false;
   }
   cache.put(chatId, text);
   setString(KEY_DRAFT_CACHE, cache.serialize());
+  return true;
 }
 
 export function localDraftPreview(chatId: number): string {

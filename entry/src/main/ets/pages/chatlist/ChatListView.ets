@@ -725,17 +725,7 @@ export struct ChatListView {
       }
       .layoutWeight(1).width('100%')
       // 上顶 EDGE_OVERLAY_VP（标题栏 56 + 状态栏 39），让渐变原点回到屏幕最上沿。
-      .margin({ top: -EDGE_OVERLAY_VP })
-      .linearGradientBlur(BLUR_MAX_VP, {
-        fractionStops: edgeBlurStops(this.listViewH),
-        direction: GradientDirection.Bottom
-      })
-      .onAreaChange((_o: Area, n: Area) => {
-        const h: number = Number(n.height);
-        if (h > 0 && Math.abs(h - this.listViewH) > 0.5) {
-          this.listViewH = h;
-        }
-      });
+      .margin({ top: -EDGE_OVERLAY_VP });
     }
   }
 }

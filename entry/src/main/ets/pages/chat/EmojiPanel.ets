@@ -10,6 +10,7 @@ import { GifPicker, GifItem } from './GifPicker';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { EMOJI_DRAWER_HEIGHT, EMOJI_TAB_BAR_HEIGHT } from '../../util/drawerMetrics';
+import { pauseStickerPanelForScroll, resumeStickerPanelAfterScroll } from '../../util/stickerPanelGate';
 
 // 内容区顶部这条带子归包切换条（贴纸/表情两页都有），横滑要留给它自己滚，
 // 不能被"切换表情/贴纸/GIF"抢走。切页手势是 parallelGesture 挂在面板根上的
@@ -95,6 +96,7 @@ export struct EmojiPanel {
   onPickGif: (g: GifItem) => void = (): void => {};
   // GIF 搜索/热门要发内联查询，协议要求带上当前会话 id。
   @Prop chatId: number;
+  @Prop @Watch('onActiveChanged') active: boolean = true;
   @Prop panelHeight: number = EMOJI_DRAWER_HEIGHT;
   @Prop expanded: boolean = false;
   onExpanded: (expanded: boolean) => void = (): void => {};
@@ -111,6 +113,14 @@ export struct EmojiPanel {
 
   private onMediaPermissionChanged(): void {
     if (!this.mediaAllowed && this.tab !== 0) { this.tab = 0; this.onTabChange(0); }
+  }
+
+  private onActiveChanged(): void {
+    if (!this.active) {
+      pauseStickerPanelForScroll();
+    } else {
+      resumeStickerPanelAfterScroll();
+    }
   }
 
   aboutToAppear(): void {
@@ -197,7 +207,7 @@ export struct EmojiPanel {
       Stack() {
         Column() {
           StickerPicker({
-            active: this.tab === 0,
+            active: this.active && this.tab === 0,
             stickerType: 'custom_emoji',
             includeTrending: true,
             classicPacks: CLASSIC_PACKS,
@@ -215,7 +225,7 @@ export struct EmojiPanel {
         if (this.stickerMounted) {
           Column() {
             StickerPicker({
-              active: this.tab === 1,
+              active: this.active && this.tab === 1,
               onPick: (s: StickerItem, x: number, y: number): void => { this.onPickSticker(s, x, y); }
             });
           }
@@ -225,7 +235,7 @@ export struct EmojiPanel {
         if (this.gifMounted) {
           Column() {
             GifPicker({
-              active: this.tab === 2,
+              active: this.active && this.tab === 2,
               chatId: this.chatId,
               onPick: (g: GifItem): void => { this.onPickGif(g); }
             });

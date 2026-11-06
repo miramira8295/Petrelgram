@@ -398,7 +398,8 @@ export struct MessageBubbleShell {
   }
 
   private compactMenuContext(): boolean {
-    return menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp);
+    return this.context.msgContextMenuShown &&
+      menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp);
   }
 
   private attachMessageChannels(message: MessageEntry): void {

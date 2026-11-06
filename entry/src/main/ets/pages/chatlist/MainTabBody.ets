@@ -798,20 +798,7 @@ export struct MainTabBody {
     })
     // 指尖按下就关发布闸（抬手/被抢手势即开），见 ChatListView 同款注释。
     .onTouch((event: TouchEvent): void => { updateTouchHold(event.type); })
-    .onReachEnd(() => { getChatStore().loadMore('main'); })
-    // 顶部/底部边缘渐变模糊。CFLark 同款参数（峰值 22px、带宽顶 118vp/底 106.7vp），
-    // 之前一直"不生效"是因为挂在了 ChatListView 上——首页真正渲染的是本组件的
-    // 这条 List，那个属性从来没画过。
-    .linearGradientBlur(BLUR_MAX_VP, {
-      fractionStops: edgeBlurStops(this.listViewH),
-      direction: GradientDirection.Bottom
-    })
-    .onAreaChange((_oldArea: Area, newArea: Area): void => {
-      const h: number = Number(newArea.height);
-      if (h > 0 && Math.abs(h - this.listViewH) > 1) {
-        this.listViewH = h;
-      }
-    });
+    .onReachEnd(() => { getChatStore().loadMore('main'); });
   }
 
   // 小方形屏（SPEC-04）：上滑隐藏标题栏与底部页签，下滑或回到顶部恢复。
