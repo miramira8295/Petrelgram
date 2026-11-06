@@ -1322,10 +1322,13 @@ export struct LightweightPlainTextBubble {
             && hitSenderAvatarColumn(x, this.isGroup, this.msg.isOutgoing, this.showAvatar)) {
             return;
           }
+          // 长按统一交给 messageGesturePolicy：tapFirst 进多选、classic 出菜单。
+          // 这里原先写死了「弹菜单」，tapFirst 下 500ms 就先把菜单弹出来，松手时
+          // 合成的那次长按再进多选 —— 用户看到的是菜单与多选同时出现。
+          // 与 MessageBubbleShell 行级长按（:2276 this.onLongPress(event)）保持一致。
+          this.onLongPress(event);
+          // 偏移换算仍用行坐标：onLongPress 内部按气泡内坐标夹取，靠近气泡边缘会偏。
           this.recordRowMenu(x, Number(event.target.area.width));
-          this.askEditable();
-          this.askDeletable();
-          this.menuShown = true;
         }))
       .onTouch((event: TouchEvent): void => {
         if (event.type === TouchType.Down) {
