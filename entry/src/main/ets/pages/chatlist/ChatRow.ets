@@ -316,14 +316,17 @@ export struct ChatRow {
     return getFolderStore().getFolders();
   }
 
+  // 分组归属随快照下发（第二层 B3）：build 里不再问 ChatStore。
+  // 这里只用 FolderStore 换标题/颜色——那是全局的、按文件夹定义变化的元数据。
   private matchingFolders(): FolderInfo[] {
     if (!this.folderTagsEnabled) { return []; }
-    return this.folders().filter((folder: FolderInfo): boolean =>
-      getChatStore().isInFolder(folder.id, this.row.snapshot.chat.id));
+    const ids: number[] = this.row.snapshot.flags.folderIds;
+    if (ids.length === 0) { return []; }
+    return this.folders().filter((folder: FolderInfo): boolean => ids.indexOf(folder.id) >= 0);
   }
 
   private isPinned(): boolean {
-    return getChatStore().isPinned(this.listKey, this.row.snapshot.chat.id);
+    return this.row.snapshot.flags.pinned;
   }
 
   // 这一行的草稿预览（空串 = 没有草稿）。读一下 draftEpoch 才会建立依赖。
@@ -332,7 +335,7 @@ export struct ChatRow {
   }
 
   private isArchived(): boolean {
-    return getChatStore().isArchived(this.row.snapshot.chat.id);
+    return this.row.snapshot.flags.archived;
   }
 
   // Unread by count OR by the manual flag — either state offers 标记为已读.

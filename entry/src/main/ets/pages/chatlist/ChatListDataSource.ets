@@ -1,5 +1,5 @@
 import { ChatEntry } from '../../store/ChatEntry';
-import { ChatListRowState } from './ChatListRowState';
+import { ChatListRowState, ChatRowFlags, NO_ROW_FLAGS } from './ChatListRowState';
 import { keyTableAdd, keyTableDelete, keyTableReload, newKeyTableId } from '../../util/keyGuard';
 
 // LazyForEach owns membership/order. ObjectLink owns content: a new revision
@@ -29,18 +29,18 @@ export class ChatListDataSource implements IDataSource {
     this.listeners = this.listeners.filter((l: DataChangeListener) => l !== listener);
   }
 
-  reload(nextContentKeys: string[]): void {
+  reload(nextContentKeys: string[], nextFlags: ChatRowFlags[] = []): void {
     this.reloadEpoch++;
-    this.syncRows(this.items, nextContentKeys);
+    this.syncRows(this.items, nextContentKeys, nextFlags);
     this.notify([{ type: DataOperationType.RELOAD } as DataReloadOperation]);
   }
 
-  update(next: ChatEntry[], nextContentKeys: string[]): void {
+  update(next: ChatEntry[], nextContentKeys: string[], nextFlags: ChatRowFlags[] = []): void {
     const previous = this.items;
     this.items = next;
     // Called only after the view's publication gates open. Hidden/menu/touch
     // freezes must not leak new snapshots through this observable side channel.
-    this.syncRows(next, nextContentKeys);
+    this.syncRows(next, nextContentKeys, nextFlags);
 
     const minLen = Math.min(previous.length, next.length);
     let p = 0;
@@ -68,7 +68,7 @@ export class ChatListDataSource implements IDataSource {
     this.notify([{ type: DataOperationType.RELOAD } as DataReloadOperation]);
   }
 
-  private syncRows(next: ChatEntry[], contentKeys: string[]): void {
+  private syncRows(next: ChatEntry[], contentKeys: string[], flags: ChatRowFlags[]): void {
     const rows: ChatListRowState[] = [];
     const previousRows = this.rows;
     const previousKeys = this.contentKeys;
@@ -77,10 +77,12 @@ export class ChatListDataSource implements IDataSource {
       const atIndex = previousRows[i];
       let row = atIndex !== undefined && atIndex.id === chat.id ? atIndex : this.byId.get(chat.id);
       if (row === undefined) {
-        row = new ChatListRowState(chat, contentKeys[i]);
+        row = new ChatListRowState(chat, contentKeys[i], flags[i] ?? NO_ROW_FLAGS);
         this.byId.set(chat.id, row);
-      } else if (row !== atIndex || previousKeys[i] !== contentKeys[i]) {
-        row.update(chat, contentKeys[i]);
+      } else {
+        // 每次都喂一遍：update 在 key 与 flags 都没变时立刻返回。分组归属这类
+        // 变化不进 contentKey，只靠 key 比较会漏（第二层 B3 起 flags 也算状态）。
+        row.update(chat, contentKeys[i], flags[i] ?? NO_ROW_FLAGS);
       }
       rows.push(row);
 

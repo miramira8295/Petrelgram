@@ -1,4 +1,5 @@
-import { ChatListRowState } from './ChatListRowState';
+import { ChatListRowState, ChatRowFlags } from './ChatListRowState';
+import { FOLDER_TAGS_ENABLED, FolderInfo } from '../../store/FolderStore';
 import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { ChatListSubscription } from '../../store/ChatListSubscription';
 import { homeCardMarginVp } from '../../util/pageMargin';
@@ -13,7 +14,7 @@ import { curves, router } from '@kit.ArkUI';
 import {
   archiveCardScale, archiveIconScale, archiveIconSpin, archiveRevealProgress
 } from '../../util/archiveReveal';
-import { getChatStore } from '../../tdkit/Globals';
+import { getChatStore, getFolderStore } from '../../tdkit/Globals';
 import { ChatEntry, effectiveMuted } from '../../store/ChatEntry';
 import { CHAT_ROW_VERTICAL_GUTTER, ChatRow } from './ChatRow';
 import { ChatRowSpec, chatRowSpec } from '../../util/chatRowMetrics';
@@ -100,6 +101,8 @@ export struct MainTabBody {
   // 所以这里守住同一条底线：没露出来时不算，露出来之后才跟着变化刷新。
   @State private archiveTop: ChatEntry | null = null;
   @StorageProp(KEY_ROW_SWIPE_ACTIONS) rowSwipeEnabled: boolean = false;
+  // 分组标签开关（第二层 B3：行渲染状态随快照下发，不在 build 里查 store）。
+  @StorageProp(FOLDER_TAGS_ENABLED) folderTagsEnabled: boolean = false;
   // 会话行走紧凑档还是宽松档。喂的必须是**窗口**宽高（AppStorage 里存的正是窗口
   // 尺寸，分屏/悬浮窗/折叠屏由 EntryAbility 的 windowSizeChange 刷新）。判据整条
   // 复用 splitMetrics，和 dock 那次「只分手机与平板分栏、强制单栏算手机」同一条线。
@@ -259,7 +262,7 @@ export struct MainTabBody {
       return;
     }
     this.rowReloadPending = false;
-    this.chatsData.reload(this.keysFor(this.chats));
+    this.chatsData.reload(this.keysFor(this.chats), this.flagsFor(this.chats));
   }
 
   private onForegroundChanged(): void {
@@ -411,7 +414,29 @@ export struct MainTabBody {
 
   private publishChats(next: ChatEntry[]): void {
     this.chats = next;
-    this.chatsData.update(next, this.keysFor(next));
+    this.chatsData.update(next, this.keysFor(next), this.flagsFor(next));
+  }
+
+  // 第二层 B3：与 ChatListView.flagsFor 同一份语义（主列表 listKey='main'）。
+  private flagsFor(items: ChatEntry[]): ChatRowFlags[] {
+    const store = getChatStore();
+    const folderIds: number[] = this.folderTagsEnabled
+      ? getFolderStore().getFolders().map((f: FolderInfo): number => f.id) : [];
+    const flags: ChatRowFlags[] = [];
+    for (const item of items) {
+      const inFolders: number[] = [];
+      for (const folderId of folderIds) {
+        if (store.isInFolder(folderId, item.id)) {
+          inFolders.push(folderId);
+        }
+      }
+      flags.push({
+        pinned: store.isPinned('main', item.id),
+        archived: store.isArchived(item.id),
+        folderIds: inFolders
+      });
+    }
+    return flags;
   }
 
   private keysFor(items: ChatEntry[]): string[] {
