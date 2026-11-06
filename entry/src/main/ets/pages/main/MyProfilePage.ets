@@ -3,7 +3,7 @@ import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEd
 import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { pageMarginVp } from '../../util/pageMargin';
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM
 } from '../../util/layoutBreakpoint';
 import { promptAction, router } from '@kit.ArkUI';
 import { flushPendingNavs } from '../../util/pendingNavFlush';
@@ -45,7 +45,7 @@ import { registerStack, NavStackLike, snapshotOf, stackOf } from '../../util/nav
 import { decidePush, StackAction, StackFrame } from '../../util/splitRouting';
 import { readableContentWidth } from '../../util/contentWidth';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
-import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
+
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
@@ -206,18 +206,8 @@ export struct MyProfilePage {
     // **延一拍**：官方明确"不建议在 aboutToAppear 中操作栈，此时页面还未构建
     // 完成"，而这里正是 aboutToAppear。见 util/pendingNav 的事故说明。
     setTimeout((): void => { flushPendingNavs('profile'); }, 0);
-    // 复位一次再挂树。**复位值取自栈的真实状态，不能一律写 true。**
-    //
-    // 需要复位是因为 onNavBarStateChange 只在**变化**时触发，不会在页面重建时
-    // 补一发——上一轮（退登/换账号）留下的 false 会让 dock 永久藏着。
-    //
-    // 但原来那句「本页刚建好时栈必然是空的」在整页 router 跳转下不成立：应用内
-    // 浏览器（pages/web/InAppBrowserPage）是整页 router 页，从聊天详情里打开再
-    // 返回时这棵树会重建、aboutToAppear 再跑一次，而页签栈还压着详情页。无条件
-    // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
-    // 判据见 util/navBarReset。
-    AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY,
-      navBarVisibleOnAppear(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.profileStack.size()));
+
+    AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY, false);
     this.loadProfile();
   }
 
@@ -278,6 +268,7 @@ export struct MyProfilePage {
   private qrScanner: TelegramQrScanner = new TelegramQrScanner();
 
   aboutToDisappear(): void {
+    AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY, false);
     this.qrScanner.cancel();
     this.closeQr();
     this.profileLoadSequence++;
@@ -2196,17 +2187,10 @@ export struct MyProfilePage {
     // 也正因为永远单栏，本页不设 navBarWidthRange / minContentWidth /
     // enableDragBar / splitPlaceholder——那四样只在分栏下有意义。
     .mode(NavigationMode.Stack)
-    // navBar 显隐。单栏下它等价于「栈非空」，dock 要藏在这种时候，见
-    // PROFILE_NAV_BAR_VISIBLE_KEY 的说明。写入前先比一次：同值 setOrCreate 也会
-    // 惊动订阅方。
-    .onNavBarStateChange((reported: boolean): void => {
-      // 整页 router 页退掉时会补发 visible=true，按栈兜底。见 navBarReset。
-      const isVisible: boolean = navBarVisibleOnChange(reported,
-        isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.profileStack.size());
+
+    .onNavBarStateChange((isVisible: boolean): void => {
       if (!isVisible) { this.closeQr(); }
-      if (AppStorage.get<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY) !== isVisible) {
-        AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY, isVisible);
-      }
+      AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY, isVisible);
     })
     // 关掉全模态联动：默认 true 时，bindSheet / bindContentCover 一拉起就会触发
     // 栈顶 HdsNavDestination 的 onHidden。**此刻它是个空操作**——本页自己没有

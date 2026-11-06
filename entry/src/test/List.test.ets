@@ -49,7 +49,6 @@ import viewportFillTest from './ViewportFill.test';
 import updateThrottleTest from './UpdateThrottle.test';
 import appIconTest from './AppIcon.test';
 import hmsRelayRegistrationTest from './HmsRelayRegistration.test';
-import navBarResetTest from './NavBarReset.test';
 import diagLogHeaderTest from './DiagLogHeader.test';
 import tdDeviceParamsTest from './TdDeviceParams.test';
 import drawerMetricsTest from './DrawerMetrics.test';
@@ -431,7 +430,6 @@ export default function testsuite() {
   updateThrottleTest();
   appIconTest();
   hmsRelayRegistrationTest();
-  navBarResetTest();
   diagLogHeaderTest();
   tdDeviceParamsTest();
   drawerMetricsTest();

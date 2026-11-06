@@ -12,10 +12,7 @@ import { KEY_APP_DARK } from '../../util/theme';
 import { navigateToSetting } from '../../util/settingsNav';
 import { appWallpaperActive } from '../../util/localWallpaper';
 import { DOCK_MODE_LEFT_FLOATING } from '../../util/splitMetrics';
-import { NavStackLike, TabKind, stackOf } from '../../util/navStacks';
-import { dockVisibleForTab, effectiveChatDepth, KEY_CHAT_DETAIL_SHOWN } from '../../util/navBarReset';
-import { CHAT_NAV_BAR_REPORTED_KEY } from '../chatlist/ChatListPage';
-import { KEY_CHAT_VIEWER_COVERS_WINDOW } from '../../util/viewerWindowCover';
+
 import { router } from '@kit.ArkUI';
 import { getTdClient, getUnreadCountStore, getCallSession, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
 import { CallSnapshot } from '../../services/CallSession';
@@ -128,16 +125,15 @@ export struct MainScreen {
   @StorageProp(NAV_BAR_WIDTH_KEY) private navBarWidth: number = 0;
   // 聊天页签的 navBar 此刻可不可见。false 只可能出现在「单栏 **且** 聊天栈非空」
   // ——也就是手机上打开了会话/资料/话题列表/归档的时候。见 CHAT_NAV_BAR_VISIBLE_KEY。
-  @StorageProp(CHAT_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private chatNavBarVisible: boolean = true;
-  // 分栏下会话页的媒体查看器开着：dock / 侧边页签收起，让查看器盖满窗口（见 util/viewerWindowCover）。
-  @StorageProp(KEY_CHAT_VIEWER_COVERS_WINDOW) @Watch('syncDock') private chatViewerCoversWindow: boolean = false;
+  @StorageProp(CHAT_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private chatNavBarVisible: boolean = false;
+
   // 设置页签分栏时左栏的实际宽度（vp，0 = 还没量到）。与聊天页签分开存：两个
   // 页签各自 enableDragBar(true)，拖过之后两边不再相等。见
   // SETTINGS_NAV_BAR_WIDTH_KEY。
   @StorageProp(SETTINGS_NAV_BAR_WIDTH_KEY) private settingsNavBarWidth: number = 0;
   // 设置页签的 navBar 此刻可不可见。false 只可能出现在「单栏 **且** 设置栈非空」
   // ——也就是手机上打开了已迁成 NavDestination 的设置子页的时候。
-  @StorageProp(SETTINGS_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private settingsNavBarVisible: boolean = true;
+  @StorageProp(SETTINGS_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private settingsNavBarVisible: boolean = false;
   // 联系人页签分栏时左栏的实际宽度（vp，0 = 还没量到）。第三个独立的键，理由
   // 同上：三个页签各自 enableDragBar(true)，拖过之后互不相等。见
   // CONTACTS_NAV_BAR_WIDTH_KEY。
@@ -146,24 +142,20 @@ export struct MainScreen {
   // 目的地（点联系人直接开会话，见 ContactsPage.openContact）；平板分栏下左栏
   // 常驻，同样恒为 true。留着这一支不是冗余：断点是窗口宽，平板分屏到
   // < 600vp 时就是单栏，那时右栏那层 ProfilePage 会盖上来，dock 必须跟着藏。
-  @StorageProp(CONTACTS_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private contactsNavBarVisible: boolean = true;
+  @StorageProp(CONTACTS_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private contactsNavBarVisible: boolean = false;
   // 个人资料页签的 navBar 此刻可不可见。**没有配套的宽度键**：这一页强制单栏
   //（.mode(NavigationMode.Stack)），navBar 恒等于整屏宽，dock 用 '100%' 就对。
   // 也正因为永远单栏，这个键的 false 直接等价于「个人资料栈非空」——平板上
   // 同样会翻 false，而那正是要的：单栏下编辑页是整页替换、铺满整屏。
   // 见 PROFILE_NAV_BAR_VISIBLE_KEY。
-  @StorageProp(PROFILE_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private profileNavBarVisible: boolean = true;
-  // dock 的**交互态**：false 的那一刻起就不再接收任何点击，不等淡出结束。
-  // 与 dockMounted 分开是本次修复的核心，理由见 syncDock()。
-  @State private dockShown: boolean = true;
-  // dock 的**渲染态**：显示时先挂载再淡入；隐藏时与 dockShown 同帧撤下。
-  @State private dockMounted: boolean = true;
-  // 栏高 / 侧栏宽的驱动（2026-09-15 从 dockShown 拆出）：返回列表时它和挂载一起落在普通帧里放开，淡入晚一帧
-  // 再在 animateTo 里只翻 dockShown。见 syncDock()。
-  @State private dockBarOpen: boolean = true;
-  // 作废还没跑的放开 / 淡入（又进了目的页）。
+  @StorageProp(PROFILE_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private profileNavBarVisible: boolean = false;
+
+  @State private dockShown: boolean = false;
+  @State private dockMounted: boolean = false;
+  @State private dockBarOpen: boolean = false;
   private dockRevealSeq: number = 0;
   private dockRevealPending: boolean = false;
+  private dockActive: boolean = false;
   @StorageProp('screenHeightVp') @Watch('syncWallpaperFlag') screenH: number = 780;
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
@@ -243,6 +235,7 @@ export struct MainScreen {
   }
 
   aboutToAppear(): void {
+    this.dockActive = true;
     this.syncWallpaperFlag();
     this.unsubNowPlaying = subscribeNowPlaying((state: NowPlaying | null): void => {
       this.nowPlaying = state;
@@ -342,6 +335,8 @@ export struct MainScreen {
   }
 
   aboutToDisappear(): void {
+    this.dockActive = false;
+    this.syncDock();
     this.miniBarHolder.dispose();
     if (this.unsubNowPlaying !== null) { this.unsubNowPlaying(); this.unsubNowPlaying = null; }
     if (this.unsubVoice !== null) { this.unsubVoice(); this.unsubVoice = null; }
@@ -352,6 +347,7 @@ export struct MainScreen {
   }
 
   onAppForegroundChanged(): void {
+    this.syncDock();
     if (!this.appIsForeground) {
       return;
     }
@@ -389,17 +385,10 @@ export struct MainScreen {
     this.syncDock();
   }
 
-  // 把 dock 的交互态与渲染态推到目标上。推入目的页时立即断交互并撤下整个
-  // 玻璃层，避免和系统转场并发；返回列表时先挂载 opacity=0 的节点再淡入。
   private syncDock(): void {
-    const want: boolean = this.dockVisible();
-    if (!want) {
-      // 进目的页：交互、渲染、栏高同帧撤下；还没跑的放开 / 淡入一并作废。
+    if (!this.dockVisible()) {
       this.dockRevealSeq++;
       this.dockRevealPending = false;
-      if (!this.dockShown && !this.dockMounted && !this.dockBarOpen) {
-        return;
-      }
       this.dockShown = false;
       this.dockMounted = false;
       this.dockBarOpen = false;
@@ -408,13 +397,6 @@ export struct MainScreen {
     if (this.dockShown || this.dockRevealPending) {
       return;
     }
-    // 返回列表：分两拍，都不压在返回转场的第一帧上（2026-09-15）。
-    //
-    // 原来是本帧挂载 + animateTo 里翻 dockShown，而栏高读的就是 dockShown：HdsTabs 栏高 0→56 被做成了
-    // 160ms 的尺寸动画，玻璃的模糊半径 / 饱和度 / 阴影跟着一起动画，animateTo 还在闭包前后同步冲刷布局——
-    // 返回首帧 25–39ms，其中这次 animateTo 占 12.6–23.9ms（trace 20260915T174809）。
-    // 现在：下一帧先挂载、放开栏高（普通布局，不进动画），再下一帧 animateTo 只翻 dockShown（透明度）。
-    // 先挂树再淡入的顺序不变：节点不在树上时改 opacity 没有任何东西可动。
     this.dockRevealPending = true;
     const seq: number = ++this.dockRevealSeq;
     const ui = this.getUIContext();
@@ -422,10 +404,18 @@ export struct MainScreen {
       if (seq !== this.dockRevealSeq) {
         return;
       }
+      if (!this.dockVisible()) {
+        this.syncDock();
+        return;
+      }
       this.dockMounted = true;
       this.dockBarOpen = true;
       ui.postDelayedFrameCallback(new OneShotFrameCallback((): void => {
         if (seq !== this.dockRevealSeq) {
+          return;
+        }
+        if (!this.dockVisible()) {
+          this.syncDock();
           return;
         }
         this.dockRevealPending = false;
@@ -675,59 +665,6 @@ export struct MainScreen {
     return '100%';
   }
 
-  // dock 该不该在屏上。
-  //
-  // 【为什么需要这个判断】会话页迁到 HdsNavDestination（commit 8046f73）之前，
-  // ChatPage 是 main_pages.json 里的整页 router 页，整屏盖在 MainScreen 之上，
-  // dock 根本不可见。迁移之后 ChatPage 渲染在 chatStack 里，而 chatStack 在
-  // 本组件的 Tabs 之内——dock 是 Tabs 的兄弟节点且写在后面，于是常驻在会话页
-  // 之上，正压住底部输入栏。归档/资料/群资料/话题列表四个页面同理。
-  //
-  // 【为什么条件是这个】要藏的是「单栏 **且** 栈非空」这个组合，不是单看栈深。
-  // 分栏（平板）下栈非空是常态，那时 dock 在左栏、不需要任何避让（Task 8 已把
-  // 它约束在左栏宽度内）。chatNavBarVisible 正好就是这个组合的反面——navBar
-  // 只在单栏推入 NavDestination 时才会被系统隐藏，分栏下恒可见。
-  //
-  // 【为什么还要看 tab】每个页签的 navBar 显隐是各自独立的一件事，chatNavBarVisible
-  // 只描述聊天页签。停在别的页签上时 dock 必须照常显示，哪怕聊天栈里还留着一个
-  // 会话。
-  //
-  // 设置页签（2）现在也有自己的 NavPathStack（首个 NavDestination 是
-  // PowerUsagePage），于是同一套判断要照做一遍：手机上推入设置子页之后，子页不再
-  // 是盖住整个 MainScreen 的整页 router 页，dock 会浮在它上面——必须跟着藏。
-  // 联系人页签（1）同理，只是它在手机上不推目的地（点联系人直接开会话），
-  // contactsNavBarVisible 在手机上恒为 true，dock 行为与改造前逐字相同；这一支
-  // 真正管的是「平板分屏到 <600vp、右栏那层 ProfilePage 盖上来」那一刻。
-  // 【原注释，已经是历史，保留原文】「个人资料（3）仍强制单栏、永远不推目的地，
-  // 恒显示。」——个人资料页签现在有自己的栈了（「编辑信息」推 AccountEditPage
-  // 进去），于是同一套判断要照做第四遍。它强制单栏，编辑页因此是**整页替换**、
-  // 铺满整屏，dock 浮在它上面正好压住底部——手机平板都一样，这一支不像联系人
-  // 那样在手机上恒为 true。
-  //
-  // 【2026-09-04：改成现算】上面这一整套判断没变，变的是**数据从哪来**。
-  // 原来是直接返回各页签存进 AppStorage 的那个布尔；现在只把它当兜底，真值
-  // 从注册表里的**真栈**现读。理由见 util/navBarReset 的 dockVisibleForTab：
-  // 那个布尔由 onNavBarStateChange 写，而该回调只在变化时触发、算的时候读的
-  // 两个输入（屏幕尺寸、栈深）都可能滞后；写错一次就永久留在那里，没有第二次
-  // 回调来纠正。用户实报「dock 的设置点击偶尔会消失」就是踩到这个。
-  //
-  // 四个布尔仍然保留 @Watch —— 它们是**触发信号**（值一变就重算一次 dock），
-  // 只是不再是答案本身。
-  private tabKindOf(tab: number): TabKind | null {
-    if (tab === 0) {
-      return 'chat';
-    }
-    if (tab === 1) {
-      return 'contacts';
-    }
-    if (tab === 2) {
-      return 'settings';
-    }
-    if (tab === 3) {
-      return 'profile';
-    }
-    return null;
-  }
 
   private storedNavBarFlag(tab: number): boolean {
     if (tab === 0) {
@@ -742,39 +679,11 @@ export struct MainScreen {
     if (tab === 3) {
       return this.profileNavBarVisible;
     }
-    return true;
+    return false;
   }
 
   private dockVisible(): boolean {
-    const kind: TabKind | null = this.tabKindOf(this.tab);
-    if (kind === null) {
-      return true;
-    }
-    const split: boolean = isSplitByBreakpoint(
-      this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait);
-    if (kind === 'chat' && this.chatViewerCoversWindow && split) {
-      return false;
-    }
-    // 两个条件缺一不可：框架上报 navBar 可见 + 详情页确实不在屏上。
-    //
-    // 只凭上报会踩老 bug——整页路由退回来时框架会补发 visible=true，而那时详情页
-    // 是真在屏上的，dock 会冒出来盖住输入框；只凭详情页标志又会漏掉这次的幽灵
-    // 目的地（栈里有 ChatPage、屏上是列表）。两个信号各自都不足以判定。
-    if (kind === 'chat'
-      && (AppStorage.get<boolean>(CHAT_NAV_BAR_REPORTED_KEY) ?? false)
-      && !(AppStorage.get<boolean>(KEY_CHAT_DETAIL_SHOWN) ?? false)) {
-      return true;
-    }
-    const stack: NavStackLike | undefined = stackOf(kind);
-    if (stack === undefined) {
-      return dockVisibleForTab(split, undefined, this.storedNavBarFlag(this.tab));
-    }
-    // 栈深还要和「详情页是否真的在屏上」一起看：整页路由退回来时会留下残留栈项，
-    // 只看栈深会让 dock 永久藏着（见 util/navBarReset.effectiveChatDepth）。
-    const detailShown: boolean = kind !== 'chat'
-      || (AppStorage.get<boolean>(KEY_CHAT_DETAIL_SHOWN) ?? false);
-    return dockVisibleForTab(split, effectiveChatDepth(stack.size(), detailShown),
-      this.storedNavBarFlag(this.tab));
+    return this.dockActive && this.appIsForeground && this.storedNavBarFlag(this.tab);
   }
 
   // Floating capsule: outer Column carries the horizontal padding + bottom

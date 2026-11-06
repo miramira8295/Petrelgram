@@ -5,7 +5,7 @@ import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { SCOPE_MUTE_EPOCH } from '../../store/ScopeMuteStore';
 import { chatListInForeground, chatListPageCanRun } from './ChatListFreeze';
 import { KEY_IMMERSIVE_BARS_HIDDEN } from '../../util/immersiveBars';
-import { effectiveChatDepth, KEY_CHAT_DETAIL_SHOWN } from '../../util/navBarReset';
+
 import {
   BreakpointType, HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM,
   isSmallSquare, isSplitByBreakpoint
@@ -58,7 +58,7 @@ import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
 import { KEY_APP_DARK } from '../../util/theme';
-import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
+
 import { KEY_CHAT_VIEWER_COVERS_WINDOW } from '../../util/viewerWindowCover';
 import { navigateToSearch } from '../../util/searchNav';
 import {
@@ -227,10 +227,7 @@ export const NAV_BAR_WIDTH_KEY: string = 'navBarWidth';
 // （含系统返回手势）的信号。默认 true：回调没来（或本页尚未挂树）时退化成
 // 「dock 照常显示」，也就是修复前的行为，不会把 dock 弄丢。
 export const CHAT_NAV_BAR_VISIBLE_KEY: string = 'chatNavBarVisible';
-// 框架自己上报的 navBar 可见性（未经我们按栈深修正）。整页 router 页退出来之后，
-// 栈里会留下幽灵目的地，而这份上报反映的是 Navigation 此刻到底在铺 navBar 还是
-// 铺目的地——dock 判据需要它当地面真值。
-export const CHAT_NAV_BAR_REPORTED_KEY: string = 'chatNavBarReported';
+
 
 // 分栏且右栏栈空时的占位。官方明确它仅在分栏模式下展示、不受路由栈管理、
 // 不可获焦、不响应事件，是纯展示层；单栏模式（手机）下永远不出现。
@@ -327,7 +324,7 @@ export struct ChatListPage {
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
   // 分栏下会话页的媒体查看器开着：收左栏，让右栏里的查看器盖满窗口（见 util/viewerWindowCover）。
   // 复用 onWindowResized：它按定义重算 navBar 可见性，这里只是多了一个输入。
-  @StorageProp(KEY_CHAT_VIEWER_COVERS_WINDOW) @Watch('onWindowResized') viewerCoversWindow: boolean = false;
+  @StorageProp(KEY_CHAT_VIEWER_COVERS_WINDOW) viewerCoversWindow: boolean = false;
   // 分栏判据读系统横向 + 纵向断点（util/layoutBreakpoint.isSplitByBreakpoint）——只看宽的话
   // 手机一转横屏就被当成平板（#125）。
   @StorageProp('screenHeightVp') @Watch('onWindowResized') screenH: number = 780;
@@ -400,7 +397,7 @@ export struct ChatListPage {
   // moving, covered page: the frame trace showed six full ChatListPage builds
   // alongside repeated store notifications. Keep only a dirty bit and mirror the
   // newest badge snapshot once the nav bar is visible again.
-  private navBarVisible: boolean = true;
+  private navBarVisible: boolean = false;
   private unreadRefreshPending: boolean = false;
   private listRenderActive: boolean = true;
   private listRenderResumeTimer: number = -1;
@@ -586,19 +583,11 @@ export struct ChatListPage {
     if (this.folderBarCollapsed) {
       this.getUIContext().postFrameCallback(new FolderChipAnchorFrameCallback(this));
     }
-    this.applyNavBarVisible(navBarVisibleOnAppear(
-      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
-      effectiveChatDepth(this.chatStack.size(), this.chatDetailShown())) &&
-      !this.viewerHidesNavBar());
-  }
 
-  // 会话详情页是否真的在屏上（由 ChatPage 的 onShown/onHidden 写）。栈里留着
-  // 一条记录但详情页已经不在屏上时，栈深不可信，见 util/navBarReset。
-  private chatDetailShown(): boolean {
-    return AppStorage.get<boolean>(KEY_CHAT_DETAIL_SHOWN) ?? true;
-  }
 
   // 只在分栏时生效：单栏（手机）下 navBar 本来就被会话页整页盖住，不需要这一手。
+  }
+
   private viewerHidesNavBar(): boolean {
     return this.viewerCoversWindow && isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait);
   }
@@ -618,20 +607,9 @@ export struct ChatListPage {
     // **延一拍**：官方明确"不建议在 aboutToAppear 中操作栈，此时页面还未构建
     // 完成"，而这里正是 aboutToAppear。见 util/pendingNav 的事故说明。
     setTimeout((): void => { flushPendingNavs('chat'); }, 0);
-    // 复位一次再挂树。**复位值取自栈的真实状态，不能一律写 true。**
-    //
-    // 需要复位是因为 onNavBarStateChange 只在**变化**时触发，不会在页面重建时
-    // 补一发——上一轮（退登/换账号）留下的 false 会让 dock 永久藏着。
-    //
-    // 但原来那句「本页刚建好时栈必然是空的」在整页 router 跳转下不成立：应用内
-    // 浏览器（pages/web/InAppBrowserPage）是整页 router 页，从聊天详情里打开再
-    // 返回时这棵树会重建、aboutToAppear 再跑一次，而页签栈还压着详情页。无条件
-    // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
-    // 判据见 util/navBarReset。
-    this.navBarVisible = navBarVisibleOnAppear(
-      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
-      effectiveChatDepth(this.chatStack.size(), this.chatDetailShown()));
-    AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, this.navBarVisible);
+
+    this.navBarVisible = false;
+    AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, false);
     this.listRenderActive = chatListPageCanRun(this.pageActive, this.navBarVisible);
     setChatListRenderActive(this.listRenderActive);
     // 先让会话列表首帧落地，紧接着预热聊天详情页模块。固定等 1200ms 会让快速
@@ -944,6 +922,7 @@ export struct ChatListPage {
   private qrScanner: TelegramQrScanner = new TelegramQrScanner();
 
   aboutToDisappear(): void {
+    AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, false);
     this.unsubSessionSecurity?.();
     this.unsubSessionSecurity = null;
     this.qrScanner.cancel();
@@ -1888,16 +1867,9 @@ export struct ChatListPage {
       // 右栏栈空时的占位。仅分栏模式展示，手机单栏下永不出现。
       .splitPlaceholder(this.placeholderContent())
       .minContentWidth(this.contentMinWidth())
-      // navBar 显隐 = 「单栏且栈非空」。dock 要藏在这种时候，见
-      // CHAT_NAV_BAR_VISIBLE_KEY 的说明。写入前先比一次：同值 setOrCreate 也会
-      // 惊动订阅方，而这个回调在单双栏切换时会连着来几次。
-      .onNavBarStateChange((reported: boolean): void => {
-        AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_REPORTED_KEY, reported);
-        // 应用内浏览器退掉时会补发 visible=true 而栈里还有详情页，按栈兜底。见 navBarReset。
-        this.applyNavBarVisible(navBarVisibleOnChange(reported,
-          isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
-          effectiveChatDepth(this.chatStack.size(), this.chatDetailShown())) &&
-          !this.viewerHidesNavBar());
+
+      .onNavBarStateChange((isVisible: boolean): void => {
+        this.applyNavBarVisible(isVisible);
       })
       .enableDragBar(true)
       // 关掉全模态联动：默认 true 时，bindSheet 一拉起就会触发栈顶
@@ -2064,7 +2036,7 @@ struct FolderChipBadge {
 // 上方那段事故记录在躲的事。这里只重建一个空壳。
 @Component
 struct FolderChipSlot {
-  @StorageProp(CHAT_NAV_BAR_VISIBLE_KEY) private navBarVisible: boolean = true;
+  @StorageProp(CHAT_NAV_BAR_VISIBLE_KEY) private navBarVisible: boolean = false;
   @StorageProp(KEY_ACTIVE_FORUM_OPEN) private forumDrawerOpen: boolean = false;
   @BuilderParam content: () => void;
 

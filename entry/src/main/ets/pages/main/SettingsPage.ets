@@ -44,7 +44,7 @@ import { splitContentMinWidth, splitNavMaxWidth, splitNavMinWidth } from '../../
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
 import { KEY_APP_DARK } from '../../util/theme';
-import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
+
 import { rememberSplitNavWidth, resolveSplitNavWidth } from '../../util/splitNavWidth';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { mainPageFill } from '../../util/theme';
@@ -236,12 +236,12 @@ export struct SettingsPage {
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // 平板上不把一列内容拉满整屏——见 util/contentWidth。窗口宽（不是屏幕宽），
   // 分屏 / 悬浮窗 / 折叠屏改变窗口时 EntryAbility 的 windowSizeChange 会刷新它。
-  @StorageProp('screenWidthVp') @Watch('onWindowResized') screenW: number = 360;
+  @StorageProp('screenWidthVp') screenW: number = 360;
   // 设置里的「强制单栏」（宽屏也当手机用）。
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
   // 分栏判据读系统横向 + 纵向断点（util/layoutBreakpoint.isSplitByBreakpoint）——只看宽的话
   // 手机一转横屏就被当成平板（#125）。
-  @StorageProp('screenHeightVp') @Watch('onWindowResized') screenH: number = 780;
+  @StorageProp('screenHeightVp') screenH: number = 780;
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
@@ -309,23 +309,6 @@ export struct SettingsPage {
   private settingNavigationTimer: number = -1;
   private profileSkeletonTimer: number = -1;
 
-  // 窗口尺寸一变，分栏与否可能跟着翻（平板分屏、悬浮窗、旋转、折叠屏都会），
-  // navBar 的真实显隐也跟着翻——而此前**没有任何东西会重算那个标志**：它只由
-  // onNavBarStateChange 写。那是框架给的回调，既保证不了它在每一次 mode 翻转时
-  // 都来，回调里那道兜底闸读的 screenW/screenH 又是 AppStorage 里由 EntryAbility
-  // 的 windowSizeChange 另行刷新的值，两者先后无定。任何一边落空，标志就停在
-  // true，dock 于是浮在详情页上不收（用户实报「Pad 版 dock 偶尔不回收」，
-  // 聊天页签那处有完整推导）。
-  //
-  // 这里按标志的**定义**重算：分栏 → 恒可见；单栏 → 栈空才可见。与
-  // aboutToAppear 的复位同一个判据（util/navBarReset），值没变时不写。
-  private onWindowResized(): void {
-    const isVisible: boolean = navBarVisibleOnAppear(
-      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.settingsStack.size());
-    if (AppStorage.get<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY) !== isVisible) {
-      AppStorage.setOrCreate<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY, isVisible);
-    }
-  }
 
   aboutToAppear(): void {
     // 全局注册表取栈：设置子页的跳转不止本页这一个入口——tg://settings/... 深链
@@ -336,18 +319,8 @@ export struct SettingsPage {
     // **延一拍**：官方明确"不建议在 aboutToAppear 中操作栈，此时页面还未构建
     // 完成"，而这里正是 aboutToAppear。见 util/pendingNav 的事故说明。
     setTimeout((): void => { flushPendingNavs('settings'); }, 0);
-    // 复位一次再挂树。**复位值取自栈的真实状态，不能一律写 true。**
-    //
-    // 需要复位是因为 onNavBarStateChange 只在**变化**时触发，不会在页面重建时
-    // 补一发——上一轮（退登/换账号）留下的 false 会让 dock 永久藏着。
-    //
-    // 但原来那句「本页刚建好时栈必然是空的」在整页 router 跳转下不成立：应用内
-    // 浏览器（pages/web/InAppBrowserPage）是整页 router 页，从聊天详情里打开再
-    // 返回时这棵树会重建、aboutToAppear 再跑一次，而页签栈还压着详情页。无条件
-    // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
-    // 判据见 util/navBarReset。
-    AppStorage.setOrCreate<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY,
-      navBarVisibleOnAppear(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.settingsStack.size()));
+
+    AppStorage.setOrCreate<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY, false);
     this.reloadAccounts();
     this.loadProfile();
   }
@@ -358,6 +331,7 @@ export struct SettingsPage {
   }
 
   aboutToDisappear(): void {
+    AppStorage.setOrCreate<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY, false);
     // ComponentContent 是脱离组件树管理的节点实体，得自己释放。
     this.splitPlaceholder.dispose();
     this.profileLoadSequence++;
@@ -782,10 +756,6 @@ export struct SettingsPage {
       this.addAccount();
     }
   }
-
-
-
-
 
   private subtitleLine(): string {
     const parts: string[] = [];
@@ -1664,16 +1634,9 @@ export struct SettingsPage {
       .splitPlaceholder(this.placeholderContent())
       .minContentWidth(this.contentMinWidth())
       .enableDragBar(true)
-      // navBar 显隐 = 「单栏且栈非空」。dock 要藏在这种时候，见
-      // SETTINGS_NAV_BAR_VISIBLE_KEY 的说明。写入前先比一次：同值 setOrCreate 也会
-      // 惊动订阅方，而这个回调在单双栏切换时会连着来几次。
-      .onNavBarStateChange((reported: boolean): void => {
-        // 整页 router 页退掉时会补发 visible=true，按栈兜底。见 navBarReset。
-        const isVisible: boolean = navBarVisibleOnChange(reported,
-          isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.settingsStack.size());
-        if (AppStorage.get<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY) !== isVisible) {
-          AppStorage.setOrCreate<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY, isVisible);
-        }
+
+      .onNavBarStateChange((isVisible: boolean): void => {
+        AppStorage.setOrCreate<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY, isVisible);
       })
       // 关掉全模态联动：默认 true 时，bindSheet 一拉起就会触发栈顶
       // HdsNavDestination 的 onHidden。**本轮它是个空操作**——迁过来的
