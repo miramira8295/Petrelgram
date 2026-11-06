@@ -15,6 +15,8 @@ import { TdObject, TdBridge } from './TdTypes';
 import { logE } from '../util/log';
 import { OrderSnapshot } from '../store/chatListOrder';
 import { ChatEntry } from '../store/ChatEntry';
+import { PREVIEW_LABEL_KEYS, serviceLabelKeys } from '../util/formatPreview';
+import { str } from '../util/strings';
 
 interface TdWorkerEvent {
   kind: string;
@@ -32,6 +34,7 @@ interface TdWorkerCommand {
   kind: string;
   json?: string;
   request?: TdObject;
+  labels?: Record<string, string>;
 }
 
 export class TdWorkerBridge implements TdBridge {
@@ -92,7 +95,16 @@ export class TdWorkerBridge implements TdBridge {
   }
 
   init(_onReceive: (json: string) => void): void {
-    this.post({ kind: 'init' });
+    // worker 没有 ApplicationContext，拿不到资源字符串。预览文案要用的那批
+    // key 在启动时解析好、随 init 一起传过去（语言变了会重发 init 重新同步）。
+    const labels: Record<string, string> = {};
+    for (const key of PREVIEW_LABEL_KEYS) {
+      labels[key] = str(key);
+    }
+    for (const key of serviceLabelKeys()) {
+      labels[key] = str(key);
+    }
+    this.post({ kind: 'init', labels: labels });
   }
 
   // 接口要求的字符串路径。TdClient 一旦发现本桥有 sendObject 就不会走这里，

@@ -14,7 +14,7 @@ import {
   ChatEntry, ChatKind, chatKindOf, computeInitials, isMutedFrom, lastMessageSendStateFrom,
   usesDefaultMuteFrom
 } from './ChatEntry';
-import { formatPreview, previewThumbOf } from '../util/formatPreview';
+import { formatPreview, previewThumbOf, LabelResolver } from '../util/formatPreview';
 import { actionBarCanUnarchiveOf, actionBarKindOf } from '../util/chatActionBar';
 import { logW } from '../util/log';
 
@@ -27,6 +27,8 @@ export interface ChatEntryBuildInput {
   // 最后一条消息的发送者显示名。注入而不是自己查 UserStore：worker 侧要能用
   // 它自己那份用户表。
   senderName: (message: TdObject | undefined) => string;
+  // 预览文案的本地化解析器。缺省 = UI 线程的 str()；worker 传自己的译文表。
+  label?: LabelResolver;
 }
 
 export function messageIdOf(message: TdObject | null): number {
@@ -102,7 +104,7 @@ export function buildChatEntry(input: ChatEntryBuildInput): ChatEntry {
     lastReadOutboxId,
     lastMessageSendState: lastMessageSendStateFrom(lastMsg, lastReadOutboxId, isSavedMessages, kind),
     typingText: previous !== undefined ? previous.typingText : '',
-    lastMessageText: formatPreview(lastMsg),
+    lastMessageText: formatPreview(lastMsg, input.label),
     lastMessageThumb: previewThumbOf(lastMsg),
     lastMessageDate: lastMsg !== null ? ((lastMsg['date'] as number | undefined) ?? 0) : 0,
     lastMessageId,

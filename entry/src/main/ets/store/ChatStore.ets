@@ -103,6 +103,7 @@ export class ChatStore {
   private orderShadowSkew: number = 0;
   private entryShadowMatch: number = 0;
   private entryShadowMismatch: number = 0;
+  private entryShadowSkew: number = 0;
   // 位置最近一次「落地」的时刻。UI 的位置更新会被行级配对事务压后最多 ~320ms，
   // 所以只有当自己安静下来之后，拿 worker 的快照比对才有意义。
   private positionAppliedAt: number = 0;
@@ -409,10 +410,21 @@ export class ChatStore {
   // 一致的字段集合见 compareChatEntries 的注释（revision/头像/发送者名等
   // 本来就各算各的，不参与比较）。
   compareWorkerEntries(entries: ChatEntry[]): void {
+    // 会话实体不像位置那样有安静窗口——消息一到就变。所以判据换成
+    // 「同一条末条消息才比」：末条 id 不一致就是 worker 慢一拍的时差，直接放过；
+    // 同一条消息还渲染出不同文本/计数，那才是真的规则分叉。
     for (const workerEntry of entries) {
       const local: ChatEntry | undefined = this.chats.get(workerEntry.id);
       if (local === undefined) {
         // UI 还没物化这条会话：时差，不算差异。
+        continue;
+      }
+      if (local.lastMessageId !== workerEntry.lastMessageId) {
+        this.entryShadowSkew += 1;
+        if (this.entryShadowSkew % 500 === 0) {
+          logI(`[EntryShadow] behind#${this.entryShadowSkew} local=${local.lastMessageId}` +
+            ` worker=${workerEntry.lastMessageId}`);
+        }
         continue;
       }
       const diff: string = compareChatEntries(local, workerEntry);
