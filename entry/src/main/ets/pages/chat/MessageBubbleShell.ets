@@ -23,6 +23,7 @@ import { CachedImage } from '../common/CachedImage';
 import { CachedImageSpec } from '../../util/cachedImageSpec';
 import { BubbleCornerCache, SenderAvatarSpec, SenderAvatarSpecCache } from '../../util/messageBubblePresentation';
 import { cornerPx, senderLeadInset } from '../../util/bubbleCornerInset';
+import { BubbleGlassGeometry } from './BubbleGlassGeometry';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { rememberLabelWidth, recallLabelWidth } from '../../util/labelWidthMemory';
 import { SenderRoleTag } from './SenderRoleTag';
@@ -313,14 +314,9 @@ export struct MessageBubbleShell {
   private attachedMessageId: number = 0;
 
 
-  // 玻璃层尺寸：普通字段 + 一个只表示"换过了"的 @Local 记号（理由见
-  // LightweightPlainTextBubble 同名注释——真机采集里 2588 次变更、单次最多
-  // 波及 51 个组件，钱都花在复用时的几何重算上）。
-  private glassW: number = 0;
-
-  private glassH: number = 0;
-
-  @Local private glassStamp: number = 0;
+  // 玻璃层几何缓存：可观测对象、属性级依赖（见 BubbleGlassGeometry）。
+  // 背景属性直接读 geo.w / geo.h，测量完成只重算这几个属性。
+  private geo: BubbleGlassGeometry = new BubbleGlassGeometry();
 
   private measuredGlassW: number = 0;
 
@@ -487,8 +483,7 @@ export struct MessageBubbleShell {
     this.clearTransientState();
     this.seedLabelWidths();
     this.context.bubbleW = this.measuredBubbleW;
-    this.glassW = this.measuredGlassW;
-    this.glassH = this.measuredGlassH;
+    this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
     this.attachMessageChannels(this.msg);
   }
 
@@ -1471,10 +1466,10 @@ export struct MessageBubbleShell {
   private tailCornerRadius(): number {
     const corners = this.bubbleCornerRadius();
     const radius = cornerPx(this.msg.isOutgoing ? corners.bottomRight : corners.bottomLeft);
-    if (this.glassW <= 0 || this.glassH <= 0) {
+    if (this.geo.w <= 0 || this.geo.h <= 0) {
       return radius;
     }
-    return Math.max(0, Math.min(radius, (this.glassW - (TAIL_W - 2)) / 2, this.glassH / 2));
+    return Math.max(0, Math.min(radius, (this.geo.w - (TAIL_W - 2)) / 2, this.geo.h / 2));
   }
 
   @Builder
@@ -1502,11 +1497,6 @@ export struct MessageBubbleShell {
 
   // 材质档只看全局开关，不看单行可见性（理由见 LightweightPlainTextBubble）。
   private bubbleMaterialLive(): boolean {
-    // 读 glassStamp 建立依赖（理由见 LightweightPlainTextBubble 同名说明）：
-    // 玻璃的整套背景属性都要在测量完成时重算，不能只重算半径。
-    if (this.glassStamp < 0) {
-      return false;
-    }
     return this.env.bubbleMaterialOn && !this.env.powerSaving;
   }
 
@@ -1522,15 +1512,15 @@ export struct MessageBubbleShell {
   }
 
   private glassReady(): boolean {
-    return glassPaintReady(this.glassLive(), this.glassW, this.glassH);
+    return glassPaintReady(this.glassLive(), this.geo.w, this.geo.h);
   }
 
   private glassBodyOn(): boolean {
-    return glassBodyPainted(this.glassLive(), this.glassW, this.glassH);
+    return glassBodyPainted(this.glassLive(), this.geo.w, this.geo.h);
   }
 
   private glassBodyFallbackOn(): boolean {
-    return glassBodyFallbackPainted(this.glassLive(), this.glassW, this.glassH);
+    return glassBodyFallbackPainted(this.glassLive(), this.geo.w, this.geo.h);
   }
 
   private glassBg(): ResourceColor {
@@ -1549,10 +1539,6 @@ export struct MessageBubbleShell {
   }
 
   private glassRadius(): BorderRadiuses {
-    // 同 LightweightPlainTextBubble：读 glassStamp 建立依赖（几何值是普通字段）。
-    if (this.glassStamp < 0) {
-      return this.bubbleCornerRadius();
-    }
     const r = this.bubbleCornerRadius();
     if (!this.hasBubbleTail()) {
       return r;
@@ -1564,14 +1550,14 @@ export struct MessageBubbleShell {
 
   @Builder
   solidShellShadow() {
-    if (this.glassW > 0 && this.glassH > 0 && !this.isBareEmoji()) {
+    if (this.geo.w > 0 && this.geo.h > 0 && !this.isBareEmoji()) {
       // 单个完整轮廓负责外部投影，阴影不再落在主体与尾角之间。
       Column() {}
-        .width(this.glassW).height(this.glassH)
+        .width(this.geo.w).height(this.geo.h)
         // Direct decorative child of the outer Row: absolute children do not
         // contribute to Row measurement, including when a reused bubble shrinks.
         .position({ x: 0, y: 0 })
-        .clipShape(this.shadowShapeCache.prepare(this.glassW, this.glassH, this.msg.isOutgoing,
+        .clipShape(this.shadowShapeCache.prepare(this.geo.w, this.geo.h, this.msg.isOutgoing,
           this.hasBubbleTail(), this.bubbleCornerRadius()))
         .shadow({ radius: 2, color: '#14000000', offsetX: 0, offsetY: 1, fill: false })
         .hitTestBehavior(HitTestMode.None).accessibilityLevel('no');
@@ -1581,10 +1567,10 @@ export struct MessageBubbleShell {
   @Builder
   glassOutline() {
     if (this.glassReady()) {
-      Path({ width: this.glassW, height: this.glassH })
+      Path({ width: this.geo.w, height: this.geo.h })
         .position({ x: 0, y: 0 })
         .hitTestBehavior(HitTestMode.None).accessibilityLevel('no')
-        .commands(glassOutlineCommands(this.glassW, this.glassH, this.msg.isOutgoing,
+        .commands(glassOutlineCommands(this.geo.w, this.geo.h, this.msg.isOutgoing,
           this.hasBubbleTail(), this.bubbleCornerRadius()))
         .fill(Color.Transparent)
         .stroke(GLASS_OUTLINE_COLOR)
@@ -2122,7 +2108,7 @@ export struct MessageBubbleShell {
             // 真机上就是用户报的「气泡描边不对」。设成气泡自己的圆角，这条边框就和轮廓
             // 重合（尾巴那侧仍由裁剪负责）。
             .borderRadius(this.glassRadius())
-            .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
+            .attributeModifier(bubbleGlassModifier(this.glassReady(), this.geo.w, this.geo.h,
               this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius()))
             // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
             // 上的长注释：apply*Attribute 里注册是叠加，会把注册表撑爆）。
@@ -2137,11 +2123,7 @@ export struct MessageBubbleShell {
               }
               this.measuredGlassW = w as number;
               this.measuredGlassH = h as number;
-              if (this.glassW !== this.measuredGlassW || this.glassH !== this.measuredGlassH) {
-                this.glassW = this.measuredGlassW;
-                this.glassH = this.measuredGlassH;
-                this.glassStamp += 1;
-              }
+              this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
             })
           } else {
             Row() {
@@ -2162,11 +2144,7 @@ export struct MessageBubbleShell {
               }
               this.measuredGlassW = w as number;
               this.measuredGlassH = h as number;
-              if (this.glassW !== this.measuredGlassW || this.glassH !== this.measuredGlassH) {
-                this.glassW = this.measuredGlassW;
-                this.glassH = this.measuredGlassH;
-                this.glassStamp += 1;
-              }
+              this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
             })
             .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
               y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),

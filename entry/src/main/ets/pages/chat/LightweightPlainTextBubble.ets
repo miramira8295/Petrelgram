@@ -1,3 +1,4 @@
+import { BubbleGlassGeometry } from './BubbleGlassGeometry';
 import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
 import { RowLeaveChannel } from '../../util/rowLeaveChannel';
 import { MessageDragGesture } from '../../util/messageDragGesture';
@@ -333,21 +334,15 @@ export struct LightweightPlainTextBubble {
   // 一半掉进实心档，看起来就是"两种厚度"。见 bubbleMaterialLive()。
   // 玻璃层的尺寸。**普通字段，不是 @Local**（2026-11-06，Insight 采集驱动）。
   //
-  // 原来是 @Local：滚动时同一行被反复复用，@Local 每次复用被框架重置成 0，再被
-  // onSizeChange 填回实测值。真机采集（18.7s 滚动）里这两个字段变了 2588 次，
-  // 单次波及**最多 51 个依赖组件**——每来一行都要为玻璃层重跑一整套几何
-  // （裁剪形状、阴影缓存、轮廓 Path）。
-  //
-  // 改成普通字段 + 一个只表示"尺寸换过了"的 @Local 记号（glassStamp）：
-  // 依赖它的节点只有本组件自己，几何值本身仍是同步读。
-  private glassW: number = 0;
+  // 玻璃层的几何缓存（可观测，属性级依赖）。所有玻璃背景属性直接读 geo.w/geo.h：
+  // 测量完成只会重算"读过这两个字段"的那几个属性，不会重跑内容 build。
+  // 历史：@Local 版本在 18.7s 滚动采集里变了 2588 次、单次最多波及 51 个组件
+  // （复用把 @Local 重置成 0 再填回）；中间态用过 glassStamp 记号，依赖关系不直观。
+  private geo: BubbleGlassGeometry = new BubbleGlassGeometry();
   // 长按菜单的两条动效链，按实例缓存（普通字段，写它不该惊动任何节点）。
   private menuFx: MessageMenuTransitions = new MessageMenuTransitions();
-  private glassH: number = 0;
-  // 玻璃尺寸变化时自增，唯一的响应式出口。同值不写。
-  @Local private glassStamp: number = 0;
-  // glassW/glassH 的量值影子。无装饰器成员复用时不重置，节点上次上报的尺寸恰好
-  // 就是它，aboutToReuse 用它回填（复用后尺寸没变时 onSizeChange 不会再回调）。
+  // 这次布局实测到的尺寸。普通成员，复用不重置——复用时用它把 geo 填回去
+  // （尺寸没变时 onSizeChange 不会再回调）。
   private measuredGlassW: number = 0;
   private measuredGlassH: number = 0;
   private shadowShapeCache: SolidBubbleShadowCache = new SolidBubbleShadowCache();
@@ -365,10 +360,10 @@ export struct LightweightPlainTextBubble {
   private tailCornerRadius(): number {
     const corners = this.bubbleCorners();
     const radius = cornerPx(this.msg.isOutgoing ? corners.bottomRight : corners.bottomLeft);
-    if (this.glassW <= 0 || this.glassH <= 0) {
+    if (this.geo.w <= 0 || this.geo.h <= 0) {
       return radius;
     }
-    return Math.max(0, Math.min(radius, (this.glassW - (TAIL_W - 2)) / 2, this.glassH / 2));
+    return Math.max(0, Math.min(radius, (this.geo.w - (TAIL_W - 2)) / 2, this.geo.h / 2));
   }
 
   @Builder
@@ -401,33 +396,22 @@ export struct LightweightPlainTextBubble {
   // 收到两次 false，而它还在屏上。于是一屏里玻璃档与实心档混着出现：玻璃档是
   // 半透明 + 1vp 描边，实心档是不透明底 + 外投影，肉眼就是"两种气泡厚度"。
   private bubbleMaterialLive(): boolean {
-    // 读一下 glassStamp，让**所有玻璃属性**都挂在同一个响应式记号上。
-    //
-    // 几何值改成普通字段之后，尺寸量完靠这个记号通知重算；而 ArkUI V2 的依赖是
-    // 按属性记的——只在某个 helper 里读一次，只有那个 helper 的属性会重算。
-    // 之前只在 glassRadius() 里读，结果容器那串背景属性（backgroundColor /
-    // background / attributeModifier / backgroundBlurStyle）停留在"没量到"时算出的
-    // 值：气泡看着像没切到玻璃档，滑出去复用回来（整棵重建）才正常。用户报的
-    // 正是这个。把读点放进这里，凡是问"材质活没活"的地方都继承依赖。
-    if (this.glassStamp < 0) {
-      return false;
-    }
     return this.env.bubbleMaterialOn && !this.env.powerSaving;
   }
 
   // 见 MessageBubble.glassReady()：**容器**这一层要等量到尺寸，
   // 否则没裁剪的那一帧会把 7vp 尾巴留白一起涂满，左边缘外扩。
   private glassReady(): boolean {
-    return glassPaintReady(this.bubbleMaterialLive(), this.glassW, this.glassH);
+    return glassPaintReady(this.bubbleMaterialLive(), this.geo.w, this.geo.h);
   }
 
   // 见 MessageBubble.glassBodyOn()：玻璃结构不等测量，避免首帧退回实心档。
   private glassBodyOn(): boolean {
-    return glassBodyPainted(this.bubbleMaterialLive(), this.glassW, this.glassH);
+    return glassBodyPainted(this.bubbleMaterialLive(), this.geo.w, this.geo.h);
   }
 
   private glassBodyFallbackOn(): boolean {
-    return glassBodyFallbackPainted(this.bubbleMaterialLive(), this.glassW, this.glassH);
+    return glassBodyFallbackPainted(this.bubbleMaterialLive(), this.geo.w, this.geo.h);
   }
 
   private bubbleBg(): ResourceColor {
@@ -464,11 +448,6 @@ export struct LightweightPlainTextBubble {
 
   // 材质本体按节点的 borderRadius 画圆角，裁剪路径只管尾巴那一侧：尾巴侧的底角设 0。
   private glassRadius(): BorderRadiuses {
-    // 读一下 glassStamp：几何值是普通字段，必须让 build 依赖这个记号，
-    // 尺寸变化后才会重跑（V2 按属性依赖刷新，没读过就不订阅）。
-    if (this.glassStamp < 0) {
-      return this.bubbleCorners();
-    }
     const r = this.bubbleCorners();
     if (!this.hasTail()) {
       return r;
@@ -482,11 +461,11 @@ export struct LightweightPlainTextBubble {
   // 补不上，自己沿整条轮廓描一圈；画在 .background() 里，不参与命中测试。
   @Builder
   solidShellShadow() {
-    if (this.glassW > 0 && this.glassH > 0) {
+    if (this.geo.w > 0 && this.geo.h > 0) {
       // 单个完整轮廓负责外部投影，阴影不再落在主体与尾角之间。
       Column() {}
-        .width(this.glassW).height(this.glassH)
-        .clipShape(this.shadowShapeCache.prepare(this.glassW, this.glassH, this.msg.isOutgoing,
+        .width(this.geo.w).height(this.geo.h)
+        .clipShape(this.shadowShapeCache.prepare(this.geo.w, this.geo.h, this.msg.isOutgoing,
           this.hasTail(), this.bubbleCorners()))
         .shadow({ radius: 2, color: '#14000000', offsetX: 0, offsetY: 1, fill: false })
         .hitTestBehavior(HitTestMode.None).accessibilityLevel('no');
@@ -496,8 +475,8 @@ export struct LightweightPlainTextBubble {
   @Builder
   glassOutline() {
     if (this.glassReady()) {
-      Path({ width: this.glassW, height: this.glassH })
-        .commands(glassOutlineCommands(this.glassW, this.glassH, this.msg.isOutgoing,
+      Path({ width: this.geo.w, height: this.geo.h })
+        .commands(glassOutlineCommands(this.geo.w, this.geo.h, this.msg.isOutgoing,
           this.hasTail(), this.bubbleCorners()))
         .fill(Color.Transparent)
         .stroke(GLASS_OUTLINE_COLOR)
@@ -611,8 +590,7 @@ export struct LightweightPlainTextBubble {
     this.resetTransient();
     this.senderLabelW = SENDER_LABEL_WIDTHS.get(this.msg.senderName) ?? 0;
     // 见 measuredGlassW：复用后尺寸没变时 onSizeChange 不再回调，这里回填。
-    this.glassW = this.measuredGlassW;
-    this.glassH = this.measuredGlassH;
+    this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
     this.attachChannels(this.msg);
   }
 
@@ -655,7 +633,7 @@ export struct LightweightPlainTextBubble {
   // 行容器满宽，气泡只占其中一段，把点击换算回气泡内坐标再交给 recordMenuOffset。
   // 命中范围与菜单锚点是两件事：先保证整行都能唤起，再谈锚点精度。
   private recordRowMenu(eventX: number, rowW: number): void {
-    const w: number = this.glassW > 0 ? this.glassW : Math.max(1, rowW - BUBBLE_ROW_SIDE_VP * 2);
+    const w: number = this.geo.w > 0 ? this.geo.w : Math.max(1, rowW - BUBBLE_ROW_SIDE_VP * 2);
     const gutter: number = BUBBLE_ROW_SIDE_VP + (this.isGroup && !this.msg.isOutgoing && this.showAvatar
       ? BUBBLE_AVATAR_GUTTER_VP : 0);
     const left: number = this.msg.isOutgoing ? rowW - BUBBLE_ROW_SIDE_VP - w : gutter;
@@ -1251,7 +1229,7 @@ export struct LightweightPlainTextBubble {
                 // 不设圆角就是个直角框，裁剪之后剩下半条亮线。
                 .borderRadius(this.glassRadius())
                 .background(this.glassOutline(), { align: Alignment.TopStart })
-                .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
+                .attributeModifier(bubbleGlassModifier(this.glassReady(), this.geo.w, this.geo.h,
                   this.msg.isOutgoing, this.hasTail(), this.bubbleCorners()))
                 // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
                 // 上的长注释：apply*Attribute 里注册是叠加，会把注册表撑爆）。
@@ -1266,12 +1244,8 @@ export struct LightweightPlainTextBubble {
                   }
                   this.measuredGlassW = w as number;
                   this.measuredGlassH = h as number;
-                  if (this.glassW !== this.measuredGlassW || this.glassH !== this.measuredGlassH) {
-                    this.glassW = this.measuredGlassW;
-                    this.glassH = this.measuredGlassH;
-                    // 唯一的响应式出口：几何值本身是普通字段，只有它变了才需要重跑 build。
-                    this.glassStamp += 1;
-                  }
+                  // 同值不写：只有几何真的变了才通知背景。
+                  this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
                 })
               } else {
                 Row() {
@@ -1289,12 +1263,8 @@ export struct LightweightPlainTextBubble {
                   }
                   this.measuredGlassW = w as number;
                   this.measuredGlassH = h as number;
-                  if (this.glassW !== this.measuredGlassW || this.glassH !== this.measuredGlassH) {
-                    this.glassW = this.measuredGlassW;
-                    this.glassH = this.measuredGlassH;
-                    // 唯一的响应式出口：几何值本身是普通字段，只有它变了才需要重跑 build。
-                    this.glassStamp += 1;
-                  }
+                  // 同值不写：只有几何真的变了才通知背景。
+                  this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
                 })
                 .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
                   y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
