@@ -793,6 +793,9 @@ export struct ChatPage {
   // 模块级单例：平板分栏/导航栈多层时同时活着多个 ChatPage，各自会话的弹层
   // 状态互不相干。
   private overlayState: ChatOverlayState = new ChatOverlayState();
+  // 本页是否真的在屏上（NavDestination.onShown/onHidden）。给 ChatBackdrop 决定
+  // 整屏光栅的 pin 生命周期：隐藏即还引用（2 秒宽限期），显示即重新 retain。
+  @Local private surfaceActive: boolean = true;
   @Local nowSec: number = 0;
   private nowSecTimer: number = -1;
   // 查看器的目标、控制层、横屏和播放交接状态集中在 ChatViewerSession；页面只
@@ -3236,6 +3239,8 @@ export struct ChatPage {
 
   private handleHidden(): void {
     AppStorage.setOrCreate<boolean>('chatDetailHiding', false);
+    this.surfaceActive = false;
+
     this.inputSwitch.cancel();
     coordinateChatPageHidden({
       stopScrollActivity: (): void => { setScrollActive(false); },
@@ -3273,6 +3278,8 @@ export struct ChatPage {
 
   private handleShown(): void {
     AppStorage.setOrCreate<boolean>('chatDetailHiding', false);
+    this.surfaceActive = true;
+
     // 回到这一页（或者退场被取消了）：放开停车闸，头像该动的继续动。
     parkSenderAnimations(false);
     this.videoPrefetch.resume();
@@ -6783,6 +6790,7 @@ export struct ChatPage {
         chatBg: this.chatBg,
         screenW: this.screenW,
         screenH: this.screenH,
+        surfaceActive: this.surfaceActive,
         chatBgBlur: this.chatBgBlur,
         chatBgPattern: this.chatBgPattern,
         chatBgDim: this.chatBgDim,
