@@ -28,6 +28,8 @@ export interface PositionChange {
 export interface OrderSnapshot {
   key: string;
   ids: number[];
+  // 该列表里被置顶的 id（V2 下 UI 不再自己维护 positions，置顶图标靠它）。
+  pinned: number[];
 }
 
 function noChange(): PositionChange {

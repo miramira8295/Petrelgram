@@ -107,6 +107,9 @@ export class ChatStore {
   // B4b-3 的镜像：按"将来要当权威"的规则维护（见 store/chatMirror）。UI 目前
   // 仍以 chats 为准，镜像先跑起来对账，切换时直接换读点。
   private mirror: ChatMirror = new ChatMirror();
+  // V2：worker 送来的列表成员与置顶。V1 关闭时，界面读的是这两份而不是 positions。
+  private workerLists: Map<string, number[]> = new Map<string, number[]>();
+  private workerPinned: Map<string, Set<number>> = new Map<string, Set<number>>();
   private entryShadowMismatch: number = 0;
   private entryShadowSkew: number = 0;
   // 位置最近一次「落地」的时刻。UI 的位置更新会被行级配对事务压后最多 ~320ms，
@@ -175,6 +178,9 @@ export class ChatStore {
       setTimeout: (cb: () => void, ms: number): number => setTimeout(cb, ms),
       clearTimeout: (id: number): void => clearTimeout(id)
     };
+    // V2：整个 V1 数据面不工作——不在更新流上注册任何 handler，实体、位置、
+    // 角标全部由 worker 投递的镜像与排序快照驱动。
+    if (!chatListV2Enabled()) {
     client.onUpdate('updateOption', (u: TdObject) => this.onOption(u));
     client.onUpdate('updateNewChat', (u: TdObject) => this.onNewChat(u));
     client.onUpdate('updateSupergroup', (u: TdObject) => this.onSupergroup(u));
@@ -197,6 +203,7 @@ export class ChatStore {
     client.onUpdate('updateDefaultBackground', (u: TdObject) => this.onDefaultBackground(u));
     client.onUpdate('updateChatVideoChat', (u: TdObject) => this.onVideoChat(u));
     client.onUpdate('updateGroupCall', (u: TdObject) => this.onGroupCall(u));
+    }
   }
 
   subscribe(listener: (chats: ChatEntry[]) => void, listKey: string = MAIN): () => void {
@@ -222,7 +229,7 @@ export class ChatStore {
   }
 
   hasChats(listKey: string): boolean {
-    return this.order.sizeOf(listKey) > 0;
+    return chatListV2Enabled() ? this.listIds(listKey).length > 0 : this.order.sizeOf(listKey) > 0;
   }
 
   private invalidateListSubscriptions(chatId: number | undefined, urgent: boolean): void {
@@ -275,7 +282,7 @@ export class ChatStore {
   // Scope-default mute changes are observed separately via SCOPE_MUTE_EPOCH.
   subscribeUnreadBadges(listener: (keys: string[]) => void): () => void {
     this.unreadBadgeListeners = [...this.unreadBadgeListeners, listener];
-    listener(this.order.keys());
+    listener(chatListV2Enabled() ? Array.from(this.workerLists.keys()) : this.order.keys());
     return (): void => {
       this.unreadBadgeListeners = this.unreadBadgeListeners.filter(
         (l: (keys: string[]) => void): boolean => l !== listener);
@@ -375,6 +382,22 @@ export class ChatStore {
     }, wait);
   }
 
+  // V2：worker 的排序快照就是列表成员与置顶的唯一来源。
+  applyWorkerOrder(lists: OrderSnapshot[]): void {
+    if (!chatListV2Enabled()) {
+      return;
+    }
+    for (const snapshot of lists) {
+      this.workerLists.set(snapshot.key, snapshot.ids);
+      this.workerPinned.set(snapshot.key, new Set<number>(snapshot.pinned));
+    }
+    this.notify();
+  }
+
+  private listIds(listKey: string): number[] {
+    return this.workerLists.get(listKey) ?? [];
+  }
+
   private runOrderShadowCompare(): void {
     if (this.orderShadowPending.size === 0) {
       return;
@@ -415,7 +438,14 @@ export class ChatStore {
   // 一致的字段集合见 compareChatEntries 的注释（revision/头像/发送者名等
   // 本来就各算各的，不参与比较）。
   compareWorkerEntries(entries: ChatEntry[]): void {
-    this.mirror.apply(entries);
+    const changed: number = this.mirror.apply(entries);
+    if (chatListV2Enabled()) {
+      // V2：镜像就是唯一真身，收到变化必须发布（V1 的 handler 不在）。
+      if (changed > 0) {
+        this.notify();
+      }
+      return;
+    }
     // 会话实体不像位置那样有安静窗口——消息一到就变。所以判据换成
     // 「同一条末条消息才比」：末条 id 不一致就是 worker 慢一拍的时差，直接放过；
     // 同一条消息还渲染出不同文本/计数，那才是真的规则分叉。
@@ -449,7 +479,7 @@ export class ChatStore {
   }
 
   getChats(listKey: string = MAIN): ChatEntry[] {
-    const ids: number[] = this.order.orderedIds(listKey);
+    const ids: number[] = chatListV2Enabled() ? this.listIds(listKey) : this.order.orderedIds(listKey);
     const useMirror: boolean = chatListV2Enabled();
     const list: ChatEntry[] = [];
     for (const id of ids) {
@@ -468,14 +498,23 @@ export class ChatStore {
 
   // Pinning is per chat list: a chat can be pinned in a folder but not in main.
   isPinned(listKey: string, chatId: number): boolean {
+    if (chatListV2Enabled()) {
+      return this.workerPinned.get(listKey)?.has(chatId) === true;
+    }
     return this.order.isPinned(listKey, chatId);
   }
 
   isArchived(chatId: number): boolean {
+    if (chatListV2Enabled()) {
+      return this.listIds('archive').indexOf(chatId) >= 0;
+    }
     return this.order.contains('archive', chatId);
   }
 
   isInFolder(folderId: number, chatId: number): boolean {
+    if (chatListV2Enabled()) {
+      return this.listIds(`folder:${folderId}`).indexOf(chatId) >= 0;
+    }
     return this.order.contains(`folder:${folderId}`, chatId);
   }
 
@@ -514,6 +553,9 @@ export class ChatStore {
   }
 
   hasArchive(): boolean {
+    if (chatListV2Enabled()) {
+      return this.listIds('archive').length > 0;
+    }
     const b = this.order.bucket('archive');
     return b !== undefined && b.size > 0;
   }
@@ -542,18 +584,28 @@ export class ChatStore {
     if (counts === undefined) {
       let total: number = 0;
       let unmuted: number = 0;
-      this.order.bucket(listKey)?.forEach((_pos: PositionInfo, id: number): void => {
-        const e = this.chats.get(id);
+      const badgeIds: number[] = chatListV2Enabled()
+        ? this.listIds(listKey) : (this.order.bucket(listKey) !== undefined
+          ? Array.from(this.order.bucket(listKey)!.keys()) : []);
+      for (const id of badgeIds) {
+        const e = this.entryForBadge(id);
         if (e !== undefined && e.unreadCount > 0) {
           total++;
           if (!effectiveMuted(e, scopeMutedForKind(e.kind))) { unmuted++; }
         }
-      });
+      }
       counts = { total, unmuted };
       this.unreadBadgeCache.set(listKey, counts);
     }
     // Do not expose the mutable cached result to consumers.
     return { total: counts.total, unmuted: counts.unmuted };
+  }
+
+  private entryForBadge(chatId: number): ChatEntry | undefined {
+    if (chatListV2Enabled()) {
+      return this.mirror.get(chatId);
+    }
+    return this.chats.get(chatId);
   }
 
   private invalidateUnreadBadge(listKey: string): void {
@@ -1782,6 +1834,15 @@ export class ChatStore {
   }
 
   private listContainsAny(listKey: string, ids: Set<number>): boolean {
+    if (chatListV2Enabled()) {
+      const members: number[] = this.listIds(listKey);
+      for (const id of ids) {
+        if (members.indexOf(id) >= 0) {
+          return true;
+        }
+      }
+      return false;
+    }
     const bucket = this.order.bucket(listKey);
     if (bucket === undefined) {
       return false;

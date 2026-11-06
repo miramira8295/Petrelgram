@@ -157,7 +157,14 @@ function flushOrder(): void {
   }
   const lists: OrderSnapshot[] = [];
   orderDirty.forEach((key: string): void => {
-    lists.push({ key, ids: orderIndex.orderedIds(key).slice() });
+    const ids: number[] = orderIndex.orderedIds(key).slice();
+    const pinned: number[] = [];
+    for (const id of ids) {
+      if (orderIndex.isPinned(key, id)) {
+        pinned.push(id);
+      }
+    }
+    lists.push({ key, ids, pinned });
   });
   orderDirty.clear();
   const event: TdWorkerEvent = { kind: 'order', lists: lists };

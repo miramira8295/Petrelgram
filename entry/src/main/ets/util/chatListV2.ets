@@ -8,7 +8,7 @@
 
 import { ChatEntry } from '../store/ChatEntry';
 
-const SOURCE_V2: boolean = true;
+const SOURCE_V2: boolean = false;
 
 export function chatListV2Enabled(): boolean {
   return SOURCE_V2;
