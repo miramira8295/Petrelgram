@@ -12,6 +12,7 @@ import { AuthService, AuthStage } from './AuthService';
 import { readTdDeviceParams } from '../util/tdDeviceParamsReader';
 import { UserStore } from '../store/UserStore';
 import { ChatStore } from '../store/ChatStore';
+import { OrderSnapshot } from '../store/chatListOrder';
 import { ChatEntry } from '../store/ChatEntry';
 import { FileService } from '../services/FileService';
 import { FolderStore } from '../store/FolderStore';
@@ -190,6 +191,11 @@ function createRuntime(slotId: string): void {
   sessionSecurity = new SessionSecurityStore(client);
   users = new UserStore(client);
   chats = new ChatStore(client, users);
+  // 第二层 B2：worker 侧影子排序对账（没有 worker 桥就什么都不做）。
+  if (workerBridge !== undefined) {
+    const shadowTarget: ChatStore = chats;
+    workerBridge.onOrder((lists: OrderSnapshot[]): void => { shadowTarget.compareWorkerOrder(lists); });
+  }
   files = new FileService(client, chats);
   folders = new FolderStore(client);
   unread = new UnreadCountStore(client);

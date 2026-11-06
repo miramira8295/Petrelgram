@@ -13,12 +13,15 @@
 import { worker, MessageEvents, ErrorEvent } from '@kit.ArkTS';
 import { TdObject, TdBridge } from './TdTypes';
 import { logE } from '../util/log';
+import { OrderSnapshot } from '../store/chatListOrder';
 
 interface TdWorkerEvent {
   kind: string;
   payload?: TdObject;
   // kind==='batch'：一个投递窗口内的多条，顺序即到达顺序。
   items?: TdObject[];
+  // kind==='order'：worker 侧影子排序（第二层 B2）。
+  lists?: OrderSnapshot[];
   head?: string;
 }
 
@@ -31,6 +34,7 @@ interface TdWorkerCommand {
 export class TdWorkerBridge implements TdBridge {
   private port: worker.ThreadWorker;
   private parsedSink: ((obj: TdObject) => void) | null = null;
+  private orderSink: ((lists: OrderSnapshot[]) => void) | null = null;
 
   constructor() {
     this.port = new worker.ThreadWorker('entry/ets/workers/TdWorker.ets');
@@ -49,6 +53,10 @@ export class TdWorkerBridge implements TdBridge {
             this.parsedSink(item);
           }
         }
+      } else if (data.kind === 'order') {
+        if (this.orderSink !== null && data.lists !== undefined) {
+          this.orderSink(data.lists);
+        }
       } else if (data.kind === 'parse-error') {
         logE(`TdWorkerBridge: unparseable payload, skipped: ${data.head ?? ''}`);
       }
@@ -63,6 +71,11 @@ export class TdWorkerBridge implements TdBridge {
   // Globals 装配时把这里接到 TdClient.deliverParsed。
   onParsed(sink: (obj: TdObject) => void): void {
     this.parsedSink = sink;
+  }
+
+  // 影子排序索引的出口（第二层 B2）。没有订阅方时这些事件直接丢掉。
+  onOrder(sink: (lists: OrderSnapshot[]) => void): void {
+    this.orderSink = sink;
   }
 
   init(_onReceive: (json: string) => void): void {

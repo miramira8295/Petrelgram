@@ -24,6 +24,12 @@ export interface PositionChange {
   pinChanged: boolean;
 }
 
+// worker → UI 的排序快照（第二层 B2）。只带 id，不带实体。
+export interface OrderSnapshot {
+  key: string;
+  ids: number[];
+}
+
 function noChange(): PositionChange {
   return { added: false, removed: false, pinChanged: false };
 }
@@ -140,6 +146,13 @@ export class ChatListOrder {
     this.ordered.delete(listKey);
   }
 
+  // 账号切换/重建运行时：这一份索引整体作废。
+  clear(): void {
+    this.positions.clear();
+    this.ordered.clear();
+    this.pinEpochs.clear();
+  }
+
   private compare(listKey: string, a: number, b: number): number {
     const bucket = this.positions.get(listKey);
     const pa = bucket?.get(a);
@@ -189,4 +202,38 @@ export class ChatListOrder {
   private bumpPinEpoch(listKey: string): void {
     this.pinEpochs.set(listKey, this.pinEpoch(listKey) + 1);
   }
+}
+
+// 第二层 B2 的对账判据。
+//
+// 【为什么要区分"两份看到的集合不同"和"排序不同"】影子索引和 UI 各自消化同一
+// 条更新流，但 UI 是异步的：快照到达时它可能还没处理完同一批更新，于是本地
+// 序列更短、或缺少某个列表。那是**时差**，不是排序错。真正的错只有一种：
+// 两边都知道的会话，相对顺序不一样。
+//
+// 所以：先在交集上比相对顺序，再报覆盖率。覆盖率 100% 且顺序一致才算通过。
+export interface OrderDiff {
+  text: string;
+  common: number;
+  localLen: number;
+  remoteLen: number;
+}
+
+export function compareOrderIds(local: number[], remote: number[]): OrderDiff {
+  const remoteRank: Map<number, number> = new Map<number, number>();
+  for (let i = 0; i < remote.length; i++) {
+    remoteRank.set(remote[i], i);
+  }
+  // 只保留两边都有的 id，按各自序列的顺序取出来比。
+  const localCommon: number[] = local.filter((id: number): boolean => remoteRank.has(id));
+  const localSet: Set<number> = new Set<number>(local);
+  const remoteCommon: number[] = remote.filter((id: number): boolean => localSet.has(id));
+  let text: string = '';
+  for (let i = 0; i < localCommon.length; i++) {
+    if (localCommon[i] !== remoteCommon[i]) {
+      text = `rel=${i} local=${localCommon[i]} worker=${remoteCommon[i]}`;
+      break;
+    }
+  }
+  return { text, common: localCommon.length, localLen: local.length, remoteLen: remote.length };
 }

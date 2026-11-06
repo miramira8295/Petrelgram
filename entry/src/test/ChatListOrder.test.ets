@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { ChatListOrder, PositionChange } from '../main/ets/store/chatListOrder';
+import { ChatListOrder, PositionChange, OrderDiff, compareOrderIds } from '../main/ets/store/chatListOrder';
 
 // 位置索引的行为钉死在这里。ChatStore 现在只是委托方；任何一条规则反过来
 // 也会让会话列表的排序、置顶分段、角标失效判据跟着变。
@@ -116,6 +116,34 @@ export default function chatListOrderTest() {
       expect(idsOf(order, 'main')).assertEqual('2,1');
       order.dropOrdered('main');
       expect(idsOf(order, 'main')).assertEqual('2,1');
+    });
+
+    it('对账：两侧一致时无差异且覆盖率满', 0, (): void => {
+      const same: OrderDiff = compareOrderIds([1, 2, 3], [1, 2, 3]);
+      expect(same.text).assertEqual('');
+      expect(same.common).assertEqual(3);
+      expect(same.localLen).assertEqual(3);
+      expect(same.remoteLen).assertEqual(3);
+    });
+
+    it('对账：只在交集上比相对顺序，缺项算时差不算乱序', 0, (): void => {
+      // 本地少了两条（还没消化的更新），交集 1,2,3 的相对顺序一致。
+      const skew: OrderDiff = compareOrderIds([1, 2, 3], [1, 9, 2, 3, 8]);
+      expect(skew.text).assertEqual('');
+      expect(skew.common).assertEqual(3);
+      expect(skew.localLen).assertEqual(3);
+      expect(skew.remoteLen).assertEqual(5);
+    });
+
+    it('对账：交集内部顺序不一致才算乱序', 0, (): void => {
+      const bad: OrderDiff = compareOrderIds([1, 2, 3], [3, 2, 1]);
+      expect(bad.text.indexOf('rel=0') >= 0).assertTrue();
+      expect(bad.common).assertEqual(3);
+    });
+
+    it('对账：空序列不算差异', 0, (): void => {
+      expect(compareOrderIds([], []).text).assertEqual('');
+      expect(compareOrderIds([], [1, 2]).text).assertEqual('');
     });
 
     it('空 listKey 的更新被忽略', 0, (): void => {

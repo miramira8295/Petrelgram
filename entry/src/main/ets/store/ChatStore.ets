@@ -1,5 +1,5 @@
 import { ChatListSubscription, ChatListPublicationMode } from './ChatListSubscription';
-import { ChatListOrder, PositionChange } from './chatListOrder';
+import { ChatListOrder, PositionChange, OrderSnapshot, OrderDiff, compareOrderIds } from './chatListOrder';
 import { groupCallGone, groupCallIsLive } from '../util/liveCallState';
 import { UnreadBadgeCounts } from '../util/unreadBadgeRule';
 import { actionBarCanUnarchiveOf, actionBarKindOf } from '../util/chatActionBar';
@@ -93,6 +93,15 @@ export class ChatStore {
   private chats: Map<number, ChatEntry> = new Map();
   // 位置索引与排序（第二层第一步：从 store 里剥出来的纯结构，见 chatListOrder）。
   private order: ChatListOrder = new ChatListOrder((chatId: number): boolean => this.chats.has(chatId));
+  // 第二层 B2 对账计数（worker 影子排序 vs 本地）。只影响日志。
+  private orderShadowMatch: number = 0;
+  private orderShadowMismatch: number = 0;
+  private orderShadowSkew: number = 0;
+  // 位置最近一次「落地」的时刻。UI 的位置更新会被行级配对事务压后最多 ~320ms，
+  // 所以只有当自己安静下来之后，拿 worker 的快照比对才有意义。
+  private positionAppliedAt: number = 0;
+  private orderShadowPending: Map<string, number[]> = new Map<string, number[]>();
+  private orderShadowTimer: number = -1;
   // Position updates are much more frequent than list opens. Keep the sorted
   // identity sequence for every list that has actually been read, then move
   // only the affected chat when TDLib changes its position. getChats() still
@@ -328,6 +337,65 @@ export class ChatStore {
 
   allEntries(): ChatEntry[] {
     return Array.from(this.chats.values());
+  }
+
+  // 第二层 B2：worker 侧影子排序的对账入口。**只记日志，不改本地顺序。**
+  //
+  // 一致 → 说明 worker 用同一份更新流排出了同样的序列，切权威的前提成立；
+  // 不一致 → 差异行会打出首个分歧下标与两侧长度，先查 worker 漏了哪类更新。
+  compareWorkerOrder(lists: OrderSnapshot[]): void {
+    // 只留每个列表最新的一份，等自己安静下来再比。
+    for (const snapshot of lists) {
+      this.orderShadowPending.set(snapshot.key, snapshot.ids);
+    }
+    this.scheduleOrderShadowCompare();
+  }
+
+  private scheduleOrderShadowCompare(): void {
+    if (this.orderShadowTimer !== -1) {
+      return;
+    }
+    const idle: number = Date.now() - this.positionAppliedAt;
+    const wait: number = idle >= 450 ? 60 : (450 - idle) + 60;
+    this.orderShadowTimer = setTimeout((): void => {
+      this.orderShadowTimer = -1;
+      this.runOrderShadowCompare();
+    }, wait);
+  }
+
+  private runOrderShadowCompare(): void {
+    if (this.orderShadowPending.size === 0) {
+      return;
+    }
+    // 还没安静（期间又落了位置更新）：再等。
+    if (Date.now() - this.positionAppliedAt < 450) {
+      this.scheduleOrderShadowCompare();
+      return;
+    }
+    this.orderShadowPending.forEach((ids: number[], key: string): void => {
+      const local: number[] = this.order.orderedIds(key);
+      const diff: OrderDiff = compareOrderIds(local, ids);
+      if (diff.text === '' && diff.localLen === diff.remoteLen) {
+        this.orderShadowMatch += 1;
+        if (this.orderShadowMatch % 50 === 0) {
+          logI(`[OrderShadow] match#${this.orderShadowMatch} list=${key} n=${local.length}`);
+        }
+        return;
+      }
+      // 相对顺序不一致才是真问题；只是覆盖率不足 = UI 还没消化完同一批更新。
+      if (diff.text !== '') {
+        this.orderShadowMismatch += 1;
+        if (this.orderShadowMismatch <= 5 || this.orderShadowMismatch % 50 === 0) {
+          logW(`[OrderShadow] order-diff#${this.orderShadowMismatch} list=${key} ${diff.text}` +
+            ` covered=${diff.common}/${diff.localLen}/${diff.remoteLen}`);
+        }
+      } else if (this.orderShadowSkew <= 8) {
+        this.orderShadowSkew += 1;
+        logI(`[OrderShadow] skew#${this.orderShadowSkew} list=${key}` +
+          ` covered=${diff.common}/${diff.localLen}/${diff.remoteLen}`);
+      }
+    });
+    this.orderShadowPending.clear();
   }
 
   getChats(listKey: string = MAIN): ChatEntry[] {
@@ -636,6 +704,7 @@ export class ChatStore {
     if (change.added || change.removed) {
       this.invalidateUnreadBadge(listKey);
     }
+    this.positionAppliedAt = Date.now();
   }
 
   private positionsNeedImmediatePublication(id: number, positions: TdObject[]): boolean {

@@ -12,6 +12,9 @@ import { worker, ThreadWorkerGlobalScope, MessageEvents } from '@kit.ArkTS';
 import testNapi from 'libentry.so';
 import { coalesceKeyOf } from '../tdkit/tdUpdateFilter';
 import { TdIngestBatch, BatchTimerFns } from '../tdkit/tdIngestBatch';
+import { ChatListOrder, OrderSnapshot } from '../store/chatListOrder';
+import { listKeyOf } from '../store/ListKey';
+import { TdObject } from '../tdkit/TdTypes';
 
 const scope: ThreadWorkerGlobalScope = worker.workerPort;
 
@@ -36,6 +39,8 @@ interface TdWorkerEvent {
   payload?: object;
   // kind==='batch' 时的整批（批内顺序 = 到达顺序）。
   items?: object[];
+  // kind==='order' 时的排序快照（第二层 B2，影子索引对账用）。
+  lists?: OrderSnapshot[];
   head?: string;
 }
 
@@ -71,7 +76,11 @@ function flushCoalesced(): void {
 }
 
 function deliver(obj: object): void {
-  const key: string = coalesceKeyOf(obj as Record<string, Object>);
+  const record = obj as Record<string, Object>;
+  // 影子索引：先按到达顺序喂一遍，再走投递（投递可能被合并/批处理推迟，
+  // 而位置语义必须按到达顺序落地）。
+  trackOrder(record);
+  const key: string = coalesceKeyOf(record);
   if (key === '') {
     // 直通事件发出前先冲积压：与不可交换事件的相对顺序必须保持。
     flushCoalesced();
@@ -95,6 +104,100 @@ function deliver(obj: object): void {
   }
 }
 
+// ── 第二层 B2：影子排序索引 ────────────────────────────────────────────────
+//
+// 用同一份更新流在 worker 里再排一遍。**它现在只用于对账**：UI 侧拿自己的
+// 序列和它对，逐项不一致就打日志、切权威的事留到下一批。这样即使影子错了，
+// 用户看到的仍是 UI 的排序。
+//
+// 三个入口与 ChatStore 完全对齐：updateNewChat（chat.positions）、
+// updateChatLastMessage（positions）、updateChatPosition（position）。
+// 顺序 = 更新到达顺序；去重与置顶分段规则由 ChatListOrder 保证（同一份代码）。
+const knownChats: Set<number> = new Set<number>();
+const orderIndex: ChatListOrder = new ChatListOrder((id: number): boolean => knownChats.has(id));
+const orderDirty: Set<string> = new Set<string>();
+let orderTimer: number = -1;
+// 每 200ms 把脏列表发一次。**快照不要求"恰好一致"**：UI 侧的位置更新会被
+// 行级配对事务压到 320ms 之后才落，任何时刻比对都天然会看到"worker 新、
+// UI 旧"。真正的判据在 UI 侧：只在它自己安静下来之后才比对（见
+// ChatStore.compareWorkerOrder）。
+const ORDER_POST_MS: number = 200;
+
+function applyPositionOf(chatId: number, position: Record<string, Object>): void {
+  const list = position['list'] as Record<string, Object> | undefined;
+  if (list === undefined) {
+    return;
+  }
+  const key: string = listKeyOf(list as TdObject);
+  if (key === '') {
+    return;
+  }
+  const order: string = (position['order'] as string | undefined) ?? '0';
+  const isPinned: boolean = (position['is_pinned'] as boolean | undefined) ?? false;
+  orderIndex.apply(key, chatId, order, isPinned);
+  orderDirty.add(key);
+  if (orderTimer === -1) {
+    orderTimer = setTimeout((): void => {
+      orderTimer = -1;
+      flushOrder();
+    }, ORDER_POST_MS);
+  }
+}
+
+function flushOrder(): void {
+  if (orderDirty.size === 0) {
+    return;
+  }
+  const lists: OrderSnapshot[] = [];
+  orderDirty.forEach((key: string): void => {
+    lists.push({ key, ids: orderIndex.orderedIds(key).slice() });
+  });
+  orderDirty.clear();
+  const event: TdWorkerEvent = { kind: 'order', lists: lists };
+  postSafe(event);
+}
+
+function trackOrder(obj: Record<string, Object>): void {
+  const type: string | undefined = obj['@type'] as string | undefined;
+  if (type === 'updateNewChat') {
+    const chat = obj['chat'] as Record<string, Object> | undefined;
+    if (chat === undefined) {
+      return;
+    }
+    const id = chat['id'] as number | undefined;
+    if (id === undefined) {
+      return;
+    }
+    knownChats.add(id);
+    const positions = chat['positions'] as object[] | undefined;
+    if (positions !== undefined) {
+      for (const p of positions) {
+        applyPositionOf(id, p as Record<string, Object>);
+      }
+    }
+    return;
+  }
+  if (type === 'updateChatLastMessage') {
+    const id = obj['chat_id'] as number | undefined;
+    const positions = obj['positions'] as object[] | undefined;
+    if (id === undefined || positions === undefined) {
+      return;
+    }
+    for (const p of positions) {
+      applyPositionOf(id, p as Record<string, Object>);
+    }
+    return;
+  }
+  if (type === 'updateChatPosition') {
+    const id = obj['chat_id'] as number | undefined;
+    const position = obj['position'] as Record<string, Object> | undefined;
+    if (id === undefined || position === undefined) {
+      return;
+    }
+    applyPositionOf(id, position);
+  }
+}
+
 scope.onmessage = (e: MessageEvents): void => {
   const msg = e.data as TdWorkerCommand;
   // td* 的 native 实现在 g_created 翻转窗口会抛 JS 异常（"tdSend before
@@ -114,6 +217,10 @@ function handleCommand(msg: TdWorkerCommand): void {
     // 账号切换会重发 init：清掉上一个运行时的积压（合并缓冲与待发批次）。
     pendingCoalesced.clear();
     batch.reset();
+    // 新运行时：影子索引整体作废，等新一轮 updateNewChat 重建。
+    knownChats.clear();
+    orderIndex.clear();
+    orderDirty.clear();
     testNapi.tdInit((json: string): void => {
       let obj: object | null = null;
       try {
