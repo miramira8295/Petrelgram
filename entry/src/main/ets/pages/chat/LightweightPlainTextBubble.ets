@@ -1,3 +1,4 @@
+import { senderLabelWidths } from '../../util/senderLabelWidths';
 import { BubbleGlassGeometry } from './BubbleGlassGeometry';
 import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
 import { RowLeaveChannel } from '../../util/rowLeaveChannel';
@@ -245,24 +246,6 @@ struct LightweightSenderAvatar {
   }
 }
 
-// 名字行宽度的进程级记忆（P4 批 2）：V1 时代靠 @State「复用不清零」兜住
-// 「名字行比正文宽」的时间层最小宽度；@Local 复用必重置，改按名字文本记忆
-// ——复用当口先播种，onAreaChange 实测后回写。上限防涨（FIFO 淘汰）。
-const SENDER_LABEL_WIDTHS: Map<string, number> = new Map<string, number>();
-const SENDER_LABEL_WIDTH_LIMIT: number = 512;
-
-function rememberSenderLabelW(name: string, width: number): void {
-  if (name === '' || !(width > 0)) {
-    return;
-  }
-  if (!SENDER_LABEL_WIDTHS.has(name) && SENDER_LABEL_WIDTHS.size >= SENDER_LABEL_WIDTH_LIMIT) {
-    const oldest = SENDER_LABEL_WIDTHS.keys().next().value as string | undefined;
-    if (oldest !== undefined) {
-      SENDER_LABEL_WIDTHS.delete(oldest);
-    }
-  }
-  SENDER_LABEL_WIDTHS.set(name, width);
-}
 
 // 按压反馈这四组样式不读任何组件状态，随批 2 迁成全局 @Styles——
 // @ComponentV2 不支持成员 @Styles。
@@ -346,6 +329,12 @@ export struct LightweightPlainTextBubble {
   private measuredGlassW: number = 0;
   private measuredGlassH: number = 0;
   private shadowShapeCache: SolidBubbleShadowCache = new SolidBubbleShadowCache();
+
+  // 名字行宽度：读当前发送者的可观测单元（首次读取惰性创建，不产生通知）。
+  // 这样依赖只落在"这个发送者"上，别的发送者量到宽度不会惊动本行。
+  private senderLabelWidth(): number {
+    return senderLabelWidths.cell(this.msg.senderName).width;
+  }
 
   private bubbleFillColor(): ResourceColor {
     if (this.env.appearanceEpoch < 0) {
@@ -505,9 +494,10 @@ export struct LightweightPlainTextBubble {
   private swipeFromEdge: boolean = false;
   // 名字行量出来的宽度。名字行比正文宽时，时间层要拿它兜最小宽度，时间戳才落在
   // 气泡右下角、引用块才能拉到气泡边缘。V1 靠「复用不清零」留住上一行的近似值；
-  // V2 的 @Local 复用必重置，改为按名字文本进程级记忆（见 SENDER_LABEL_WIDTHS），
+  // 名字行宽度按发送者存在可观测单元里（见 util/senderLabelWidths）：
+  // 不再用 @Local，复用不会被重置成 0，也就没有「归零 + 回填」两次通知。
   // 复用当口播种，比 V1 的近似更准（同名即同宽，V1 拿的是上一行随机名字的宽）。
-  @Local private senderLabelW: number = 0;
+
   private menuOffsetX: number = 0;
   private gestureClaimed: boolean = false;
   private unsubSend: (() => void) | null = null;
@@ -572,7 +562,6 @@ export struct LightweightPlainTextBubble {
 
   aboutToAppear(): void {
     probeHit('message.plain.mount');
-    this.senderLabelW = SENDER_LABEL_WIDTHS.get(this.msg.senderName) ?? 0;
     this.attachChannels(this.msg);
   }
   aboutToDisappear(): void {
@@ -588,7 +577,6 @@ export struct LightweightPlainTextBubble {
     // @Param 已是新值、@Local 已重置（批 0.5 判读 Q1b/Q2）：同步重挂+重播种，
     // V1 时代的 reuseParam 读参和 nextFrameQueue 延帧兜底整套退役。
     this.resetTransient();
-    this.senderLabelW = SENDER_LABEL_WIDTHS.get(this.msg.senderName) ?? 0;
     // 见 measuredGlassW：复用后尺寸没变时 onSizeChange 不再回调，这里回填。
     this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
     this.attachChannels(this.msg);
@@ -900,7 +888,7 @@ export struct LightweightPlainTextBubble {
   private measuredTimeLayerWidth(): number {
     return timeLayerMinWidth(this.inlineMaxW(), {
       forwardShown: false, forwardW: 0,
-      senderShown: this.senderLabelShown(), senderW: this.senderLabelW,
+      senderShown: this.senderLabelShown(), senderW: this.senderLabelWidth(),
       commentsShown: false, commentsW: 0
     });
   }
@@ -1120,14 +1108,12 @@ export struct LightweightPlainTextBubble {
         // onSizeChange 而不是 onAreaChange：后者每帧对所有注册节点逐个比对
         // （PipelineContext::HandleOnAreaChangeEvent，15:25 trace 翻页段每帧约 0.9ms），
         // 这里只要宽度。复用后尺寸没变就不会回调——那种情况 aboutToReuse 已按名字
-        // 从 SENDER_LABEL_WIDTHS 播种，值就是同一个。
+        // 宽度来自 senderLabelWidths 的可观测单元（首次读到 0，量到后自动刷新）。
         .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
           const w: Length | undefined = size.width;
-          if (typeof w === 'number' && this.senderLabelW !== w) {
-            // 同值不写：onSizeChange 在每次布局变化时都来，@Local 写同值也会走一遍
-            // 通知（12.4s 采集里 730 次变更）。
-            this.senderLabelW = w as number;
-            rememberSenderLabelW(this.msg.senderName, w as number);
+          // remember 内部同值不写，且只唤醒同一发送者的行。
+          if (typeof w === 'number') {
+            senderLabelWidths.remember(this.msg.senderName, w as number);
           }
         });
       }
