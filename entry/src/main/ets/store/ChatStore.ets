@@ -183,9 +183,19 @@ export class ChatStore {
     // UserStore）与 TTL 计时器，worker 那边没有用户表；它也不产生会话实体，
     // 只是把文案写进镜像。selfId 同理（my_id 决定 Saved Messages 与"自己"过滤）。
     if (chatListV2Enabled()) {
+      // 元数据与本地状态这几条**不是会话实体**，worker 那条链不产生它们，
+      // 所以 V2 必须自己订阅：
+      //   · updateChatAction / updateUser —— 输入中（要 UserStore 里的显示名）
+      //   · updateOption —— my_id，决定 Saved Messages 与"自己"过滤
+      //   · updateNewChat / updateSupergroup —— 群与频道的能力位、话题群判定
+      //     （isForumSupergroup / supergroupIdOf 等，ChatRow 与话题页都要用）
+      //   · updateGroupCall —— 直播位（手机上没有别的来源）
       client.onUpdate('updateChatAction', (u: TdObject) => this.onChatAction(u));
       client.onUpdate('updateUser', (u: TdObject) => this.onChatActionUser(u));
       client.onUpdate('updateOption', (u: TdObject) => this.onOption(u));
+      client.onUpdate('updateNewChat', (u: TdObject) => this.onNewChat(u));
+      client.onUpdate('updateSupergroup', (u: TdObject) => this.onSupergroup(u));
+      client.onUpdate('updateGroupCall', (u: TdObject) => this.onGroupCall(u));
     }
     if (!chatListV2Enabled()) {
     client.onUpdate('updateOption', (u: TdObject) => this.onOption(u));
