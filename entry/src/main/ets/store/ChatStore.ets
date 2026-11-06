@@ -1,5 +1,8 @@
 import { ChatListSubscription, ChatListPublicationMode } from './ChatListSubscription';
 import { ChatListOrder, PositionChange, OrderSnapshot, OrderDiff, compareOrderIds } from './chatListOrder';
+import {
+  buildChatEntry, effectiveUnread, messageIdOf, smallPhotoIdOf, videoChatIdOf, backgroundOf
+} from './chatEntryFactory';
 import { groupCallGone, groupCallIsLive } from '../util/liveCallState';
 import { UnreadBadgeCounts } from '../util/unreadBadgeRule';
 import { actionBarCanUnarchiveOf, actionBarKindOf } from '../util/chatActionBar';
@@ -758,25 +761,8 @@ export class ChatStore {
     return '';
   }
 
-  private smallPhotoId(photo: TdObject | undefined): number {
-    if (photo === undefined) {
-      return 0;
-    }
-    const small = photo['small'] as TdObject | undefined;
-    if (small === undefined) {
-      return 0;
-    }
-    return (small['id'] as number | undefined) ?? 0;
-  }
 
-  private videoChatId(videoChat: TdObject | undefined): number {
-    return videoChat !== undefined
-      ? ((videoChat['group_call_id'] as number | undefined) ?? 0) : 0;
-  }
 
-  private backgroundOf(value: Object | null | undefined): TdObject | null {
-    return value !== undefined && value !== null ? value as TdObject : null;
-  }
 
   private rememberGroupCall(chatId: number, previousId: number, groupCallId: number): void {
     if (previousId > 0 && this.groupCallChats.get(previousId) === chatId) {
@@ -867,62 +853,16 @@ export class ChatStore {
     }
     const previous = this.chats.get(id);
     const previousGroupCallId = previous?.liveGroupCallId ?? 0;
-    const title = (chat['title'] as string | undefined) ?? '';
-    const rawLastMessage = chat['last_message'];
-    const lastMsg: TdObject | null = rawLastMessage !== undefined && rawLastMessage !== null
-      ? rawLastMessage as TdObject : null;
-    const groupCallId = this.videoChatId(chat['video_chat'] as TdObject | undefined);
-    const photoFileId = this.smallPhotoId(chat['photo'] as TdObject | undefined);
+    const photoFileId: number = smallPhotoIdOf(chat['photo'] as TdObject | undefined);
     const samePhoto = previous !== undefined && previous.photoFileId === photoFileId;
     this.notePhotoAnimation(id, chat['photo'] as TdObject | undefined, previous !== undefined && !samePhoto);
-    const sameGroupCall = previous !== undefined && previous.liveGroupCallId === groupCallId;
-    const lastReadOutboxId: number = (chat['last_read_outbox_message_id'] as number | undefined) ?? 0;
-    const isSavedMessages: boolean = this.selfId !== 0 && id === this.selfId;
-    const kind: ChatKind = chatKindOf(chat['type'] as TdObject | undefined);
-    const entry: ChatEntry = {
-      id,
-      revision: previous !== undefined ? previous.revision + 1 : 0,
-      title,
-      isMuted: isMutedFrom(chat['notification_settings'] as TdObject | undefined),
-      usesDefaultMute: usesDefaultMuteFrom(chat['notification_settings'] as TdObject | undefined),
-      unreadCount: ChatStore.effectiveUnread(
-        (chat['unread_count'] as number | undefined) ?? 0,
-        (chat['last_read_inbox_message_id'] as number | undefined) ?? 0,
-        this.messageIdOf(lastMsg)),
-      unreadMentionCount: (chat['unread_mention_count'] as number | undefined) ?? 0,
-      rawUnreadCount: (chat['unread_count'] as number | undefined) ?? 0,
-      lastReadInboxId: (chat['last_read_inbox_message_id'] as number | undefined) ?? 0,
-      lastReadOutboxId,
-      lastMessageSendState: lastMessageSendStateFrom(lastMsg, lastReadOutboxId, isSavedMessages, kind),
-      typingText: previous?.typingText ?? '',
-      lastMessageText: formatPreview(lastMsg),
-      lastMessageThumb: previewThumbOf(lastMsg),
-      lastMessageDate: lastMsg !== null ? ((lastMsg['date'] as number | undefined) ?? 0) : 0,
-      lastMessageId: this.messageIdOf(lastMsg),
-      lastSenderName: isSavedMessages ? '' : this.senderName(lastMsg ?? undefined),
-      photoFileId,
-      // getChat/updateNewChat may refresh a chat after its avatar has already
-      // completed. Preserve the resolved path when the photo itself is unchanged.
-      avatarPath: samePhoto ? previous!.avatarPath : '',
-      initials: computeInitials(title),
-      autoDeleteTime: (chat['message_auto_delete_time'] as number | undefined) ?? 0,
-      kind,
-      isMarkedUnread: (chat['is_marked_as_unread'] as boolean | undefined) ?? false,
-      actionBar: actionBarKindOf(chat['action_bar'] as TdObject | undefined),
-      actionBarCanUnarchive: actionBarCanUnarchiveOf(chat['action_bar'] as TdObject | undefined),
-      // deleteChatHistory 的两个前置能力位。TDLib 没有针对它们的增量 update
-      // （updateChat* 里没有对应的类），只随完整 chat 对象到达，所以这里是
-      // 唯一的写入点；缺省取 false —— 宁可少给一个入口，也不要给一个必然
-      // 报 "Can't delete history of X only for self" 的入口。
-      canDeleteOnlyForSelf: (chat['can_be_deleted_only_for_self'] as boolean | undefined) ?? false,
-      canDeleteForAllUsers: (chat['can_be_deleted_for_all_users'] as boolean | undefined) ?? false,
-      isSavedMessages,
-      background: this.backgroundOf(chat['background']),
-      themeName: (chat['theme_name'] as string | undefined) ?? '',
-      liveGroupCallId: groupCallId,
-      isLive: sameGroupCall ? previous!.isLive : false,
-      isRtmpLive: sameGroupCall ? previous!.isRtmpLive : false
-    };
+    const groupCallId: number = videoChatIdOf(chat['video_chat'] as TdObject | undefined);
+    // 字段计算搬进 chatEntryFactory（第二层 B4a）：worker 将来跑同一份代码，
+    // 本类只留副作用。
+    const entry: ChatEntry = buildChatEntry({
+      chat, previous, selfId: this.selfId,
+      senderName: (message: TdObject | undefined): string => this.senderName(message)
+    });
     this.setChatEntry(id, entry);
     this.rememberGroupCall(id, previousGroupCallId, groupCallId);
     const positions = (chat['positions'] as TdObject[] | undefined) ?? [];
@@ -1007,7 +947,7 @@ export class ChatStore {
     const baselineLastId: number = pending !== undefined && pending.latestIncomingLastId > 0
       ? pending.latestIncomingLastId : e.lastMessageId;
     const freshIncoming: boolean = this.isFreshIncomingTail(e, baselineLastId, lastMsg);
-    const nextLastMessageId: number = this.messageIdOf(lastMsg);
+    const nextLastMessageId: number = messageIdOf(lastMsg);
 
     if (pending === undefined && freshIncoming) {
       if (e.lastReadInboxId >= nextLastMessageId) {
@@ -1144,7 +1084,7 @@ export class ChatStore {
       return;
     }
     const c = cloneEntry(e);
-    c.photoFileId = this.smallPhotoId(update['photo'] as TdObject | undefined);
+    c.photoFileId = smallPhotoIdOf(update['photo'] as TdObject | undefined);
     this.notePhotoAnimation(id, update['photo'] as TdObject | undefined, c.photoFileId !== e.photoFileId);
     c.avatarPath = '';
     this.setChatEntry(id, c);
@@ -1198,7 +1138,7 @@ export class ChatStore {
     if (e === undefined) {
       return;
     }
-    const background = this.backgroundOf(update['background']);
+    const background = backgroundOf(update['background']);
     if (e.background === background) {
       return;
     }
@@ -1226,7 +1166,7 @@ export class ChatStore {
 
   private onDefaultBackground(update: TdObject): void {
     const forDarkTheme = (update['for_dark_theme'] as boolean | undefined) ?? false;
-    const background = this.backgroundOf(update['background']);
+    const background = backgroundOf(update['background']);
     if (forDarkTheme) {
       this.defaultBackgroundDark = background;
       this.defaultBackgroundDarkKnown = true;
@@ -1392,7 +1332,7 @@ export class ChatStore {
     const chatId = (update['chat_id'] as number | undefined) ?? 0;
     const entry = this.chats.get(chatId);
     if (entry === undefined) { return; }
-    const groupCallId = this.videoChatId(update['video_chat'] as TdObject | undefined);
+    const groupCallId = videoChatIdOf(update['video_chat'] as TdObject | undefined);
     const previousId = entry.liveGroupCallId;
     const next = cloneEntry(entry);
     next.liveGroupCallId = groupCallId;
@@ -1416,22 +1356,7 @@ export class ChatStore {
   // — the read watermark already covers the chat's newest message — and
   // viewMessages cannot clear it because nothing viewable is left. Trust what
   // the watermark proves over the raw counter.
-  private static effectiveUnread(unread: number, lastReadInboxId: number,
-    lastMessageId: number): number {
-    const suppressed: boolean = unread > 0 && lastMessageId > 0 && lastReadInboxId >= lastMessageId;
-    if (suppressed) {
-      // 诊断：反馈过"有些会话不显示未读数"。这里是**唯一**会把非零未读抹成 0
-      // 的地方（另外两处是本地摘角标和 TDLib 自己下发），三个数一起打才判断
-      // 得出是真幽灵未读还是误伤。只在真抹掉时打。
-      logW(`effectiveUnread suppressed unread=${unread}` +
-        ` lastRead=${lastReadInboxId} lastMsg=${lastMessageId}`);
-    }
-    return suppressed ? 0 : unread;
-  }
 
-  private messageIdOf(message: TdObject | null): number {
-    return message !== null ? ((message['id'] as number | undefined) ?? 0) : 0;
-  }
 
   // Only a strictly newer received tail needs an unread counterpart. TDLib's
   // direction flag is required here: an absent flag must not turn an edit or a
@@ -1448,7 +1373,7 @@ export class ChatStore {
       (schedulingState !== undefined && schedulingState !== null)) {
       return false;
     }
-    const nextLastMessageId = this.messageIdOf(lastMessage);
+    const nextLastMessageId = messageIdOf(lastMessage);
     return Number.isSafeInteger(nextLastMessageId) && nextLastMessageId > 0 &&
       nextLastMessageId > baselineLastId;
   }
@@ -1585,7 +1510,7 @@ export class ChatStore {
       next.lastMessageThumb = previewThumbOf(pending.lastMessage);
       next.lastMessageDate = pending.lastMessage !== null
         ? ((pending.lastMessage['date'] as number | undefined) ?? 0) : 0;
-      next.lastMessageId = this.messageIdOf(pending.lastMessage);
+      next.lastMessageId = messageIdOf(pending.lastMessage);
       next.lastSenderName = next.isSavedMessages ? '' : this.senderName(pending.lastMessage ?? undefined);
       next.lastMessageSendState = lastMessageSendStateFrom(
         pending.lastMessage, next.lastReadOutboxId ?? 0, next.isSavedMessages, next.kind);
@@ -1599,7 +1524,7 @@ export class ChatStore {
     }
     // Recompute only after both staged fields are present. This also preserves
     // the existing phantom-unread recovery when the read half arrived first.
-    next.unreadCount = ChatStore.effectiveUnread(
+    next.unreadCount = effectiveUnread(
       next.rawUnreadCount, next.lastReadInboxId, next.lastMessageId);
     this.setChatEntry(chatId, next);
     const urgentPositions: boolean = pending.affectsPositions &&
@@ -1644,11 +1569,11 @@ export class ChatStore {
     next.lastMessageThumb = previewThumbOf(lastMessage);
     next.lastMessageDate = lastMessage !== null
       ? ((lastMessage['date'] as number | undefined) ?? 0) : 0;
-    next.lastMessageId = this.messageIdOf(lastMessage);
+    next.lastMessageId = messageIdOf(lastMessage);
     next.lastSenderName = next.isSavedMessages ? '' : this.senderName(lastMessage ?? undefined);
     next.lastMessageSendState = lastMessageSendStateFrom(
       lastMessage, next.lastReadOutboxId ?? 0, next.isSavedMessages, next.kind);
-    next.unreadCount = ChatStore.effectiveUnread(
+    next.unreadCount = effectiveUnread(
       next.rawUnreadCount, next.lastReadInboxId, next.lastMessageId);
     this.setChatEntry(chatId, next);
     const urgent: boolean = next.unreadCount < entry.unreadCount || (positions !== undefined &&
@@ -1701,7 +1626,7 @@ export class ChatStore {
     const next = cloneEntry(entry);
     next.rawUnreadCount = rawUnreadCount;
     next.lastReadInboxId = lastReadInboxId;
-    next.unreadCount = ChatStore.effectiveUnread(
+    next.unreadCount = effectiveUnread(
       next.rawUnreadCount, next.lastReadInboxId, next.lastMessageId);
     this.setChatEntry(chatId, next);
     if (immediately) {
