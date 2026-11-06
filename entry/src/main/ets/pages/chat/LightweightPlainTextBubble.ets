@@ -1123,7 +1123,9 @@ export struct LightweightPlainTextBubble {
         // 从 SENDER_LABEL_WIDTHS 播种，值就是同一个。
         .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
           const w: Length | undefined = size.width;
-          if (typeof w === 'number') {
+          if (typeof w === 'number' && this.senderLabelW !== w) {
+            // 同值不写：onSizeChange 在每次布局变化时都来，@Local 写同值也会走一遍
+            // 通知（12.4s 采集里 730 次变更）。
             this.senderLabelW = w as number;
             rememberSenderLabelW(this.msg.senderName, w as number);
           }

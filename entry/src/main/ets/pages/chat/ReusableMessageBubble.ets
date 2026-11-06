@@ -282,12 +282,21 @@ export struct ReusableMessageBubble {
   // 记下 key 同时也让「订阅挂在哪」成为可判定的事实，谁先到都不影响正确性。
   private attachedKey: string = '';
 
+  // 同值不写：复用时框架把 liveGroup 重置为 null，这里会补种一次；但 attach 在
+  // 每次 @Monitor('msg') 落地时也会走，重投同一个对象时不该再产生一次通知
+  // （12.4s 采集里 liveGroup 变了 1171 次）。
+  private applyLiveGroup(next: AlbumGroup): void {
+    if (this.liveGroup !== next) {
+      this.liveGroup = next;
+    }
+  }
+
   private attachPresentation(group: AlbumGroup): void {
     const key: string = `${this.data.chatId}:${group.head.rowId}`;
     if (this.unsubPresentation !== null && this.attachedKey === key) {
       // 已挂在同一行上：订阅原样保留，只重新取一次现值（复用时框架会把
       // liveGroup 重置回 null，短路分支不补种会让这一帧退回 @Prop 的快照）。
-      this.liveGroup = messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group;
+      this.applyLiveGroup(messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group);
       this.jumpFocus = this.actions.bubbleFocus.value(group.head.rowId);
       this.leaving = this.actions.rowLeave.value(group.head.rowId);
       return;
@@ -298,7 +307,7 @@ export struct ReusableMessageBubble {
       (strength: number): void => { this.jumpFocus = strength; });
     this.unsubLeave = this.actions.rowLeave.subscribe(group.head.rowId,
       (strength: number): void => { this.leaving = strength; });
-    this.liveGroup = messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group;
+    this.applyLiveGroup(messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group);
     this.unsubPresentation = subscribeMessageRowPresentation(
       this.data.chatId,
       group.head.rowId,
