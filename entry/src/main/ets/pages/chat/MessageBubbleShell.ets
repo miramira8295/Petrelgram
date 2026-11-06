@@ -1502,6 +1502,11 @@ export struct MessageBubbleShell {
 
   // 材质档只看全局开关，不看单行可见性（理由见 LightweightPlainTextBubble）。
   private bubbleMaterialLive(): boolean {
+    // 读 glassStamp 建立依赖（理由见 LightweightPlainTextBubble 同名说明）：
+    // 玻璃的整套背景属性都要在测量完成时重算，不能只重算半径。
+    if (this.glassStamp < 0) {
+      return false;
+    }
     return this.env.bubbleMaterialOn && !this.env.powerSaving;
   }
 

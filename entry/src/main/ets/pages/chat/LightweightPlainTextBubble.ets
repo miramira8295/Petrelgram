@@ -401,6 +401,17 @@ export struct LightweightPlainTextBubble {
   // 收到两次 false，而它还在屏上。于是一屏里玻璃档与实心档混着出现：玻璃档是
   // 半透明 + 1vp 描边，实心档是不透明底 + 外投影，肉眼就是"两种气泡厚度"。
   private bubbleMaterialLive(): boolean {
+    // 读一下 glassStamp，让**所有玻璃属性**都挂在同一个响应式记号上。
+    //
+    // 几何值改成普通字段之后，尺寸量完靠这个记号通知重算；而 ArkUI V2 的依赖是
+    // 按属性记的——只在某个 helper 里读一次，只有那个 helper 的属性会重算。
+    // 之前只在 glassRadius() 里读，结果容器那串背景属性（backgroundColor /
+    // background / attributeModifier / backgroundBlurStyle）停留在"没量到"时算出的
+    // 值：气泡看着像没切到玻璃档，滑出去复用回来（整棵重建）才正常。用户报的
+    // 正是这个。把读点放进这里，凡是问"材质活没活"的地方都继承依赖。
+    if (this.glassStamp < 0) {
+      return false;
+    }
     return this.env.bubbleMaterialOn && !this.env.powerSaving;
   }
 
