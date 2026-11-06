@@ -1,5 +1,6 @@
 import { ChatListSubscription, ChatListPublicationMode } from './ChatListSubscription';
 import { ChatListOrder, PositionChange, OrderSnapshot, OrderDiff, compareOrderIds } from './chatListOrder';
+import { ChatMirror } from './chatMirror';
 import {
   buildChatEntry, effectiveUnread, messageIdOf, smallPhotoIdOf, videoChatIdOf, backgroundOf,
   compareChatEntries
@@ -102,6 +103,9 @@ export class ChatStore {
   private orderShadowMismatch: number = 0;
   private orderShadowSkew: number = 0;
   private entryShadowMatch: number = 0;
+  // B4b-3 的镜像：按"将来要当权威"的规则维护（见 store/chatMirror）。UI 目前
+  // 仍以 chats 为准，镜像先跑起来对账，切换时直接换读点。
+  private mirror: ChatMirror = new ChatMirror();
   private entryShadowMismatch: number = 0;
   private entryShadowSkew: number = 0;
   // 位置最近一次「落地」的时刻。UI 的位置更新会被行级配对事务压后最多 ~320ms，
@@ -410,6 +414,7 @@ export class ChatStore {
   // 一致的字段集合见 compareChatEntries 的注释（revision/头像/发送者名等
   // 本来就各算各的，不参与比较）。
   compareWorkerEntries(entries: ChatEntry[]): void {
+    this.mirror.apply(entries);
     // 会话实体不像位置那样有安静窗口——消息一到就变。所以判据换成
     // 「同一条末条消息才比」：末条 id 不一致就是 worker 慢一拍的时差，直接放过；
     // 同一条消息还渲染出不同文本/计数，那才是真的规则分叉。
