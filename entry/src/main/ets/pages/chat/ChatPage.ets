@@ -1582,6 +1582,7 @@ export struct ChatPage {
       markVisibleRead: (end: number): void => { this.markVisibleRead(end); },
       closeBottomPanels: (): void => { this.closeBottomPanels(); },
       dismissKeyboardOnUserScroll: (): void => { this.dismissKeyboardOnUserScroll(); },
+      keyboardVisible: (): boolean => this.keyboardH > 0,
       capMessageReuseBuckets: (): void => { this.capMessageReuseBuckets(); },
       cancelImeFollow: (): void => {
         this.imeTailPinned = false;
@@ -3095,7 +3096,11 @@ export struct ChatPage {
   // 只在键盘确实立着时才动手。stopEditing 在没有焦点时是空操作，但白跑一次
   // 就意味着每一次滑动都要过一遍输入法的 IPC。
   private dismissKeyboardOnUserScroll(): void {
-    if (!this.timeline.listTouchActive || this.keyboardH <= 0) {
+    // 只有"按下时键盘已经立着"的手势才允许滑动收键盘。长按头像 @ 会在按住
+    // 期间 requestFocus，键盘刚升起就撞上 IME 贴底滚动产生的 onScrollStart，
+    // 这里若只看 listTouchActive 就会把刚升起的键盘收掉（闪烁）。
+    if (!this.timeline.listTouchActive || this.keyboardH <= 0 ||
+      !this.timeline.keyboardWasUpAtTouchDown()) {
       return;
     }
     this.composerController.stopEditing();
@@ -5821,7 +5826,9 @@ export struct ChatPage {
         this.command.closeMenu();
         if (this.keyboardH > 0) { this.syncTailOnImeFrame(); }
       },
-      onEditorBlur: (): void => { this.composerFocused = false; },
+      onEditorBlur: (): void => {
+        this.composerFocused = false;
+      },
       onActivateEditor: (): void => { this.inputSwitch.showKeyboard(); },
       onScheduleEditorMount: (): void => { this.scheduleComposerEditorMount(); },
       onToggleReplyKeyboard: (): void => { this.toggleReplyKeyboard(); },

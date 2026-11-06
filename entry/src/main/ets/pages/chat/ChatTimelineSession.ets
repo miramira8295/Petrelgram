@@ -83,6 +83,7 @@ export interface ChatTimelineBindings {
   markVisibleRead: (end: number) => void;
   closeBottomPanels: () => void;
   dismissKeyboardOnUserScroll: () => void;
+  keyboardVisible: () => boolean;
   capMessageReuseBuckets: () => void;
   cancelImeFollow: () => void;
 }
@@ -329,6 +330,14 @@ export class ChatTimelineSession {
   floatDateScrollAt: number = 0;
 
   listTouchActive: boolean = false;
+  // 按下那一刻键盘是否已经立着。滑动收键盘的前提是"用户抬手时键盘本来就在"，
+  // 否则长按头像 @ 触发 requestFocus 把键盘升起来、紧跟着 IME 贴底滚动又走
+  // dismissKeyboardOnUserScroll 把它收掉 —— 表现就是键盘闪现一下。
+  private keyboardUpAtTouchDown: boolean = false;
+
+  keyboardWasUpAtTouchDown(): boolean {
+    return this.keyboardUpAtTouchDown;
+  }
 
   listUserScrollActive: boolean = false;
 
@@ -853,11 +862,13 @@ export class ChatTimelineSession {
       this.finishInitialMessageStageForInteraction();
       this.bindings!.cancelImeFollow();
       this.listTouchActive = true;
+      this.keyboardUpAtTouchDown = this.bindings!.keyboardVisible();
       this.olderArmed = true;
       this.bindings!.flash.cancelFlash();
       this.bindings!.closeBottomPanels();
     } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
       this.listTouchActive = false;
+      this.keyboardUpAtTouchDown = false;
       // 按下又抬起、中间根本没滑（listUserScrollActive 没翻真）：不会有
       // onFloatDateHidden，按住那一会儿被翻译滑动闸攒下的状态得在这里放出。
       if (!this.listUserScrollActive) {
