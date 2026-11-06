@@ -800,6 +800,26 @@ export struct LightweightPlainTextBubble {
   }
 
   @Builder
+  private replyQuoteBackdrop() {
+    Row({ space: 0 }) {
+      Column() {}
+        .width(4)
+        .height('100%')
+        .flexShrink(0)
+        .backgroundColor(this.accent())
+        .borderRadius({ topLeft: 4, bottomLeft: 4, topRight: 0, bottomRight: 0 });
+      Column() {}
+        .layoutWeight(1)
+        .height('100%')
+        .backgroundColor(accentSoft())
+        .borderRadius({ topLeft: 0, bottomLeft: 0, topRight: 4, bottomRight: 4 });
+    }
+    .width('100%')
+    .height('100%')
+    .hitTestBehavior(HitTestMode.None);
+  }
+
+  @Builder
   replyQuote() {
     Column() {
       Text(this.msg.replySenderName).fontSize(12).fontColor(this.accent()).maxLines(1)
@@ -811,10 +831,11 @@ export struct LightweightPlainTextBubble {
         .constraintSize({ maxWidth: this.replyMaxW() })
         .textOverflow({ overflow: TextOverflow.Ellipsis });
     }
-    .alignItems(HorizontalAlign.Start).alignSelf(ItemAlign.Stretch)
-    .backgroundColor(accentSoft()).borderRadius(6)
-    .border({ width: { left: 2 }, color: this.accent() })
-    .padding({ left: 6, right: 6, top: 3, bottom: 3 }).margin({ bottom: 4 })
+    .alignItems(HorizontalAlign.Start)
+    .alignSelf(ItemAlign.Stretch)
+    .padding({ left: 10, right: 6, top: 3, bottom: 3 })
+    .background(this.replyQuoteBackdrop(), { align: Alignment.TopStart })
+    .margin({ bottom: 4 })
     .onClick((): void => {
       if (!this.gestureClaimed) {
         this.actions.onReplyTap(this.msg.replyToMessageId, this.msg.id);

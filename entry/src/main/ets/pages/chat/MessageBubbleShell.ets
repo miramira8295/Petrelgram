@@ -1382,20 +1382,29 @@ export struct MessageBubbleShell {
   }
 
   @Builder
+  private replyQuoteBackdrop() {
+    Row({ space: 0 }) {
+      Column() {}
+        .width(4)
+        .height('100%')
+        .flexShrink(0)
+        .backgroundColor(this.accent())
+        .borderRadius({ topLeft: 4, bottomLeft: 4, topRight: 0, bottomRight: 0 });
+      Column() {}
+        .layoutWeight(1)
+        .height('100%')
+        .backgroundColor(accentSoft())
+        .borderRadius({ topLeft: 0, bottomLeft: 0, topRight: 4, bottomRight: 4 });
+    }
+    .width('100%')
+    .height('100%')
+    .hitTestBehavior(HitTestMode.None);
+  }
+
+  @Builder
   replyQuote() {
-    // 条件是"有没有回复"，不是"引用内容到没到"。被引用的消息是异步取回来的，
-    // 等内容到了才画这一块，气泡就会在落地后凭空长高约 40vp——进聊天页时那次
-    // 重排就是这么来的。两行都锁死行高，加载中和加载完是同一个高度。
-    // 前提：拉不到原消息时 store 会填 mb_reply_unavailable，不会永远空着。
     Row({ space: REPLY_THUMB_GAP }) {
-      // 缩略图：贴纸显示贴纸本身、图片显示原图、视频显示封面（同一个
-      // photoPath，见 util/replyThumb）。路径为空就整个不画——**不留占位方块**，
-      // 否则没图的引用块会多出一块空白。
-      //
-      // 边长刚好是两行文字的总高，所以有没有这张图，引用块的高度都一样，
-      // 不会在缩略图落地时把气泡顶高（这一块的注释里那条"锁死行高"的约束）。
       if (this.msg.replyDiceLayers.length > 0) {
-        // 骰子/老虎机：画摇出来的结果（结尾帧），见 DiceEndFrame。
         DiceEndFrame({ layers: this.msg.replyDiceLayers, thumbPath: this.msg.replyThumbPath,
           boxSize: REPLY_THUMB_SIZE });
       } else if (this.msg.replyThumbPath !== '') {
@@ -1414,27 +1423,13 @@ export struct MessageBubbleShell {
           .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
       }
       .alignItems(HorizontalAlign.Start)
-      // Weight 会让未定宽 Row 直接吃满主轴上限，短正文一旦带引用就被撑到
-      // 气泡最大宽度。这里只需在引用过长时收缩，整块宽度仍由正文决定。
       .flexShrink(1);
     }
     .alignItems(VerticalAlign.Center)
-    // 整块染一层强调色的淡底，并撑满气泡的内宽——这样点击区域就是看得见的
-    // 那一块，而不是只有文字那几个字宽。
-    //
-    // 用 alignSelf(Stretch) 而不是 width('100%')：百分比宽度的孩子会按父级
-    // 的**上限**来量，气泡会被这一块顶到最宽（同样的坑在时间戳那层踩过一次，
-    // 见 inline timestamp 的 Stack 注释）。Stretch 是先由别的内容定出宽度、
-    // 再把这一块拉满，正是要的语义。
-    //
-    // 引用文本仍然吃 replyQuoteMaxW 的上限：引用是次要信息，不该决定气泡
-    // 宽度（长 URL 会把气泡撑满，哪怕正文只有两个字）。
     .alignSelf(ItemAlign.Stretch)
-    .backgroundColor(accentSoft())
-    .borderRadius(6)
-    .border({ width: { left: 2 }, color: this.accent() })
-    .padding({ left: 6, right: 6, top: 3, bottom: 3 }).margin({ bottom: 4 })
-    // Tap the quote → jump to the original message.
+    .padding({ left: 10, right: 6, top: 3, bottom: 3 })
+    .background(this.replyQuoteBackdrop(), { align: Alignment.TopStart })
+    .margin({ bottom: 4 })
     .onClick(() => {
       if (this.context.gestureClaimed) { return; }
       if (this.msg.replyToMessageId !== 0) {
