@@ -312,7 +312,6 @@ export struct MessageBubbleShell {
   private attachedRowId: number = 0;
   private attachedMessageId: number = 0;
 
-  @Local onScreen: boolean = true;
 
   // 玻璃层尺寸：普通字段 + 一个只表示"换过了"的 @Local 记号（理由见
   // LightweightPlainTextBubble 同名注释——真机采集里 2588 次变更、单次最多
@@ -499,7 +498,6 @@ export struct MessageBubbleShell {
       this.clearTransientState();
       this.seedLabelWidths();
       this.context.bubbleW = this.measuredBubbleW;
-      this.onScreen = true;
       this.attachMessageChannels(this.msg);
     } else if (this.msg.id !== this.attachedMessageId) {
       // Sending keeps rowId stable while replacing a temporary message id.
@@ -1502,12 +1500,13 @@ export struct MessageBubbleShell {
     }
   }
 
+  // 材质档只看全局开关，不看单行可见性（理由见 LightweightPlainTextBubble）。
   private bubbleMaterialLive(): boolean {
-    return this.env.bubbleMaterialOn && this.onScreen && !this.env.powerSaving;
+    return this.env.bubbleMaterialOn && !this.env.powerSaving;
   }
 
   private bubbleBg(): ResourceColor {
-    if (!this.glassLive()) {
+    if (!this.bubbleMaterialLive()) {
       return this.bubbleFillColor();
     }
     return this.glassBodyFallbackOn() ? this.glassBg() : Color.Transparent;
@@ -2140,11 +2139,6 @@ export struct MessageBubbleShell {
                 this.glassH = this.measuredGlassH;
                 this.glassStamp += 1;
               }
-            })
-            // onScreen 只给材质用（bubbleMaterialLive），所以可见区回调只在这一支挂；容器与本体
-            // 是同一块，阈值 0.01 下的判定与原来挂在本体上一致。
-            .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
-              this.onScreen = visible;
             })
           } else {
             Row() {

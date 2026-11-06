@@ -328,11 +328,9 @@ export struct LightweightPlainTextBubble {
   @Param animateIn: boolean = false;
   @Param memberIds: number[] = [];
   @Param nowSec: number = 0;
-  // 初值 true：行是在 LazyForEach 首批里建出来的，onVisibleAreaChange 的首帧
-  // 回调常常不来，初值 false 会让玻璃层等到「滑动一下」才挂上（用户报的）。
-  // 由回调负责在真正离屏时关掉——那一路是可靠的。@Local 复用时重置回 true，
-  // 语义与 V1 的手工赋值一致。
-  @Local onScreen: boolean = true;
+  // 档位判据不再看"这一行在不在屏上"（2026-11-06）：onVisibleAreaChange 在
+  // 滚动与行重建期间会在行仍可见时翻 false，导致同一屏里一半气泡走玻璃档、
+  // 一半掉进实心档，看起来就是"两种厚度"。见 bubbleMaterialLive()。
   // 玻璃层的尺寸。**普通字段，不是 @Local**（2026-11-06，Insight 采集驱动）。
   //
   // 原来是 @Local：滚动时同一行被反复复用，@Local 每次复用被框架重置成 0，再被
@@ -396,8 +394,14 @@ export struct LightweightPlainTextBubble {
     }
   }
 
+  // 材质档只看全局开关：**不看单行可见性**。
+  //
+  // 原来还有 `&& this.onScreen`，本意是省掉离屏行的模糊合成。代价是
+  // onVisibleAreaChange([0, 0.01]) 在滚动/复用期间并不可靠——实测同一行会连续
+  // 收到两次 false，而它还在屏上。于是一屏里玻璃档与实心档混着出现：玻璃档是
+  // 半透明 + 1vp 描边，实心档是不透明底 + 外投影，肉眼就是"两种气泡厚度"。
   private bubbleMaterialLive(): boolean {
-    return this.env.bubbleMaterialOn && this.onScreen && !this.env.powerSaving;
+    return this.env.bubbleMaterialOn && !this.env.powerSaving;
   }
 
   // 见 MessageBubble.glassReady()：**容器**这一层要等量到尺寸，
@@ -561,7 +565,7 @@ export struct LightweightPlainTextBubble {
   }
 
   // 只剩无装饰器成员要手工归零：官方表格明确它们复用时**不重置**。
-  // @Local（menuShown/swipeX/通道值/玻璃尺寸/onScreen）由框架在 aboutToReuse
+  // @Local（menuShown/swipeX/通道值/玻璃尺寸）由框架在 aboutToReuse
   // 之前统一重置（批 0.5 实测 1370/1370）。
   private resetTransient(): void {
     this.dragGesture = new MessageDragGesture();
@@ -1252,11 +1256,6 @@ export struct LightweightPlainTextBubble {
                     // 唯一的响应式出口：几何值本身是普通字段，只有它变了才需要重跑 build。
                     this.glassStamp += 1;
                   }
-                })
-                // onScreen 只给材质用（bubbleMaterialLive），所以可见区回调只在这一支挂；容器与本体
-                // 是同一块，阈值 0.01 下的判定与原来挂在本体上一致。
-                .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
-                  this.onScreen = visible;
                 })
               } else {
                 Row() {
