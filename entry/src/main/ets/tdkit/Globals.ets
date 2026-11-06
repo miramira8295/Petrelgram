@@ -115,11 +115,16 @@ type RuntimeStopMode = 'close' | 'destroy';
 
 // A 批 1 开关（勘探 docs/superpowers/specs/2026-09-02-tdlib-worker-survey.md）：
 // 开 = TDLib 收包 + JSON.parse 进 workers/TdWorker，跨线程投递解析对象。
-// **默认关**：libentry 在 worker 线程的可加载性（勘探问题 1/4）未经真机
-// spike。构造抛错时自动落回直连并记日志，所以开着也不至于起不来。
+//
+// 2026-11-06 真机 spike（Mate 70 Pro+）后开启：libentry 在 worker 线程可加载、
+// tdInit 回调落在 worker，约 100 秒接收 1.5 万条更新，0 条 parse-error /
+// worker error；会话列表、历史加载与上翻分页、群内"正在输入"实时更新均正常。
+// 尚未覆盖：账号切换、语音/视频通话、透明贴纸（见勘探的 spike 清单）。
+//
+// 构造抛错时自动落回直连并记日志，所以开着也不至于起不来。
 // 账号切换（createRuntime 重入）复用同一个 worker，重发 init 即可——tdInit
-// 的回调注册在 NAPI 层是幂等换新。
-const TD_WORKER_BRIDGE_ENABLED: boolean = false;
+// 的回调注册在 NAPI 层是幂等换新；销毁走 worker 队列（见 destroyTdNative）。
+const TD_WORKER_BRIDGE_ENABLED: boolean = true;
 let workerBridge: TdWorkerBridge | undefined = undefined;
 
 function createTdClientWithBridge(): TdClient {
@@ -132,6 +137,7 @@ function createTdClientWithBridge(): TdClient {
     try {
       if (workerBridge === undefined) {
         workerBridge = new TdWorkerBridge();
+        logI('TdBridge: worker receive path active');
       }
       const created = new TdClient(workerBridge);
       workerBridge.onParsed((obj: TdObject): void => { created.deliverParsed(obj); });
