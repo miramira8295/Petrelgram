@@ -155,6 +155,7 @@ import chatListOrderTest from './ChatListOrder.test';
 import chatListRowStateTest from './ChatListRowState.test';
 import chatEntryFactoryTest from './ChatEntryFactory.test';
 import chatMirrorTest from './ChatMirror.test';
+import chatListV2Test from './ChatListV2.test';
 import proxyMirrorTest from './ProxyMirror.test';
 import mainTabsWidthTest from './MainTabsWidth.test';
 import appearanceTest from './Appearance.test';
@@ -547,6 +548,7 @@ export default function testsuite() {
   chatListRowStateTest();
   chatEntryFactoryTest();
   chatMirrorTest();
+  chatListV2Test();
   proxyMirrorTest();
   mainTabsWidthTest();
   appearanceTest();

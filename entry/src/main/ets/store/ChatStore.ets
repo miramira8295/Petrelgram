@@ -1,6 +1,7 @@
 import { ChatListSubscription, ChatListPublicationMode } from './ChatListSubscription';
 import { ChatListOrder, PositionChange, OrderSnapshot, OrderDiff, compareOrderIds } from './chatListOrder';
 import { ChatMirror } from './chatMirror';
+import { chatListV2Enabled, pickEntry } from '../util/chatListV2';
 import {
   buildChatEntry, effectiveUnread, messageIdOf, smallPhotoIdOf, videoChatIdOf, backgroundOf,
   compareChatEntries
@@ -449,9 +450,10 @@ export class ChatStore {
 
   getChats(listKey: string = MAIN): ChatEntry[] {
     const ids: number[] = this.order.orderedIds(listKey);
+    const useMirror: boolean = chatListV2Enabled();
     const list: ChatEntry[] = [];
     for (const id of ids) {
-      const entry = this.chats.get(id);
+      const entry = pickEntry(useMirror, this.chats.get(id), this.mirror.get(id));
       if (entry !== undefined) {
         list.push(entry);
       }
@@ -599,6 +601,12 @@ export class ChatStore {
   }
 
   entryOf(chatId: number): ChatEntry | undefined {
+    if (chatListV2Enabled()) {
+      const mirrored = this.mirror.get(chatId);
+      if (mirrored !== undefined) {
+        return mirrored;
+      }
+    }
     return this.chats.get(chatId);
   }
 
@@ -744,6 +752,8 @@ export class ChatStore {
     const c = cloneEntry(e);
     c.avatarPath = path;
     this.setChatEntry(chatId, c);
+    // 头像路径是本地独有字段：镜像也要写回，否则 V2 读镜像时头像是空的。
+    this.mirror.setAvatarPath(chatId, path);
     this.notify(chatId);
   }
 
@@ -871,6 +881,8 @@ export class ChatStore {
     next.isLive = isLive;
     next.isRtmpLive = isRtmpLive;
     this.setChatEntry(chatId, next);
+    // 直播位来自通话状态，不在 worker 的数据链上：切 V2 前也要写回镜像。
+    this.mirror.setLiveFlags(chatId, isLive, isRtmpLive);
     this.notify(chatId);
   }
 
@@ -1275,6 +1287,8 @@ export class ChatStore {
     const c = cloneEntry(e);
     c.typingText = nextText;
     this.setChatEntry(chatId, c);
+    // 输入中是本地独有字段（worker 不处理 updateChatAction）：镜像也要写回。
+    this.mirror.setTyping(chatId, nextText);
     this.notifySoon(chatId, true);
   }
 
@@ -1371,6 +1385,7 @@ export class ChatStore {
     const c = cloneEntry(e);
     c.typingText = nextText;
     this.setChatEntry(chatId, c);
+    this.mirror.setTyping(chatId, nextText);
     return c;
   }
 
@@ -1387,6 +1402,7 @@ export class ChatStore {
     next.isLive = false;
     next.isRtmpLive = false;
     this.setChatEntry(chatId, next);
+    this.mirror.setLiveFlags(chatId, false, false);
     this.rememberGroupCall(chatId, previousId, groupCallId);
     this.notify(chatId);
   }

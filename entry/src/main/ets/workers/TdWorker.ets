@@ -316,6 +316,11 @@ function patchChat(obj: Record<string, Object>, base: TdObject): TdObject | null
     chat['is_marked_as_unread'] = obj['is_marked_as_unread'];
     return chat;
   }
+  if (type === 'updateChatUnreadMentionCount' || type === 'updateMessageMentionRead') {
+    // 两个 update 都只带 unread_mention_count，语义都是"这个会话的提及数变了"。
+    chat['unread_mention_count'] = obj['unread_mention_count'];
+    return chat;
+  }
   if (type === 'updateChatActionBar') {
     chat['action_bar'] = obj['action_bar'];
     return chat;

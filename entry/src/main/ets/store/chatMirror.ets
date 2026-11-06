@@ -33,6 +33,40 @@ export class ChatMirror {
     this.entries.clear();
   }
 
+  // 本地独有字段的**写回**：UI 解析出头像路径、收到输入中、拿到直播状态时，
+  // 镜像也必须跟着更新，否则切到 V2 读镜像时这些就没了（真机首测正是头像全空）。
+  // 只在 worker 那条实体已经存在时才写，避免先造出一条空实体。
+  setAvatarPath(chatId: number, path: string): void {
+    const entry: ChatEntry | undefined = this.entries.get(chatId);
+    if (entry === undefined || entry.avatarPath === path) {
+      return;
+    }
+    const next: ChatEntry = cloneEntry(entry);
+    next.avatarPath = path;
+    this.entries.set(chatId, next);
+  }
+
+  setTyping(chatId: number, text: string): void {
+    const entry: ChatEntry | undefined = this.entries.get(chatId);
+    if (entry === undefined || entry.typingText === text) {
+      return;
+    }
+    const next: ChatEntry = cloneEntry(entry);
+    next.typingText = text;
+    this.entries.set(chatId, next);
+  }
+
+  setLiveFlags(chatId: number, isLive: boolean, isRtmpLive: boolean): void {
+    const entry: ChatEntry | undefined = this.entries.get(chatId);
+    if (entry === undefined || (entry.isLive === isLive && entry.isRtmpLive === isRtmpLive)) {
+      return;
+    }
+    const next: ChatEntry = cloneEntry(entry);
+    next.isLive = isLive;
+    next.isRtmpLive = isRtmpLive;
+    this.entries.set(chatId, next);
+  }
+
   // 合并一批 worker 实体，返回**真正变化**的条数（按 B4b 的可比字段口径，
   // revision 不计）。没变化的条目保持原对象身份，避免下游白刷。
   apply(remote: ChatEntry[]): number {
