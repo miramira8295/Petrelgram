@@ -11,6 +11,7 @@
 import { worker, ThreadWorkerGlobalScope, MessageEvents } from '@kit.ArkTS';
 import testNapi from 'libentry.so';
 import { coalesceKeyOf } from '../tdkit/tdUpdateFilter';
+import { TdIngestBatch, BatchTimerFns } from '../tdkit/tdIngestBatch';
 
 const scope: ThreadWorkerGlobalScope = worker.workerPort;
 
@@ -33,6 +34,8 @@ interface TdWorkerCommand {
 interface TdWorkerEvent {
   kind: string;
   payload?: object;
+  // kind==='batch' 时的整批（批内顺序 = 到达顺序）。
+  items?: object[];
   head?: string;
 }
 
@@ -42,6 +45,16 @@ const pendingCoalesced: Map<string, object> = new Map<string, object>();
 let flushTimer: number = -1;
 const COALESCE_FLUSH_MS: number = 48;
 
+// 批投递（A 批 3，见 tdkit/tdIngestBatch）：窗口内的多条合一个 postMessage。
+const batchTimer: BatchTimerFns = {
+  setTimeout: (cb: () => void, ms: number): number => setTimeout(cb, ms),
+  clearTimeout: (id: number): void => { clearTimeout(id); }
+};
+const batch: TdIngestBatch = new TdIngestBatch((items: object[]): void => {
+  const event: TdWorkerEvent = { kind: 'batch', items: items };
+  postSafe(event);
+}, batchTimer);
+
 function flushCoalesced(): void {
   if (flushTimer !== -1) {
     clearTimeout(flushTimer);
@@ -50,9 +63,9 @@ function flushCoalesced(): void {
   if (pendingCoalesced.size === 0) {
     return;
   }
+  // Map 迭代按插入序：并入批次的相对顺序仍是到达顺序。
   pendingCoalesced.forEach((payload: object): void => {
-    const event: TdWorkerEvent = { kind: 'recv', payload: payload };
-    postSafe(event);
+    batch.push(payload);
   });
   pendingCoalesced.clear();
 }
@@ -62,8 +75,15 @@ function deliver(obj: object): void {
   if (key === '') {
     // 直通事件发出前先冲积压：与不可交换事件的相对顺序必须保持。
     flushCoalesced();
-    const event: TdWorkerEvent = { kind: 'recv', payload: obj };
-    postSafe(event);
+    // 响应（带 @extra）不吃批窗口：先冲掉已排队的一批，再单独投递，
+    // 既保序又不给请求-响应加最多一个窗口的延迟。
+    if ((obj as Record<string, Object>)['@extra'] !== undefined) {
+      batch.flush();
+      const event: TdWorkerEvent = { kind: 'recv', payload: obj };
+      postSafe(event);
+      return;
+    }
+    batch.push(obj);
     return;
   }
   pendingCoalesced.set(key, obj);
@@ -91,8 +111,9 @@ scope.onmessage = (e: MessageEvents): void => {
 
 function handleCommand(msg: TdWorkerCommand): void {
   if (msg.kind === 'init') {
-    // 账号切换会重发 init：清掉上一个运行时的积压。
+    // 账号切换会重发 init：清掉上一个运行时的积压（合并缓冲与待发批次）。
     pendingCoalesced.clear();
+    batch.reset();
     testNapi.tdInit((json: string): void => {
       let obj: object | null = null;
       try {
@@ -125,6 +146,7 @@ function handleCommand(msg: TdWorkerCommand): void {
       clearTimeout(flushTimer);
       flushTimer = -1;
     }
+    batch.reset();
     testNapi.tdDestroy();
   }
 }

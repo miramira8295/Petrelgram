@@ -150,6 +150,7 @@ import folderBadgesTest from './FolderBadges.test';
 import folderBarCollapseTest from './FolderBarCollapse.test';
 import chatEnvMirrorTest from './ChatEnvMirror.test';
 import tdUpdateFilterTest from './TdUpdateFilter.test';
+import tdIngestBatchTest from './TdIngestBatch.test';
 import proxyMirrorTest from './ProxyMirror.test';
 import mainTabsWidthTest from './MainTabsWidth.test';
 import appearanceTest from './Appearance.test';
@@ -537,6 +538,7 @@ export default function testsuite() {
   folderBarCollapseTest();
   chatEnvMirrorTest();
   tdUpdateFilterTest();
+  tdIngestBatchTest();
   proxyMirrorTest();
   mainTabsWidthTest();
   appearanceTest();

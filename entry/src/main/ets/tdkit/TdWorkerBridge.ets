@@ -17,6 +17,8 @@ import { logE } from '../util/log';
 interface TdWorkerEvent {
   kind: string;
   payload?: TdObject;
+  // kind==='batch'：一个投递窗口内的多条，顺序即到达顺序。
+  items?: TdObject[];
   head?: string;
 }
 
@@ -35,8 +37,17 @@ export class TdWorkerBridge implements TdBridge {
     this.port.onmessage = (e: MessageEvents): void => {
       const data = e.data as TdWorkerEvent;
       if (data.kind === 'recv') {
+        // 响应（带 @extra）走单条通道，不吃批窗口。
         if (this.parsedSink !== null && data.payload !== undefined) {
           this.parsedSink(data.payload);
+        }
+      } else if (data.kind === 'batch') {
+        // 批内顺序必须按原样逐条下发：@extra 配对与 handler 分发都依赖到达序。
+        const items = data.items;
+        if (this.parsedSink !== null && items !== undefined) {
+          for (const item of items) {
+            this.parsedSink(item);
+          }
         }
       } else if (data.kind === 'parse-error') {
         logE(`TdWorkerBridge: unparseable payload, skipped: ${data.head ?? ''}`);
