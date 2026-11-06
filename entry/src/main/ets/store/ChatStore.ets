@@ -1,4 +1,5 @@
 import { ChatListSubscription, ChatListPublicationMode } from './ChatListSubscription';
+import { ChatListOrder, PositionChange } from './chatListOrder';
 import { groupCallGone, groupCallIsLive } from '../util/liveCallState';
 import { UnreadBadgeCounts } from '../util/unreadBadgeRule';
 import { actionBarCanUnarchiveOf, actionBarKindOf } from '../util/chatActionBar';
@@ -90,8 +91,8 @@ export class ChatStore {
   private client: TdClient;
   private users: UserStore;
   private chats: Map<number, ChatEntry> = new Map();
-  private positions: Map<string, Map<number, PositionInfo>> = new Map();
-  private pinEpochs: Map<string, number> = new Map();
+  // 位置索引与排序（第二层第一步：从 store 里剥出来的纯结构，见 chatListOrder）。
+  private order: ChatListOrder = new ChatListOrder((chatId: number): boolean => this.chats.has(chatId));
   // Position updates are much more frequent than list opens. Keep the sorted
   // identity sequence for every list that has actually been read, then move
   // only the affected chat when TDLib changes its position. getChats() still
@@ -200,12 +201,12 @@ export class ChatStore {
   }
 
   hasChats(listKey: string): boolean {
-    return (this.positions.get(listKey)?.size ?? 0) > 0;
+    return this.order.sizeOf(listKey) > 0;
   }
 
   private invalidateListSubscriptions(chatId: number | undefined, urgent: boolean): void {
     for (const sub of this.listSubs) {
-      if (chatId === undefined || this.positions.get(sub.listKey)?.has(chatId) === true) {
+      if (chatId === undefined || this.order.contains(sub.listKey, chatId)) {
         sub.subscription.invalidate(urgent);
       }
     }
@@ -253,7 +254,7 @@ export class ChatStore {
   // Scope-default mute changes are observed separately via SCOPE_MUTE_EPOCH.
   subscribeUnreadBadges(listener: (keys: string[]) => void): () => void {
     this.unreadBadgeListeners = [...this.unreadBadgeListeners, listener];
-    listener(Array.from(this.positions.keys()));
+    listener(this.order.keys());
     return (): void => {
       this.unreadBadgeListeners = this.unreadBadgeListeners.filter(
         (l: (keys: string[]) => void): boolean => l !== listener);
@@ -330,23 +331,9 @@ export class ChatStore {
   }
 
   getChats(listKey: string = MAIN): ChatEntry[] {
-    const bucket = this.positions.get(listKey);
-    if (bucket === undefined) {
-      return [];
-    }
-    let ordered = this.orderedChatIds.get(listKey);
-    if (ordered === undefined) {
-      ordered = [];
-      bucket.forEach((_pos: PositionInfo, id: number): void => {
-        if (this.chats.has(id)) {
-          ordered!.push(id);
-        }
-      });
-      ordered.sort((a: number, b: number): number => this.compareChatPosition(listKey, a, b));
-      this.orderedChatIds.set(listKey, ordered);
-    }
+    const ids: number[] = this.order.orderedIds(listKey);
     const list: ChatEntry[] = [];
-    for (const id of ordered) {
+    for (const id of ids) {
       const entry = this.chats.get(id);
       if (entry !== undefined) {
         list.push(entry);
@@ -355,74 +342,22 @@ export class ChatStore {
     return list;
   }
 
-  private compareChatPosition(listKey: string, a: number, b: number): number {
-    const bucket = this.positions.get(listKey);
-    const pa = bucket?.get(a);
-    const pb = bucket?.get(b);
-    if (pa === undefined) { return pb === undefined ? 0 : 1; }
-    if (pb === undefined) { return -1; }
-    if (pa.isPinned !== pb.isPinned) {
-      return pa.isPinned ? -1 : 1;
-    }
-    return compareOrderDesc(pa.order, pb.order);
-  }
-
-  private removeOrderedChat(listKey: string, id: number): void {
-    const ordered = this.orderedChatIds.get(listKey);
-    if (ordered === undefined) {
-      return;
-    }
-    const index = ordered.indexOf(id);
-    if (index >= 0) {
-      ordered.splice(index, 1);
-    }
-  }
-
-  private insertOrderedChat(listKey: string, id: number): void {
-    const ordered = this.orderedChatIds.get(listKey);
-    if (ordered === undefined || !this.chats.has(id)) {
-      return;
-    }
-    // Remove first so repeated/unchanged position pushes cannot duplicate an
-    // identity in the cache. Then binary-search the new order.
-    const previous = ordered.indexOf(id);
-    if (previous >= 0) {
-      ordered.splice(previous, 1);
-    }
-    let lo = 0;
-    let hi = ordered.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (this.compareChatPosition(listKey, id, ordered[mid]) < 0) {
-        hi = mid;
-      } else {
-        lo = mid + 1;
-      }
-    }
-    ordered.splice(lo, 0, id);
-  }
-
   // Order-only changes do not invalidate cached pin checks in list row keys.
   pinEpoch(listKey: string): number {
-    return this.pinEpochs.get(listKey) ?? 0;
-  }
-
-  private bumpPinEpoch(listKey: string): void {
-    this.pinEpochs.set(listKey, this.pinEpoch(listKey) + 1);
+    return this.order.pinEpoch(listKey);
   }
 
   // Pinning is per chat list: a chat can be pinned in a folder but not in main.
   isPinned(listKey: string, chatId: number): boolean {
-    const pos = this.positions.get(listKey)?.get(chatId);
-    return pos !== undefined && pos.isPinned;
+    return this.order.isPinned(listKey, chatId);
   }
 
   isArchived(chatId: number): boolean {
-    return this.positions.get('archive')?.has(chatId) === true;
+    return this.order.contains('archive', chatId);
   }
 
   isInFolder(folderId: number, chatId: number): boolean {
-    return this.positions.get(`folder:${folderId}`)?.has(chatId) === true;
+    return this.order.contains(`folder:${folderId}`, chatId);
   }
 
   // 这个会话在不在**任何一个**会话列表里（主列表 / 归档 / 任意文件夹）。
@@ -436,7 +371,7 @@ export class ChatStore {
   // 按"不在列表里"处理会把真正该响的通知也吞掉。
   inAnyChatList(chatId: number): boolean {
     let found: boolean = false;
-    this.positions.forEach((bucket: Map<number, PositionInfo>): void => {
+    this.order.forEach((bucket: Map<number, PositionInfo>): void => {
       if (!found && bucket.has(chatId)) {
         found = true;
       }
@@ -451,7 +386,7 @@ export class ChatStore {
   // 不能写成 `!isArchived()`——那会把"归档 + 在文件夹里"的一起否掉。
   inNonArchiveList(chatId: number): boolean {
     let found: boolean = false;
-    this.positions.forEach((bucket: Map<number, PositionInfo>, listKey: string): void => {
+    this.order.forEach((bucket: Map<number, PositionInfo>, listKey: string): void => {
       if (!found && listKey !== 'archive' && bucket.has(chatId)) {
         found = true;
       }
@@ -460,7 +395,7 @@ export class ChatStore {
   }
 
   hasArchive(): boolean {
-    const b = this.positions.get('archive');
+    const b = this.order.bucket('archive');
     return b !== undefined && b.size > 0;
   }
 
@@ -488,7 +423,7 @@ export class ChatStore {
     if (counts === undefined) {
       let total: number = 0;
       let unmuted: number = 0;
-      this.positions.get(listKey)?.forEach((_pos: PositionInfo, id: number): void => {
+      this.order.bucket(listKey)?.forEach((_pos: PositionInfo, id: number): void => {
         const e = this.chats.get(id);
         if (e !== undefined && e.unreadCount > 0) {
           total++;
@@ -520,7 +455,7 @@ export class ChatStore {
     if (wasUnread === isUnread && (!isUnread || (previous !== undefined &&
       effectiveMuted(previous, scopeMutedForKind(previous.kind)) ===
       effectiveMuted(next, scopeMutedForKind(next.kind))))) { return; }
-    this.positions.forEach((bucket: Map<number, PositionInfo>, key: string): void => {
+    this.order.forEach((bucket: Map<number, PositionInfo>, key: string): void => {
       if (bucket.has(id)) { this.invalidateUnreadBadge(key); }
     });
   }
@@ -681,7 +616,7 @@ export class ChatStore {
     this.fullyLoadedLists.delete(listKey);
     this.exhaustedLists.delete(listKey);
     this.initializedLists.delete(listKey);
-    this.orderedChatIds.delete(listKey);
+    this.order.dropOrdered(listKey);
   }
 
   setAvatarPath(chatId: number, path: string): void {
@@ -696,35 +631,18 @@ export class ChatStore {
   }
 
   private setPosition(listKey: string, id: number, order: string, isPinned: boolean): void {
-    if (listKey === '') {
-      return;
+    // 索引与排序归 ChatListOrder；这里只处理它回报的副作用（角标缓存失效）。
+    const change: PositionChange = this.order.apply(listKey, id, order, isPinned);
+    if (change.added || change.removed) {
+      this.invalidateUnreadBadge(listKey);
     }
-    if (order === '0') {
-      const b = this.positions.get(listKey);
-      if (b?.get(id)?.isPinned === true) { this.bumpPinEpoch(listKey); }
-      if (b !== undefined && b.delete(id)) {
-        this.invalidateUnreadBadge(listKey);
-      }
-      this.removeOrderedChat(listKey, id);
-      return;
-    }
-    let bucket = this.positions.get(listKey);
-    if (bucket === undefined) {
-      bucket = new Map();
-      this.positions.set(listKey, bucket);
-    }
-    const previous = bucket.get(id);
-    if (previous === undefined) { this.invalidateUnreadBadge(listKey); }
-    if ((previous?.isPinned ?? false) !== isPinned) { this.bumpPinEpoch(listKey); }
-    bucket.set(id, { order, isPinned });
-    this.insertOrderedChat(listKey, id);
   }
 
   private positionsNeedImmediatePublication(id: number, positions: TdObject[]): boolean {
     for (const pos of positions) {
       const list = pos['list'] as TdObject | undefined;
       if (list === undefined) { continue; }
-      const previous = this.positions.get(listKeyOf(list))?.get(id);
+      const previous = this.order.positionOf(listKeyOf(list), id);
       const present: boolean = ((pos['order'] as string | undefined) ?? '0') !== '0';
       if ((previous !== undefined) !== present || (present && previous !== undefined &&
         previous.isPinned !== ((pos['is_pinned'] as boolean | undefined) ?? false))) { return true; }
@@ -1808,7 +1726,7 @@ export class ChatStore {
   }
 
   private listContainsAny(listKey: string, ids: Set<number>): boolean {
-    const bucket = this.positions.get(listKey);
+    const bucket = this.order.bucket(listKey);
     if (bucket === undefined) {
       return false;
     }

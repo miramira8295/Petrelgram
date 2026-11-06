@@ -151,6 +151,7 @@ import folderBarCollapseTest from './FolderBarCollapse.test';
 import chatEnvMirrorTest from './ChatEnvMirror.test';
 import tdUpdateFilterTest from './TdUpdateFilter.test';
 import tdIngestBatchTest from './TdIngestBatch.test';
+import chatListOrderTest from './ChatListOrder.test';
 import proxyMirrorTest from './ProxyMirror.test';
 import mainTabsWidthTest from './MainTabsWidth.test';
 import appearanceTest from './Appearance.test';
@@ -539,6 +540,7 @@ export default function testsuite() {
   chatEnvMirrorTest();
   tdUpdateFilterTest();
   tdIngestBatchTest();
+  chatListOrderTest();
   proxyMirrorTest();
   mainTabsWidthTest();
   appearanceTest();
