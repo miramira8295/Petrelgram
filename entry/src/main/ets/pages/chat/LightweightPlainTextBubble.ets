@@ -333,13 +333,23 @@ export struct LightweightPlainTextBubble {
   // 由回调负责在真正离屏时关掉——那一路是可靠的。@Local 复用时重置回 true，
   // 语义与 V1 的手工赋值一致。
   @Local onScreen: boolean = true;
-  @Local glassW: number = 0;
+  // 玻璃层的尺寸。**普通字段，不是 @Local**（2026-11-06，Insight 采集驱动）。
+  //
+  // 原来是 @Local：滚动时同一行被反复复用，@Local 每次复用被框架重置成 0，再被
+  // onSizeChange 填回实测值。真机采集（18.7s 滚动）里这两个字段变了 2588 次，
+  // 单次波及**最多 51 个依赖组件**——每来一行都要为玻璃层重跑一整套几何
+  // （裁剪形状、阴影缓存、轮廓 Path）。
+  //
+  // 改成普通字段 + 一个只表示"尺寸换过了"的 @Local 记号（glassStamp）：
+  // 依赖它的节点只有本组件自己，几何值本身仍是同步读。
+  private glassW: number = 0;
   // 长按菜单的两条动效链，按实例缓存（普通字段，写它不该惊动任何节点）。
   private menuFx: MessageMenuTransitions = new MessageMenuTransitions();
-  @Local glassH: number = 0;
-  // glassW/glassH 的量值影子。@Local 复用时被框架重置成 0，而 onSizeChange 在复用后
-  // 尺寸没变时不会再回调；无装饰器成员复用时不重置，节点上次上报的尺寸恰好就是它，
-  // aboutToReuse 用它回填。
+  private glassH: number = 0;
+  // 玻璃尺寸变化时自增，唯一的响应式出口。同值不写。
+  @Local private glassStamp: number = 0;
+  // glassW/glassH 的量值影子。无装饰器成员复用时不重置，节点上次上报的尺寸恰好
+  // 就是它，aboutToReuse 用它回填（复用后尺寸没变时 onSizeChange 不会再回调）。
   private measuredGlassW: number = 0;
   private measuredGlassH: number = 0;
   private shadowShapeCache: SolidBubbleShadowCache = new SolidBubbleShadowCache();
@@ -433,6 +443,11 @@ export struct LightweightPlainTextBubble {
 
   // 材质本体按节点的 borderRadius 画圆角，裁剪路径只管尾巴那一侧：尾巴侧的底角设 0。
   private glassRadius(): BorderRadiuses {
+    // 读一下 glassStamp：几何值是普通字段，必须让 build 依赖这个记号，
+    // 尺寸变化后才会重跑（V2 按属性依赖刷新，没读过就不订阅）。
+    if (this.glassStamp < 0) {
+      return this.bubbleCorners();
+    }
     const r = this.bubbleCorners();
     if (!this.hasTail()) {
       return r;
@@ -1231,11 +1246,11 @@ export struct LightweightPlainTextBubble {
                   }
                   this.measuredGlassW = w as number;
                   this.measuredGlassH = h as number;
-                  if (this.glassW !== this.measuredGlassW) {
+                  if (this.glassW !== this.measuredGlassW || this.glassH !== this.measuredGlassH) {
                     this.glassW = this.measuredGlassW;
-                  }
-                  if (this.glassH !== this.measuredGlassH) {
                     this.glassH = this.measuredGlassH;
+                    // 唯一的响应式出口：几何值本身是普通字段，只有它变了才需要重跑 build。
+                    this.glassStamp += 1;
                   }
                 })
                 // onScreen 只给材质用（bubbleMaterialLive），所以可见区回调只在这一支挂；容器与本体
@@ -1259,11 +1274,11 @@ export struct LightweightPlainTextBubble {
                   }
                   this.measuredGlassW = w as number;
                   this.measuredGlassH = h as number;
-                  if (this.glassW !== this.measuredGlassW) {
+                  if (this.glassW !== this.measuredGlassW || this.glassH !== this.measuredGlassH) {
                     this.glassW = this.measuredGlassW;
-                  }
-                  if (this.glassH !== this.measuredGlassH) {
                     this.glassH = this.measuredGlassH;
+                    // 唯一的响应式出口：几何值本身是普通字段，只有它变了才需要重跑 build。
+                    this.glassStamp += 1;
                   }
                 })
                 .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),

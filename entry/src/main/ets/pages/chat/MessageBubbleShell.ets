@@ -314,9 +314,14 @@ export struct MessageBubbleShell {
 
   @Local onScreen: boolean = true;
 
-  @Local glassW: number = 0;
+  // 玻璃层尺寸：普通字段 + 一个只表示"换过了"的 @Local 记号（理由见
+  // LightweightPlainTextBubble 同名注释——真机采集里 2588 次变更、单次最多
+  // 波及 51 个组件，钱都花在复用时的几何重算上）。
+  private glassW: number = 0;
 
-  @Local glassH: number = 0;
+  private glassH: number = 0;
+
+  @Local private glassStamp: number = 0;
 
   private measuredGlassW: number = 0;
 
@@ -1542,6 +1547,10 @@ export struct MessageBubbleShell {
   }
 
   private glassRadius(): BorderRadiuses {
+    // 同 LightweightPlainTextBubble：读 glassStamp 建立依赖（几何值是普通字段）。
+    if (this.glassStamp < 0) {
+      return this.bubbleCornerRadius();
+    }
     const r = this.bubbleCornerRadius();
     if (!this.hasBubbleTail()) {
       return r;
@@ -2126,11 +2135,10 @@ export struct MessageBubbleShell {
               }
               this.measuredGlassW = w as number;
               this.measuredGlassH = h as number;
-              if (this.glassW !== this.measuredGlassW) {
+              if (this.glassW !== this.measuredGlassW || this.glassH !== this.measuredGlassH) {
                 this.glassW = this.measuredGlassW;
-              }
-              if (this.glassH !== this.measuredGlassH) {
                 this.glassH = this.measuredGlassH;
+                this.glassStamp += 1;
               }
             })
             // onScreen 只给材质用（bubbleMaterialLive），所以可见区回调只在这一支挂；容器与本体
@@ -2157,11 +2165,10 @@ export struct MessageBubbleShell {
               }
               this.measuredGlassW = w as number;
               this.measuredGlassH = h as number;
-              if (this.glassW !== this.measuredGlassW) {
+              if (this.glassW !== this.measuredGlassW || this.glassH !== this.measuredGlassH) {
                 this.glassW = this.measuredGlassW;
-              }
-              if (this.glassH !== this.measuredGlassH) {
                 this.glassH = this.measuredGlassH;
+                this.glassStamp += 1;
               }
             })
             .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
