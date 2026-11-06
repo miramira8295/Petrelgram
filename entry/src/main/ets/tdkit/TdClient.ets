@@ -45,6 +45,10 @@ export class TdClient {
   private timer: TimerFns;
   private extraSeq: number = 0;
   private pending: Map<string, Pending> = new Map();
+  // dispose() 之后不再碰 native：账号切换时 store 里的定时器/回调还会拿着
+  // 旧 client 引用发请求，落到 worker 队列里就是一条 "tdSend before tdInit"
+  // （真机日志 20261106 抓到过）。请求在这里就地拒绝，比打到 native 再抛便宜。
+  private disposed: boolean = false;
   private handlers: Map<string, Array<(update: TdObject) => void>> = new Map();
   // One timer services every pending request. The old per-request timers made
   // clearTimeout a measurable NAPI hotspot during TDLib response bursts.
@@ -69,6 +73,9 @@ export class TdClient {
   }
 
   send(request: TdRequest, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<TdObject> {
+    if (this.disposed) {
+      return Promise.reject(new TdError(-1, 'TDLib session disposed'));
+    }
     this.extraSeq += 1;
     const extra = `req_${this.extraSeq}`;
     // TD requests are flat at the top level; nested values are never modified.
@@ -175,6 +182,7 @@ export class TdClient {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.clearTimeoutTimer();
     for (const entry of this.pending.values()) {
       entry.reject(new TdError(-1, 'TDLib account session changed'));

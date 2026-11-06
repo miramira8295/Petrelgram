@@ -232,6 +232,23 @@ export default function tdClientTest() {
       client.dispose();
     });
 
+    it('send_after_dispose_never_reaches_the_bridge', 0, async () => {
+      // 账号切换的尾巴：store 里的定时器还拿着旧 client。请求必须在本地
+      // 拒绝，不能打到 worker/native（那里会抛 tdSend before tdInit）。
+      const bridge = new FakeBridge();
+      const client = new TdClient(bridge);
+      client.start();
+      client.dispose();
+      let code = 0;
+      try {
+        await client.send({ '@type': 'getOption' });
+      } catch (e) {
+        code = (e as TdError).code;
+      }
+      expect(code).assertEqual(-1);
+      expect(bridge.sent.length).assertEqual(0);
+    });
+
     it('pending_requests_share_one_timeout_timer', 0, () => {
       let scheduled = 0;
       const timer: TimerFns = {
