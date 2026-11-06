@@ -432,10 +432,16 @@ export struct LightweightPlainTextBubble {
       ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
   }
 
-  // 框架容器材质，不是 backdropBlur（后者节点边缘有采样衰减，四角最明显）。
-  private glassBlurStyle(): BlurStyle | undefined {
-    return this.glassBodyFallbackOn() ? bubbleGlassBlurStyle() : undefined;
-  }
+  // 【不要再给气泡本体挂 backgroundBlurStyle】(2026-11-06)
+  //
+  // 本体的模糊只在"还没量到尺寸"的首帧用，量到之后本体会变成 Transparent。
+  // 但 backgroundBlurStyle(undefined) **不会撤掉已经挂上的模糊**——那一层会留在
+  // 节点上，叠在容器的玻璃下面，看起来就是"气泡多叠了一层/厚一层"。滑出去再
+  // 复用回来的行因为一开始就有尺寸、从没挂过本体模糊，所以看起来是正常的，
+  // 正好对应用户报的"刚进会话厚，滑动后正常"。
+  //
+  // 现在本体只承担填充色（见 bubbleBg），模糊一律由容器负责。首帧的差别只剩
+  // "模糊晚一帧出现"，不再有残留层。
 
   private containerGlassBg(): ResourceColor {
     return this.glassReady() ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
@@ -1149,7 +1155,6 @@ export struct LightweightPlainTextBubble {
     // 上下文、连带整张消息 List 的重测。两支气泡必须同改。
     .constraintSize({ maxWidth: this.bubbleMaxW() })
     .backgroundColor(this.bubbleBg())
-    .backgroundBlurStyle(this.glassBlurStyle())
     .borderRadius(this.bubbleCorners()).padding(8)
     // 与富气泡一致：内容层高于尾巴，避免尾巴伸入主体的部分盖住文字。
     .zIndex(1)

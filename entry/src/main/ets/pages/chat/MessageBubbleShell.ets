@@ -1533,10 +1533,8 @@ export struct MessageBubbleShell {
       ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
   }
 
-  private glassBlurStyle(): BlurStyle | undefined {
-    return this.glassBodyFallbackOn() ? bubbleGlassBlurStyle() : undefined;
-  }
-
+  // 本体不挂 backgroundBlurStyle：undefined 撤不掉已挂的模糊，会留下叠层
+  // （见 LightweightPlainTextBubble 同名说明）。
   private containerGlassBg(): ResourceColor {
     return this.glassReady() ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
   }
@@ -1967,7 +1965,7 @@ export struct MessageBubbleShell {
     })
     .constraintSize({ maxWidth: this.bubbleMaxW() })
     .backgroundColor(this.isBareEmoji() ? Color.Transparent : this.bubbleBg())
-    .backgroundBlurStyle(this.glassBlurStyle())
+
     // Adjacent rows share a restrained 7vp corner. Only the final row gets
     // the full bottom corner; a single-row run keeps the configured top arc.
     .borderRadius(this.bubbleCornerRadius())
