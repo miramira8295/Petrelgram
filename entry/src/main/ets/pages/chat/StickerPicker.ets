@@ -32,6 +32,7 @@ import { logE, logI } from '../../util/log';
 import { stickerFramesCached, warmStickerFrameIndex } from '../../services/stickerFrameIndex';
 import { remoteUniqueIdOf } from '../../util/stickerSetItems';
 import { alphaStickerHighBudget } from '../../util/webm/AlphaStickerBudget';
+import { chatContentWidth } from '../../util/chatContentWidth';
 
 export interface StickerItem {
   fileId: number;   // the sticker's own file (what gets sent)
@@ -318,8 +319,9 @@ export struct StickerPicker {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   // 正在被按住的格子（setIdx_pos）。空串表示没有。
   @State private pressedCell: string = '';
-  @State private previewOpen: boolean = false;
-  @State private panelWidth: number = 380;
+  @State @Watch('syncPickerAnimate') private previewOpen: boolean = false;
+  @Provide('stickerPickerAnimate') pickerAnimate: boolean = true;
+  @State private panelWidth: number = Math.max(100, (chatContentWidth() > 0 ? chatContentWidth() : 396) - 16);
   private previewController: CustomDialogController | null = null;
   private quickSeq: number = 0;
   private previewGeneration: number = 0;
@@ -355,6 +357,8 @@ export struct StickerPicker {
   @State contentError: string = '';
   private initialized: boolean = false;
   private disposed: boolean = false;
+  private setsRequested: boolean = false;
+  private initLoadTimer: number = -1;
   private loadSeq: number = 0;
   private sourceLoading: Set<number> = new Set<number>();
   // 贴纸源文件 id -> remote.unique_id（2026-10-09）。webm 贴纸的帧缓存按它命名：命中了
@@ -363,10 +367,39 @@ export struct StickerPicker {
   private srcUids: Map<number, string> = new Map<number, string>();
   private gridData: StickerDataSource = new StickerDataSource();
 
+  private scheduleInitialSetsLoad(): void {
+    if (this.setsRequested || this.disposed) {
+      return;
+    }
+    if (this.classicPacks.length === 0) {
+      this.setsRequested = true;
+      this.loadSets();
+      this.loadQuickSections();
+      return;
+    }
+    if (!this.active) {
+      return;
+    }
+    if (this.initLoadTimer !== -1) {
+      return;
+    }
+    this.initLoadTimer = setTimeout((): void => {
+      this.initLoadTimer = -1;
+      if (this.disposed || this.setsRequested || !this.active) {
+        return;
+      }
+      this.setsRequested = true;
+      this.loadSets();
+      this.loadQuickSections();
+    }, 260);
+  }
+
   aboutToAppear(): void {
     warmStickerFrameIndex();
     this.disposed = false;
+    this.syncPickerAnimate();
     if (this.initialized) {
+      this.scheduleInitialSetsLoad();
       return;
     }
     this.initialized = true;
@@ -383,10 +416,9 @@ export struct StickerPicker {
         }))
       }));
       this.loading = false;
-      this.refreshGrid();
+      this.flushGridNow();
     }
-    this.loadSets();
-    this.loadQuickSections();
+    this.scheduleInitialSetsLoad();
   }
 
   aboutToDisappear(): void {
@@ -397,6 +429,10 @@ export struct StickerPicker {
     this.loadSeq++;
     this.searchSeq++;
     this.sourceLoading.clear();
+    if (this.initLoadTimer !== -1) {
+      clearTimeout(this.initLoadTimer);
+      this.initLoadTimer = -1;
+    }
     if (this.searchTimer !== -1) {
       clearTimeout(this.searchTimer);
       this.searchTimer = -1;
@@ -554,8 +590,24 @@ export struct StickerPicker {
       : this.stickersEnabled && this.stickerAutoplay;
   }
 
+  private syncPickerAnimate(): void {
+    const next: boolean = this.playbackEnabled() && !this.previewOpen;
+    if (this.pickerAnimate !== next) {
+      this.pickerAnimate = next;
+    }
+  }
+
   private onPlaybackSettingsChanged(): void {
-    if (!this.active) { this.closePreview(); }
+    this.syncPickerAnimate();
+    if (!this.active) {
+      this.closePreview();
+      if (this.initLoadTimer !== -1) {
+        clearTimeout(this.initLoadTimer);
+        this.initLoadTimer = -1;
+      }
+    } else {
+      this.scheduleInitialSetsLoad();
+    }
     this.requestVisibleSources();
   }
 
@@ -642,7 +694,6 @@ export struct StickerPicker {
           failed: false,
           stickers: []
         });
-        this.resolveTabIcon(id, s);
       }
       if (extra.length > 0) {
         const hadNone = this.sets.length === 0;
@@ -1154,6 +1205,23 @@ export struct StickerPicker {
 
   private refreshTimer: number = -1;
 
+  private flushGridNow(): void {
+    if (this.refreshTimer !== -1) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = -1;
+    }
+    if (this.searchQuery.trim() !== '') {
+      this.flatEntries = this.searchItems.map((st: StickerItem, idx: number): FlatEntry =>
+        ({ kind: 'sticker', title: '', setIdx: -1, pos: idx, sticker: st }));
+    } else {
+      this.flatEntries = this.flatten();
+    }
+    this.rebuildFlatIndex(this.flatEntries);
+    this.syncGridLayout(this.flatEntries);
+    this.gridData.update(this.flatEntries);
+    this.requestVisibleSources();
+  }
+
   // Debounced: a freshly opened set fires many thumbnail patches in quick
   // succession. Coalesce them before calculating targeted cell changes.
   private refreshGrid(): void {
@@ -1162,16 +1230,7 @@ export struct StickerPicker {
     }
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = -1;
-      if (this.searchQuery.trim() !== '') {
-        this.flatEntries = this.searchItems.map((st: StickerItem, idx: number): FlatEntry =>
-          ({ kind: 'sticker', title: '', setIdx: -1, pos: idx, sticker: st }));
-      } else {
-        this.flatEntries = this.flatten();
-      }
-      this.rebuildFlatIndex(this.flatEntries);
-      this.syncGridLayout(this.flatEntries);
-      this.gridData.update(this.flatEntries);
-      this.requestVisibleSources();
+      this.flushGridNow();
     }, 80);
   }
 

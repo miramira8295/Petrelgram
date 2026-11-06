@@ -705,15 +705,25 @@ export struct ChatListPage {
     return fs.map((f: FolderInfo): string => `${f.id}:${f.title}`).join('|');
   }
 
+  private syncClockMinute(): void {
+    // 列表行时间（formatTime）只精确到分钟/天，不看秒；按整分钟量化并仅在跨分钟时写入，
+    // 避免从会话退回列表（resumeListRenderingAfterTransition -> startClock）在转场刚结束
+    // 的那一帧无条件改写秒级时间戳、触发全部可见与缓存 ChatRow 同步重绘掉帧。
+    const nowMinSec: number = Math.floor(Date.now() / 60000) * 60;
+    if ((AppStorage.get<number>(CHAT_LIST_NOW) ?? 0) !== nowMinSec) {
+      AppStorage.setOrCreate(CHAT_LIST_NOW, nowMinSec);
+    }
+  }
+
   private startClock(): void {
     if (!chatListPageCanRun(this.pageActive, this.navBarVisible) || !this.listRenderActive) { return; }
-    AppStorage.setOrCreate(CHAT_LIST_NOW, Math.floor(Date.now() / 1000));
+    this.syncClockMinute();
     if (this.clockTimer !== -1) {
       return;
     }
     this.clockTimer = setInterval((): void => {
       if (chatListPageCanRun(this.pageActive, this.navBarVisible) && this.listRenderActive) {
-        AppStorage.setOrCreate(CHAT_LIST_NOW, Math.floor(Date.now() / 1000));
+        this.syncClockMinute();
       }
     }, 60000);
   }
@@ -957,6 +967,12 @@ export struct ChatListPage {
       key: 'main', title: $r('app.string.cl_all'), plainTitle: str('cl_all')
     });
     return specs;
+  }
+
+  private tabEffectsActive(key: string): boolean {
+    const specs = this.tabs();
+    return specs[this.selectedIndex]?.key === key ||
+      specs[this.companionImageTabIndex]?.key === key;
   }
 
   private tabVisualsActive(key: string): boolean {
@@ -1661,7 +1677,7 @@ export struct ChatListPage {
                   // bottomBuilder 上，也算标题栏的一部分，这里再算一次就是重复。
                   contentTopInset: 0,
                   listScroller: this.scrollerFor(spec.key),
-                  effectsActive: this.tabVisualsActive(spec.key),
+                  effectsActive: this.tabEffectsActive(spec.key),
                   imagesActive: this.tabVisualsActive(spec.key),
                   updatesActive: this.tabUpdatesActive(spec.key),
                   // 文件夹条收起/展开的输入（util/folderBarCollapse）。普通成员而非
@@ -1675,7 +1691,7 @@ export struct ChatListPage {
                   listKey: spec.key,
                   contentTopInset: 0,
                   listScroller: this.scrollerFor(spec.key),
-                  effectsActive: this.tabVisualsActive(spec.key),
+                  effectsActive: this.tabEffectsActive(spec.key),
                   imagesActive: this.tabVisualsActive(spec.key),
                   updatesActive: this.tabUpdatesActive(spec.key),
                   onScrollForFolderBar: (delta: number, atTop: boolean): void => {
@@ -1880,8 +1896,10 @@ export struct ChatListPage {
       .titleMode(HdsNavigationTitleMode.MINI)
       // 小方形屏沉浸式浏览（SPEC-04）：上滑收起标题栏，带动画。
       .hideTitleBar(this.immersiveHidden && isSmallSquare(this.widthBp, this.heightBp), true)
-      // 每个文件夹页签的列表控制器都交进去——哪一个在滚，标题栏就跟着哪一个。
-      .bindToScrollable(this.allTabScrollers())
+      // 标题栏已固定为静态透明 MINI 栏（文件夹条收起由 onScrollForFolderBar 独立驱动），
+      // 不向 HdsNavigation 绑定 Scroller，避免 HdsNavigation 挂载整窗离屏滤镜节点导致
+      // 进出会话转场期间每帧整屏 FilterCache 失效、GPU 冲上 100%。
+      .bindToScrollable([])
       .width('100%').height('100%')
       // 背景色是 expandSafeArea 真正延伸出去的东西——只写 expandSafeArea 而不画
       // 背景，延伸的是"什么都没有"，状态栏底下露的就是窗口底色（实测深色模式

@@ -27,6 +27,7 @@ import {
   KEY_THREE_LINES, powerAnimationDuration
 } from '../../store/AppSettings';
 import { CHAT_LIST_NOW, CHAT_MENU_OPEN } from './ChatListFreeze';
+import { CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
 import { navigateToDirectMessagesTopics, navigateToForumTopics } from '../../util/profileNav';
 import {
   closeForumDrawer, FORUM_DRAWER_CLOSE_MS, FORUM_DRAWER_OPEN_MS,
@@ -212,6 +213,9 @@ export struct ChatRow {
       return;
     }
     this.livePulseTimer = setInterval((): void => {
+      if (!(AppStorage.get<boolean>(CHAT_LIST_RENDER_ACTIVE_KEY) ?? true)) {
+        return;
+      }
       if (this.powerSaving || !this.particlesEnabled) {
         this.livePulseExpanded = false;
         return;
@@ -239,6 +243,9 @@ export struct ChatRow {
           this.typingPulseTimer = -1;
         }
         this.typingDotPhase = 0;
+        return;
+      }
+      if (!(AppStorage.get<boolean>(CHAT_LIST_RENDER_ACTIVE_KEY) ?? true)) {
         return;
       }
       if (this.powerSaving || !this.liveEffects) {

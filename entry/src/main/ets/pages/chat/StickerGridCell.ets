@@ -21,7 +21,11 @@ export struct StickerGridCell {
   @Prop thumbPath: string = '';
   @Prop emoji: string = '';
   // 抽屉激活且允许播放（StickerPicker.active && animate）。
+  // 同时经 @Consume('stickerPickerAnimate') 接收父级 StickerPicker 的实时激活态：
+  // V1 LazyForEach 在键值不变时不会重跑子项 builder，单靠 @Prop animate 无法感知
+  // 面板收起或切页，必须靠 @Consume 穿透 LazyForEach 立即卸载动态贴纸视图。
   @Prop animate: boolean = true;
+  @Consume('stickerPickerAnimate') pickerAnimate: boolean;
   @Prop cellPx: number = 62;
   @Prop category: string = 'sticker';
   @Prop emojiFontSize: number = 30;
@@ -30,16 +34,20 @@ export struct StickerGridCell {
     return stickerFramesCached(this.srcUid, vp2px(this.cellPx), alphaStickerHighBudget(this.category));
   }
 
+  private shouldAnimate(): boolean {
+    return this.animate && this.pickerAnimate;
+  }
+
   build() {
     Stack() {
-      if (this.animate && this.format === 'tgs' && this.srcPath !== '') {
+      if (this.shouldAnimate() && this.format === 'tgs' && this.srcPath !== '') {
         TgsStickerView({
           tgsPath: this.srcPath, thumbPath: this.thumbPath,
           boxWidth: this.cellPx, boxHeight: this.cellPx,
           powerCategory: this.category,
           panelGated: true
         });
-      } else if (this.animate && this.format === 'webm' && (this.srcPath !== '' || this.framesCached())) {
+      } else if (this.shouldAnimate() && this.format === 'webm' && (this.srcPath !== '' || this.framesCached())) {
         SmartLoopVideo({
           videoPath: this.srcPath, thumbPath: this.thumbPath, stickerUid: this.srcUid,
           boxWidth: this.cellPx, boxHeight: this.cellPx,

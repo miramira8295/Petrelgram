@@ -14,7 +14,6 @@ import { SelectionSession } from './SelectionSession';
 import { RowPageInputs } from '../../util/rowPageInputs';
 import { canRenderLightweightPlainTextRow } from '../../util/messageBubbleReuse';
 import { ChatTimelineSession } from './ChatTimelineSession';
-import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 
 // 完整消息流渲染宿主：List、Repeat、行与覆盖层都归同一组件。
 // 数据发布与视口状态由 ChatTimelineSession 持有。
@@ -59,17 +58,6 @@ export struct ChatTimelineHost {
   @Param langEpoch: number = 0;
   @Param materialEpoch: number = 0;
   @Param timelineTopMargin: number = 0;
-
-  // 列表实测高度（vp）：linearGradientBlur 的 fractionStops 按实际高度归一化。
-  @Local private timelineViewH: number = 0;
-
-  // 滑动中把上下两端渐隐模糊关掉（用户 2026-11-05）。
-  //
-  // linearGradientBlur 是离屏渲染：整条列表先进离屏层、再按渐变合成，滑动时
-  // 每一帧都要重做一次。会话页行高、图片、视频都在动，这一层叠上去会直接掉帧。
-  // onScrollStart/Stop 正好包住"手指按住 + 惯性滑动"整段，停稳后（含惯性结束）
-  // 自动恢复，不需要额外定时器。
-  @Local private scrollActive: boolean = false;
 
   @Event onEmptyRetry: () => void = (): void => {};
   // 【第二轮第 12 项】签名从 `() => void` 改成带 mode。
@@ -191,12 +179,10 @@ export struct ChatTimelineHost {
     .width('100%').height('100%')
     .opacity(this.session.initialTimelineMasked ? 0 : 1)
     .contentStartOffset(this.headerStartOffset)
-    // 【PR 那笔补偿只留一半】List 和输入框在同一个 Stack 里，List 本来就铺满整屏，
-    // 负 margin 没有"下边界可延伸"、不起作用，而 contentEndOffset 是实打实生效的。
-    // PR 写的是 `chrome * 2 + 8`（比上游的 `chrome + 8` 多了一整个输入框高度），
-    // 实测最后一条消息被抬得偏高；用户 2026-11-05 要求"距离缩回一半"，即只保留
-    // 多出来那一半。
-    .contentEndOffset(this.bottomChromeH * 1.5 + 8)
+    // List 与底部输入区（bottomDock）在同一个 Stack 内且下沿齐平，bottomChromeH
+    // 已包含输入框自身上内边距（6vp）及展开时的抽屉高度；按 1:1 让出 bottomChromeH
+    // 并留 2vp 余量（算上输入框上内边距 6vp 与消息行下内边距后视觉间距约 10~12vp）。
+    .contentEndOffset(this.bottomChromeH + 2)
     .cachedCount(this.listCachedCount)
     // Media-heavy frames can make a short release look like an 8-9k vp/s
     // fling. Cap only the inertial phase; direct finger tracking is unchanged.
@@ -222,26 +208,20 @@ export struct ChatTimelineHost {
       this.session.handleTimelineDidScroll(offset, state);
     })
     .onScrollStart((): void => {
-      this.scrollActive = true;
       this.session.handleTimelineScrollStart();
     })
     .onScrollStop((): void => {
-      this.scrollActive = false;
       this.session.handleTimelineScrollStop();
     })
-    // 顶部/底部边缘渐变虚化：与首页会话列表同一套参数（顶/底 118vp、峰 22px）。
-    // 消息 List 的上沿就是屏幕顶（标题栏 enableComponentSafeArea: false、会话头由
-    // 主题栏悬浮在内容之上），所以渐变原点天然对齐，无需再上顶。
-    // 半径传 0 = 完全不糊（stops 仍然有效，只是没有模糊半径）。
-    .linearGradientBlur(this.scrollActive ? 0 : BLUR_MAX_VP, {
-      fractionStops: edgeBlurStops(this.timelineViewH),
-      direction: GradientDirection.Bottom
-    })
+    // 消息流 List **不挂容器级 linearGradientBlur**：
+    // 与静态设置页不同，聊天列表在静止浏览态（scrollActive=false）下常驻播放动态头像
+    // （30fps AVPlayer/ImageAnimator）与动态贴纸/表情（30~60fps Canvas/ImageAnimator）。
+    // linearGradientBlur 是整列表离屏滤镜，只要列表内任意 38×38vp 头像或贴纸更新一帧，
+    // RS 就必须把整张 1378×2832 的 List 重新合成进全屏离屏 FBO、跑 15 段高斯模糊着色器，
+    // 并将脏区扩大到整屏 [0,0,1378,2832]，进而每帧连带作废顶栏 ChatHeader 与底栏
+    // ChatComposerInput 共 5 颗悬浮毛玻璃胶囊的 FilterCache，导致 GPU 片元/纹理/带宽
+    // 长期飙到 90%~100%。顶底悬浮胶囊自身已带 backdropBlur + visualEffect，无需整表再套离屏滤镜。
     .onAreaChange((_old: Area, area: Area): void => {
-      const h: number = Number(area.height);
-      if (h > 0 && Math.abs(h - this.timelineViewH) > 0.5) {
-        this.timelineViewH = h;
-      }
       this.session.handleTimelineAreaChange(area);
     });
   }

@@ -101,9 +101,10 @@ const HYDRATE_COALESCE_MS: number = 64;
 const HYDRATE_SCROLL_CAP_MS: number = 800;
 // 初始历史发布后的安置期。首页刚建好的这段时间里，头像回填、回复引用、缩略
 // 图会各到一批——16ms 的窗口把它们放成两三波，每波都是近乎整页的 CHANGE 重建
-// （实测每波 27-30 行、各吃一个掉帧）。安置期内的发布整体压到窗口末尾一次
-// 放行，期满恢复 16ms，日常更新照旧灵敏。见 notifySoon()。
-const INITIAL_SETTLE_WINDOW_MS: number = 400;
+// （实测每波 27-30 行、各吃一个掉帧）。HdsNavigation 推入转场约 600ms，原来
+// 400ms 的安置窗口刚好落在转场最后收尾阶段（t ≈ 450ms）触发整页重建造成尾帧掉帧；
+// 拉长到 720ms 让安置期合并刷新完全跨过推页转场后再放行，期满恢复 16ms。见 notifySoon()。
+const INITIAL_SETTLE_WINDOW_MS: number = 720;
 // 首屏历史页的条数。30 条一帧建完是实测的首帧掉帧来源；12 条先铺满屏幕，
 // 剩余由短页补链/滚动分页在后续帧补齐。
 const INITIAL_FIRST_PAGE: number = 12;

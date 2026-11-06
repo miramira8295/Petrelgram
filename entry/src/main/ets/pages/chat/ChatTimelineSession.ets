@@ -877,6 +877,9 @@ export class ChatTimelineSession {
     this.curStartIdx = start;
     this.curEndIdx = end;
     this.indexGroupsLen = this.groups.length;
+    if (this.bindings!.imeTailPinned()) {
+      return;
+    }
     this.refreshAtBottom();
     this.fillViewportIfNeeded();
     this.curBottomId = this.bottomVisibleId(end);
@@ -918,6 +921,9 @@ export class ChatTimelineSession {
   }
 
   handleTimelineDidScroll(offset: number, state: ScrollState): void {
+    if (this.bindings!.imeTailPinned() && !this.listTouchActive) {
+      return;
+    }
     if (state !== ScrollState.Idle && offset !== 0) {
       noteScrollPlaceholderMotion();
     }
@@ -1134,11 +1140,13 @@ export class ChatTimelineSession {
   // isAtEnd() 瞬时误报导致把用户从中间拽到最新，以及拿陈旧行号否决导致的自锁死。
   refreshAtBottom(): void {
     const timelineStore: MessageStore | null = this.bindings!.store();
-    const scrollerAtEnd: boolean = this.bindings!.viewerOpen() ? false : this.scroller.isAtEnd();
+    const viewerOpen: boolean = this.bindings!.viewerOpen();
+    const imeTailPinned: boolean = this.bindings!.imeTailPinned();
+    const scrollerAtEnd: boolean = (viewerOpen || imeTailPinned) ? false : this.scroller.isAtEnd();
     const hasMoreNewer: boolean = timelineStore !== null && timelineStore.getHasMoreNewer();
     const verdict: string = atBottomVerdict({
-      viewerOpen: this.bindings!.viewerOpen(),
-      imeTailPinned: this.bindings!.imeTailPinned(),
+      viewerOpen: viewerOpen,
+      imeTailPinned: imeTailPinned,
       scrollerAtEnd: scrollerAtEnd,
       visibleEndIdx: this.curEndIdx,
       indexGroupsLen: this.indexGroupsLen,
@@ -1202,6 +1210,15 @@ export class ChatTimelineSession {
     if (this.groups.length === 0) {
       return;
     }
+    this.refreshAtBottom();
+    if (this.curEndIdx >= 0 && this.curEndIdx < this.groups.length) {
+      this.curBottomId = this.bottomVisibleId(this.curEndIdx);
+      this.bindings!.syncReturnState();
+      this.bindings!.markVisibleRead(this.curEndIdx);
+    }
+    if (this.curStartIdx >= 0 && this.curStartIdx < this.groups.length) {
+      this.bindings!.topCard.updatePinnedFromScroll(this.curStartIdx);
+    }
     // 首帧之前还没有滚动事件，curStartIdx/curEndIdx 是 -1：用首屏兜底
     // （聊天默认停在底部，所以取末尾一屏），滑动事件到了会立刻纠正。
     const range: VisibleRange = visibleRangeOrFallback(
@@ -1251,15 +1268,22 @@ export class ChatTimelineSession {
     }
   }
 
+  private preImeStackFromEnd: boolean = true;
+
   stackFromEndWanted(): boolean {
     const timelineStore: MessageStore | null = this.bindings!.store();
-    return stackFromEndWanted(
+    const wanted: boolean = stackFromEndWanted(
       timelineStore !== null && timelineStore.getHasMoreNewer(),
       this.curStartIdx,
       this.curEndIdx,
       this.indexGroupsLen,
       this.bindings!.threadRootId() > 0
     );
+    if (this.bindings!.imeTailPinned()) {
+      return this.preImeStackFromEnd || wanted;
+    }
+    this.preImeStackFromEnd = wanted;
+    return wanted;
   }
   private static readonly FILL_VIEWPORT_MAX_ROWS: number = 80;
 
@@ -1361,6 +1385,18 @@ export class ChatTimelineSession {
     this.scheduleChatTgsResume();
   }
 
+  pauseForViewportResize(): void {
+    setStickerDecodePaused(true);
+    this.pauseChatTgsForScroll();
+  }
+
+  resumeAfterViewportResize(): void {
+    if (!this.timelineScrollActive) {
+      setStickerDecodePaused(false);
+      this.resumeChatTgsAfterScroll();
+    }
+  }
+
   // The normal publication gate also invalidates an unfinished initial stage.
   publishGroups(groups: AlbumGroup[]): void {
     const wasStaging: boolean = this.initialMessageStageActive;
@@ -1442,6 +1478,12 @@ export class ChatTimelineSession {
     );
   }
 
+  // 首次进页时等 HdsNavDestination ~600ms 推入转场彻底落定后再放开动态头像/TGS 贴纸解码与播放，
+  // 避免在推页转场后半程与尾帧集中起播造成 GPU 冲顶与收尾掉帧。
+  scheduleInitialChatTgsResume(): void {
+    this.scheduleChatTgsResume(520);
+  }
+
   finishInitialMessageStage(groups: AlbumGroup[]): void {
     this.publishGroupsNow(groups);
     this.initialMessageStageActive = false;
@@ -1449,8 +1491,8 @@ export class ChatTimelineSession {
     this.initialMessageRevealCount = 0;
     this.initialTailTarget = 0;
     this.initialMessageStageScheduledSeq = 0;
-    // Keep Lottie startup out of the final placeholder replacement frame.
-    this.scheduleChatTgsResume();
+    // Keep Lottie startup out of the final placeholder replacement frame and the push transition tail.
+    this.scheduleInitialChatTgsResume();
     // The timeline stays masked until this full snapshot has been laid out and
     // the final id-based anchor has been applied. Never issue another delayed
     // landing after the mask is gone: that was the visible second jump.

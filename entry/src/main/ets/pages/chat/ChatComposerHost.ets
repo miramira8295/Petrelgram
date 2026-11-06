@@ -29,9 +29,6 @@ export struct ChatComposerHost {
   @Param attachPanelOpen: boolean = false;
   @Param pendingMedia: PendingMediaItem[] = [];
   @Param showEmojiPanel: boolean = false;
-  @Param panelContentReady: boolean = false;
-  @Param emojiPanelClosing: boolean = false;
-  @Param emojiPanelTab: number = 0;
   @Param composerEditorReady: boolean = false;
   @Param editorFocused: boolean = false;
   @Param keyboardVisible: boolean = false;
@@ -46,14 +43,9 @@ export struct ChatComposerHost {
   @Param replyKeyboardVisible: boolean = false;
   @Param replyKeyboardSendingKey: string = '';
   @Param bottomGap: number = 0;
-  @Param bottomSafe: number = 0;
-  @Param drawerHeight: number = 260;
   @Param hasDraft: boolean = false;
   @Param accentColor: ResourceColor = Color.Transparent;
   @Param chromeIconColor: ResourceColor = Color.Transparent;
-  @Param chatId: number = 0;
-  @Param isGroup: boolean = false;
-  @Param isChannel: boolean = false;
   @Param menuEffectDuration: (duration: number) => number = (duration: number): number => duration;
   @Param replyEffectDuration: (duration: number) => number = (duration: number): number => duration;
   @Param smoothEffectDuration: (duration: number) => number = (duration: number): number => duration;
@@ -80,6 +72,115 @@ export struct ChatComposerHost {
   @Event onRecord: () => void = (): void => {};
   @Event onSend: () => void = (): void => {};
   @Event onSendOptions: () => void = (): void => {};
+  @Event onHeightChange: (height: number) => void = (_height: number): void => {};
+
+  @Builder
+  buildComposer() {
+    Column() {
+      ChatComposerInput({
+        appDark: this.appDark,
+        attachPanelOpen: this.attachPanelOpen,
+        pendingMedia: this.pendingMedia,
+        composer: this.composer,
+        commandSuggestion: this.commandSuggestion,
+        recording: this.recording,
+        showEmojiPanel: this.showEmojiPanel,
+        composerEditorReady: this.composerEditorReady,
+        editorFocused: this.editorFocused,
+        keyboardVisible: this.keyboardVisible,
+        draft: this.draft,
+        composerPlaceholder: this.composerPlaceholder,
+        composerController: this.composerController,
+        sendByEnter: this.sendByEnter,
+        replyKeyboard: this.replyKeyboard,
+        replyKbCollapsed: this.replyKbCollapsed,
+        botMiniAppUrlValue: this.botMiniAppUrlValue,
+        composerSending: this.composerSending,
+        replyKeyboardVisible: this.replyKeyboardVisible,
+        bottomGap: this.bottomGap,
+        hasDraft: this.hasDraft,
+        accentColor: this.accentColor,
+        chromeIconColor: this.chromeIconColor,
+        onToggleAttach: this.onToggleAttach,
+        onRemoveMedia: this.onRemoveMedia,
+        onMoveMedia: this.onMoveMedia,
+        onClearMedia: this.onClearMedia,
+        onCancelEdit: this.onCancelEdit,
+        onReplyTap: this.onReplyTap,
+        onClearReply: this.onClearReply,
+        onCancelRecording: this.onCancelRecording,
+        onFinishRecording: this.onFinishRecording,
+        onToggleBotMenu: this.onToggleBotMenu,
+        onEmojiButtonTap: this.onEmojiButtonTap,
+        onDraftChange: this.onDraftChange,
+        onSubmit: this.onSubmit,
+        onEditorFocus: this.onEditorFocus,
+        onEditorBlur: this.onEditorBlur,
+        onActivateEditor: this.onActivateEditor,
+        onScheduleEditorMount: this.onScheduleEditorMount,
+        onToggleReplyKeyboard: this.onToggleReplyKeyboard,
+        onOpenMiniApp: this.onOpenMiniApp,
+        onRecord: this.onRecord,
+        onSend: this.onSend,
+        onSendOptions: this.onSendOptions,
+        menuEffectDuration: this.menuEffectDuration,
+        replyEffectDuration: this.replyEffectDuration,
+        smoothEffectDuration: this.smoothEffectDuration
+      });
+      if (this.replyKeyboardVisible && this.replyKeyboard !== null) {
+        ReplyKeyboardPanel({
+          rows: this.replyKeyboard.rows,
+          sendingKey: this.replyKeyboardSendingKey,
+          resize: this.replyKeyboard.resize,
+          bottomGap: this.bottomGap,
+          enterDuration: this.menuEffectDuration(190),
+          onTap: (button: KeyboardBtn, key: string): void => {
+            this.onReplyKeyboardTap(button, key);
+          }
+        });
+      }
+    }
+    .width('100%')
+    .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+      if (typeof size.height === 'number') {
+        this.emojiDrawer.measureComposer(size.height);
+      }
+    })
+    .onAreaChange((_old: Area, area: Area): void => {
+      if (typeof area.height === 'number') { this.onHeightChange(area.height); }
+    });
+  }
+
+  private onReplyKeyboardTap(button: KeyboardBtn, key: string): void {
+    // Reply-keyboard sending remains a ChatPage business action.
+    this.onReplyKeyboardButton(button, key);
+  }
+
+  @Event onReplyKeyboardButton: (button: KeyboardBtn, key: string) => void =
+    (_button: KeyboardBtn, _key: string): void => {};
+
+  build() {
+    this.buildComposer();
+  }
+}
+
+@ComponentV2
+export struct ChatBottomDrawerHost {
+  @Require @Param emojiDrawer: EmojiDrawerState;
+  @Require @Param sendAccess: ChatSendAccess;
+  @Param attachPanelOpen: boolean = false;
+  @Param showEmojiPanel: boolean = false;
+  @Param panelContentReady: boolean = false;
+  @Param emojiPanelClosing: boolean = false;
+  @Param emojiPanelTab: number = 0;
+  @Param bottomSafe: number = 0;
+  @Param drawerHeight: number = 260;
+  @Param accentColor: ResourceColor = Color.Transparent;
+  @Param chatId: number = 0;
+  @Param isGroup: boolean = false;
+  @Param isChannel: boolean = false;
+  @Param menuEffectDuration: (duration: number) => number = (duration: number): number => duration;
+
   @Event onAttachPick: (key: string) => void = (_key: string): void => {};
   @Event onEmojiPick: (emoji: string) => void = (_emoji: string): void => {};
   @Event onCustomEmojiPick: (emoji: string, customEmojiId: string) => void =
@@ -89,9 +190,7 @@ export struct ChatComposerHost {
   @Event onGifPick: (gif: GifItem) => void = (_gif: GifItem): void => {};
   @Event onEmojiTabChange: (tab: number) => void = (_tab: number): void => {};
   @Event onEmojiExpanded: (expanded: boolean) => void = (_expanded: boolean): void => {};
-  @Event onHeightChange: (height: number) => void = (_height: number): void => {};
 
-  // 传给 BottomDrawerShell 的内容必须保持宿主绑定，不能改成普通 @Builder。
   @LocalBuilder
   attachDrawerContent() {
     AttachPanel({
@@ -106,6 +205,7 @@ export struct ChatComposerHost {
   emojiDrawerContent() {
     if (this.panelContentReady) {
       EmojiPanel({
+        active: this.showEmojiPanel,
         panelHeight: this.drawerHeight,
         expanded: this.emojiDrawer.expanded,
         onExpanded: (expanded: boolean): void => { this.onEmojiExpanded(expanded); },
@@ -122,122 +222,35 @@ export struct ChatComposerHost {
         },
         onPickGif: (gif: GifItem): void => { this.onGifPick(gif); }
       });
-    } else if (!this.emojiPanelClosing) {
-      Column({ space: 8 }) {
-        LoadingProgress().width(26).height(26).color(this.accentColor);
-        Text($r('app.string.cp_opening_panel')).fontSize(13)
-          .fontColor($r('app.color.text_secondary'));
-      }
-      .width('100%').height('100%')
-      .justifyContent(FlexAlign.Center);
+    } else {
+      Column()
+        .width('100%')
+        .height('100%');
     }
   }
-
-  @Builder
-  bottomDrawer() {
-    if (this.attachPanelOpen) {
-      BottomDrawerShell({ bottomSafe: this.bottomSafe, content: this.attachDrawerContent });
-    } else if (this.showEmojiPanel) {
-      BottomDrawerShell({
-        bottomSafe: this.bottomSafe,
-        drawerHeight: this.drawerHeight,
-        content: this.emojiDrawerContent
-      });
-    }
-  }
-
-  @Builder
-  buildComposer() {
-    Column() {
-      Column() {
-        ChatComposerInput({
-          appDark: this.appDark,
-          attachPanelOpen: this.attachPanelOpen,
-          pendingMedia: this.pendingMedia,
-          composer: this.composer,
-          commandSuggestion: this.commandSuggestion,
-          recording: this.recording,
-          showEmojiPanel: this.showEmojiPanel,
-          composerEditorReady: this.composerEditorReady,
-          editorFocused: this.editorFocused,
-          keyboardVisible: this.keyboardVisible,
-          draft: this.draft,
-          composerPlaceholder: this.composerPlaceholder,
-          composerController: this.composerController,
-          sendByEnter: this.sendByEnter,
-          replyKeyboard: this.replyKeyboard,
-          replyKbCollapsed: this.replyKbCollapsed,
-          botMiniAppUrlValue: this.botMiniAppUrlValue,
-          composerSending: this.composerSending,
-          replyKeyboardVisible: this.replyKeyboardVisible,
-          bottomGap: this.bottomGap,
-          hasDraft: this.hasDraft,
-          accentColor: this.accentColor,
-          chromeIconColor: this.chromeIconColor,
-          onToggleAttach: this.onToggleAttach,
-          onRemoveMedia: this.onRemoveMedia,
-          onMoveMedia: this.onMoveMedia,
-          onClearMedia: this.onClearMedia,
-          onCancelEdit: this.onCancelEdit,
-          onReplyTap: this.onReplyTap,
-          onClearReply: this.onClearReply,
-          onCancelRecording: this.onCancelRecording,
-          onFinishRecording: this.onFinishRecording,
-          onToggleBotMenu: this.onToggleBotMenu,
-          onEmojiButtonTap: this.onEmojiButtonTap,
-          onDraftChange: this.onDraftChange,
-          onSubmit: this.onSubmit,
-          onEditorFocus: this.onEditorFocus,
-          onEditorBlur: this.onEditorBlur,
-          onActivateEditor: this.onActivateEditor,
-          onScheduleEditorMount: this.onScheduleEditorMount,
-          onToggleReplyKeyboard: this.onToggleReplyKeyboard,
-          onOpenMiniApp: this.onOpenMiniApp,
-          onRecord: this.onRecord,
-          onSend: this.onSend,
-          onSendOptions: this.onSendOptions,
-          menuEffectDuration: this.menuEffectDuration,
-          replyEffectDuration: this.replyEffectDuration,
-          smoothEffectDuration: this.smoothEffectDuration
-        });
-        if (this.replyKeyboardVisible && this.replyKeyboard !== null) {
-          ReplyKeyboardPanel({
-            rows: this.replyKeyboard.rows,
-            sendingKey: this.replyKeyboardSendingKey,
-            resize: this.replyKeyboard.resize,
-            bottomGap: this.bottomGap,
-            enterDuration: this.menuEffectDuration(190),
-            onTap: (button: KeyboardBtn, key: string): void => {
-              this.onReplyKeyboardTap(button, key);
-            }
-          });
-        }
-      }
-      .width('100%')
-      .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
-        if (typeof size.height === 'number') {
-          this.emojiDrawer.measureComposer(size.height);
-        }
-      });
-      if (this.attachPanelOpen || this.showEmojiPanel) {
-        this.bottomDrawer();
-      }
-    }
-    .width('100%')
-    .onAreaChange((_old: Area, area: Area): void => {
-      if (typeof area.height === 'number') { this.onHeightChange(area.height); }
-    });
-  }
-
-  private onReplyKeyboardTap(button: KeyboardBtn, key: string): void {
-    // Reply-keyboard sending remains a ChatPage business action.
-    this.onReplyKeyboardButton(button, key);
-  }
-
-  @Event onReplyKeyboardButton: (button: KeyboardBtn, key: string) => void =
-    (_button: KeyboardBtn, _key: string): void => {};
 
   build() {
-    this.buildComposer();
+    Column() {
+      if (this.emojiDrawer.activeSlot === 'attach' && this.emojiDrawer.shellHeight > 0) {
+        BottomDrawerShell({
+          bottomSafe: this.bottomSafe,
+          shellHeight: this.emojiDrawer.shellHeight,
+          cardOffsetY: this.emojiDrawer.cardOffsetY,
+          cardOpacity: this.emojiDrawer.cardOpacity,
+          content: this.attachDrawerContent
+        });
+      }
+      if (this.emojiDrawer.activeSlot === 'emoji' && this.emojiDrawer.shellHeight > 0) {
+        BottomDrawerShell({
+          bottomSafe: this.bottomSafe,
+          drawerHeight: this.drawerHeight,
+          shellHeight: this.emojiDrawer.shellHeight,
+          cardOffsetY: this.emojiDrawer.cardOffsetY,
+          cardOpacity: this.emojiDrawer.cardOpacity,
+          content: this.emojiDrawerContent
+        });
+      }
+    }
+    .width('100%');
   }
 }
