@@ -87,7 +87,6 @@ import formatPreviewTest from './formatPreview.test';
 import chatEntryTest from './ChatEntry.test';
 import clearHistoryOptionsTest from './ClearHistoryOptions.test';
 import userStoreTest from './UserStore.test';
-import chatStoreTest from './ChatStore.test';
 import fileServiceTest from './FileService.test';
 import listKeyTest from './ListKey.test';
 import folderStoreTest from './FolderStore.test';
@@ -155,9 +154,6 @@ import chatListOrderTest from './ChatListOrder.test';
 import chatListRowStateTest from './ChatListRowState.test';
 import chatEntryFactoryTest from './ChatEntryFactory.test';
 import chatMirrorTest from './ChatMirror.test';
-import chatListV2Test from './ChatListV2.test';
-import { setChatListSourceForTest } from '../main/ets/util/chatListV2';
-import chatStoreV2Test from './ChatStoreV2.test';
 import proxyMirrorTest from './ProxyMirror.test';
 import mainTabsWidthTest from './MainTabsWidth.test';
 import appearanceTest from './Appearance.test';
@@ -407,7 +403,6 @@ import contactAddRequestTest from './ContactAddRequest.test';
 export default function testsuite() {
   // 既有用例验证的是 V1（喂 update → store 怎么变）。V2 的用例在自己内部
   // 把源切过去再切回来，所以这里先钉住默认。
-  setChatListSourceForTest(false);
   searchPresentationTest();
   recentChatHistoryTest();
   floatingVideoRuntimeTest();
@@ -480,7 +475,6 @@ export default function testsuite() {
   chatEntryTest();
   clearHistoryOptionsTest();
   userStoreTest();
-  chatStoreTest();
   fileServiceTest();
   listKeyTest();
   folderStoreTest();
@@ -553,8 +547,6 @@ export default function testsuite() {
   chatListRowStateTest();
   chatEntryFactoryTest();
   chatMirrorTest();
-  chatListV2Test();
-  chatStoreV2Test();
   proxyMirrorTest();
   mainTabsWidthTest();
   appearanceTest();

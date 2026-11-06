@@ -197,7 +197,6 @@ function createRuntime(slotId: string): void {
     workerBridge.onOrder((lists: OrderSnapshot[]): void => {
       // V2 下这份快照就是列表成员与置顶的唯一来源；V1 下只用于对账。
       shadowTarget.applyWorkerOrder(lists);
-      shadowTarget.compareWorkerOrder(lists);
     });
     // 第二层 B4b：worker 侧影子实体对账（只比字段，不改本地）。
     workerBridge.onChatEntries((entries: ChatEntry[]): void => {

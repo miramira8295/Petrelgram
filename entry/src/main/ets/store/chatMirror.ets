@@ -80,10 +80,10 @@ export class ChatMirror {
     this.entries.set(chatId, next);
   }
 
-  // 合并一批 worker 实体，返回**真正变化**的条数（按 B4b 的可比字段口径，
+  // 合并一批 worker 实体，返回**真正变化**的会话 id（按 B4b 的可比字段口径，
   // revision 不计）。没变化的条目保持原对象身份，避免下游白刷。
-  apply(remote: ChatEntry[]): number {
-    let changed = 0;
+  apply(remote: ChatEntry[]): number[] {
+    const changed: number[] = [];
     for (const incoming of remote) {
       const previous: ChatEntry | undefined = this.entries.get(incoming.id);
       const merged: ChatEntry = cloneEntry(incoming);
@@ -104,7 +104,7 @@ export class ChatMirror {
         merged.revision = 0;
       }
       this.entries.set(incoming.id, merged);
-      changed += 1;
+      changed.push(incoming.id);
     }
     return changed;
   }

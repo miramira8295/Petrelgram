@@ -66,7 +66,13 @@ set -u
 #     文件保留，只覆盖仍然生效的 canRenderLightweightPlainTextRow 判据。
 # 4203 是删完后实跑的结果（脚本自己的输出），不是推算值。
 # 与上面几次同理：这是"确实删了用例"那一档，不是为了让脚本变绿。
-MIN_TESTS="${MIN_TESTS:-4203}"
+# 2026-11-06 从 4203 降到 4154：**故意删除**被测对象已经不存在的用例。
+#   · ChatStore.test.ets（整份）—— 验证 V1 的更新处理器：喂 update、断言实体与发布
+#     节奏。V1 数据面已删（实体改由 worker 投递），这些用例没有被测对象。
+#   · ChatListV2.test.ets —— 测的是 V1/V2 一行开关，开关本身也随 V1 一起删了。
+#   · ChatStoreV2.test.ets —— 同上，它靠 setChatListSourceForTest 切换。
+# 4154 是删完后实跑的结果，不是推算值。与「为了让脚本变绿而降」是两档。
+MIN_TESTS="${MIN_TESTS:-4154}"
 # ---------------------------------------------------------------------------
 
 # Defaults are the macOS install. On Windows (git-bash) DevEco lives elsewhere,

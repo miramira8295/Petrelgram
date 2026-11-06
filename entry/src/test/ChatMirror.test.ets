@@ -21,7 +21,7 @@ export default function chatMirrorTest() {
   describe('chatMirror', () => {
     it('首次合并落库，revision 从 0 开始', 0, (): void => {
       const mirror = new ChatMirror();
-      expect(mirror.apply([entryOf(1, 'a', 10)])).assertEqual(1);
+      expect(mirror.apply([entryOf(1, 'a', 10)]).length).assertEqual(1);
       expect(mirror.size()).assertEqual(1);
       expect(mirror.get(1)!.revision).assertEqual(0);
     });
@@ -30,7 +30,7 @@ export default function chatMirrorTest() {
       const mirror = new ChatMirror();
       mirror.apply([entryOf(1, 'a', 10)]);
       const before = mirror.get(1);
-      expect(mirror.apply([entryOf(1, 'a', 10)])).assertEqual(0);
+      expect(mirror.apply([entryOf(1, 'a', 10)]).length).assertEqual(0);
       expect(mirror.get(1) === before).assertTrue();
     });
 
@@ -38,7 +38,7 @@ export default function chatMirrorTest() {
       const mirror = new ChatMirror();
       mirror.apply([entryOf(1, 'a', 10)]);
       const next = entryOf(1, 'b', 10);
-      expect(mirror.apply([next])).assertEqual(1);
+      expect(mirror.apply([next]).length).assertEqual(1);
       expect(mirror.get(1)!.title).assertEqual('b');
       expect(mirror.get(1)!.revision).assertEqual(1);
     });
@@ -71,7 +71,7 @@ export default function chatMirrorTest() {
       mirror.apply([entryOf(1, 'a', 10)]);
       mirror.clear();
       expect(mirror.size()).assertEqual(0);
-      expect(mirror.apply([entryOf(2, 'c', 0)])).assertEqual(1);
+      expect(mirror.apply([entryOf(2, 'c', 0)]).length).assertEqual(1);
     });
   });
 }
