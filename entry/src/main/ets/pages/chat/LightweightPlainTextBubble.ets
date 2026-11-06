@@ -15,7 +15,8 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { getAccentColorStore, getTdClient, getUserStore } from '../../tdkit/Globals';
 import {
-  BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth
+  BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth,
+  hitSenderAvatarColumn
 } from '../../util/mediaBox';
 import { editableCached, ensureEditable } from '../../util/messageEditable';
 import { deletableCached, ensureDeletable } from '../../util/messageDeletable';
@@ -1336,10 +1337,19 @@ export struct LightweightPlainTextBubble {
           if (this.gestureClaimed || this.menuShown) { return; }
           const fingers: FingerInfo[] = event.fingerList;
           const x: number = fingers && fingers.length > 0 ? fingers[0].localX : 0;
+          // 这一下按在发送者头像上：整手归头像（长按 = @ 对方），满宽行不弹菜单。
+          // 头像自己的 gesture 拦不住这里的 parallelGesture（父子并行触发）。
+          if (fingers && fingers.length > 0
+            && hitSenderAvatarColumn(x, this.isGroup, this.msg.isOutgoing, this.showAvatar)) {
+            return;
+          }
+          // 长按统一交给 messageGesturePolicy：tapFirst 进多选、classic 出菜单。
+          // 这里原先写死了「弹菜单」，tapFirst 下 500ms 就先把菜单弹出来，松手时
+          // 合成的那次长按再进多选 —— 用户看到的是菜单与多选同时出现。
+          // 与 MessageBubbleShell 行级长按（:2276 this.onLongPress(event)）保持一致。
+          this.onLongPress(event);
+          // 偏移换算仍用行坐标：onLongPress 内部按气泡内坐标夹取，靠近气泡边缘会偏。
           this.recordRowMenu(x, Number(event.target.area.width));
-          this.askEditable();
-          this.askDeletable();
-          this.menuShown = true;
         }))
       .onTouch((event: TouchEvent): void => {
         if (event.type === TouchType.Down) {

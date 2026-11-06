@@ -26,7 +26,7 @@ import { cornerPx, senderLeadInset } from '../../util/bubbleCornerInset';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { rememberLabelWidth, recallLabelWidth } from '../../util/labelWidthMemory';
 import { SenderRoleTag } from './SenderRoleTag';
-import { BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth } from '../../util/mediaBox';
+import { BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth, hitSenderAvatarColumn } from '../../util/mediaBox';
 import { formatClockTime } from '../../util/formatTime';
 import { isUnformattedPlainText, messageUrls, parseFormattedText } from '../../util/richText';
 import { inlineButtonKey, inlineButtonRowKey } from '../../util/inlineButtonKey';
@@ -2260,7 +2260,15 @@ export struct MessageBubbleShell {
           .onAction((event: GestureEvent): void => {
             if (this.context.gestureClaimed) { return; }
             const fingers = event.fingerList;
-            this.recordRowMenuOffset(fingers.length > 0 ? fingers[0].localX : 0);
+            const localX: number = fingers.length > 0 ? fingers[0].localX : 0;
+            // 这一下按在发送者头像上：整手归头像（长按 = @ 对方），满宽行不再
+            // 弹菜单、也不进多选。头像自己的 gesture 拦不住这里的 parallelGesture
+            // （parent 与 child 并行触发），只能在这一层按落点让路。
+            if (fingers.length > 0 && hitSenderAvatarColumn(localX, this.data.isGroup,
+              this.msg.isOutgoing, this.group.showAvatar)) {
+              return;
+            }
+            this.recordRowMenuOffset(localX);
             this.onLongPress(event);
           })
       )
