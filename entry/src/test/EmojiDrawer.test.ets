@@ -1,5 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { emojiDrawerHeight, mediaPanelColumns, mediaPanelTemplate, EmojiDrawerState } from '../main/ets/pages/chat/EmojiDrawerState';
+import {
+  drawerTopOverlap, emojiDrawerHeight, mediaPanelColumns, mediaPanelTemplate, EmojiDrawerState
+} from '../main/ets/pages/chat/EmojiDrawerState';
 
 export default function emojiDrawerTest() {
   describe('EmojiDrawer', (): void => {
@@ -35,6 +37,19 @@ export default function emojiDrawerTest() {
       state.measureViewport(0); state.measureComposer(Number.NaN); state.expanded = true;
       expect(state.height(100, 24)).assertEqual(592);
       state.measureViewport(400); expect(state.height(100, 24)).assertEqual(192);
+    });
+    it('lift_height_absorbs_composer_safe_gap_diff_so_close_ends_at_zero', 0, (): void => {
+      const state = new EmojiDrawerState();
+      state.measureViewport(800);
+      state.measureComposer(76);
+      expect(drawerTopOverlap(28, false)).assertEqual(22);
+      expect(drawerTopOverlap(0, false)).assertEqual(2);
+      expect(drawerTopOverlap(28, true)).assertEqual(0);
+      expect(state.totalHeight(100, 28)).assertEqual(340);
+      expect(state.liftHeight(100, 28)).assertEqual(318);
+      expect(state.topOverlap(28)).assertEqual(22);
+      state.closingToIme = true;
+      expect(state.topOverlap(28)).assertEqual(0);
     });
   });
 }

@@ -7,6 +7,8 @@ import {
 import { titleBarStyle } from '../../util/hdsTitleBar';
 import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { readableContentWidth } from '../../util/contentWidth';
+import { allocChatDestToken, markChatDestHidden, markChatDestShown } from '../../util/chatDestTracker';
+import { stackOf } from '../../util/navStacks';
 import { logE } from '../../util/log';
 
 // 设置类子页面的外壳 —— HdsSubPage 的 HdsNavDestination 版本。
@@ -128,6 +130,13 @@ export struct HdsSubDestination {
 
   // 本页所在的 Navigation 栈，onReady 时拿到。
   private navStack: NavPathStack | undefined = undefined;
+  private readonly chatDestToken: number = allocChatDestToken();
+  private inChatStack: boolean = false;
+  private willShowSeen: boolean = false;
+
+  aboutToDisappear(): void {
+    markChatDestHidden(this.chatDestToken, true);
+  }
 
   // 出栈。形状和 ProfilePage / ChatProfilePage / ArchivePage 里 Task 7 建立的
   // goBack() 一致：navStack 缺失时只记一条日志，**故意不回退到 router.back()**
@@ -241,6 +250,10 @@ export struct HdsSubDestination {
     .bindToScrollable([this.scroller])
     .onReady((ctx: NavDestinationContext): void => {
       this.navStack = ctx.pathStack;
+      this.inChatStack = (ctx.pathStack as Object) === (stackOf('chat') as Object);
+      if (this.inChatStack && this.willShowSeen) {
+        markChatDestShown(this.chatDestToken);
+      }
       // 调用页也要拿到同一条栈（见 onNavStack 的说明）。与下面同理：它可能在
       // onRouteParams 里直接决定退场，那时它自己的出栈动作得已经有栈可用。
       this.onNavStack(ctx.pathStack);
@@ -249,8 +262,24 @@ export struct HdsSubDestination {
       this.onRouteParams(ctx.pathInfo.param as Object | undefined);
     })
     // 三个转发。默认值是空操作 / 返回 false，见上面 Prop 声明处的说明。
-    .onShown((): void => { this.onShown(); })
-    .onHidden((): void => { this.onHidden(); })
+    .onWillShow((): void => {
+      this.willShowSeen = true;
+      if (this.inChatStack) {
+        markChatDestShown(this.chatDestToken);
+      }
+    })
+    .onShown((): void => {
+      this.willShowSeen = true;
+      if (this.inChatStack) {
+        markChatDestShown(this.chatDestToken);
+      }
+      this.onShown();
+    })
+    .onHidden((): void => {
+      this.willShowSeen = false;
+      markChatDestHidden(this.chatDestToken);
+      this.onHidden();
+    })
     .onBackPressed((): boolean => { return collapseFloatingVideo() || this.onBackPressed(); })
     .width('100%').height('100%')
     .backgroundColor(this.pageBackground);

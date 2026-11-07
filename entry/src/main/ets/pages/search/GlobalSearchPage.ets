@@ -37,6 +37,7 @@ import {
   SearchSession, forgetSearchSession, rememberSearchSession, takeSearchSession
 } from '../../util/searchSession';
 import { SEARCH_DEST_NAME } from '../../util/searchNav';
+import { allocChatDestToken, markChatDestHidden, markChatDestShown } from '../../util/chatDestTracker';
 import { NavStackLike, lastParamOfDest, stackOf } from '../../util/navStacks';
 import { logE, logI } from '../../util/log';
 import { readableContentWidth } from '../../util/contentWidth';
@@ -153,6 +154,7 @@ export function GlobalSearchPageBuilder(): void {
 export struct GlobalSearchPage {
   // 本页在栈里的位置由外壳给（NavDestination 的 onReady），关闭 = 弹自己。
   private navStack: NavPathStack | null = null;
+  private readonly chatDestToken: number = allocChatDestToken();
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -402,6 +404,7 @@ export struct GlobalSearchPage {
   }
 
   aboutToDisappear(): void {
+    markChatDestHidden(this.chatDestToken, true);
     this.traceMessageState('leave');
     // 离页不丢掉已经确认的删除操作，也不把旧动画带到下一次打开。
     this.finishRecentDeleteEffect();
@@ -2978,6 +2981,9 @@ export struct GlobalSearchPage {
     .onReady((context: NavDestinationContext): void => {
       this.navStack = context.pathStack;
     })
+    .onWillShow((): void => { markChatDestShown(this.chatDestToken); })
+    .onShown((): void => { markChatDestShown(this.chatDestToken); })
+    .onHidden((): void => { markChatDestHidden(this.chatDestToken); })
     .width('100%').height('100%')
     .backgroundColor(mainPageFill(this.appWallpaperOn));
   }

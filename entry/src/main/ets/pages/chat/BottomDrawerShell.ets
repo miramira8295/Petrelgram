@@ -20,6 +20,7 @@ export struct BottomDrawerShell {
   @Prop bottomSafe: number;
   @Prop drawerHeight: number = BOTTOM_DRAWER_HEIGHT;
   @Prop shellHeight: number = -1;
+  @Prop topOverlap: number = 0;
   @Prop cardOffsetY: number = 0;
   @Prop cardOpacity: number = 1;
   @Prop imeOverlapRatio: number = 0;
@@ -27,7 +28,7 @@ export struct BottomDrawerShell {
 
   private visibleShellHeight(): number {
     if (this.shellHeight >= 0) {
-      return Math.max(0, this.shellHeight);
+      return this.shellHeight > 0 ? Math.max(0, this.shellHeight + Math.max(0, this.topOverlap)) : 0;
     }
     const full: number = this.drawerHeight + drawerBottomInset(this.bottomSafe);
     const ratio: number = Math.min(1, Math.max(0, this.imeOverlapRatio));
@@ -77,6 +78,7 @@ export struct BottomDrawerShell {
     }
     .width('100%')
     .height(this.visibleShellHeight())
+    .margin({ top: this.shellHeight > 0 && this.topOverlap > 0 ? -this.topOverlap : 0 })
     // **必须裁剪**。背景层内部按整屏尺寸绘制（CachedImage 的 box 是
     // screenW × screenH），限了高度但不裁的话图会溢出到键盘区外面，把输入框
     // 整个盖住——实测就是这样，中间还多出一条颜色对不上的壁纸。

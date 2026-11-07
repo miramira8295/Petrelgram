@@ -4,6 +4,7 @@ import { DirectMessagesTopicRow, DirectMessagesTopicStore } from '../../store/Di
 import { getTdClient } from '../../tdkit/Globals';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
+import { allocChatDestToken, markChatDestHidden, markChatDestShown } from '../../util/chatDestTracker';
 import { formatTime } from '../../util/formatTime';
 import { logE } from '../../util/log';
 import {
@@ -37,6 +38,7 @@ export struct DirectMessagesTopicsPage {
   @State query: string = '';
   @State nowSec: number = Math.floor(Date.now() / 1000);
   private navStack: NavPathStack | undefined = undefined;
+  private readonly chatDestToken: number = allocChatDestToken();
   private navParams: Record<string, Object> | undefined = undefined;
   private paramsApplied: boolean = false;
   private chatId: number = 0;
@@ -52,6 +54,7 @@ export struct DirectMessagesTopicsPage {
   }
 
   aboutToDisappear(): void {
+    markChatDestHidden(this.chatDestToken, true);
     if (this.nowTimer !== -1) {
       clearInterval(this.nowTimer);
       this.nowTimer = -1;
@@ -279,7 +282,9 @@ export struct DirectMessagesTopicsPage {
       this.navParams = context.pathInfo.param as Record<string, Object> | undefined;
       this.applyRouteParams();
     })
+    .onWillShow((): void => { markChatDestShown(this.chatDestToken); })
     .onShown((): void => {
+      markChatDestShown(this.chatDestToken);
       this.armClock();
       this.bindStore();
       this.store?.open(this.chatId);
@@ -287,6 +292,7 @@ export struct DirectMessagesTopicsPage {
         this.store?.refreshTopic(this.openedTopicId);
       }
     })
+    .onHidden((): void => { markChatDestHidden(this.chatDestToken); })
     .width('100%').height('100%');
   }
 }

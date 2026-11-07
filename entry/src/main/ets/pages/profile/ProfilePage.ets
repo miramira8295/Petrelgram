@@ -59,6 +59,8 @@ import {
 } from '../../util/contactAddRequest';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
+import { allocChatDestToken, markChatDestHidden, markChatDestShown } from '../../util/chatDestTracker';
+import { stackOf } from '../../util/navStacks';
 import { logE } from '../../util/log';
 import { MEDIA_GRID_COLS, mediaCellSize as mediaGridCellSize, mediaFallbackContentWidth } from '../../util/mediaGrid';
 import { HdsNavDestination } from '@kit.UIDesignKit';
@@ -118,6 +120,9 @@ export struct ProfilePage {
   // 本页所在的 Navigation 栈，onReady 时拿到。返回按钮靠它出栈——本页已不是
   // router 页，router.back() 弹不到自己。
   private navStack: NavPathStack | undefined = undefined;
+  private readonly chatDestToken: number = allocChatDestToken();
+  private inChatStack: boolean = false;
+  private willShowSeen: boolean = false;
 
   // 路由参数。router 时代靠 router.getParams() 现取，NavDestination 要在
   // onReady 里从 NavDestinationContext 拿，而 onReady 实测晚于 aboutToAppear
@@ -366,6 +371,7 @@ export struct ProfilePage {
   private qrScanner: TelegramQrScanner = new TelegramQrScanner();
 
   aboutToDisappear(): void {
+    markChatDestHidden(this.chatDestToken, true);
     this.qrScanner.cancel();
     this.qrCtrl.close();
     if (this.profileRefreshTimer !== -1) {
@@ -1707,12 +1713,32 @@ export struct ProfilePage {
     .onBackPressed((): boolean => collapseFloatingVideo())
     .onReady((ctx: NavDestinationContext): void => {
       this.navStack = ctx.pathStack;
+      this.inChatStack = (ctx.pathStack as Object) === (stackOf('chat') as Object);
+      if (this.inChatStack && this.willShowSeen) {
+        markChatDestShown(this.chatDestToken);
+      }
       this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;
       // 必须在这里调而不是等 aboutToAppear：实测 onReady 晚于 aboutToAppear。
       this.applyRouteParams();
     })
-    .onShown((): void => { this.handleShown(); })
+    .onWillShow((): void => {
+      this.willShowSeen = true;
+      if (this.inChatStack) {
+        markChatDestShown(this.chatDestToken);
+      }
+    })
+    .onShown((): void => {
+      this.willShowSeen = true;
+      if (this.inChatStack) {
+        markChatDestShown(this.chatDestToken);
+      }
+      this.handleShown();
+    })
     .onWillHide((): void => { this.handleWillHide(); })
+    .onHidden((): void => {
+      this.willShowSeen = false;
+      markChatDestHidden(this.chatDestToken);
+    })
     .width('100%').height('100%');
   }
 }

@@ -58,7 +58,8 @@ function setup() {
     powerAnimationDuration: (_, duration) => duration,
     getCallSession: () => ({ current: () => ({ phase: 'idle' }) }),
     chatListInForeground: () => true,
-    requestChatListFlush: () => {}
+    requestChatListFlush: () => {},
+    isSplitByBreakpoint: (w, _h, force, portrait) => !force && !portrait && w >= 2
   });
   const methods = ['syncDock', 'dockVisible', 'storedNavBarFlag', 'onTabExternallyChanged',
     'aboutToDisappear', 'onAppForegroundChanged'].map(name => method(main, name)).join('\n');
@@ -77,18 +78,27 @@ function setup() {
     miniBarHolder: { dispose() {} }, unsubNowPlaying: null, unsubVoice: null, unsubUnread: null,
     unsubStore: null, unsubCall: null, store: null
   });
+  let chatPage = null;
   const handlers = pages.map(([path], tab) => {
     const source = read(path);
-    const extra = tab === 0 ? method(source, 'applyNavBarVisible') : '';
+    const extra = tab === 0
+      ? ['applyNavBarVisible', 'singleColDetailCoversNavBar', 'onChatDetailShownChanged', 'viewerHidesNavBar']
+          .map(name => method(source, name)).join('\n')
+      : '';
     vm.runInContext(compile(`{ class RootProbe { ${extra}\ncallback() { return ${navCallback(source)}; } }
       globalThis.RootProbe = RootProbe; }`), ctx);
     const page = new ctx.RootProbe();
-    Object.assign(page, { navBarVisible: false, listRenderActive: false,
-      suspendListRendering() {}, flushFolderBadges() {}, resumeListRenderingAfterTransition() {}, closeQr() {} });
+    Object.assign(page, {
+      navBarVisible: false, listRenderActive: false, lastReportedNavBarVisible: false,
+      chatDetailShown: false, chatStack: { size: () => 0 },
+      widthBp: 1, heightBp: 2, forceSingleColumn: false, windowPortrait: true, viewerCoversWindow: false,
+      suspendListRendering() {}, flushFolderBadges() {}, resumeListRenderingAfterTransition() {}, closeQr() {}
+    });
+    if (tab === 0) chatPage = page;
     return page.callback();
   });
   return {
-    dock, frames, handlers,
+    dock, frames, handlers, chatPage,
     mount() { dock.dockActive = true; dock.syncDock(); },
     flush() { let n = 0; while (frames.length) { assert.ok(++n < 50); frames.shift()(); } },
     select(tab) { dock.tab = tab; dock.onTabExternallyChanged(); }
@@ -172,5 +182,17 @@ check('foreground resumes a cancelled reveal and respects detail visibility', ()
   s.handlers[0](false);
   s.dock.appIsForeground = false; s.dock.onAppForegroundChanged();
   s.dock.appIsForeground = true; s.dock.onAppForegroundChanged(); s.flush(); hidden(s.dock);
+});
+check('spurious visible=true on router.back() from GroupAdminPage stays hidden until chatStack empties', () => {
+  const s = setup(); s.mount();
+  let stackDepth = 0;
+  s.chatPage.chatStack = { size: () => stackDepth };
+  s.handlers[0](true); s.flush(); visible(s.dock);
+  stackDepth = 2; s.chatPage.chatDetailShown = true;
+  s.handlers[0](false); s.flush(); hidden(s.dock);
+  s.handlers[0](true); s.flush(); hidden(s.dock);
+  stackDepth = 1; s.chatPage.onChatDetailShownChanged(); s.flush(); hidden(s.dock);
+  stackDepth = 0; s.chatPage.chatDetailShown = false;
+  s.chatPage.onChatDetailShownChanged(); s.flush(); visible(s.dock);
 });
 console.log(`Dock visibility: ${passed} scenarios passed (native callbacks and frame scheduling are simulated).`);

@@ -1,9 +1,24 @@
 import { EMOJI_DRAWER_HEIGHT, drawerBottomInset } from '../../util/drawerMetrics';
+import { COMPOSER_GAP_MIN, COMPOSER_GAP_TIGHT } from '../../util/composerChrome';
 
 export function emojiDrawerHeight(viewport: number, header: number, composer: number,
   bottomSafe: number, expanded: boolean): number {
   const available = Math.max(0, viewport - header - composer - drawerBottomInset(bottomSafe) - 8);
   return expanded ? available : Math.min(EMOJI_DRAWER_HEIGHT, available);
+}
+
+// 抽屉开合期间保持输入框 bottomGap 恒为安全区间距（Math.max(COMPOSER_GAP_MIN, bottomSafe)），
+// 抽屉外壳向上叠入安全区与 COMPOSER_GAP_TIGHT 的差值，避免开合首尾帧发生
+// shellHeight(bottomSafe <-> 0) 与 bottomGap(6 <-> bottomSafe) 的双路跳变。
+export function drawerTopOverlap(bottomSafe: number, closingToIme: boolean = false): number {
+  if (closingToIme) {
+    return 0;
+  }
+  const safeGap: number = Math.max(
+    COMPOSER_GAP_MIN,
+    Math.round(Number.isFinite(bottomSafe) ? Math.max(0, bottomSafe) : 0)
+  );
+  return Math.max(0, safeGap - COMPOSER_GAP_TIGHT);
 }
 
 export function mediaPanelColumns(width: number, kind: string): number {
@@ -29,6 +44,7 @@ export class EmojiDrawerState {
   @Trace fullViewportH: number = 0;
   @Trace curResizeH: number = 0;
   @Trace closingImeToDrawer: boolean = false;
+  @Trace closingToIme: boolean = false;
   @Trace closingExpanded: boolean = false;
   @Trace imeOverlapRatio: number = 0;
   @Trace imeBridgeSlot: string = '';
@@ -45,6 +61,12 @@ export class EmojiDrawerState {
   }
   totalHeight(header: number, bottomSafe: number): number {
     return this.height(header, bottomSafe) + drawerBottomInset(bottomSafe);
+  }
+  topOverlap(bottomSafe: number): number {
+    return drawerTopOverlap(bottomSafe, this.closingToIme);
+  }
+  liftHeight(header: number, bottomSafe: number): number {
+    return Math.max(0, this.totalHeight(header, bottomSafe) - drawerTopOverlap(bottomSafe, false));
   }
   cardHeight(header: number, bottomSafe: number): number {
     if (this.closingExpanded && this.viewport > 0) {
