@@ -61,21 +61,13 @@ let cachedEpoch: number = -1;
 
 let emptyEffect: VisualEffect | null = null;
 
-export function hdsVisualEffect(surface: OverlaySurface, enabled: boolean = true): VisualEffect {
-  if (!enabled) {
-    if (emptyEffect === null) { emptyEffect = new hdsEffect.HdsEffectBuilder().buildEffect(); }
-    return emptyEffect;
+export function hdsVisualEffect(_surface: OverlaySurface, _enabled: boolean = true): VisualEffect {
+  // 聊天页顶栏/置顶条/输入栏/回底键等 6~8 个胶囊若同时挂载 HdsEffectBuilder.pointLight
+  // （既是 3D 点光源发射器又是受光边框），当列表内存在 60fps 动态表情或 30fps 动态头像时，
+  // Rosen 每帧都会在 GPU 上重算多光源距离衰减与边框受光 Shader。
+  // 对齐首页 ChatListPage，统一返回空 VisualEffect，彻底消除聊天页常驻多光源 GPU 开销。
+  if (emptyEffect === null) {
+    emptyEffect = new hdsEffect.HdsEffectBuilder().buildEffect();
   }
-  const epoch: number = AppStorage.get<number>(MATERIAL_EPOCH) ?? 0;
-  if (epoch !== cachedEpoch) {
-    cache.clear();
-    cachedEpoch = epoch;
-  }
-  const hit = cache.get(surface);
-  if (hit !== undefined) {
-    return hit;
-  }
-  const built: VisualEffect = buildEffect(surface);
-  cache.set(surface, built);
-  return built;
+  return emptyEffect;
 }

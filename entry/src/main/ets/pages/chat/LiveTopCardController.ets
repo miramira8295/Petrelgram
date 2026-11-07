@@ -195,7 +195,9 @@ export class LiveTopCardController {
     });
     this.livePulseTimer = setInterval((): void => {
       if (!this.liveCallIsActive || !powerFeatureEnabled(KEY_POWER_PARTICLES)) {
-        this.livePulseExpanded = false;
+        if (this.livePulseExpanded) {
+          this.livePulseExpanded = false;
+        }
         return;
       }
       this.livePulseExpanded = !this.livePulseExpanded;
@@ -204,7 +206,9 @@ export class LiveTopCardController {
     // that resume this cached page after an update was delivered while its
     // subscriptions were inactive.
     this.liveStateRefreshTimer = setInterval((): void => {
-      this.refreshVideoChat();
+      if (this.liveGroupCallId > 0 || this.liveLoadState !== 'ready') {
+        this.refreshVideoChat();
+      }
     }, 2000);
   }
 

@@ -2945,7 +2945,9 @@ export struct GlobalSearchPage {
       Column({ space: 8 }) {
         Text(this.tab === TAB_CHATS ? str('gs_name_scope') :
           (this.channelId !== 0 ? str('gs_channel_scope', this.channelTitle) : str('gs_message_scope')))
-          .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+          .fontSize(12).lineHeight(16).maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .fontColor(COLOR_TEXT_SECONDARY).width('100%');
         Row({ space: 8 }) {
           ForEach(['all', 'user', 'group', 'channel'], (scope: string) => {
             Button(str(scope === 'all' ? 'gs_scope_all' : scope === 'user' ?
@@ -2967,7 +2969,7 @@ export struct GlobalSearchPage {
             }
           }.width('100%');
         }
-      }.padding({ top: 8 }).width('100%');
+      }.padding({ top: 8, bottom: 8 }).width('100%');
     }
   }
 
@@ -2988,9 +2990,15 @@ export struct GlobalSearchPage {
     .backgroundColor(mainPageFill(this.appWallpaperOn));
   }
 
-  // 搜索框(48) + 页签条(40 + 上间距 8) + 顶部安全区与内边距(10)。
+  // 搜索框(48) + 页签条(40 + 上间距 8) + 顶部安全区与内边距(10)，以及有搜索词时的 scopeControls 二级筛选区
+  // （顶底 padding 8+8=16、说明行 16、间距 8、筛选胶囊行 30，共 70vp；选「频道」时多一行 32vp + 间距 8vp = 40vp）。
   private headerHeight(): number {
-    return this.topSafe + 10 + 48 + 8 + 40;
+    const baseH: number = this.topSafe + 10 + 48 + 8 + 40;
+    const hasScope: boolean = this.query.trim() !== '' &&
+      (this.tab === TAB_CHATS || this.tab === TAB_MESSAGES);
+    const extraChannelRow: number =
+      hasScope && this.tab === TAB_MESSAGES && this.messageScope === 'channel' ? 40 : 0;
+    return baseH + (hasScope ? 70 + extraChannelRow : 0);
   }
 
   @Builder

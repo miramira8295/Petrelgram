@@ -74,7 +74,7 @@ export struct ChatComposerInput {
   // 同 composer/commandSuggestion。
   @Require @Param recording: VoiceRecordingState;
   @Param showEmojiPanel: boolean = false;
-  @Param composerEditorReady: boolean = false;
+  @Param composerEditorReady: boolean = true;
   @Param editorFocused: boolean = false;
   @Param keyboardVisible: boolean = false;
   @Local private commandShortcutVisible: boolean = true;
@@ -571,22 +571,6 @@ export struct ChatComposerInput {
             .animation({ duration: this.smoothEffectDuration(120), curve: Curve.EaseOut })
             .onClick((): void => { this.onFinishRecording(); });
           } else {
-            if (this.commandSuggestion.botMenuAvailable && this.commandShortcutVisible) {
-              Row() {
-                Text(this.commandSuggestion.commandMenuOpen ? '×' : '/')
-                  .fontSize(22).fontWeight(FontWeight.Medium).fontColor(this.commandSuggestion.commandMenuOpen ? Color.White : this.chromeIconColor);
-              }
-              .width(32).height(32).justifyContent(FlexAlign.Center)
-              .transition(TransitionEffect.OPACITY.combine(TransitionEffect.scale({ x: 0.8, y: 0.8 })))
-              .accessibilityText(this.commandSuggestion.commandMenuOpen ? str('close') : str('cp_bot_commands'))
-              .borderRadius(15)
-              .stateStyles({
-                normal: this.commandButtonNormalStyle,
-                pressed: this.composerIconPressedStyle
-              })
-              .animation({ duration: this.smoothEffectDuration(120), curve: Curve.EaseOut })
-              .onClick((): void => { this.onToggleBotMenu(); });
-            }
             SymbolGlyph($r(this.showEmojiPanel ? 'sys.symbol.keyboard' : 'sys.symbol.face_smiling'))
               .fontSize(24)
               .fontColor([this.showEmojiPanel ? this.accentColor : this.chromeIconColor])

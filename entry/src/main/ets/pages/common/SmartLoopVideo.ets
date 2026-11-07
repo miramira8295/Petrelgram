@@ -3,11 +3,16 @@ import { WebmStickerView } from '../chat/WebmStickerView';
 import { StickerPoster } from './StickerPoster';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { subscribeChatAnimationGate } from '../../util/chatAnimationGate';
+import { subscribeSenderAnimationPark } from '../../util/senderAnimationPark';
+import { AnimationSlotPool } from '../../util/animationSlotPool';
 import { logW } from '../../util/log';
 
 // One-time probe verdict for VP9/WEBM on the system AVPlayer:
 // 0 = unknown (try AVPlayer), 1 = works, -1 = unsupported (go straight to ijk).
 let avWebmVerdict: number = 0;
+// 会话时间线内自动循环播放的 GIF（AvLoopVideo）并发上限：避免同屏多张 GIF 同时启动多个
+// AVPlayer + TEXTURE XComponent 把 GPU 刷满。滑出视口即让出名额给在屏 GIF。
+const CHAT_GIF_SLOTS: AnimationSlotPool = new AnimationSlotPool(2);
 
 // Looping muted video that prefers the system AVPlayer (hardware decode) and
 // silently falls back to ijkplayer (ffmpeg software VP9) when the system
@@ -38,11 +43,16 @@ export struct SmartLoopVideo {
   // 贴纸抽屉里的格子：订阅抽屉那道闸。只透传给帧序列那支（抽屉里的都是贴纸/表情）。
   @Param panelGated: boolean = false;
   @Local private scrollPaused: boolean = false;
+  @Local private pageParked: boolean = false;
   private unsubGate: (() => void) | null = null;
+  private unsubPark: (() => void) | null = null;
+  private parkTimer: number = -1;
   // 会话里的这一格此刻在不在屏幕上（只在 scrollGated 时跟踪）。屏幕外不播；开闸时也
   // 排在屏幕上的后面（见 util/chatAnimationGate）。初值 false：等第一次可见区回调再起播。
   private onScreen: boolean = false;
   private gateSuspended: boolean = false;
+  private holdsGifSlot: boolean = false;
+  private cancelGifSlotWait: (() => void) | null = null;
   private env: ChatEnvMirror = chatEnv;
   // 透明素材必须走 ijk，见 aboutToAppear。这里的初值只管非透明那一类。
   @Local useIjk: boolean = avWebmVerdict === -1;
@@ -66,6 +76,26 @@ export struct SmartLoopVideo {
         this.syncScrollPaused();
       }, (): boolean => this.onScreen);
     }
+    if (this.scrollGated && this.unsubPark === null) {
+      this.unsubPark = subscribeSenderAnimationPark((parked: boolean): void => {
+        if (this.parkTimer !== -1) {
+          clearTimeout(this.parkTimer);
+          this.parkTimer = -1;
+        }
+        if (parked && this.thumbPath !== '') {
+          // 退场转场第 40ms 错峰切回静态缩略图并提前释放 AVPlayer / ijkplayer，
+          // 避免留到 ~590ms 退场结束帧与整棵 ChatPage 树一起扎堆销毁。
+          this.parkTimer = setTimeout((): void => {
+            this.parkTimer = -1;
+            this.releaseGifSlot();
+            this.pageParked = true;
+          }, 40);
+          return;
+        }
+        this.pageParked = false;
+        this.syncScrollPaused();
+      });
+    }
   }
 
   aboutToDisappear(): void {
@@ -73,6 +103,14 @@ export struct SmartLoopVideo {
     if (this.unsubGate !== null) {
       this.unsubGate();
       this.unsubGate = null;
+    }
+    if (this.unsubPark !== null) {
+      this.unsubPark();
+      this.unsubPark = null;
+    }
+    if (this.parkTimer !== -1) {
+      clearTimeout(this.parkTimer);
+      this.parkTimer = -1;
     }
   }
 
@@ -104,12 +142,52 @@ export struct SmartLoopVideo {
       clearTimeout(this.firstFrameTimer);
       this.firstFrameTimer = -1;
     }
+    this.releaseGifSlot();
     this.videoReady = false;
   }
 
-  // 滑动闸关着、或者这一格在屏幕外：暂停（留住最后一帧，不换缩略图，理由见 scrollGated）。
+  private acquireGifSlotIfNeeded(): void {
+    if (!this.scrollGated || this.useIjk || this.forcePlay || !this.onScreen || this.gateSuspended) {
+      return;
+    }
+    if (this.holdsGifSlot || this.cancelGifSlotWait !== null) {
+      return;
+    }
+    if (CHAT_GIF_SLOTS.tryAcquire()) {
+      this.holdsGifSlot = true;
+      return;
+    }
+    this.cancelGifSlotWait = CHAT_GIF_SLOTS.wait((): void => {
+      this.cancelGifSlotWait = null;
+      if (!this.onScreen || this.useIjk || this.suspended()) {
+        CHAT_GIF_SLOTS.release();
+        return;
+      }
+      this.holdsGifSlot = true;
+      this.syncScrollPaused();
+    });
+  }
+
+  private releaseGifSlot(): void {
+    if (this.cancelGifSlotWait !== null) {
+      this.cancelGifSlotWait();
+      this.cancelGifSlotWait = null;
+    }
+    if (this.holdsGifSlot) {
+      this.holdsGifSlot = false;
+      CHAT_GIF_SLOTS.release();
+    }
+  }
+
+  // 滑动闸关着、或者这一格在屏幕外、或者没拿到并发名额：暂停（留住最后一帧，不换缩略图，理由见 scrollGated）。
   private syncScrollPaused(): void {
-    const next: boolean = this.gateSuspended || !this.onScreen;
+    if (!this.onScreen) {
+      this.releaseGifSlot();
+    } else {
+      this.acquireGifSlotIfNeeded();
+    }
+    const needsSlot: boolean = this.scrollGated && !this.useIjk && !this.forcePlay;
+    const next: boolean = this.gateSuspended || !this.onScreen || (needsSlot && !this.holdsGifSlot);
     if (this.scrollPaused !== next) {
       this.scrollPaused = next;
     }
@@ -143,6 +221,9 @@ export struct SmartLoopVideo {
   }
 
   private suspended(): boolean {
+    if (this.scrollGated && this.pageParked) {
+      return true;
+    }
     if (this.forcePlay) {
       return false;
     }

@@ -1,3 +1,4 @@
+import { componentUtils } from '@kit.ArkUI';
 import { image } from '@kit.ImageKit';
 import { StickerPoster } from '../common/StickerPoster';
 import {
@@ -14,6 +15,7 @@ import {
 } from '../../util/tgsPlayback';
 import { stickerFrameClock } from '../../util/stickerFrameClock';
 import { subscribeAnimationGateFor } from '../../util/stickerPanelGate';
+import { subscribeSenderAnimationPark } from '../../util/senderAnimationPark';
 import { logE, logW } from '../../util/log';
 import { forgetPlayedOnce, markPlayedOnce, playedOnce } from '../../util/stickerPlayedOnce';
 
@@ -21,6 +23,49 @@ import { forgetPlayedOnce, markPlayedOnce, playedOnce } from '../../util/sticker
 // false = 原来的「画完一帧再 setTimeout」。真机上若出问题（比如贴纸停在缩略图不动、
 // 反而更卡），改这一个常量即可回到旧路径。为什么要换，见 util/stickerFrameClock。
 const TGS_USE_DISPLAY_SYNC: boolean = true;
+// 可见期间循环贴纸单实例内存帧缓存上限（覆盖 60fps × 3s = 180 帧全量上限）。
+// 首轮渲染后在同一 Canvas + displaySync 时钟下直接同步复用 PixelMap，
+// 保持原生 60fps 丝滑度的同时省掉第二轮起每帧 NAPI 跨线程与 zlib 解压。
+const TGS_FRAME_CACHE_MAX: number = 180;
+let nextTgsStickerNodeSeq: number = 0;
+const deferredTgsPixelMaps: image.PixelMap[] = [];
+const deferredTgsHandles: number[] = [];
+let deferredTgsCleanupTimer: number = -1;
+
+function scheduleDeferredTgsCleanup(): void {
+  if (deferredTgsCleanupTimer !== -1) {
+    return;
+  }
+  if (deferredTgsPixelMaps.length === 0 && deferredTgsHandles.length === 0) {
+    return;
+  }
+  const hiding: boolean = AppStorage.get<boolean>('chatDetailHiding') === true;
+  const delayMs: number = hiding ? 64 : 16;
+  deferredTgsCleanupTimer = setTimeout((): void => {
+    deferredTgsCleanupTimer = -1;
+    const isStillHiding: boolean = AppStorage.get<boolean>('chatDetailHiding') === true;
+    const batchCount: number = Math.min(isStillHiding ? 8 : 20, deferredTgsPixelMaps.length);
+    for (let i = 0; i < batchCount; i++) {
+      const bmp: image.PixelMap | undefined = deferredTgsPixelMaps.pop();
+      if (bmp !== undefined) {
+        try {
+          bmp.release();
+        } catch (_) {}
+      }
+    }
+    if (!isStillHiding && deferredTgsHandles.length > 0) {
+      const h: number | undefined = deferredTgsHandles.pop();
+      if (h !== undefined && h !== 0) {
+        try {
+          tgsClose(h);
+        } catch (_) {}
+      }
+    }
+    if (deferredTgsPixelMaps.length > 0 || deferredTgsHandles.length > 0) {
+      scheduleDeferredTgsCleanup();
+    }
+  }, delayMs);
+}
 
 // TGS 贴纸的原生渲染（rlottie）。UI 线程只做一件事：把 worker 上渲好的一张
 // PixelMap 画进 Canvas。
@@ -79,6 +124,7 @@ export struct TgsNativeStickerView {
   private canvasReady: boolean = false;
   private visible: boolean = false;
   private chatGateSuspended: boolean = false;
+  private pageParked: boolean = false;
   private disposed: boolean = false;
   private rendering: boolean = false;
   // 同时在动的名额（与 WebM 共用）。只在屏幕上、要开始要帧时才取，滑出屏幕立刻还。
@@ -89,6 +135,8 @@ export struct TgsNativeStickerView {
   private openTicket: TgsRenderTicket | null = null;
   // 换路径/销毁时作废在途的异步渲染——它回来得比下一次打开晚，会把新贴纸盖掉。
   private seq: number = 0;
+  private readonly nodeId: string = `tgs_sticker_${++nextTgsStickerNodeSeq}`;
+  private frameCache: Map<number, image.PixelMap> = new Map<number, image.PixelMap>();
 
   aboutToAppear(): void {
     this.disposed = false;
@@ -103,21 +151,58 @@ export struct TgsNativeStickerView {
         }
       }, (): boolean => this.visible);
     }
+    if (this.chatTimeline) {
+      this.unsubPark = subscribeSenderAnimationPark((parked: boolean): void => {
+        if (this.parkTimer !== -1) {
+          clearTimeout(this.parkTimer);
+          this.parkTimer = -1;
+        }
+        this.pageParked = parked;
+        if (parked) {
+          this.stopPump();
+          // 避开退场起跳第 0 帧，在转场第 28ms（与动态头像 24ms、视频 40ms 错峰）将帧缓存与
+          // rlottie handle 送入异步分帧回收队列；若 28ms 内侧滑取消，句柄与帧缓存无损保留。
+          this.parkTimer = setTimeout((): void => {
+            this.parkTimer = -1;
+            if (!this.pageParked || this.disposed) {
+              return;
+            }
+            this.cancelOpen();
+            this.releaseSlot();
+            this.clearFrameCache();
+            this.close();
+          }, 28);
+        } else {
+          this.maybeStart();
+        }
+      });
+    }
     this.open();
   }
 
   private unsubGate: (() => void) | null = null;
+  private unsubPark: (() => void) | null = null;
+  private parkTimer: number = -1;
 
   aboutToDisappear(): void {
     this.disposed = true;
     this.visible = false;
+    if (this.parkTimer !== -1) {
+      clearTimeout(this.parkTimer);
+      this.parkTimer = -1;
+    }
     this.stopPump();
     this.cancelOpen();
     this.releaseSlot();
+    this.clearFrameCache();
     this.close();
     if (this.unsubGate !== null) {
       this.unsubGate();
       this.unsubGate = null;
+    }
+    if (this.unsubPark !== null) {
+      this.unsubPark();
+      this.unsubPark = null;
     }
   }
 
@@ -161,6 +246,7 @@ export struct TgsNativeStickerView {
     this.stopPump();
     this.cancelOpen();
     this.releaseSlot();
+    this.clearFrameCache();
     this.close();
     this.clearCanvas();
     this.startedAt = 0;
@@ -177,6 +263,7 @@ export struct TgsNativeStickerView {
     this.stopPump();
     this.cancelOpen();
     this.releaseSlot();
+    this.clearFrameCache();
     this.close();
     this.clearCanvas();
     // 新贴纸从第 0 帧起播，不接着上一张的进度。
@@ -245,6 +332,7 @@ export struct TgsNativeStickerView {
       this.stopPump();
       if (tgsPowerSuspended(this.env, this.powerCategory)) {
         this.releaseSlot();   // 省电停播：名额还掉（滑动闸只是暂停，名额留着）
+        this.clearFrameCache();
       }
     } else {
       this.maybeStart();
@@ -253,11 +341,17 @@ export struct TgsNativeStickerView {
 
   private suspended(): boolean {
     return tgsPowerSuspended(this.env, this.powerCategory)
+      || (this.chatTimeline && this.pageParked)
       || ((this.chatTimeline || this.panelGated) && this.chatGateSuspended);
   }
 
+  private effectiveFps(): number {
+    return tgsPlaybackFps(this.sourceFps, this.env.powerSaving, tgsHighRateCategory(this.powerCategory));
+  }
+
   private open(): void {
-    if (this.tgsPath === '' || this.handle !== 0) {
+    if (this.tgsPath === '' || this.handle !== 0 || this.openTicket !== null ||
+      (this.chatTimeline && this.pageParked)) {
       return;
     }
     // vp2px(1) 就是当前屏幕密度；chatEnv 里没有这一项，也不必为它加一项。
@@ -268,11 +362,13 @@ export struct TgsNativeStickerView {
     const source: string | string[] = this.layerPaths.length > 1 ? this.layerPaths.slice() : this.tgsPath;
     this.openedKey = this.sourceKey();
     queueTgsOpenTicketed(source, size, size, ticket).then((outcome: TgsOpenOutcome): void => {
+      this.openTicket = null;
       const info: TgsOpenResult | null = outcome.info;
-      if (this.disposed || token !== this.seq) {
-        // 已经换了路径/下了树：这个 handle 没人要了，立刻还回去。
-        if (info !== null) {
-          tgsClose(info.handle);
+      if (this.disposed || token !== this.seq || (this.chatTimeline && this.pageParked)) {
+        // 已经换了路径/下了树/正在退场：这个 handle 没人要了，送入分帧析构队列归还。
+        if (info !== null && info.handle !== 0) {
+          deferredTgsHandles.push(info.handle);
+          scheduleDeferredTgsCleanup();
         }
         return;
       }
@@ -289,6 +385,7 @@ export struct TgsNativeStickerView {
       this.sourceFps = info.frameRate > 0 ? info.frameRate : 60;
       this.maybeStart();
     }).catch((e: Error): void => {
+      this.openTicket = null;
       if (this.disposed || token !== this.seq) {
         return;   // 换过贴纸：旧的那次失败与新贴纸无关，别让它触发回退
       }
@@ -300,17 +397,51 @@ export struct TgsNativeStickerView {
 
   private close(): void {
     if (this.handle !== 0) {
-      tgsClose(this.handle);
+      deferredTgsHandles.push(this.handle);
       this.handle = 0;
       this.totalFrames = 0;
+      scheduleDeferredTgsCleanup();
+    }
+  }
+
+  private inSafeTimelineViewport(): boolean {
+    if (!this.chatTimeline || !this.painted) {
+      return true;
+    }
+    try {
+      const rect: componentUtils.ComponentInfo =
+        this.getUIContext().getComponentUtils().getRectangleById(this.nodeId);
+      const h: number = px2vp(rect.size.height);
+      if (!(h > 0)) {
+        return true;
+      }
+      const topVp: number = px2vp(rect.windowOffset.y);
+      const bottomVp: number = topVp + h;
+      const bottomLimit: number = this.env.screenHeightVp - this.env.keyboardHeightVp - 76;
+      return topVp >= 104 && bottomVp <= bottomLimit;
+    } catch (_) {
+      return true;
     }
   }
 
   private maybeStart(): void {
+    if (this.disposed || !this.visible || this.suspended()) {
+      return;
+    }
+    if (!this.inSafeTimelineViewport()) {
+      this.stopPump();
+      this.releaseSlot();
+      return;
+    }
+    if (this.handle === 0) {
+      if (!this.failed) {
+        this.open();
+      }
+      return;
+    }
     // `rendering` 也要拦：一帧在途时 timer 是 -1，光看 timer 会让每一次闸门
     // 变化（滚动中很频繁）都再叫起一个 pump，请求速率成倍往上翻。
-    if (this.disposed || this.handle === 0 || !this.canvasReady || !this.visible
-      || this.suspended() || this.timer !== -1 || this.unsubClock !== null || this.rendering) {
+    if (!this.canvasReady || this.timer !== -1 || this.unsubClock !== null || this.rendering) {
       return;
     }
     if (!this.holdsSlot) {
@@ -337,10 +468,9 @@ export struct TgsNativeStickerView {
     this.pump();
   }
 
-  // 挂到共享时钟上。帧率在起播时定：大表情最高 60，其余 30，省电 15。
+  // 挂到共享时钟上。
   private startClock(): void {
-    const fps: number = tgsPlaybackFps(this.sourceFps, this.env.powerSaving,
-      tgsHighRateCategory(this.powerCategory));
+    const fps: number = this.effectiveFps();
     this.lastRequestMs = -1;
     this.unsubClock = stickerFrameClock.subscribe(this.getUIContext(), fps,
       (timestampMs: number, targetMs: number): void => {
@@ -372,6 +502,7 @@ export struct TgsNativeStickerView {
     }
     const elapsed: number = targetMs - this.startedAt;
     const looping: boolean = this.loop && !this.playOnce;
+    const step: number = tgsFrameStep(this.sourceFps, fps);
     if (!looping && tgsFinished(elapsed, this.sourceFps, this.totalFrames)) {
       if (this.lastIndex !== this.totalFrames - 1) {
         // 定格必须是真正的最后一帧：按步长取帧时最后画的可能是倒数第二帧；
@@ -384,8 +515,7 @@ export struct TgsNativeStickerView {
       this.releaseSlot();
       return;   // 定格在最后一帧
     }
-    const index: number = tgsFrameIndexAt(elapsed, this.sourceFps, this.totalFrames, looping,
-      tgsFrameStep(this.sourceFps, fps));
+    const index: number = tgsFrameIndexAt(elapsed, this.sourceFps, this.totalFrames, looping, step);
     this.lastRequestMs = targetMs;
     if (index === this.lastIndex) {
       return;   // 源帧还没前进（源帧率低于时钟），不重复渲同一帧
@@ -418,25 +548,34 @@ export struct TgsNativeStickerView {
     if (this.disposed || this.handle === 0 || this.suspended() || !this.visible || !this.holdsSlot) {
       return;
     }
+    const fps: number = this.effectiveFps();
     if (this.rendering) {
       // 上一帧还没回来（设备忙）：跳过这一拍，不排队堆积。
-      this.timer = setTimeout((): void => { this.pump(); },
-        tgsNextDelayMs(tgsPlaybackFps(this.sourceFps, this.env.powerSaving)));
+      this.timer = setTimeout((): void => { this.pump(); }, tgsNextDelayMs(fps));
       return;
     }
     const elapsed: number = Date.now() - this.startedAt;
     const looping: boolean = this.loop && !this.playOnce;
+    const step: number = tgsFrameStep(this.sourceFps, fps);
     if (!looping && tgsFinished(elapsed, this.sourceFps, this.totalFrames)) {
       this.releaseSlot();
       return;   // 定格在最后一帧
     }
-    const index: number = tgsFrameIndexAt(elapsed, this.sourceFps, this.totalFrames, looping,
-      tgsFrameStep(this.sourceFps, tgsPlaybackFps(this.sourceFps, this.env.powerSaving)));
+    const index: number = tgsFrameIndexAt(elapsed, this.sourceFps, this.totalFrames, looping, step);
     this.renderFrame(index);
   }
 
   // 要一帧并画上。pump（定时器）和 onClockFrame（共享时钟）共用。
   private renderFrame(index: number): void {
+    const cached: image.PixelMap | undefined = this.frameCache.get(index);
+    if (cached !== undefined) {
+      this.drawBitmap(cached);
+      this.lastIndex = index;
+      if (!TGS_USE_DISPLAY_SYNC && !this.suspended() && this.visible && this.holdsSlot) {
+        this.timer = setTimeout((): void => { this.pump(); }, tgsNextDelayMs(this.effectiveFps()));
+      }
+      return;
+    }
     const token: number = this.seq;
     this.rendering = true;
     queueTgsRenderTicketed(this.handle, index, this.currentRenderTicket()).then((result: TgsRenderResult): void => {
@@ -462,8 +601,20 @@ export struct TgsNativeStickerView {
         this.onFailed();
         return;
       }
-      this.draw(frame);
+      const wasPainted: boolean = this.painted;
+      this.drawBitmap(frame);
+      if (this.loop && !this.playOnce && this.visible && !this.disposed
+        && this.frameCache.size < TGS_FRAME_CACHE_MAX && !this.frameCache.has(index)) {
+        this.frameCache.set(index, frame);
+      } else {
+        frame.release();
+      }
       this.lastIndex = index;
+      if (!wasPainted && !this.inSafeTimelineViewport()) {
+        this.stopPump();
+        this.releaseSlot();
+        return;
+      }
       if (TGS_USE_DISPLAY_SYNC) {
         // 时钟模式下不用约下一拍，时钟自己会跳。但若这一帧在途时被暂停又恢复（滚动闸门
         // 很频繁），恢复时的 maybeStart 被 rendering 挡了回去、又没人再订阅时钟——
@@ -472,8 +623,7 @@ export struct TgsNativeStickerView {
         return;
       }
       if (!this.suspended() && this.visible && this.holdsSlot) {
-        this.timer = setTimeout((): void => { this.pump(); },
-          tgsNextDelayMs(tgsPlaybackFps(this.sourceFps, this.env.powerSaving)));
+        this.timer = setTimeout((): void => { this.pump(); }, tgsNextDelayMs(this.effectiveFps()));
       }
     }).catch((e: Error): void => {
       this.rendering = false;
@@ -487,8 +637,7 @@ export struct TgsNativeStickerView {
     });
   }
 
-  // 画完就把这张还掉：每帧都是一张新的 PixelMap，不还就是每秒几 MB 的原生内存。
-  private draw(frame: image.PixelMap): void {
+  private drawBitmap(frame: image.PixelMap): void {
     try {
       this.ctx.clearRect(0, 0, this.boxWidth, this.boxHeight);
       this.ctx.drawImage(frame, 0, 0, this.boxWidth, this.boxHeight);
@@ -496,7 +645,17 @@ export struct TgsNativeStickerView {
     } catch (e) {
       logE(`TgsNativeStickerView draw failed: ${e}`);
     }
-    frame.release();
+  }
+
+  private clearFrameCache(): void {
+    if (this.frameCache.size === 0) {
+      return;
+    }
+    this.frameCache.forEach((bmp: image.PixelMap): void => {
+      deferredTgsPixelMaps.push(bmp);
+    });
+    this.frameCache.clear();
+    scheduleDeferredTgsCleanup();
   }
 
   build() {
@@ -512,6 +671,7 @@ export struct TgsNativeStickerView {
           this.maybeStart();
         });
     }
+    .id(this.nodeId)
     .width(this.boxWidth).height(this.boxHeight)
     .onVisibleAreaChange([0.01], (isVisible: boolean, ratio: number): void => {
       const next: boolean = isVisible && ratio > 0;
@@ -524,6 +684,7 @@ export struct TgsNativeStickerView {
       } else {
         this.stopPump();
         this.releaseSlot();   // 滑出屏幕立刻还名额
+        this.clearFrameCache();
       }
     });
   }

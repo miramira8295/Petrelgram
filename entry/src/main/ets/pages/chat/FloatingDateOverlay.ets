@@ -157,8 +157,8 @@ export struct FloatingDateOverlay {
         // 迁到输入框/顶部浮卡那一套：plainGlassFill + plainBackdropBlur +
         // hdsVisualEffect，档位仍用它原来的 'bar'，厚度偏移照旧生效。
         .backgroundColor(plainGlassFill($r('app.color.surface')))
-        .backdropBlur(this.glassBlur())
-        .visualEffect(hdsVisualEffect('bar'))
+        .backdropBlur(this.state.shown ? this.glassBlur() : 0)
+        .visualEffect(hdsVisualEffect('bar', this.state.shown))
         .border({ width: 0.5, color: $r('app.color.divider') })
         .borderRadius(14)
         .shadow({ radius: 5, color: '#22000000', offsetX: 0, offsetY: 2 })

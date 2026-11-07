@@ -32,7 +32,7 @@ import { ChatListDataSource } from './ChatListDataSource';
 import { ChatListRowKeyCache } from './chatListRowKeys';
 import { guardKey } from '../../util/keyGuard';
 import { HOME_CARD_INSET_VP } from '../../util/listCardGeometry';
-import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, chatListInForeground, chatListPublicationMode, ChatListFreeze, chatOrderUnchanged, contentOnlyUpdate, updateTouchHold } from './ChatListFreeze';
+import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, chatListInForeground, chatListPublicationMode, ChatListFreeze, chatOrderUnchanged, chatRevisionsUnchanged, contentOnlyUpdate, updateTouchHold } from './ChatListFreeze';
 import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_ROW_SWIPE_ACTIONS, powerAnimationDuration
@@ -80,6 +80,8 @@ const ARCHIVE_OVERPULL: number = 96;
 //
 // 原值是「归档行高 × 2」（144vp）——那 144vp 就是重叠暴露的那段窗口。
 const ARCHIVE_COLLAPSE_SCROLL: number = 8;
+const EMPTY_FOLDER_IDS: number[] = [];
+const FLUSH_BYPASS_DEFER_MS: number = 32;
 
 @Preview
 @Component
@@ -177,6 +179,7 @@ export struct MainTabBody {
   // 纯发布闸，不参与绘制：滚动期间只缓存最新会话快照，停下后一次性发布。
   private listMoving: boolean = false;
   private scrollSettleTimer: number = -1;
+  private flushBypassTimer: number = -1;
   private archiveRefreshPending: boolean = false;
 
   private updateScrollActivity(state: ScrollState): void {
@@ -298,6 +301,10 @@ export struct MainTabBody {
   private onRenderGateChanged(): void {
     // 闸开了就关窗：往后走正常路（含重排动画），不再需要旁路。
     if (this.renderActive) {
+      if (this.flushBypassTimer !== -1) {
+        clearTimeout(this.flushBypassTimer);
+        this.flushBypassTimer = -1;
+      }
       this.flushBypass = false;
     }
     this.flushBufferedChats();
@@ -316,6 +323,25 @@ export struct MainTabBody {
       return;
     }
     this.flushBypass = true;
+    if (!this.updatesActive) {
+      return;
+    }
+    if (AppStorage.get<boolean>('chatDetailHiding') === true) {
+      if (this.flushBypassTimer !== -1) {
+        clearTimeout(this.flushBypassTimer);
+      }
+      this.flushBypassTimer = setTimeout((): void => {
+        this.flushBypassTimer = -1;
+        if (!chatListInForeground() || this.menuOpen || this.renderActive || !this.flushBypass) {
+          return;
+        }
+        this.listSubscription?.refresh();
+        if (!this.listMoving) {
+          this.drainContentOnly();
+        }
+      }, FLUSH_BYPASS_DEFER_MS);
+      return;
+    }
     this.listSubscription?.refresh();
     if (!this.listMoving) {
       this.drainContentOnly();
@@ -339,7 +365,9 @@ export struct MainTabBody {
       return;
     }
     if (chatOrderUnchanged(this.chats, next)) {
-      this.publishChats(next);
+      if (!chatRevisionsUnchanged(this.chats, next)) {
+        this.publishChats(next);
+      }
       return;
     }
     const merged: ChatEntry[] | null = contentOnlyUpdate(this.chats, next);
@@ -389,6 +417,10 @@ export struct MainTabBody {
       clearTimeout(this.scrollSettleTimer);
       this.scrollSettleTimer = -1;
     }
+    if (this.flushBypassTimer !== -1) {
+      clearTimeout(this.flushBypassTimer);
+      this.flushBypassTimer = -1;
+    }
     this.listMoving = false;
     this.archiveRefreshPending = false;
     this.listSubscription?.close();
@@ -421,13 +453,18 @@ export struct MainTabBody {
   private flagsFor(items: ChatEntry[]): ChatRowFlags[] {
     const store = getChatStore();
     const folderIds: number[] = this.folderTagsEnabled
-      ? getFolderStore().getFolders().map((f: FolderInfo): number => f.id) : [];
+      ? getFolderStore().getFolders().map((f: FolderInfo): number => f.id) : EMPTY_FOLDER_IDS;
     const flags: ChatRowFlags[] = [];
     for (const item of items) {
-      const inFolders: number[] = [];
-      for (const folderId of folderIds) {
-        if (store.isInFolder(folderId, item.id)) {
-          inFolders.push(folderId);
+      let inFolders: number[] = EMPTY_FOLDER_IDS;
+      if (folderIds.length > 0) {
+        for (const folderId of folderIds) {
+          if (store.isInFolder(folderId, item.id)) {
+            if (inFolders === EMPTY_FOLDER_IDS) {
+              inFolders = [];
+            }
+            inFolders.push(folderId);
+          }
         }
       }
       flags.push({

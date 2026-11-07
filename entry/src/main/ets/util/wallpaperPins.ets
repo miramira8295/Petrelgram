@@ -22,10 +22,11 @@ import { PixelHandle, pinPixelMap, unpinPixelMap } from './pixelCache';
 //   · entry 级 gen + 组件级 pinGen 双代次，旧定时器/旧异步不会动到新一轮引用；
 //   · 处于等待释放（owners 为空）的 entry 有上限，超出按排队时间最旧立即松钉，
 //     避免快速换壁纸/拖滑杆时无限累积。
-const RELEASE_GRACE_MS: number = 2000;
+const RELEASE_GRACE_MS: number = 300000;
 // 处于「等宽限期」状态的 entry 上限（按张数与字节双限）。
+// 整屏 RGBA 壁纸约 14.22MiB，32MiB 可同时容下 APP 背景与聊天背景共 2 张常驻命中。
 const MAX_PARKED: number = 2;
-const PARKED_BYTES_CAP: number = 16 * 1024 * 1024;
+const PARKED_BYTES_CAP: number = 32 * 1024 * 1024;
 
 class PinEntry {
   handle: PixelHandle;
