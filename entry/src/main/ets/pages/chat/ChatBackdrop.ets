@@ -8,10 +8,12 @@ import {
 import { KEY_APP_BG_ON, KEY_FORCE_SINGLE_COLUMN } from '../../store/AppSettings';
 import { KEY_SPLIT_UNIFIED_BG } from '../../util/localWallpaper';
 import { CachedImage } from '../common/CachedImage';
-import { cachedPixelMap } from '../../util/pixelCache';
+import { cachedPixelMap, loadPixelMap, PixelHandle, PixelRequest } from '../../util/pixelCache';
+import { releaseAllWallpaperPins, releaseWallpaperPin, retainWallpaperPin } from '../../util/wallpaperPins';
 import {
   BackgroundRasterParams, backgroundBlurRadius, BLUR_OVERSCAN_SCALE, cachedRaster, combineDimming,
-  NO_BLUR_RADIUS, patternOpacity, rasterSignature, rasterizeBackground, wallpaperTakesUserDim
+  NO_BLUR_RADIUS, patternOpacity, rasterSignature, rasterizeBackground, retainRaster, releaseRaster,
+  sweepChatbgCacheSoon, wallpaperTakesUserDim
 } from '../../util/chatBackgroundRaster';
 import { PatternTileLayer } from './PatternTileLayer';
 import { gradientStops } from '../../util/backgroundPresentation';
@@ -20,6 +22,10 @@ import {
 } from '../../store/AppSettings';
 import { KEY_APP_DARK } from '../../util/theme';
 import { publishChatContentWidth } from '../../util/chatContentWidth';
+import { logI } from '../../util/log';
+
+// 每层背景一个稳定 owner id：同一张像素被多层/多页共享时各自记账，退出只还自己那份。
+let backdropPinSeq: number = 0;
 
 // 聊天页的整层背景：壁纸 / 图案 / 渐变、深色遮罩。
 //
@@ -44,6 +50,12 @@ export struct ChatBackdrop {
   // 分栏 + 统一背景时，聊天页不再画自己的壁纸（否则会把整窗那张盖掉）。
   // 只有聊天页这一处传 true；AppBackdrop 用同一个组件画 APP 壁纸，那处保持 false。
   @Prop isChatSlot: boolean = false;
+  // 页面级激活态：由 ChatPage 的 NavDestination.onShown / onHidden 驱动。
+  //
+  // 为什么还要这一路：onVisibleAreaChange 能覆盖"被另一层盖住"，但分栏退回列表时
+  // 右栏依旧算在可见组合里，回调不报 ratio=0（真机实测），于是聊天层那张整屏光栅
+  // 会一直钉着。这一路直接把"这一页现在是否真的在屏上"告诉背景层。
+  @Prop @Watch('onActiveChanged') active: boolean = true;
   @StorageProp(KEY_SPLIT_UNIFIED_BG) private unifiedBg: boolean = true;
   @StorageProp(KEY_APP_BG_ON) private appBgOn: boolean = false;
   @StorageProp(KEY_WIDTH_BREAKPOINT) private widthBp: number = 1;
@@ -59,10 +71,24 @@ export struct ChatBackdrop {
   }
 
   private suppressedByUnifiedBg(): boolean {
+    // 【2026-11-05 真机实测：这条链是坏的，先停用】
+    //
+    // 原设计：分栏 + 统一背景 + APP 壁纸开启时，把聊天页这一层整个藏掉
+    // （build() 末尾 opacity(0)），让挂在 MainScreen 上的 APP 壁纸透上来，两栏共用一张。
+    //
+    // 平板实测日志：`[Backdrop] branch suppressed=true split=true unified=true appBgOn=true
+    // path=set pattern=true colors=4 raster=set shown=true` —— 背景解析、图案解压、
+    // 光栅生成、CachedImage 解码（`cachedReady shown=true`）全都成功，**只有整层被藏掉**。
+    // 而 APP 壁纸只铺在左栏，聊天列底下没有垫东西，于是聊天页永远白屏（用户报的正是这个）。
+    // 手机不分栏，`isSplitByBreakpoint` 为 false，本来就走不到这里，故本改动对手机零影响。
+    //
+    // 恢复条件：APP 壁纸层改挂到窗口根、真正铺满两栏之后，再把下面这几行放回来。
+    //   if (!this.isChatSlot || !this.unifiedBg || !this.appBgOn) { return false; }
+    //   return isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingle, this.portrait);
     if (!this.isChatSlot || !this.unifiedBg || !this.appBgOn) {
       return false;
     }
-    return isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingle, this.portrait);
+    return false;
   }
 
   @Prop @Watch('onParamsChanged') chatBg: ChatBackgroundState;
@@ -107,16 +133,45 @@ export struct ChatBackdrop {
   @Prop @Watch('onParamsChanged') chatDim: number = 0;
   @State private rasterPath: string = '';
   private rasterTimer: number = -1;
+  // 本层在像素缓存里钉住的整屏光栅句柄。退出时只还自己这一份引用；
+  // 同一槽位（bg:app / bg:chat）只留一张，切换时旧的排 2 秒宽限期释放。
+  private pinHandle: PixelHandle | undefined = undefined;
+  // 组件是否还活着：异步解码回来时用它判断还要不要钉。
+  private pinAlive: boolean = false;
+  // 本层在 pin 记账里的 owner id（退场时只摘自己这一份）。
+  private pinOwner: string = '';
+  // 当前 pin 对应的 pixelCache key（路径 + 像素尺寸）；尺寸变了要重钉。
+  private pinKey: string = '';
+  // 组件级代次：异步解码回来时比对，旧一轮的 then 不许动新一轮的引用。
+  private pinGen: number = 0;
+  // 白屏定位用：只在"分支组合"变化时打一条，避免每帧刷屏。确认修复后删掉。
+  private diagLast: string = '';
 
   aboutToAppear(): void {
+    this.pinAlive = true;
+    this.pinOwner = 'bd#' + (++backdropPinSeq);
+    this.diagDump();
     this.syncRaster();
   }
 
   aboutToDisappear(): void {
+    this.pinAlive = false;
     if (this.rasterTimer !== -1) {
       clearTimeout(this.rasterTimer);
       this.rasterTimer = -1;
     }
+    // 页面不在了就不再保护这张文件；文件本身仍在（最近 12 张保留），
+    // 下次进来照样命中，只是允许清扫在超额时淘汰它。
+    if (this.rasterPath !== '') {
+      releaseRaster(this.rasterPath);
+    }
+    // 只放掉本层这一份引用：同一张图若还被别的层（分栏另一栏、主屏 APP 层）持有，
+    // 记账里仍有 owner，最后一个人离开才进 2 秒宽限期；宽限期内切回来即取消释放，
+    // 不必重解码。pinGen 自增让所有挂起中的解码回调作废。
+    this.pinGen++;
+    this.dropPin();
+    releaseAllWallpaperPins(this.pinOwner);
+    sweepChatbgCacheSoon(this.cacheDir());
   }
 
   // 背景状态、屏幕尺寸、模糊度、图案浓度、深浅主题——任何一个变了，合成图都
@@ -127,6 +182,7 @@ export struct ChatBackdrop {
   // 拿到的是种子默认背景——真背景到达后光栅永不重算，轻则缓存全废、每次进
   // 会话都走实时分层绘制，重则一直停在默认背景的旧缓存图上，显示错壁纸。
   private onParamsChanged(): void {
+    this.diagDump();
     if (this.screenH > 0 && this.areaH > this.screenH) {
       this.areaH = this.screenH;
     }
@@ -178,6 +234,9 @@ export struct ChatBackdrop {
   }
 
   private syncRaster(): void {
+    logI(`[Backdrop] sync path='${this.chatBg.path}' pattern=${this.chatBg.isPattern}` +
+      ` colors=${this.chatBg.colors.length} blur=${this.bgBlur} raster='${this.rasterPath}'` +
+      ` shown=${this.rasterShown} layer=${this.layerW()}x${this.layerH()}`);
     // 「跟随系统」（没有颜色也没有文件）不走光栅：底色是 $r('app.color.chat_bg')，
     // 离屏合成时按**那一刻**的深浅色取值，而签名里没有深浅色——深色下烘出的那张
     // 会被亮色模式原样命中，整页变黑（2026-09-27 真机）。一层纯色本来也不值得光栅。
@@ -237,7 +296,127 @@ export struct ChatBackdrop {
       // 壁纸保留完整色深；预查格式必须与下面 CachedImage 一致。
       opaque: false
     }) !== undefined;
+    // 引用登记：清扫按 mtime 淘汰，正在显示的这一张必须被保护，
+    // 否则换壁纸后立刻清扫就可能把它删掉、返回列表再进来又要重烘。
+    if (this.rasterPath !== '' && this.rasterPath !== next) {
+      releaseRaster(this.rasterPath);
+    }
     this.rasterPath = next;
+    if (next !== '') {
+      retainRaster(next);
+    }
+    // 像素缓存槽位：先把旧的那张排队释放（2 秒宽限期，期间切回来会作废），
+    // 再把新图钉住。请求参数必须与上面的同步预查、下面的 CachedImage 逐位一致，
+    // 否则拿到的是另一把 key，钉住的和显示的不是同一张。
+    this.dropPin();
+    if (next !== '') {
+      this.pinForSlot(next);
+    }
+    logI(`[Backdrop] setRaster next='${next}' shown=${this.rasterShown}`);
+  }
+
+  // 把当前这张光栅登记到本层名下。命中缓存直接登记；没命中就先解码再登记——
+  // 这里主动 loadPixelMap 与 CachedImage 内部走同一个 key，后者会命中同一个句柄，
+  // 不会重复解码。
+  private pinForSlot(path: string): void {
+    // 布局尺寸还没量到时不钉：layerW/H 这时回落到窗口尺寸，会先钉一张"错尺寸"的
+    // 光栅，紧接着 onSizeChange 又要换真尺寸。真机实测那会多出一条 parked 条目，
+    // 还会被 parked cap 挤出刚被复用那一张。等 onSizeChange → syncPin 一步到位。
+    if (this.areaW <= 0) {
+      return;
+    }
+    const req: PixelRequest = {
+      path: path,
+      width: vp2px(this.layerW()),
+      height: vp2px(this.layerH()),
+      opaque: false
+    };
+    const hit: PixelHandle | undefined = cachedPixelMap(req);
+    if (hit !== undefined) {
+      this.applyPin(hit, req);
+      return;
+    }
+    const gen: number = this.pinGen;
+    loadPixelMap(req).then((handle: PixelHandle | undefined): void => {
+      // 解码回来时这一层可能已经换图/换尺寸/销毁了：只有同一轮请求才登记。
+      if (handle === undefined || !this.pinAlive || gen !== this.pinGen) {
+        return;
+      }
+      if (this.rasterPath !== path) {
+        return;
+      }
+      this.applyPin(handle, req);
+    }).catch((): void => {
+      // 解码失败就走实时分层兜底，不登记即可。
+    });
+  }
+
+  // pixelCache 的 key 口径（util/pixelCacheKey.ets）：路径 + 四舍五入后的像素尺寸。
+  // 这里只需要"尺寸变没变"，不必拼 opaque。
+  private pinKeyOf(req: PixelRequest): string {
+    return `${req.path}@${Math.round(req.width)}x${Math.round(req.height)}`;
+  }
+
+  // 记下本层持有这一份像素。重复登记同一 key 直接早退；
+  // 换图/换尺寸时先把旧的还掉，再登记新的。
+  private applyPin(handle: PixelHandle, req: PixelRequest): void {
+    const key: string = this.pinKeyOf(req);
+    if (this.pinHandle === handle && this.pinKey === key) {
+      return;
+    }
+    this.dropPin();
+    this.pinHandle = handle;
+    this.pinKey = key;
+    retainWallpaperPin(handle, this.pinOwner);
+  }
+
+  // 还掉本层这一份引用；真正松钉发生在最后一个 owner 离开后的 2 秒宽限期。
+  private dropPin(): void {
+    if (this.pinHandle !== undefined) {
+      releaseWallpaperPin(this.pinHandle, this.pinOwner);
+      this.pinHandle = undefined;
+    }
+    this.pinKey = '';
+  }
+
+  // 尺寸变化（首帧 onSizeChange、分栏拖动、旋转）后 pixelCache key 会变：
+  // 必须重钉，否则钉住的是旧尺寸的位图，新尺寸那份没有任何 LRU 保护。
+  private syncPin(): void {
+    if (this.rasterPath === '' || !this.pinAlive) {
+      return;
+    }
+    const want: string = `${this.rasterPath}@${Math.round(vp2px(this.layerW()))}x${Math.round(vp2px(this.layerH()))}`;
+    if (want === this.pinKey) {
+      return;
+    }
+    this.pinForSlot(this.rasterPath);
+  }
+
+  // 页面被盖住（回列表 / 切到别的 tab / 分栏另一焦点）时，可见比例会掉到 0。
+  // 这时把本层这份 pin 还掉，让位给真正在显示的那一层；重新可见时再登记回来。
+  // 2 秒宽限期保证"划一下立刻回来"不会重解码。
+  // 页面显示/隐藏（NavDestination 层给的强信号）。释放同样走 2 秒宽限期：
+  // 退列表后立刻回来时 dropPin 只是把 owner 摘掉，宽限期内重新 retain 即取消释放。
+  private onActiveChanged(): void {
+    if (this.active) {
+      if (this.rasterPath !== '' && this.pinAlive) {
+        this.pinForSlot(this.rasterPath);
+      }
+      return;
+    }
+    this.pinGen++;
+    this.dropPin();
+  }
+
+  private onVisibleChanged(isVisible: boolean, ratio: number): void {
+    if (!isVisible || ratio <= 0) {
+      this.pinGen++;
+      this.dropPin();
+      return;
+    }
+    if (this.rasterPath !== '' && this.pinAlive) {
+      this.pinForSlot(this.rasterPath);
+    }
   }
 
   // 深色下的用户遮罩。它会与服务端下发的 dark_theme_dimming 合并并烘进最终
@@ -258,6 +437,22 @@ export struct ChatBackdrop {
     // The layered fallback has not baked the user's mask. Remove this node
     // only after the matching cached image has actually decoded on screen.
     return this.canBakeDarkMask() && this.rasterShown ? 0 : opacity;
+  }
+
+  // 白屏定位：把「走哪一支」的全部判据串成一行。任何一个变化才打，平静时不出日志。
+  private diagDump(): void {
+    const split: boolean = isSplitByBreakpoint(
+      this.widthBp, this.heightBp, this.forceSingle, this.portrait);
+    const line: string = `suppressed=${this.suppressedByUnifiedBg()} split=${split}`
+      + ` unified=${this.unifiedBg} appBgOn=${this.appBgOn}`
+      + ` path=${this.chatBg.path === '' ? 'empty' : 'set'}`
+      + ` pattern=${this.chatBg.isPattern} colors=${this.chatBg.colors.length}`
+      + ` raster=${this.rasterPath === '' ? 'none' : 'set'} shown=${this.rasterShown}`
+      + ` layer=${this.layerW()}x${this.layerH()}`;
+    if (line !== this.diagLast) {
+      this.diagLast = line;
+      logI(`[Backdrop] branch ${line}`);
+    }
   }
 
   @Builder
@@ -332,11 +527,17 @@ export struct ChatBackdrop {
           boxHeight: this.layerH(),
           radius: 0,
           fit: ImageFit.Cover,
-          pin: true,
+          // 不再用 spec.pin 的永久 pin：整屏光栅的 pin 由 util/wallpaperPins 按槽位
+          // 管理（切换/退出后 2 秒释放，重进可取消）。这里保持普通引用即可，
+          // 组件销毁时 CachedImage 自己会还掉这一份。
+          pin: false,
           // 渐变壁纸不能降到 RGB_565，否则会出现明显色带（#232 / #234）。
           // 与 setRasterPath 的缓存预查保持同一格式，继续复用整屏位图。
           opaque: false
-        }, onReady: (): void => { this.rasterShown = true; } });
+        }, onReady: (): void => {
+          this.rasterShown = true;
+          logI('[Backdrop] cachedReady shown=true');
+        } });
       }
     }
     .width('100%').height('100%')
@@ -374,10 +575,16 @@ export struct ChatBackdrop {
         // Choose a source large enough for the widest media bubble in this
         // column; the pixel cache still decodes to each row's exact box size.
         if (w > 0) { setInlinePhotoTargetPx(vp2px(mediaThumbWidth(w, 0))); }
+        // 尺寸变了 pixelCache key 也变：把 pin 跟到新尺寸上（同尺寸则不动作）。
+        this.syncPin();
       })
       // 平铺网格会向上取整到整数块并被 Stack 居中，通常四边都略微超出视口——
       // 裁回去，而不是让它把布局顶开。
-      .clip(true);
+      .clip(true)
+      // 可见性变化驱动 pin 的持/放：被盖住就还、露出来就再登记。
+      .onVisibleAreaChange([0.0, 1.0], (isVisible: boolean, currentRatio: number): void => {
+        this.onVisibleChanged(isVisible, currentRatio);
+      });
   }
 
   build() {

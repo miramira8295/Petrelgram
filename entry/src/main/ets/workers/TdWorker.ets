@@ -12,6 +12,11 @@ import { worker, ThreadWorkerGlobalScope, MessageEvents } from '@kit.ArkTS';
 import testNapi from 'libentry.so';
 import { coalesceKeyOf } from '../tdkit/tdUpdateFilter';
 import { TdIngestBatch, BatchTimerFns } from '../tdkit/tdIngestBatch';
+import { ChatListOrder, OrderSnapshot } from '../store/chatListOrder';
+import { listKeyOf } from '../store/ListKey';
+import { TdObject } from '../tdkit/TdTypes';
+import { ChatEntry } from '../store/ChatEntry';
+import { buildChatEntry } from '../store/chatEntryFactory';
 
 const scope: ThreadWorkerGlobalScope = worker.workerPort;
 
@@ -29,6 +34,8 @@ interface TdWorkerCommand {
   kind: string;
   json?: string;
   request?: object;
+  // init 时带上来的本地化文案（预览里的"照片""语音"等）。
+  labels?: Record<string, string>;
 }
 
 interface TdWorkerEvent {
@@ -36,6 +43,10 @@ interface TdWorkerEvent {
   payload?: object;
   // kind==='batch' 时的整批（批内顺序 = 到达顺序）。
   items?: object[];
+  // kind==='order' 时的排序快照（第二层 B2，影子索引对账用）。
+  lists?: OrderSnapshot[];
+  // kind==='chatEntry' 时由本线程构建的会话实体（第二层 B4b 影子）。
+  entries?: ChatEntry[];
   head?: string;
 }
 
@@ -71,7 +82,12 @@ function flushCoalesced(): void {
 }
 
 function deliver(obj: object): void {
-  const key: string = coalesceKeyOf(obj as Record<string, Object>);
+  const record = obj as Record<string, Object>;
+  // 影子索引：先按到达顺序喂一遍，再走投递（投递可能被合并/批处理推迟，
+  // 而位置语义必须按到达顺序落地）。
+  trackOrder(record);
+  trackChatEntry(record);
+  const key: string = coalesceKeyOf(record);
   if (key === '') {
     // 直通事件发出前先冲积压：与不可交换事件的相对顺序必须保持。
     flushCoalesced();
@@ -95,6 +111,308 @@ function deliver(obj: object): void {
   }
 }
 
+// ── 第二层 B2：影子排序索引 ────────────────────────────────────────────────
+//
+// 用同一份更新流在 worker 里再排一遍。**它现在只用于对账**：UI 侧拿自己的
+// 序列和它对，逐项不一致就打日志、切权威的事留到下一批。这样即使影子错了，
+// 用户看到的仍是 UI 的排序。
+//
+// 三个入口与 ChatStore 完全对齐：updateNewChat（chat.positions）、
+// updateChatLastMessage（positions）、updateChatPosition（position）。
+// 顺序 = 更新到达顺序；去重与置顶分段规则由 ChatListOrder 保证（同一份代码）。
+const knownChats: Set<number> = new Set<number>();
+const orderIndex: ChatListOrder = new ChatListOrder((id: number): boolean => knownChats.has(id));
+const orderDirty: Set<string> = new Set<string>();
+let orderTimer: number = -1;
+// 每 200ms 把脏列表发一次。**快照不要求"恰好一致"**：UI 侧的位置更新会被
+// 行级配对事务压到 320ms 之后才落，任何时刻比对都天然会看到"worker 新、
+// UI 旧"。真正的判据在 UI 侧：只在它自己安静下来之后才比对（见
+// ChatStore.compareWorkerOrder）。
+const ORDER_POST_MS: number = 200;
+
+function applyPositionOf(chatId: number, position: Record<string, Object>): void {
+  const list = position['list'] as Record<string, Object> | undefined;
+  if (list === undefined) {
+    return;
+  }
+  const key: string = listKeyOf(list as TdObject);
+  if (key === '') {
+    return;
+  }
+  const order: string = (position['order'] as string | undefined) ?? '0';
+  const isPinned: boolean = (position['is_pinned'] as boolean | undefined) ?? false;
+  orderIndex.apply(key, chatId, order, isPinned);
+  orderDirty.add(key);
+  if (orderTimer === -1) {
+    orderTimer = setTimeout((): void => {
+      orderTimer = -1;
+      flushOrder();
+    }, ORDER_POST_MS);
+  }
+}
+
+function flushOrder(): void {
+  if (orderDirty.size === 0) {
+    return;
+  }
+  const lists: OrderSnapshot[] = [];
+  orderDirty.forEach((key: string): void => {
+    const ids: number[] = orderIndex.orderedIds(key).slice();
+    const pinned: number[] = [];
+    for (const id of ids) {
+      if (orderIndex.isPinned(key, id)) {
+        pinned.push(id);
+      }
+    }
+    lists.push({ key, ids, pinned });
+  });
+  orderDirty.clear();
+  const event: TdWorkerEvent = { kind: 'order', lists: lists };
+  postSafe(event);
+}
+
+function trackOrder(obj: Record<string, Object>): void {
+  const type: string | undefined = obj['@type'] as string | undefined;
+  if (type === 'updateNewChat') {
+    const chat = obj['chat'] as Record<string, Object> | undefined;
+    if (chat === undefined) {
+      return;
+    }
+    const id = chat['id'] as number | undefined;
+    if (id === undefined) {
+      return;
+    }
+    knownChats.add(id);
+    const positions = chat['positions'] as object[] | undefined;
+    if (positions !== undefined) {
+      for (const p of positions) {
+        applyPositionOf(id, p as Record<string, Object>);
+      }
+    }
+    return;
+  }
+  if (type === 'updateChatLastMessage') {
+    const id = obj['chat_id'] as number | undefined;
+    const positions = obj['positions'] as object[] | undefined;
+    if (id === undefined || positions === undefined) {
+      return;
+    }
+    for (const p of positions) {
+      applyPositionOf(id, p as Record<string, Object>);
+    }
+    return;
+  }
+  if (type === 'updateChatPosition') {
+    const id = obj['chat_id'] as number | undefined;
+    const position = obj['position'] as Record<string, Object> | undefined;
+    if (id === undefined || position === undefined) {
+      return;
+    }
+    applyPositionOf(id, position);
+  }
+}
+
+// ── 第二层 B4b：影子实体 ────────────────────────────────────────────────────
+//
+// 用 updateNewChat 的完整 chat 对象在本线程构建 ChatEntry（同一份
+// chatEntryFactory），发回 UI 逐字段对账。**不切权威**：UI 仍按自己的路径建库，
+// 这里只证明「工厂能在 worker 里跑，且算出来的字段与 UI 一致」。
+//
+// 已知的对不上的字段（本批不比）：lastSenderName（要 UserStore）、avatarPath
+// （UI 侧异步解析）、typingText（UI 侧暂存事务）、isLive/isRtmpLive（来自通话
+// 状态）、revision（各自口径）。
+const shadowEntries: Map<number, ChatEntry> = new Map<number, ChatEntry>();
+// worker 侧保留每个会话的**原始 chat 对象**，增量更新先打补丁再重建实体。
+// 这样字段规则只有 chatEntryFactory 一份，没有第二套"逐字段赋值"要维护。
+const shadowChats: Map<number, TdObject> = new Map<number, TdObject>();
+const entryDirty: Set<number> = new Set<number>();
+let entryTimer: number = -1;
+const ENTRY_POST_MS: number = 200;
+let shadowSelfId: number = 0;
+// 预览文案的译文表：UI 在 init 时同步过来。没同步到就退回 key 本身——
+// 宁可显示一个 key，也不要显示空白。
+const previewLabels: Map<string, string> = new Map<string, string>();
+
+// 资源里的占位符是 %1$s / %1$d（不是 %s）：worker 得自己替换，见
+// base/element/string.json 的 preview_* 条目。
+function fillLabel(pattern: string, arg: string | number): string {
+  return pattern.replace('%1$s', `${arg}`).replace('%1$d', `${arg}`)
+    .replace('%s', `${arg}`).replace('%d', `${arg}`);
+}
+
+function labelOf(key: string, arg?: string | number): string {
+  const base: string | undefined = previewLabels.get(key);
+  if (base === undefined) {
+    return key;
+  }
+  return arg === undefined ? base : fillLabel(base, arg);
+}
+
+function flushEntries(): void {
+  if (entryDirty.size === 0) {
+    return;
+  }
+  const entries: ChatEntry[] = [];
+  entryDirty.forEach((id: number): void => {
+    const entry = shadowEntries.get(id);
+    if (entry !== undefined) {
+      entries.push(entry);
+    }
+  });
+  entryDirty.clear();
+  const event: TdWorkerEvent = { kind: 'chatEntry', entries: entries };
+  postSafe(event);
+}
+
+// 增量 update → chat 对象上的补丁。返回补丁后的新对象；null = 这条 update
+// 不在这条链上。
+//
+// 【为什么每次拷一份】ArkTS 不允许 delete，而 TdObject 装不下 null——"最后一条
+// 消息没了"只能靠**去掉这个键**表达。拷贝只在有更新的那次发生，代价可接受。
+function patchChat(obj: Record<string, Object>, base: TdObject): TdObject | null {
+  const type: string | undefined = obj['@type'] as string | undefined;
+  // "最后一条消息没了"（删除/清空会话）在 TDLib 里是 last_message 缺省。
+  // ArkTS 不允许 delete，所以拷贝时直接跳过这个键——保留旧值会让 worker 的
+  // 预览停在删掉的那条上（真机上正是这批 diff 的来源）。
+  const dropLastMessage: boolean = type === 'updateChatLastMessage' && obj['last_message'] === undefined;
+  const chat: TdObject = {};
+  for (const key of Object.keys(base)) {
+    if (dropLastMessage && key === 'last_message') {
+      continue;
+    }
+    chat[key] = base[key];
+  }
+  if (type === 'updateChatLastMessage') {
+    const lastMessage: Object | undefined = obj['last_message'];
+    // TDLib 用空值表示"这条消息没了"：拷贝时就不带这个键，工厂按缺省当 null。
+    if (lastMessage !== undefined) {
+      chat['last_message'] = lastMessage;
+    }
+    const positions = obj['positions'];
+    if (positions !== undefined) {
+      chat['positions'] = positions;
+    }
+    return chat;
+  }
+  if (type === 'updateChatReadInbox') {
+    chat['last_read_inbox_message_id'] = obj['last_read_inbox_message_id'];
+    chat['unread_count'] = obj['unread_count'];
+    return chat;
+  }
+  if (type === 'updateChatReadOutbox') {
+    chat['last_read_outbox_message_id'] = obj['last_read_outbox_message_id'];
+    return chat;
+  }
+  if (type === 'updateChatTitle') {
+    chat['title'] = obj['title'];
+    return chat;
+  }
+  if (type === 'updateChatPhoto') {
+    chat['photo'] = obj['photo'];
+    return chat;
+  }
+  if (type === 'updateChatNotificationSettings') {
+    chat['notification_settings'] = obj['notification_settings'];
+    return chat;
+  }
+  if (type === 'updateChatMessageAutoDeleteTime') {
+    chat['message_auto_delete_time'] = obj['message_auto_delete_time'];
+    return chat;
+  }
+  if (type === 'updateChatIsMarkedAsUnread') {
+    chat['is_marked_as_unread'] = obj['is_marked_as_unread'];
+    return chat;
+  }
+  if (type === 'updateChatUnreadMentionCount' || type === 'updateMessageMentionRead') {
+    // 两个 update 都只带 unread_mention_count，语义都是"这个会话的提及数变了"。
+    chat['unread_mention_count'] = obj['unread_mention_count'];
+    return chat;
+  }
+  if (type === 'updateChatActionBar') {
+    chat['action_bar'] = obj['action_bar'];
+    return chat;
+  }
+  if (type === 'updateChatTheme') {
+    chat['theme_name'] = obj['theme_name'];
+    return chat;
+  }
+  if (type === 'updateChatVideoChat') {
+    chat['video_chat'] = obj['video_chat'];
+    return chat;
+  }
+  if (type === 'updateChatBackground') {
+    chat['background'] = obj['background'];
+    return chat;
+  }
+  return null;
+}
+
+function rebuildShadowEntry(id: number): void {
+  const chat = shadowChats.get(id);
+  if (chat === undefined) {
+    return;
+  }
+  const entry: ChatEntry = buildChatEntry({
+    chat,
+    previous: shadowEntries.get(id),
+    selfId: shadowSelfId,
+    // 本批还没有 worker 侧用户表：这一列不参与对账。
+    senderName: (_message: TdObject | undefined): string => '',
+    label: labelOf
+  });
+  shadowEntries.set(id, entry);
+  entryDirty.add(id);
+  if (entryTimer === -1) {
+    entryTimer = setTimeout((): void => {
+      entryTimer = -1;
+      flushEntries();
+    }, ENTRY_POST_MS);
+  }
+}
+
+function trackChatEntry(obj: Record<string, Object>): void {
+  const type: string | undefined = obj['@type'] as string | undefined;
+  if (type === 'updateOption') {
+    if (((obj['name'] as string | undefined) ?? '') === 'my_id') {
+      const value = obj['value'] as Record<string, Object> | undefined;
+      const raw = value !== undefined ? value['value'] : undefined;
+      const id: number = typeof raw === 'number' ? raw as number : Number(`${raw ?? 0}`);
+      if (Number.isFinite(id) && id > 0) {
+        shadowSelfId = id;
+      }
+    }
+    return;
+  }
+  if (type === 'updateNewChat') {
+    const chat = obj['chat'] as TdObject | undefined;
+    if (chat === undefined) {
+      return;
+    }
+    const id = chat['id'] as number | undefined;
+    if (id === undefined) {
+      return;
+    }
+    shadowChats.set(id, chat);
+    rebuildShadowEntry(id);
+    return;
+  }
+  // 其余类型是增量：先给保存的 chat 打补丁，再用同一份工厂重建实体。
+  const chatId = obj['chat_id'] as number | undefined;
+  if (chatId === undefined) {
+    return;
+  }
+  const chat = shadowChats.get(chatId);
+  if (chat === undefined) {
+    // 没见过完整对象：UI 侧同样不会凭空建出会话，等 updateNewChat。
+    return;
+  }
+  const patched: TdObject | null = patchChat(obj, chat);
+  if (patched !== null) {
+    shadowChats.set(chatId, patched);
+    rebuildShadowEntry(chatId);
+  }
+}
+
 scope.onmessage = (e: MessageEvents): void => {
   const msg = e.data as TdWorkerCommand;
   // td* 的 native 实现在 g_created 翻转窗口会抛 JS 异常（"tdSend before
@@ -112,8 +430,22 @@ scope.onmessage = (e: MessageEvents): void => {
 function handleCommand(msg: TdWorkerCommand): void {
   if (msg.kind === 'init') {
     // 账号切换会重发 init：清掉上一个运行时的积压（合并缓冲与待发批次）。
+    previewLabels.clear();
+    const labels = msg.labels;
+    if (labels !== undefined) {
+      for (const key of Object.keys(labels)) {
+        previewLabels.set(key, labels[key]);
+      }
+    }
     pendingCoalesced.clear();
     batch.reset();
+    // 新运行时：影子索引整体作废，等新一轮 updateNewChat 重建。
+    knownChats.clear();
+    orderIndex.clear();
+    orderDirty.clear();
+    shadowEntries.clear();
+    entryDirty.clear();
+    shadowSelfId = 0;
     testNapi.tdInit((json: string): void => {
       let obj: object | null = null;
       try {

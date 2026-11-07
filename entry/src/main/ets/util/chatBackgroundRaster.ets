@@ -2,7 +2,7 @@ import { image } from '@kit.ImageKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { ComponentContent, UIContext } from '@kit.ArkUI';
 import { gradientStops } from './backgroundPresentation';
-import { logE } from './log';
+import { logE, logI } from './log';
 
 // Flatten the chat background into one opaque JPEG, once per (background, size).
 //
@@ -246,13 +246,14 @@ export function cachedRaster(sig: string, cacheDir: string = ''): string {
     return '';
   }
   const dest = rasterPathFor(sig, cacheDir);
-  try {
-    if (fileIo.accessSync(dest)) {
-      rasterCache.set(sig, dest);
-      return dest;
-    }
-  } catch (e) {
-    // 盘上没有或不可读都当作未命中，重新合成即可。
+  // 只判存在不够：TRUNC 写入失败留下的 0 字节/半截文件也"存在"，会被永久命中成空图。
+  // rasterUsable 会校验 JPEG 完整性，坏文件当场删掉并让本次走重新合成。
+  const usable: boolean = rasterUsable(dest);
+  // 冷启动第一次查盘时顺手清一次历史垃圾（残留 .tmp、坏图、超额旧图）。
+  scheduleSweep(cacheDir);
+  if (usable) {
+    rasterCache.set(sig, dest);
+    return dest;
   }
   return '';
 }
@@ -347,15 +348,28 @@ export async function rasterizeBackground(
       .createFromComponent(node, SNAPSHOT_DELAY_MS, true,
         { scale: 1, waitUntilRenderFinished: true });
     const dest = rasterPathFor(sig, cacheDir);
+    // 不再直接 TRUNC 正式文件：先写 .tmp，校验完整后再提交。
+    // 这样正式名字下只会出现内容完整的图；写入失败/进程被杀只留下 .tmp 残留，
+    // 由 sweepChatbgCache 清理，绝不会被 cachedRaster 命中。
+    const tmp: string = dest + CHATBG_TMP_SUFFIX;
     packer = image.createImagePacker();
-    const file = await fileIo.open(dest,
-      fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+    rasterWriting.add(dest);
     try {
       // Awaited before the PixelMap is released — releasing during an in-flight
       // encode crashes the process.
-      await packer.packToFile(pixelMap, file.fd, { format: 'image/jpeg', quality: 96 });
-    } finally {
-      await fileIo.close(file);
+      await writeRasterTmp(packer, pixelMap, tmp);
+    } catch (e) {
+      rasterWriting.delete(dest);
+      try {
+        fileIo.unlinkSync(tmp);
+      } catch (e2) {
+        // 没有残留就算了。
+      }
+      throw e as Error;
+    }
+    rasterWriting.delete(dest);
+    if (!publishRaster(tmp, dest, cacheDir)) {
+      return '';
     }
     rasterCache.set(sig, dest);
     return dest;
@@ -371,4 +385,458 @@ export async function rasterizeBackground(
       pixelMap.release();
     }
   }
+}
+
+
+// ── 图案预览的离屏光栅（设置页 WallpaperPreview 专用） ──────────────────────
+//
+// 和上面 rasterizeBackground 不是重复实现，两者的烘焙范围与失效条件都不一样：
+//   · 这张只烘「图案本体」，不烘渐变、不烘蒙层 → 透明底 PNG，滑杆调浓度/模糊/
+//     遮罩时位图不用重建，也就不会在拖动时反复重烘；
+//   · 签名只含 path 与预览尺寸：图案本身没有深浅色，深浅两个槽位可以共享同一张；
+//   · 用 PNG 无损：图案是矢量线稿 + 细星点，JPEG 的量化噪声会在边缘糊出一圈。
+//
+// 起因（真机 trace 2026-11-06）：聊天槽进入帧 177–179ms，其中 105ms 是
+// `RSModifierManager Draw num:[180]` 里 10 条 `RSModifier::Draw` 各约 10ms ——
+// PatternTileLayer 的 10 张 pattern.tgv.svg 每张都要在绘制时重新栅格化一次。
+// 烘成一张位图后这块只剩一次 blit。
+
+export interface PatternRasterParams {
+  path: string;
+  width: number;   // vp，与 PatternTileLayer 的 screenW 一致
+  height: number;  // vp
+}
+
+// 只留最近几套：预览一次只显示一个背景，缓存跟着「最近用过的图案」走。
+// 32 个图案全留会堆出上百 MB 的贴图，收益只有第二次点同一个图案。
+const PATTERN_CACHE_MAX: number = 3;
+const patternRasterCache: Map<string, string> = new Map();
+const patternOrder: string[] = [];
+const patternInFlight: Set<string> = new Set();
+
+export function patternRasterSignature(p: PatternRasterParams): string {
+  return `pat_v1_${p.path}_${Math.round(p.width)}x${Math.round(p.height)}`;
+}
+
+function patternRasterPathFor(sig: string, cacheDir: string): string {
+  return `${cacheDir}/chatpat_${sig.replace(/[^A-Za-z0-9_-]/g, '')}.png`;
+}
+
+function rememberPatternRaster(sig: string, dest: string): void {
+  patternRasterCache.set(sig, dest);
+  const at: number = patternOrder.indexOf(sig);
+  if (at >= 0) {
+    patternOrder.splice(at, 1);
+  }
+  patternOrder.push(sig);
+  while (patternOrder.length > PATTERN_CACHE_MAX) {
+    const evicted: string = patternOrder[0];
+    patternOrder.splice(0, 1);
+    const gone: string | undefined = patternRasterCache.get(evicted);
+    patternRasterCache.delete(evicted);
+    if (gone !== undefined) {
+      try {
+        fileIo.unlinkSync(gone);
+      } catch (e) {
+        // 盘上已经没有（被系统清过 cache）就算了。
+      }
+    }
+  }
+}
+
+// 与 cachedRaster 同构：先查进程内，再查磁盘（冷启动也要能命中上一次烘的那张）。
+export function cachedPatternRaster(sig: string, cacheDir: string = ''): string {
+  const known = patternRasterCache.get(sig);
+  if (known !== undefined) {
+    return known;
+  }
+  if (cacheDir === '') {
+    return '';
+  }
+  const dest = patternRasterPathFor(sig, cacheDir);
+  try {
+    if (fileIo.accessSync(dest)) {
+      rememberPatternRaster(sig, dest);
+      return dest;
+    }
+  } catch (e) {
+    // 未命中，重新烘。
+  }
+  return '';
+}
+
+// 透明底：只在画布上铺图案网格，不铺渐变、不铺蒙层。
+@Builder
+function patternOnlyLayer(p: PatternRasterParams) {
+  Stack() {
+    patternTileGridLayer(p.path, 1, patternTileGrid(p.width, p.height), NO_BLUR_RADIUS);
+  }
+  .width(p.width).height(p.height)
+  .clip(true);
+}
+
+// 失败一律返回 ''，调用方回落到实时 PatternTileLayer —— 这是加速，不是前提。
+export async function rasterizePattern(
+  ui: UIContext, p: PatternRasterParams, cacheDir: string
+): Promise<string> {
+  const sig = patternRasterSignature(p);
+  const hit = patternRasterCache.get(sig);
+  if (hit !== undefined) {
+    return hit;
+  }
+  if (p.path === '' || p.width <= 0 || p.height <= 0 || patternInFlight.has(sig)) {
+    return '';
+  }
+  patternInFlight.add(sig);
+  let pixelMap: image.PixelMap | undefined = undefined;
+  let packer: image.ImagePacker | undefined = undefined;
+  try {
+    // 与 rasterizeBackground 同样的三个前提：ComponentContent + wrapBuilder（全局
+    // @Builder 在组件上下文外调用会抛 observeComponentCreation2）、留出时间让 SVG
+    // 加载完、scale 1 保持 1:1 像素（放大既浪费又容易直接失败）。
+    const node: ComponentContent<PatternRasterParams> =
+      new ComponentContent(ui, wrapBuilder(patternOnlyLayer), p);
+    pixelMap = await ui.getComponentSnapshot()
+      .createFromComponent(node, SNAPSHOT_DELAY_MS, true,
+        { scale: 1, waitUntilRenderFinished: true });
+    const dest = patternRasterPathFor(sig, cacheDir);
+    packer = image.createImagePacker();
+    const file = await fileIo.open(dest,
+      fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+    try {
+      // 先编码完再 release PixelMap，边编码边释放会把进程送掉。
+      await packer.packToFile(pixelMap, file.fd, { format: 'image/png', quality: 100 });
+    } finally {
+      await fileIo.close(file);
+    }
+    rememberPatternRaster(sig, dest);
+    logI(`[PatternRaster] baked ${sig}`);
+    return dest;
+  } catch (e) {
+    logE(`rasterizePattern failed: ${e}`);
+    return '';
+  } finally {
+    patternInFlight.delete(sig);
+    if (packer !== undefined) {
+      packer.release();
+    }
+    if (pixelMap !== undefined) {
+      pixelMap.release();
+    }
+  }
+}
+
+// ── 背景 JPEG 缓存的磁盘生命周期 ─────────────────────────────────────────
+//
+// 为什么单独一节：快照编码原来直接以 TRUNC 打开正式文件再写。TRUNC 已经在 open
+// 时把文件清零，packToFile 若中途失败（PixelMap 提前释放、编码器报错、进程被杀），
+// 盘上就留下一张 0 字节或半截的 chatbg_*.jpg；而 cachedRaster 原来只做 accessSync
+// （只判存在、不看内容），于是这张坏文件会被永久命中，CachedImage 解不出图 ——
+// 壁纸消失且再也不会自愈。
+//
+// 本节把两件事变成不变量：
+//   1) 正式文件名下只会出现「完整的 JPEG」（.tmp → 校验 → 提交）；
+//   2) 回收只按 mtime 淘汰最旧，且绝不碰正在使用/正在写入的文件。
+const CHATBG_PREFIX: string = 'chatbg_';
+const CHATBG_SUFFIX: string = '.jpg';
+const CHATBG_TMP_SUFFIX: string = '.tmp';
+// 近 12 张有效缓存 ≈ 15–20MB（实测单张 1.45–1.74MB @1318x866）。
+// 用户就在这些壁纸之间来回切，删早了每次都要重烘 320ms。
+const CHATBG_KEEP_COUNT: number = 12;
+const CHATBG_KEEP_BYTES: number = 24 * 1024 * 1024;
+// 正常写入几秒内就会 rename 掉临时文件；活过 10 分钟的 .tmp 一律是异常退出的残留。
+const CHATBG_STALE_TMP_MS: number = 10 * 60 * 1000;
+const CHATBG_SWEEP_DEBOUNCE_MS: number = 1000;
+
+// path -> 引用计数。谁在显示这一张，谁就 retain；页面下树 release。
+const rasterRefs: Map<string, number> = new Map();
+// 正在写（.tmp 已建、还没提交）的正式路径。清扫绝对不能碰它。
+const rasterWriting: Set<string> = new Set();
+const rasterSweepAt: Map<string, number> = new Map();
+
+export function retainRaster(path: string): void {
+  if (path === '') {
+    return;
+  }
+  rasterRefs.set(path, (rasterRefs.get(path) ?? 0) + 1);
+}
+
+export function releaseRaster(path: string): void {
+  if (path === '') {
+    return;
+  }
+  const n: number = rasterRefs.get(path) ?? 0;
+  if (n <= 1) {
+    rasterRefs.delete(path);
+  } else {
+    rasterRefs.set(path, n - 1);
+  }
+}
+
+// 磁盘文件被删后，进程内 sig -> path 的映射必须一起失效，
+// 否则下一次会命中一个已经不存在的路径（Image 空白）。
+function purgeRasterCachePath(path: string): void {
+  const stale: string[] = [];
+  for (const sig of rasterCache.keys()) {
+    if (rasterCache.get(sig) === path) {
+      stale.push(sig);
+    }
+  }
+  for (const sig of stale) {
+    rasterCache.delete(sig);
+  }
+}
+
+// size>0 只是弱闸门：被截断的 JPEG 依然非空。再查 SOI(FFD8)/EOI(FFD9) 两端，
+// 才能把「编码写到一半」和「完整图」区分开（SDK 对 packToFile 失败后 fd 里
+// 剩下多少字节没有任何书面保证，只能靠内容自证）。
+function rasterLooksCompleteJpeg(path: string): boolean {
+  let file: fileIo.File | undefined = undefined;
+  try {
+    const st: fileIo.Stat = fileIo.statSync(path);
+    if (st.isDirectory() || st.size < 4) {
+      return false;
+    }
+    file = fileIo.openSync(path, fileIo.OpenMode.READ_ONLY);
+    const head: ArrayBuffer = new ArrayBuffer(2);
+    fileIo.readSync(file.fd, head, { offset: 0, length: 2 });
+    const tail: ArrayBuffer = new ArrayBuffer(2);
+    fileIo.readSync(file.fd, tail, { offset: st.size - 2, length: 2 });
+    const h: Uint8Array = new Uint8Array(head);
+    const t: Uint8Array = new Uint8Array(tail);
+    return h[0] === 0xFF && h[1] === 0xD8 && t[0] === 0xFF && t[1] === 0xD9;
+  } catch (e) {
+    return false;
+  } finally {
+    if (file !== undefined) {
+      try {
+        fileIo.closeSync(file);
+      } catch (e) {
+        // ignore
+      }
+    }
+  }
+}
+
+function rasterDrop(path: string, why: string): void {
+  try {
+    fileIo.unlinkSync(path);
+    purgeRasterCachePath(path);
+    logE(`[bgcache] drop ${why} path=${path}`);
+  } catch (e) {
+    // 删不掉（可能被别处占着）就只保证本次不命中。
+  }
+}
+
+// 命中前的完整性校验：只认「存在且是完整 JPEG」。坏文件当场删掉，
+// 让调用方走重新合成，而不是把一张坏图当成有效缓存永久复用。
+function rasterUsable(path: string): boolean {
+  try {
+    const st: fileIo.Stat = fileIo.statSync(path);
+    if (st.isDirectory() || st.size <= 0) {
+      rasterDrop(path, `size=${st.size}`);
+      return false;
+    }
+    if (!rasterLooksCompleteJpeg(path)) {
+      rasterDrop(path, `incomplete jpeg size=${st.size}`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// 正式提交：只有内容已经完整落在 .tmp 里才调用。
+// 三级兜底 —— SDK 对 renameSync 覆盖已存在文件没有书面保证（只列了
+// 13900015 File exists 这一个可能错误码），moveFileSync(mode=0) 才是 fs 里
+// 文档明说「覆盖同名文件」的 API，最后才退到「先删目标再 rename」。
+// 回滚性质：任何失败都只删 .tmp、不碰 dest，所以 dest 要么是旧的完整图，
+// 要么不存在 —— 永远不会出现半截的正式文件。
+function commitRaster(tmp: string, dest: string): void {
+  try {
+    fileIo.renameSync(tmp, dest);
+    return;
+  } catch (e) {
+    logI(`[bgcache] rename failed, try moveFileSync: ${e}`);
+  }
+  try {
+    fileIo.moveFileSync(tmp, dest, 0);
+    return;
+  } catch (e2) {
+    logI(`[bgcache] moveFileSync failed, unlink then rename: ${e2}`);
+  }
+  try {
+    fileIo.unlinkSync(dest);
+  } catch (e3) {
+    // 目标本来就不存在。
+  }
+  fileIo.renameSync(tmp, dest);
+}
+
+interface CachedRasterFile {
+  path: string;
+  size: number;
+  mtime: number;
+}
+
+// 同步清扫：删残留 .tmp、删 0 字节/半截坏图、把数量与占用压到上限以内。
+// 保护规则：正被页面引用（rasterRefs）、正在写入（rasterWriting）一律不删；
+// 其余按 mtime 从旧到新淘汰。chatpat_*.png 由图案预览自己的 LRU 管，这里不越界。
+export function sweepChatbgCache(cacheDir: string): void {
+  if (cacheDir === '') {
+    return;
+  }
+  let names: string[] = [];
+  try {
+    // listFileSync 返回的是「文件名」（非递归），不含目录前缀，所以要自己拼。
+    names = fileIo.listFileSync(cacheDir);
+  } catch (e) {
+    logE(`[bgcache] list fail: ${e}`);
+    return;
+  }
+  const now: number = Date.now();
+  const kept: CachedRasterFile[] = [];
+  let dropped: number = 0;
+  for (const name of names) {
+    const full: string = `${cacheDir}/${name}`;
+    if (name.endsWith(CHATBG_TMP_SUFFIX)) {
+      const dest: string = full.substring(0, full.length - CHATBG_TMP_SUFFIX.length);
+      if (rasterWriting.has(dest)) {
+        continue;
+      }
+      let stale: boolean = true;
+      try {
+        // Stat.mtime 单位是秒（SDK: "number of seconds elapsed since ..."）。
+        stale = now - fileIo.statSync(full).mtime * 1000 > CHATBG_STALE_TMP_MS;
+      } catch (e) {
+        stale = true;
+      }
+      if (stale) {
+        try {
+          fileIo.unlinkSync(full);
+          dropped++;
+        } catch (e) {
+          // 已经没了。
+        }
+      }
+      continue;
+    }
+    if (!name.startsWith(CHATBG_PREFIX) || !name.endsWith(CHATBG_SUFFIX)) {
+      continue;
+    }
+    let size: number = 0;
+    let mtime: number = 0;
+    try {
+      const st: fileIo.Stat = fileIo.statSync(full);
+      size = st.size;
+      mtime = st.mtime;
+    } catch (e) {
+      continue;
+    }
+    if (size <= 0 || !rasterLooksCompleteJpeg(full)) {
+      rasterDrop(full, `corrupt size=${size}`);
+      dropped++;
+      continue;
+    }
+    kept.push({ path: full, size, mtime });
+  }
+  kept.sort((a: CachedRasterFile, b: CachedRasterFile): number => b.mtime - a.mtime);
+  let bytes: number = 0;
+  for (let i = 0; i < kept.length; i++) {
+    const f: CachedRasterFile = kept[i];
+    bytes += f.size;
+    const pinned: boolean = (rasterRefs.get(f.path) ?? 0) > 0 || rasterWriting.has(f.path);
+    if (pinned) {
+      continue;
+    }
+    if (i < CHATBG_KEEP_COUNT && bytes <= CHATBG_KEEP_BYTES) {
+      continue;
+    }
+    try {
+      fileIo.unlinkSync(f.path);
+      purgeRasterCachePath(f.path);
+      dropped++;
+    } catch (e) {
+      // 删不掉就下次再说。
+    }
+  }
+  if (dropped > 0) {
+    logI(`[bgcache] sweep dropped=${dropped} valid=${kept.length} bytes=${bytes} dir=${cacheDir}`);
+  }
+}
+
+// 冷启动首次查盘与每次写入成功后各触发一次；节流合并，且延后到交互稳定后再跑，
+// 避免在主题切换/滑杆拖动/列表滚动关键帧上做目录 I/O。
+function scheduleSweep(cacheDir: string): void {
+  if (cacheDir === '') {
+    return;
+  }
+  const now: number = Date.now();
+  const last: number = rasterSweepAt.get(cacheDir) ?? 0;
+  if (now - last < CHATBG_SWEEP_DEBOUNCE_MS) {
+    return;
+  }
+  rasterSweepAt.set(cacheDir, now);
+  setTimeout((): void => {
+    try {
+      sweepChatbgCache(cacheDir);
+    } catch (e) {
+      logE(`[bgcache] sweep fail: ${e}`);
+    }
+  }, CHATBG_SWEEP_DEBOUNCE_MS);
+}
+
+export function sweepChatbgCacheSoon(cacheDir: string): void {
+  scheduleSweep(cacheDir);
+}
+
+// 写 .tmp 的公共实现。调用方负责在失败时清理 .tmp。
+async function writeRasterTmp(
+  packer: image.ImagePacker, pixelMap: image.PixelMap, tmp: string
+): Promise<void> {
+  const file: fileIo.File = await fileIo.open(tmp,
+    fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+  try {
+    // 等编码完成再释放 PixelMap —— 编码中释放会崩进程（历史坑）。
+    await packer.packToFile(pixelMap, file.fd, { format: 'image/jpeg', quality: 96 });
+    try {
+      fileIo.fsyncSync(file.fd);
+    } catch (e) {
+      // 老版本可能没有；close 也会刷。
+    }
+  } finally {
+    await fileIo.close(file);
+  }
+}
+
+// 供 rasterizeBackground 调用：把已经编码好的 .tmp 提交成正式缓存。
+export function publishRaster(tmp: string, dest: string, cacheDir: string): boolean {
+  try {
+    const st: fileIo.Stat = fileIo.statSync(tmp);
+    if (st.size <= 0 || !rasterLooksCompleteJpeg(tmp)) {
+      logE(`[bgcache] refuse incomplete tmp size=${st.size}`);
+      try {
+        fileIo.unlinkSync(tmp);
+      } catch (e) {
+        // ignore
+      }
+      return false;
+    }
+  } catch (e) {
+    return false;
+  }
+  try {
+    commitRaster(tmp, dest);
+  } catch (e) {
+    logE(`[bgcache] commit fail: ${e}`);
+    try {
+      fileIo.unlinkSync(tmp);
+    } catch (e2) {
+      // ignore
+    }
+    return false;
+  }
+  scheduleSweep(cacheDir);
+  return true;
 }

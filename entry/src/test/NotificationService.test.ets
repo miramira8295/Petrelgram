@@ -3,6 +3,7 @@ import { TdClient } from '../main/ets/tdkit/TdClient';
 import { TdObject, TdBridge } from '../main/ets/tdkit/TdTypes';
 import { UserStore } from '../main/ets/store/UserStore';
 import { ChatStore } from '../main/ets/store/ChatStore';
+import { buildChatEntry } from '../main/ets/store/chatEntryFactory';
 import { CallSession } from '../main/ets/services/CallSession';
 import { FileService } from '../main/ets/services/FileService';
 import { NullCallMedia } from '../main/ets/services/CallMediaBridge';
@@ -43,6 +44,7 @@ interface Env {
   publisher: FakePublisher;
   service: NotificationService;
   foreground: boolean;
+  chats: ChatStore;
 }
 
 function setup(): Env {
@@ -51,7 +53,7 @@ function setup(): Env {
   const users = new UserStore(c);
   const chats = new ChatStore(c, users);
   const publisher = new FakePublisher();
-  const env: Env = { bridge: b, publisher: publisher, service: null!, foreground: false };
+  const env: Env = { bridge: b, publisher: publisher, service: null!, foreground: false, chats };
   env.service = new NotificationService(c, chats, publisher, (): boolean => env.foreground);
   c.start();
   // 提供会话标题
@@ -62,6 +64,10 @@ function setup(): Env {
   chat['unread_count'] = 0;
   const newChat: TdObject = { '@type': 'updateNewChat' };
   newChat['chat'] = chat;
+  // 实体只来自 worker 投递（V1 的生产已删）：直接播种一份。
+  chats.ingestForTest([buildChatEntry({ chat, previous: undefined, selfId: 0,
+    senderName: (_m: TdObject | undefined): string => '' })],
+    [{ key: 'main', ids: [5], pinned: [] }]);
   b.onReceive(JSON.stringify(newChat));
   return env;
 }
@@ -116,6 +122,7 @@ interface GroupEnv {
   publisher: FakePublisher;
   service: NotificationService;
   foreground: boolean;
+  chats: ChatStore;
 }
 
 // 群会话 + 挂上发信人来源。setup() 的会话没有 type，chatKindOf 判为 private，
@@ -127,7 +134,7 @@ function setupGroup(): GroupEnv {
   const chats = new ChatStore(c, users);
   const files = new FileService(c, chats);
   const publisher = new FakePublisher();
-  const env: GroupEnv = { bridge: b, publisher: publisher, service: null!, foreground: false };
+  const env: GroupEnv = { bridge: b, publisher: publisher, service: null!, foreground: false, chats };
   env.service = new NotificationService(c, chats, publisher, (): boolean => env.foreground);
   env.service.attachSenderSources(users, files);
   c.start();
@@ -141,6 +148,10 @@ function setupGroup(): GroupEnv {
   chat['unread_count'] = 0;
   const newChat: TdObject = { '@type': 'updateNewChat' };
   newChat['chat'] = chat;
+  // 实体只来自 worker 投递（V1 的生产已删）：直接播种一份。
+  chats.ingestForTest([buildChatEntry({ chat, previous: undefined, selfId: 0,
+    senderName: (_m: TdObject | undefined): string => '' })],
+    [{ key: 'main', ids: [5], pinned: [] }]);
   b.onReceive(JSON.stringify(newChat));
   return env;
 }
@@ -235,6 +246,9 @@ export default function notificationServiceTest() {
       const upd: TdObject = { '@type': 'updateNewChat' };
       upd['chat'] = bare;
       env.bridge.onReceive(JSON.stringify(upd));
+      // 实体由 worker 投递：播种"点进去过"的那一份，但**不加入任何列表**。
+      env.chats.ingestForTest([buildChatEntry({ chat: bare, previous: undefined, selfId: 0,
+        senderName: (_m: TdObject | undefined): string => '' })]);
 
       feedNewMessage(env.bridge, 6, 4194304, '晚上开会', false);
       expect(env.publisher.published.length).assertEqual(0);

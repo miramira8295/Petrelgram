@@ -4,7 +4,9 @@ import { TdObject, TdBridge } from '../main/ets/tdkit/TdTypes';
 import { UserStore } from '../main/ets/store/UserStore';
 import { ChatStore } from '../main/ets/store/ChatStore';
 import { ChatEntry } from '../main/ets/store/ChatEntry';
+import { buildChatEntry } from '../main/ets/store/chatEntryFactory';
 import { FileService } from '../main/ets/services/FileService';
+import { cloneEntry } from '../main/ets/store/ChatEntry';
 import { avatarFilePathFor, resetAvatarFileChannelForTest } from '../main/ets/util/avatarFileChannel';
 
 class FakeBridge implements TdBridge {
@@ -24,7 +26,7 @@ function pushCompletedFile(bridge: FakeBridge, fileId: number, path: string): vo
   bridge.onReceive(JSON.stringify(u));
 }
 
-function seedChat(bridge: FakeBridge, id: number, photoFileId: number = 0,
+function seedChat(store: ChatStore, bridge: FakeBridge, id: number, photoFileId: number = 0,
   listType: string = 'chatListMain'): void {
   const list: TdObject = { '@type': listType };
   if (listType === 'chatListFolder') { list['chat_folder_id'] = 9; }
@@ -37,6 +39,14 @@ function seedChat(bridge: FakeBridge, id: number, photoFileId: number = 0,
     const photo: TdObject = { '@type': 'chatPhotoInfo' }; photo['small'] = small;
     chat['photo'] = photo;
   }
+  // 实体只来自 worker 投递（V1 的生产已删）：这里直接播种。
+  const entry: ChatEntry = buildChatEntry({
+    chat, previous: undefined, selfId: 0,
+    senderName: (_m: TdObject | undefined): string => ''
+  });
+  const listKey: string = listType === 'chatListMain' ? 'main'
+    : (listType === 'chatListArchive' ? 'archive' : 'folder:9');
+  store.ingestForTest([entry], [{ key: listKey, ids: [id], pinned: [] }]);
   const u: TdObject = { '@type': 'updateNewChat' }; u['chat'] = chat;
   bridge.onReceive(JSON.stringify(u));
 }
@@ -112,6 +122,14 @@ function photo(h: Harness, id: number, fileId: number): void {
     update['photo'] = info;
   }
   h.bridge.onReceive(JSON.stringify(update));
+  // 实体只来自 worker 投递：把"换了头像之后的那份 entry"也播种进来，
+  // 这正是 worker 会做的事（V1 的 updateChatPhoto handler 已删）。
+  const current = h.store.entryOf(id);
+  if (current !== undefined) {
+    const next: ChatEntry = cloneEntry(current);
+    next.photoFileId = fileId;
+    h.store.ingestForTest([next]);
+  }
 }
 function reply(h: Harness, fileId: number, error: boolean, path: string = ''): void {
   const requests = downloads(h).filter((req) => req['file_id'] === fileId);
@@ -145,7 +163,7 @@ export default function fileServiceTest() {
       const files = new FileService(client, store);
       cleanups.push(() => { files.close(); client.dispose(); });
       client.start();
-      seedChat(bridge, 1, 55);
+      seedChat(store, bridge, 1, 55);
       files.requestAvatar(1, 55);
       pushCompletedFile(bridge, 55, '/data/avatar_55.jpg');
       expect(store.getChats()[0].avatarPath).assertEqual('/data/avatar_55.jpg');
@@ -158,7 +176,7 @@ export default function fileServiceTest() {
       const files = new FileService(client, store);
       cleanups.push(() => { files.close(); client.dispose(); });
       client.start();
-      seedChat(bridge, 1, 55);
+      seedChat(store, bridge, 1, 55);
       files.requestAvatar(1, 55);
       const after1 = bridge.sent.length;
       files.requestAvatar(1, 55);
@@ -172,15 +190,15 @@ export default function fileServiceTest() {
       const files = new FileService(client, store);
       cleanups.push(() => { files.close(); client.dispose(); });
       client.start();
-      seedChat(bridge, 1, 55);
-      seedChat(bridge, 2, 55);
+      seedChat(store, bridge, 1, 55);
+      seedChat(store, bridge, 2, 55);
       files.requestAvatar(1, 55);
       files.requestAvatar(2, 55);
       pushCompletedFile(bridge, 55, '/data/avatar_55.jpg');
       expect(store.entryOf(1)?.avatarPath).assertEqual('/data/avatar_55.jpg');
       expect(store.entryOf(2)?.avatarPath).assertEqual('/data/avatar_55.jpg');
 
-      seedChat(bridge, 3, 55);
+      seedChat(store, bridge, 3, 55);
       const sentBefore = bridge.sent.length;
       files.requestAvatar(3, 55);
       expect(store.entryOf(3)?.avatarPath).assertEqual('/data/avatar_55.jpg');
@@ -197,9 +215,9 @@ export default function fileServiceTest() {
 
     it('新增主列表归档文件夹头像均触发，且不生成列表或扫描allEntries', 0, () => {
       const h = setup();
-      seedChat(h.bridge, 1, 51);
-      seedChat(h.bridge, 2, 52, 'chatListArchive');
-      seedChat(h.bridge, 3, 53, 'chatListFolder');
+      seedChat(h.store, h.bridge, 1, 51);
+      seedChat(h.store, h.bridge, 2, 52, 'chatListArchive');
+      seedChat(h.store, h.bridge, 3, 53, 'chatListFolder');
       h.timer.advance(80);
       expect(downloads(h).length).assertEqual(3);
       expect(h.store.snapshots).assertEqual(0);
@@ -209,8 +227,8 @@ export default function fileServiceTest() {
     it('订阅时补已有头像一次，已有本地路径不再请求', 0, () => {
       const h = setup();
       h.files.close();
-      seedChat(h.bridge, 1, 55);
-      seedChat(h.bridge, 2, 56);
+      seedChat(h.store, h.bridge, 1, 55);
+      seedChat(h.store, h.bridge, 2, 56);
       h.store.setAvatarPath(2, '/already.jpg');
       h.timer.advance(80);
       h.files = new ProbeFiles(h.client, h.store, h.timer);
@@ -222,7 +240,7 @@ export default function fileServiceTest() {
 
     it('普通标题未读位置更新不再重复检查头像', 0, () => {
       const h = setup();
-      seedChat(h.bridge, 1, 55);
+      seedChat(h.store, h.bridge, 1, 55);
       h.timer.advance(80);
       const before = h.files.requests;
       for (let i = 0; i < 20; i++) {
@@ -243,7 +261,7 @@ export default function fileServiceTest() {
 
     it('同窗口多次换头像只请求最终文件，旧完成不覆盖新头像', 0, () => {
       const h = setup();
-      seedChat(h.bridge, 1, 55); h.timer.advance(80);
+      seedChat(h.store, h.bridge, 1, 55); h.timer.advance(80);
       photo(h, 1, 56); photo(h, 1, 57); h.timer.advance(80);
       expect(downloads(h).length).assertEqual(2);
       expect(downloads(h)[1]['file_id']).assertEqual(57);
@@ -255,7 +273,7 @@ export default function fileServiceTest() {
 
     it('共享文件只下载一次且完成后更新全部会话', 0, () => {
       const h = setup();
-      seedChat(h.bridge, 1, 55); seedChat(h.bridge, 2, 55, 'chatListArchive'); h.timer.advance(80);
+      seedChat(h.store, h.bridge, 1, 55); seedChat(h.store, h.bridge, 2, 55, 'chatListArchive'); h.timer.advance(80);
       expect(downloads(h).length).assertEqual(1);
       pushCompletedFile(h.bridge, 55, '/shared.jpg');
       expect(h.store.entryOf(1)!.avatarPath).assertEqual('/shared.jpg');
@@ -263,13 +281,13 @@ export default function fileServiceTest() {
     });
 
     it('直接下载应答完成也能更新头像，不依赖updateFile', 0, async () => {
-      const h = setup(); seedChat(h.bridge, 1, 55); h.timer.advance(80);
+      const h = setup(); seedChat(h.store, h.bridge, 1, 55); h.timer.advance(80);
       reply(h, 55, false, '/response.jpg'); await microtasks();
       expect(h.store.entryOf(1)!.avatarPath).assertEqual('/response.jpg');
     });
 
     it('下载失败无需消息更新即可延迟重试', 0, async () => {
-      const h = setup(); seedChat(h.bridge, 1, 55); h.timer.advance(80);
+      const h = setup(); seedChat(h.store, h.bridge, 1, 55); h.timer.advance(80);
       reply(h, 55, true); await microtasks();
       h.timer.advance(1999); expect(downloads(h).length).assertEqual(1);
       h.timer.advance(1); expect(downloads(h).length).assertEqual(2);
@@ -280,7 +298,7 @@ export default function fileServiceTest() {
     });
 
     it('失败最多追加三次重试，网络恢复只重试失败文件且Ready不重复触发', 0, async () => {
-      const h = setup(); seedChat(h.bridge, 1, 55); seedChat(h.bridge, 2, 56); h.timer.advance(80);
+      const h = setup(); seedChat(h.store, h.bridge, 1, 55); seedChat(h.store, h.bridge, 2, 56); h.timer.advance(80);
       reply(h, 56, false, '/ok.jpg'); await microtasks();
       for (const delay of [2000, 5000, 15000]) {
         reply(h, 55, true); await microtasks(); h.timer.advance(delay);
@@ -295,7 +313,7 @@ export default function fileServiceTest() {
     });
 
     it('移除头像取消失败文件的重试', 0, async () => {
-      const h = setup(); seedChat(h.bridge, 1, 55); h.timer.advance(80);
+      const h = setup(); seedChat(h.store, h.bridge, 1, 55); h.timer.advance(80);
       reply(h, 55, true); await microtasks();
       photo(h, 1, 0); h.timer.advance(80); h.timer.advance(6000);
       connection(h, true);
@@ -304,7 +322,7 @@ export default function fileServiceTest() {
     });
 
     it('独立预取的文件不会因会话换头像而丢失重试', 0, async () => {
-      const h = setup(); seedChat(h.bridge, 1, 55); h.timer.advance(80);
+      const h = setup(); seedChat(h.store, h.bridge, 1, 55); h.timer.advance(80);
       h.files.prefetchAvatar(55);
       reply(h, 55, true); await microtasks();
       photo(h, 1, 0); h.timer.advance(2000);
@@ -315,7 +333,7 @@ export default function fileServiceTest() {
     });
 
     it('清除本地路径后按单会话恢复缓存，无需再次下载', 0, () => {
-      const h = setup(); seedChat(h.bridge, 1, 55); h.timer.advance(80);
+      const h = setup(); seedChat(h.store, h.bridge, 1, 55); h.timer.advance(80);
       pushCompletedFile(h.bridge, 55, '/cached.jpg'); h.timer.advance(80);
       const requests = h.files.requests;
       h.store.setAvatarPath(1, ''); h.timer.advance(80);
@@ -326,12 +344,12 @@ export default function fileServiceTest() {
 
     it('关闭取消重试并拒绝新更新和迟到应答的全局发布', 0, async () => {
       resetAvatarFileChannelForTest();
-      const h = setup(); seedChat(h.bridge, 1, 55); seedChat(h.bridge, 2, 56); h.timer.advance(80);
+      const h = setup(); seedChat(h.store, h.bridge, 1, 55); seedChat(h.store, h.bridge, 2, 56); h.timer.advance(80);
       reply(h, 55, true); await microtasks();
       h.files.close(); h.files.close();
       reply(h, 56, false, '/old-account.jpg'); await microtasks();
       pushCompletedFile(h.bridge, 55, '/old-update.jpg');
-      seedChat(h.bridge, 3, 57); h.timer.advance(10000);
+      seedChat(h.store, h.bridge, 3, 57); h.timer.advance(10000);
       expect(downloads(h).length).assertEqual(2);
       expect(h.store.entryOf(2)!.avatarPath).assertEqual('');
       expect(avatarFilePathFor(56)).assertEqual('');

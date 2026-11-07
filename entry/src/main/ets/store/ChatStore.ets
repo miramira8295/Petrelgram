@@ -1,4 +1,10 @@
 import { ChatListSubscription, ChatListPublicationMode } from './ChatListSubscription';
+import { OrderSnapshot } from './chatListOrder';
+import { ChatMirror } from './chatMirror';
+import {
+  buildChatEntry, effectiveUnread, messageIdOf, smallPhotoIdOf, videoChatIdOf, backgroundOf,
+  compareChatEntries
+} from './chatEntryFactory';
 import { groupCallGone, groupCallIsLive } from '../util/liveCallState';
 import { UnreadBadgeCounts } from '../util/unreadBadgeRule';
 import { actionBarCanUnarchiveOf, actionBarKindOf } from '../util/chatActionBar';
@@ -89,9 +95,26 @@ interface LateRowSync {
 export class ChatStore {
   private client: TdClient;
   private users: UserStore;
-  private chats: Map<number, ChatEntry> = new Map();
-  private positions: Map<string, Map<number, PositionInfo>> = new Map();
-  private pinEpochs: Map<string, number> = new Map();
+  // 位置索引与排序（第二层第一步：从 store 里剥出来的纯结构，见 chatListOrder）。
+  // 第二层 B2 对账计数（worker 影子排序 vs 本地）。只影响日志。
+  private orderShadowMatch: number = 0;
+  private orderShadowMismatch: number = 0;
+  private orderShadowSkew: number = 0;
+  private entryShadowMatch: number = 0;
+  // B4b-3 的镜像：按"将来要当权威"的规则维护（见 store/chatMirror）。UI 目前
+  // 仍以 chats 为准，镜像先跑起来对账，切换时直接换读点。
+  private mirror: ChatMirror = new ChatMirror();
+  private pinEpochs: Map<string, number> = new Map<string, number>();
+  // V2：worker 送来的列表成员与置顶。V1 关闭时，界面读的是这两份而不是 positions。
+  private workerLists: Map<string, number[]> = new Map<string, number[]>();
+  private workerPinned: Map<string, Set<number>> = new Map<string, Set<number>>();
+  private entryShadowMismatch: number = 0;
+  private entryShadowSkew: number = 0;
+  // 位置最近一次「落地」的时刻。UI 的位置更新会被行级配对事务压后最多 ~320ms，
+  // 所以只有当自己安静下来之后，拿 worker 的快照比对才有意义。
+  private positionAppliedAt: number = 0;
+  private orderShadowPending: Map<string, number[]> = new Map<string, number[]>();
+  private orderShadowTimer: number = -1;
   // Position updates are much more frequent than list opens. Keep the sorted
   // identity sequence for every list that has actually been read, then move
   // only the affected chat when TDLib changes its position. getChats() still
@@ -153,28 +176,25 @@ export class ChatStore {
       setTimeout: (cb: () => void, ms: number): number => setTimeout(cb, ms),
       clearTimeout: (id: number): void => clearTimeout(id)
     };
+    // V2：V1 的实体/位置/角标生产全部不工作，由 worker 投递的镜像与排序快照
+    // 驱动。**唯一保留**的是「输入中」这条子系统：它要发送者显示名（UI 侧
+    // UserStore）与 TTL 计时器，worker 那边没有用户表；它也不产生会话实体，
+    // 只是把文案写进镜像。selfId 同理（my_id 决定 Saved Messages 与"自己"过滤）。
+    // 元数据与本地状态这几条**不是会话实体**，worker 那条链不产生它们：
+      //   · updateChatAction / updateUser —— 输入中（要 UserStore 里的显示名）
+      //   · updateOption —— my_id，决定 Saved Messages 与"自己"过滤
+      //   · updateNewChat / updateSupergroup —— 群与频道的能力位、话题群判定
+      //     （isForumSupergroup / supergroupIdOf 等，ChatRow 与话题页都要用）
+      //   · updateGroupCall —— 直播位（手机上没有别的来源）
+    client.onUpdate('updateChatAction', (u: TdObject) => this.onChatAction(u));
+    client.onUpdate('updateUser', (u: TdObject) => this.onChatActionUser(u));
     client.onUpdate('updateOption', (u: TdObject) => this.onOption(u));
     client.onUpdate('updateNewChat', (u: TdObject) => this.onNewChat(u));
     client.onUpdate('updateSupergroup', (u: TdObject) => this.onSupergroup(u));
-    client.onUpdate('updateChatPosition', (u: TdObject) => this.onPosition(u));
-    client.onUpdate('updateChatLastMessage', (u: TdObject) => this.onLastMessage(u));
-    client.onUpdate('updateChatReadInbox', (u: TdObject) => this.onReadInbox(u));
-    client.onUpdate('updateChatReadOutbox', (u: TdObject) => this.onReadOutbox(u));
-    client.onUpdate('updateChatAction', (u: TdObject) => this.onChatAction(u));
-    client.onUpdate('updateUser', (u: TdObject) => this.onChatActionUser(u));
-    client.onUpdate('updateChatUnreadMentionCount', (u: TdObject) => this.onUnreadMentions(u));
-    client.onUpdate('updateMessageMentionRead', (u: TdObject) => this.onUnreadMentions(u));
-    client.onUpdate('updateChatTitle', (u: TdObject) => this.onTitle(u));
-    client.onUpdate('updateChatPhoto', (u: TdObject) => this.onPhoto(u));
-    client.onUpdate('updateChatNotificationSettings', (u: TdObject) => this.onNotify(u));
-    client.onUpdate('updateChatMessageAutoDeleteTime', (u: TdObject) => this.onAutoDelete(u));
-    client.onUpdate('updateChatIsMarkedAsUnread', (u: TdObject) => this.onMarkedUnread(u));
-    client.onUpdate('updateChatActionBar', (u: TdObject) => this.onActionBar(u));
-    client.onUpdate('updateChatBackground', (u: TdObject) => this.onBackground(u));
-    client.onUpdate('updateChatTheme', (u: TdObject) => this.onTheme(u));
-    client.onUpdate('updateDefaultBackground', (u: TdObject) => this.onDefaultBackground(u));
-    client.onUpdate('updateChatVideoChat', (u: TdObject) => this.onVideoChat(u));
     client.onUpdate('updateGroupCall', (u: TdObject) => this.onGroupCall(u));
+    // 默认背景也是元数据：ChatBackgroundStore 靠它决定"没自定义背景时画什么"。
+    client.onUpdate('updateDefaultBackground', (u: TdObject) => this.onDefaultBackground(u));
+
   }
 
   subscribe(listener: (chats: ChatEntry[]) => void, listKey: string = MAIN): () => void {
@@ -200,12 +220,12 @@ export class ChatStore {
   }
 
   hasChats(listKey: string): boolean {
-    return (this.positions.get(listKey)?.size ?? 0) > 0;
+    return this.listIds(listKey).length > 0;
   }
 
   private invalidateListSubscriptions(chatId: number | undefined, urgent: boolean): void {
     for (const sub of this.listSubs) {
-      if (chatId === undefined || this.positions.get(sub.listKey)?.has(chatId) === true) {
+      if (chatId === undefined || this.listIds(sub.listKey).indexOf(chatId) >= 0) {
         sub.subscription.invalidate(urgent);
       }
     }
@@ -229,9 +249,10 @@ export class ChatStore {
   subscribeAvatars(listener: (chatIds: number[]) => void): () => void {
     this.avatarListeners = [...this.avatarListeners, listener];
     const ids: number[] = [];
-    this.chats.forEach((entry: ChatEntry): void => {
+    const source: Iterable<ChatEntry> = this.mirror.values();
+    for (const entry of source) {
       if (entry.photoFileId !== 0 && entry.avatarPath === '') { ids.push(entry.id); }
-    });
+    }
     if (ids.length > 0) { listener(ids); }
     return (): void => {
       this.avatarListeners = this.avatarListeners.filter((value: (chatIds: number[]) => void): boolean =>
@@ -253,11 +274,64 @@ export class ChatStore {
   // Scope-default mute changes are observed separately via SCOPE_MUTE_EPOCH.
   subscribeUnreadBadges(listener: (keys: string[]) => void): () => void {
     this.unreadBadgeListeners = [...this.unreadBadgeListeners, listener];
-    listener(Array.from(this.positions.keys()));
+    listener(Array.from(this.workerLists.keys()));
     return (): void => {
       this.unreadBadgeListeners = this.unreadBadgeListeners.filter(
         (l: (keys: string[]) => void): boolean => l !== listener);
     };
+  }
+
+  // 元数据：群/私聊 id 映射（话题群判定要用）。实体的生产在 worker。
+  private onNewChat(update: TdObject): void {
+    const chat = update['chat'] as TdObject | undefined;
+    if (chat === undefined) {
+      return;
+    }
+    const id = chat['id'] as number | undefined;
+    if (id === undefined) {
+      return;
+    }
+    const chatType = chat['type'] as TdObject | undefined;
+    if (chatType !== undefined && (chatType['@type'] as string | undefined) === 'chatTypeSupergroup') {
+      const supergroupId: number = (chatType['supergroup_id'] as number | undefined) ?? 0;
+      if (supergroupId > 0) {
+        this.chatSupergroupIds.set(id, supergroupId);
+      }
+    } else if (chatType !== undefined && (chatType['@type'] as string | undefined) === 'chatTypePrivate') {
+      const userId: number = (chatType['user_id'] as number | undefined) ?? 0;
+      if (userId > 0) {
+        this.chatPrivateUserIds.set(id, userId);
+      }
+    }
+  }
+
+  // my_id：Saved Messages 判定与"自己"过滤都要它。
+  private onOption(update: TdObject): void {
+    if (((update['name'] as string | undefined) ?? '') !== 'my_id') {
+      return;
+    }
+    const valueObject = update['value'] as TdObject | undefined;
+    const raw = valueObject !== undefined ? valueObject['value'] : undefined;
+    const id: number = typeof raw === 'number' ? raw as number : Number(`${raw ?? 0}`);
+    if (!Number.isFinite(id) || id <= 0 || id === this.selfId) {
+      return;
+    }
+    selfIdGuard: {
+      break selfIdGuard;
+    }
+    this.selfId = id;
+  }
+
+  private onDefaultBackground(update: TdObject): void {
+    const dark: boolean = (update['for_dark_theme'] as boolean | undefined) ?? false;
+    const background = update['background'] as TdObject | undefined;
+    if (dark) {
+      this.defaultBackgroundDark = background !== undefined ? background : null;
+      this.defaultBackgroundDarkKnown = true;
+    } else {
+      this.defaultBackgroundLight = background !== undefined ? background : null;
+      this.defaultBackgroundLightKnown = true;
+    }
   }
 
   private onSupergroup(update: TdObject): void {
@@ -326,28 +400,65 @@ export class ChatStore {
   }
 
   allEntries(): ChatEntry[] {
-    return Array.from(this.chats.values());
+    return this.mirror.values();
   }
 
+  // 第二层 B2：worker 侧影子排序的对账入口。**只记日志，不改本地顺序。**
+  //
+  // 一致 → 说明 worker 用同一份更新流排出了同样的序列，切权威的前提成立；
+  // 不一致 → 差异行会打出首个分歧下标与两侧长度，先查 worker 漏了哪类更新。
+
+
+  // V2：worker 的排序快照就是列表成员与置顶的唯一来源。
+  applyWorkerOrder(lists: OrderSnapshot[]): void {
+    for (const snapshot of lists) {
+      this.workerLists.set(snapshot.key, snapshot.ids);
+      this.workerPinned.set(snapshot.key, new Set<number>(snapshot.pinned));
+    }
+    this.notify();
+  }
+
+  // 仅供用例：把 worker 的两条投递（列表成员 + 实体）直接灌进来。
+  // 生产里只有 worker 会调 applyWorkerOrder / compareWorkerEntries。
+  ingestForTest(entries: ChatEntry[], lists: OrderSnapshot[] = []): void {
+    for (const list of lists) {
+      this.workerLists.set(list.key, list.ids);
+      this.workerPinned.set(list.key, new Set<number>(list.pinned));
+      this.pinEpochs.set(list.key, this.pinEpoch(list.key) + 1);
+    }
+    this.compareWorkerEntries(entries);
+  }
+
+  private listIds(listKey: string): number[] {
+    return this.workerLists.get(listKey) ?? [];
+  }
+
+
+  // 第二层 B4b：worker 侧影子实体的对账入口。**只记日志，不改本地数据。**
+  //
+  // 一致的字段集合见 compareChatEntries 的注释（revision/头像/发送者名等
+  // 本来就各算各的，不参与比较）。
+  compareWorkerEntries(entries: ChatEntry[]): void {
+    const changed: number[] = this.mirror.apply(entries);
+    if (changed.length === 0) {
+      return;
+    }
+    for (const id of changed) {
+      const mirrored = this.mirror.get(id);
+      // 头像链靠这里：**任何**实体变化都把 id 标脏（含"头像被移除"，photo→0
+      // 时要让 FileService 去 detach 并取消重试——V1 的 setChatEntry 就是这个口径）。
+      this.dirtyAvatarChatIds.add(id);
+      // 只把变了的会话标脏：不在任何列表里的会话不触发列表发布。
+      this.notify(id);
+    }
+  }
+
+
+
   getChats(listKey: string = MAIN): ChatEntry[] {
-    const bucket = this.positions.get(listKey);
-    if (bucket === undefined) {
-      return [];
-    }
-    let ordered = this.orderedChatIds.get(listKey);
-    if (ordered === undefined) {
-      ordered = [];
-      bucket.forEach((_pos: PositionInfo, id: number): void => {
-        if (this.chats.has(id)) {
-          ordered!.push(id);
-        }
-      });
-      ordered.sort((a: number, b: number): number => this.compareChatPosition(listKey, a, b));
-      this.orderedChatIds.set(listKey, ordered);
-    }
     const list: ChatEntry[] = [];
-    for (const id of ordered) {
-      const entry = this.chats.get(id);
+    for (const id of this.listIds(listKey)) {
+      const entry = this.mirror.get(id);
       if (entry !== undefined) {
         list.push(entry);
       }
@@ -355,75 +466,28 @@ export class ChatStore {
     return list;
   }
 
-  private compareChatPosition(listKey: string, a: number, b: number): number {
-    const bucket = this.positions.get(listKey);
-    const pa = bucket?.get(a);
-    const pb = bucket?.get(b);
-    if (pa === undefined) { return pb === undefined ? 0 : 1; }
-    if (pb === undefined) { return -1; }
-    if (pa.isPinned !== pb.isPinned) {
-      return pa.isPinned ? -1 : 1;
-    }
-    return compareOrderDesc(pa.order, pb.order);
-  }
-
-  private removeOrderedChat(listKey: string, id: number): void {
-    const ordered = this.orderedChatIds.get(listKey);
-    if (ordered === undefined) {
-      return;
-    }
-    const index = ordered.indexOf(id);
-    if (index >= 0) {
-      ordered.splice(index, 1);
-    }
-  }
-
-  private insertOrderedChat(listKey: string, id: number): void {
-    const ordered = this.orderedChatIds.get(listKey);
-    if (ordered === undefined || !this.chats.has(id)) {
-      return;
-    }
-    // Remove first so repeated/unchanged position pushes cannot duplicate an
-    // identity in the cache. Then binary-search the new order.
-    const previous = ordered.indexOf(id);
-    if (previous >= 0) {
-      ordered.splice(previous, 1);
-    }
-    let lo = 0;
-    let hi = ordered.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (this.compareChatPosition(listKey, id, ordered[mid]) < 0) {
-        hi = mid;
-      } else {
-        lo = mid + 1;
-      }
-    }
-    ordered.splice(lo, 0, id);
-  }
 
   // Order-only changes do not invalidate cached pin checks in list row keys.
   pinEpoch(listKey: string): number {
     return this.pinEpochs.get(listKey) ?? 0;
   }
 
-  private bumpPinEpoch(listKey: string): void {
-    this.pinEpochs.set(listKey, this.pinEpoch(listKey) + 1);
-  }
 
   // Pinning is per chat list: a chat can be pinned in a folder but not in main.
   isPinned(listKey: string, chatId: number): boolean {
-    const pos = this.positions.get(listKey)?.get(chatId);
-    return pos !== undefined && pos.isPinned;
+    return this.workerPinned.get(listKey)?.has(chatId) === true;
   }
+
 
   isArchived(chatId: number): boolean {
-    return this.positions.get('archive')?.has(chatId) === true;
+    return this.listIds('archive').indexOf(chatId) >= 0;
   }
 
+
   isInFolder(folderId: number, chatId: number): boolean {
-    return this.positions.get(`folder:${folderId}`)?.has(chatId) === true;
+    return this.listIds(`folder:${folderId}`).indexOf(chatId) >= 0;
   }
+
 
   // 这个会话在不在**任何一个**会话列表里（主列表 / 归档 / 任意文件夹）。
   //
@@ -436,13 +500,12 @@ export class ChatStore {
   // 按"不在列表里"处理会把真正该响的通知也吞掉。
   inAnyChatList(chatId: number): boolean {
     let found: boolean = false;
-    this.positions.forEach((bucket: Map<number, PositionInfo>): void => {
-      if (!found && bucket.has(chatId)) {
-        found = true;
-      }
+    this.workerLists.forEach((ids: number[]): void => {
+      if (ids.indexOf(chatId) >= 0) { found = true; }
     });
     return found;
   }
+
 
   // 至少出现在一个**非归档**列表里（主列表或任意文件夹）。
   //
@@ -451,18 +514,17 @@ export class ChatStore {
   // 不能写成 `!isArchived()`——那会把"归档 + 在文件夹里"的一起否掉。
   inNonArchiveList(chatId: number): boolean {
     let found: boolean = false;
-    this.positions.forEach((bucket: Map<number, PositionInfo>, listKey: string): void => {
-      if (!found && listKey !== 'archive' && bucket.has(chatId)) {
-        found = true;
-      }
+    this.workerLists.forEach((ids: number[], key: string): void => {
+      if (key !== 'archive' && ids.indexOf(chatId) >= 0) { found = true; }
     });
     return found;
   }
 
+
   hasArchive(): boolean {
-    const b = this.positions.get('archive');
-    return b !== undefined && b.size > 0;
+    return this.listIds('archive').length > 0;
   }
+
 
   isListExhausted(listKey: string): boolean {
     return this.exhaustedLists.has(listKey);
@@ -488,13 +550,14 @@ export class ChatStore {
     if (counts === undefined) {
       let total: number = 0;
       let unmuted: number = 0;
-      this.positions.get(listKey)?.forEach((_pos: PositionInfo, id: number): void => {
-        const e = this.chats.get(id);
+      const badgeIds: number[] = this.listIds(listKey);
+      for (const id of badgeIds) {
+        const e = this.mirror.get(id);
         if (e !== undefined && e.unreadCount > 0) {
           total++;
           if (!effectiveMuted(e, scopeMutedForKind(e.kind))) { unmuted++; }
         }
-      });
+      }
       counts = { total, unmuted };
       this.unreadBadgeCache.set(listKey, counts);
     }
@@ -502,28 +565,12 @@ export class ChatStore {
     return { total: counts.total, unmuted: counts.unmuted };
   }
 
+
   private invalidateUnreadBadge(listKey: string): void {
     this.unreadBadgeCache.delete(listKey);
     this.dirtyUnreadBadgeKeys.add(listKey);
   }
 
-  private setChatEntry(id: number, next: ChatEntry): void {
-    const previous = this.chats.get(id);
-    this.chats.set(id, next);
-    if ((previous?.photoFileId ?? 0) !== next.photoFileId ||
-      (next.photoFileId !== 0 && next.avatarPath === '' && previous?.avatarPath !== '')) {
-      this.dirtyAvatarChatIds.add(id);
-    }
-    const wasUnread: boolean = previous !== undefined && previous.unreadCount > 0;
-    const isUnread: boolean = next.unreadCount > 0;
-    // 1→100 unread messages still contributes exactly one unread chat.
-    if (wasUnread === isUnread && (!isUnread || (previous !== undefined &&
-      effectiveMuted(previous, scopeMutedForKind(previous.kind)) ===
-      effectiveMuted(next, scopeMutedForKind(next.kind))))) { return; }
-    this.positions.forEach((bucket: Map<number, PositionInfo>, key: string): void => {
-      if (bucket.has(id)) { this.invalidateUnreadBadge(key); }
-    });
-  }
 
   hasAnimatedPhoto(chatId: number): boolean {
     return this.animatedPhotoChats.has(chatId);
@@ -542,52 +589,30 @@ export class ChatStore {
   }
 
   photoFileIdOf(chatId: number): number {
-    const e = this.chats.get(chatId);
+    // 走 entryOf：V2 下实体在镜像里，直接查 chats 会永远返回 0——头像下载完成的
+    // 回调正是靠它比对"这张图还是不是这个会话的"，返回 0 就等于永不落地。
+    const e = this.entryOf(chatId);
     return e !== undefined ? e.photoFileId : 0;
   }
 
   entryOf(chatId: number): ChatEntry | undefined {
-    return this.chats.get(chatId);
+    return this.mirror.get(chatId);
   }
+
 
   // Remove the badge immediately once the UI has actually shown the newest
   // message. TDLib remains authoritative and will still send
   // updateChatReadInbox; this only bridges its delay (and the local join-service
   // edge case where that update can otherwise stay at unread_count = 1).
   markReadLocally(chatId: number, readThroughId: number): void {
-    const entry = this.chats.get(chatId);
-    const pending = this.pendingRowSync.get(chatId);
-    const newestKnownId: number = pending !== undefined && pending.latestIncomingLastId > 0
-      ? pending.latestIncomingLastId : (entry?.lastMessageId ?? 0);
-    if (entry !== undefined && pending !== undefined && pending.sawIncomingLast &&
-      readThroughId > 0 &&
-      newestKnownId > 0 && readThroughId >= newestKnownId) {
-      // The chat page has already displayed the staged tail. Fold that local
-      // read into the same transaction instead of exposing either half first.
-      pending.hasUnread = true;
-      pending.rawUnreadCount = 0;
-      pending.lastReadInboxId = Math.max(pending.lastReadInboxId, readThroughId);
-      pending.clearMarkedUnread = true;
-      this.scheduleRowSyncSettle(chatId, pending);
-      return;
+    const mirrored = this.mirror.get(chatId);
+    if (mirrored !== undefined && readThroughId >= mirrored.lastMessageId &&
+      (mirrored.unreadCount > 0 || mirrored.isMarkedUnread)) {
+      this.mirror.markRead(chatId);
+      this.notify();
     }
-    if (pending !== undefined) {
-      // A pending unread-first update already proves that the committed badge
-      // is stale. Likewise, an older visible id must not clear a staged tail.
-      return;
-    }
-    if (entry === undefined || readThroughId <= 0 || entry.lastMessageId <= 0 ||
-      readThroughId < entry.lastMessageId ||
-      (entry.unreadCount === 0 && !entry.isMarkedUnread)) {
-      return;
-    }
-    const next = cloneEntry(entry);
-    next.unreadCount = 0;
-    next.isMarkedUnread = false;
-    this.setChatEntry(chatId, next);
-    this.clearLateRowSync(chatId);
-    this.notify(chatId, true);
   }
+
 
   defaultBackground(forDarkTheme: boolean): TdObject | null {
     return forDarkTheme ? this.defaultBackgroundDark : this.defaultBackgroundLight;
@@ -681,69 +706,22 @@ export class ChatStore {
     this.fullyLoadedLists.delete(listKey);
     this.exhaustedLists.delete(listKey);
     this.initializedLists.delete(listKey);
-    this.orderedChatIds.delete(listKey);
   }
 
   setAvatarPath(chatId: number, path: string): void {
-    const e = this.chats.get(chatId);
-    if (e === undefined || e.avatarPath === path) {
+    const mirrored = this.mirror.get(chatId);
+    if (mirrored === undefined || mirrored.avatarPath === path) {
       return;
     }
-    const c = cloneEntry(e);
-    c.avatarPath = path;
-    this.setChatEntry(chatId, c);
+    this.mirror.setAvatarPath(chatId, path);
+    // 路径被清空时 FileService 要重新走一遍（可能从 completedPaths 直接补回）。
+    this.dirtyAvatarChatIds.add(chatId);
     this.notify(chatId);
   }
 
-  private setPosition(listKey: string, id: number, order: string, isPinned: boolean): void {
-    if (listKey === '') {
-      return;
-    }
-    if (order === '0') {
-      const b = this.positions.get(listKey);
-      if (b?.get(id)?.isPinned === true) { this.bumpPinEpoch(listKey); }
-      if (b !== undefined && b.delete(id)) {
-        this.invalidateUnreadBadge(listKey);
-      }
-      this.removeOrderedChat(listKey, id);
-      return;
-    }
-    let bucket = this.positions.get(listKey);
-    if (bucket === undefined) {
-      bucket = new Map();
-      this.positions.set(listKey, bucket);
-    }
-    const previous = bucket.get(id);
-    if (previous === undefined) { this.invalidateUnreadBadge(listKey); }
-    if ((previous?.isPinned ?? false) !== isPinned) { this.bumpPinEpoch(listKey); }
-    bucket.set(id, { order, isPinned });
-    this.insertOrderedChat(listKey, id);
-  }
 
-  private positionsNeedImmediatePublication(id: number, positions: TdObject[]): boolean {
-    for (const pos of positions) {
-      const list = pos['list'] as TdObject | undefined;
-      if (list === undefined) { continue; }
-      const previous = this.positions.get(listKeyOf(list))?.get(id);
-      const present: boolean = ((pos['order'] as string | undefined) ?? '0') !== '0';
-      if ((previous !== undefined) !== present || (present && previous !== undefined &&
-        previous.isPinned !== ((pos['is_pinned'] as boolean | undefined) ?? false))) { return true; }
-    }
-    return false;
-  }
 
-  private applyPositions(id: number, positions: TdObject[]): void {
-    for (const p of positions) {
-      const list = p['list'] as TdObject | undefined;
-      if (list === undefined) {
-        continue;
-      }
-      const key = listKeyOf(list);
-      const order = (p['order'] as string | undefined) ?? '0';
-      const isPinned = (p['is_pinned'] as boolean | undefined) ?? false;
-      this.setPosition(key, id, order, isPinned);
-    }
-  }
+
 
   senderNameOf(message: TdObject | undefined): string {
     return this.senderName(message);
@@ -765,31 +743,14 @@ export class ChatStore {
       return this.users.displayName(userId);
     }
     if (sender['@type'] === 'messageSenderChat') {
-      const c = this.chats.get(sender['chat_id'] as number);
+      const c = this.mirror.get(sender['chat_id'] as number);
       return c !== undefined ? c.title : '';
     }
     return '';
   }
 
-  private smallPhotoId(photo: TdObject | undefined): number {
-    if (photo === undefined) {
-      return 0;
-    }
-    const small = photo['small'] as TdObject | undefined;
-    if (small === undefined) {
-      return 0;
-    }
-    return (small['id'] as number | undefined) ?? 0;
-  }
 
-  private videoChatId(videoChat: TdObject | undefined): number {
-    return videoChat !== undefined
-      ? ((videoChat['group_call_id'] as number | undefined) ?? 0) : 0;
-  }
 
-  private backgroundOf(value: Object | null | undefined): TdObject | null {
-    return value !== undefined && value !== null ? value as TdObject : null;
-  }
 
   private rememberGroupCall(chatId: number, previousId: number, groupCallId: number): void {
     if (previousId > 0 && this.groupCallChats.get(previousId) === chatId) {
@@ -828,13 +789,10 @@ export class ChatStore {
   private clearGroupCallLive(groupCallId: number): void {
     const chatId = this.groupCallChats.get(groupCallId);
     if (chatId === undefined) { return; }
-    const entry = this.chats.get(chatId);
+    const entry = this.mirror.get(chatId);
     if (entry === undefined || entry.liveGroupCallId !== groupCallId) { return; }
     if (!entry.isLive && !entry.isRtmpLive) { return; }
-    const next = cloneEntry(entry);
-    next.isLive = false;
-    next.isRtmpLive = false;
-    this.setChatEntry(chatId, next);
+    this.mirror.setLiveFlags(chatId, false, false);
     this.notify(chatId);
   }
 
@@ -842,428 +800,34 @@ export class ChatStore {
     const groupCallId = (groupCall['id'] as number | undefined) ?? 0;
     const chatId = this.groupCallChats.get(groupCallId);
     if (chatId === undefined) { return; }
-    const entry = this.chats.get(chatId);
+    const entry = this.mirror.get(chatId);
     if (entry === undefined || entry.liveGroupCallId !== groupCallId) { return; }
     // is_active 只说明"通话对象还在"，不说明有人在播——判据见 groupCallIsLive。
     const isLive = groupCallIsLive(groupCall);
     const isRtmpLive = (groupCall['is_rtmp_stream'] as boolean | undefined) ?? false;
     if (entry.isLive === isLive && entry.isRtmpLive === isRtmpLive) { return; }
-    const next = cloneEntry(entry);
-    next.isLive = isLive;
-    next.isRtmpLive = isRtmpLive;
-    this.setChatEntry(chatId, next);
+    // 直播位来自通话状态，不在 worker 的数据链上：写进镜像。
+    this.mirror.setLiveFlags(chatId, isLive, isRtmpLive);
     this.notify(chatId);
   }
 
-  private onNewChat(update: TdObject): void {
-    const chat = update['chat'] as TdObject | undefined;
-    if (chat === undefined) {
-      return;
-    }
-    const id = chat['id'] as number;
-    // A full chat is authoritative for both halves. Do not let an older staged
-    // incremental update overwrite it when its timeout fires.
-    this.discardPendingRowSync(id);
-    this.clearLateRowSync(id);
-    // 话题群识别需要 chatId → supergroupId 映射（is_forum 在 supergroup 上）。
-    const chatType = chat['type'] as TdObject | undefined;
-    if (chatType !== undefined && (chatType['@type'] as string | undefined) === 'chatTypeSupergroup') {
-      const supergroupId: number = (chatType['supergroup_id'] as number | undefined) ?? 0;
-      if (supergroupId > 0) {
-        this.chatSupergroupIds.set(id, supergroupId);
-      }
-    } else if (chatType !== undefined && (chatType['@type'] as string | undefined) === 'chatTypePrivate') {
-      const userId: number = (chatType['user_id'] as number | undefined) ?? 0;
-      if (userId > 0) {
-        this.chatPrivateUserIds.set(id, userId);
-      }
-    }
-    const previous = this.chats.get(id);
-    const previousGroupCallId = previous?.liveGroupCallId ?? 0;
-    const title = (chat['title'] as string | undefined) ?? '';
-    const rawLastMessage = chat['last_message'];
-    const lastMsg: TdObject | null = rawLastMessage !== undefined && rawLastMessage !== null
-      ? rawLastMessage as TdObject : null;
-    const groupCallId = this.videoChatId(chat['video_chat'] as TdObject | undefined);
-    const photoFileId = this.smallPhotoId(chat['photo'] as TdObject | undefined);
-    const samePhoto = previous !== undefined && previous.photoFileId === photoFileId;
-    this.notePhotoAnimation(id, chat['photo'] as TdObject | undefined, previous !== undefined && !samePhoto);
-    const sameGroupCall = previous !== undefined && previous.liveGroupCallId === groupCallId;
-    const lastReadOutboxId: number = (chat['last_read_outbox_message_id'] as number | undefined) ?? 0;
-    const isSavedMessages: boolean = this.selfId !== 0 && id === this.selfId;
-    const kind: ChatKind = chatKindOf(chat['type'] as TdObject | undefined);
-    const entry: ChatEntry = {
-      id,
-      revision: previous !== undefined ? previous.revision + 1 : 0,
-      title,
-      isMuted: isMutedFrom(chat['notification_settings'] as TdObject | undefined),
-      usesDefaultMute: usesDefaultMuteFrom(chat['notification_settings'] as TdObject | undefined),
-      unreadCount: ChatStore.effectiveUnread(
-        (chat['unread_count'] as number | undefined) ?? 0,
-        (chat['last_read_inbox_message_id'] as number | undefined) ?? 0,
-        this.messageIdOf(lastMsg)),
-      unreadMentionCount: (chat['unread_mention_count'] as number | undefined) ?? 0,
-      rawUnreadCount: (chat['unread_count'] as number | undefined) ?? 0,
-      lastReadInboxId: (chat['last_read_inbox_message_id'] as number | undefined) ?? 0,
-      lastReadOutboxId,
-      lastMessageSendState: lastMessageSendStateFrom(lastMsg, lastReadOutboxId, isSavedMessages, kind),
-      typingText: previous?.typingText ?? '',
-      lastMessageText: formatPreview(lastMsg),
-      lastMessageThumb: previewThumbOf(lastMsg),
-      lastMessageDate: lastMsg !== null ? ((lastMsg['date'] as number | undefined) ?? 0) : 0,
-      lastMessageId: this.messageIdOf(lastMsg),
-      lastSenderName: isSavedMessages ? '' : this.senderName(lastMsg ?? undefined),
-      photoFileId,
-      // getChat/updateNewChat may refresh a chat after its avatar has already
-      // completed. Preserve the resolved path when the photo itself is unchanged.
-      avatarPath: samePhoto ? previous!.avatarPath : '',
-      initials: computeInitials(title),
-      autoDeleteTime: (chat['message_auto_delete_time'] as number | undefined) ?? 0,
-      kind,
-      isMarkedUnread: (chat['is_marked_as_unread'] as boolean | undefined) ?? false,
-      actionBar: actionBarKindOf(chat['action_bar'] as TdObject | undefined),
-      actionBarCanUnarchive: actionBarCanUnarchiveOf(chat['action_bar'] as TdObject | undefined),
-      // deleteChatHistory 的两个前置能力位。TDLib 没有针对它们的增量 update
-      // （updateChat* 里没有对应的类），只随完整 chat 对象到达，所以这里是
-      // 唯一的写入点；缺省取 false —— 宁可少给一个入口，也不要给一个必然
-      // 报 "Can't delete history of X only for self" 的入口。
-      canDeleteOnlyForSelf: (chat['can_be_deleted_only_for_self'] as boolean | undefined) ?? false,
-      canDeleteForAllUsers: (chat['can_be_deleted_for_all_users'] as boolean | undefined) ?? false,
-      isSavedMessages,
-      background: this.backgroundOf(chat['background']),
-      themeName: (chat['theme_name'] as string | undefined) ?? '',
-      liveGroupCallId: groupCallId,
-      isLive: sameGroupCall ? previous!.isLive : false,
-      isRtmpLive: sameGroupCall ? previous!.isRtmpLive : false
-    };
-    this.setChatEntry(id, entry);
-    this.rememberGroupCall(id, previousGroupCallId, groupCallId);
-    const positions = (chat['positions'] as TdObject[] | undefined) ?? [];
-    this.applyPositions(id, positions);
-    this.notify();
-  }
 
   // my_id 通常在会话列表出现之前就到了；万一晚到，把已经建好的那条重标一次。
   // 走 cloneEntry 是必要的——它会把 revision 加一，行 key 才会变、列表才会
   // 重画（否则标题仍是自己的昵称）。
-  private onOption(update: TdObject): void {
-    if (((update['name'] as string | undefined) ?? '') !== 'my_id') {
-      return;
-    }
-    const valueObject = update['value'] as TdObject | undefined;
-    const raw = valueObject !== undefined ? valueObject['value'] : undefined;
-    // int53 在 JSON 里可能是数字也可能是字符串。
-    const id: number = typeof raw === 'number' ? raw as number : Number(`${raw ?? 0}`);
-    if (!Number.isFinite(id) || id <= 0 || id === this.selfId) {
-      return;
-    }
-    this.selfId = id;
-    // Saved Messages can contain forwarded messages reported as incoming but
-    // never gains an unread counterpart. Release such a staged tail now that
-    // the self-chat identity is known.
-    this.commitPendingRowSync(id);
-    this.clearLateRowSync(id);
-    const selfName: string = this.users.displayName(id);
-    if (selfName !== '') {
-      const youLabel: string = str('sm_you');
-      this.chats.forEach((entry: ChatEntry, chatId: number): void => {
-        if (chatId !== id && entry.lastSenderName === selfName) {
-          const updated = cloneEntry(entry);
-          updated.lastSenderName = youLabel;
-          this.setChatEntry(chatId, updated);
-          this.notify(chatId);
-        }
-      });
-    }
-    const existing = this.chats.get(id);
-    if (existing === undefined || existing.isSavedMessages) {
-      return;
-    }
-    const next = cloneEntry(existing);
-    next.isSavedMessages = true;
-    next.lastSenderName = '';
-    next.lastMessageSendState = refreshOutboxSendState(
-      next.lastMessageSendState, next.lastMessageId, next.lastReadOutboxId ?? 0, true, next.kind);
-    this.setChatEntry(id, next);
-    this.notify(id);
-  }
 
-  private onPosition(update: TdObject): void {
-    const id = update['chat_id'] as number;
-    const pos = update['position'] as TdObject | undefined;
-    if (pos === undefined) {
-      return;
-    }
-    const pending = this.pendingRowSync.get(id);
-    if (pending !== undefined) {
-      pending.positionUpdates.push(pos);
-      pending.affectsPositions = true;
-      return;
-    }
-    const urgent: boolean = this.positionsNeedImmediatePublication(id, [pos]);
-    this.applyPositions(id, [pos]);
-    this.notify(undefined, urgent);
-  }
 
-  private onLastMessage(update: TdObject): void {
-    const id = update['chat_id'] as number;
-    let e = this.chats.get(id);
-    if (e === undefined) {
-      return;
-    }
-    const rawLastMessage = update['last_message'];
-    const lastMsg: TdObject | null = rawLastMessage !== undefined && rawLastMessage !== null
-      ? rawLastMessage as TdObject : null;
-    e = this.clearTypingForMessage(id, e, lastMsg);
-    const positions = update['positions'] as TdObject[] | undefined;
-    let pending = this.pendingRowSync.get(id);
-    const baselineLastId: number = pending !== undefined && pending.latestIncomingLastId > 0
-      ? pending.latestIncomingLastId : e.lastMessageId;
-    const freshIncoming: boolean = this.isFreshIncomingTail(e, baselineLastId, lastMsg);
-    const nextLastMessageId: number = this.messageIdOf(lastMsg);
 
-    if (pending === undefined && freshIncoming) {
-      if (e.lastReadInboxId >= nextLastMessageId) {
-        // The read half was committed before this tail became known (for
-        // example while the chat is open). The watermark proves the pair is
-        // already complete, so no fallback timer is needed.
-        this.clearLateRowSync(id);
-        this.applyLastMessage(id, e, lastMsg, positions, true);
-        return;
-      }
-      const late = this.lateRowSync.get(id);
-      pending = late !== undefined
-        ? this.takeLateRowSync(id, e)
-        : this.createPendingRowSync(id, e.rawUnreadCount, e.lastReadInboxId);
-    }
 
-    if (pending !== undefined) {
-      const updatesStagedIncoming: boolean = pending.sawIncomingLast &&
-        nextLastMessageId > 0 && nextLastMessageId === pending.latestIncomingLastId;
-      this.stagePendingLastMessage(pending, lastMsg, positions);
-      if (freshIncoming) {
-        pending.sawIncomingLast = true;
-        pending.latestIncomingLastId = nextLastMessageId;
-        pending.incomingTailCount += 1;
-      } else if (!updatesStagedIncoming) {
-        // An outgoing tail, deletion or backtrack supersedes the staged
-        // preview. Publish it now. Preserve only a real outstanding side: an
-        // edit of the committed row can still be followed by the unread-first
-        // tail, while a staged incoming can still receive its delayed count.
-        const sameCommittedIdentity: boolean = nextLastMessageId === e.lastMessageId;
-        this.commitPendingRowSync(id,
-          pending.sawIncomingLast || sameCommittedIdentity);
-        return;
-      }
-      this.scheduleRowSyncSettle(id, pending);
-      return;
-    }
 
-    const late = this.lateRowSync.get(id);
-    if (late !== undefined && nextLastMessageId !== e.lastMessageId) {
-      // A different authoritative tail supersedes an unmatched unread-first
-      // generation. It must not credit some future incoming message.
-      this.clearLateRowSync(id);
-    }
-    this.applyLastMessage(id, e, lastMsg, positions, false);
-  }
 
-  private onReadInbox(update: TdObject): void {
-    const id = update['chat_id'] as number;
-    const e = this.chats.get(id);
-    if (e === undefined) {
-      return;
-    }
-    const nextRawUnread: number = (update['unread_count'] as number | undefined) ?? 0;
-    const nextLastReadInboxId: number =
-      (update['last_read_inbox_message_id'] as number | undefined) ?? 0;
-    const unreadAdvanced: boolean = nextRawUnread > e.rawUnreadCount ||
-      (nextLastReadInboxId > e.lastReadInboxId && nextLastReadInboxId > e.lastMessageId);
-    let pending = this.pendingRowSync.get(id);
-    if (pending === undefined) {
-      const late = this.lateRowSync.get(id);
-      if (late !== undefined) {
-        const matchesLateLast: boolean = late.half === 'lastMessage' &&
-          (nextRawUnread > e.rawUnreadCount ||
-            (late.lastMessageId > 0 && nextLastReadInboxId >= late.lastMessageId));
-        if (matchesLateLast || (late.half === 'unread' && unreadAdvanced)) {
-          pending = this.takeLateRowSync(id, e);
-        } else {
-          // A duplicate or an ordinary read must not consume an unmatched
-          // generation. Keep the marker for its actual counterpart.
-          if (nextRawUnread !== e.rawUnreadCount ||
-            nextLastReadInboxId !== e.lastReadInboxId) {
-            this.applyReadInbox(id, e, nextRawUnread, nextLastReadInboxId, false);
-          }
-          return;
-        }
-      } else if (unreadAdvanced) {
-        pending = this.createPendingRowSync(id, e.rawUnreadCount, e.lastReadInboxId);
-      } else {
-        this.applyReadInbox(id, e, nextRawUnread, nextLastReadInboxId, false);
-        return;
-      }
-    }
-
-    const rawAdvance: number = Math.max(0,
-      nextRawUnread - pending.baseRawUnreadCount);
-    const previousReadInboxId: number = pending.lastReadInboxId;
-    const coversStagedTail: boolean = pending.latestIncomingLastId > 0 &&
-      nextLastReadInboxId >= pending.latestIncomingLastId;
-    const watermarkAddsUnit: boolean = rawAdvance === 0 &&
-      nextLastReadInboxId > previousReadInboxId &&
-      nextLastReadInboxId > e.lastMessageId;
-    const contributesToPair: boolean = rawAdvance > 0 || coversStagedTail || watermarkAddsUnit;
-    if (contributesToPair || pending.hasUnread) {
-      pending.hasUnread = true;
-      pending.rawUnreadCount = nextRawUnread;
-      pending.lastReadInboxId = nextLastReadInboxId;
-      pending.unreadAdvanceCount = Math.max(pending.unreadAdvanceCount, rawAdvance);
-      if (watermarkAddsUnit) {
-        pending.unreadAdvanceCount += 1;
-      }
-      this.scheduleRowSyncSettle(id, pending);
-      return;
-    }
-
-    // This update only changes the already committed side. Apply it through
-    // the normal 80ms window and rebase the still-pending generation.
-    if (nextRawUnread !== e.rawUnreadCount || nextLastReadInboxId !== e.lastReadInboxId) {
-      this.applyReadInbox(id, e, nextRawUnread, nextLastReadInboxId, false);
-    }
-    pending.baseRawUnreadCount = nextRawUnread;
-    pending.rawUnreadCount = nextRawUnread;
-    pending.lastReadInboxId = nextLastReadInboxId;
-  }
-
-  private onTitle(update: TdObject): void {
-    const id = update['chat_id'] as number;
-    const e = this.chats.get(id);
-    if (e === undefined) {
-      return;
-    }
-    const title = (update['title'] as string | undefined) ?? '';
-    const c = cloneEntry(e);
-    c.title = title;
-    c.initials = computeInitials(title);
-    this.setChatEntry(id, c);
-    this.notify(id);
-  }
-
-  private onPhoto(update: TdObject): void {
-    const id = update['chat_id'] as number;
-    const e = this.chats.get(id);
-    if (e === undefined) {
-      return;
-    }
-    const c = cloneEntry(e);
-    c.photoFileId = this.smallPhotoId(update['photo'] as TdObject | undefined);
-    this.notePhotoAnimation(id, update['photo'] as TdObject | undefined, c.photoFileId !== e.photoFileId);
-    c.avatarPath = '';
-    this.setChatEntry(id, c);
-    this.notify(id);
-  }
-
-  private onNotify(update: TdObject): void {
-    const id = update['chat_id'] as number;
-    const e = this.chats.get(id);
-    if (e === undefined) {
-      return;
-    }
-    const c = cloneEntry(e);
-    const ns = update['notification_settings'] as TdObject | undefined;
-    c.isMuted = isMutedFrom(ns);
-    c.usesDefaultMute = usesDefaultMuteFrom(ns);
-    this.setChatEntry(id, c);
-    this.notify(id, true);
-  }
 
   // 会话操作条变化（举报/屏蔽/加联系人之后服务端会撤掉它）。
-  private onActionBar(update: TdObject): void {
-    const id = update['chat_id'] as number;
-    const e = this.chats.get(id);
-    if (e === undefined) {
-      return;
-    }
-    const c = cloneEntry(e);
-    const bar = update['action_bar'] as TdObject | undefined;
-    c.actionBar = actionBarKindOf(bar);
-    c.actionBarCanUnarchive = actionBarCanUnarchiveOf(bar);
-    this.setChatEntry(id, c);
-    this.notify(id);
-  }
 
-  private onMarkedUnread(update: TdObject): void {
-    const id = update['chat_id'] as number;
-    const e = this.chats.get(id);
-    if (e === undefined) {
-      return;
-    }
-    const c = cloneEntry(e);
-    c.isMarkedUnread = (update['is_marked_as_unread'] as boolean | undefined) ?? false;
-    this.setChatEntry(id, c);
-    this.notify(id, true);
-  }
 
-  private onBackground(update: TdObject): void {
-    const id = update['chat_id'] as number;
-    const e = this.chats.get(id);
-    if (e === undefined) {
-      return;
-    }
-    const background = this.backgroundOf(update['background']);
-    if (e.background === background) {
-      return;
-    }
-    const c = cloneEntry(e);
-    c.background = background;
-    this.setChatEntry(id, c);
-    this.notify(id);
-  }
 
-  private onTheme(update: TdObject): void {
-    const id = update['chat_id'] as number;
-    const e = this.chats.get(id);
-    if (e === undefined) {
-      return;
-    }
-    const themeName = (update['theme_name'] as string | undefined) ?? '';
-    if (e.themeName === themeName) {
-      return;
-    }
-    const c = cloneEntry(e);
-    c.themeName = themeName;
-    this.setChatEntry(id, c);
-    this.notify(id);
-  }
 
-  private onDefaultBackground(update: TdObject): void {
-    const forDarkTheme = (update['for_dark_theme'] as boolean | undefined) ?? false;
-    const background = this.backgroundOf(update['background']);
-    if (forDarkTheme) {
-      this.defaultBackgroundDark = background;
-      this.defaultBackgroundDarkKnown = true;
-    } else {
-      this.defaultBackgroundLight = background;
-      this.defaultBackgroundLightKnown = true;
-    }
-    logI(
-      `[ChatBackground] default dark=${forDarkTheme} background=${background !== null}`
-    );
-    this.notify();
-  }
 
-  private onAutoDelete(update: TdObject): void {
-    const id = update['chat_id'] as number;
-    const e = this.chats.get(id);
-    if (e === undefined) {
-      return;
-    }
-    const c = cloneEntry(e);
-    c.autoDeleteTime = (update['message_auto_delete_time'] as number | undefined) ?? 0;
-    this.setChatEntry(id, c);
-    this.notify(id);
-  }
 
   private actionTimerKey(chatId: number, uid: number): string {
     return `${chatId}:${uid}`;
@@ -1289,8 +853,12 @@ export class ChatStore {
     );
   }
 
+  private typingEntryOf(chatId: number): ChatEntry | undefined {
+    return this.mirror.get(chatId);
+  }
+
   private publishTypingText(chatId: number): void {
-    const e = this.chats.get(chatId);
+    const e = this.typingEntryOf(chatId);
     if (e === undefined) {
       return;
     }
@@ -1299,15 +867,14 @@ export class ChatStore {
     if ((e.typingText ?? '') === nextText) {
       return;
     }
-    const c = cloneEntry(e);
-    c.typingText = nextText;
-    this.setChatEntry(chatId, c);
+    // 输入中是本地独有字段（worker 不处理 updateChatAction）：写进镜像。
+    this.mirror.setTyping(chatId, nextText);
     this.notifySoon(chatId, true);
   }
 
   private onChatAction(update: TdObject): void {
     const chatId = (update['chat_id'] as number | undefined) ?? 0;
-    const e = this.chats.get(chatId);
+    const e = this.typingEntryOf(chatId);
     if (e === undefined || e.isSavedMessages) {
       return;
     }
@@ -1372,51 +939,7 @@ export class ChatStore {
     });
   }
 
-  private clearTypingForMessage(chatId: number, e: ChatEntry, lastMsg: TdObject | null): ChatEntry {
-    if (lastMsg === null) {
-      return e;
-    }
-    const senders = this.chatActions.get(chatId);
-    if (senders === undefined || senders.size === 0) {
-      return e;
-    }
-    const sender = lastMsg['sender_id'] as TdObject | undefined;
-    const uid = sender !== undefined && sender['@type'] === 'messageSenderUser'
-      ? ((sender['user_id'] as number | undefined) ?? 0) : 0;
-    if (uid <= 0 || !senders.has(uid)) {
-      return e;
-    }
-    this.clearActionTimer(chatId, uid);
-    senders.delete(uid);
-    if (senders.size === 0) {
-      this.chatActions.delete(chatId);
-    }
-    const nextText = this.computeTypingText(e.kind, senders);
-    if ((e.typingText ?? '') === nextText) {
-      return e;
-    }
-    const c = cloneEntry(e);
-    c.typingText = nextText;
-    this.setChatEntry(chatId, c);
-    return c;
-  }
 
-  private onVideoChat(update: TdObject): void {
-    const chatId = (update['chat_id'] as number | undefined) ?? 0;
-    const entry = this.chats.get(chatId);
-    if (entry === undefined) { return; }
-    const groupCallId = this.videoChatId(update['video_chat'] as TdObject | undefined);
-    const previousId = entry.liveGroupCallId;
-    const next = cloneEntry(entry);
-    next.liveGroupCallId = groupCallId;
-    // A newly announced id can still be scheduled. Keep the badge hidden
-    // until getGroupCall/updateGroupCall confirms is_active.
-    next.isLive = false;
-    next.isRtmpLive = false;
-    this.setChatEntry(chatId, next);
-    this.rememberGroupCall(chatId, previousId, groupCallId);
-    this.notify(chatId);
-  }
 
   private onGroupCall(update: TdObject): void {
     const groupCall = update['group_call'] as TdObject | undefined;
@@ -1429,300 +952,23 @@ export class ChatStore {
   // — the read watermark already covers the chat's newest message — and
   // viewMessages cannot clear it because nothing viewable is left. Trust what
   // the watermark proves over the raw counter.
-  private static effectiveUnread(unread: number, lastReadInboxId: number,
-    lastMessageId: number): number {
-    const suppressed: boolean = unread > 0 && lastMessageId > 0 && lastReadInboxId >= lastMessageId;
-    if (suppressed) {
-      // 诊断：反馈过"有些会话不显示未读数"。这里是**唯一**会把非零未读抹成 0
-      // 的地方（另外两处是本地摘角标和 TDLib 自己下发），三个数一起打才判断
-      // 得出是真幽灵未读还是误伤。只在真抹掉时打。
-      logW(`effectiveUnread suppressed unread=${unread}` +
-        ` lastRead=${lastReadInboxId} lastMsg=${lastMessageId}`);
-    }
-    return suppressed ? 0 : unread;
-  }
 
-  private messageIdOf(message: TdObject | null): number {
-    return message !== null ? ((message['id'] as number | undefined) ?? 0) : 0;
-  }
 
   // Only a strictly newer received tail needs an unread counterpart. TDLib's
   // direction flag is required here: an absent flag must not turn an edit or a
   // partially constructed test object into a received message.
-  private isFreshIncomingTail(entry: ChatEntry, baselineLastId: number,
-    lastMessage: TdObject | null): boolean {
-    if (lastMessage === null || entry.isSavedMessages ||
-      (lastMessage['is_outgoing'] as boolean | undefined) !== false) {
-      return false;
-    }
-    const sendingState = lastMessage['sending_state'];
-    const schedulingState = lastMessage['scheduling_state'];
-    if ((sendingState !== undefined && sendingState !== null) ||
-      (schedulingState !== undefined && schedulingState !== null)) {
-      return false;
-    }
-    const nextLastMessageId = this.messageIdOf(lastMessage);
-    return Number.isSafeInteger(nextLastMessageId) && nextLastMessageId > 0 &&
-      nextLastMessageId > baselineLastId;
-  }
 
-  private createPendingRowSync(chatId: number, baseRawUnreadCount: number,
-    baseLastReadInboxId: number): PendingRowSync {
-    const pending: PendingRowSync = {
-      hasLastMessage: false,
-      lastMessage: null,
-      positionUpdates: [],
-      affectsPositions: false,
-      hasUnread: false,
-      baseRawUnreadCount,
-      rawUnreadCount: baseRawUnreadCount,
-      lastReadInboxId: baseLastReadInboxId,
-      clearMarkedUnread: false,
-      sawIncomingLast: false,
-      latestIncomingLastId: 0,
-      incomingTailCount: 0,
-      unreadCreditCount: 0,
-      unreadAdvanceCount: 0,
-      timeoutTimer: -1,
-      settleTimer: -1
-    };
-    this.pendingRowSync.set(chatId, pending);
-    pending.timeoutTimer = this.timer.setTimeout((): void => {
-      if (this.pendingRowSync.get(chatId) !== pending) {
-        return;
-      }
-      this.commitPendingRowSync(chatId, true);
-    }, ROW_SYNC_WAIT_MS);
-    return pending;
-  }
 
-  private takeLateRowSync(chatId: number, entry: ChatEntry): PendingRowSync {
-    const late = this.lateRowSync.get(chatId);
-    this.clearLateRowSync(chatId);
-    const pending = this.createPendingRowSync(
-      chatId, entry.rawUnreadCount, entry.lastReadInboxId);
-    if (late === undefined) {
-      return pending;
-    }
-    if (late.half === 'lastMessage') {
-      pending.sawIncomingLast = true;
-      pending.latestIncomingLastId = late.lastMessageId;
-      pending.incomingTailCount = late.units;
-    } else {
-      // This unread state is already canonical; only its unmatched pairing
-      // credit needs to cross into the next bounded generation.
-      pending.unreadCreditCount = late.units;
-    }
-    return pending;
-  }
 
-  private stagePendingLastMessage(pending: PendingRowSync,
-    lastMessage: TdObject | null, positions: TdObject[] | undefined): void {
-    pending.hasLastMessage = true;
-    pending.lastMessage = lastMessage;
-    if (positions === undefined) {
-      return;
-    }
-    for (const position of positions) {
-      pending.positionUpdates.push(position);
-    }
-    pending.affectsPositions = true;
-  }
 
-  private scheduleRowSyncSettle(chatId: number, pending: PendingRowSync): void {
-    const unreadUnits: number = pending.unreadCreditCount + pending.unreadAdvanceCount;
-    const watermarkCoversTail: boolean = pending.hasUnread &&
-      pending.latestIncomingLastId > 0 &&
-      pending.lastReadInboxId >= pending.latestIncomingLastId;
-    const ready: boolean = pending.sawIncomingLast &&
-      (watermarkCoversTail ||
-        (unreadUnits > 0 && unreadUnits === pending.incomingTailCount));
-    if (!ready) {
-      if (pending.settleTimer !== -1) {
-        this.timer.clearTimeout(pending.settleTimer);
-        pending.settleTimer = -1;
-      }
-      return;
-    }
-    if (pending.settleTimer !== -1) {
-      return;
-    }
-    pending.settleTimer = this.timer.setTimeout((): void => {
-      if (this.pendingRowSync.get(chatId) === pending) {
-        this.commitPendingRowSync(chatId);
-      }
-    }, ROW_SYNC_SETTLE_MS);
-  }
 
-  private discardPendingRowSync(chatId: number): void {
-    const pending = this.pendingRowSync.get(chatId);
-    if (pending === undefined) {
-      return;
-    }
-    this.pendingRowSync.delete(chatId);
-    this.timer.clearTimeout(pending.timeoutTimer);
-    if (pending.settleTimer !== -1) {
-      this.timer.clearTimeout(pending.settleTimer);
-    }
-  }
 
-  private commitPendingRowSync(chatId: number,
-    rememberOutstanding: boolean = false): void {
-    const pending = this.pendingRowSync.get(chatId);
-    if (pending === undefined) {
-      return;
-    }
-    let lateHalf: RowSyncHalf | undefined = undefined;
-    let lateUnits: number = 0;
-    const unreadUnits: number = pending.unreadCreditCount + pending.unreadAdvanceCount;
-    const watermarkCoversTail: boolean = pending.hasUnread &&
-      pending.latestIncomingLastId > 0 &&
-      pending.lastReadInboxId >= pending.latestIncomingLastId;
-    if (rememberOutstanding && !watermarkCoversTail) {
-      if (pending.incomingTailCount > unreadUnits) {
-        lateHalf = 'lastMessage';
-        lateUnits = pending.incomingTailCount - unreadUnits;
-      } else if (unreadUnits > pending.incomingTailCount) {
-        lateHalf = 'unread';
-        lateUnits = unreadUnits - pending.incomingTailCount;
-      }
-    }
-    this.discardPendingRowSync(chatId);
-    const entry = this.chats.get(chatId);
-    if (entry === undefined) {
-      return;
-    }
-    const next = cloneEntry(entry);
-    if (pending.hasLastMessage) {
-      next.lastMessageText = formatPreview(pending.lastMessage);
-      next.lastMessageThumb = previewThumbOf(pending.lastMessage);
-      next.lastMessageDate = pending.lastMessage !== null
-        ? ((pending.lastMessage['date'] as number | undefined) ?? 0) : 0;
-      next.lastMessageId = this.messageIdOf(pending.lastMessage);
-      next.lastSenderName = next.isSavedMessages ? '' : this.senderName(pending.lastMessage ?? undefined);
-      next.lastMessageSendState = lastMessageSendStateFrom(
-        pending.lastMessage, next.lastReadOutboxId ?? 0, next.isSavedMessages, next.kind);
-    }
-    if (pending.hasUnread) {
-      next.rawUnreadCount = pending.rawUnreadCount;
-      next.lastReadInboxId = pending.lastReadInboxId;
-    }
-    if (pending.clearMarkedUnread) {
-      next.isMarkedUnread = false;
-    }
-    // Recompute only after both staged fields are present. This also preserves
-    // the existing phantom-unread recovery when the read half arrived first.
-    next.unreadCount = ChatStore.effectiveUnread(
-      next.rawUnreadCount, next.lastReadInboxId, next.lastMessageId);
-    this.setChatEntry(chatId, next);
-    const urgentPositions: boolean = pending.affectsPositions &&
-      this.positionsNeedImmediatePublication(chatId, pending.positionUpdates);
-    if (pending.affectsPositions) {
-      this.applyPositions(chatId, pending.positionUpdates);
-    }
-    if (lateHalf !== undefined && lateUnits > 0) {
-      this.rememberLateRowSync(
-        chatId, lateHalf, lateUnits, pending.latestIncomingLastId);
-    }
-    this.notifySoon(pending.affectsPositions ? undefined : chatId,
-      urgentPositions || next.unreadCount < entry.unreadCount || entry.isMarkedUnread !== next.isMarkedUnread);
-  }
 
-  private rememberLateRowSync(chatId: number, half: RowSyncHalf,
-    units: number, lastMessageId: number): void {
-    this.clearLateRowSync(chatId);
-    const late: LateRowSync = { half, units, lastMessageId, expiryTimer: -1 };
-    this.lateRowSync.set(chatId, late);
-    late.expiryTimer = this.timer.setTimeout((): void => {
-      if (this.lateRowSync.get(chatId) === late) {
-        this.lateRowSync.delete(chatId);
-      }
-    }, ROW_SYNC_LATE_MATCH_MS);
-  }
 
-  private clearLateRowSync(chatId: number): void {
-    const late = this.lateRowSync.get(chatId);
-    if (late === undefined) {
-      return;
-    }
-    this.lateRowSync.delete(chatId);
-    this.timer.clearTimeout(late.expiryTimer);
-  }
 
-  private applyLastMessage(chatId: number, entry: ChatEntry,
-    lastMessage: TdObject | null, positions: TdObject[] | undefined,
-    immediately: boolean): void {
-    const next = cloneEntry(entry);
-    next.lastMessageText = formatPreview(lastMessage);
-    next.lastMessageThumb = previewThumbOf(lastMessage);
-    next.lastMessageDate = lastMessage !== null
-      ? ((lastMessage['date'] as number | undefined) ?? 0) : 0;
-    next.lastMessageId = this.messageIdOf(lastMessage);
-    next.lastSenderName = next.isSavedMessages ? '' : this.senderName(lastMessage ?? undefined);
-    next.lastMessageSendState = lastMessageSendStateFrom(
-      lastMessage, next.lastReadOutboxId ?? 0, next.isSavedMessages, next.kind);
-    next.unreadCount = ChatStore.effectiveUnread(
-      next.rawUnreadCount, next.lastReadInboxId, next.lastMessageId);
-    this.setChatEntry(chatId, next);
-    const urgent: boolean = next.unreadCount < entry.unreadCount || (positions !== undefined &&
-      this.positionsNeedImmediatePublication(chatId, positions));
-    if (positions !== undefined) {
-      this.applyPositions(chatId, positions);
-    }
-    const dirtyChatId: number | undefined = positions !== undefined ? undefined : chatId;
-    if (immediately) {
-      this.notifySoon(dirtyChatId, urgent);
-    } else {
-      this.notify(dirtyChatId, urgent);
-    }
-  }
 
-  private onUnreadMentions(update: TdObject): void {
-    const chatId = update['chat_id'] as number;
-    const entry = this.chats.get(chatId);
-    const count = Math.max(0, (update['unread_mention_count'] as number | undefined) ?? 0);
-    if (entry === undefined || entry.unreadMentionCount === count) { return; }
-    const next = cloneEntry(entry);
-    next.unreadMentionCount = count;
-    this.setChatEntry(chatId, next);
-    this.notifySoon(chatId, count < entry.unreadMentionCount);
-  }
 
-  private onReadOutbox(update: TdObject): void {
-    const chatId = update['chat_id'] as number;
-    const entry = this.chats.get(chatId);
-    if (entry === undefined) {
-      return;
-    }
-    const lastReadOutboxId: number =
-      (update['last_read_outbox_message_id'] as number | undefined) ?? 0;
-    const nextSendState: string = refreshOutboxSendState(
-      entry.lastMessageSendState, entry.lastMessageId, lastReadOutboxId, entry.isSavedMessages, entry.kind);
-    const previousSendState: string = entry.lastMessageSendState ?? 'none';
-    if (lastReadOutboxId === (entry.lastReadOutboxId ?? 0) && nextSendState === previousSendState) {
-      return;
-    }
-    const next = cloneEntry(entry);
-    next.lastReadOutboxId = lastReadOutboxId;
-    next.lastMessageSendState = nextSendState;
-    this.setChatEntry(chatId, next);
-    this.notify(chatId, nextSendState !== previousSendState);
-  }
 
-  private applyReadInbox(chatId: number, entry: ChatEntry, rawUnreadCount: number,
-    lastReadInboxId: number, immediately: boolean): void {
-    const next = cloneEntry(entry);
-    next.rawUnreadCount = rawUnreadCount;
-    next.lastReadInboxId = lastReadInboxId;
-    next.unreadCount = ChatStore.effectiveUnread(
-      next.rawUnreadCount, next.lastReadInboxId, next.lastMessageId);
-    this.setChatEntry(chatId, next);
-    if (immediately) {
-      this.notifySoon(chatId, next.unreadCount < entry.unreadCount);
-    } else {
-      this.notify(chatId, next.unreadCount < entry.unreadCount);
-    }
-  }
 
   // Mark lists dirty and schedule one coalesced flush. A field-only change
   // passes its chat id so only lists actually containing that chat rebuild;
@@ -1808,15 +1054,11 @@ export class ChatStore {
   }
 
   private listContainsAny(listKey: string, ids: Set<number>): boolean {
-    const bucket = this.positions.get(listKey);
-    if (bucket === undefined) {
-      return false;
-    }
+    const members: number[] = this.listIds(listKey);
     for (const id of ids) {
-      if (bucket.has(id)) {
-        return true;
-      }
+      if (members.indexOf(id) >= 0) { return true; }
     }
     return false;
   }
+
 }

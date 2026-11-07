@@ -15,7 +15,11 @@ export struct CachedImage {
   private scrollState = scrollPlaceholderState;
   private imageSession: CachedImageSession = new CachedImageSession(
     (pixels: image.PixelMap | undefined, ready: boolean): void => {
-      this.pixelMap = pixels;
+      // 同值不写：activate/reuse 会把同一个位图重新投递一次，@Local 写同值也会
+      // 走一遍通知（12.4s 采集里 804 次变更，多数是这种重投）。
+      if (this.pixelMap !== pixels) {
+        this.pixelMap = pixels;
+      }
       if (ready) { this.onReady(); }
     });
 

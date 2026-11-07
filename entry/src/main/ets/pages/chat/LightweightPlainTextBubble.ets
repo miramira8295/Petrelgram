@@ -1,3 +1,5 @@
+import { senderLabelWidths } from '../../util/senderLabelWidths';
+import { BubbleGlassGeometry } from './BubbleGlassGeometry';
 import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
 import { RowLeaveChannel } from '../../util/rowLeaveChannel';
 import { MessageDragGesture } from '../../util/messageDragGesture';
@@ -15,7 +17,8 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { getAccentColorStore, getTdClient, getUserStore } from '../../tdkit/Globals';
 import {
-  BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth
+  BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth,
+  hitSenderAvatarColumn
 } from '../../util/mediaBox';
 import { editableCached, ensureEditable } from '../../util/messageEditable';
 import { deletableCached, ensureDeletable } from '../../util/messageDeletable';
@@ -243,24 +246,6 @@ struct LightweightSenderAvatar {
   }
 }
 
-// 名字行宽度的进程级记忆（P4 批 2）：V1 时代靠 @State「复用不清零」兜住
-// 「名字行比正文宽」的时间层最小宽度；@Local 复用必重置，改按名字文本记忆
-// ——复用当口先播种，onAreaChange 实测后回写。上限防涨（FIFO 淘汰）。
-const SENDER_LABEL_WIDTHS: Map<string, number> = new Map<string, number>();
-const SENDER_LABEL_WIDTH_LIMIT: number = 512;
-
-function rememberSenderLabelW(name: string, width: number): void {
-  if (name === '' || !(width > 0)) {
-    return;
-  }
-  if (!SENDER_LABEL_WIDTHS.has(name) && SENDER_LABEL_WIDTHS.size >= SENDER_LABEL_WIDTH_LIMIT) {
-    const oldest = SENDER_LABEL_WIDTHS.keys().next().value as string | undefined;
-    if (oldest !== undefined) {
-      SENDER_LABEL_WIDTHS.delete(oldest);
-    }
-  }
-  SENDER_LABEL_WIDTHS.set(name, width);
-}
 
 // 按压反馈这四组样式不读任何组件状态，随批 2 迁成全局 @Styles——
 // @ComponentV2 不支持成员 @Styles。
@@ -327,21 +312,29 @@ export struct LightweightPlainTextBubble {
   @Param animateIn: boolean = false;
   @Param memberIds: number[] = [];
   @Param nowSec: number = 0;
-  // 初值 true：行是在 LazyForEach 首批里建出来的，onVisibleAreaChange 的首帧
-  // 回调常常不来，初值 false 会让玻璃层等到「滑动一下」才挂上（用户报的）。
-  // 由回调负责在真正离屏时关掉——那一路是可靠的。@Local 复用时重置回 true，
-  // 语义与 V1 的手工赋值一致。
-  @Local onScreen: boolean = true;
-  @Local glassW: number = 0;
+  // 档位判据不再看"这一行在不在屏上"（2026-11-06）：onVisibleAreaChange 在
+  // 滚动与行重建期间会在行仍可见时翻 false，导致同一屏里一半气泡走玻璃档、
+  // 一半掉进实心档，看起来就是"两种厚度"。见 bubbleMaterialLive()。
+  // 玻璃层的尺寸。**普通字段，不是 @Local**（2026-11-06，Insight 采集驱动）。
+  //
+  // 玻璃层的几何缓存（可观测，属性级依赖）。所有玻璃背景属性直接读 geo.w/geo.h：
+  // 测量完成只会重算"读过这两个字段"的那几个属性，不会重跑内容 build。
+  // 历史：@Local 版本在 18.7s 滚动采集里变了 2588 次、单次最多波及 51 个组件
+  // （复用把 @Local 重置成 0 再填回）；中间态用过 glassStamp 记号，依赖关系不直观。
+  private geo: BubbleGlassGeometry = new BubbleGlassGeometry();
   // 长按菜单的两条动效链，按实例缓存（普通字段，写它不该惊动任何节点）。
   private menuFx: MessageMenuTransitions = new MessageMenuTransitions();
-  @Local glassH: number = 0;
-  // glassW/glassH 的量值影子。@Local 复用时被框架重置成 0，而 onSizeChange 在复用后
-  // 尺寸没变时不会再回调；无装饰器成员复用时不重置，节点上次上报的尺寸恰好就是它，
-  // aboutToReuse 用它回填。
+  // 这次布局实测到的尺寸。普通成员，复用不重置——复用时用它把 geo 填回去
+  // （尺寸没变时 onSizeChange 不会再回调）。
   private measuredGlassW: number = 0;
   private measuredGlassH: number = 0;
   private shadowShapeCache: SolidBubbleShadowCache = new SolidBubbleShadowCache();
+
+  // 名字行宽度：读当前发送者的可观测单元（首次读取惰性创建，不产生通知）。
+  // 这样依赖只落在"这个发送者"上，别的发送者量到宽度不会惊动本行。
+  private senderLabelWidth(): number {
+    return senderLabelWidths.cell(this.msg.senderName).width;
+  }
 
   private bubbleFillColor(): ResourceColor {
     if (this.env.appearanceEpoch < 0) {
@@ -356,10 +349,10 @@ export struct LightweightPlainTextBubble {
   private tailCornerRadius(): number {
     const corners = this.bubbleCorners();
     const radius = cornerPx(this.msg.isOutgoing ? corners.bottomRight : corners.bottomLeft);
-    if (this.glassW <= 0 || this.glassH <= 0) {
+    if (this.geo.w <= 0 || this.geo.h <= 0) {
       return radius;
     }
-    return Math.max(0, Math.min(radius, (this.glassW - (TAIL_W - 2)) / 2, this.glassH / 2));
+    return Math.max(0, Math.min(radius, (this.geo.w - (TAIL_W - 2)) / 2, this.geo.h / 2));
   }
 
   @Builder
@@ -385,23 +378,29 @@ export struct LightweightPlainTextBubble {
     }
   }
 
+  // 材质档只看全局开关：**不看单行可见性**。
+  //
+  // 原来还有 `&& this.onScreen`，本意是省掉离屏行的模糊合成。代价是
+  // onVisibleAreaChange([0, 0.01]) 在滚动/复用期间并不可靠——实测同一行会连续
+  // 收到两次 false，而它还在屏上。于是一屏里玻璃档与实心档混着出现：玻璃档是
+  // 半透明 + 1vp 描边，实心档是不透明底 + 外投影，肉眼就是"两种气泡厚度"。
   private bubbleMaterialLive(): boolean {
-    return this.env.bubbleMaterialOn && this.onScreen && !this.env.powerSaving;
+    return this.env.bubbleMaterialOn && !this.env.powerSaving;
   }
 
   // 见 MessageBubble.glassReady()：**容器**这一层要等量到尺寸，
   // 否则没裁剪的那一帧会把 7vp 尾巴留白一起涂满，左边缘外扩。
   private glassReady(): boolean {
-    return glassPaintReady(this.bubbleMaterialLive(), this.glassW, this.glassH);
+    return glassPaintReady(this.bubbleMaterialLive(), this.geo.w, this.geo.h);
   }
 
   // 见 MessageBubble.glassBodyOn()：玻璃结构不等测量，避免首帧退回实心档。
   private glassBodyOn(): boolean {
-    return glassBodyPainted(this.bubbleMaterialLive(), this.glassW, this.glassH);
+    return glassBodyPainted(this.bubbleMaterialLive(), this.geo.w, this.geo.h);
   }
 
   private glassBodyFallbackOn(): boolean {
-    return glassBodyFallbackPainted(this.bubbleMaterialLive(), this.glassW, this.glassH);
+    return glassBodyFallbackPainted(this.bubbleMaterialLive(), this.geo.w, this.geo.h);
   }
 
   private bubbleBg(): ResourceColor {
@@ -417,10 +416,16 @@ export struct LightweightPlainTextBubble {
       ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
   }
 
-  // 框架容器材质，不是 backdropBlur（后者节点边缘有采样衰减，四角最明显）。
-  private glassBlurStyle(): BlurStyle | undefined {
-    return this.glassBodyFallbackOn() ? bubbleGlassBlurStyle() : undefined;
-  }
+  // 【不要再给气泡本体挂 backgroundBlurStyle】(2026-11-06)
+  //
+  // 本体的模糊只在"还没量到尺寸"的首帧用，量到之后本体会变成 Transparent。
+  // 但 backgroundBlurStyle(undefined) **不会撤掉已经挂上的模糊**——那一层会留在
+  // 节点上，叠在容器的玻璃下面，看起来就是"气泡多叠了一层/厚一层"。滑出去再
+  // 复用回来的行因为一开始就有尺寸、从没挂过本体模糊，所以看起来是正常的，
+  // 正好对应用户报的"刚进会话厚，滑动后正常"。
+  //
+  // 现在本体只承担填充色（见 bubbleBg），模糊一律由容器负责。首帧的差别只剩
+  // "模糊晚一帧出现"，不再有残留层。
 
   private containerGlassBg(): ResourceColor {
     return this.glassReady() ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
@@ -445,11 +450,11 @@ export struct LightweightPlainTextBubble {
   // 补不上，自己沿整条轮廓描一圈；画在 .background() 里，不参与命中测试。
   @Builder
   solidShellShadow() {
-    if (this.glassW > 0 && this.glassH > 0) {
+    if (this.geo.w > 0 && this.geo.h > 0) {
       // 单个完整轮廓负责外部投影，阴影不再落在主体与尾角之间。
       Column() {}
-        .width(this.glassW).height(this.glassH)
-        .clipShape(this.shadowShapeCache.prepare(this.glassW, this.glassH, this.msg.isOutgoing,
+        .width(this.geo.w).height(this.geo.h)
+        .clipShape(this.shadowShapeCache.prepare(this.geo.w, this.geo.h, this.msg.isOutgoing,
           this.hasTail(), this.bubbleCorners()))
         .shadow({ radius: 2, color: '#14000000', offsetX: 0, offsetY: 1, fill: false })
         .hitTestBehavior(HitTestMode.None).accessibilityLevel('no');
@@ -459,8 +464,8 @@ export struct LightweightPlainTextBubble {
   @Builder
   glassOutline() {
     if (this.glassReady()) {
-      Path({ width: this.glassW, height: this.glassH })
-        .commands(glassOutlineCommands(this.glassW, this.glassH, this.msg.isOutgoing,
+      Path({ width: this.geo.w, height: this.geo.h })
+        .commands(glassOutlineCommands(this.geo.w, this.geo.h, this.msg.isOutgoing,
           this.hasTail(), this.bubbleCorners()))
         .fill(Color.Transparent)
         .stroke(GLASS_OUTLINE_COLOR)
@@ -489,9 +494,10 @@ export struct LightweightPlainTextBubble {
   private swipeFromEdge: boolean = false;
   // 名字行量出来的宽度。名字行比正文宽时，时间层要拿它兜最小宽度，时间戳才落在
   // 气泡右下角、引用块才能拉到气泡边缘。V1 靠「复用不清零」留住上一行的近似值；
-  // V2 的 @Local 复用必重置，改为按名字文本进程级记忆（见 SENDER_LABEL_WIDTHS），
+  // 名字行宽度按发送者存在可观测单元里（见 util/senderLabelWidths）：
+  // 不再用 @Local，复用不会被重置成 0，也就没有「归零 + 回填」两次通知。
   // 复用当口播种，比 V1 的近似更准（同名即同宽，V1 拿的是上一行随机名字的宽）。
-  @Local private senderLabelW: number = 0;
+
   private menuOffsetX: number = 0;
   private gestureClaimed: boolean = false;
   private unsubSend: (() => void) | null = null;
@@ -545,7 +551,7 @@ export struct LightweightPlainTextBubble {
   }
 
   // 只剩无装饰器成员要手工归零：官方表格明确它们复用时**不重置**。
-  // @Local（menuShown/swipeX/通道值/玻璃尺寸/onScreen）由框架在 aboutToReuse
+  // @Local（menuShown/swipeX/通道值/玻璃尺寸）由框架在 aboutToReuse
   // 之前统一重置（批 0.5 实测 1370/1370）。
   private resetTransient(): void {
     this.dragGesture = new MessageDragGesture();
@@ -556,7 +562,6 @@ export struct LightweightPlainTextBubble {
 
   aboutToAppear(): void {
     probeHit('message.plain.mount');
-    this.senderLabelW = SENDER_LABEL_WIDTHS.get(this.msg.senderName) ?? 0;
     this.attachChannels(this.msg);
   }
   aboutToDisappear(): void {
@@ -572,10 +577,8 @@ export struct LightweightPlainTextBubble {
     // @Param 已是新值、@Local 已重置（批 0.5 判读 Q1b/Q2）：同步重挂+重播种，
     // V1 时代的 reuseParam 读参和 nextFrameQueue 延帧兜底整套退役。
     this.resetTransient();
-    this.senderLabelW = SENDER_LABEL_WIDTHS.get(this.msg.senderName) ?? 0;
     // 见 measuredGlassW：复用后尺寸没变时 onSizeChange 不再回调，这里回填。
-    this.glassW = this.measuredGlassW;
-    this.glassH = this.measuredGlassH;
+    this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
     this.attachChannels(this.msg);
   }
 
@@ -618,7 +621,7 @@ export struct LightweightPlainTextBubble {
   // 行容器满宽，气泡只占其中一段，把点击换算回气泡内坐标再交给 recordMenuOffset。
   // 命中范围与菜单锚点是两件事：先保证整行都能唤起，再谈锚点精度。
   private recordRowMenu(eventX: number, rowW: number): void {
-    const w: number = this.glassW > 0 ? this.glassW : Math.max(1, rowW - BUBBLE_ROW_SIDE_VP * 2);
+    const w: number = this.geo.w > 0 ? this.geo.w : Math.max(1, rowW - BUBBLE_ROW_SIDE_VP * 2);
     const gutter: number = BUBBLE_ROW_SIDE_VP + (this.isGroup && !this.msg.isOutgoing && this.showAvatar
       ? BUBBLE_AVATAR_GUTTER_VP : 0);
     const left: number = this.msg.isOutgoing ? rowW - BUBBLE_ROW_SIDE_VP - w : gutter;
@@ -800,6 +803,26 @@ export struct LightweightPlainTextBubble {
   }
 
   @Builder
+  private replyQuoteBackdrop() {
+    Row({ space: 0 }) {
+      Column() {}
+        .width(4)
+        .height('100%')
+        .flexShrink(0)
+        .backgroundColor(this.accent())
+        .borderRadius({ topLeft: 4, bottomLeft: 4, topRight: 0, bottomRight: 0 });
+      Column() {}
+        .layoutWeight(1)
+        .height('100%')
+        .backgroundColor(accentSoft())
+        .borderRadius({ topLeft: 0, bottomLeft: 0, topRight: 4, bottomRight: 4 });
+    }
+    .width('100%')
+    .height('100%')
+    .hitTestBehavior(HitTestMode.None);
+  }
+
+  @Builder
   replyQuote() {
     Column() {
       Text(this.msg.replySenderName).fontSize(12).fontColor(this.accent()).maxLines(1)
@@ -811,10 +834,11 @@ export struct LightweightPlainTextBubble {
         .constraintSize({ maxWidth: this.replyMaxW() })
         .textOverflow({ overflow: TextOverflow.Ellipsis });
     }
-    .alignItems(HorizontalAlign.Start).alignSelf(ItemAlign.Stretch)
-    .backgroundColor(accentSoft()).borderRadius(6)
-    .border({ width: { left: 2 }, color: this.accent() })
-    .padding({ left: 6, right: 6, top: 3, bottom: 3 }).margin({ bottom: 4 })
+    .alignItems(HorizontalAlign.Start)
+    .alignSelf(ItemAlign.Stretch)
+    .padding({ left: 10, right: 6, top: 3, bottom: 3 })
+    .background(this.replyQuoteBackdrop(), { align: Alignment.TopStart })
+    .margin({ bottom: 4 })
     .onClick((): void => {
       if (!this.gestureClaimed) {
         this.actions.onReplyTap(this.msg.replyToMessageId, this.msg.id);
@@ -864,7 +888,7 @@ export struct LightweightPlainTextBubble {
   private measuredTimeLayerWidth(): number {
     return timeLayerMinWidth(this.inlineMaxW(), {
       forwardShown: false, forwardW: 0,
-      senderShown: this.senderLabelShown(), senderW: this.senderLabelW,
+      senderShown: this.senderLabelShown(), senderW: this.senderLabelWidth(),
       commentsShown: false, commentsW: 0
     });
   }
@@ -1084,12 +1108,12 @@ export struct LightweightPlainTextBubble {
         // onSizeChange 而不是 onAreaChange：后者每帧对所有注册节点逐个比对
         // （PipelineContext::HandleOnAreaChangeEvent，15:25 trace 翻页段每帧约 0.9ms），
         // 这里只要宽度。复用后尺寸没变就不会回调——那种情况 aboutToReuse 已按名字
-        // 从 SENDER_LABEL_WIDTHS 播种，值就是同一个。
+        // 宽度来自 senderLabelWidths 的可观测单元（首次读到 0，量到后自动刷新）。
         .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
           const w: Length | undefined = size.width;
+          // remember 内部同值不写，且只唤醒同一发送者的行。
           if (typeof w === 'number') {
-            this.senderLabelW = w as number;
-            rememberSenderLabelW(this.msg.senderName, w as number);
+            senderLabelWidths.remember(this.msg.senderName, w as number);
           }
         });
       }
@@ -1108,7 +1132,6 @@ export struct LightweightPlainTextBubble {
     // 上下文、连带整张消息 List 的重测。两支气泡必须同改。
     .constraintSize({ maxWidth: this.bubbleMaxW() })
     .backgroundColor(this.bubbleBg())
-    .backgroundBlurStyle(this.glassBlurStyle())
     .borderRadius(this.bubbleCorners()).padding(8)
     // 与富气泡一致：内容层高于尾巴，避免尾巴伸入主体的部分盖住文字。
     .zIndex(1)
@@ -1194,7 +1217,7 @@ export struct LightweightPlainTextBubble {
                 // 不设圆角就是个直角框，裁剪之后剩下半条亮线。
                 .borderRadius(this.glassRadius())
                 .background(this.glassOutline(), { align: Alignment.TopStart })
-                .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
+                .attributeModifier(bubbleGlassModifier(this.glassReady(), this.geo.w, this.geo.h,
                   this.msg.isOutgoing, this.hasTail(), this.bubbleCorners()))
                 // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
                 // 上的长注释：apply*Attribute 里注册是叠加，会把注册表撑爆）。
@@ -1209,17 +1232,8 @@ export struct LightweightPlainTextBubble {
                   }
                   this.measuredGlassW = w as number;
                   this.measuredGlassH = h as number;
-                  if (this.glassW !== this.measuredGlassW) {
-                    this.glassW = this.measuredGlassW;
-                  }
-                  if (this.glassH !== this.measuredGlassH) {
-                    this.glassH = this.measuredGlassH;
-                  }
-                })
-                // onScreen 只给材质用（bubbleMaterialLive），所以可见区回调只在这一支挂；容器与本体
-                // 是同一块，阈值 0.01 下的判定与原来挂在本体上一致。
-                .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
-                  this.onScreen = visible;
+                  // 同值不写：只有几何真的变了才通知背景。
+                  this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
                 })
               } else {
                 Row() {
@@ -1237,12 +1251,8 @@ export struct LightweightPlainTextBubble {
                   }
                   this.measuredGlassW = w as number;
                   this.measuredGlassH = h as number;
-                  if (this.glassW !== this.measuredGlassW) {
-                    this.glassW = this.measuredGlassW;
-                  }
-                  if (this.glassH !== this.measuredGlassH) {
-                    this.glassH = this.measuredGlassH;
-                  }
+                  // 同值不写：只有几何真的变了才通知背景。
+                  this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
                 })
                 .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
                   y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
@@ -1315,10 +1325,19 @@ export struct LightweightPlainTextBubble {
           if (this.gestureClaimed || this.menuShown) { return; }
           const fingers: FingerInfo[] = event.fingerList;
           const x: number = fingers && fingers.length > 0 ? fingers[0].localX : 0;
+          // 这一下按在发送者头像上：整手归头像（长按 = @ 对方），满宽行不弹菜单。
+          // 头像自己的 gesture 拦不住这里的 parallelGesture（父子并行触发）。
+          if (fingers && fingers.length > 0
+            && hitSenderAvatarColumn(x, this.isGroup, this.msg.isOutgoing, this.showAvatar)) {
+            return;
+          }
+          // 长按统一交给 messageGesturePolicy：tapFirst 进多选、classic 出菜单。
+          // 这里原先写死了「弹菜单」，tapFirst 下 500ms 就先把菜单弹出来，松手时
+          // 合成的那次长按再进多选 —— 用户看到的是菜单与多选同时出现。
+          // 与 MessageBubbleShell 行级长按（:2276 this.onLongPress(event)）保持一致。
+          this.onLongPress(event);
+          // 偏移换算仍用行坐标：onLongPress 内部按气泡内坐标夹取，靠近气泡边缘会偏。
           this.recordRowMenu(x, Number(event.target.area.width));
-          this.askEditable();
-          this.askDeletable();
-          this.menuShown = true;
         }))
       .onTouch((event: TouchEvent): void => {
         if (event.type === TouchType.Down) {

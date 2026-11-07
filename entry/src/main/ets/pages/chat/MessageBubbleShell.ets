@@ -23,10 +23,11 @@ import { CachedImage } from '../common/CachedImage';
 import { CachedImageSpec } from '../../util/cachedImageSpec';
 import { BubbleCornerCache, SenderAvatarSpec, SenderAvatarSpecCache } from '../../util/messageBubblePresentation';
 import { cornerPx, senderLeadInset } from '../../util/bubbleCornerInset';
+import { BubbleGlassGeometry } from './BubbleGlassGeometry';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { rememberLabelWidth, recallLabelWidth } from '../../util/labelWidthMemory';
 import { SenderRoleTag } from './SenderRoleTag';
-import { BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth } from '../../util/mediaBox';
+import { BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth, hitSenderAvatarColumn } from '../../util/mediaBox';
 import { formatClockTime } from '../../util/formatTime';
 import { isUnformattedPlainText, messageUrls, parseFormattedText } from '../../util/richText';
 import { inlineButtonKey, inlineButtonRowKey } from '../../util/inlineButtonKey';
@@ -312,11 +313,10 @@ export struct MessageBubbleShell {
   private attachedRowId: number = 0;
   private attachedMessageId: number = 0;
 
-  @Local onScreen: boolean = true;
 
-  @Local glassW: number = 0;
-
-  @Local glassH: number = 0;
+  // 玻璃层几何缓存：可观测对象、属性级依赖（见 BubbleGlassGeometry）。
+  // 背景属性直接读 geo.w / geo.h，测量完成只重算这几个属性。
+  private geo: BubbleGlassGeometry = new BubbleGlassGeometry();
 
   private measuredGlassW: number = 0;
 
@@ -483,8 +483,7 @@ export struct MessageBubbleShell {
     this.clearTransientState();
     this.seedLabelWidths();
     this.context.bubbleW = this.measuredBubbleW;
-    this.glassW = this.measuredGlassW;
-    this.glassH = this.measuredGlassH;
+    this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
     this.attachMessageChannels(this.msg);
   }
 
@@ -494,7 +493,6 @@ export struct MessageBubbleShell {
       this.clearTransientState();
       this.seedLabelWidths();
       this.context.bubbleW = this.measuredBubbleW;
-      this.onScreen = true;
       this.attachMessageChannels(this.msg);
     } else if (this.msg.id !== this.attachedMessageId) {
       // Sending keeps rowId stable while replacing a temporary message id.
@@ -1382,20 +1380,29 @@ export struct MessageBubbleShell {
   }
 
   @Builder
+  private replyQuoteBackdrop() {
+    Row({ space: 0 }) {
+      Column() {}
+        .width(4)
+        .height('100%')
+        .flexShrink(0)
+        .backgroundColor(this.accent())
+        .borderRadius({ topLeft: 4, bottomLeft: 4, topRight: 0, bottomRight: 0 });
+      Column() {}
+        .layoutWeight(1)
+        .height('100%')
+        .backgroundColor(accentSoft())
+        .borderRadius({ topLeft: 0, bottomLeft: 0, topRight: 4, bottomRight: 4 });
+    }
+    .width('100%')
+    .height('100%')
+    .hitTestBehavior(HitTestMode.None);
+  }
+
+  @Builder
   replyQuote() {
-    // 条件是"有没有回复"，不是"引用内容到没到"。被引用的消息是异步取回来的，
-    // 等内容到了才画这一块，气泡就会在落地后凭空长高约 40vp——进聊天页时那次
-    // 重排就是这么来的。两行都锁死行高，加载中和加载完是同一个高度。
-    // 前提：拉不到原消息时 store 会填 mb_reply_unavailable，不会永远空着。
     Row({ space: REPLY_THUMB_GAP }) {
-      // 缩略图：贴纸显示贴纸本身、图片显示原图、视频显示封面（同一个
-      // photoPath，见 util/replyThumb）。路径为空就整个不画——**不留占位方块**，
-      // 否则没图的引用块会多出一块空白。
-      //
-      // 边长刚好是两行文字的总高，所以有没有这张图，引用块的高度都一样，
-      // 不会在缩略图落地时把气泡顶高（这一块的注释里那条"锁死行高"的约束）。
       if (this.msg.replyDiceLayers.length > 0) {
-        // 骰子/老虎机：画摇出来的结果（结尾帧），见 DiceEndFrame。
         DiceEndFrame({ layers: this.msg.replyDiceLayers, thumbPath: this.msg.replyThumbPath,
           boxSize: REPLY_THUMB_SIZE });
       } else if (this.msg.replyThumbPath !== '') {
@@ -1414,27 +1421,13 @@ export struct MessageBubbleShell {
           .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
       }
       .alignItems(HorizontalAlign.Start)
-      // Weight 会让未定宽 Row 直接吃满主轴上限，短正文一旦带引用就被撑到
-      // 气泡最大宽度。这里只需在引用过长时收缩，整块宽度仍由正文决定。
       .flexShrink(1);
     }
     .alignItems(VerticalAlign.Center)
-    // 整块染一层强调色的淡底，并撑满气泡的内宽——这样点击区域就是看得见的
-    // 那一块，而不是只有文字那几个字宽。
-    //
-    // 用 alignSelf(Stretch) 而不是 width('100%')：百分比宽度的孩子会按父级
-    // 的**上限**来量，气泡会被这一块顶到最宽（同样的坑在时间戳那层踩过一次，
-    // 见 inline timestamp 的 Stack 注释）。Stretch 是先由别的内容定出宽度、
-    // 再把这一块拉满，正是要的语义。
-    //
-    // 引用文本仍然吃 replyQuoteMaxW 的上限：引用是次要信息，不该决定气泡
-    // 宽度（长 URL 会把气泡撑满，哪怕正文只有两个字）。
     .alignSelf(ItemAlign.Stretch)
-    .backgroundColor(accentSoft())
-    .borderRadius(6)
-    .border({ width: { left: 2 }, color: this.accent() })
-    .padding({ left: 6, right: 6, top: 3, bottom: 3 }).margin({ bottom: 4 })
-    // Tap the quote → jump to the original message.
+    .padding({ left: 10, right: 6, top: 3, bottom: 3 })
+    .background(this.replyQuoteBackdrop(), { align: Alignment.TopStart })
+    .margin({ bottom: 4 })
     .onClick(() => {
       if (this.context.gestureClaimed) { return; }
       if (this.msg.replyToMessageId !== 0) {
@@ -1473,10 +1466,10 @@ export struct MessageBubbleShell {
   private tailCornerRadius(): number {
     const corners = this.bubbleCornerRadius();
     const radius = cornerPx(this.msg.isOutgoing ? corners.bottomRight : corners.bottomLeft);
-    if (this.glassW <= 0 || this.glassH <= 0) {
+    if (this.geo.w <= 0 || this.geo.h <= 0) {
       return radius;
     }
-    return Math.max(0, Math.min(radius, (this.glassW - (TAIL_W - 2)) / 2, this.glassH / 2));
+    return Math.max(0, Math.min(radius, (this.geo.w - (TAIL_W - 2)) / 2, this.geo.h / 2));
   }
 
   @Builder
@@ -1502,12 +1495,13 @@ export struct MessageBubbleShell {
     }
   }
 
+  // 材质档只看全局开关，不看单行可见性（理由见 LightweightPlainTextBubble）。
   private bubbleMaterialLive(): boolean {
-    return this.env.bubbleMaterialOn && this.onScreen && !this.env.powerSaving;
+    return this.env.bubbleMaterialOn && !this.env.powerSaving;
   }
 
   private bubbleBg(): ResourceColor {
-    if (!this.glassLive()) {
+    if (!this.bubbleMaterialLive()) {
       return this.bubbleFillColor();
     }
     return this.glassBodyFallbackOn() ? this.glassBg() : Color.Transparent;
@@ -1518,15 +1512,15 @@ export struct MessageBubbleShell {
   }
 
   private glassReady(): boolean {
-    return glassPaintReady(this.glassLive(), this.glassW, this.glassH);
+    return glassPaintReady(this.glassLive(), this.geo.w, this.geo.h);
   }
 
   private glassBodyOn(): boolean {
-    return glassBodyPainted(this.glassLive(), this.glassW, this.glassH);
+    return glassBodyPainted(this.glassLive(), this.geo.w, this.geo.h);
   }
 
   private glassBodyFallbackOn(): boolean {
-    return glassBodyFallbackPainted(this.glassLive(), this.glassW, this.glassH);
+    return glassBodyFallbackPainted(this.glassLive(), this.geo.w, this.geo.h);
   }
 
   private glassBg(): ResourceColor {
@@ -1534,10 +1528,8 @@ export struct MessageBubbleShell {
       ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
   }
 
-  private glassBlurStyle(): BlurStyle | undefined {
-    return this.glassBodyFallbackOn() ? bubbleGlassBlurStyle() : undefined;
-  }
-
+  // 本体不挂 backgroundBlurStyle：undefined 撤不掉已挂的模糊，会留下叠层
+  // （见 LightweightPlainTextBubble 同名说明）。
   private containerGlassBg(): ResourceColor {
     return this.glassReady() ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
   }
@@ -1558,14 +1550,14 @@ export struct MessageBubbleShell {
 
   @Builder
   solidShellShadow() {
-    if (this.glassW > 0 && this.glassH > 0 && !this.isBareEmoji()) {
+    if (this.geo.w > 0 && this.geo.h > 0 && !this.isBareEmoji()) {
       // 单个完整轮廓负责外部投影，阴影不再落在主体与尾角之间。
       Column() {}
-        .width(this.glassW).height(this.glassH)
+        .width(this.geo.w).height(this.geo.h)
         // Direct decorative child of the outer Row: absolute children do not
         // contribute to Row measurement, including when a reused bubble shrinks.
         .position({ x: 0, y: 0 })
-        .clipShape(this.shadowShapeCache.prepare(this.glassW, this.glassH, this.msg.isOutgoing,
+        .clipShape(this.shadowShapeCache.prepare(this.geo.w, this.geo.h, this.msg.isOutgoing,
           this.hasBubbleTail(), this.bubbleCornerRadius()))
         .shadow({ radius: 2, color: '#14000000', offsetX: 0, offsetY: 1, fill: false })
         .hitTestBehavior(HitTestMode.None).accessibilityLevel('no');
@@ -1575,10 +1567,10 @@ export struct MessageBubbleShell {
   @Builder
   glassOutline() {
     if (this.glassReady()) {
-      Path({ width: this.glassW, height: this.glassH })
+      Path({ width: this.geo.w, height: this.geo.h })
         .position({ x: 0, y: 0 })
         .hitTestBehavior(HitTestMode.None).accessibilityLevel('no')
-        .commands(glassOutlineCommands(this.glassW, this.glassH, this.msg.isOutgoing,
+        .commands(glassOutlineCommands(this.geo.w, this.geo.h, this.msg.isOutgoing,
           this.hasBubbleTail(), this.bubbleCornerRadius()))
         .fill(Color.Transparent)
         .stroke(GLASS_OUTLINE_COLOR)
@@ -1964,7 +1956,7 @@ export struct MessageBubbleShell {
     })
     .constraintSize({ maxWidth: this.bubbleMaxW() })
     .backgroundColor(this.isBareEmoji() ? Color.Transparent : this.bubbleBg())
-    .backgroundBlurStyle(this.glassBlurStyle())
+
     // Adjacent rows share a restrained 7vp corner. Only the final row gets
     // the full bottom corner; a single-row run keeps the configured top arc.
     .borderRadius(this.bubbleCornerRadius())
@@ -2116,7 +2108,7 @@ export struct MessageBubbleShell {
             // 真机上就是用户报的「气泡描边不对」。设成气泡自己的圆角，这条边框就和轮廓
             // 重合（尾巴那侧仍由裁剪负责）。
             .borderRadius(this.glassRadius())
-            .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
+            .attributeModifier(bubbleGlassModifier(this.glassReady(), this.geo.w, this.geo.h,
               this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius()))
             // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
             // 上的长注释：apply*Attribute 里注册是叠加，会把注册表撑爆）。
@@ -2131,17 +2123,7 @@ export struct MessageBubbleShell {
               }
               this.measuredGlassW = w as number;
               this.measuredGlassH = h as number;
-              if (this.glassW !== this.measuredGlassW) {
-                this.glassW = this.measuredGlassW;
-              }
-              if (this.glassH !== this.measuredGlassH) {
-                this.glassH = this.measuredGlassH;
-              }
-            })
-            // onScreen 只给材质用（bubbleMaterialLive），所以可见区回调只在这一支挂；容器与本体
-            // 是同一块，阈值 0.01 下的判定与原来挂在本体上一致。
-            .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
-              this.onScreen = visible;
+              this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
             })
           } else {
             Row() {
@@ -2162,12 +2144,7 @@ export struct MessageBubbleShell {
               }
               this.measuredGlassW = w as number;
               this.measuredGlassH = h as number;
-              if (this.glassW !== this.measuredGlassW) {
-                this.glassW = this.measuredGlassW;
-              }
-              if (this.glassH !== this.measuredGlassH) {
-                this.glassH = this.measuredGlassH;
-              }
+              this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
             })
             .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
               y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
@@ -2265,7 +2242,15 @@ export struct MessageBubbleShell {
           .onAction((event: GestureEvent): void => {
             if (this.context.gestureClaimed) { return; }
             const fingers = event.fingerList;
-            this.recordRowMenuOffset(fingers.length > 0 ? fingers[0].localX : 0);
+            const localX: number = fingers.length > 0 ? fingers[0].localX : 0;
+            // 这一下按在发送者头像上：整手归头像（长按 = @ 对方），满宽行不再
+            // 弹菜单、也不进多选。头像自己的 gesture 拦不住这里的 parallelGesture
+            // （parent 与 child 并行触发），只能在这一层按落点让路。
+            if (fingers.length > 0 && hitSenderAvatarColumn(localX, this.data.isGroup,
+              this.msg.isOutgoing, this.group.showAvatar)) {
+              return;
+            }
+            this.recordRowMenuOffset(localX);
             this.onLongPress(event);
           })
       )

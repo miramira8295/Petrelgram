@@ -3,6 +3,7 @@ import { TdClient } from '../main/ets/tdkit/TdClient';
 import { TdObject, TdBridge } from '../main/ets/tdkit/TdTypes';
 import { UserStore } from '../main/ets/store/UserStore';
 import { ChatStore } from '../main/ets/store/ChatStore';
+import { buildChatEntry } from '../main/ets/store/chatEntryFactory';
 import { ChatThemeStore } from '../main/ets/store/ChatThemeStore';
 import {
   ChatBackgroundState, ChatBackgroundStore, defaultChatBackgroundSnapshot, emptyChatBackground,
@@ -35,6 +36,7 @@ interface Harness {
   bridge: FakeBridge;
   client: TdClient;
   store: ChatBackgroundStore;
+  chats: ChatStore;
 }
 
 function harness(dark: boolean = false): Harness {
@@ -45,7 +47,7 @@ function harness(dark: boolean = false): Harness {
   const themes = new ChatThemeStore(client);
   client.start();
   const store = new ChatBackgroundStore(client, chats, themes, (): boolean => dark);
-  return { bridge, client, store };
+  return { bridge, client, store, chats };
 }
 
 function solidFillBackground(color: number): TdObject {
@@ -472,6 +474,9 @@ export default function chatBackgroundStoreTest() {
       chat['background'] = solidFillBackground(0x00FF00);
       newChat['chat'] = chat;
       h.bridge.onReceive(JSON.stringify(newChat));
+      // 实体由 worker 投递：播种这一条，hasSpecificBackground() 才有依据。
+      h.chats.ingestForTest([buildChatEntry({ chat, previous: undefined, selfId: 0,
+        senderName: (_m: TdObject | undefined): string => '' })]); 
       h.store.open(555);
       h.store.applyKnownBackground(gradientBackground(0xAAAAAA, 0xBBBBBB, 90));
       expect(h.store.current().colors[0]).assertEqual('#AAAAAA');

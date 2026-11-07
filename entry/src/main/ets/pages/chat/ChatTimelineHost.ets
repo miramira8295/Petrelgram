@@ -4,6 +4,8 @@ import { showInitialLoadingHint } from '../../util/initialLoadingHint';
 import { FloatingDateOverlay, TimelineStatePillSlot } from './FloatingDateOverlay';
 import { TL_NONE, timelineStateMode, timelineStateText } from '../../util/timelineState';
 import { ROW_TEMPLATE_DEFERRED, ROW_TEMPLATE_PLAIN, ROW_TEMPLATE_PLAIN_GUTTER, ROW_TEMPLATE_RICH, ROW_TEMPLATE_RICH_GUTTER, rowTemplateId } from '../../util/rowTemplateId';
+import { MessageBubbleRenderData } from './ReusableMessageBubble';
+import { rowProbe } from '../../util/rowProbe';
 import { MessageRowHost } from './MessageRowHost';
 import { MessageBubbleActions } from './ReusableMessageBubble';
 import { stackFromEndWanted } from '../../util/stackFromEnd';
@@ -85,13 +87,27 @@ export struct ChatTimelineHost {
   @Builder
   private preparedMessageBubble(ri: RepeatItem<AlbumGroup>) {
     // 每次参数绑定只准备一次；宿主用同一份 data 与当前 group 现算复用桶。
+    // 准备耗时的打点在 prepareRowData() 里（@Builder 体内不能声明局部变量）。
     MessageRowHost({
       group: ri.item,
       nowSec: this.nowSec,
-      data: this.session.prepareMessageBubble(ri.item, this.rowPageInputs).data,
+      data: this.prepareRowData(ri.item),
       actions: this.actions,
       reusePageScope: this.reusePageScope
     });
+  }
+
+  // 行数据准备（prepareMessageBubble）+ 打点。单独成普通方法：@Builder 体内不许
+  // 声明局部变量。
+  private prepareRowData(group: AlbumGroup): MessageBubbleRenderData {
+    // 首次进会话才启动逐帧统计；start() 自身幂等。
+    rowProbe.start();
+    rowProbe.rowBuilt();
+    const start: number = Date.now();
+    const data: MessageBubbleRenderData =
+      this.session.prepareMessageBubble(group, this.rowPageInputs).data;
+    rowProbe.recordPrepare((Date.now() - start) * 1e6);
+    return data;
   }
 
   // Repeat 的模板名。分的是**外壳**的池，必须可枚举（见 util/rowTemplateId）。

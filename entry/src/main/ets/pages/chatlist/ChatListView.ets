@@ -1,10 +1,11 @@
-import { ChatListRowState } from './ChatListRowState';
+import { ChatListRowState, ChatRowFlags } from './ChatListRowState';
+import { FOLDER_TAGS_ENABLED, FolderInfo } from '../../store/FolderStore';
 import { ChatListSubscription } from '../../store/ChatListSubscription';
 import { homeCardMarginVp } from '../../util/pageMargin';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
-import { getChatStore } from '../../tdkit/Globals';
+import { getChatStore, getFolderStore } from '../../tdkit/Globals';
 import { ChatEntry } from '../../store/ChatEntry';
 import { ChatRow } from './ChatRow';
 import { KEY_FORCE_SINGLE_COLUMN } from '../../store/AppSettings';
@@ -239,6 +240,8 @@ export struct ChatListView {
   //
   // 所以这类页面传 false，改由页面自己的 onShown/onHidden 驱动 pageVisible。
   @Prop obeyGlobalGate: boolean = true;
+  // 分组标签开关：关着就不必为每行算分组归属（第二层 B3）。
+  @StorageProp(FOLDER_TAGS_ENABLED) folderTagsEnabled: boolean = false;
   // 承载本列表的页面在不在眼前。obeyGlobalGate 为 false 时才用得上。
   @Prop @Watch('onPageVisibleChanged') pageVisible: boolean = true;
   @StorageProp(CHAT_LIST_FLUSH_EPOCH) @Watch('onFlushRequested')
@@ -329,7 +332,7 @@ export struct ChatListView {
       return;
     }
     this.rowReloadPending = false;
-    this.chatsData.reload(this.keysFor(this.chats));
+    this.chatsData.reload(this.keysFor(this.chats), this.flagsFor(this.chats));
   }
 
   private onForegroundChanged(): void {
@@ -408,8 +411,32 @@ export struct ChatListView {
   // Only the empty/non-empty boundary needs parent state; row changes use the data source.
   private publishChats(next: ChatEntry[]): void {
     this.chats = next;
-    this.chatsData.update(next, this.keysFor(next));
+    this.chatsData.update(next, this.keysFor(next), this.flagsFor(next));
     this.chatsEmpty = next.length === 0;
+  }
+
+  // 第二层 B3：行渲染要的置顶/归档/分组归属，发布时算好随快照下发。
+  // 行组件因此不再在 build 里查 store（那是 store 搬进 worker 的硬阻塞）。
+  private flagsFor(items: ChatEntry[]): ChatRowFlags[] {
+    const store = getChatStore();
+    const listKey: string = this.listKey;
+    const folderIds: number[] = this.folderTagsEnabled
+      ? getFolderStore().getFolders().map((f: FolderInfo): number => f.id) : [];
+    const flags: ChatRowFlags[] = [];
+    for (const item of items) {
+      const inFolders: number[] = [];
+      for (const folderId of folderIds) {
+        if (store.isInFolder(folderId, item.id)) {
+          inFolders.push(folderId);
+        }
+      }
+      flags.push({
+        pinned: store.isPinned(listKey, item.id),
+        archived: store.isArchived(item.id),
+        folderIds: inFolders
+      });
+    }
+    return flags;
   }
 
   private keysFor(items: ChatEntry[]): string[] {

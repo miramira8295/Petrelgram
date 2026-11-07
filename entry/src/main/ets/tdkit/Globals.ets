@@ -12,6 +12,7 @@ import { AuthService, AuthStage } from './AuthService';
 import { readTdDeviceParams } from '../util/tdDeviceParamsReader';
 import { UserStore } from '../store/UserStore';
 import { ChatStore } from '../store/ChatStore';
+import { OrderSnapshot } from '../store/chatListOrder';
 import { ChatEntry } from '../store/ChatEntry';
 import { FileService } from '../services/FileService';
 import { FolderStore } from '../store/FolderStore';
@@ -190,6 +191,18 @@ function createRuntime(slotId: string): void {
   sessionSecurity = new SessionSecurityStore(client);
   users = new UserStore(client);
   chats = new ChatStore(client, users);
+  // 第二层 B2：worker 侧影子排序对账（没有 worker 桥就什么都不做）。
+  if (workerBridge !== undefined) {
+    const shadowTarget: ChatStore = chats;
+    workerBridge.onOrder((lists: OrderSnapshot[]): void => {
+      // V2 下这份快照就是列表成员与置顶的唯一来源；V1 下只用于对账。
+      shadowTarget.applyWorkerOrder(lists);
+    });
+    // 第二层 B4b：worker 侧影子实体对账（只比字段，不改本地）。
+    workerBridge.onChatEntries((entries: ChatEntry[]): void => {
+      shadowTarget.compareWorkerEntries(entries);
+    });
+  }
   files = new FileService(client, chats);
   folders = new FolderStore(client);
   unread = new UnreadCountStore(client);

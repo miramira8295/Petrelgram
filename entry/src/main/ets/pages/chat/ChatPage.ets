@@ -794,6 +794,9 @@ export struct ChatPage {
   // 模块级单例：平板分栏/导航栈多层时同时活着多个 ChatPage，各自会话的弹层
   // 状态互不相干。
   private overlayState: ChatOverlayState = new ChatOverlayState();
+  // 本页是否真的在屏上（NavDestination.onShown/onHidden）。给 ChatBackdrop 决定
+  // 整屏光栅的 pin 生命周期：隐藏即还引用（2 秒宽限期），显示即重新 retain。
+  @Local private surfaceActive: boolean = true;
   @Local nowSec: number = 0;
   private nowSecTimer: number = -1;
   // 查看器的目标、控制层、横屏和播放交接状态集中在 ChatViewerSession；页面只
@@ -1607,6 +1610,7 @@ export struct ChatPage {
       markVisibleRead: (end: number): void => { this.markVisibleRead(end); },
       closeBottomPanels: (): void => { this.closeBottomPanels(); },
       dismissKeyboardOnUserScroll: (): void => { this.dismissKeyboardOnUserScroll(); },
+      keyboardVisible: (): boolean => this.keyboardH > 0,
       capMessageReuseBuckets: (): void => { this.capMessageReuseBuckets(); },
       cancelImeFollow: (): void => {
         this.imeTailPinned = false;
@@ -3131,7 +3135,11 @@ export struct ChatPage {
   // 只在键盘确实立着时才动手。stopEditing 在没有焦点时是空操作，但白跑一次
   // 就意味着每一次滑动都要过一遍输入法的 IPC。
   private dismissKeyboardOnUserScroll(): void {
-    if (!this.timeline.listTouchActive || this.keyboardH <= 0) {
+    // 只有"按下时键盘已经立着"的手势才允许滑动收键盘。长按头像 @ 会在按住
+    // 期间 requestFocus，键盘刚升起就撞上 IME 贴底滚动产生的 onScrollStart，
+    // 这里若只看 listTouchActive 就会把刚升起的键盘收掉（闪烁）。
+    if (!this.timeline.listTouchActive || this.keyboardH <= 0 ||
+      !this.timeline.keyboardWasUpAtTouchDown()) {
       return;
     }
     this.composerController.stopEditing();
@@ -3239,6 +3247,8 @@ export struct ChatPage {
   private handleHidden(): void {
     AppStorage.setOrCreate<boolean>('chatDetailHiding', false);
     markChatDestHidden(this.chatDestToken);
+    this.surfaceActive = false;
+
     this.inputSwitch.cancel();
     coordinateChatPageHidden({
       stopScrollActivity: (): void => { setScrollActive(false); },
@@ -3277,6 +3287,8 @@ export struct ChatPage {
   private handleShown(): void {
     AppStorage.setOrCreate<boolean>('chatDetailHiding', false);
     markChatDestShown(this.chatDestToken);
+    this.surfaceActive = true;
+
     // 回到这一页（或者退场被取消了）：放开停车闸，头像该动的继续动。
     parkSenderAnimations(false);
     this.videoPrefetch.resume();
@@ -6303,7 +6315,9 @@ export struct ChatPage {
         this.command.closeMenu();
         if (this.keyboardH > 0) { this.syncTailOnImeFrame(); }
       },
-      onEditorBlur: (): void => { this.composerFocused = false; },
+      onEditorBlur: (): void => {
+        this.composerFocused = false;
+      },
       onActivateEditor: (): void => { this.inputSwitch.showKeyboard(); },
       onScheduleEditorMount: (): void => { this.scheduleComposerEditorMount(); },
       onToggleReplyKeyboard: (): void => { this.toggleReplyKeyboard(); },
@@ -6815,6 +6829,7 @@ export struct ChatPage {
         chatBg: this.chatBg,
         screenW: this.screenW,
         screenH: this.screenH,
+        surfaceActive: this.surfaceActive,
         chatBgBlur: this.chatBgBlur,
         chatBgPattern: this.chatBgPattern,
         chatBgDim: this.chatBgDim,

@@ -103,7 +103,34 @@ function embeddedText(content: TdObject): string {
   return txt !== undefined ? ((txt['text'] as string | undefined) ?? '') : '';
 }
 
-export function formatPreview(message: TdObject | null): string {
+// 预览文案里的固定词（"照片""语音"…）要本地化。UI 线程走 str()；worker 拿不到
+// ApplicationContext，所以由调用方注入一个解析器（worker 用启动时同步过去的
+// 译文表）。默认值 = 原来的 str()，其它调用点零改动。
+export type LabelResolver = (key: string, arg?: string | number) => string;
+
+const defaultLabel: LabelResolver = (key: string, arg?: string | number): string =>
+  arg === undefined ? str(key) : str(key, arg);
+
+// 预览路径会用到哪些 key：worker 启动时按这份清单同步译文。
+export const PREVIEW_LABEL_KEYS: string[] = [
+  'preview_photo', 'preview_video', 'preview_voice', 'preview_file', 'preview_sticker',
+  'preview_sticker_emoji', 'preview_music', 'preview_location', 'preview_live_location',
+  'preview_venue', 'preview_contact', 'preview_poll', 'preview_poll_question',
+  'preview_video_note', 'preview_call', 'preview_photo_expired', 'preview_video_expired',
+  'preview_video_note_expired', 'preview_voice_expired', 'preview_unsupported',
+  'preview_story', 'preview_game', 'preview_invoice', 'preview_paid', 'preview_paid_stars'
+];
+
+// 服务消息（入群/改标题/通话记录…）的文案也是 str()，同一份译文表要覆盖它。
+export function serviceLabelKeys(): string[] {
+  const keys: string[] = [];
+  for (const type of Object.keys(SERVICE_LABEL_KEYS)) {
+    keys.push(SERVICE_LABEL_KEYS[type]);
+  }
+  return keys;
+}
+
+export function formatPreview(message: TdObject | null, label: LabelResolver = defaultLabel): string {
   if (message === null) {
     return '';
   }
@@ -122,67 +149,67 @@ export function formatPreview(message: TdObject | null): string {
     return inner ?? '';
   }
   if (type === 'messagePhoto') {
-    return mediaLabel('📷', str('preview_photo'), content);
+    return mediaLabel('📷', label('preview_photo'), content);
   }
   if (type === 'messageVideo') {
-    return mediaLabel('📹', str('preview_video'), content);
+    return mediaLabel('📹', label('preview_video'), content);
   }
   if (type === 'messageVoiceNote') {
-    return str('preview_voice');
+    return label('preview_voice');
   }
   if (type === 'messageDocument') {
-    return mediaLabel('📎', str('preview_file'), content);
+    return mediaLabel('📎', label('preview_file'), content);
   }
   if (type === 'messageSticker') {
     const st = content['sticker'] as TdObject | undefined;
     const emoji = st !== undefined ? (st['emoji'] as string) : '';
-    return emoji !== '' && emoji !== undefined ? str('preview_sticker_emoji', emoji) : str('preview_sticker');
+    return emoji !== '' && emoji !== undefined ? label('preview_sticker_emoji', emoji) : label('preview_sticker');
   }
   if (type === 'messageAnimation') {
     return 'GIF';
   }
   if (type === 'messageAudio') {
-    return str('preview_music');
+    return label('preview_music');
   }
   if (type === 'messageLocation') {
-    return str('preview_location');
+    return label('preview_location');
   }
   if (type === 'messageLiveLocation') {
-    return str('preview_live_location');
+    return label('preview_live_location');
   }
   if (type === 'messageVenue') {
-    return str('preview_venue');
+    return label('preview_venue');
   }
   if (type === 'messageContact') {
-    return str('preview_contact');
+    return label('preview_contact');
   }
   if (type === 'messagePoll') {
     const poll = content['poll'] as TdObject | undefined;
     const q = poll !== undefined ? ((poll['question'] as TdObject | undefined)) : undefined;
     const qText = q !== undefined ? ((q['text'] as string | undefined) ?? '') : '';
-    return qText !== '' ? str('preview_poll_question', qText) : str('preview_poll');
+    return qText !== '' ? label('preview_poll_question', qText) : label('preview_poll');
   }
   if (type === 'messageDice') {
     const e = content['emoji'] as string | undefined;
     return e !== undefined && e !== '' ? e : '🎲';
   }
   if (type === 'messageVideoNote') {
-    return str('preview_video_note');
+    return label('preview_video_note');
   }
   if (type === 'messageCall') {
-    return str('preview_call');
+    return label('preview_call');
   }
   if (type === 'messageExpiredPhoto') {
-    return str('preview_photo_expired');
+    return label('preview_photo_expired');
   }
   if (type === 'messageExpiredVideo') {
-    return str('preview_video_expired');
+    return label('preview_video_expired');
   }
   if (type === 'messageExpiredVideoNote') {
-    return str('preview_video_note_expired');
+    return label('preview_video_note_expired');
   }
   if (type === 'messageExpiredVoiceNote') {
-    return str('preview_voice_expired');
+    return label('preview_voice_expired');
   }
   if (type === 'messageRichMessage') {
     // 富文本长帖：摊平后取正文，会话列表里就不再是一行"暂不支持"。
@@ -192,53 +219,53 @@ export function formatPreview(message: TdObject | null): string {
     }
   }
   if (type === 'messageUnsupported') {
-    return str('preview_unsupported');
+    return label('preview_unsupported');
   }
   if (type === 'messageStory') {
-    return str('preview_story');
+    return label('preview_story');
   }
   if (type === 'messageGame') {
-    return str('preview_game');
+    return label('preview_game');
   }
   if (type === 'messageInvoice') {
-    return str('preview_invoice');
+    return label('preview_invoice');
   }
   if (type === 'messagePaidMedia') {
     const stars = Math.max(0, (content['star_count'] as number | undefined) ?? 0);
-    return stars > 0 ? str('preview_paid_stars', stars) : str('preview_paid');
+    return stars > 0 ? label('preview_paid_stars', stars) : label('preview_paid');
   }
   if (type === 'messageGiftedStars') {
     const stars = Math.max(0, (content['star_count'] as number | undefined) ?? 0);
-    return stars > 0 ? str('preview_gift_stars_n', stars) : str('preview_gift_stars');
+    return stars > 0 ? label('preview_gift_stars_n', stars) : label('preview_gift_stars');
   }
   if (type === 'messageGiftedTon') {
-    return str('preview_gift_ton');
+    return label('preview_gift_ton');
   }
   if (type === 'messageGiftedPremium') {
     const months = Math.max(0, (content['month_count'] as number | undefined) ?? 0);
-    return months > 0 ? str('preview_gift_premium_n', months) : str('preview_gift_premium');
+    return months > 0 ? label('preview_gift_premium_n', months) : label('preview_gift_premium');
   }
   if (type === 'messagePremiumGiftCode') {
-    return str('preview_premium_code');
+    return label('preview_premium_code');
   }
   if (type === 'messageGift') {
     return ((content['was_refunded'] as boolean | undefined) ?? false)
-      ? str('preview_gift_refunded') : str('preview_gift');
+      ? label('preview_gift_refunded') : label('preview_gift');
   }
   if (type === 'messageUpgradedGift') {
     const gift = content['gift'] as TdObject | undefined;
     const title = gift !== undefined ? ((gift['title'] as string | undefined) ?? '') : '';
-    return title !== '' ? str('preview_gift_titled', title) : str('preview_gift_collectible');
+    return title !== '' ? label('preview_gift_titled', title) : label('preview_gift_collectible');
   }
   if (type === 'messageGiveaway') {
-    return str('preview_giveaway');
+    return label('preview_giveaway');
   }
   if (type === 'messageGiveawayWinners' || type === 'messageGiveawayCompleted') {
-    return str('preview_giveaway_results');
+    return label('preview_giveaway_results');
   }
   if (type === 'messageGiveawayPrizeStars') {
     const stars = Math.max(0, (content['star_count'] as number | undefined) ?? 0);
-    return stars > 0 ? str('preview_giveaway_won_stars', stars) : str('preview_giveaway_won');
+    return stars > 0 ? label('preview_giveaway_won_stars', stars) : label('preview_giveaway_won');
   }
   if (type === 'messageAnimatedEmoji') {
     const emoji = (content!['emoji'] as string | undefined) ?? '';
@@ -248,11 +275,11 @@ export function formatPreview(message: TdObject | null): string {
   }
   if (type === 'messageCustomServiceAction') {
     const text = ((content['text'] as string | undefined) ?? '').trim();
-    return text !== '' ? text : str('preview_chat_state_updated');
+    return text !== '' ? text : label('preview_chat_state_updated');
   }
   const svcKey: string | undefined = SERVICE_LABEL_KEYS[type];
   if (svcKey !== undefined) {
-    return str(svcKey);
+    return label(svcKey);
   }
   // Last resort: any embedded text/caption, else a readable compatibility
   // label. Never expose a raw TDLib type or the old ambiguous "[通知]".
@@ -260,7 +287,7 @@ export function formatPreview(message: TdObject | null): string {
   if (embedded !== '') {
     return embedded;
   }
-  return str('preview_unsupported');
+  return label('preview_unsupported');
 }
 
 // ── 会话列表预览小图（issue #202）──

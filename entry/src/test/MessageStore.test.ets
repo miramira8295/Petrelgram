@@ -657,9 +657,10 @@ export default function messageStoreTest() {
       try {
         AppStorage.setOrCreate('chatScrollActive', true);
         pushNewMessage(b, textMessage(11, 5, false, 'arrives mid-scroll'));
-        // 要越过两层：16ms 发布合并窗 + 400ms 入页安置窗（notifySoon 会把
-        // update 压到安置期末尾才尝试发布，冻结检查在那之后才会命中）。
-        await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 460));
+        // 要越过两层：16ms 发布合并窗 + 入页安置窗（notifySoon 会把 update 压到
+        // 安置期末尾才尝试发布，冻结检查在那之后才会命中）。安置窗 2026-11-06 由
+        // 400ms 拉到 720ms（跨过 HdsNavigation 推入转场），这里跟着放到 800ms。
+        await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 800));
         expect(notifies).assertEqual(0);
       } finally {
         // 断言失败也必须复位，否则冻结态会泄漏进后续所有用例。

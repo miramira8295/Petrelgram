@@ -358,6 +358,14 @@ export class ChatBackgroundStore {
   }
 
   private patchBubbleColor(color: string): void {
+    // 2026-11-06 主题切换专项：refresh() 会无条件用 '' 重置主题气泡色。若当前本来就是
+    // ''（没套主题的普通会话，占绝大多数），patch() 依然 cloned()+emit()，订阅端拿到
+    // 「值完全没变」的新对象后照样 bump chatBackgroundRevision，于是每次深浅色切换都
+    // 白跑一轮 preparedMessageCache 失效 + 可见行重算。这里只比较气泡色这一个字段：
+    // 值相同就不广播；最终状态与原来逐字段一致，不改变主题生效时机。
+    if (this.state.bubbleOutColor === color) {
+      return;
+    }
     const next: ChatBackgroundState = this.cloned();
     next.bubbleOutColor = color;
     this.patch(next);
@@ -534,11 +542,13 @@ export class ChatBackgroundStore {
   // Inflation is async, so a background resolved in the meantime must win:
   // fileId is re-checked before the state is touched.
   private usePath(path: string, id: number): void {
+    logI(`[ChatBackground] usePath id=${id} path=${path}`);
     if (!path.endsWith('.tgv')) {
       this.patchPath(path);
       return;
     }
     this.inflateIfPattern(path).then((usable: string): void => {
+      logI(`[ChatBackground] inflate id=${id} usable=${usable} match=${id === this.fileId}`);
       if (usable !== '' && id === this.fileId) {
         this.patchPath(usable);
       }

@@ -150,7 +150,10 @@ export const BG_BLUR_MAX: number = 20;
 // 共用一个浓度等于在深色下调完浅色也跟着变。
 export const KEY_BG_PATTERN: string = 'bgPatternStrength';
 export const KEY_BG_PATTERN_DARK: string = 'bgPatternStrengthDark';
-export const BG_PATTERN_DEFAULT: number = 1;
+// 2026-11-06：图案默认浓度从 100% 降到下限 20%。用户在壁纸设置里看到的是
+// 「纹路太粗、很丑」，20% 是滑杆允许的最低值；老用户存过的值不受影响，只有
+// 从未调过滑杆的场景用这个默认。
+export const BG_PATTERN_DEFAULT: number = 0.2;
 export const BG_PATTERN_MIN: number = 0.2;
 
 export function patternStrengthKey(forDark: boolean): string {
