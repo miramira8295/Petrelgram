@@ -234,21 +234,28 @@ export struct ChatBottomDrawerHost {
       if (this.emojiDrawer.activeSlot === 'attach' && this.emojiDrawer.shellHeight > 0) {
         BottomDrawerShell({
           bottomSafe: this.bottomSafe,
+          topOverlap: this.emojiDrawer.topOverlap(this.bottomSafe),
           shellHeight: this.emojiDrawer.shellHeight,
           cardOffsetY: this.emojiDrawer.cardOffsetY,
           cardOpacity: this.emojiDrawer.cardOpacity,
           content: this.attachDrawerContent
         });
       }
-      if (this.emojiDrawer.activeSlot === 'emoji' && this.emojiDrawer.shellHeight > 0) {
-        BottomDrawerShell({
-          bottomSafe: this.bottomSafe,
-          drawerHeight: this.drawerHeight,
-          shellHeight: this.emojiDrawer.shellHeight,
-          cardOffsetY: this.emojiDrawer.cardOffsetY,
-          cardOpacity: this.emojiDrawer.cardOpacity,
-          content: this.emojiDrawerContent
-        });
+      if (this.panelContentReady || (this.emojiDrawer.activeSlot === 'emoji' && this.emojiDrawer.shellHeight > 0)) {
+        Column() {
+          BottomDrawerShell({
+            bottomSafe: this.bottomSafe,
+            drawerHeight: this.drawerHeight,
+            topOverlap: this.emojiDrawer.topOverlap(this.bottomSafe),
+            shellHeight: this.emojiDrawer.activeSlot === 'emoji' ? this.emojiDrawer.shellHeight : 0,
+            cardOffsetY: this.emojiDrawer.cardOffsetY,
+            cardOpacity: this.emojiDrawer.cardOpacity,
+            content: this.emojiDrawerContent
+          });
+        }
+        .width('100%')
+        .visibility(this.emojiDrawer.activeSlot === 'emoji' && this.emojiDrawer.shellHeight > 0
+          ? Visibility.Visible : Visibility.None);
       }
     }
     .width('100%');

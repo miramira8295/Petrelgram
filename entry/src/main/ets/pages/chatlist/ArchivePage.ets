@@ -6,6 +6,7 @@ import { getChatStore, getUnreadCountStore } from '../../tdkit/Globals';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { allocChatDestToken, markChatDestHidden, markChatDestShown } from '../../util/chatDestTracker';
 import { HdsNavDestination } from '@kit.UIDesignKit';
 import { logE } from '../../util/log';
 
@@ -23,6 +24,7 @@ export struct ArchivePage {
   // NavDestination 之后 router.back() 弹的是 router 页栈，而本页已经不是
   // router 页了，弹不到自己。
   private navStack: NavPathStack | undefined = undefined;
+  private readonly chatDestToken: number = allocChatDestToken();
 
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -62,6 +64,7 @@ export struct ArchivePage {
   }
 
   aboutToDisappear(): void {
+    markChatDestHidden(this.chatDestToken, true);
     if (this.unsubscribeChats !== null) {
       this.unsubscribeChats();
       this.unsubscribeChats = null;
@@ -147,8 +150,15 @@ export struct ArchivePage {
     })
     // 盖住时停发、露出时补发。归档列表的未读角标就靠这一对回来
     //（2026-09-18：点进会话看完退回来，角标一直挂着）。
-    .onShown((): void => { this.pageVisible = true; })
-    .onHidden((): void => { this.pageVisible = false; })
+    .onWillShow((): void => { markChatDestShown(this.chatDestToken); })
+    .onShown((): void => {
+      markChatDestShown(this.chatDestToken);
+      this.pageVisible = true;
+    })
+    .onHidden((): void => {
+      markChatDestHidden(this.chatDestToken);
+      this.pageVisible = false;
+    })
     .width('100%').height('100%');
   }
 }

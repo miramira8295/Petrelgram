@@ -4,7 +4,7 @@ import { initVideoPosterStore } from '../../util/videoPosterStore';
 import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { ChatDropReceiver } from './ChatDropReceiver';
 import { CHAT_DROP_TYPES } from '../../services/DropData';
-import { EmojiDrawerState } from './EmojiDrawerState';
+import { EmojiDrawerState, drawerTopOverlap } from './EmojiDrawerState';
 import { ComposerInputSwitch } from './ComposerInputSwitch';
 import { StickerItem } from './StickerPicker';
 import { GifItem } from './GifPicker';
@@ -214,7 +214,7 @@ import { hasPrefetchedPage } from '../../util/chatPrefetch';
 import { subscribeChatJump } from '../../util/chatJumpChannel';
 import { clearNowPlaying, NowPlaying, publishNowPlaying } from '../../util/nowPlayingChannel';
 import { viewerFullScreenWanted, viewerHidesTitleBar } from '../../util/navFullScreen';
-
+import { allocChatDestToken, markChatDestHidden, markChatDestShown } from '../../util/chatDestTracker';
 import { isSystemTopBarReady, restoreViewerSystemBars } from '../../util/systemBarsWindow';
 import { publishViewerCoversWindow } from '../../util/viewerWindowCover';
 import {
@@ -363,6 +363,7 @@ export struct ChatPage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @Require @Param materialEpoch: number = 0;
+  private readonly chatDestToken: number = allocChatDestToken();
   // @Monitor('langEpoch') hangs off this (see onLanguageEpochChanged), because
   // the row key below embeds this value: bumping it renames every row, and the
   // data source has to be told or LazyForEach keeps a key table that no longer
@@ -1304,6 +1305,7 @@ export struct ChatPage {
     this.clearImeBridge(false);
     this.drawerAnimSeq++;
     this.drawerClosingToIme = false;
+    this.emojiDrawer.closingToIme = false;
     this.emojiDrawer.shellHeight = 0;
     this.emojiDrawer.activeSlot = '';
     this.emojiDrawer.cardOffsetY = 0;
@@ -3236,6 +3238,7 @@ export struct ChatPage {
 
   private handleHidden(): void {
     AppStorage.setOrCreate<boolean>('chatDetailHiding', false);
+    markChatDestHidden(this.chatDestToken);
     this.inputSwitch.cancel();
     coordinateChatPageHidden({
       stopScrollActivity: (): void => { setScrollActive(false); },
@@ -3273,6 +3276,7 @@ export struct ChatPage {
 
   private handleShown(): void {
     AppStorage.setOrCreate<boolean>('chatDetailHiding', false);
+    markChatDestShown(this.chatDestToken);
     // 回到这一页（或者退场被取消了）：放开停车闸，头像该动的继续动。
     parkSenderAnimations(false);
     this.videoPrefetch.resume();
@@ -3311,6 +3315,7 @@ export struct ChatPage {
 
   aboutToDisappear(): void {
     AppStorage.setOrCreate<boolean>('chatDetailHiding', false);
+    markChatDestHidden(this.chatDestToken, true);
     this.messageActionsState.reset();
     this.sessionLifecycle.dispose();
   }
@@ -3375,6 +3380,7 @@ export struct ChatPage {
     this.clearImeBridge(false);
     this.drawerAnimSeq++;
     this.drawerClosingToIme = false;
+    this.emojiDrawer.closingToIme = false;
     this.bottomChromeLayoutSeq++;
     this.imeTailPinned = false;
     this.bottomChromeMeasured = false;
@@ -3612,6 +3618,14 @@ export struct ChatPage {
     return 0;
   }
 
+  private targetDrawerLiftHeight(slot: string): number {
+    const total: number = this.targetDrawerTotalHeight(slot);
+    if (total <= 0) {
+      return 0;
+    }
+    return Math.max(0, total - drawerTopOverlap(this.bottomSafe, false));
+  }
+
   private finishDrawerToImeBridge(): void {
     if (this.imeBridgeTimer !== -1) {
       clearTimeout(this.imeBridgeTimer);
@@ -3619,6 +3633,7 @@ export struct ChatPage {
     }
     this.drawerAnimSeq++;
     this.drawerClosingToIme = false;
+    this.emojiDrawer.closingToIme = false;
     this.imeClosingToDrawer = false;
     this.emojiDrawer.closingImeToDrawer = false;
     this.emojiDrawer.closingExpanded = false;
@@ -3628,9 +3643,6 @@ export struct ChatPage {
     this.emojiDrawer.cardOpacity = 1;
     this.emojiDrawer.imeBridgeSlot = '';
     this.emojiDrawer.setImeOverlapRatio(0);
-    if (!this.showEmojiPanel) {
-      this.panelContentReady = false;
-    }
     this.syncComposerBottomGap();
   }
 
@@ -3652,12 +3664,14 @@ export struct ChatPage {
     if (this.currentImeOverlap() > 10 && this.emojiDrawer.shellHeight <= 0) {
       return;
     }
+    const prevTopOverlap: number = drawerTopOverlap(this.bottomSafe, this.drawerClosingToIme);
     this.imeClosingToDrawer = false;
     this.emojiDrawer.closingImeToDrawer = false;
     this.drawerClosingToIme = true;
+    this.emojiDrawer.closingToIme = true;
     const settle: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 190);
     const startH: number = this.emojiDrawer.shellHeight > 0
-      ? this.emojiDrawer.shellHeight
+      ? this.emojiDrawer.shellHeight + prevTopOverlap
       : this.targetDrawerTotalHeight(slot);
     const targetH: number = this.refImeHeight();
     this.armImeBridgeTimer(Math.max(340, settle + 140));
@@ -3671,6 +3685,7 @@ export struct ChatPage {
     }
     this.imeClosingToDrawer = false;
     this.drawerClosingToIme = false;
+    this.emojiDrawer.closingToIme = false;
     this.emojiDrawer.closingImeToDrawer = false;
     if (this.emojiDrawer.imeBridgeSlot !== '') {
       this.emojiDrawer.imeBridgeSlot = '';
@@ -3695,6 +3710,7 @@ export struct ChatPage {
   ): void {
     const seq: number = ++this.drawerAnimSeq;
     this.drawerClosingToIme = closingToIme;
+    this.emojiDrawer.closingToIme = closingToIme;
     if (slot !== '') {
       this.emojiDrawer.activeSlot = slot;
     }
@@ -3743,9 +3759,6 @@ export struct ChatPage {
         return;
       }
       this.emojiDrawer.closingExpanded = false;
-      if (onDone !== undefined) {
-        onDone();
-      }
       if (!closingToIme) {
         if (targetH <= 0) {
           this.emojiDrawer.shellHeight = 0;
@@ -3754,11 +3767,22 @@ export struct ChatPage {
           this.emojiDrawer.cardOpacity = 1;
           this.syncComposerBottomGap();
         }
-        if (this.keyboardH <= 0 && this.viewportResizeSettleTimer === -1) {
-          this.imeTailPinned = false;
-          this.timeline.driveVisibleWork();
+        if (onDone !== undefined) {
+          onDone();
         }
+        this.getUIContext().postFrameCallback(new ChatPageFrameCallback((): void => {
+          if (seq !== this.drawerAnimSeq) {
+            return;
+          }
+          if (this.keyboardH <= 0 && this.viewportResizeSettleTimer === -1) {
+            this.imeTailPinned = false;
+            this.timeline.driveVisibleWork();
+          }
+        }));
       } else {
+        if (onDone !== undefined) {
+          onDone();
+        }
         const overlap: number = this.currentImeOverlap();
         if (overlap >= Math.max(10, targetH - 4)) {
           this.finishDrawerToImeBridge();
@@ -3831,7 +3855,9 @@ export struct ChatPage {
       if (this.imeTailPinned || this.timeline.atBottom) {
         this.imeTailPinned = true;
         this.timeline.atBottom = true;
-        this.timeline.glueBottom('imeResizeClose');
+        if (!this.timeline.scroller.isAtEnd()) {
+          this.timeline.glueBottom('imeResizeClose');
+        }
       } else if (!this.timeline.scroller.isAtEnd()) {
         this.timeline.scroller.scrollBy(0, deltaH);
       }
@@ -5091,9 +5117,11 @@ export struct ChatPage {
   }
 
   private composerBottomGap(): number {
+    const tightForIme: boolean = (this.keyboardH > 0 && this.emojiDrawer.activeSlot === '') ||
+      this.drawerClosingToIme;
     return bottomGapOf(
-      this.keyboardH,
-      this.bottomPanelOpen() || this.emojiDrawer.activeSlot !== '' || this.drawerClosingToIme,
+      tightForIme ? Math.max(1, this.keyboardH) : 0,
+      tightForIme,
       this.bottomSafe
     );
   }
@@ -5193,10 +5221,10 @@ export struct ChatPage {
     }
     const startH: number = this.emojiDrawer.shellHeight > 0
       ? this.emojiDrawer.shellHeight
-      : this.emojiDrawer.totalHeight(this.headerChromeHeight(), this.bottomSafe);
+      : this.emojiDrawer.liftHeight(this.headerChromeHeight(), this.bottomSafe);
     this.emojiDrawer.closingExpanded = !expanded;
     this.emojiDrawer.expanded = expanded;
-    const targetH: number = this.emojiDrawer.totalHeight(this.headerChromeHeight(), this.bottomSafe);
+    const targetH: number = this.emojiDrawer.liftHeight(this.headerChromeHeight(), this.bottomSafe);
     const settle: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 210);
     this.animateDrawerTo(SLOT_EMOJI, targetH, settle, startH, 0, 0, 1, 1, false);
   }
@@ -5214,6 +5242,7 @@ export struct ChatPage {
       this.emojiPanelClosing = false;
       this.composerFocused = false;
       this.drawerClosingToIme = false;
+      this.emojiDrawer.closingToIme = false;
       const overlap: number = this.currentImeOverlap();
       const fromIme: boolean = overlap > 1 || this.keyboardH > 0;
       const wasDrawerOpen: boolean = this.emojiDrawer.shellHeight > 0;
@@ -5228,10 +5257,12 @@ export struct ChatPage {
       } else {
         this.emojiDrawer.closingImeToDrawer = false;
       }
+      const topOverlap: number = drawerTopOverlap(this.bottomSafe, false);
+      const rawImeH: number = overlap > 1 ? overlap : this.keyboardH;
       const startH: number = wasDrawerOpen
         ? this.emojiDrawer.shellHeight
-        : (fromIme ? Math.max(this.bottomSafe, overlap > 1 ? overlap : this.keyboardH) : this.bottomSafe);
-      const fromOffsetY: number = wasDrawerOpen ? 8 : (fromIme ? 14 : Math.max(18, this.bottomSafe));
+        : (fromIme ? Math.max(0, rawImeH - topOverlap) : 0);
+      const fromOffsetY: number = wasDrawerOpen ? 8 : (fromIme ? 14 : Math.max(18, topOverlap + 4));
       const fromOpacity: number = wasDrawerOpen ? 0.92 : (fromIme ? 0.86 : 0.88);
       this.applyBottomSlot(openSlot(this.bottomSlot, SLOT_EMOJI));
       this.showEmojiPanel = true;
@@ -5239,7 +5270,7 @@ export struct ChatPage {
       this.syncComposerBottomGap();
       // 收起系统键盘，把这块高度让给抽屉。
       this.composerController.stopEditing();
-      const targetH: number = this.targetDrawerTotalHeight(SLOT_EMOJI);
+      const targetH: number = this.targetDrawerLiftHeight(SLOT_EMOJI);
       this.animateDrawerTo(SLOT_EMOJI, targetH, settle, startH, fromOffsetY, 0, fromOpacity, 1, false);
       if (!this.panelContentReady) {
         this.getUIContext().postFrameCallback(new ChatPageFrameCallback((): void => {
@@ -5260,21 +5291,20 @@ export struct ChatPage {
       this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_EMOJI));
       if (this.emojiDrawer.activeSlot !== SLOT_EMOJI || this.emojiDrawer.shellHeight <= 0) {
         this.emojiPanelClosing = false;
-        this.panelContentReady = false;
         this.syncComposerBottomGap();
         return;
       }
       this.emojiPanelClosing = true;
       const closeDur: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 190);
       const startH: number = this.emojiDrawer.shellHeight;
-      const endH: number = Math.max(0, this.bottomSafe);
+      const topOverlap: number = drawerTopOverlap(this.bottomSafe, false);
       this.animateDrawerTo(
         SLOT_EMOJI,
-        endH,
+        0,
         closeDur,
         startH,
         this.emojiDrawer.cardOffsetY,
-        Math.max(16, this.bottomSafe),
+        Math.max(18, topOverlap + 6),
         this.emojiDrawer.cardOpacity,
         0.82,
         false,
@@ -5286,7 +5316,6 @@ export struct ChatPage {
           this.emojiDrawer.activeSlot = '';
           this.emojiDrawer.cardOffsetY = 0;
           this.emojiDrawer.cardOpacity = 1;
-          this.panelContentReady = false;
           this.emojiPanelClosing = false;
           this.syncComposerBottomGap();
         }
@@ -6018,6 +6047,7 @@ export struct ChatPage {
     this.emojiPanelClosing = false;
     this.composerFocused = false;
     this.drawerClosingToIme = false;
+    this.emojiDrawer.closingToIme = false;
     const settle: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 210);
     const overlap: number = this.currentImeOverlap();
     const fromIme: boolean = overlap > 1 || this.keyboardH > 0;
@@ -6033,16 +6063,18 @@ export struct ChatPage {
     } else {
       this.emojiDrawer.closingImeToDrawer = false;
     }
+    const topOverlap: number = drawerTopOverlap(this.bottomSafe, false);
+    const rawImeH: number = overlap > 1 ? overlap : this.keyboardH;
     const startH: number = wasDrawerOpen
       ? this.emojiDrawer.shellHeight
-      : (fromIme ? Math.max(this.bottomSafe, overlap > 1 ? overlap : this.keyboardH) : this.bottomSafe);
-    const fromOffsetY: number = wasDrawerOpen ? 8 : (fromIme ? 14 : Math.max(18, this.bottomSafe));
+      : (fromIme ? Math.max(0, rawImeH - topOverlap) : 0);
+    const fromOffsetY: number = wasDrawerOpen ? 8 : (fromIme ? 14 : Math.max(18, topOverlap + 4));
     const fromOpacity: number = wasDrawerOpen ? 0.92 : (fromIme ? 0.86 : 0.88);
     this.composerController.stopEditing();
     this.applyBottomSlot(next);
     this.emojiDrawer.activeSlot = SLOT_ATTACH;
     this.syncComposerBottomGap();
-    const targetH: number = this.targetDrawerTotalHeight(SLOT_ATTACH);
+    const targetH: number = this.targetDrawerLiftHeight(SLOT_ATTACH);
     this.animateDrawerTo(SLOT_ATTACH, targetH, settle, startH, fromOffsetY, 0, fromOpacity, 1, false);
   }
 
@@ -6062,14 +6094,14 @@ export struct ChatPage {
     this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_ATTACH));
     const closeDur: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 190);
     const startH: number = this.emojiDrawer.shellHeight;
-    const endH: number = Math.max(0, this.bottomSafe);
+    const topOverlap: number = drawerTopOverlap(this.bottomSafe, false);
     this.animateDrawerTo(
       SLOT_ATTACH,
-      endH,
+      0,
       closeDur,
       startH,
       this.emojiDrawer.cardOffsetY,
-      Math.max(16, this.bottomSafe),
+      Math.max(18, topOverlap + 6),
       this.emojiDrawer.cardOpacity,
       0.82,
       false,
@@ -6899,6 +6931,7 @@ export struct ChatPage {
       this.applyRouteParams();
     })
 
+    .onWillShow((): void => { markChatDestShown(this.chatDestToken); })
     .onShown((): void => { this.handleShown(); })
     .onWillHide((): void => { this.handleWillHide(); })
     .onHidden((): void => { this.handleHidden(); })

@@ -10,6 +10,8 @@ import { viewerBaseMessage, viewerEntryFor, viewerIndexOf, viewerMessageIdAt } f
 import { saveFileToDownloads, saveMediaToGallery } from '../../util/mediaSaver';
 import { initVideoPosterStore } from '../../util/videoPosterStore';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
+import { allocChatDestToken, markChatDestHidden, markChatDestShown } from '../../util/chatDestTracker';
+import { stackOf } from '../../util/navStacks';
 import { restoreViewerSystemBars } from '../../util/systemBarsWindow';
 import { str } from '../../util/strings';
 import { logE, logI } from '../../util/log';
@@ -36,6 +38,13 @@ export struct DownloadPreviewPage {
   @Local private topSafe: number = 0;
   private items: DownloadCenterItem[] = [];
   private navStack: NavPathStack | undefined = undefined;
+  private readonly chatDestToken: number = allocChatDestToken();
+  private inChatStack: boolean = false;
+  private willShowSeen: boolean = false;
+
+  aboutToDisappear(): void {
+    markChatDestHidden(this.chatDestToken, true);
+  }
 
   private ctx(): common.UIAbilityContext {
     return getContext(this) as common.UIAbilityContext;
@@ -154,7 +163,27 @@ export struct DownloadPreviewPage {
     .backgroundColor(Color.Black)
     .onReady((ctx: NavDestinationContext): void => {
       this.navStack = ctx.pathStack;
+      this.inChatStack = (ctx.pathStack as Object) === (stackOf('chat') as Object);
+      if (this.inChatStack && this.willShowSeen) {
+        markChatDestShown(this.chatDestToken);
+      }
       this.applyParams(ctx.pathInfo.param as Object | undefined);
+    })
+    .onWillShow((): void => {
+      this.willShowSeen = true;
+      if (this.inChatStack) {
+        markChatDestShown(this.chatDestToken);
+      }
+    })
+    .onShown((): void => {
+      this.willShowSeen = true;
+      if (this.inChatStack) {
+        markChatDestShown(this.chatDestToken);
+      }
+    })
+    .onHidden((): void => {
+      this.willShowSeen = false;
+      markChatDestHidden(this.chatDestToken);
     });
   }
 }

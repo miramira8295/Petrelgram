@@ -72,6 +72,7 @@ import { common } from '@kit.AbilityKit';
 import { openLocalFile } from '../../util/openLocalFile';
 import { fileOpenMimeType } from '../../util/fileMessage';
 import { navigateToProfile } from '../../util/profileNav';
+import { allocChatDestToken, markChatDestHidden, markChatDestShown } from '../../util/chatDestTracker';
 import { MEDIA_GRID_COLS, mediaCellSize as mediaGridCellSize, mediaFallbackContentWidth } from '../../util/mediaGrid';
 import { HdsNavDestination } from '@kit.UIDesignKit';
 
@@ -120,6 +121,7 @@ export struct ChatProfilePage {
   // 本页所在的 Navigation 栈，onReady 时拿到。返回按钮靠它出栈——本页已不是
   // router 页，router.back() 弹不到自己。
   private navStack: NavPathStack | undefined = undefined;
+  private readonly chatDestToken: number = allocChatDestToken();
   // 顶/底虚化四件套：半径随滚动量渐入，静止时 0（头图在列表里，常开会糊头像）。
   @State private listViewH: number = 0;
   @State private blurRadius: number = 0;
@@ -326,6 +328,7 @@ export struct ChatProfilePage {
   // 从提权/限制面板返回时重拉成员：身份标签和受限状态都可能变了。
   // 迁移前是 onPageShow，方法体一字未动，改由 HdsNavDestination.onShown() 触发。
   private handleShown(): void {
+    markChatDestShown(this.chatDestToken);
     this.inviteJoinResolver?.refresh();
     if (this.pendingMemberReload) {
       this.pendingMemberReload = false;
@@ -355,6 +358,7 @@ export struct ChatProfilePage {
   private qrScanner: TelegramQrScanner = new TelegramQrScanner();
 
   aboutToDisappear(): void {
+    markChatDestHidden(this.chatDestToken, true);
     this.qrScanner.cancel();
     this.closeQr();
     this.joinSeq++;
@@ -2098,8 +2102,12 @@ export struct ChatProfilePage {
       this.applyRouteParams();
       this.overOwnChat = this.computeOverOwnChat(ctx.pathStack);
     })
+    .onWillShow((): void => { markChatDestShown(this.chatDestToken); })
     .onShown((): void => { this.handleShown(); })
-    .onHidden((): void => { this.closeQr(); })
+    .onHidden((): void => {
+      markChatDestHidden(this.chatDestToken);
+      this.closeQr();
+    })
     .width('100%').height('100%');
   }
 }

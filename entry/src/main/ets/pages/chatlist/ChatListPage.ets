@@ -5,7 +5,7 @@ import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { SCOPE_MUTE_EPOCH } from '../../store/ScopeMuteStore';
 import { chatListInForeground, chatListPageCanRun } from './ChatListFreeze';
 import { KEY_IMMERSIVE_BARS_HIDDEN } from '../../util/immersiveBars';
-
+import { clearChatDestShownIfStackEmpty, KEY_CHAT_DETAIL_SHOWN } from '../../util/chatDestTracker';
 import {
   BreakpointType, HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM,
   isSmallSquare, isSplitByBreakpoint
@@ -325,6 +325,8 @@ export struct ChatListPage {
   // 分栏下会话页的媒体查看器开着：收左栏，让右栏里的查看器盖满窗口（见 util/viewerWindowCover）。
   // 复用 onWindowResized：它按定义重算 navBar 可见性，这里只是多了一个输入。
   @StorageProp(KEY_CHAT_VIEWER_COVERS_WINDOW) viewerCoversWindow: boolean = false;
+  @StorageProp(KEY_CHAT_DETAIL_SHOWN) @Watch('onChatDetailShownChanged') private chatDetailShown: boolean = false;
+  private lastReportedNavBarVisible: boolean = false;
   // 分栏判据读系统横向 + 纵向断点（util/layoutBreakpoint.isSplitByBreakpoint）——只看宽的话
   // 手机一转横屏就被当成平板（#125）。
   @StorageProp('screenHeightVp') @Watch('onWindowResized') screenH: number = 780;
@@ -539,7 +541,9 @@ export struct ChatListPage {
   // navBar 显隐落地：写标志、开关列表渲染闸、同步给 dock。
   // **两条路共用**——框架的 onNavBarStateChange，以及下面按窗口尺寸自己重算的
   // onWindowResized。两处各写一遍必然跑偏。
-  private applyNavBarVisible(isVisible: boolean): void {
+  private applyNavBarVisible(reported: boolean): void {
+    this.lastReportedNavBarVisible = reported;
+    const isVisible: boolean = reported && !(this.singleColDetailCoversNavBar && this.singleColDetailCoversNavBar());
     const changed: boolean = this.navBarVisible !== isVisible;
     this.navBarVisible = isVisible;
     if (!isVisible || !chatListInForeground()) {
@@ -564,6 +568,20 @@ export struct ChatListPage {
     }
   }
 
+  private singleColDetailCoversNavBar(): boolean {
+    return !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait)
+      && this.chatStack.size() > 0
+      && this.chatDetailShown;
+  }
+
+  private onChatDetailShownChanged(): void {
+    if (!this.chatDetailShown && (this.chatStack.size() === 0 || this.lastReportedNavBarVisible)) {
+      this.applyNavBarVisible(!this.viewerHidesNavBar());
+      return;
+    }
+    this.applyNavBarVisible(this.lastReportedNavBarVisible && !this.viewerHidesNavBar());
+  }
+
   // 窗口尺寸一变，分栏与否可能跟着翻（平板分屏、悬浮窗、旋转、折叠屏都会），
   // navBar 的真实显隐也跟着翻——而此前**没有任何东西会重算那个标志**：它只由
   // onNavBarStateChange 写。那是框架给的回调，我们既保证不了它在每一次 mode
@@ -583,7 +601,9 @@ export struct ChatListPage {
     if (this.folderBarCollapsed) {
       this.getUIContext().postFrameCallback(new FolderChipAnchorFrameCallback(this));
     }
-
+    if (this.singleColDetailCoversNavBar()) {
+      this.applyNavBarVisible(false);
+    }
 
   // 只在分栏时生效：单栏（手机）下 navBar 本来就被会话页整页盖住，不需要这一手。
   }
@@ -608,6 +628,8 @@ export struct ChatListPage {
     // 完成"，而这里正是 aboutToAppear。见 util/pendingNav 的事故说明。
     setTimeout((): void => { flushPendingNavs('chat'); }, 0);
 
+    clearChatDestShownIfStackEmpty(this.chatStack.size());
+    this.lastReportedNavBarVisible = false;
     this.navBarVisible = false;
     AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, false);
     this.listRenderActive = chatListPageCanRun(this.pageActive, this.navBarVisible);
