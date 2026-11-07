@@ -28,8 +28,8 @@ constexpr int32_t kMaxFrames = 2000;
 constexpr int32_t kMaxDim = 512;
 // 文件超过这个就不再追加（偏移是 u32；正常一张贴纸几 MB）。
 constexpr uint64_t kMaxFileBytes = 256ull * 1024 * 1024;
-// 后台压缩队列上限：渲染比压缩快得多时宁可丢，下次渲到这帧再存。
-constexpr size_t kMaxPending = 8;
+// 后台压缩队列上限：首轮 60fps×3s 最多连续产出 180 帧，留足 192 槽位保证一轮全部落盘。
+constexpr size_t kMaxPending = 192;
 
 void PutU32(uint8_t *p, uint32_t v) {
     p[0] = static_cast<uint8_t>(v);

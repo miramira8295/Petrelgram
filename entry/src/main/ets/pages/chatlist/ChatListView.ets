@@ -12,7 +12,7 @@ import { KEY_FORCE_SINGLE_COLUMN } from '../../store/AppSettings';
 import { ChatListDataSource } from './ChatListDataSource';
 import { ChatListRowKeyCache } from './chatListRowKeys';
 import { guardKey } from '../../util/keyGuard';
-import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, chatListInForeground, chatListPublicationMode, ChatListFreeze, chatOrderUnchanged, contentOnlyUpdate, updateTouchHold } from './ChatListFreeze';
+import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, chatListInForeground, chatListPublicationMode, ChatListFreeze, chatOrderUnchanged, chatRevisionsUnchanged, contentOnlyUpdate, updateTouchHold } from './ChatListFreeze';
 import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
 import { rememberListPosition, recallListPosition } from '../../util/chatListPosition';
 import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
@@ -36,6 +36,9 @@ import {
   ChatSwipeActionVisual,
   archiveSwipeVisual, muteSwipeVisual, readSwipeVisual
 } from '../../util/chatListSwipe';
+
+const EMPTY_FOLDER_IDS: number[] = [];
+const FLUSH_BYPASS_DEFER_MS: number = 32;
 
 @Component
 export struct ChatListView {
@@ -269,6 +272,7 @@ export struct ChatListView {
   // 纯发布闸，不参与绘制：滚动期间只缓存最新会话快照，停下后一次性发布。
   private listMoving: boolean = false;
   private scrollSettleTimer: number = -1;
+  private flushBypassTimer: number = -1;
 
   // 文件夹条的收起/展开只关心"这一帧滚了多少"和"是不是已经在顶上"，两样都在
   // 这一个回调里拿得到。先判空再取 currentOffset()：这个回调每帧都跑，没接线
@@ -421,13 +425,18 @@ export struct ChatListView {
     const store = getChatStore();
     const listKey: string = this.listKey;
     const folderIds: number[] = this.folderTagsEnabled
-      ? getFolderStore().getFolders().map((f: FolderInfo): number => f.id) : [];
+      ? getFolderStore().getFolders().map((f: FolderInfo): number => f.id) : EMPTY_FOLDER_IDS;
     const flags: ChatRowFlags[] = [];
     for (const item of items) {
-      const inFolders: number[] = [];
-      for (const folderId of folderIds) {
-        if (store.isInFolder(folderId, item.id)) {
-          inFolders.push(folderId);
+      let inFolders: number[] = EMPTY_FOLDER_IDS;
+      if (folderIds.length > 0) {
+        for (const folderId of folderIds) {
+          if (store.isInFolder(folderId, item.id)) {
+            if (inFolders === EMPTY_FOLDER_IDS) {
+              inFolders = [];
+            }
+            inFolders.push(folderId);
+          }
         }
       }
       flags.push({
@@ -491,6 +500,10 @@ export struct ChatListView {
   private onRenderGateChanged(): void {
     // 闸开了就关窗：往后走正常路（含重排动画），不再需要旁路。
     if (this.gateOpen()) {
+      if (this.flushBypassTimer !== -1) {
+        clearTimeout(this.flushBypassTimer);
+        this.flushBypassTimer = -1;
+      }
       this.flushBypass = false;
     }
     this.flushBufferedChats();
@@ -514,6 +527,25 @@ export struct ChatListView {
       return;
     }
     this.flushBypass = true;
+    if (!this.updatesActive) {
+      return;
+    }
+    if (AppStorage.get<boolean>('chatDetailHiding') === true) {
+      if (this.flushBypassTimer !== -1) {
+        clearTimeout(this.flushBypassTimer);
+      }
+      this.flushBypassTimer = setTimeout((): void => {
+        this.flushBypassTimer = -1;
+        if (!this.obeyGlobalGate || !chatListInForeground() || this.menuOpen || this.gateOpen() || !this.flushBypass) {
+          return;
+        }
+        this.listSubscription?.refresh();
+        if (!this.listMoving) {
+          this.drainContentOnly();
+        }
+      }, FLUSH_BYPASS_DEFER_MS);
+      return;
+    }
     this.listSubscription?.refresh();
     if (!this.listMoving) {
       this.drainContentOnly();
@@ -537,7 +569,9 @@ export struct ChatListView {
       return;
     }
     if (chatOrderUnchanged(this.chats, next)) {
-      this.publishChats(next);
+      if (!chatRevisionsUnchanged(this.chats, next)) {
+        this.publishChats(next);
+      }
       return;
     }
     const merged: ChatEntry[] | null = contentOnlyUpdate(this.chats, next);
@@ -553,6 +587,10 @@ export struct ChatListView {
     if (this.scrollSettleTimer !== -1) {
       clearTimeout(this.scrollSettleTimer);
       this.scrollSettleTimer = -1;
+    }
+    if (this.flushBypassTimer !== -1) {
+      clearTimeout(this.flushBypassTimer);
+      this.flushBypassTimer = -1;
     }
     this.listMoving = false;
     this.listSubscription?.close();

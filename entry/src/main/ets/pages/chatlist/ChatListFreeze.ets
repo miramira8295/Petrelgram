@@ -95,6 +95,18 @@ export function chatOrderUnchanged(current: ChatEntry[], next: ChatEntry[]): boo
   return true;
 }
 
+export function chatRevisionsUnchanged(current: ChatEntry[], next: ChatEntry[]): boolean {
+  if (current.length !== next.length) {
+    return false;
+  }
+  for (let i: number = 0; i < current.length; i++) {
+    if (current[i].id !== next[i].id || current[i].revision !== next[i].revision) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // 把新快照的**内容**贴到当前顺序上，返回可以立刻发布的那一份；没有内容变化
 // 时返回 null。
 //

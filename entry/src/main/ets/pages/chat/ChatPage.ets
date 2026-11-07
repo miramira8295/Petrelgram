@@ -79,7 +79,7 @@ import { ChatOverlayState, ChatOverlaySheetKind } from './ChatOverlayState';
 import { ChatTimelineHost } from './ChatTimelineHost';
 import { AttachActions } from './AttachActions';
 import {
-  ChatBackgroundState, ChatBackgroundStore, emptyChatBackground
+  ChatBackgroundState, ChatBackgroundStore, defaultChatBackgroundSnapshot, emptyChatBackground
 } from '../../store/ChatBackgroundStore';
 import { MusicQueue } from '../../services/MusicQueue';
 import { VoiceState } from '../../services/VoicePlayback';
@@ -344,6 +344,29 @@ interface AppendAnchorSample {
 // 删除时那几行淡出的时长（issue #149）。比 publishGroupsNow 里塌陷动画的 200ms
 // 略短，好让"先淡出、后收拢"读起来是一个连续动作。
 
+let clearDetailHidingTimer: number = -1;
+
+function cancelClearChatDetailHiding(hiding: boolean): void {
+  if (clearDetailHidingTimer !== -1) {
+    clearTimeout(clearDetailHidingTimer);
+    clearDetailHidingTimer = -1;
+  }
+  AppStorage.setOrCreate<boolean>('chatDetailHiding', hiding);
+}
+
+function scheduleClearChatDetailHiding(): void {
+  if (!(AppStorage.get<boolean>('chatDetailHiding') ?? false)) {
+    return;
+  }
+  if (clearDetailHidingTimer !== -1) {
+    return;
+  }
+  clearDetailHidingTimer = setTimeout((): void => {
+    clearDetailHidingTimer = -1;
+    AppStorage.setOrCreate<boolean>('chatDetailHiding', false);
+  }, 36);
+}
+
 @ComponentV2
 export struct ChatPage {
   private timeline: ChatTimelineSession = new ChatTimelineSession();
@@ -417,6 +440,7 @@ export struct ChatPage {
 
   @Local private contentAnimationsAllowed: boolean = false;
   private hiddenSinceMs: number = 0;
+  private scrollResumeCapturedOnHide: boolean = false;
   // 应用整个进过后台（熄屏、回桌面），而不只是本页被应用内的另一页盖住。
   //
   // hiddenListDirty 只认"隐藏期间数据变过"。但实测下来更常见的是另一路：
@@ -1098,12 +1122,8 @@ export struct ChatPage {
   private recording: VoiceRecordingState = new VoiceRecordingState();
   @Local composerSending: boolean = false;
   @Local composerFocused: boolean = false;
-  // TextArea creation loads the stylus service and performs its first paragraph
-  // layout. The 17:04 trace confirmed the one-frame placeholder moved it out of
-  // page creation, but it then shared a 22 ms frame with the first real message.
-  // Keep the placeholder until initial-message admission finishes, then cross
-  // one more VSync before mounting the editor.
-  @Local composerEditorReady: boolean = false;
+  // 首帧直接挂载真实 TextArea，避免进场后从 Text 替身切换到 TextArea 导致占位文字基线/颜色跳动与主线程二次重排。
+  @Local composerEditorReady: boolean = true;
   private composerMountScheduled: boolean = false;
   private composerMountSeq: number = 0;
   private composerController: TextAreaController = new TextAreaController();
@@ -1327,7 +1347,7 @@ export struct ChatPage {
     this.composerFocused = false;
     this.composerMountSeq++;
     this.composerMountScheduled = false;
-    this.composerEditorReady = false;
+    this.composerEditorReady = true;
     this.imeTailPinned = false;
     this.bottomChromeMeasured = false;
     this.lastComposerBottomGap = -1;
@@ -2079,6 +2099,10 @@ export struct ChatPage {
     this.subscriptions.set('playSlot', this.playSlot.subscribe());
     initVideoPosterStore((getContext(this) as common.UIAbilityContext).cacheDir);
     this.nowSec = Math.floor(Date.now() / 1000);
+    // 首帧 build 前即同步填入账号默认壁纸快照，避免 aboutToAppear → onReady 之间发生二次壁纸切换。
+    this.chatBg = defaultChatBackgroundSnapshot(
+      darkResourceMode(getContext(this) as common.UIAbilityContext)
+    );
     // 日期条隐藏的那一刻 listUserScrollActive 必须跟着翻假——原来它和显隐写在
     // 同一个定时器体里，定时器下沉之后靠这个回调保住同一时刻。
     this.timeline.floatDateState.setOnHidden((): void => { this.timeline.onFloatDateHidden(); });
@@ -2782,10 +2806,7 @@ export struct ChatPage {
   // 仍是原文件里"consumeLiveIncomingMediaAndCommands"这一步该做的事的
   // 后半截。
   private consumeLiveIncomingMediaAndCommands(): void {
-    // Shared loader resolves private/group command catalogs once per chat.
-    if (this.command.commandLoadState === 'idle' && this.store !== null) {
-      this.command.ensureCommandsLoaded();
-    }
+    // 机器人 '/' 指令按钮已不在输入框内常驻展示，命令目录改为用户输入 '/' 触发 refreshCommands() 时按需加载。
   }
 
   // 四条落点分支的互斥链：resume 已定位 / 首屏落点 / 新消息跟随 / 原地增高贴底。
@@ -3245,7 +3266,7 @@ export struct ChatPage {
   }
 
   private handleHidden(): void {
-    AppStorage.setOrCreate<boolean>('chatDetailHiding', false);
+    scheduleClearChatDetailHiding();
     markChatDestHidden(this.chatDestToken);
     this.surfaceActive = false;
 
@@ -3258,7 +3279,9 @@ export struct ChatPage {
       syncChatTgsGate: (): void => { this.syncChatTgsGate(); },
       captureHiddenAnchor: (): void => {
         this.hiddenSinceMs = Date.now();
-        this.timeline.captureHiddenAnchor();
+        if (!this.scrollResumeCapturedOnHide) {
+          this.timeline.captureHiddenAnchor();
+        }
       },
       clearNowSecTimer: (): void => { this.clearNowSecTimer(); },
       clearSlotTick: (): void => { this.playSlot.clearTick(); },
@@ -3267,8 +3290,12 @@ export struct ChatPage {
   }
 
   private handleWillHide(): void {
-    AppStorage.setOrCreate<boolean>('chatDetailHiding', true);
+    cancelClearChatDetailHiding(true);
     this.inputSwitch.cancel();
+    this.hiddenSinceMs = Date.now();
+    this.timeline.captureHiddenAnchor();
+    this.captureScrollResume();
+    this.scrollResumeCapturedOnHide = true;
     // 退场一开始就把群聊动态头像卸下来：播放器于是在转场那 600ms 里逐个释放，
     // 而不是全挤在转场结束那一帧（真机 trace：那一帧 47–57ms，
     // SenderAnimatedLayer 是单节点销毁成本的冠军，1.02ms/个 × 17）。
@@ -3285,7 +3312,8 @@ export struct ChatPage {
   }
 
   private handleShown(): void {
-    AppStorage.setOrCreate<boolean>('chatDetailHiding', false);
+    cancelClearChatDetailHiding(false);
+    this.scrollResumeCapturedOnHide = false;
     markChatDestShown(this.chatDestToken);
     this.surfaceActive = true;
 
@@ -3326,7 +3354,7 @@ export struct ChatPage {
   }
 
   aboutToDisappear(): void {
-    AppStorage.setOrCreate<boolean>('chatDetailHiding', false);
+    scheduleClearChatDetailHiding();
     markChatDestHidden(this.chatDestToken, true);
     this.messageActionsState.reset();
     this.sessionLifecycle.dispose();
@@ -3378,12 +3406,17 @@ export struct ChatPage {
     // 抢在草稿落地之前（真机日志 1.4.7.2：save len=3 → 同一会话 restore serverLen=0）。
     // 仅当草稿文本真发生改变时才递增 DRAFT_EPOCH，避免退出会话（aboutToDisappear）
     // 最后一帧无条件唤醒会话列表全部 ChatRow 同步重绘导致退场尾帧掉帧。
-    if (rememberLocalDraft(this.chatId, draftText)) {
+    const draftChanged: boolean = rememberLocalDraft(this.chatId, draftText);
+    if (draftChanged) {
       bumpDraftEpoch();
     }
-    this.store?.saveDraft(draftText, this.composer.replyToId);
+    if (draftChanged || draftText.trim() !== '' || this.composer.replyToId !== 0) {
+      this.store?.saveDraft(draftText, this.composer.replyToId);
+    }
     this.exitViewerLandscape();
-    this.captureScrollResume();
+    if (!this.scrollResumeCapturedOnHide) {
+      this.captureScrollResume();
+    }
   }
 
   private disposeTimersAndSeqGuards(): void {
@@ -6543,13 +6576,7 @@ export struct ChatPage {
         });
       }
     }
-    .width('100%')
-    .opacity(this.timeline.initialMessageTransitionSettled ? 1 : 0)
-    .animation({
-      duration: powerAnimationDuration(
-        KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
-      curve: Curve.EaseOut
-    });
+    .width('100%');
   }
 
   @Builder
@@ -6946,7 +6973,10 @@ export struct ChatPage {
       this.applyRouteParams();
     })
 
-    .onWillShow((): void => { markChatDestShown(this.chatDestToken); })
+    .onWillShow((): void => {
+      cancelClearChatDetailHiding(false);
+      markChatDestShown(this.chatDestToken);
+    })
     .onShown((): void => { this.handleShown(); })
     .onWillHide((): void => { this.handleWillHide(); })
     .onHidden((): void => { this.handleHidden(); })

@@ -30,7 +30,7 @@ import {
   overlayBackdropBlur, containerBlur, overlayGlassFill, overlayMaterial
 } from '../../util/overlayMaterial';
 import {
-  GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, SolidBubbleShadowCache
+  GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands
 } from '../../util/bubbleTail';
 import {
   glassBodyFallbackPainted, glassBodyPainted, glassPaintReady, tailShapeCommands
@@ -146,6 +146,9 @@ const TAIL_GUTTER_RIGHT: Padding = { right: 7 };
 // 群聊来信不显示头像时给头像留的 44vp 位（头像 38 + 右边距 6），见 avatarGutterPadding。
 const AVATAR_GUTTER: Padding = { left: BUBBLE_AVATAR_GUTTER_VP };
 const NO_GUTTER: Padding = {};
+const SOLID_BUBBLE_SHADOW: ShadowOptions = {
+  radius: 2, color: '#14000000', offsetX: 0, offsetY: 1
+};
 
 @ComponentV2
 struct LightweightSenderAvatar {
@@ -328,7 +331,6 @@ export struct LightweightPlainTextBubble {
   // （尺寸没变时 onSizeChange 不会再回调）。
   private measuredGlassW: number = 0;
   private measuredGlassH: number = 0;
-  private shadowShapeCache: SolidBubbleShadowCache = new SolidBubbleShadowCache();
 
   // 名字行宽度：读当前发送者的可观测单元（首次读取惰性创建，不产生通知）。
   // 这样依赖只落在"这个发送者"上，别的发送者量到宽度不会惊动本行。
@@ -391,16 +393,16 @@ export struct LightweightPlainTextBubble {
   // 见 MessageBubble.glassReady()：**容器**这一层要等量到尺寸，
   // 否则没裁剪的那一帧会把 7vp 尾巴留白一起涂满，左边缘外扩。
   private glassReady(): boolean {
-    return glassPaintReady(this.bubbleMaterialLive(), this.geo.w, this.geo.h);
+    return this.bubbleMaterialLive() && glassPaintReady(true, this.geo.w, this.geo.h);
   }
 
   // 见 MessageBubble.glassBodyOn()：玻璃结构不等测量，避免首帧退回实心档。
   private glassBodyOn(): boolean {
-    return glassBodyPainted(this.bubbleMaterialLive(), this.geo.w, this.geo.h);
+    return this.bubbleMaterialLive() && glassBodyPainted(true, this.geo.w, this.geo.h);
   }
 
   private glassBodyFallbackOn(): boolean {
-    return glassBodyFallbackPainted(this.bubbleMaterialLive(), this.geo.w, this.geo.h);
+    return this.bubbleMaterialLive() && glassBodyFallbackPainted(true, this.geo.w, this.geo.h);
   }
 
   private bubbleBg(): ResourceColor {
@@ -446,17 +448,26 @@ export struct LightweightPlainTextBubble {
       : { topLeft: r.topLeft, topRight: r.topRight, bottomRight: r.bottomRight, bottomLeft: 0 };
   }
 
+  private solidBodyShadow(): ShadowOptions | undefined {
+    if (this.bubbleMaterialLive() || this.hasTail()) {
+      return undefined;
+    }
+    return SOLID_BUBBLE_SHADOW;
+  }
+
   // 见 MessageBubble.glassOutline()：材质的边框只沿节点 border-box 画，尾巴那一侧
   // 补不上，自己沿整条轮廓描一圈；画在 .background() 里，不参与命中测试。
   @Builder
   solidShellShadow() {
-    if (this.geo.w > 0 && this.geo.h > 0) {
-      // 单个完整轮廓负责外部投影，阴影不再落在主体与尾角之间。
+    if (this.hasTail() && this.geo.w > TAIL_W - 1 && this.geo.h > 0) {
+      // 有尾角时在尾巴（zIndex 0）与主体（zIndex 1）正下方垫与主体同尺寸的标准圆角矩形投影：
+      // 尾角根部投影被上方不透明的尾巴 Path 盖死（无竖向暗缝），同时避开 PathShape 裁剪与 fill:false 离屏遮罩。
       Column() {}
-        .width(this.geo.w).height(this.geo.h)
-        .clipShape(this.shadowShapeCache.prepare(this.geo.w, this.geo.h, this.msg.isOutgoing,
-          this.hasTail(), this.bubbleCorners()))
-        .shadow({ radius: 2, color: '#14000000', offsetX: 0, offsetY: 1, fill: false })
+        .width(this.geo.w - (TAIL_W - 1)).height(this.geo.h)
+        .offset({ x: this.msg.isOutgoing ? 0 : TAIL_W - 1, y: 0 })
+        .backgroundColor(this.bubbleFillColor())
+        .borderRadius(this.bubbleCorners())
+        .shadow(SOLID_BUBBLE_SHADOW)
         .hitTestBehavior(HitTestMode.None).accessibilityLevel('no');
     }
   }
@@ -1133,6 +1144,7 @@ export struct LightweightPlainTextBubble {
     .constraintSize({ maxWidth: this.bubbleMaxW() })
     .backgroundColor(this.bubbleBg())
     .borderRadius(this.bubbleCorners()).padding(8)
+    .shadow(this.solidBodyShadow())
     // 与富气泡一致：内容层高于尾巴，避免尾巴伸入主体的部分盖住文字。
     .zIndex(1)
     // 主体不能单独投影到尾角上，避免连接处出现竖向暗缝（与富气泡壳一致）。
@@ -1211,7 +1223,6 @@ export struct LightweightPlainTextBubble {
                 .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
                   y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
                   centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
-                .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
                 .backgroundBlurStyle(this.containerGlassBlurStyle())
                 // 见 MessageBubble 同一处：材质的边框沿本节点 border-box 画、吃 borderRadius，
                 // 不设圆角就是个直角框，裁剪之后剩下半条亮线。
@@ -1251,13 +1262,13 @@ export struct LightweightPlainTextBubble {
                   }
                   this.measuredGlassW = w as number;
                   this.measuredGlassH = h as number;
-                  // 同值不写：只有几何真的变了才通知背景。
+                  // 无尾巴实心行在 solidShellShadow() 首条件 hasTail() 短路，不订阅 geo.w/h（0 重绘开销），
+                  // 但仍写入 geo 以供长按空白区菜单锚点与删消息后原地补尾巴使用。
                   this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
                 })
                 .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
                   y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
                   centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
-                .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
               }
             }
             .stateStyles({ normal: plainBubbleNormalStyle, pressed: plainBubblePressedStyle })

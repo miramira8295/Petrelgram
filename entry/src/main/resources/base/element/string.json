@@ -8822,7 +8822,7 @@
     },
     {
       "name": "cp_message_placeholder",
-      "value": "发消息"
+      "value": "输入消息..."
     },
     {
       "name": "cp_fetching_membership",

@@ -150,12 +150,6 @@ export struct ChatPageSurface {
             this.bottomSuggestions();
             this.bottomContent();
           }
-          .opacity(this.timeline.initialMessageTransitionSettled ? 1 : 0)
-          .animation({
-            duration: powerAnimationDuration(
-              KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
-            curve: Curve.EaseOut
-          })
           .width('100%').height('100%')
           .justifyContent(FlexAlign.End)
           .hitTestBehavior(HitTestMode.None);

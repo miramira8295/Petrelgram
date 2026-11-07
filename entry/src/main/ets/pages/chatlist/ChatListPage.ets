@@ -161,7 +161,7 @@ const FOLDER_PILL_ANIMATE: string = 'folderPillAnimate';
 // HdsNavigation reports the nav bar visible near the beginning of a pop. Keep
 // child list publications frozen until the measured ~590 ms transition ends,
 // then apply the newest buffered snapshot once.
-const CHAT_LIST_RETURN_SETTLE_MS: number = 640;
+const CHAT_LIST_RETURN_SETTLE_MS: number = 720;
 
 // The route table loads ChatPage dynamically. Queue its module graph immediately
 // after the chat list's first frame instead of waiting a fixed 1200 ms: a quick
@@ -571,7 +571,8 @@ export struct ChatListPage {
   private singleColDetailCoversNavBar(): boolean {
     return !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait)
       && this.chatStack.size() > 0
-      && this.chatDetailShown;
+      && this.chatDetailShown
+      && !(AppStorage.get<boolean>('chatDetailHiding') ?? false);
   }
 
   private onChatDetailShownChanged(): void {

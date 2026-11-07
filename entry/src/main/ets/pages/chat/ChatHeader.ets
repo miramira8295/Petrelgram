@@ -390,7 +390,10 @@ export struct ChatHeader {
       Row({ space: 10 }) {
       AvatarView({
         avatarPath: this.header.avatarPath,
-        animPath: this.header.avatarAnimPath,
+        // 顶栏身份胶囊自身带 backdropBlur('bar')，内部若挂载 30fps XComponent 视频纹理
+        // 会每帧作废毛玻璃 FilterCache 并迫使整屏退出硬件直接合成（与 ChatRow 同理保持静态，
+        // 点进资料页 ChatProfilePage 才播放大图动态头像）。
+        animPath: '',
         animationPaused: !this.animationsAllowed,
         initials: this.header.initials,
         colorSeed: this.chatId,
@@ -493,12 +496,6 @@ export struct ChatHeader {
     .width('100%')
     .padding({ left: 12, right: 12 })
     .margin({ top: 8, bottom: 8 })
-    .alignItems(VerticalAlign.Center)
-    .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ y: -5 }))
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-        curve: Curve.EaseOut
-      }));
+    .alignItems(VerticalAlign.Center);
   }
 }

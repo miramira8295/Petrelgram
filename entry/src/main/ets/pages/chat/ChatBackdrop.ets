@@ -486,7 +486,9 @@ export struct ChatBackdrop {
         // 把一份实例适配到屏幕（见 patternTileGrid 的注释——用 Contain 适配一份
         // 时，比例比图案更宽的设备（如平板）会在离轴边缘露白）。整图壁纸仍然
         // 铺满并裁切（Cover）。
-        if (this.chatBg.path !== '' && this.chatBg.isPattern) {
+        // 当磁盘已有烘焙好的光栅文件（rasterPath !== ''）时，解码的 ~15ms 内仅垫渐变底色，
+        // 绝不在转场首帧挂载 PatternTileLayer（2x 超采样 SVG + 实时 blur + renderGroup，实测卡 85ms）。
+        if (this.chatBg.path !== '' && this.chatBg.isPattern && this.rasterPath === '') {
           // 组件而不是全局 @Builder：多参数的全局 @Builder 建完就不再跟随参数
           // 变化，模糊度/图案浓度到货后这一层会停在旧值上。见 PatternTileLayer。
           PatternTileLayer({

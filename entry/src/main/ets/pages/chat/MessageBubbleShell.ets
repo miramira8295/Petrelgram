@@ -41,7 +41,7 @@ import { TranslationStatus, subscribeTranslationStatus, translationStatusFor } f
 import { subscribeViewCount, viewCountLabelFor, viewsReserve } from '../../util/viewCountChannel';
 import { pinForTranslationGrowth } from '../../util/translationGrowthPin';
 import { containerBlur, overlayMaterial } from '../../util/overlayMaterial';
-import { GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, SolidBubbleShadowCache } from '../../util/bubbleTail';
+import { GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands } from '../../util/bubbleTail';
 import { glassBodyFallbackPainted, glassBodyPainted, glassPaintReady, tailShapeCommands } from '../../util/bubbleGlassPath';
 import { timeLayerMinWidth } from '../../util/timeLayerWidth';
 import { MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
@@ -143,6 +143,9 @@ const PURE_MEDIA_CORNER_RADIUS: BorderRadiuses = {
 };
 const MEDIA_TIME_PADDING: Padding = { left: 6, right: 6, top: 2, bottom: 2 };
 const PLAIN_TIME_PADDING: Padding = { left: 0 };
+const SOLID_BUBBLE_SHADOW: ShadowOptions = {
+  radius: 2, color: '#14000000', offsetX: 0, offsetY: 1
+};
 
 interface SenderAvatarState {
   path: string;
@@ -323,8 +326,6 @@ export struct MessageBubbleShell {
   private measuredGlassH: number = 0;
 
   private reactionTransitions: ReactionTransitions = new ReactionTransitions();
-
-  private shadowShapeCache: SolidBubbleShadowCache = new SolidBubbleShadowCache();
 
   @Param nowSec: number = 0;
 
@@ -1512,15 +1513,15 @@ export struct MessageBubbleShell {
   }
 
   private glassReady(): boolean {
-    return glassPaintReady(this.glassLive(), this.geo.w, this.geo.h);
+    return this.glassLive() && glassPaintReady(true, this.geo.w, this.geo.h);
   }
 
   private glassBodyOn(): boolean {
-    return glassBodyPainted(this.glassLive(), this.geo.w, this.geo.h);
+    return this.glassLive() && glassBodyPainted(true, this.geo.w, this.geo.h);
   }
 
   private glassBodyFallbackOn(): boolean {
-    return glassBodyFallbackPainted(this.glassLive(), this.geo.w, this.geo.h);
+    return this.glassLive() && glassBodyFallbackPainted(true, this.geo.w, this.geo.h);
   }
 
   private glassBg(): ResourceColor {
@@ -1548,18 +1549,26 @@ export struct MessageBubbleShell {
       : { topLeft: r.topLeft, topRight: r.topRight, bottomRight: r.bottomRight, bottomLeft: 0 };
   }
 
+  private solidBodyShadow(): ShadowOptions | undefined {
+    if (this.bubbleMaterialLive() || this.isBareEmoji() || this.hasBubbleTail()) {
+      return undefined;
+    }
+    return SOLID_BUBBLE_SHADOW;
+  }
+
   @Builder
   solidShellShadow() {
-    if (this.geo.w > 0 && this.geo.h > 0 && !this.isBareEmoji()) {
-      // 单个完整轮廓负责外部投影，阴影不再落在主体与尾角之间。
+    if (this.hasBubbleTail() && this.geo.w > TAIL_W - 1 && this.geo.h > 0 && !this.isBareEmoji()) {
+      // 有尾角时在尾巴（zIndex 0）与主体（zIndex 1）正下方垫与主体同尺寸的标准圆角矩形投影：
+      // 尾角根部投影被上方不透明的尾巴 Path 盖死（无竖向暗缝），同时避开 PathShape 裁剪与 fill:false 离屏遮罩。
       Column() {}
-        .width(this.geo.w).height(this.geo.h)
+        .width(this.geo.w - (TAIL_W - 1)).height(this.geo.h)
         // Direct decorative child of the outer Row: absolute children do not
         // contribute to Row measurement, including when a reused bubble shrinks.
-        .position({ x: 0, y: 0 })
-        .clipShape(this.shadowShapeCache.prepare(this.geo.w, this.geo.h, this.msg.isOutgoing,
-          this.hasBubbleTail(), this.bubbleCornerRadius()))
-        .shadow({ radius: 2, color: '#14000000', offsetX: 0, offsetY: 1, fill: false })
+        .position({ x: this.msg.isOutgoing ? 0 : TAIL_W - 1, y: 0 })
+        .backgroundColor(this.bubbleFillColor())
+        .borderRadius(this.bubbleCornerRadius())
+        .shadow(SOLID_BUBBLE_SHADOW)
         .hitTestBehavior(HitTestMode.None).accessibilityLevel('no');
     }
   }
@@ -1960,6 +1969,7 @@ export struct MessageBubbleShell {
     // Adjacent rows share a restrained 7vp corner. Only the final row gets
     // the full bottom corner; a single-row run keeps the configured top arc.
     .borderRadius(this.bubbleCornerRadius())
+    .shadow(this.solidBodyShadow())
     // 主体与内容绘制在尾巴上方，防止发出消息的尾巴压住正文或时间角标。
     .zIndex(1)
     .padding(this.isBareEmoji() ? 0 : {
@@ -2101,7 +2111,6 @@ export struct MessageBubbleShell {
             .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
               y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
               centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
-            .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
             .backgroundBlurStyle(this.containerGlassBlurStyle())
             // 材质自带的边框沿**本节点的 border-box** 画，而且吃 borderRadius。不设圆角
             // 它就画一个直角矩形框，被轮廓裁掉左边/底边后只剩顶边一条直线拐到右边——
@@ -2144,12 +2153,13 @@ export struct MessageBubbleShell {
               }
               this.measuredGlassW = w as number;
               this.measuredGlassH = h as number;
+              // 无尾巴实心行在 solidShellShadow() 首条件 hasBubbleTail() 短路，不订阅 geo.w/h（0 重绘开销），
+              // 但仍写入 geo 以确保删消息后原地补尾巴时已有实测尺寸。
               this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
             })
             .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
               y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
               centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
-            .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
           }
         }
         .attributeModifier(this.suppressBubblePressDim() || this.hasLiveVideoSurface()

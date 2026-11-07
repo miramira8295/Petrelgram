@@ -66,18 +66,18 @@ export struct AvLoopVideo {
   private release(): void {
     const p = this.player;
     this.player = null;
+    const fd = this.fd;
+    this.fd = -1;
     if (p !== null) {
       p.release().catch((e: Object) => {
         logE(`AvLoopVideo.release failed: ${JSON.stringify(e)}`);
+      }).finally((): void => {
+        if (fd >= 0) {
+          fs.close(fd).catch((): void => {});
+        }
       });
-    }
-    if (this.fd >= 0) {
-      try {
-        fs.closeSync(this.fd);
-      } catch (e) {
-        logE(`AvLoopVideo fd close failed: ${e}`);
-      }
-      this.fd = -1;
+    } else if (fd >= 0) {
+      fs.close(fd).catch((): void => {});
     }
   }
 

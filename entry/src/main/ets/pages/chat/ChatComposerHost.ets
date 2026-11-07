@@ -29,7 +29,7 @@ export struct ChatComposerHost {
   @Param attachPanelOpen: boolean = false;
   @Param pendingMedia: PendingMediaItem[] = [];
   @Param showEmojiPanel: boolean = false;
-  @Param composerEditorReady: boolean = false;
+  @Param composerEditorReady: boolean = true;
   @Param editorFocused: boolean = false;
   @Param keyboardVisible: boolean = false;
   @Param draft: string = '';
