@@ -1,3 +1,4 @@
+import { SplitPanePlaceholder } from '../common/SplitPanePlaceholder';
 import { pageMarginVp } from '../../util/pageMargin';
 import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import {
@@ -82,17 +83,7 @@ export const SETTINGS_NAV_BAR_VISIBLE_KEY: string = 'settingsNavBarVisible';
 // contactsSplitPlaceholder 同一个形状，只是文案不同。
 @Builder
 function settingsSplitPlaceholder(): void {
-  Column({ space: 12 }) {
-    Image($r('app.media.foreground'))
-      .width(64).height(64).opacity(0.45)
-      .draggable(false);
-    Text($r('app.string.split_pick_a_setting'))
-      .fontSize(14)
-      .fontColor(COLOR_TEXT_SECONDARY);
-  }
-  .width('100%').height('100%')
-  .justifyContent(FlexAlign.Center)
-  .backgroundColor($r('app.color.page_bg'));
+  SplitPanePlaceholder({ message: $r('app.string.split_pick_a_setting'), chatList: false });
 }
 
 interface SettingItem {

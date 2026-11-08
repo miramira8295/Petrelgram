@@ -1,3 +1,4 @@
+import { SplitPanePlaceholder } from '../common/SplitPanePlaceholder';
 import { navigateToSetting } from '../../util/settingsNav';
 import { NewSessionBanner, NEW_SESSION_BAR_HEIGHT } from './NewSessionBanner';
 import { common } from '@kit.AbilityKit';
@@ -236,20 +237,7 @@ export const CHAT_NAV_BAR_VISIBLE_KEY: string = 'chatNavBarVisible';
 // ComponentContent，要 wrapBuilder() 包一层，而 wrapBuilder 只接全局 @Builder。
 @Builder
 function splitPanePlaceholder(): void {
-  Column({ space: 12 }) {
-    // 用开屏页那架**蓝色**飞机，不是启动图标的前景层（issue #113）。前景层是
-    // 白色的，压在 45% 透明度下几乎看不见——报告人说的就是这个。
-    // ic_split_placeholder 是从 start_splash.png 居中裁出来的那一块，同一架飞机。
-    Image($r('app.media.ic_split_placeholder'))
-      .width(72).height(72).opacity(0.9)
-      .draggable(false);
-    Text($r('app.string.split_pick_a_chat'))
-      .fontSize(14)
-      .fontColor(COLOR_TEXT_SECONDARY);
-  }
-  .width('100%').height('100%')
-  .justifyContent(FlexAlign.Center)
-  .backgroundColor($r('app.color.page_bg'));
+  SplitPanePlaceholder({ message: $r('app.string.split_pick_a_chat'), chatList: true });
 }
 
 // 标题区左右内边距与文件夹标题最大宽，按系统横向断点取值（原来写死 screenW >= 600）。

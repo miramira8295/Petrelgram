@@ -29,6 +29,7 @@ import { PROFILE_TAB_MEDIA } from '../../store/ChatProfileStore';
 import { RowLeaveChannel, wholeDeleteRowIds } from '../../util/rowLeaveChannel';
 import { saveableEntries, SaveablePlan } from '../../util/selectionSave';
 import { ActionBarContext, dismissActionBar, handleActionBar } from './ChatActionBarActions';
+import { actionBarButtons } from '../../util/chatActionBar';
 import { ReportTarget, runReportFlow } from '../../util/reportFlow';
 import { reportFlowUiFor } from '../common/ReportPrompts';
 import { promptAction, UIContext } from '@kit.ArkUI';
@@ -79,7 +80,7 @@ import { ChatOverlayState, ChatOverlaySheetKind } from './ChatOverlayState';
 import { ChatTimelineHost } from './ChatTimelineHost';
 import { AttachActions } from './AttachActions';
 import {
-  ChatBackgroundState, ChatBackgroundStore, defaultChatBackgroundSnapshot, emptyChatBackground
+  ChatBackgroundState, ChatBackgroundStore, defaultChatBackgroundSnapshot, emptyChatBackground, parseSnapshot
 } from '../../store/ChatBackgroundStore';
 import { MusicQueue } from '../../services/MusicQueue';
 import { VoiceState } from '../../services/VoicePlayback';
@@ -411,6 +412,9 @@ export struct ChatPage {
   @Require @Param chatBgBlur: number = 0;
   @Require @Param chatBgPattern: number = 0;
   @Require @Param chatBgDim: number = 0;
+  @Param unifiedBackground: boolean = false;
+  @Param appBackgroundRaw: string = '';
+  @Param appBackgroundDim: number = 0;
   @Require @Param topSafe: number = 0;
   @Require @Param bottomSafe: number = 0;  // ✅ 新增
   @Require @Param keyboardH: number = 0;
@@ -763,6 +767,12 @@ export struct ChatPage {
   // and its four TDLib subscriptions live in ChatBackgroundStore.
   @Local chatBg: ChatBackgroundState = emptyChatBackground();
 
+  // 图标对比度跟实际露出的整窗背景走，不能再参考被隐藏的会话壁纸。
+  private chromeBackground(): ChatBackgroundState {
+    return this.unifiedBackground
+      ? (parseSnapshot(this.appBackgroundRaw) ?? emptyChatBackground()) : this.chatBg;
+  }
+
   // ── chrome 的前景要跟着**壁纸**翻，不是跟着深浅色模式 ───────────────────
   //
   // 判据、叠加公式与真机对比度数字全部住在 util/chatChrome.ets，由
@@ -770,20 +780,22 @@ export struct ChatPage {
   // 薄包装。glassTintHex(true) 留在页面侧：玻璃厚度是设备态（依赖
   // immersiveMaterialAvailable()），不能进纯函数。
   private chromeOnLightBg(): boolean {
-    return chromeOnLightBgOf(this.appDark, this.chatBg.colors, glassTintHex(true),
+    return chromeOnLightBgOf(this.appDark, this.chromeBackground().colors, glassTintHex(true),
       this.chromeDarkMask());
   }
 
   private chromeDarkMask(): number {
     // 与 ChatBackdrop.darkMaskOpacity 同一判据：纯色 / 跟随系统不吃用户遮罩。
-    return chromeDarkMaskOf(this.chatBg.dimming,
-      wallpaperTakesUserDim(this.chatBg.colors, this.chatBg.path) ? this.chatBgDim : 0);
+    const bg: ChatBackgroundState = this.chromeBackground();
+    return chromeDarkMaskOf(bg.dimming,
+      wallpaperTakesUserDim(bg.colors, bg.path)
+        ? (this.unifiedBackground ? this.appBackgroundDim : this.chatBgDim) : 0);
   }
 
   // 浅色模式 + 暗壁纸的那一半（用户 2026-09-18：黑壁纸上按钮图标还是黑的）。
   // tint 要传**浅色**那档的玻璃色——合成的是浅色模式下那层玻璃。
   private chromeOnDarkBg(): boolean {
-    return chromeOnDarkBgOf(this.appDark, this.chatBg.colors, glassTintHex(false),
+    return chromeOnDarkBgOf(this.appDark, this.chromeBackground().colors, glassTintHex(false),
       this.chromeDarkMask());
   }
 
@@ -1122,6 +1134,7 @@ export struct ChatPage {
   private recording: VoiceRecordingState = new VoiceRecordingState();
   @Local composerSending: boolean = false;
   @Local composerFocused: boolean = false;
+  private composerEditorArea: Area | undefined = undefined;
   // 首帧直接挂载真实 TextArea，避免进场后从 Text 替身切换到 TextArea 导致占位文字基线/颜色跳动与主线程二次重排。
   @Local composerEditorReady: boolean = true;
   private composerMountScheduled: boolean = false;
@@ -1480,8 +1493,10 @@ export struct ChatPage {
 
   private syncActionBar(): void {
     const e: ChatEntry | undefined = getChatStore().entryOf(this.chatId);
-    const kind: string = e !== undefined ? e.actionBar : '';
     const canUnarchive: boolean = e !== undefined ? e.actionBarCanUnarchive : false;
+    const rawKind: string = e !== undefined ? e.actionBar : '';
+    // 未实现按钮的类型不生成空操作行；渲染和顶部占位共用这个显示态。
+    const kind: string = actionBarButtons(rawKind, canUnarchive).length > 0 ? rawKind : '';
     if (kind !== this.actionBarKind) { this.actionBarKind = kind; }
     if (canUnarchive !== this.actionBarCanUnarchive) { this.actionBarCanUnarchive = canUnarchive; }
   }
@@ -3145,6 +3160,34 @@ export struct ChatPage {
       clearInterval(this.nowSecTimer);
       this.nowSecTimer = -1;
     }
+  }
+
+  private interceptKeyboardDismiss(event: TouchEvent): HitTestMode {
+    if (event.type !== TouchType.Down || this.keyboardH <= 0 || !this.composerFocused) {
+      return HitTestMode.Default;
+    }
+    const area: Area | undefined = this.composerEditorArea;
+    const touches: TouchObject[] = event.changedTouches.length > 0 ? event.changedTouches : event.touches;
+    if (area === undefined || touches.length === 0) { return HitTestMode.Default; }
+    // Area.globalPosition 与 windowX/windowY 都是窗口内 vp 坐标，适用于分栏与自由窗口。
+    const left: number = Number(area.globalPosition.x);
+    const top: number = Number(area.globalPosition.y);
+    const width: number = Number(area.width);
+    const height: number = Number(area.height);
+    if (!Number.isFinite(left) || !Number.isFinite(top) ||
+      !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return HitTestMode.Default;
+    }
+    const touch: TouchObject = touches[0];
+    if (touch.windowX >= left && touch.windowX < left + width &&
+      touch.windowY >= top && touch.windowY < top + height) {
+      return HitTestMode.Default;
+    }
+    this.composerController.stopEditing();
+    this.composerFocused = false;
+    // 在 DOWN 的命中测试阶段阻断子树；这整次触摸都不会交给菜单、媒体或按钮。
+    // 不在冒泡 onTouch/onClick 中收键盘，避免子节点已经响应或收起后 UP 穿透。
+    return HitTestMode.Block;
   }
 
   // 手动滑动消息列表就收起键盘。
@@ -6351,6 +6394,7 @@ export struct ChatPage {
       onEditorBlur: (): void => {
         this.composerFocused = false;
       },
+      onEditorAreaChange: (area: Area | undefined): void => { this.composerEditorArea = area; },
       onActivateEditor: (): void => { this.inputSwitch.showKeyboard(); },
       onScheduleEditorMount: (): void => { this.scheduleComposerEditorMount(); },
       onToggleReplyKeyboard: (): void => { this.toggleReplyKeyboard(); },
@@ -6949,6 +6993,9 @@ export struct ChatPage {
     // 且把展开态接进 TitleBarContentOptions 会让整条栏按点击重建）。
     // 首页 ChatListPage 早就是这个结构。
     .hideBackButton(true)
+    // 统一背景在 MainScreen 底下；框架默认的目的页底色也必须让位。
+    .backgroundColor(Color.Transparent)
+    .onTouchIntercept((event: TouchEvent): HitTestMode => { return this.interceptKeyboardDismiss(event); })
     // 查看器在内容区里，盖不住框架标题栏：开着就收（见 navFullScreen.viewerHidesTitleBar）。
     // animated 取 true：查看器根节点是 300ms 的黑底渐入，第 0 帧直接摘掉顶栏会
     // 在还透着的黑底上闪一下。退出查看器时若状态栏安全区还在恢复，先保持收起直到

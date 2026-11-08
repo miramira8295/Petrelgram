@@ -45,9 +45,7 @@ export function appWallpaperFileName(forDark: boolean, stamp: number): string {
 // stateRaw：APP 槽位里存的**序列化 ChatBackgroundState**（'' = 没设）。存状态而
 // 不是裸路径，是为了让原生壁纸（渐变/图案）也能给 APP 背景用——见
 // pages/common/AppBackdrop。
-// split：是不是分栏（平板/折叠屏展开）。**分栏下不提供这个功能**——右栏被聊天
-// 壁纸盖住，这张图只能从左栏那一条窄缝里露出来，既不好看也没意义；设置项在分栏
-// 下也一并藏掉，免得给一个看不出效果的开关。
+// split：是不是分栏（平板/折叠屏展开）。统一背景开启时，APP 壁纸铺满整个窗口。
 export function appWallpaperActive(stateRaw: string, split: boolean): boolean {
   if (stateRaw === '') {
     return false;

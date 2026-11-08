@@ -71,24 +71,12 @@ export struct ChatBackdrop {
   }
 
   private suppressedByUnifiedBg(): boolean {
-    // 【2026-11-05 真机实测：这条链是坏的，先停用】
-    //
-    // 原设计：分栏 + 统一背景 + APP 壁纸开启时，把聊天页这一层整个藏掉
-    // （build() 末尾 opacity(0)），让挂在 MainScreen 上的 APP 壁纸透上来，两栏共用一张。
-    //
-    // 平板实测日志：`[Backdrop] branch suppressed=true split=true unified=true appBgOn=true
-    // path=set pattern=true colors=4 raster=set shown=true` —— 背景解析、图案解压、
-    // 光栅生成、CachedImage 解码（`cachedReady shown=true`）全都成功，**只有整层被藏掉**。
-    // 而 APP 壁纸只铺在左栏，聊天列底下没有垫东西，于是聊天页永远白屏（用户报的正是这个）。
-    // 手机不分栏，`isSplitByBreakpoint` 为 false，本来就走不到这里，故本改动对手机零影响。
-    //
-    // 恢复条件：APP 壁纸层改挂到窗口根、真正铺满两栏之后，再把下面这几行放回来。
-    //   if (!this.isChatSlot || !this.unifiedBg || !this.appBgOn) { return false; }
-    //   return isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingle, this.portrait);
-    if (!this.isChatSlot || !this.unifiedBg || !this.appBgOn) {
+    // MainScreen 垫整窗背景，ChatPage 的 NavDestination 和右栏空态保持透明。
+    // 未设 APP 壁纸时也共用整窗默认底色，不留下左右两块不同的底。
+    if (!this.isChatSlot || !this.unifiedBg) {
       return false;
     }
-    return false;
+    return isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingle, this.portrait);
   }
 
   @Prop @Watch('onParamsChanged') chatBg: ChatBackgroundState;
@@ -191,7 +179,9 @@ export struct ChatBackdrop {
     // 能比窗口宽，而 onSizeChange 那次精确的量要等布局回来；这期间气泡若还按
     // 旧的宽算 maxWidth，就会伸出右缘。窗口变宽时 min 取的仍是旧值、同值不写，
     // 等 onSizeChange 发精确值。
-    publishChatContentWidth(Math.min(this.layerW(), this.screenW));
+    if (this.isChatSlot) {
+      publishChatContentWidth(Math.min(this.layerW(), this.screenW));
+    }
   }
 
   private patternStrength(): number {
@@ -573,10 +563,10 @@ export struct ChatBackdrop {
         }
         // 本层铺满聊天列，量到的宽就是内容列宽——气泡按它算宽度（issue #107），
         // 见 util/chatContentWidth。
-        publishChatContentWidth(w);
+        if (this.isChatSlot) { publishChatContentWidth(w); }
         // Choose a source large enough for the widest media bubble in this
         // column; the pixel cache still decodes to each row's exact box size.
-        if (w > 0) { setInlinePhotoTargetPx(vp2px(mediaThumbWidth(w, 0))); }
+        if (this.isChatSlot && w > 0) { setInlinePhotoTargetPx(vp2px(mediaThumbWidth(w, 0))); }
         // 尺寸变了 pixelCache key 也变：把 pin 跟到新尺寸上（同尺寸则不动作）。
         this.syncPin();
       })

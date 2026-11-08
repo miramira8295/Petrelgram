@@ -1,3 +1,4 @@
+import { SplitPanePlaceholder } from '../common/SplitPanePlaceholder';
 import { ContactAlphabetIndex } from '../../services/ContactAlphabetIndex';
 import { homeCardMarginVp } from '../../util/pageMargin';
 import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
@@ -102,17 +103,7 @@ export const CONTACTS_NAV_BAR_VISIBLE_KEY: string = 'contactsNavBarVisible';
 // 与 ChatListPage 的 splitPanePlaceholder 同一个形状，只是文案不同。
 @Builder
 function contactsSplitPlaceholder(): void {
-  Column({ space: 12 }) {
-    Image($r('app.media.foreground'))
-      .width(64).height(64).opacity(0.45)
-      .draggable(false);
-    Text($r('app.string.split_pick_a_contact'))
-      .fontSize(14)
-      .fontColor(COLOR_TEXT_SECONDARY);
-  }
-  .width('100%').height('100%')
-  .justifyContent(FlexAlign.Center)
-  .backgroundColor($r('app.color.page_bg'));
+  SplitPanePlaceholder({ message: $r('app.string.split_pick_a_contact'), chatList: false });
 }
 
 // The contacts tab: search box, recent-calls shortcut, and the contact

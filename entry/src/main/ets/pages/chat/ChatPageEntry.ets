@@ -1,5 +1,6 @@
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM,
+  isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
 import { ChatPage } from './ChatPage';
 import { ReusableMessageBubble } from './ReusableMessageBubble';
@@ -14,8 +15,10 @@ import {
   KEY_LOCAL_BG_EPOCH, KEY_POWER_ACTIVE, KEY_POWER_AUTOPLAY_VIDEO,
   KEY_POWER_CHAT_EFFECTS, KEY_POWER_EMOJI,
   KEY_POWER_EMOJI_REACTIONS, KEY_POWER_PARTICLES, KEY_REDUCE_ANIM,
-  KEY_SEND_BY_ENTER, KEY_TRANSLATE_CHATS, KEY_FORCE_SINGLE_COLUMN
+  KEY_SEND_BY_ENTER, KEY_TRANSLATE_CHATS, KEY_FORCE_SINGLE_COLUMN,
+  KEY_APP_BG_STATE_LIGHT, KEY_APP_BG_STATE_DARK, KEY_APP_BG_DIM, KEY_APP_BG_DIM_LIGHT
 } from '../../store/AppSettings';
+import { KEY_SPLIT_UNIFIED_BG } from '../../util/localWallpaper';
 import { KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT } from '../../util/debugListPerf';
 import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 
@@ -58,6 +61,11 @@ struct ChatPageChrome {
   @StorageProp(KEY_BG_PATTERN_DARK) chatBgPatternDark: number = BG_PATTERN_DEFAULT;
   @StorageProp(KEY_CHAT_DIM_LIGHT) chatBgDimLight: number = 0;
   @StorageProp(KEY_CHAT_DIM) chatBgDimDark: number = 0;
+  @StorageProp(KEY_SPLIT_UNIFIED_BG) unifiedBg: boolean = true;
+  @StorageProp(KEY_APP_BG_STATE_LIGHT) appBgLight: string = '';
+  @StorageProp(KEY_APP_BG_STATE_DARK) appBgDark: string = '';
+  @StorageProp(KEY_APP_BG_DIM_LIGHT) appBgDimLight: number = 0;
+  @StorageProp(KEY_APP_BG_DIM) appBgDimDark: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @StorageProp('keyboardHeightVp') keyboardH: number = 0;
@@ -94,6 +102,10 @@ struct ChatPageChrome {
       chatBgBlur: this.appDark ? this.chatBgBlurDark : this.chatBgBlurLight,
       chatBgPattern: this.appDark ? this.chatBgPatternDark : this.chatBgPatternLight,
       chatBgDim: this.appDark ? this.chatBgDimDark : this.chatBgDimLight,
+      unifiedBackground: this.unifiedBg && isSplitByBreakpoint(
+        this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
+      appBackgroundRaw: this.appDark ? this.appBgDark : this.appBgLight,
+      appBackgroundDim: this.appDark ? this.appBgDimDark : this.appBgDimLight,
       langEpoch: this.langEpoch,
       appDark: this.appDark,
       topSafe: this.topSafe,

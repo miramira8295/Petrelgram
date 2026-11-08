@@ -239,11 +239,12 @@ struct LiveSenderAvatar {
     if (previous !== undefined && previous.path === path && previous.boxWidth === size) {
       return previous;
     }
-    // Preserve bounded pinning, synchronous small-avatar decoding and native
-    // display. No Computed: the child expression reads the current path/size.
+    // Preserve bounded pinning and native display. Avatar misses decode on the
+    // TaskPool so a recycled row never blocks the UI thread. No Computed: the
+    // child expression reads the current path/size.
     const next: CachedImageSpec = {
       path: path, boxWidth: size, boxHeight: size, radius: size / 2,
-      fit: ImageFit.Cover, pinBounded: true, syncSmall: true, syncDisplay: true
+      fit: ImageFit.Cover, pinBounded: true, syncDisplay: true
     };
     this.preparedImageSpec = next;
     return next;
@@ -829,11 +830,12 @@ export struct MessageBubbleShell {
   @Builder
   directPlainText() {
     if (this.msg.replyToMessageId !== 0) {
-      Column() {
+      Flex({ direction: FlexDirection.Column, alignItems: ItemAlign.Start }) {
         this.replyQuote();
         this.directPlainTextBody();
       }
-      .alignItems(HorizontalAlign.Start)
+      .width(LayoutPolicy.wrapContent)
+      .height(LayoutPolicy.wrapContent)
       .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
     } else {
       this.directPlainTextBody();
@@ -1381,26 +1383,6 @@ export struct MessageBubbleShell {
   }
 
   @Builder
-  private replyQuoteBackdrop() {
-    Row({ space: 0 }) {
-      Column() {}
-        .width(4)
-        .height('100%')
-        .flexShrink(0)
-        .backgroundColor(this.accent())
-        .borderRadius({ topLeft: 4, bottomLeft: 4, topRight: 0, bottomRight: 0 });
-      Column() {}
-        .layoutWeight(1)
-        .height('100%')
-        .backgroundColor(accentSoft())
-        .borderRadius({ topLeft: 0, bottomLeft: 0, topRight: 4, bottomRight: 4 });
-    }
-    .width('100%')
-    .height('100%')
-    .hitTestBehavior(HitTestMode.None);
-  }
-
-  @Builder
   replyQuote() {
     Row({ space: REPLY_THUMB_GAP }) {
       if (this.msg.replyDiceLayers.length > 0) {
@@ -1426,8 +1408,15 @@ export struct MessageBubbleShell {
     }
     .alignItems(VerticalAlign.Center)
     .alignSelf(ItemAlign.Stretch)
-    .padding({ left: 10, right: 6, top: 3, bottom: 3 })
-    .background(this.replyQuoteBackdrop(), { align: Alignment.TopStart })
+    // Stretch 需要 Flex 父容器；Column 的交叉轴对齐不支持拉伸。
+    // 父 Flex 按内容收缩，引用行再拉伸到其中最宽的正文/引用宽度。
+    .constraintSize({ maxWidth: this.inlineMaxW() })
+    // background(builder) 的脱树装饰可能保留复用前的尺寸；原生背景/边框直接
+    // 跟随当前行，不量尺寸、不回写可观测状态，也不增加滚动期间的重绘回调。
+    .backgroundColor(accentSoft())
+    .border({ width: { left: 4 }, color: this.accent() })
+    .borderRadius(4)
+    .padding({ left: 6, right: 6, top: 3, bottom: 3 })
     .margin({ bottom: 4 })
     .onClick(() => {
       if (this.context.gestureClaimed) { return; }
@@ -1441,6 +1430,19 @@ export struct MessageBubbleShell {
   content() {
     if (this.msg.replyToMessageId !== 0) { this.replyQuote(); }
     this.body();
+  }
+
+  @Builder
+  contentWithReactions() {
+    this.content();
+    if (this.msg.reactions.length > 0) {
+      Row({ space: 6 }) {
+        this.reactionsRow();
+        this.timeOverlay();
+      }
+      .alignItems(VerticalAlign.Bottom)
+      .constraintSize({ maxWidth: this.inlineMaxW() });
+    }
   }
 
   private isBareEmoji(): boolean {
@@ -1891,19 +1893,16 @@ export struct MessageBubbleShell {
         // 的孩子会让 Stack 直接取到 maxWidth，每条气泡都被撑成整屏宽。
         if (this.useDirectPlainText()) {
           this.directPlainText();
+        } else if (this.msg.replyToMessageId !== 0) {
+          Flex({ direction: FlexDirection.Column, alignItems: ItemAlign.Start }) {
+            this.contentWithReactions();
+          }
+          .width(LayoutPolicy.wrapContent)
+          .height(LayoutPolicy.wrapContent)
+          .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
         } else {
           Column() {
-            this.content();
-            if (this.msg.reactions.length > 0) {
-              // 有反应时时间跟在反应行末尾（官方也是这样）：时间浮层原本贴
-              // 气泡右下角，而反应行正好占住那一块，两者会叠在一起（issue #100）。
-              Row({ space: 6 }) {
-                this.reactionsRow();
-                this.timeOverlay();
-              }
-              .alignItems(VerticalAlign.Bottom)
-              .constraintSize({ maxWidth: this.inlineMaxW() });
-            }
+            this.contentWithReactions();
           }
           .alignItems(HorizontalAlign.Start)
           .constraintSize({ minWidth: this.measuredTimeLayerWidth() });

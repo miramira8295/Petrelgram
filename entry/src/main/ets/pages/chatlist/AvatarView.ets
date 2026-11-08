@@ -101,7 +101,6 @@ export struct AvatarView {
             //               准入见 util/pixelSyncPolicy——那条阈值同日由 160 抬到
             //               176，否则本机 161px 的头像差一像素够不着。
             pinBounded: true,
-            syncSmall: true
           } });
         }
       }

@@ -128,28 +128,14 @@ export struct ScrollFab {
         .border({ width: 1.5, color: $r('app.color.surface') })
         .shadow({ radius: 3, color: '#24000000', offsetX: 0, offsetY: 1 })
         .position({ x: unreadBadgeOffsetX(this.unreadCount), y: 0 })
-        .animation({
-          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 140),
-          curve: Curve.EaseOut
-        })
-        .transition(TransitionEffect.OPACITY
-          .combine(TransitionEffect.scale({ x: 0.72, y: 0.72 }))
-          .animation({
-            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 160),
-            curve: Curve.EaseOut
-          }))
+        // The badge is updated during scrolling; a resident transition pulls
+        // the message List into the same layout flush.
         .enabled(!this.busy)
         .onClick((): void => { this.onTap(); })
         .accessibilityText(plural('cp_unread_a11y', this.unreadCount, this.unreadCount));
       }
     }
     .width(52).height(56)
-    .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.scale({ x: 0.72, y: 0.72 }))
-      .combine(TransitionEffect.translate({ y: 10 }))
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220),
-        curve: Curve.EaseOut
-      }));
+    // Visibility is state driven and synchronous while the list is moving.
   }
 }

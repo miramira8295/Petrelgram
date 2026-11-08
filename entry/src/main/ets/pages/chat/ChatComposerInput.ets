@@ -139,6 +139,7 @@ export struct ChatComposerInput {
   @Event onSubmit: () => void = (): void => {};
   @Event onEditorFocus: () => void = (): void => {};
   @Event onEditorBlur: () => void = (): void => {};
+  @Event onEditorAreaChange: (area: Area | undefined) => void = (): void => {};
   @Event onActivateEditor: () => void = (): void => {};
   @Event onScheduleEditorMount: () => void = (): void => {};
   @Event onToggleReplyKeyboard: () => void = (): void => {};
@@ -330,6 +331,7 @@ export struct ChatComposerInput {
   }
 
   aboutToDisappear(): void {
+    this.onEditorAreaChange(undefined);
     this.layoutActive = false;
     this.layoutGeneration++;
     this.layoutRefreshPending = false;
@@ -605,6 +607,7 @@ export struct ChatComposerInput {
                 .key('chat_composer')
                 .allowDrop(null)
                 .onAreaChange((old: Area, area: Area): void => {
+                  this.onEditorAreaChange(area);
                   const next: number = area.width as number;
                   // 0.5vp 以内的抖动不写：宽度是排版约束，写一次就要重算一次高度。
                   if (Math.abs(next - this.editorW) > 0.5) {

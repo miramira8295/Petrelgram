@@ -1,4 +1,3 @@
-import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
 import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { COLOR_TEXT_PRIMARY } from '../../util/theme';
@@ -171,10 +170,8 @@ export struct FloatingDateOverlay {
     .opacity(this.state.shown ? 1 : 0)
     .scale({ x: this.state.shown ? 1 : 0.9, y: this.state.shown ? 1 : 0.9 })
     .translate({ y: this.state.shown ? 0 : -5 })
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200),
-      curve: Curve.EaseOut
-    })
+    // Keep scroll driven visibility synchronous. A resident animation here
+    // makes ArkUI include the chat List in the same layout flush.
     .hitTestBehavior(HitTestMode.None);
   }
 }

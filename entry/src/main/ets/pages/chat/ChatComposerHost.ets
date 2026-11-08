@@ -65,6 +65,7 @@ export struct ChatComposerHost {
   @Event onSubmit: () => void = (): void => {};
   @Event onEditorFocus: () => void = (): void => {};
   @Event onEditorBlur: () => void = (): void => {};
+  @Event onEditorAreaChange: (area: Area | undefined) => void = (): void => {};
   @Event onActivateEditor: () => void = (): void => {};
   @Event onScheduleEditorMount: () => void = (): void => {};
   @Event onToggleReplyKeyboard: () => void = (): void => {};
@@ -116,6 +117,7 @@ export struct ChatComposerHost {
         onSubmit: this.onSubmit,
         onEditorFocus: this.onEditorFocus,
         onEditorBlur: this.onEditorBlur,
+        onEditorAreaChange: this.onEditorAreaChange,
         onActivateEditor: this.onActivateEditor,
         onScheduleEditorMount: this.onScheduleEditorMount,
         onToggleReplyKeyboard: this.onToggleReplyKeyboard,

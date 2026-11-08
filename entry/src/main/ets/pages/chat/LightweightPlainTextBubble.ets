@@ -239,7 +239,6 @@ struct LightweightSenderAvatar {
         // 和 LiveSenderAvatar 同一理由：头像被大图挤出 LRU 后重解码会闪
         // （issue #137）。两处要一起开，否则纯文本行的头像仍然会闪。
         pinBounded: true,
-        syncSmall: true,
         syncDisplay: true
       } }).visibility(this.path !== '' ? Visibility.Visible : Visibility.None);
       if (this.animated) {
@@ -463,8 +462,8 @@ export struct LightweightPlainTextBubble {
       // 有尾角时在尾巴（zIndex 0）与主体（zIndex 1）正下方垫与主体同尺寸的标准圆角矩形投影：
       // 尾角根部投影被上方不透明的尾巴 Path 盖死（无竖向暗缝），同时避开 PathShape 裁剪与 fill:false 离屏遮罩。
       Column() {}
-        .width(this.geo.w - (TAIL_W - 1)).height(this.geo.h)
-        .offset({ x: this.msg.isOutgoing ? 0 : TAIL_W - 1, y: 0 })
+        .width(this.geo.w - (TAIL_W - 2)).height(this.geo.h)
+        .position({ x: this.msg.isOutgoing ? 0 : TAIL_W - 2, y: 0 })
         .backgroundColor(this.bubbleFillColor())
         .borderRadius(this.bubbleCorners())
         .shadow(SOLID_BUBBLE_SHADOW)
@@ -476,6 +475,8 @@ export struct LightweightPlainTextBubble {
   glassOutline() {
     if (this.glassReady()) {
       Path({ width: this.geo.w, height: this.geo.h })
+        .position({ x: 0, y: 0 })
+        .hitTestBehavior(HitTestMode.None).accessibilityLevel('no')
         .commands(glassOutlineCommands(this.geo.w, this.geo.h, this.msg.isOutgoing,
           this.hasTail(), this.bubbleCorners()))
         .fill(Color.Transparent)
@@ -814,26 +815,6 @@ export struct LightweightPlainTextBubble {
   }
 
   @Builder
-  private replyQuoteBackdrop() {
-    Row({ space: 0 }) {
-      Column() {}
-        .width(4)
-        .height('100%')
-        .flexShrink(0)
-        .backgroundColor(this.accent())
-        .borderRadius({ topLeft: 4, bottomLeft: 4, topRight: 0, bottomRight: 0 });
-      Column() {}
-        .layoutWeight(1)
-        .height('100%')
-        .backgroundColor(accentSoft())
-        .borderRadius({ topLeft: 0, bottomLeft: 0, topRight: 4, bottomRight: 4 });
-    }
-    .width('100%')
-    .height('100%')
-    .hitTestBehavior(HitTestMode.None);
-  }
-
-  @Builder
   replyQuote() {
     Column() {
       Text(this.msg.replySenderName).fontSize(12).fontColor(this.accent()).maxLines(1)
@@ -847,8 +828,11 @@ export struct LightweightPlainTextBubble {
     }
     .alignItems(HorizontalAlign.Start)
     .alignSelf(ItemAlign.Stretch)
-    .padding({ left: 10, right: 6, top: 3, bottom: 3 })
-    .background(this.replyQuoteBackdrop(), { align: Alignment.TopStart })
+    .constraintSize({ maxWidth: this.inlineMaxW() })
+    .backgroundColor(accentSoft())
+    .border({ width: { left: 4 }, color: this.accent() })
+    .borderRadius(4)
+    .padding({ left: 6, right: 6, top: 3, bottom: 3 })
     .margin({ bottom: 4 })
     .onClick((): void => {
       if (!this.gestureClaimed) {
@@ -905,10 +889,7 @@ export struct LightweightPlainTextBubble {
   }
 
   @Builder
-  body() {
-    // minWidth 挂在这个 Column 上（而不是只挂 Stack）：Stack 的 BottomEnd 会作用到
-    // 每个孩子，Column 比 Stack 窄时会被一起推到右边、压在时间戳上。
-    Column() {
+  bodyContents() {
       if (this.msg.replyToMessageId !== 0) { this.replyQuote(); }
       Text() {
         // **只有链接那一段才挂 onClick。** 给每一段都挂一个（哪怕回调里先判
@@ -943,12 +924,25 @@ export struct LightweightPlainTextBubble {
       // Column 才够宽，引用块的 alignSelf(Stretch) 才有得伸。
       .constraintSize({ minWidth: this.measuredTimeLayerWidth(), maxWidth: this.inlineMaxW() });
       this.translationState();
-    }
-    .alignItems(HorizontalAlign.Start)
-    .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
   }
 
-  // 频道消息的浏览数：眼睛 + 5.2K，排在时间左边（与官方客户端同位）。
+  @Builder
+  body() {
+    if (this.msg.replyToMessageId !== 0) {
+      // Only reply rows need Flex's cross-axis Stretch. Keep ordinary rows cheap.
+      Flex({ direction: FlexDirection.Column, alignItems: ItemAlign.Start }) {
+        this.bodyContents();
+      }
+      .width(LayoutPolicy.wrapContent)
+      .height(LayoutPolicy.wrapContent)
+      .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
+    } else {
+      Column() { this.bodyContents(); }
+        .alignItems(HorizontalAlign.Start)
+        .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
+    }
+  }
+
   @Builder
   viewsLabel() {
     Row({ space: 2 }) {
@@ -1210,13 +1204,14 @@ export struct LightweightPlainTextBubble {
             Row() {
               if (this.env.bubbleMaterialOn) {
                 Row() {
-                  this.bubbleCluster();
+                  this.glassOutline();
+                  Row() { this.bubbleCluster(); }
+                    .alignItems(VerticalAlign.Bottom)
+                    .padding(this.tailGutterPadding());
                 }
                 // 「尾巴 + 气泡」整块由**上层**渲染：材质挂在这一层，形状由整体轮廓裁剪
                 // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
                 // 不存在「一边材质一边普通渲染」对不齐的问题。
-                .alignItems(VerticalAlign.Bottom)
-                .padding(this.tailGutterPadding())
                 // 见 MessageBubble 同一处：容器跨着 7vp 留白，必须等量到尺寸才上色；
                 // 完整态本体同步退为透明，避免两层玻璃在同一区域重复合成。
                 .backgroundColor(this.containerGlassBg())
@@ -1227,7 +1222,6 @@ export struct LightweightPlainTextBubble {
                 // 见 MessageBubble 同一处：材质的边框沿本节点 border-box 画、吃 borderRadius，
                 // 不设圆角就是个直角框，裁剪之后剩下半条亮线。
                 .borderRadius(this.glassRadius())
-                .background(this.glassOutline(), { align: Alignment.TopStart })
                 .attributeModifier(bubbleGlassModifier(this.glassReady(), this.geo.w, this.geo.h,
                   this.msg.isOutgoing, this.hasTail(), this.bubbleCorners()))
                 // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
@@ -1248,12 +1242,12 @@ export struct LightweightPlainTextBubble {
                 })
               } else {
                 Row() {
-                  this.bubbleCluster();
+                  // Absolute live decoration cannot grow the flow layout.
+                  this.solidShellShadow();
+                  Row() { this.bubbleCluster(); }
+                    .alignItems(VerticalAlign.Bottom)
+                    .padding(this.tailGutterPadding());
                 }
-                // 实心外壳统一投影；尺寸仅在实际变化时更新，轮廓命中现有缓存。
-                .alignItems(VerticalAlign.Bottom)
-                .padding(this.tailGutterPadding())
-                .background(this.solidShellShadow(), { align: Alignment.TopStart })
                 .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
                   const w: Length | undefined = size.width;
                   const h: Length | undefined = size.height;

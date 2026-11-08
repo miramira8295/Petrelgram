@@ -10,7 +10,7 @@ import {
 } from '../../store/AppSettings';
 import { KEY_APP_DARK } from '../../util/theme';
 import { navigateToSetting } from '../../util/settingsNav';
-import { appWallpaperActive } from '../../util/localWallpaper';
+import { appWallpaperActive, KEY_SPLIT_UNIFIED_BG } from '../../util/localWallpaper';
 import { DOCK_MODE_LEFT_FLOATING } from '../../util/splitMetrics';
 
 import { router } from '@kit.ArkUI';
@@ -119,7 +119,7 @@ export struct MainScreen {
   @StorageProp('keyboardHeightVp') private keyboardH: number = 0;
   @StorageProp('screenWidthVp') @Watch('syncWallpaperFlag') screenW: number = 360;
   // 设置里的「强制单栏」（宽屏也当手机用）。
-  @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
+  @StorageProp(KEY_FORCE_SINGLE_COLUMN) @Watch('syncWallpaperFlag') forceSingleColumn: boolean = false;
   // 聊天页签分栏时左栏的实际宽度（vp，0 = 还没量到）。由 ChatListPage 在自己的
   // 布局回调里写入——HdsNavigation 不回调宽度，拖分割线又会改它，只能这么拿。
   @StorageProp(NAV_BAR_WIDTH_KEY) private navBarWidth: number = 0;
@@ -161,9 +161,10 @@ export struct MainScreen {
   private dockActive: boolean = false;
   @StorageProp('screenHeightVp') @Watch('syncWallpaperFlag') screenH: number = 780;
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
-  @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
-  @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
-  @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
+  @StorageProp(KEY_WIDTH_BREAKPOINT) @Watch('syncWallpaperFlag') widthBp: number = WIDTH_BP_SM;
+  @StorageProp(KEY_HEIGHT_BREAKPOINT) @Watch('syncWallpaperFlag') heightBp: number = HEIGHT_BP_LG;
+  @StorageProp(KEY_WINDOW_PORTRAIT) @Watch('syncWallpaperFlag') windowPortrait: boolean = true;
+  @StorageProp(KEY_SPLIT_UNIFIED_BG) @Watch('syncWallpaperFlag') private unifiedBg: boolean = true;
   // 小方形屏上滑时收起底部页签（SPEC-04，写入方是会话列表的滚动回调）。
   @StorageProp(KEY_IMMERSIVE_BARS_HIDDEN) immersiveHidden: boolean = false;
   // APP 壁纸：这一层同时知道分栏和路径，所以由它算一次「生效中」写进

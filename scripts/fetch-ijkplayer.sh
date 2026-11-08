@@ -39,6 +39,14 @@ if [ ! -d "$FORK_DIR/ijkplayer" ]; then
   exit 1
 fi
 FORK_VERSION="$(grep -o '"version": "[^"]*"' "$FORK_DIR/ijkplayer/oh-package.json5" | cut -d'"' -f4)"
+if [ "$VERSION" = "2.0.13-pg.10" ] && [ "$FORK_VERSION" = "2.0.13-pg.9" ]; then
+  # Local pg.10 adds owned asynchronous teardown on top of the pg.9 fork.
+  # --check refuses to overwrite conflicting source edits.
+  PATCH="$ROOT/scripts/ijkplayer-pg10-async-release.patch"
+  git -C "$FORK_DIR" apply --check "$PATCH"
+  git -C "$FORK_DIR" apply "$PATCH"
+  FORK_VERSION="2.0.13-pg.10"
+fi
 if [ "$FORK_VERSION" != "$VERSION" ]; then
   echo "fork 当前版本是 $FORK_VERSION，需要 $VERSION：先在 fork 里切到 v$VERSION 再编"
   exit 1

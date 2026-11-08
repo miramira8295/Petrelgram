@@ -4,7 +4,7 @@ import {
   KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT
 } from '../../store/AppSettings';
 import { KEY_APP_DARK } from '../../util/theme';
-import { appWallpaperActive } from '../../util/localWallpaper';
+import { appWallpaperActive, KEY_SPLIT_UNIFIED_BG } from '../../util/localWallpaper';
 import {
   ChatBackgroundState, emptyChatBackground, parseSnapshot
 } from '../../store/ChatBackgroundStore';
@@ -22,11 +22,11 @@ import { ChatBackdrop } from '../chat/ChatBackdrop';
 // 再存一份两边会打架；而 Telegram 协议里根本没有「APP 背景」这个概念，它只能是
 // 本机设置。
 //
-// 【分栏下不铺】右栏被聊天壁纸盖住，这张图只能从左栏那条窄缝里露出来，既不好看
-// 也没意义；设置项在分栏下也一并藏掉（用户："pad 没有这个选项"）。
+// 挂在 MainScreen 的整窗 Stack 底下，分栏时两栏共享同一份绘制和裁切。
 @Component
 export struct AppBackdrop {
   @Prop split: boolean = false;
+  @StorageProp(KEY_SPLIT_UNIFIED_BG) private unifiedBg: boolean = true;
   @StorageProp(KEY_APP_DARK) appDark: boolean = false;
   @StorageProp(KEY_APP_BG_STATE_LIGHT) stateLight: string = '';
   @StorageProp(KEY_APP_BG_STATE_DARK) stateDark: string = '';
@@ -44,7 +44,7 @@ export struct AppBackdrop {
   }
 
   private wallpaperOn(): boolean {
-    return appWallpaperActive(this.rawState(), this.split);
+    return (!this.split || this.unifiedBg) && appWallpaperActive(this.rawState(), this.split);
   }
 
   // 解析失败时给一份空状态：ChatBackdrop 对「没有填充也没有图」的状态什么都不画，
@@ -80,6 +80,7 @@ export struct AppBackdrop {
       }
     }
     .width('100%').height('100%')
+    .backgroundColor($r('app.color.app_page_bg'))
     // 纯装饰层，不该吃任何手势——上面就是会话列表。
     .hitTestBehavior(HitTestMode.None);
   }

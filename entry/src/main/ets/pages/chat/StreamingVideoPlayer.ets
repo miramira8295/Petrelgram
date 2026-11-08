@@ -44,6 +44,7 @@ import { VideoGestureLayer } from './VideoGestureLayer';
 import { VideoStatsSnapshot, emptyVideoStats } from '../../util/videoStats';
 import { streamReadAheadBytes } from '../../util/streamReadAhead';
 import { networkIsMetered } from '../../util/videoVariants';
+import { releaseVideoResources } from '../../util/videoRelease';
 
 
 
@@ -157,6 +158,8 @@ export struct StreamingVideoPlayer {
   private session: VideoStreamSession | null = null;
   private rangeServer: VideoRangeServer | null = null;
   private tdSource: VideoTdSource | null = null;
+  private pendingRelease: Promise<void> = Promise.resolve();
+  private playbackGeneration: number = 0;
   private progressUnsub: (() => void) | null = null;
   private routingManager: audio.AudioRoutingManager | null = null;
   private deviceChangeCb: ((change: audio.DeviceChangeAction) => void) | null = null;
@@ -438,6 +441,7 @@ export struct StreamingVideoPlayer {
   }
 
   private release(): void {
+    this.playbackGeneration++;
     this.stopHold(false);
     this.holdRewind.reset();
     this.clearAutoHideControls();
@@ -472,28 +476,28 @@ export struct StreamingVideoPlayer {
       this.progressUnsub = null;
     }
     this.syncViewerDownloadSpeed(0);
-    if (this.player !== null) {
+    const player = this.player;
+    const rangeServer = this.rangeServer;
+    const tdSource = this.tdSource;
+    const session = this.session;
+    this.player = null;
+    this.rangeServer = null;
+    this.tdSource = null;
+    this.session = null;
+    if (player !== null) {
       this.onStatsSource(null);
-      const p = this.player;
-      this.player = null;
-      try {
-        // Native release must finish before its HTTP source is closed.
-        p.release();
-      } catch (e) {
-        logE(`StreamingVideoPlayer.release failed: ${e}`);
-      }
     }
-    if (this.rangeServer !== null) {
-      this.rangeServer.close();
-      this.rangeServer = null;
-    }
-    if (this.tdSource !== null) {
-      this.tdSource.close();
-      this.tdSource = null;
-    }
-    if (this.session !== null) {
-      this.session.close();
-      this.session = null;
+    if (player !== null || rangeServer !== null || tdSource !== null || session !== null) {
+      const closeSources: (() => void)[] = [];
+      if (rangeServer !== null) { closeSources.push((): void => { rangeServer.close(); }); }
+      if (tdSource !== null) { closeSources.push((): void => { tdSource.close(); }); }
+      if (session !== null) { closeSources.push((): void => { session.close(); }); }
+      this.pendingRelease = releaseVideoResources(
+        player === null ? null : (): Promise<boolean> => player.releaseAsync(),
+        (): void => { if (player !== null) { player.release(); } }, closeSources)
+        .catch((error: Error): void => {
+          logE(`StreamingVideoPlayer.release failed: ${error}`);
+        });
     }
     this.isPlaying = false;
   }
@@ -523,6 +527,11 @@ export struct StreamingVideoPlayer {
   }
 
   private async initPlayer(context: object): Promise<void> {
+    const generation: number = this.playbackGeneration;
+    await this.pendingRelease;
+    if (generation !== this.playbackGeneration || this.surfaceContext !== context) {
+      return;
+    }
     if (!this.active || this.player !== null || this.session !== null) {
       return;
     }
@@ -610,10 +619,10 @@ export struct StreamingVideoPlayer {
       player.setVideoVisible(this.active && this.appIsForeground);
       const preparedListener: OnPreparedListener = {
         onPrepared: (): void => {
-          this.autoRetries = 0;
           if (this.player !== player) {
             return;
           }
+          this.autoRetries = 0;
           this.reportDecoder(player);
           this.logStartup('prepared');
           this.applyReadAhead(player);
@@ -802,6 +811,9 @@ export struct StreamingVideoPlayer {
       player.setDataSource(sourceUrl);
       player.prepareAsync();
     } catch (e) {
+      if (generation !== this.playbackGeneration) {
+        return;
+      }
       logE(`StreamingVideoPlayer.init failed: ${e}`);
       this.release();
       this.showError(str('player_load_failed'));
