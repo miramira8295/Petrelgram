@@ -454,19 +454,11 @@ export struct MainTabBody {
     const store = getChatStore();
     const folderIds: number[] = this.folderTagsEnabled
       ? getFolderStore().getFolders().map((f: FolderInfo): number => f.id) : EMPTY_FOLDER_IDS;
+    const chatIds: number[] = items.map((item: ChatEntry): number => item.id);
+    const memberships: Map<number, number[]> = store.folderIdsForChats(folderIds, chatIds);
     const flags: ChatRowFlags[] = [];
     for (const item of items) {
-      let inFolders: number[] = EMPTY_FOLDER_IDS;
-      if (folderIds.length > 0) {
-        for (const folderId of folderIds) {
-          if (store.isInFolder(folderId, item.id)) {
-            if (inFolders === EMPTY_FOLDER_IDS) {
-              inFolders = [];
-            }
-            inFolders.push(folderId);
-          }
-        }
-      }
+      const inFolders: number[] = memberships.get(item.id) ?? EMPTY_FOLDER_IDS;
       flags.push({
         pinned: store.isPinned('main', item.id),
         archived: store.isArchived(item.id),

@@ -488,6 +488,25 @@ export class ChatStore {
     return this.listIds(`folder:${folderId}`).indexOf(chatId) >= 0;
   }
 
+  // Build folder membership once per list publication. Calling isInFolder for
+  // every row repeatedly scans the folder's ordered id array, turning a
+  // folder-tag refresh into chats × folders × folder-size work.
+  folderIdsForChats(folderIds: number[], chatIds: number[]): Map<number, number[]> {
+    const out: Map<number, number[]> = new Map<number, number[]>();
+    for (const id of chatIds) {
+      out.set(id, []);
+    }
+    for (const folderId of folderIds) {
+      const members: Set<number> = new Set<number>(this.listIds(`folder:${folderId}`));
+      for (const chatId of chatIds) {
+        if (members.has(chatId)) {
+          out.get(chatId)!.push(folderId);
+        }
+      }
+    }
+    return out;
+  }
+
 
   // 这个会话在不在**任何一个**会话列表里（主列表 / 归档 / 任意文件夹）。
   //
