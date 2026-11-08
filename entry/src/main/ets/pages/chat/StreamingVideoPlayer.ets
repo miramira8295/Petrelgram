@@ -44,7 +44,7 @@ import { VideoGestureLayer } from './VideoGestureLayer';
 import { VideoStatsSnapshot, emptyVideoStats } from '../../util/videoStats';
 import { streamReadAheadBytes } from '../../util/streamReadAhead';
 import { networkIsMetered } from '../../util/videoVariants';
-import { releaseVideoResources } from '../../util/videoRelease';
+import { enqueueNativeReleaseSync } from '../../util/videoRelease';
 
 
 
@@ -492,9 +492,11 @@ export struct StreamingVideoPlayer {
       if (rangeServer !== null) { closeSources.push((): void => { rangeServer.close(); }); }
       if (tdSource !== null) { closeSources.push((): void => { tdSource.close(); }); }
       if (session !== null) { closeSources.push((): void => { session.close(); }); }
-      this.pendingRelease = releaseVideoResources(
-        player === null ? null : (): Promise<boolean> => player.releaseAsync(),
-        (): void => { if (player !== null) { player.release(); } }, closeSources)
+      // 2026-11-09：改用**同步** release（插件 releaseAsync 的线程池回调会在实例
+      // 销毁之后才执行，IjkMediaPlayer_release() 里对 id_ 的 std::string 拷贝读到
+      // 已释放内存 —— 真机栈：memcpy ← IjkMediaPlayer_release+148 ← AsyncWorkCallback）。
+      this.pendingRelease = enqueueNativeReleaseSync(
+        player === null ? null : (): void => { player.release(); }, closeSources)
         .catch((error: Error): void => {
           logE(`StreamingVideoPlayer.release failed: ${error}`);
         });

@@ -6,6 +6,7 @@ import { alphaStickerCandidate } from '../../util/webm/alphaStickerGate';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { probeHit } from '../../util/panelProbe';
 import { logE, logW } from '../../util/log';
+import { enqueueNativeReleaseSync } from '../../util/videoRelease';
 
 let nextWebmStickerId: number = 1;
 // Pre-EOF rewind: poll the position and seek to 0 this far before the end.
@@ -294,9 +295,15 @@ export struct WebmStickerView {
       this.player = null;
       // Deferred: releasing inline (e.g. a whole grid page unmounting on a
       // tab switch) serializes many native teardowns into one frame.
+      //
+      // 2026-11-09：改走**同步**释放（util/videoRelease enqueueNativeReleaseSync）。
+      // 插件的 releaseAsync 在线程池里回调时才去取实例，实例可能已经销毁，
+      // 于是 IjkMediaPlayer_release() 里对 std::string 的拷贝读到已释放内存
+      // （真机栈：memcpy ← IjkMediaPlayer_release+148 ← AsyncWorkCallback）。
+      // 同步 release 在调用线程立刻执行，实例必然还活着。
       enqueueRelease(() => {
-        p.release();
-        livePlayers--;
+        void enqueueNativeReleaseSync((): void => { p.release(); }, [])
+          .then((): void => { livePlayers--; });
       });
     }
   }
