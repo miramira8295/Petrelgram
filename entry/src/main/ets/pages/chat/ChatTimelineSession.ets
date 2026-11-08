@@ -114,6 +114,11 @@ const TRIM_MIN_MARGIN_ROWS: number = 60;
 // 是 57ms），余量仍是第一版"400 触发/砍到 225"那个踏步版本的近两倍。
 const TRIM_TRIGGER_ROWS: number = 500;
 
+// Splice plans are derived from the same snapshots they update. A full
+// row-by-row verification on every publish adds O(n) work to the hot path;
+// keep it opt-in for focused diagnostics.
+const VERIFY_TIMELINE_ROW_INVARIANTS: boolean = false;
+
 // 消息流的数据发布、行准备和视口状态。List/Repeat 的 UI 归 ChatTimelineHost。
 // 跨域操作只接已有控制器或固定接口，不保存 ChatPage 实例。
 interface InitialMessageStageTarget {
@@ -408,22 +413,24 @@ export class ChatTimelineSession {
     // 不变量：timelineRows 与 next **逐项同对象**。任何一处不同（漏行、重复行、
     // 旧对象残留）都退回整份替换——宁可丢一次保位，也不能让两份数组分叉。
     // O(n) 引用比较，和 reuseUnchangedRows 同量级。
-    let mismatchAt: number = -1;
-    if (this.timelineRows.length !== next.length) {
-      mismatchAt = Math.min(this.timelineRows.length, next.length);
-    } else {
-      for (let i = 0; i < next.length; i++) {
-        if (this.timelineRows[i] !== next[i]) {
-          mismatchAt = i;
-          break;
+    if (VERIFY_TIMELINE_ROW_INVARIANTS) {
+      let mismatchAt: number = -1;
+      if (this.timelineRows.length !== next.length) {
+        mismatchAt = Math.min(this.timelineRows.length, next.length);
+      } else {
+        for (let i = 0; i < next.length; i++) {
+          if (this.timelineRows[i] !== next[i]) {
+            mismatchAt = i;
+            break;
+          }
         }
       }
-    }
-    if (mismatchAt >= 0) {
-      logW(`[SplicePublish] invariant broken at=${mismatchAt}` +
-        ` rows=${this.timelineRows.length}/${next.length} head=${head}, fallback to replace`);
-      this.timelineRows = next;
-      return;
+      if (mismatchAt >= 0) {
+        logW(`[SplicePublish] invariant broken at=${mismatchAt}` +
+          ` rows=${this.timelineRows.length}/${next.length} head=${head}, fallback to replace`);
+        this.timelineRows = next;
+        return;
+      }
     }
   }
 
@@ -457,20 +464,22 @@ export class ChatTimelineSession {
       this.timelineRows.splice(this.timelineRows.length, 0, ...next.slice(prev.length));
     }
     this.groups = next;
-    let mismatchAt: number = -1;
-    if (this.timelineRows.length !== next.length) {
-      mismatchAt = Math.min(this.timelineRows.length, next.length);
-    } else {
-      for (let i = 0; i < next.length; i++) {
-        if (this.timelineRows[i] !== next[i]) { mismatchAt = i; break; }
+    if (VERIFY_TIMELINE_ROW_INVARIANTS) {
+      let mismatchAt: number = -1;
+      if (this.timelineRows.length !== next.length) {
+        mismatchAt = Math.min(this.timelineRows.length, next.length);
+      } else {
+        for (let i = 0; i < next.length; i++) {
+          if (this.timelineRows[i] !== next[i]) { mismatchAt = i; break; }
+        }
       }
-    }
-    if (mismatchAt >= 0) {
-      logW(`[SplicePublish] ${appended > 0 ? 'append' : 'patch'} invariant broken` +
-        ` at=${mismatchAt} rows=${this.timelineRows.length}/${next.length}` +
-        ` appended=${appended}, fallback to replace`);
-      this.timelineRows = next;
-      return;
+      if (mismatchAt >= 0) {
+        logW(`[SplicePublish] ${appended > 0 ? 'append' : 'patch'} invariant broken` +
+          ` at=${mismatchAt} rows=${this.timelineRows.length}/${next.length}` +
+          ` appended=${appended}, fallback to replace`);
+        this.timelineRows = next;
+        return;
+      }
     }
   }
 
@@ -502,19 +511,21 @@ export class ChatTimelineSession {
       }
     }
     this.groups = next;
-    let mismatchAt: number = -1;
-    if (this.timelineRows.length !== next.length) {
-      mismatchAt = Math.min(this.timelineRows.length, next.length);
-    } else {
-      for (let i = 0; i < next.length; i++) {
-        if (this.timelineRows[i] !== next[i]) { mismatchAt = i; break; }
+    if (VERIFY_TIMELINE_ROW_INVARIANTS) {
+      let mismatchAt: number = -1;
+      if (this.timelineRows.length !== next.length) {
+        mismatchAt = Math.min(this.timelineRows.length, next.length);
+      } else {
+        for (let i = 0; i < next.length; i++) {
+          if (this.timelineRows[i] !== next[i]) { mismatchAt = i; break; }
+        }
       }
-    }
-    if (mismatchAt >= 0) {
-      logW(`[SplicePublish] ${kind} invariant broken at=${mismatchAt}` +
-        ` rows=${this.timelineRows.length}/${next.length} count=${count}, fallback to replace`);
-      this.timelineRows = next;
-      return;
+      if (mismatchAt >= 0) {
+        logW(`[SplicePublish] ${kind} invariant broken at=${mismatchAt}` +
+          ` rows=${this.timelineRows.length}/${next.length} count=${count}, fallback to replace`);
+        this.timelineRows = next;
+        return;
+      }
     }
   }
 
