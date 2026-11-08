@@ -456,12 +456,13 @@ export struct MainTabBody {
       ? getFolderStore().getFolders().map((f: FolderInfo): number => f.id) : EMPTY_FOLDER_IDS;
     const chatIds: number[] = items.map((item: ChatEntry): number => item.id);
     const memberships: Map<number, number[]> = store.folderIdsForChats(folderIds, chatIds);
+    const archived: Set<number> = store.listMembership('archive', chatIds);
     const flags: ChatRowFlags[] = [];
     for (const item of items) {
       const inFolders: number[] = memberships.get(item.id) ?? EMPTY_FOLDER_IDS;
       flags.push({
         pinned: store.isPinned('main', item.id),
-        archived: store.isArchived(item.id),
+        archived: archived.has(item.id),
         folderIds: inFolders
       });
     }

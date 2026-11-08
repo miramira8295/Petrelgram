@@ -483,6 +483,17 @@ export class ChatStore {
     return this.listIds('archive').indexOf(chatId) >= 0;
   }
 
+  listMembership(listKey: string, chatIds: number[]): Set<number> {
+    const wanted: Set<number> = new Set<number>(chatIds);
+    const found: Set<number> = new Set<number>();
+    for (const id of this.listIds(listKey)) {
+      if (wanted.has(id)) {
+        found.add(id);
+      }
+    }
+    return found;
+  }
+
 
   isInFolder(folderId: number, chatId: number): boolean {
     return this.listIds(`folder:${folderId}`).indexOf(chatId) >= 0;
