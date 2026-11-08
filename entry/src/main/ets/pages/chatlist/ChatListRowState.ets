@@ -42,17 +42,24 @@ function sameFlags(a: ChatRowFlags, b: ChatRowFlags): boolean {
 @Observed
 export class ChatListRowState {
   readonly id: number;
+  // Position in the published list. Gesture validation only needs the row's
+  // captured position; looking it up in ChatStore would scan the whole list.
+  position: number;
   snapshot: ChatListRowSnapshot;
 
-  constructor(chat: ChatEntry, contentKey: string, flags: ChatRowFlags = NO_ROW_FLAGS) {
+  constructor(chat: ChatEntry, contentKey: string, flags: ChatRowFlags = NO_ROW_FLAGS,
+    position: number = -1) {
     this.id = chat.id;
+    this.position = position;
     this.snapshot = { chat, contentKey, flags };
   }
 
   // flags 与 key 都要比：置顶/归档/分组归属变化不一定改 ChatEntry 的 revision，
   // 只看 key 的话行会停在旧图标上。
-  update(chat: ChatEntry, contentKey: string, flags: ChatRowFlags = NO_ROW_FLAGS): void {
+  update(chat: ChatEntry, contentKey: string, flags: ChatRowFlags = NO_ROW_FLAGS,
+    position: number = this.position): void {
     if (chat.id !== this.id) { throw new Error('ChatListRowState identity changed'); }
+    this.position = position;
     if (contentKey === this.snapshot.contentKey && sameFlags(flags, this.snapshot.flags)) { return; }
     this.snapshot = { chat, contentKey, flags };
   }

@@ -77,12 +77,12 @@ export class ChatListDataSource implements IDataSource {
       const atIndex = previousRows[i];
       let row = atIndex !== undefined && atIndex.id === chat.id ? atIndex : this.byId.get(chat.id);
       if (row === undefined) {
-        row = new ChatListRowState(chat, contentKeys[i], flags[i] ?? NO_ROW_FLAGS);
+        row = new ChatListRowState(chat, contentKeys[i], flags[i] ?? NO_ROW_FLAGS, i);
         this.byId.set(chat.id, row);
       } else {
         // 每次都喂一遍：update 在 key 与 flags 都没变时立刻返回。分组归属这类
         // 变化不进 contentKey，只靠 key 比较会漏（第二层 B3 起 flags 也算状态）。
-        row.update(chat, contentKeys[i], flags[i] ?? NO_ROW_FLAGS);
+        row.update(chat, contentKeys[i], flags[i] ?? NO_ROW_FLAGS, i);
       }
       rows.push(row);
 

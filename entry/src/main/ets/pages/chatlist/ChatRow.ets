@@ -398,8 +398,7 @@ export struct ChatRow {
   }
 
   private currentIndex(): number {
-    return getChatStore().getChats(this.listKey)
-      .findIndex((entry: ChatEntry): boolean => entry.id === this.row.snapshot.chat.id);
+    return this.row.position;
   }
 
   private beginPress(): void {
