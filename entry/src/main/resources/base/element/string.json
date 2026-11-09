@@ -13359,6 +13359,14 @@
     {
       "name": "settings_about_credits",
       "value": "鸣谢"
+    },
+    {
+      "name": "mb_copy_message_link",
+      "value": "复制消息链接"
+    },
+    {
+      "name": "link_copied_internal",
+      "value": "已复制内部链接（仅本应用可打开）"
     }
   ]
 }

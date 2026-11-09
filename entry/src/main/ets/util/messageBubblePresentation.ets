@@ -9,6 +9,19 @@ export interface SenderAvatarSpec {
   animate: boolean;
 }
 
+// 头像解出来的那一份东西：路径 + 带不带动画。**一个对象**而不是两个 @Local，
+// 原因是 @ReusableV2 的复用重置按变量个数逐条赋值（见官方《@ReusableV2装饰器》
+// 的重置表，以及转译产物 resetStateVarsOnReuse 里逐行 this.x = 初值），
+// 两个变量就是两次"复位→重新播种"的往返，一次重渲染变成两三次。
+export interface SenderAvatarState {
+  path: string;
+  animated: boolean;
+}
+
+// 复用重置用的初值。同一个模块级常量 = 同一个引用，复位到它时若已经是它，
+// `@Local` 的 `===` 比较会直接短路，不产生通知。
+export const EMPTY_SENDER_AVATAR_STATE: SenderAvatarState = { path: '', animated: false };
+
 export class SenderAvatarSpecCache {
   private previous: SenderAvatarSpec | undefined = undefined;
 

@@ -45,31 +45,15 @@ export struct LiveUserAvatar {
     return senderChannelKey(this.userId, true);
   }
 
-  aboutToAppear(): void {
-    const key: string = this.channelKey();
-    this.path = senderAvatarFor(key);
-    if (this.path === '' && this.avatarFileId > 0) {
-      this.path = avatarFilePathFor(this.avatarFileId);
-    }
-    if (this.path === '' && this.avatarFileId > 0) {
-      // 已经下完过就直接拿；都没有才真正发请求（prefetchAvatar 自己去重）。
-      const files = getFileService();
-      this.path = files.avatarPathOf(this.avatarFileId);
-      if (this.path === '') {
-        files.prefetchAvatar(this.avatarFileId);
-      }
-    }
-    this.unsubSender = subscribeSenderAvatar(key, (next: string): void => {
+  // 同值不写：通道会重复投递同一个路径，`@Local` 虽然对同一个值短路，
+  // 但这里先比较一次，省掉一次 setter 进出的代价。
+  private setPath(next: string): void {
+    if (this.path !== next) {
       this.path = next;
-    });
-    if (this.avatarFileId > 0) {
-      this.unsubFile = subscribeAvatarFile(this.avatarFileId, (next: string): void => {
-        this.path = next;
-      });
     }
   }
 
-  aboutToDisappear(): void {
+  private detach(): void {
     if (this.unsubSender !== null) {
       this.unsubSender();
       this.unsubSender = null;
@@ -78,6 +62,52 @@ export struct LiveUserAvatar {
       this.unsubFile();
       this.unsubFile = null;
     }
+  }
+
+  // 通道现值 → 文件 id 缓存 → 真的发请求，三步都做完再挂订阅。
+  private attach(): void {
+    this.detach();
+    const key: string = this.channelKey();
+    let known: string = senderAvatarFor(key);
+    if (known === '' && this.avatarFileId > 0) {
+      known = avatarFilePathFor(this.avatarFileId);
+    }
+    if (known === '' && this.avatarFileId > 0) {
+      const files = getFileService();
+      known = files.avatarPathOf(this.avatarFileId);
+      if (known === '') {
+        files.prefetchAvatar(this.avatarFileId);
+      }
+    }
+    this.setPath(known);
+    this.unsubSender = subscribeSenderAvatar(key, (next: string): void => {
+      this.setPath(next);
+    });
+    if (this.avatarFileId > 0) {
+      this.unsubFile = subscribeAvatarFile(this.avatarFileId, (next: string): void => {
+        this.setPath(next);
+      });
+    }
+  }
+
+  aboutToAppear(): void {
+    this.attach();
+  }
+
+  // 复用时 @Param 已是新值、@Local 已被框架重置成 ''：必须重挂，否则这一格
+  // 会停在首字母，而且订阅还挂在**上一个**用户身上（串头像）。原来只有
+  // aboutToAppear，当前调用点（@ 弹窗、回应人名单）是 ForEach 所以还没炸，
+  // 一旦搬进复用列表就是错的。
+  aboutToReuse(): void {
+    this.attach();
+  }
+
+  aboutToRecycle(): void {
+    this.detach();
+  }
+
+  aboutToDisappear(): void {
+    this.detach();
   }
 
   build() {

@@ -168,8 +168,13 @@ export struct AlphaWebmStickerView {
     if (this.animatorFrames.length === 0) {
       return false;
     }
-    this.animatorFrames = [];
+    // 【先停再清】顺序反过来的话，中间会有一帧处于"state 还是 Running、frames
+    // 已经空了"的组合，ImageAnimator 照常推进 index，于是每个下标都会打一条
+    // `ImageAnimator update index error, index: N, size: 0`（2026-11-09 的
+    // hilog 里一次滚动会话 742 条，全是这个）。先把状态拨回 Initial，动画器就
+    // 不再要帧了，随后清空数组才是安全的。
     this.animatorState = AnimationStatus.Initial;
+    this.animatorFrames = [];
     return true;
   }
 

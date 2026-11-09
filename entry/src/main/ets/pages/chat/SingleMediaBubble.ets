@@ -9,7 +9,7 @@ import { posterFor, requestPoster, subscribePoster } from '../../util/videoPoste
 import { MessageBubbleActions, MessageBubbleRenderData } from './ReusableMessageBubble';
 import { VideoBubbleSurface } from './VideoBubbleSurface';
 import { SmartLoopVideo } from '../common/SmartLoopVideo';
-import { LiveThumbImage } from './LiveThumbImage';
+import { LiveThumbImage, LiveThumbSpecCache } from './LiveThumbImage';
 import { LiveProgressRing } from './LiveProgressRing';
 import { ThumbReadyGate } from './ThumbReadyGate';
 import { EntryVideoFileRef, entryInlineFile } from '../../util/entryVideoVariant';
@@ -48,6 +48,9 @@ export struct SingleMediaBubble {
   private context: MessageBubbleContext = new MessageBubbleContext();
   private env: ChatEnvMirror = chatEnv;
   private mediaCornerCache: BubbleCornerCache = new BubbleCornerCache();
+  // 这张图的入参记忆化：父组件重渲染（进度、发送态、播放角标）时不再
+  // 制造新的 spec 对象，否则下层整格重设一遍（见 LiveThumbSpecCache）。
+  private thumbSpecCache: LiveThumbSpecCache = new LiveThumbSpecCache();
   @Local private livePhotoProgress: number = 0;
   @Local private liveVideoProgress: number = 0;
   @Local private localVideoPoster: string = '';
@@ -515,7 +518,7 @@ export struct SingleMediaBubble {
         // be 0, and losing the path there would regress an already
         // downloaded photo to a dead "retry" tile.
         LiveThumbImage({
-          spec: {
+          spec: this.thumbSpecCache.prepare({
             syncDisplay: true,
             fileId: this.msg.photoFileId,
             initialPath: this.effectivePosterPath(),
@@ -529,7 +532,7 @@ export struct SingleMediaBubble {
             // 和 singleMediaPlaceholder 的底色同源（见 util/thumbBackdrop）。
             backdrop: thumbBackdropColor(this.msg.contentType === 'video'),
             mini: miniPlaceholderOf(this.msg.photoMini)
-          },
+          }),
           placeholder: (): void => {
             this.singleMediaPlaceholder(this.msg.photoFileId !== 0);
           }

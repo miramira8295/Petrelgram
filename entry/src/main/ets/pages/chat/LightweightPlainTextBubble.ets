@@ -40,6 +40,10 @@ import { cornerPx } from '../../util/bubbleCornerInset';
 import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
 } from '../../util/senderAvatarChannel';
+import { CachedImageSpec, CachedImageSpecCache } from '../../util/cachedImageSpec';
+import {
+  EMPTY_SENDER_AVATAR_STATE, SenderAvatarSpec, SenderAvatarSpecCache, SenderAvatarState
+} from '../../util/messageBubblePresentation';
 import { sendStateFor, subscribeSendState } from '../../util/sendStateChannel';
 import { str } from '../../util/strings';
 import {
@@ -152,53 +156,65 @@ const SOLID_BUBBLE_SHADOW: ShadowOptions = {
 
 @ComponentV2
 struct LightweightSenderAvatar {
-  @Param senderId: number = 0;
-  @Param senderIsUser: boolean = true;
-  @Param initialPath: string = '';
-  @Param initials: string = '?';
-  @Local path: string = '';
-  // 头像带不带动画；带的话叠一层 SenderAnimatedLayer（issue #140，同 LiveSenderAvatar）。
-  @Local animated: boolean = false;
-  // 无装饰器成员复用时不重置（官方表格 + 批 0.5 实测），照旧记订阅与回收态。
+  // 与 LiveSenderAvatar（MessageBubbleShell）同一套形状，理由也同一套：
+  //
+  // ① 一个原子 @Param 替掉 4 个标量 @Param。@Param 的复用重置是逐变量赋值
+  //    （resetStateVarsOnReuse 里一行一个），4 个变量就是 4 行；而且标量逐个
+  //    落地时 senderId 到位、initialPath 还是上一行的，会先画一次错头像
+  //    （I-2 串头像）。一个对象参数 = 一次赋值、一次 @Monitor、参数一定完整。
+  // ② @Local 只留一个 avatarState（path + animated 一起）。V2 对 `@Local`
+  //    的赋值有 `===` 短路，所以"复位 → 重新播种"里只有真正变了的那些才会
+  //    发通知；两个 @Local 会让一次复用变成两三轮重渲染。
+  // ③ CachedImage 的 spec 走 CachedImageSpecCache。父组件每次重渲染都会
+  //    现造一个字面量对象，`===` 比较必然不等 → 一次假通知 + 整个
+  //    CachedImage 子树重设属性。2026-11-09 的 Insight 采集里，纯文本头像
+  //    一条链路贡献了 993 次 `CachedImage.spec` 写、其中 890 次内容完全相同
+  //    （90%），且 337 次复用对应 993 次写 = 每次复用被拆成约 3 次重渲染。
+  @Require @Param spec: SenderAvatarSpec;
+  @Local private avatarState: SenderAvatarState = EMPTY_SENDER_AVATAR_STATE;
+  // 无装饰器成员复用时不重置（官方重置表最后一行），所以订阅与记忆化都挂在这里。
   private unsub: (() => void) | null = null;
   private attachedKey: string = '';
+  private imageSpecCache: CachedImageSpecCache = new CachedImageSpecCache();
 
-  private attach(senderId: number, senderIsUser: boolean, initialPath: string): void {
-    const key: string = senderChannelKey(senderId, senderIsUser);
+  private get path(): string { return this.avatarState.path; }
+  private get animated(): boolean { return this.avatarState.animated; }
+
+  // 同值不写：`@Local` 对同一个值会短路，但这里读的是派生 getter，
+  // 比较一次比让框架去比较更早、更省（头像每复用一次走到这里两次）。
+  private setAvatarState(path: string, animated: boolean): void {
+    if (this.path !== path || this.animated !== animated) {
+      this.avatarState = { path: path, animated: animated };
+    }
+  }
+
+  private attach(): void {
+    const spec: SenderAvatarSpec = this.spec;
+    const key: string = senderChannelKey(spec.senderId, spec.senderIsUser);
     const known: string = senderAvatarFor(key);
-    this.animated = senderHasAnimatedPhoto(senderId, senderIsUser);
+    this.setAvatarState(known !== '' ? known : spec.initialPath,
+      spec.animate && senderHasAnimatedPhoto(spec.senderId, spec.senderIsUser));
     if (this.unsub !== null && this.attachedKey === key) {
-      // 同 key 短路：订阅不动，只重新播种（@Local 复用时被框架清空）。
-      this.path = known !== '' ? known : initialPath;
+      // 同 key：订阅原样保留，只重新播种（复用把 @Local 重置回初值了）。
       return;
     }
     this.detach();
     this.attachedKey = key;
-    this.path = known !== '' ? known : initialPath;
     this.unsub = subscribeSenderAvatar(key, (path: string): void => {
-      this.path = path;
-      this.animated = senderHasAnimatedPhoto(this.senderId, this.senderIsUser);
+      // 迟到的推送不能再改到别人头上（同一实例已切到下一个发送者）。
+      if (this.attachedKey !== key) { return; }
+      const current: SenderAvatarSpec = this.spec;
+      this.setAvatarState(path,
+        current.animate && senderHasAnimatedPhoto(current.senderId, current.senderIsUser));
     });
   }
 
-  // 非复用路径上同一实例真的换了发送者时兜底重挂。复用路径靠 aboutToReuse
-  // ——批 0.5 实测 @Monitor 在复用期完全静默（453 次换行复用 0 触发），
-  // 这里永远替代不了 aboutToReuse 里的无条件重挂。
-  // 第三个参数传 ''：@Param 逐个落地，senderId 变化时 initialPath 可能还是
-  // 上一行的（I-2 的串行头像坑在非复用路径依旧成立），最差先显示首字母。
-  @Monitor('senderId', 'senderIsUser')
-  onSenderChanged(): void {
-    this.attach(this.senderId, this.senderIsUser, '');
-  }
-
-  // 与 LiveSenderAvatar 同一处理：上面传 '' 是为了不画上一个人的头像，代价是
-  // 通道没缓存时会空一下（Repeat 外壳复用打开后走的正是这条路，那一闪就显出来
-  // 了）。这里**只在 path 为空时**补种，两头都不吃亏。
-  @Monitor('initialPath')
-  onInitialPathArrived(): void {
-    if (this.path === '' && this.initialPath !== '') {
-      this.path = this.initialPath;
-    }
+  // 非复用路径上同一实例真的换了发送者（@Monitor 在复用期静默，见
+  // aboutToReuse 的说明），一个 spec 参数落地一次、一次性拿全，不会再出现
+  // 标量逐个落地时的中间态。
+  @Monitor('spec')
+  onSpecChanged(): void {
+    this.attach();
   }
 
   private detach(): void {
@@ -210,7 +226,7 @@ struct LightweightSenderAvatar {
   }
 
   aboutToAppear(): void {
-    this.attach(this.senderId, this.senderIsUser, this.initialPath);
+    this.attach();
   }
   aboutToDisappear(): void {
     this.detach();
@@ -219,35 +235,40 @@ struct LightweightSenderAvatar {
     this.detach();
   }
   aboutToReuse(): void {
-    // @Param 已是新值（批 0.5 判读 Q1b），直接同步重挂+重播种。initialPath
-    // 也是新行的值，V1 时代"watch 里不敢用 initialPath"的 I-2 坑在这条路
-    // 不存在。
-    this.attach(this.senderId, this.senderIsUser, this.initialPath);
+    // @Param 已是新值、@Local 已被框架重置成 EMPTY——同步重挂即可，窗口是零帧。
+    this.attach();
+  }
+
+  // 头像被大图挤出 LRU 后重解码会闪（issue #137），pinBounded/syncDisplay 两处
+  // 要一起开；字段没变时返回同一个对象，CachedImage 的 @Param 就不会变化。
+  private imageSpec(): CachedImageSpec {
+    const size: number = this.spec.avatarSize;
+    return this.imageSpecCache.prepare({
+      path: this.path, boxWidth: size, boxHeight: size, radius: size / 2,
+      fit: ImageFit.Cover, pinBounded: true, syncDisplay: true
+    });
   }
 
   build() {
     Stack() {
-      // 底色圆和首字母合成一个 Text（背景色 + 19 圆角 = 原来的 Circle），头像少一个节点。
+      // 底色圆和首字母合成一个 Text（背景色 + 圆角 = 原来的 Circle），头像少一个节点。
       // 有图时只清空文字、不藏背景：解码到手之前垫着的仍是原来的彩色圆底。
-      Text(this.path === '' ? this.initials : '')
-        .width(38).height(38).borderRadius(19)
-        .backgroundColor(AVATAR_PALETTE[Math.abs(this.senderId) % AVATAR_PALETTE.length])
+      Text(this.path === '' ? this.spec.initials : '')
+        .width(this.spec.avatarSize).height(this.spec.avatarSize).borderRadius(this.spec.avatarSize / 2)
+        .backgroundColor(AVATAR_PALETTE[Math.abs(this.spec.senderId) % AVATAR_PALETTE.length])
         .textAlign(TextAlign.Center).align(Alignment.Center)
         .fontColor(Color.White).fontSize(15.2).fontWeight(FontWeight.Medium);
-      CachedImage({ spec: {
-        path: this.path, boxWidth: 38, boxHeight: 38, radius: 19, fit: ImageFit.Cover,
-        // 和 LiveSenderAvatar 同一理由：头像被大图挤出 LRU 后重解码会闪
-        // （issue #137）。两处要一起开，否则纯文本行的头像仍然会闪。
-        pinBounded: true,
-        syncDisplay: true
-      } }).visibility(this.path !== '' ? Visibility.Visible : Visibility.None);
+      CachedImage({ spec: this.imageSpec() })
+        .visibility(this.path !== '' ? Visibility.Visible : Visibility.None);
       if (this.animated) {
-        SenderAnimatedLayer({ senderId: this.senderId, senderIsUser: this.senderIsUser, avatarSize: 38 });
+        SenderAnimatedLayer({
+          senderId: this.spec.senderId, senderIsUser: this.spec.senderIsUser,
+          avatarSize: this.spec.avatarSize
+        });
       }
-    }.width(38).height(38);
+    }.width(this.spec.avatarSize).height(this.spec.avatarSize);
   }
 }
-
 
 // 按压反馈这四组样式不读任何组件状态，随批 2 迁成全局 @Styles——
 // @ComponentV2 不支持成员 @Styles。
@@ -330,6 +351,15 @@ export struct LightweightPlainTextBubble {
   // （尺寸没变时 onSizeChange 不会再回调）。
   private measuredGlassW: number = 0;
   private measuredGlassH: number = 0;
+  // 头像入参记忆化。它是本行**唯一**会在每次重渲染时被现造的对象（父组件
+  // build 里写死了 4 个标量 → 现在收成一个 spec），没有这一层，子组件的
+  // @Param 每次都换引用。
+  private avatarSpecCache: SenderAvatarSpecCache = new SenderAvatarSpecCache();
+
+  private senderAvatarSpec(): SenderAvatarSpec {
+    return this.avatarSpecCache.prepare(this.msg.senderId, this.msg.senderIsUser,
+      this.msg.senderAvatarPath, this.msg.senderInitials, 38, true);
+  }
 
   // 名字行宽度：读当前发送者的可观测单元（首次读取惰性创建，不产生通知）。
   // 这样依赖只落在"这个发送者"上，别的发送者量到宽度不会惊动本行。
@@ -1019,6 +1049,15 @@ export struct LightweightPlainTextBubble {
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.plus_square_on_square')),
         content: $r('app.string.mb_copy_text')
       }).onClick((): void => { this.actions.onCopyText(this.msg.id); });
+      // 「复制消息链接」。TDLib 的 getMessageLink 只对**服务端已存在**的消息有效，
+      // 本地待发（id <= 0）和系统消息不出现；拿不到链接（私密聊天等）由
+      // ChatPage.copyMessageLink 兜底提示 cp_no_link。
+      if (this.msg.id > 0 && this.msg.contentType !== 'system' && this.msg.contentType !== 'hidden') {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.link')),
+          content: $r('app.string.mb_copy_message_link')
+        }).onClick((): void => { this.actions.onCopyLink(this.msg.id); });
+      }
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.character_textbox')),
         content: $r('app.string.mb_select_text')
@@ -1183,12 +1222,7 @@ export struct LightweightPlainTextBubble {
           // 群聊来信不显示头像时，头像位由这层 Row 的内边距占（avatarGutterPadding），
           // 不再垫定宽空 Column；两层 if 也并成一层。
           if (this.isGroup && !this.msg.isOutgoing && this.showAvatar) {
-            LightweightSenderAvatar({
-              senderId: this.msg.senderId,
-              senderIsUser: this.msg.senderIsUser,
-              initialPath: this.msg.senderAvatarPath,
-              initials: this.msg.senderInitials
-            })
+            LightweightSenderAvatar({ spec: this.senderAvatarSpec() })
               .margin({ right: BUBBLE_AVATAR_GAP_VP })
               .onClick((): void => {
                 if (!this.gestureClaimed && this.msg.senderIsUser && this.msg.senderId > 0) {

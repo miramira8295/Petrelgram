@@ -13359,6 +13359,14 @@
     {
       "name": "settings_about_credits",
       "value": "Подяки"
+    },
+    {
+      "name": "mb_copy_message_link",
+      "value": "Скопіювати посилання на повідомлення"
+    },
+    {
+      "name": "link_copied_internal",
+      "value": "Внутрішнє посилання скопійовано (лише в цьому застосунку)"
     }
   ]
 }

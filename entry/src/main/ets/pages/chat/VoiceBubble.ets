@@ -1,3 +1,4 @@
+import { AudioClock, IDLE_AUDIO_CLOCK } from '../../util/audioClock';
 import { getVoicePlayback, VoiceState } from '../../services/VoicePlayback';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { formatVoiceDuration, voiceWaveformBars } from '../../util/voiceWaveform';
@@ -38,10 +39,20 @@ export struct VoiceBubble {
   @Event onRecognizeTap: () => void = (): void => {};
   @Param onNeedDownload: () => void = (): void => {};
   @Param onPlaybackStarted: () => void = (): void => {};
+  private get progress(): number { return this.clock.progress; }
+  private get elapsedSec(): number { return this.clock.elapsed; }
+
+  private setClock(progress: number, elapsed: number): void {
+    if (this.clock.progress !== progress || this.clock.elapsed !== elapsed) {
+      this.clock = { progress: progress, elapsed: elapsed };
+    }
+  }
+
   @Local playbackStatus: string = 'idle';
   @Local finished: boolean = false;
-  @Local progress: number = 0;
-  @Local elapsedSec: number = 0;
+  // 进度比例 + 秒数永远成对写（4 处全是相邻两行），合成一个快照：一次赋值、
+  // 一次通知，而不是每次播放进度回调都跑两遍依赖遍历。
+  @Local private clock: AudioClock = IDLE_AUDIO_CLOCK;
   @Local resolvedDurationSec: number = 0;
   @Local speed: number = 1;
   @Local playbackFailed: boolean = false;
@@ -53,8 +64,7 @@ export struct VoiceBubble {
     this.detachPlayback();
     this.playbackStatus = 'idle';
     this.finished = false;
-    this.progress = 0;
-    this.elapsedSec = 0;
+    this.setClock(0, 0);
     this.speed = 1;
     this.playbackFailed = false;
     this.playbackStartedReported = false;
@@ -69,9 +79,9 @@ export struct VoiceBubble {
         if (state.durationMs > 0) {
           this.resolvedDurationSec = Math.max(1, Math.ceil(state.durationMs / 1000));
         }
-        this.progress = state.durationMs > 0
-          ? Math.min(1, Math.max(0, state.positionMs / state.durationMs)) : 0;
-        this.elapsedSec = Math.max(0, Math.floor(state.positionMs / 1000));
+        this.setClock(state.durationMs > 0
+          ? Math.min(1, Math.max(0, state.positionMs / state.durationMs)) : 0,
+          Math.max(0, Math.floor(state.positionMs / 1000)));
         if (state.status === 'loading') {
           this.finished = false;
         }
@@ -83,14 +93,12 @@ export struct VoiceBubble {
       } else {
         this.playbackStatus = 'idle';
         if (!this.finished) {
-          this.progress = 0;
-          this.elapsedSec = 0;
+          this.setClock(0, 0);
         }
       }
       if (state.mode === 'voice' && state.completedId === targetId) {
         this.finished = true;
-        this.progress = 1;
-        this.elapsedSec = this.resolvedDuration();
+        this.setClock(1, this.resolvedDuration());
       }
     });
   }

@@ -13359,6 +13359,14 @@
     {
       "name": "settings_about_credits",
       "value": "شكر وتقدير"
+    },
+    {
+      "name": "mb_copy_message_link",
+      "value": "نسخ رابط الرسالة"
+    },
+    {
+      "name": "link_copied_internal",
+      "value": "تم نسخ الرابط الداخلي (يفتح في هذا التطبيق فقط)"
     }
   ]
 }

@@ -2117,16 +2117,33 @@ export class MessageStore {
   }
 
   // Resolve a public/private t.me link for a message (used by 拷贝消息链接).
+  //
+  // 话题/评论线程里的消息要带上 topic 作用域，否则拿到的链接会落到主时间线
+  // 那条消息上。本 td 版本的作用域参数是 `topic_id`（不是旧版的
+  // message_thread_id），复用 applyMessageTopicScope。
+  // 带作用域被服务端拒绝时回退一次不带作用域的请求——话题外这条永远走不到，
+  // 所以正常路径不会多花一次往返。
   messageLink(messageId: number, cb: (url: string) => void): void {
-    const req: TdRequest = { '@type': 'getMessageLink' };
-    req['chat_id'] = this.chatId;
-    req['message_id'] = messageId;
-    this.client.send(req).then((res: TdObject) => {
-      cb((res['link'] as string | undefined) ?? '');
-    }).catch((e: TdError) => {
-      logE(`MessageStore.getMessageLink failed: ${e.message}`);
-      cb('');
-    });
+    const scoped: TdRequest = { '@type': 'getMessageLink' };
+    scoped['chat_id'] = this.chatId;
+    scoped['message_id'] = messageId;
+    this.applyTopicScope(scoped);
+    const plain: TdRequest = { '@type': 'getMessageLink' };
+    plain['chat_id'] = this.chatId;
+    plain['message_id'] = messageId;
+    const send = (req: TdRequest, allowRetry: boolean): void => {
+      this.client.send(req).then((res: TdObject) => {
+        cb((res['link'] as string | undefined) ?? '');
+      }).catch((e: TdError) => {
+        if (allowRetry && req['topic_id'] !== undefined) {
+          send(plain, false);
+          return;
+        }
+        logE(`MessageStore.getMessageLink failed: ${e.message}`);
+        cb('');
+      });
+    };
+    send(scoped, true);
   }
 
   // Send a document from a local (sandbox) path. TDLib uploads it and the

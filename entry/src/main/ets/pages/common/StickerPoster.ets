@@ -1,4 +1,5 @@
 import { CachedImage } from './CachedImage';
+import { CachedImageSpecCache } from '../../util/cachedImageSpec';
 
 // 贴纸类的静态图：缩略图、动画起播前的占位、贴纸包标签图标。
 //
@@ -14,10 +15,14 @@ export struct StickerPoster {
   @Param boxWidth: number = 0;
   @Param boxHeight: number = 0;
   @Param fit: ImageFit = ImageFit.Contain;
+  // 同一个贴纸在重渲染时会重造 spec 对象 → 子组件 @Param 换引用 → 整棵图片子树重设。
+  private imageCache: CachedImageSpecCache = new CachedImageSpecCache();
 
   build() {
     if (this.path.startsWith('/')) {
-      CachedImage({ spec: { path: this.path, boxWidth: this.boxWidth, boxHeight: this.boxHeight, fit: this.fit } });
+      CachedImage({ spec: this.imageCache.prepare({
+        path: this.path, boxWidth: this.boxWidth, boxHeight: this.boxHeight, fit: this.fit
+      }) });
     } else if (this.path !== '') {
       Image(this.path).draggable(false)
         .width(this.boxWidth).height(this.boxHeight).objectFit(this.fit);

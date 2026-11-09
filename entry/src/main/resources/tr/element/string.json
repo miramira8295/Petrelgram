@@ -13359,6 +13359,14 @@
     {
       "name": "settings_about_credits",
       "value": "Teşekkürler"
+    },
+    {
+      "name": "mb_copy_message_link",
+      "value": "Mesaj bağlantısını kopyala"
+    },
+    {
+      "name": "link_copied_internal",
+      "value": "Dahili bağlantı kopyalandı (yalnızca bu uygulama)"
     }
   ]
 }

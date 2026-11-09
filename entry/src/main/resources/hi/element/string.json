@@ -13359,6 +13359,14 @@
     {
       "name": "settings_about_credits",
       "value": "आभार"
+    },
+    {
+      "name": "mb_copy_message_link",
+      "value": "संदेश लिंक कॉपी करें"
+    },
+    {
+      "name": "link_copied_internal",
+      "value": "आंतरिक लिंक कॉपी किया गया (केवल इस ऐप में)"
     }
   ]
 }

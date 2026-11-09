@@ -13359,6 +13359,14 @@
     {
       "name": "settings_about_credits",
       "value": "감사의 말"
+    },
+    {
+      "name": "mb_copy_message_link",
+      "value": "메시지 링크 복사"
+    },
+    {
+      "name": "link_copied_internal",
+      "value": "내부 링크를 복사했습니다(이 앱에서만 열림)"
     }
   ]
 }

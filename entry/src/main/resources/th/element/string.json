@@ -13359,6 +13359,14 @@
     {
       "name": "settings_about_credits",
       "value": "กิตติกรรมประกาศ"
+    },
+    {
+      "name": "mb_copy_message_link",
+      "value": "คัดลอกลิงก์ข้อความ"
+    },
+    {
+      "name": "link_copied_internal",
+      "value": "คัดลอกลิงก์ภายในแล้ว (เปิดได้ในแอปนี้เท่านั้น)"
     }
   ]
 }

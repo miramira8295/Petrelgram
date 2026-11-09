@@ -21,7 +21,9 @@ import { senderHasAnimatedPhoto } from '../../services/PhotoAnimationFetch';
 import { SenderAnimatedLayer } from './SenderAnimatedLayer';
 import { CachedImage } from '../common/CachedImage';
 import { CachedImageSpec } from '../../util/cachedImageSpec';
-import { BubbleCornerCache, SenderAvatarSpec, SenderAvatarSpecCache } from '../../util/messageBubblePresentation';
+import {
+  BubbleCornerCache, EMPTY_SENDER_AVATAR_STATE, SenderAvatarSpec, SenderAvatarSpecCache, SenderAvatarState
+} from '../../util/messageBubblePresentation';
 import { cornerPx, senderLeadInset } from '../../util/bubbleCornerInset';
 import { BubbleGlassGeometry } from './BubbleGlassGeometry';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
@@ -146,12 +148,6 @@ const PLAIN_TIME_PADDING: Padding = { left: 0 };
 const SOLID_BUBBLE_SHADOW: ShadowOptions = {
   radius: 2, color: '#14000000', offsetX: 0, offsetY: 1
 };
-
-interface SenderAvatarState {
-  path: string;
-  animated: boolean;
-}
-const EMPTY_SENDER_AVATAR_STATE: SenderAvatarState = { path: '', animated: false };
 
 @ComponentV2
 struct LiveSenderAvatar {
@@ -1260,6 +1256,15 @@ export struct MessageBubbleShell {
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.plus_square_on_square')),
         content: $r('app.string.mb_copy_text')
       }).onClick((): void => { this.actions.onCopyText(this.msg.id); });
+      // 「复制消息链接」。TDLib 的 getMessageLink 只对**服务端已存在**的消息有效，
+      // 本地待发（id <= 0）和系统消息不出现；拿不到链接（私密聊天等）由
+      // ChatPage.copyMessageLink 兜底提示 cp_no_link。
+      if (this.msg.id > 0 && this.msg.contentType !== 'system' && this.msg.contentType !== 'hidden') {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.link')),
+          content: $r('app.string.mb_copy_message_link')
+        }).onClick((): void => { this.actions.onCopyLink(this.msg.id); });
+      }
       // 「复制文本」是整条全选，这一项是 issue #94 要的"只copy其中一段"。
       if (this.msg.text !== '') {
         MenuItem({

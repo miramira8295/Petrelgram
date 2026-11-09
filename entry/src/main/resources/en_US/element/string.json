@@ -13359,6 +13359,14 @@
     {
       "name": "settings_about_credits",
       "value": "Credits"
+    },
+    {
+      "name": "mb_copy_message_link",
+      "value": "Copy message link"
+    },
+    {
+      "name": "link_copied_internal",
+      "value": "Internal link copied (only opens in this app)"
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { AudioClock, IDLE_AUDIO_CLOCK } from '../../util/audioClock';
 import { getVoicePlayback, VoiceState } from '../../services/VoicePlayback';
 import { formatFileSize } from '../../util/formatFileSize';
 import { formatVoiceDuration } from '../../util/voiceWaveform';
@@ -68,9 +69,20 @@ export struct MusicBubble {
   @Param onSave: () => void = (): void => {};
   @Param onFavorite: () => void = (): void => {};
 
+  private get progress(): number { return this.clock.progress; }
+  private get elapsedSec(): number { return this.clock.elapsed; }
+
+  private setClock(progress: number, elapsed: number): void {
+    if (this.clock.progress !== progress || this.clock.elapsed !== elapsed) {
+      this.clock = { progress: progress, elapsed: elapsed };
+    }
+  }
+
   @Local playbackStatus: string = 'idle';
-  @Local progress: number = 0;
-  @Local elapsedSec: number = 0;
+  // 进度条比例 + 秒数：两者**永远成对写**（6 处写入全是相邻两行），所以合成一个
+  // 快照。分成两个 @Local 时，每来一次播放进度回调就要发两次通知、跑两遍依赖
+  // 遍历；合并后一次赋值、一次通知（写入前先比较，值没变就整条短路）。
+  @Local private clock: AudioClock = IDLE_AUDIO_CLOCK;
   @Local resolvedDurationSec: number = 0;
   @Local playbackFailed: boolean = false;
   @Local finished: boolean = false;
@@ -86,8 +98,7 @@ export struct MusicBubble {
   private attachPlayback(targetId: number, durationSec: number): void {
     this.detachPlayback();
     this.playbackStatus = 'idle';
-    this.progress = 0;
-    this.elapsedSec = 0;
+    this.setClock(0, 0);
     this.resolvedDurationSec = Math.max(0, durationSec);
     this.playbackFailed = false;
     this.finished = false;
@@ -102,25 +113,21 @@ export struct MusicBubble {
         if (state.durationMs > 0) {
           this.resolvedDurationSec = Math.max(1, Math.ceil(state.durationMs / 1000));
         }
-        if (!this.dragging) {
-          this.progress = state.durationMs > 0
-            ? Math.min(1, Math.max(0, state.positionMs / state.durationMs)) : 0;
-        }
-        this.elapsedSec = Math.max(0, Math.floor(state.positionMs / 1000));
+        const nextProgress: number = this.dragging ? this.progress
+          : (state.durationMs > 0 ? Math.min(1, Math.max(0, state.positionMs / state.durationMs)) : 0);
+        this.setClock(nextProgress, Math.max(0, Math.floor(state.positionMs / 1000)));
         if (state.status === 'loading' || state.status === 'playing') {
           this.finished = false;
         }
       } else {
         this.playbackStatus = 'idle';
         if (!this.finished && !this.dragging) {
-          this.progress = 0;
-          this.elapsedSec = 0;
+          this.setClock(0, 0);
         }
       }
       if (state.mode === 'music' && state.completedId === targetId) {
         this.finished = true;
-        this.progress = 1;
-        this.elapsedSec = this.resolvedDuration();
+        this.setClock(1, this.resolvedDuration());
       }
     });
   }
@@ -266,8 +273,7 @@ export struct MusicBubble {
       return;
     }
     this.dragging = false;
-    this.progress = fraction;
-    this.elapsedSec = Math.floor(fraction * this.resolvedDuration());
+    this.setClock(fraction, Math.floor(fraction * this.resolvedDuration()));
     this.onSeek(fraction);
   }
 
@@ -509,8 +515,7 @@ export struct MusicBubble {
       return;
     }
     this.dragging = false;
-    this.progress = fraction;
-    this.elapsedSec = Math.floor(fraction * this.resolvedDuration());
+    this.setClock(fraction, Math.floor(fraction * this.resolvedDuration()));
     this.onSeek(fraction);
   }
 }

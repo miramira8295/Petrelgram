@@ -108,6 +108,37 @@ export function parseOpenMessageLink(uri: string): OpenMessageTarget | null {
 // 下游所有解析都假设 `tg://`，所以在最外层补齐一次，而不是让每个调用点各自
 // 判断两种形态（linkNav 里已经出现过 `startsWith('tg:resolve')` 这种窄补丁，
 // 就是这么来的）。
+// 一条消息对外分享时该给什么链接。
+//
+// TDLib 的 getMessageLink 对**公开**频道/群返回 `https://t.me/<name>/<id>`，
+// 对私有会话返回 `https://t.me/c/<internal>/<id>`——后者只有本客户端能解析，
+// 发给别人是死链。所以私有会话改写成本客户端自己的 `tg://openmessage`，
+// 参数名与推送契约一致（见上面 openmessage 那段），保证粘贴回本应用能直达。
+export interface ShareableMessageLink {
+  link: string;
+  // true = 只能在 Petrelgram 内打开
+  internal: boolean;
+}
+
+export function shareableMessageLink(chatId: number, tdMessageId: number,
+  serverLink: string): ShareableMessageLink {
+  if (serverLink === '') {
+    return { link: '', internal: false };
+  }
+  if (serverLink.indexOf('t.me/c/') < 0) {
+    return { link: serverLink, internal: false };
+  }
+  const serverId: number = Math.floor(tdMessageId / SERVER_MESSAGE_ID_SCALE);
+  if (serverId <= 0 || chatId === 0) {
+    return { link: '', internal: false };
+  }
+  // 与 parseOpenMessageLink 的三条分支一一对应：超级群/频道、基础群、私聊。
+  const scope: string = chatId < ZERO_CHANNEL_ID
+    ? `channel_id=${ZERO_CHANNEL_ID - chatId}`
+    : (chatId < 0 ? `chat_id=${-chatId}` : `user_id=${chatId}`);
+  return { link: `tg://openmessage?${scope}&msg_id=${serverId}`, internal: true };
+}
+
 export function normalizeTgScheme(uri: string): string {
   if (uri.startsWith('tg://') || !uri.startsWith('tg:')) {
     return uri;

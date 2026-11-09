@@ -35,6 +35,36 @@ import { warnStaleThumbAttach } from '../../util/thumbAttachGuard';
 // 合并省的是"逐个登记 + 每次排队列"，赔的是"整棵子树粗粒度失效"。本组件的
 // 子树只有一组图片节点或一段占位——赔得起；纯文本气泡的子树是整条消息，
 // 赔不起。
+// 一格缩略图的入参记忆化。父组件每次重渲染都会现造 spec 对象，V2 的 @Param
+// 按 `===` 比较 → 必然"变化"一次，@Monitor('spec') 重跑、整格重渲染。
+// 2026-11-09 的 Insight 采集里 `LiveThumbImage.spec` 198 次写有 183 次内容
+// 完全相同（92%）；相册一行 6–9 格，这笔是按格乘的。
+export class LiveThumbSpecCache {
+  private previous: LiveThumbSpec | undefined = undefined;
+
+  prepare(next: LiveThumbSpec): LiveThumbSpec {
+    const p = this.previous;
+    if (p !== undefined && p.fileId === next.fileId && p.initialPath === next.initialPath &&
+      p.boxWidth === next.boxWidth && p.boxHeight === next.boxHeight &&
+      p.radius === next.radius && p.fit === next.fit && p.opaque === next.opaque &&
+      p.backdrop === next.backdrop && p.mini === next.mini &&
+      p.syncDisplay === next.syncDisplay &&
+      p.deferMiniOnScroll === next.deferMiniOnScroll && sameRadii(p.radii, next.radii)) {
+      return p;
+    }
+    this.previous = next;
+    return next;
+  }
+}
+
+function sameRadii(a: BorderRadiuses | undefined, b: BorderRadiuses | undefined): boolean {
+  if (a === undefined || b === undefined) {
+    return a === b;
+  }
+  return a.topLeft === b.topLeft && a.topRight === b.topRight &&
+    a.bottomLeft === b.bottomLeft && a.bottomRight === b.bottomRight;
+}
+
 export interface LiveThumbSpec {
   // Chat cells opt in; shared viewer/filmstrip uses keep the default policy.
   syncDisplay?: boolean;
@@ -69,7 +99,11 @@ export struct LiveThumbImage {
   @Local private pixelMap: image.PixelMap | undefined = undefined;
   private scrollState = scrollPlaceholderState;
   private imageSession: CachedImageSession = new CachedImageSession(
-    (pixels: image.PixelMap | undefined): void => { this.pixelMap = pixels; });
+    (pixels: image.PixelMap | undefined): void => {
+      // 同值不写：activate/reuse 会把同一个位图重新投递一次，不比较就是一次
+      // 空转的重渲染（CachedImage 那边同一处已有守卫，这里原本漏了）。
+      if (this.pixelMap !== pixels) { this.pixelMap = pixels; }
+    });
   private unsubThumb: (() => void) | null = null;
   // 订阅此刻挂在哪个文件上。两个用途：① 同 key 短路，让 attach 幂等；
   // ② 让「订阅挂在哪」成为可判定的事实，而不是靠推断 params 到没到。

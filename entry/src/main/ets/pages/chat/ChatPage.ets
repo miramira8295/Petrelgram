@@ -1,3 +1,4 @@
+import { shareableMessageLink, ShareableMessageLink } from '../../util/deepLink';
 import { ChatTimelineBindings, ChatTimelineSession } from './ChatTimelineSession';
 import { subscribeVideoPreload } from '../../util/videoPreloadSetting';
 import { initVideoPosterStore } from '../../util/videoPosterStore';
@@ -5810,13 +5811,20 @@ export struct ChatPage {
       return;
     }
     this.store.messageLink(messageId, (url: string) => {
-      if (url === '') {
+      // 私有会话的 t.me/c/… 只有本客户端能解析，换成本应用的 tg:// 形式后再复制，
+      // 并在提示里说明适用范围（公开频道/群仍复制 https 链接）。
+      const share: ShareableMessageLink = shareableMessageLink(this.chatId, messageId, url);
+      if (share.link === '') {
         promptAction.showToast({ message: $r('app.string.cp_no_link'), duration: 1800 });
         return;
       }
-      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, url);
+      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, share.link);
       pasteboard.getSystemPasteboard().setData(data).then(() => {
-        promptAction.showToast({ message: $r('app.string.link_copied'), duration: 1200 });
+        promptAction.showToast({
+          message: share.internal
+            ? $r('app.string.link_copied_internal') : $r('app.string.link_copied'),
+          duration: share.internal ? 1800 : 1200
+        });
       }).catch((e: Object) => { logE(`ChatPage.copyMessageLink failed: ${JSON.stringify(e)}`); });
     });
   }

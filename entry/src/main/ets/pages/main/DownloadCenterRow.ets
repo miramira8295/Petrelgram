@@ -2,6 +2,7 @@ import { searchSegments, SearchSegment, searchHit, searchExcerpt } from '../../u
 import { DownloadDeleteEffects } from '../../util/downloadDeleteEffects';
 import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
 import { CachedImage } from '../common/CachedImage';
+import { CachedImageSpecCache } from '../../util/cachedImageSpec';
 import { formatDuration } from '../../store/StorageApi';
 import { formatFileSize } from '../../util/formatFileSize';
 import { formatTime } from '../../util/formatTime';
@@ -36,6 +37,8 @@ const BUTTON_SIZE: number = 34;
 @ReusableV2
 @ComponentV2
 export struct DownloadCenterRow {
+  // 同一行的缩略图在选中/进度更新时会重渲染，spec 字面量换引用 = 白重设一次图片子树。
+  private imageCache: CachedImageSpecCache = new CachedImageSpecCache();
   @Require @Param deleteEffects: DownloadDeleteEffects;
   @Require @Param listIndex: number;
   @Local private leaving: number = 0;
@@ -273,10 +276,14 @@ export struct DownloadCenterRow {
             .onClick((): void => { this.act(DC_ACTION_SELECT); });
           }
           if (this.row.kind === DC_KIND_PHOTO && this.row.path !== '') {
-            CachedImage({ spec: { path: this.row.path, boxWidth: 44, boxHeight: 44, radius: 12, fit: ImageFit.Cover } });
+            CachedImage({ spec: this.imageCache.prepare({
+              path: this.row.path, boxWidth: 44, boxHeight: 44, radius: 12, fit: ImageFit.Cover
+            }) });
           } else if (this.poster !== '') {
             Stack() {
-              CachedImage({ spec: { path: this.poster, boxWidth: 44, boxHeight: 44, radius: 12, fit: ImageFit.Cover } });
+              CachedImage({ spec: this.imageCache.prepare({
+                path: this.poster, boxWidth: 44, boxHeight: 44, radius: 12, fit: ImageFit.Cover
+              }) });
               SymbolGlyph($r('sys.symbol.play_fill')).fontSize(14).fontColor([Color.White]);
             }
             .width(44).height(44);

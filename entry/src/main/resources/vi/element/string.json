@@ -13359,6 +13359,14 @@
     {
       "name": "settings_about_credits",
       "value": "Lời cảm ơn"
+    },
+    {
+      "name": "mb_copy_message_link",
+      "value": "Sao chép liên kết tin nhắn"
+    },
+    {
+      "name": "link_copied_internal",
+      "value": "Đã sao chép liên kết nội bộ (chỉ trong ứng dụng này)"
     }
   ]
 }

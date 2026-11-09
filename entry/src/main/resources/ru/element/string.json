@@ -13359,6 +13359,14 @@
     {
       "name": "settings_about_credits",
       "value": "Благодарности"
+    },
+    {
+      "name": "mb_copy_message_link",
+      "value": "Скопировать ссылку на сообщение"
+    },
+    {
+      "name": "link_copied_internal",
+      "value": "Внутренняя ссылка скопирована (только в этом приложении)"
     }
   ]
 }

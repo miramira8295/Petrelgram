@@ -3,6 +3,7 @@ import { formatTTL } from '../../util/formatTTL';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { AvLoopVideo } from '../common/AvLoopVideo';
 import { CachedImage } from '../common/CachedImage';
+import { CachedImageSpecCache } from '../../util/cachedImageSpec';
 import { KEY_POWER_ACTIVE, KEY_POWER_ANIMATED_AVATAR } from '../../store/AppSettings';
 
 @Component
@@ -30,6 +31,9 @@ export struct AvatarView {
   // ——转屏或进出分栏时已经存在的那些行会停在旧尺寸上（HdsSubDestination 的 menuItems
   // 栽过同一个坑）。数字过 @Prop 的深拷贝没有任何代价。
   @Prop avatarSize: number = AVATAR_SIZE;
+  // 每次重渲染都现造 spec 字面量的话，CachedImage 的 @Param 必然换引用
+  // （V2 对对象参数按 `===` 比较）——会话列表每行一颗头像，这里是无谓重渲染。
+  private imageCache: CachedImageSpecCache = new CachedImageSpecCache();
 
   // 动态头像播不播。
   //
@@ -85,7 +89,7 @@ export struct AvatarView {
         // circle rather than a hole.
         this.initialsCircle();
         if (this.loadImage) {
-          CachedImage({ spec: {
+          CachedImage({ spec: this.imageCache.prepare({
             path: this.avatarPath,
             boxWidth: this.avatarSize,
             boxHeight: this.avatarSize,
@@ -101,7 +105,7 @@ export struct AvatarView {
             //               准入见 util/pixelSyncPolicy——那条阈值同日由 160 抬到
             //               176，否则本机 161px 的头像差一像素够不着。
             pinBounded: true,
-          } });
+          }) });
         }
       }
       .width(this.avatarSize).height(this.avatarSize);

@@ -1,4 +1,5 @@
-import { LiveThumbImage } from './LiveThumbImage';
+import { LiveThumbImage, LiveThumbSpecCache } from './LiveThumbImage';
+import { CachedImageSpecCache } from '../../util/cachedImageSpec';
 import { CachedImage } from '../common/CachedImage';
 import { FilmCellVM } from '../../util/viewerFilmstrip';
 import { posterFor, subscribePoster } from '../../util/videoPosterStore';
@@ -40,6 +41,10 @@ export struct ViewerFilmstripCell {
   // 通道按**路径**索引（util/videoPosterStore）。所以这一格不能走 LiveThumbImage
   // （它按 fileId 订阅），自己订阅、自己换图——道理与 LiveThumbImage 完全一样。
   @Local private poster: string = '';
+  // 本格有两个图片节点（首帧海报 / 缩略图），各记一份入参：父组件重渲染时
+  // 不再制造新对象（见 LiveThumbSpecCache / CachedImageSpecCache 的头注释）。
+  private imageCache: CachedImageSpecCache = new CachedImageSpecCache();
+  private thumbSpecCache: LiveThumbSpecCache = new LiveThumbSpecCache();
   private unsubPoster: (() => void) | null = null;
   private attachedPath: string = '';
 
@@ -95,16 +100,16 @@ export struct ViewerFilmstripCell {
     Stack() {
       if (this.cell.videoPath !== '') {
         if (this.poster !== '') {
-          CachedImage({ spec: {
+          CachedImage({ spec: this.imageCache.prepare({
             path: this.poster, boxWidth: THUMB, boxHeight: THUMB,
             radius: RADIUS, fit: ImageFit.Cover
-          } });
+          }) });
         } else {
           this.emptyBox();
         }
       } else {
         LiveThumbImage({
-        spec: {
+        spec: this.thumbSpecCache.prepare({
           fileId: this.cell.fileId,
           initialPath: this.cell.path,
           boxWidth: THUMB,
@@ -117,7 +122,7 @@ export struct ViewerFilmstripCell {
           backdrop: '',
           // 缩略图条这一轮也不接内联小图：格子只有几十 px，糊图和马赛克没区别。
           mini: ''
-        },
+        }),
         placeholder: (): void => { this.emptyBox(); }
         });
       }

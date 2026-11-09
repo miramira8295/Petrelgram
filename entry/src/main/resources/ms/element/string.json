@@ -13359,6 +13359,14 @@
     {
       "name": "settings_about_credits",
       "value": "Penghargaan"
+    },
+    {
+      "name": "mb_copy_message_link",
+      "value": "Salin pautan mesej"
+    },
+    {
+      "name": "link_copied_internal",
+      "value": "Pautan dalaman disalin (hanya aplikasi ini)"
     }
   ]
 }
