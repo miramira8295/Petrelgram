@@ -1,0 +1,96 @@
+export interface ChatRouteParams {
+  chatId: number;
+  threadRootId: number;
+  topicName: string;
+  forumTopicId: number;
+  directMessagesTopicId: number;
+  showJoinedNotice: boolean;
+  joinedNoticeIsChannel: boolean;
+  jumpTo: number | undefined;
+  draftText: string;
+  searchQuery: string;
+  startSearch: boolean;
+  // 系统分享把内容送进来了，等着放进这个会话。载荷本身不走路由参数（里面
+  // 有一串路径和长文本，而路由参数会被序列化进导航栈），只有这个标志走；
+  // 内容由 ChatPage 从 services/ShareInbox 取。
+  sharePending: boolean;
+  // 「直接发送」那一档：不落输入框，进来就发（见 util/shareSendMode）。
+  shareAutoSend: boolean;
+}
+
+function numberParam(params: Record<string, Object> | undefined, key: string,
+  fallback: number = 0): number {
+  if (params === undefined) {
+    return fallback;
+  }
+  return (params[key] as number | undefined) ?? fallback;
+}
+
+function stringParam(params: Record<string, Object> | undefined, key: string,
+  fallback: string = ''): string {
+  if (params === undefined) {
+    return fallback;
+  }
+  return (params[key] as string | undefined) ?? fallback;
+}
+
+function boolParam(params: Record<string, Object> | undefined, key: string,
+  fallback: boolean = false): boolean {
+  if (params === undefined) {
+    return fallback;
+  }
+  return (params[key] as boolean | undefined) ?? fallback;
+}
+
+export function parseChatRouteParams(params: Record<string, Object> | undefined): ChatRouteParams {
+  return {
+    chatId: numberParam(params, 'chatId'),
+    threadRootId: numberParam(params, 'threadRootId'),
+    topicName: stringParam(params, 'topicName'),
+    forumTopicId: numberParam(params, 'forumTopicId'),
+    directMessagesTopicId: numberParam(params, 'directMessagesTopicId'),
+    showJoinedNotice: boolParam(params, 'showJoinedNotice'),
+    joinedNoticeIsChannel: boolParam(params, 'joinedNoticeIsChannel'),
+    jumpTo: params !== undefined ? (params['jumpTo'] as number | undefined) : undefined,
+    draftText: stringParam(params, 'draftText'),
+    searchQuery: stringParam(params, 'searchQuery'),
+    startSearch: boolParam(params, 'startSearch'),
+    sharePending: boolParam(params, 'sharePending'),
+    shareAutoSend: boolParam(params, 'shareAutoSend')
+  };
+}
+
+// Navigation state is deliberately kept outside the rendering component. It
+// owns only NavDestination plumbing; chat/session state remains in ChatPage.
+export class ChatPageNavigationCoordinator {
+  private navStack: NavPathStack | undefined = undefined;
+  private paramsApplied: boolean = false;
+
+  setStack(stack: NavPathStack): void {
+    this.navStack = stack;
+  }
+
+  beginRouteApply(): boolean {
+    if (this.paramsApplied) {
+      return false;
+    }
+    this.paramsApplied = true;
+    return true;
+  }
+
+  // 原地重跑路由流水线（切话题）。这道闸本来是"每个目的地只允许应用一次参数"，
+  // 防的是重入把订阅叠两份；而切话题恰恰要**有意重跑一次**：改写 navParams 里的
+  // forumTopicId/topicName，再走同一条 applyRouteParams，不 push 新页面。
+  // 只复位这一个字段——navStack 不能动，它是这一层唯一的外部依赖。
+  resetRouteApply(): void {
+    this.paramsApplied = false;
+  }
+
+  pop(): boolean {
+    if (this.navStack === undefined) {
+      return false;
+    }
+    this.navStack.pop();
+    return true;
+  }
+}

@@ -1,0 +1,979 @@
+{
+  "plural": [
+    {
+      "name": "duration_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d day"
+        },
+        {
+          "quantity": "other",
+          "value": "%d days"
+        }
+      ]
+    },
+    {
+      "name": "duration_days_premium",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d day of Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d days of Premium"
+        }
+      ]
+    },
+    {
+      "name": "duration_months",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d month"
+        },
+        {
+          "quantity": "other",
+          "value": "%d months"
+        }
+      ]
+    },
+    {
+      "name": "duration_months_premium",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d month of Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d months of Premium"
+        }
+      ]
+    },
+    {
+      "name": "gift_stars_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d Star"
+        },
+        {
+          "quantity": "other",
+          "value": "%d Stars"
+        }
+      ]
+    },
+    {
+      "name": "gift_worth_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Worth %d Star"
+        },
+        {
+          "quantity": "other",
+          "value": "Worth %d Stars"
+        }
+      ]
+    },
+    {
+      "name": "live_media_in_room",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d in the room"
+        },
+        {
+          "quantity": "other",
+          "value": "%d in the room"
+        }
+      ]
+    },
+    {
+      "name": "live_status_watching",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d viewer"
+        },
+        {
+          "quantity": "other",
+          "value": "%d viewers"
+        }
+      ]
+    },
+    {
+      "name": "prize_premium_months",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d month of Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d months of Premium"
+        }
+      ]
+    },
+    {
+      "name": "prize_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d Star"
+        },
+        {
+          "quantity": "other",
+          "value": "%d Stars"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d day"
+        },
+        {
+          "quantity": "other",
+          "value": "%d days"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d hour"
+        },
+        {
+          "quantity": "other",
+          "value": "%d hours"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d minute"
+        },
+        {
+          "quantity": "other",
+          "value": "%d minutes"
+        }
+      ]
+    },
+    {
+      "name": "user_status_days_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d day ago"
+        },
+        {
+          "quantity": "other",
+          "value": "%d days ago"
+        }
+      ]
+    },
+    {
+      "name": "user_status_hours_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d hour ago"
+        },
+        {
+          "quantity": "other",
+          "value": "%d hours ago"
+        }
+      ]
+    },
+    {
+      "name": "user_status_minutes_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d minute ago"
+        },
+        {
+          "quantity": "other",
+          "value": "%d minutes ago"
+        }
+      ]
+    },
+    {
+      "name": "sticker_set_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d sticker"
+        },
+        {
+          "quantity": "other",
+          "value": "%d stickers"
+        }
+      ]
+    },
+    {
+      "name": "cw_disconnect_all_confirm",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "This will sign you out of %d website."
+        },
+        {
+          "quantity": "other",
+          "value": "This will sign you out of %d websites."
+        }
+      ]
+    },
+    {
+      "name": "pe_group_exceptions_kept",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d group exception kept by the server"
+        },
+        {
+          "quantity": "other",
+          "value": "%d group exceptions kept by the server"
+        }
+      ]
+    },
+    {
+      "name": "storage_file_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d file"
+        },
+        {
+          "quantity": "other",
+          "value": "%d files"
+        }
+      ]
+    },
+    {
+      "name": "bu_account_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d account"
+        },
+        {
+          "quantity": "other",
+          "value": "%d accounts"
+        }
+      ]
+    },
+    {
+      "name": "calls_about_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "About %d record"
+        },
+        {
+          "quantity": "other",
+          "value": "About %d records"
+        }
+      ]
+    },
+    {
+      "name": "calls_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d record"
+        },
+        {
+          "quantity": "other",
+          "value": "%d records"
+        }
+      ]
+    },
+    {
+      "name": "calls_participants",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d person"
+        },
+        {
+          "quantity": "other",
+          "value": "%d people"
+        }
+      ]
+    },
+    {
+      "name": "cf_about_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "About %d chat"
+        },
+        {
+          "quantity": "other",
+          "value": "About %d chats"
+        }
+      ]
+    },
+    {
+      "name": "cf_delete_and_leave",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Delete and leave %d chat"
+        },
+        {
+          "quantity": "other",
+          "value": "Delete and leave %d chats"
+        }
+      ]
+    },
+    {
+      "name": "fl_new_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d new chat"
+        },
+        {
+          "quantity": "other",
+          "value": "%d new chats"
+        }
+      ]
+    },
+    {
+      "name": "fl_selected_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d chat selected"
+        },
+        {
+          "quantity": "other",
+          "value": "%d chats selected"
+        }
+      ]
+    },
+    {
+      "name": "fl_add_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Add %d chat"
+        },
+        {
+          "quantity": "other",
+          "value": "Add %d chats"
+        }
+      ]
+    },
+    {
+      "name": "ds_cached_files",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d cached file"
+        },
+        {
+          "quantity": "other",
+          "value": "%d cached files"
+        }
+      ]
+    },
+    {
+      "name": "ct_result_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d person"
+        },
+        {
+          "quantity": "other",
+          "value": "%d people"
+        }
+      ]
+    },
+    {
+      "name": "ng_max_members",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "A basic group takes at most %d member"
+        },
+        {
+          "quantity": "other",
+          "value": "A basic group takes at most %d members"
+        }
+      ]
+    },
+    {
+      "name": "ng_member_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d member"
+        },
+        {
+          "quantity": "other",
+          "value": "%d members"
+        }
+      ]
+    },
+    {
+      "name": "ng_people_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d person"
+        },
+        {
+          "quantity": "other",
+          "value": "%d people"
+        }
+      ]
+    },
+    {
+      "name": "ps_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d day"
+        },
+        {
+          "quantity": "other",
+          "value": "%d days"
+        }
+      ]
+    },
+    {
+      "name": "px_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d"
+        },
+        {
+          "quantity": "other",
+          "value": "%d"
+        }
+      ]
+    },
+    {
+      "name": "fe_chosen_limit",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "At most %d individually chosen chat"
+        },
+        {
+          "quantity": "other",
+          "value": "At most %d individually chosen chats"
+        }
+      ]
+    },
+    {
+      "name": "fe_removed_invalid",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Removed %d chat that is not in your chat list"
+        },
+        {
+          "quantity": "other",
+          "value": "Removed %d chats that are not in your chat list"
+        }
+      ]
+    },
+    {
+      "name": "fe_pick_limit",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Pick at most %d chat"
+        },
+        {
+          "quantity": "other",
+          "value": "Pick at most %d chats"
+        }
+      ]
+    },
+    {
+      "name": "fe_preview_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "About %d chat"
+        },
+        {
+          "quantity": "other",
+          "value": "About %d chats"
+        }
+      ]
+    },
+    {
+      "name": "fe_selected_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d selected"
+        },
+        {
+          "quantity": "other",
+          "value": "%d selected"
+        }
+      ]
+    },
+    {
+      "name": "mp_item_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d item"
+        },
+        {
+          "quantity": "other",
+          "value": "%d items"
+        }
+      ]
+    },
+    {
+      "name": "fw_forwarded_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Forwarded %d message"
+        },
+        {
+          "quantity": "other",
+          "value": "Forwarded %d messages"
+        }
+      ]
+    },
+    {
+      "name": "fw_forward_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Forward %d message"
+        },
+        {
+          "quantity": "other",
+          "value": "Forward %d messages"
+        }
+      ]
+    },
+    {
+      "name": "poll_voters",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d vote"
+        },
+        {
+          "quantity": "other",
+          "value": "%d votes"
+        }
+      ]
+    },
+    {
+      "name": "gw_winners_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d winner"
+        },
+        {
+          "quantity": "other",
+          "value": "%d winners"
+        }
+      ]
+    },
+    {
+      "name": "gw_unclaimed_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d unclaimed"
+        },
+        {
+          "quantity": "other",
+          "value": "%d unclaimed"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Live location · %d hour"
+        },
+        {
+          "quantity": "other",
+          "value": "Live location · %d hours"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Live location · %d min"
+        },
+        {
+          "quantity": "other",
+          "value": "Live location · %d min"
+        }
+      ]
+    },
+    {
+      "name": "loc_accuracy",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Accurate to about %d m"
+        },
+        {
+          "quantity": "other",
+          "value": "Accurate to about %d m"
+        }
+      ]
+    },
+    {
+      "name": "loc_proximity",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Alert radius %d m"
+        },
+        {
+          "quantity": "other",
+          "value": "Alert radius %d m"
+        }
+      ]
+    },
+    {
+      "name": "ft_topic_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d topic"
+        },
+        {
+          "quantity": "other",
+          "value": "%d topics"
+        }
+      ]
+    },
+    {
+      "name": "mb_comments_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d comment"
+        },
+        {
+          "quantity": "other",
+          "value": "%d comments"
+        }
+      ]
+    },
+    {
+      "name": "lv_new_interactions",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d new message"
+        },
+        {
+          "quantity": "other",
+          "value": "%d new messages"
+        }
+      ]
+    },
+    {
+      "name": "lv_more_sources",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d more feed"
+        },
+        {
+          "quantity": "other",
+          "value": "%d more feeds"
+        }
+      ]
+    },
+    {
+      "name": "lv_open_chat_unread",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Open the stream chat, %d new message"
+        },
+        {
+          "quantity": "other",
+          "value": "Open the stream chat, %d new messages"
+        }
+      ]
+    },
+    {
+      "name": "lv_view_members",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "View %d member"
+        },
+        {
+          "quantity": "other",
+          "value": "View %d members"
+        }
+      ]
+    },
+    {
+      "name": "cp_live_online_now",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d person is online."
+        },
+        {
+          "quantity": "other",
+          "value": "%d people are online."
+        }
+      ]
+    },
+    {
+      "name": "cp_n_online",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d online"
+        },
+        {
+          "quantity": "other",
+          "value": "%d online"
+        }
+      ]
+    },
+    {
+      "name": "cp_media_skipped",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d item could not be read; the rest were sent"
+        },
+        {
+          "quantity": "other",
+          "value": "%d items could not be read; the rest were sent"
+        }
+      ]
+    },
+    {
+      "name": "cp_copied_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Copied %d message"
+        },
+        {
+          "quantity": "other",
+          "value": "Copied %d messages"
+        }
+      ]
+    },
+    {
+      "name": "cp_n_typing",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d person is typing…"
+        },
+        {
+          "quantity": "other",
+          "value": "%d people are typing…"
+        }
+      ]
+    },
+    {
+      "name": "cp_unread_a11y",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d unread message, jump to the latest"
+        },
+        {
+          "quantity": "other",
+          "value": "%d unread messages, jump to the latest"
+        }
+      ]
+    },
+    {
+      "name": "sm_paid_per_message",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d Star per message"
+        },
+        {
+          "quantity": "other",
+          "value": "%d Stars per message"
+        }
+      ]
+    },
+    {
+      "name": "sm_refunded_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d Star refunded"
+        },
+        {
+          "quantity": "other",
+          "value": "%d Stars refunded"
+        }
+      ]
+    },
+    {
+      "name": "sm_channel_dm_price",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "This channel accepts direct messages at %d Star each"
+        },
+        {
+          "quantity": "other",
+          "value": "This channel accepts direct messages at %d Stars each"
+        }
+      ]
+    },
+    {
+      "name": "unit_seconds",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d second"
+        },
+        {
+          "quantity": "other",
+          "value": "%d seconds"
+        }
+      ]
+    },
+    {
+      "name": "unit_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d minute"
+        },
+        {
+          "quantity": "other",
+          "value": "%d minutes"
+        }
+      ]
+    },
+    {
+      "name": "unit_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d hour"
+        },
+        {
+          "quantity": "other",
+          "value": "%d hours"
+        }
+      ]
+    },
+    {
+      "name": "unit_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d day"
+        },
+        {
+          "quantity": "other",
+          "value": "%d days"
+        }
+      ]
+    },
+    {
+      "name": "sm_proximity_metres",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d m"
+        },
+        {
+          "quantity": "other",
+          "value": "%d m"
+        }
+      ]
+    },
+    {
+      "name": "lg_resend_in",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "You can resend in %d second"
+        },
+        {
+          "quantity": "other",
+          "value": "You can resend in %d seconds"
+        }
+      ]
+    },
+    {
+      "name": "cl_unread_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d unread"
+        },
+        {
+          "quantity": "other",
+          "value": "%d unread"
+        }
+      ]
+    },
+    {
+      "name": "ap_chats_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d chat"
+        },
+        {
+          "quantity": "other",
+          "value": "%d chats"
+        }
+      ]
+    },
+    {
+      "name": "gs_free_left",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d free search left today"
+        },
+        {
+          "quantity": "other",
+          "value": "%d free searches left today"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,134 @@
+{
+  "routerMap": [
+    {
+      "name": "GlobalSearchPage",
+      "pageSourceFile": "src/main/ets/pages/search/GlobalSearchPage.ets",
+      "buildFunction": "GlobalSearchPageBuilder"
+    },
+    {
+      "name": "ChatPage",
+      "pageSourceFile": "src/main/ets/pages/chat/ChatPageEntry.ets",
+      "buildFunction": "ChatPageBuilder"
+    },
+    {
+      "name": "ProfilePage",
+      "pageSourceFile": "src/main/ets/pages/profile/ProfilePage.ets",
+      "buildFunction": "ProfilePageBuilder"
+    },
+    {
+      "name": "ChatProfilePage",
+      "pageSourceFile": "src/main/ets/pages/profile/ChatProfilePage.ets",
+      "buildFunction": "ChatProfilePageBuilder"
+    },
+    {
+      "name": "ForumTopicsPage",
+      "pageSourceFile": "src/main/ets/pages/chat/ForumTopicsPage.ets",
+      "buildFunction": "ForumTopicsPageBuilder"
+    },
+    {
+      "name": "DirectMessagesTopicsPage",
+      "pageSourceFile": "src/main/ets/pages/chat/DirectMessagesTopicsPage.ets",
+      "buildFunction": "DirectMessagesTopicsPageBuilder"
+    },
+    {
+      "name": "ArchivePage",
+      "pageSourceFile": "src/main/ets/pages/chatlist/ArchivePage.ets",
+      "buildFunction": "ArchivePageBuilder"
+    },
+    {
+      "name": "PowerUsagePage",
+      "pageSourceFile": "src/main/ets/pages/main/PowerUsagePage.ets",
+      "buildFunction": "PowerUsagePageBuilder"
+    },
+    {
+      "name": "AboutPage",
+      "pageSourceFile": "src/main/ets/pages/main/AboutPage.ets",
+      "buildFunction": "AboutPageBuilder"
+    },
+    {
+      "name": "DiagnosticsPage",
+      "pageSourceFile": "src/main/ets/pages/main/DiagnosticsPage.ets",
+      "buildFunction": "DiagnosticsPageBuilder"
+    },
+    {
+      "name": "LanguagePage",
+      "pageSourceFile": "src/main/ets/pages/main/LanguagePage.ets",
+      "buildFunction": "LanguagePageBuilder"
+    },
+    {
+      "name": "MusicCenterPage",
+      "pageSourceFile": "src/main/ets/pages/music/MusicCenterPage.ets",
+      "buildFunction": "MusicCenterPageBuilder"
+    },
+    {
+      "name": "DownloadCenterPage",
+      "pageSourceFile": "src/main/ets/pages/main/DownloadCenterPage.ets",
+      "buildFunction": "DownloadCenterPageBuilder"
+    },
+    {
+      "name": "DownloadPreviewPage",
+      "pageSourceFile": "src/main/ets/pages/main/DownloadPreviewPage.ets",
+      "buildFunction": "DownloadPreviewPageBuilder"
+    },
+    {
+      "name": "InteractionSettingsPage",
+      "pageSourceFile": "src/main/ets/pages/main/InteractionSettingsPage.ets",
+      "buildFunction": "InteractionSettingsPageBuilder"
+    },
+    {
+      "name": "ChatSettingsPage",
+      "pageSourceFile": "src/main/ets/pages/main/ChatSettingsPage.ets",
+      "buildFunction": "ChatSettingsPageBuilder"
+    },
+    {
+      "name": "MediaSettingsPage",
+      "pageSourceFile": "src/main/ets/pages/main/MediaSettingsPage.ets",
+      "buildFunction": "MediaSettingsPageBuilder"
+    },
+    {
+      "name": "NotificationSettingsPage",
+      "pageSourceFile": "src/main/ets/pages/main/NotificationSettingsPage.ets",
+      "buildFunction": "NotificationSettingsPageBuilder"
+    },
+    {
+      "name": "PrivacySecurityPage",
+      "pageSourceFile": "src/main/ets/pages/main/PrivacySecurityPage.ets",
+      "buildFunction": "PrivacySecurityPageBuilder"
+    },
+    {
+      "name": "EmojiStatusPage",
+      "pageSourceFile": "src/main/ets/pages/main/EmojiStatusPage.ets",
+      "buildFunction": "EmojiStatusPageBuilder"
+    },
+    {
+      "name": "StickerSetsPage",
+      "pageSourceFile": "src/main/ets/pages/main/StickerSetsPage.ets",
+      "buildFunction": "StickerSetsPageBuilder"
+    },
+    {
+      "name": "AccountEditPage",
+      "pageSourceFile": "src/main/ets/pages/main/AccountEditPage.ets",
+      "buildFunction": "AccountEditPageBuilder"
+    },
+    {
+      "name": "DataStoragePage",
+      "pageSourceFile": "src/main/ets/pages/main/DataStoragePage.ets",
+      "buildFunction": "DataStoragePageBuilder"
+    },
+    {
+      "name": "ActiveSessionsPage",
+      "pageSourceFile": "src/main/ets/pages/main/ActiveSessionsPage.ets",
+      "buildFunction": "ActiveSessionsPageBuilder"
+    },
+    {
+      "name": "ChatFoldersPage",
+      "pageSourceFile": "src/main/ets/pages/main/ChatFoldersPage.ets",
+      "buildFunction": "ChatFoldersPageBuilder"
+    },
+    {
+      "name": "ProxyPage",
+      "pageSourceFile": "src/main/ets/pages/main/ProxyPage.ets",
+      "buildFunction": "ProxyPageBuilder"
+    }
+  ]
+}

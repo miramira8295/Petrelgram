@@ -1,0 +1,670 @@
+import { invalidateTextMeasurements } from '../util/textMeasureCache';
+import { mediaThumbWidth } from '../util/mediaBox';
+import { deviceInfo } from '@kit.BasicServicesKit';
+import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit';
+import { mirrorChatEnvKey } from '../util/chatEnvMirror';
+import { clearOutlineCache } from '../util/bubbleTail';
+import { notificationManager } from '@kit.NotificationKit';
+import {
+  cancelLiveDownloadNotifications, clearStaleDownloadNotifications
+} from '../services/DownloadSaveNotification';
+import { stashDownloadCenterWant } from '../util/downloadCenterWant';
+import { isHandledDeepLinkUri } from '../util/deepLink';
+import { hilog } from '@kit.PerformanceAnalysisKit';
+import { display, window, KeyboardAvoidMode, UIContext } from '@kit.ArkUI';
+import { applyDefaultOrientation } from '../util/appOrientation';
+import { KEY_APP_DARK, darkResourceMode } from '../util/theme';
+import { recomputeAppearance } from '../util/appearance';
+import { getTdClient, initTdKit, setTdOnlineState, setUiAbilityContext } from '../tdkit/Globals';
+import { installStringsFromContext, invalidateStringCache } from '../util/strings';
+import { clearLinkPreviewPresentationCache } from '../util/linkPreview';
+import { refreshLocale } from '../util/intlFormat';
+import { bumpLanguageEpoch } from '../util/appLanguage';
+import { backgroundGraceTask } from '../services/BackgroundGraceTask';
+import { startCrashWatch } from '../services/crashReport';
+import { initDiagLog } from '../util/log';
+import { initSettings, refreshPowerSavingState, KEY_CACHE_LIMIT } from '../store/AppSettings';
+import { migrateLegacyAppWallpaperStates } from '../store/ChatBackgroundStore';
+import { CACHE_LIMIT_DEFAULT, shouldTrimNow } from '../store/CacheLimit';
+import { applyCacheLimit } from '../store/StorageApi';
+import { beginNetworkMonitoring, refreshNetworkState, republishNetworkTypeToTd } from '../services/NetworkStateService';
+import { proxyAutoSwitchService } from '../services/ProxyAutoSwitchService';
+import { updateChecker } from '../services/UpdateChecker';
+import { syncWebBridgeFromTd } from '../services/WebProxyBridge';
+import { liveLocation } from '../services/LiveLocationService';
+import { setInlinePhotoTargetPx } from '../util/formatMsgContent';
+import { trimPixelCache } from '../util/pixelCache';
+import { settleParkedWallpaperPins } from '../util/wallpaperPins';
+import { startShareTargetService } from '../services/ShareTargetService';
+import {
+  contactChatIdOf, isShareWant, parseShareWant, stashPendingShare
+} from '../services/ShareInbox';
+import { initShareHandoff, takeShareHandoff } from '../services/ShareHandoff';
+import { initShareSendMode, readShareSendMode } from '../services/ShareSendModeStore';
+import { isAutoSend } from '../util/shareSendMode';
+import { ShareHandoff } from '../util/sharedContent';
+import { SharedPayload } from '../util/sharedContent';
+import { initA11yState } from '../util/a11yState';
+import { flushDiagLog, logE, logW } from '../util/log';
+import { ColorModeBaseline } from '../util/configChange';
+import { bumpMaterialEpoch } from '../util/overlayMaterial';
+import { isSystemBarsHiddenApplied } from '../util/systemBarsHidden';
+import { noteSystemTopAvoidHeight, setSystemBarsMainWindow } from '../util/systemBarsWindow';
+import {
+  KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, KEY_WINDOW_PORTRAIT, heightBreakpointOfSize, widthBreakpointOfVp
+} from '../util/layoutBreakpoint';
+
+const DOMAIN = 0x0000;
+// windowSizeChange 带来的密度和启动时相差超过这个比例，就判定这次回调不可信。
+// 折叠屏切换屏幕那类真实变化远小于它。
+const DENSITY_TOLERANCE: number = 0.2;
+
+export default class EntryAbility extends UIAbility {
+  // 启动时算出的显示密度，作为后续 windowSizeChange 的校验基准。
+  private uiDensity: number = 0;
+  // 上一次见到的系统语言，用来判断配置变更里语言到底变没变。
+  private lastLanguage: string = '';
+  // 上一次见到的颜色模式（#194）：只有它真变了才走深浅色重算，字号/转屏/回前台不再全量重绘。
+  private colorMode: ColorModeBaseline = new ColorModeBaseline();
+  private lastConfigAt: number = 0;
+  private windowStageRef: window.WindowStage | null = null;
+  // 主窗口实例，只为 onWindowStageDestroy 注销监听而留：销毁流程里再
+  // getMainWindowSync 会抛（窗口错误码文档明写）。
+  private mainWin: window.Window | null = null;
+  // 折叠屏开合换屏幕，重新算默认旋转策略（util/appOrientation）。
+  private foldModeCallback: ((mode: display.FoldDisplayMode) => void) | null = null;
+  // loadContent 回调之前窗口还没有内容，setWindowBackgroundColor 必失败
+  // （"This window state is abnormal"）——原来每次冷启动都在诊断日志里留一行。
+  private contentLoaded: boolean = false;
+  // 上一次跑缓存收缩的时间戳；配合 CACHE_TRIM_MIN_INTERVAL_MS 防止频繁切前台反复触发重操作。
+  private lastCacheTrimAt: number = 0;
+
+  onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    // Before anything that formats text: stores build chat previews during
+    // startup, and without a source installed those would come out as raw keys.
+    // 日志落盘目录尽早设好：在这之前 logI/logW/logE 只在内存里攒（模块加载时
+    // 就已经在攒了），设好之后才开始轮转到文件。启动期恰好是最难查的一段，
+    // 早一点设就多留住一点。
+    initDiagLog(this.context.filesDir);
+    // 崩溃观察者要在**业务逻辑之前**注册：应用没主动捕获时，崩溃事件是在下次
+    // 启动才回调的，注册晚了那一次就漏了（官方《订阅崩溃事件》写明这一点）。
+    startCrashWatch(this.context);
+    // ApplicationContext rather than this.context — the lookup is not tied to
+    // any Ability or window, and locale is application-level configuration.
+    installStringsFromContext(this.context.getApplicationContext());
+    // Loads persisted settings into AppStorage and applies the stored night
+    // mode (which subsumes the old unconditional COLOR_MODE_NOT_SET).
+    initSettings(this.context).then((): void => {
+      migrateLegacyAppWallpaperStates();
+      proxyAutoSwitchService.settingsChanged();
+    }).catch((error: Error): void => {
+      // initSettings 自己已经装好默认值；这里防住未来实现改成向外抛错时的未处理
+      // Promise，启动不能因为一次设置迁移失败而中断。
+      logE(`EntryAbility initSettings failed: ${error.message}`);
+    });
+    initTdKit(this.context);
+    // 实时位置共享要跨会话、跨前后台存活，服务需要 Ability 上下文申请长时任务。
+    liveLocation.init(this.context);
+    // 版本号与上次的检查结果先读出来，红点在网络请求回来之前就是对的。
+    updateChecker.init(this.context).catch((): void => {});
+    setUiAbilityContext(this.context);
+    beginNetworkMonitoring();
+    // 读屏开没开查一次并订阅变更。会话行的无障碍文本按它短路——那段话每行
+    // 每次渲染都要拼，而读屏关着时没人读（见 util/a11yState）。
+    initA11yState();
+    // Cold start via a tg:// deep link — stash it; Index routes it once auth
+    // reaches Ready (the UI/router aren't up yet here).
+    this.stashDeepLink(want);
+    // 分享目标名单：主应用平时就把"发给谁"的候选写到磁盘，分享面板里那个
+    // 独立进程只能读这份快照（见 services/ShareTargetService）。
+    // 必须用应用级 filesDir——两个进程要解析到同一个文件。
+    startShareTargetService(this.context.getApplicationContext().filesDir, this.context);
+    initShareHandoff(this.context.getApplicationContext().filesDir);
+    initShareSendMode(this.context.getApplicationContext().filesDir);
+    // 冷启动就是被系统分享拉起来的。和 tg:// 一样先存着，等 Index 里认证
+    // 到 Ready 再路由（这里 UI 和路由都还没起来）。
+    this.stashShare(want);
+    AppStorage.setOrCreate('appIsForeground', false);
+    mirrorChatEnvKey('appIsForeground', false);
+    AppStorage.setOrCreate('appForegroundEpoch', 0);
+    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
+  }
+
+  // Warm start: the app is already running (foreground or background) when a
+  // tg:// link arrives. Index's @Watch picks up the new value and routes it.
+  onNewWant(want: Want, _launchParam: AbilityConstant.LaunchParam): void {
+    this.stashDeepLink(want);
+    this.stashShare(want);
+  }
+
+  // 别的应用分享东西过来。两条来路：
+  //
+  //   A. 用户在系统分享面板里点了「Petrelgram」——want 带着 sendData 和数据，
+  //      这里现场解析（含把文件复制进沙箱），目标会话未定，进应用自己挑；
+  //   B. 用户在分享面板里就地点了某个头像——那块界面在独立进程里（见
+  //      shareextension/ShareTargetAbility），它已经把内容和选中的会话写进
+  //      交接文件，这里只要读回来。
+  //
+  // 两条都是异步之后才置位标志：Index 看到标志时载荷一定已经就位，
+  // 不会拿到半份数据。
+  private stashShare(want: Want): void {
+    if (this.stashHandoffShare(want)) {
+      return;
+    }
+    if (!isShareWant(want)) {
+      return;
+    }
+    // 用户可能是点了分享面板上那一排推荐头像中的一个（那一排由意图框架画，
+    // 见 services/ShareContactDonation）。是的话 want 里带着我们捐献时写进去
+    // 的 chatId，直接进那个会话；拿不到就是 0，进应用自己挑。
+    const target: Promise<number> = contactChatIdOf(want);
+    parseShareWant(want, this.context.cacheDir).then(
+      (payload: SharedPayload | null): void => {
+        if (payload === null) {
+          return;
+        }
+        stashPendingShare(payload);
+        // 意图框架推荐的联系人：用户在系统面板上直接点了某个头像，意图与
+        // 面板里点头像一致，按记住的那一档走。
+        target.then((chatId: number): void =>
+          this.publishShare(chatId, chatId !== 0 && isAutoSend(readShareSendMode())));
+      });
+  }
+
+  // 来路 B。返回 true 表示这个 want 是面板交接，不要再走解析那条路。
+  private stashHandoffShare(want: Want): boolean {
+    const flagged: boolean = want.parameters !== undefined &&
+      (want.parameters['shareHandoff'] as boolean | undefined) === true;
+    if (!flagged) {
+      return false;
+    }
+    const handoff: ShareHandoff | null = takeShareHandoff();
+    if (handoff === null) {
+      // 交接文件读不到（被清过、格式坏了）。当成没有分享，什么都不做——
+      // 用户看到的是应用正常打开，比弹一句看不懂的错误好。
+      return true;
+    }
+    stashPendingShare(handoff.payload);
+    this.publishShare(handoff.chatId, handoff.autoSend);
+    return true;
+  }
+
+  // 清零-再置位，与 pendingDeepLink 同一套路：连着分享两次同样的东西
+  // 也要能各触发一次路由。chatId 必须在 epoch 之前写：Index 监听的是 epoch，
+  // 翻到它的那一刻两个值都得就位（与 stashNotifyTarget 同一顺序约束）。
+  private publishShare(chatId: number, autoSend: boolean): void {
+    AppStorage.setOrCreate('pendingShareAutoSend', autoSend);
+    AppStorage.setOrCreate('pendingShareChatId', chatId);
+    AppStorage.setOrCreate('pendingShareEpoch', 0);
+    AppStorage.setOrCreate('pendingShareEpoch', Date.now());
+  }
+
+  // Fires when the system language (or colour mode, font scale, …) changes
+  // while the app is running. Resources re-resolve themselves; the Intl
+  // formatters are cached in-process and do not, so they would keep rendering
+  // dates in the language the user just left.
+  onConfigurationUpdate(config: Configuration): void {
+    invalidateTextMeasurements();
+    // Density changes can also arrive via configuration without a size change.
+    clearOutlineCache();
+    refreshLocale();
+    // Only on an actual language change. This fires for every configuration
+    // change — dark mode, font scale, orientation — and the epoch is embedded
+    // in list row keys, so bumping it renames every row in the app. Doing that
+    // for a colour-mode change (or whatever the system reports when an app
+    // returns to the foreground) left the lists rebuilding for no reason, and
+    // renamed rows out from under LazyForEach.
+    const language: string = config.language ?? '';
+    if (language !== this.lastLanguage) {
+      this.lastLanguage = language;
+      invalidateStringCache();
+      clearLinkPreviewPresentationCache();
+      bumpLanguageEpoch();
+    }
+    // 深浅色切换时状态栏的图标要跟着反色，否则白图标留在浅色页面上会看不见。
+    // 但只在颜色模式**真变了**时做（官方 onConfigurationUpdate 范式）：这一步会写
+    // KEY_APP_DARK、重算主色/气泡色并 bump 外观 epoch，整条时间线和首页都会重绘。
+    const now: number = Date.now();
+    const before: number = this.colorMode.current();
+    // observe 自己推进基准。**这里之后谁都不许再写基准**——applyImmersiveStatusBar
+    // 原来会用 this.context.config 再盖一遍，而那一刻它还是旧值（#194，见
+    // util/configChange 里 ColorModeBaseline 的说明）。
+    const changed: boolean = this.colorMode.observe(config.colorMode);
+    logW(`[Config] colorMode ${before}->${config.colorMode ?? -1} lang=${language}` +
+      ` changed=${changed} +${this.lastConfigAt > 0 ? now - this.lastConfigAt : 0}ms`);
+    this.lastConfigAt = now;
+    if (!changed) {
+      return;
+    }
+    this.applyImmersiveStatusBar();
+    // HdsNavigation / HdsNavDestination / HdsTabs 从 API 26 起才支持高性能切换流程；
+    // 之前的版本要靠我们自己驱动它们的颜色属性——bump 材质 epoch 让壳层重挂一遍。
+    if (deviceInfo.sdkApiVersion < 26) {
+      bumpMaterialEpoch();
+    }
+  }
+
+  // 状态栏沉浸。
+  //
+  // setWindowLayoutFullScreen(true) 只让**布局**铺满，状态栏自己仍然画一层
+  // 不透明底色——深色模式下是纯黑，压在应用的深蓝灰之上就是一条明显的分界，
+  // 浅色模式下则是浅灰压在白色 chrome 上。底色要单独设成透明才真正沉浸。
+  //
+  // 内容色（时钟和图标）必须跟着深浅色走：深色模式下应用背景是暗的，图标要
+  // 白的才看得见；浅色反之。系统不会替我们判断，因为它不知道页面底下画了什么。
+  private applyWindowBackground(win: window.Window, dark: boolean): void {
+    if (!this.contentLoaded) {
+      return;
+    }
+    try {
+      // 浅色跟着默认页面底（app.color.app_page_bg = #E3F2E6）。原来这里是 #EFEFF4，
+      // 页面底色改成绿之后，窗口切换那一下会从灰闪一下绿。深色仍取原值。
+      win.setWindowBackgroundColor(dark ? '#17212B' : '#E3F2E6');
+    } catch (e) {
+      logE(`setWindowBackgroundColor failed: ${(e as Error).message}`);
+    }
+  }
+
+  private applyImmersiveStatusBar(): void {
+    if (this.windowStageRef === null) {
+      return;
+    }
+    // getMainWindowSync 在窗口销毁流程里会抛（窗口错误码文档明写）；这个方法从
+    // onConfigurationUpdate 进来时没有任何 try/catch，抛了就是进程死（#194 的 9 次冷启
+    // 没有退后台痕迹，这里是唯一的裸同步系统调用）。
+    // **这里不再写基准。** 原来这一行是 `this.lastColorMode = this.context.config.colorMode`，
+    // 本意是启动时播种，但 onConfigurationUpdate 也会走到这个函数——那一刻 ability
+    // 缓存的 context.config 还是旧值，于是刚记下的新值被盖回去，切回原模式时判成
+    // 「没变」直接 return，深色遮罩撤不掉（issue #194）。播种改由 onWindowStageCreate
+    // 显式做一次。
+    let win: window.Window;
+    try {
+      win = this.windowStageRef.getMainWindowSync();
+    } catch (e) {
+      logE(`applyImmersiveStatusBar getMainWindowSync failed: ${(e as Error).message}`);
+      return;
+    }
+    const dark: boolean = darkResourceMode(this.context);
+    // 界面侧用 @StorageProp(KEY_APP_DARK) 订阅。这里是全应用唯一一处真正知道
+    // 模式变了的地方（onConfigurationUpdate 也会走到这个函数）。
+    AppStorage.setOrCreate(KEY_APP_DARK, dark);
+    // 主色/气泡色是按模式分存的，模式一变就得重算当前那份。
+    recomputeAppearance();
+    // 窗口底色。状态栏透明之后，它下面露出来的就是这一层；悬浮的文件夹条
+    // 背后也是它。从没设过，所以一直是系统默认的黑——深色模式下 app 是
+    // #17212B 的深蓝灰，顶上压着一条纯黑，就是"状态栏不沉浸"的真相。
+    //
+    // 这两个值必须与 resources/{base,dark}/element/color.json 的 page_bg 一致。
+    // 不用 getColorSync 从资源里取：那条路在本项目实测会在深色模式下仍然
+    // 返回浅色值（theme.ets:31 的注释记着这个坑）。
+    this.applyWindowBackground(win, dark);
+    try {
+      win.setWindowSystemBarProperties({
+        statusBarColor: '#00000000',
+        statusBarContentColor: dark ? '#FFFFFF' : '#000000',
+        navigationBarColor: '#00000000',
+        navigationBarContentColor: dark ? '#FFFFFF' : '#000000'
+      }).catch((e: Error): void => {
+        logE(`setWindowSystemBarProperties failed: ${e.message}`);
+      });
+    } catch (e) {
+      logE(`setWindowSystemBarProperties threw: ${(e as Error).message}`);
+    }
+  }
+
+  // Publish the launch URI for the UI layer. Cleared to '' first so re-opening
+  // the SAME link still registers as a change and re-triggers routing.
+  private stashDeepLink(want: Want): void {
+    this.stashNotifyTarget(want);
+    stashDownloadCenterWant(want);
+    const uri = want.uri ?? '';
+    const bag: Record<string, Object> | undefined =
+      want.parameters !== undefined ? (want.parameters as Record<string, Object>) : undefined;
+    // 推送通道送来的点击链接。**这是中转与客户端之间的契约**，对端是
+    // relay-go-src/hms.go 的 clickData()：华为 Push Kit 的
+    // notification.clickAction 用 actionType=0（打开应用首页）+ data 键值对，
+    // 中转把 tg://openmessage?... 放进 data 的 "url" 键，由客户端自行路由。
+    // 冻结期间的消息通知由 HMS 直接展示，want.uri 只会是系统的事件标记
+    // （abilityEvent:clickAlertMessage），真正的目标在这里。
+    // 中转那半边早就实现了，客户端这半边一直是空的——所以点通知只能落到首页。
+    const clickUrl: string = bag !== undefined ? ((bag['url'] as string | undefined) ?? '') : '';
+    // 只放行真的是链接的 uri。系统把「点击通知」也编码进 want.uri
+    // （abilityEvent:clickAlertMessage），分享进来的 want 也可能带 file:// —
+    // 原来只判非空，这两种都会被当成深链送进 Telegram 链接解析器，弹出
+    // 一句「无法识别该 Telegram 链接」。判据见 util/deepLink。
+    const link: string = isHandledDeepLinkUri(uri) ? uri
+      : (isHandledDeepLinkUri(clickUrl) ? clickUrl : '');
+    if (link === '') {
+      return;
+    }
+    AppStorage.setOrCreate('pendingDeepLink', '');
+    AppStorage.setOrCreate('pendingDeepLink', link);
+  }
+
+  // 点击本地通知拉起时携带的目标会话。与 pendingDeepLink 相同的
+  // 清零-再置位模式，保证重复点击同一会话的通知也触发路由。
+  private stashNotifyTarget(want: Want): void {
+    const chatId = want.parameters !== undefined
+      ? (want.parameters['notifyChatId'] as number | undefined) ?? 0 : 0;
+    if (chatId === 0) {
+      return;
+    }
+    const messageId = want.parameters !== undefined
+      ? (want.parameters['notifyMessageId'] as number | undefined) ?? 0 : 0;
+    // 消息 id 先写：Index 监听的是 chatId，翻到它的那一刻两个值都得就位。
+    AppStorage.setOrCreate('pendingNotifyMessageId', messageId);
+    // 槽位先落，chatId 最后落——Index 那边 @Watch 的是 chatId，它一变就消费。
+    AppStorage.setOrCreate('pendingNotifySlotId', want.parameters !== undefined
+      ? ((want.parameters['notifySlotId'] as string | undefined) ?? '') : '');
+    AppStorage.setOrCreate('pendingNotifyChatId', 0);
+    AppStorage.setOrCreate('pendingNotifyChatId', chatId);
+  }
+
+  onDestroy(): void {
+    // 保存任务全吊在这个 ability 的 context 上，ability 一没它们就都是死的，
+    // 通知栏里那条进度不撤就永远停在原地（用户转述："总是停留在通知栏"）。
+    cancelLiveDownloadNotifications();
+    setTdOnlineState(false);
+    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
+  }
+
+  onWindowStageCreate(windowStage: window.WindowStage): void {
+    // Main window is created, set main page for this ability
+    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
+    // 本地通知授权：先查是否已启用，未启用才弹授权框（重复调用/系统开关
+    // 关闭时 requestEnableNotification 会报 Internal error，故先判断）。
+    notificationManager.isNotificationEnabled().then((enabled: boolean): void => {
+      if (enabled) {
+        return;
+      }
+      notificationManager.requestEnableNotification(this.context).catch((e: Error): void => {
+        logE(`requestEnableNotification failed: ${e.message}`);
+      });
+    }).catch((e: Error): void => {
+      logE(`isNotificationEnabled failed: ${e.message}`);
+    });
+    // 上一次运行残留的下载通知（进程被杀时停在半路的那些）在这里收尾——
+    // 只有启动这一个时机能认领它们，理由见函数上的注释。
+    clearStaleDownloadNotifications();
+
+    try {
+      this.windowStageRef = windowStage;
+      const win = windowStage.getMainWindowSync();
+      this.mainWin = win;
+      setSystemBarsMainWindow(win);
+      // 默认旋转策略：手机锁竖屏，大屏可转（util/appOrientation）。折叠屏开合时再算一次。
+      applyDefaultOrientation(win);
+      try {
+        if (display.isFoldable()) {
+          const onFold = (_mode: display.FoldDisplayMode): void => {
+            const current: window.Window | null = this.mainWin;
+            if (current !== null) {
+              applyDefaultOrientation(current);
+            }
+          };
+          this.foldModeCallback = onFold;
+          display.on('foldDisplayModeChange', onFold);
+        }
+      } catch (e) {
+        logE(`foldDisplayModeChange subscribe failed: ${(e as Error).message}`);
+      }
+      win.setWindowLayoutFullScreen(true);
+      // 唯一一处播种：启动时 context.config 是权威的。
+      this.colorMode.seed(this.context.config.colorMode);
+      this.applyImmersiveStatusBar();
+      const avoid = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
+      const seedTopSafeVp: number = px2vp(avoid.topRect.height);
+      noteSystemTopAvoidHeight(seedTopSafeVp, seedTopSafeVp);
+      AppStorage.setOrCreate('topSafeHeight', seedTopSafeVp);
+      // Bottom inset (gesture navigation bar) — pages pad their bottom bars by this.
+      const navAvoid = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
+      AppStorage.setOrCreate('bottomSafeHeight', px2vp(navAvoid.bottomRect.height));
+      const cutoutAvoid = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_CUTOUT);
+      AppStorage.setOrCreate('cutoutTopSafeHeight', px2vp(cutoutAvoid.topRect.height));
+      AppStorage.setOrCreate('cutoutLeftSafeWidth', px2vp(cutoutAvoid.leftRect.width));
+      AppStorage.setOrCreate('cutoutRightSafeWidth', px2vp(cutoutAvoid.rightRect.width));
+      // 断点先于尺寸写：页面挂在尺寸上的 @Watch（onWindowResized 等）触发时要读到新断点。
+      // 这里是 loadContent 之前，系统断点接口还不可信，按官方阈值从尺寸推一个初值，
+      // 免得平板第一帧按默认 sm 画成单栏；loadContent 回调里立刻换成系统值。
+      const seedW: number = px2vp(win.getWindowProperties().windowRect.width);
+      const seedH: number = px2vp(win.getWindowProperties().windowRect.height);
+      AppStorage.setOrCreate(KEY_WIDTH_BREAKPOINT, widthBreakpointOfVp(seedW));
+      mirrorChatEnvKey(KEY_WIDTH_BREAKPOINT, widthBreakpointOfVp(seedW));
+      AppStorage.setOrCreate(KEY_HEIGHT_BREAKPOINT, heightBreakpointOfSize(seedW, seedH));
+      AppStorage.setOrCreate(KEY_WINDOW_PORTRAIT, !(seedW > seedH));
+      AppStorage.setOrCreate('screenWidthVp', px2vp(win.getWindowProperties().windowRect.width));
+      AppStorage.setOrCreate('screenHeightVp', px2vp(win.getWindowProperties().windowRect.height));
+      mirrorChatEnvKey('screenWidthVp', px2vp(win.getWindowProperties().windowRect.width));
+      mirrorChatEnvKey('screenHeightVp', px2vp(win.getWindowProperties().windowRect.height));
+      // 首帧按无头像气泡的最大宽度选图片源；聊天列量到后再按列宽更新。
+      const rectPx: number = win.getWindowProperties().windowRect.width;
+      const density: number = rectPx / Math.max(1, px2vp(rectPx));
+      // 记住启动时的密度，windowSizeChange 里拿它做换算和校验。见下面的注释。
+      this.uiDensity = density;
+      // 启动时把窗口度量打一行出来。**分栏与否完全由 vp 宽决定**（600vp 断点），
+      // 而 vp 宽 = 物理像素 / 密度——光看分辨率会得出错误结论。2026-08-22 手机
+      // 模拟器上就撞过：1320px 屏按 3x 密度算是 440vp（该单栏），按 2x 算是 660vp
+      // （该分栏），两者行为天差地别，而当时没有任何一处日志能把这个数说清楚。
+      // hilog 的 %{public}f 在本机不生效（打出来是字面的 "}f"），先在 JS 里格式化
+      // 成字符串再交给它。
+      const heightPx: number = win.getWindowProperties().windowRect.height;
+      const metrics: string =
+        `${rectPx}px x ${heightPx}px, density ${density} -> ` +
+        `${px2vp(rectPx)}vp x ${px2vp(heightPx)}vp`;
+      hilog.info(DOMAIN, 'testTag', '[Layout] window %{public}s', metrics);
+      setInlinePhotoTargetPx(mediaThumbWidth(px2vp(rectPx), 0) * density);
+      win.on('avoidAreaChange', (data) => {
+        if (data.type === window.AvoidAreaType.TYPE_SYSTEM) {
+          const topVp: number = px2vp(data.area.topRect.height);
+          noteSystemTopAvoidHeight(topVp);
+          // 媒体查看器/直播全屏调 setWindowSystemBarEnable([]) 隐藏状态栏时，系统会推一次
+          // topRect.height=0 的 avoidAreaChange。不把 0 写进 topSafeHeight：否则底下的
+          // ChatPage / 首页等 60+ 处 @StorageProp('topSafeHeight') 会集体少掉状态栏高度
+          // 向上跳并在退出时整页同步重排卡顿。
+          if (topVp > 0 || !isSystemBarsHiddenApplied()) {
+            if (topVp > 0) {
+              AppStorage.setOrCreate('topSafeHeight', topVp);
+            }
+          }
+        } else if (data.type === window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR) {
+          const bottomVp: number = px2vp(data.area.bottomRect.height);
+          if (bottomVp > 0) {
+            AppStorage.setOrCreate('bottomSafeHeight', bottomVp);
+          }
+        } else if (data.type === window.AvoidAreaType.TYPE_CUTOUT) {
+          AppStorage.setOrCreate('cutoutTopSafeHeight', px2vp(data.area.topRect.height));
+          AppStorage.setOrCreate('cutoutLeftSafeWidth', px2vp(data.area.leftRect.width));
+          AppStorage.setOrCreate('cutoutRightSafeWidth', px2vp(data.area.rightRect.width));
+        }
+      });
+      // Keyboard height: when the IME is up the window is already resized
+      // above it, so pages must drop their gesture-bar bottom padding.
+      win.on('keyboardHeightChange', (h: number) => {
+        AppStorage.setOrCreate('keyboardHeightVp', px2vp(h));
+        mirrorChatEnvKey('keyboardHeightVp', px2vp(h));
+      });
+      // 悬浮小窗 ↔ 全屏来回时系统会重置状态栏的内容色，而上面那套只在启动和
+      // 配置变更时设过一次——从小窗恢复后图标就不是白的了（issue #136）。
+      // 窗口模式一变就再设一遍。
+      win.on('windowStatusChange', (status: window.WindowStatusType): void => {
+        logW(`windowStatus ${status}`);
+        this.applyImmersiveStatusBar();
+      });
+      win.on('windowSizeChange', (size) => {
+        // px2vp 依赖当前显示密度。灭屏/亮屏那一瞬间这个回调会带着尚未恢复的
+        // 密度过来，密度当成 1 时 px2vp 直接把物理像素原样返回——屏宽从 385
+        // 跳到 1316，气泡的 maxWidth（屏宽 × 0.78）变成 1026 远超可用宽度，
+        // 整条消息就摊平到整行。等下一次正常回调到达才自己恢复。
+        //
+        // 所以这里不直接信 px2vp：拿它反推一次密度，和启动时那个对不上就
+        // 判定这次回调不可信，跳过。密度真正变化只发生在折叠屏切换屏幕那
+        // 类场景，那时误差远小于这个阈值，仍然会被接受并刷新基准。
+        const candidate: number = px2vp(size.width);
+        const derived: number = size.width / Math.max(1, candidate);
+        const base: number = this.uiDensity > 0 ? this.uiDensity : derived;
+        if (Math.abs(derived - base) / base > DENSITY_TOLERANCE) {
+          hilog.warn(DOMAIN, 'testTag',
+            'windowSizeChange ignored: density %{public}f vs %{public}f (px=%{public}d)',
+            derived, base, size.width);
+          return;
+        }
+        this.uiDensity = derived;
+        hilog.info(DOMAIN, 'testTag',
+          'windowSizeChange accepted: px=%{public}d vp=%{public}f density=%{public}f',
+          size.width, candidate, derived);
+        // 密度可能跟着变了，气泡轮廓的 path 缓存按 vp 尺寸建键、不含密度，
+        // 这里清一次让它按新密度重建（见 util/bubbleTail.clearOutlineCache）。
+        clearOutlineCache();
+        // 断点只在这条「可信」分支里更新：被上面密度校验拒掉的那次回调，
+        // 系统算出的断点同样不可信。**先于尺寸写**，理由见启动那处。
+        this.publishBreakpoints(win);
+        AppStorage.setOrCreate('screenWidthVp', candidate);
+        AppStorage.setOrCreate('screenHeightVp', px2vp(size.height));
+        mirrorChatEnvKey('screenWidthVp', candidate);
+        mirrorChatEnvKey('screenHeightVp', px2vp(size.height));
+      });
+    } catch (err) {
+      hilog.error(DOMAIN, 'testTag', 'Failed to set full-screen layout. Cause: %{public}s', JSON.stringify(err));
+    }
+
+    windowStage.loadContent('pages/Index', (err) => {
+      if (err.code) {
+        hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
+        return;
+      }
+      // IME avoidance: RESIZE shrinks the page above the keyboard, so fixed
+      // headers (chat title bar) stay put and only the scrolling content and
+      // input bar move. The default OFFSET translates the WHOLE page up.
+      try {
+        windowStage.getMainWindowSync().getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE);
+      } catch (e) {
+        hilog.error(DOMAIN, 'testTag', 'setKeyboardAvoidMode failed: %{public}s', JSON.stringify(e));
+      }
+      // 断点与窗口尺寸的初值（官方《断点系统》前置条件一）：loadContent 回调里窗口
+      // 已完成布局，这时取的才可信。上面 loadContent 之前那次 screenWidthVp 播种
+      // 保留——首帧之前页面就要读它；这里用回调里的值再校一次。
+      try {
+        const loadedWin: window.Window = windowStage.getMainWindowSync();
+        const rect: window.Rect = loadedWin.getWindowProperties().windowRect;
+        this.publishBreakpoints(loadedWin);
+        AppStorage.setOrCreate('screenWidthVp', px2vp(rect.width));
+        AppStorage.setOrCreate('screenHeightVp', px2vp(rect.height));
+        mirrorChatEnvKey('screenWidthVp', px2vp(rect.width));
+        mirrorChatEnvKey('screenHeightVp', px2vp(rect.height));
+      } catch (e) {
+        logE(`breakpoint seed after loadContent failed: ${(e as Error).message}`);
+      }
+      // 窗口底色要等内容加载完才设得上，见 contentLoaded。
+      this.contentLoaded = true;
+      try {
+        this.applyWindowBackground(windowStage.getMainWindowSync(), darkResourceMode(this.context));
+      } catch (e) {
+        logE(`applyWindowBackground after loadContent failed: ${(e as Error).message}`);
+      }
+      hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
+    });
+  }
+
+  onWindowStageDestroy(): void {
+    // Main window is destroyed, release UI related resources
+    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageDestroy');
+    // 注销 onWindowStageCreate 里挂的窗口监听（官方《窗口监听》：防泄漏）。
+    const win: window.Window | null = this.mainWin;
+    this.mainWin = null;
+    setSystemBarsMainWindow(null);
+    const onFold: ((mode: display.FoldDisplayMode) => void) | null = this.foldModeCallback;
+    this.foldModeCallback = null;
+    if (onFold !== null) {
+      try {
+        display.off('foldDisplayModeChange', onFold);
+      } catch (e) {
+        logE(`foldDisplayModeChange unsubscribe failed: ${(e as Error).message}`);
+      }
+    }
+    if (win === null) {
+      return;
+    }
+    try {
+      win.off('windowSizeChange');
+      win.off('windowStatusChange');
+      win.off('avoidAreaChange');
+      win.off('keyboardHeightChange');
+    } catch (e) {
+      logE(`window listener teardown failed: ${(e as Error).message}`);
+    }
+  }
+
+  // 系统断点写进 AppStorage（util/layoutBreakpoint）。存的是枚举原值（数字）。
+  private publishBreakpoints(win: window.Window): void {
+    try {
+      const ui: UIContext = win.getUIContext();
+      const widthBp: number = ui.getWindowWidthBreakpoint() as number;
+      const heightBp: number = ui.getWindowHeightBreakpoint() as number;
+      AppStorage.setOrCreate(KEY_WIDTH_BREAKPOINT, widthBp);
+      // 会话环境镜像按它放大消息字号（util/textScale）。
+      mirrorChatEnvKey(KEY_WIDTH_BREAKPOINT, widthBp);
+      AppStorage.setOrCreate(KEY_HEIGHT_BREAKPOINT, heightBp);
+      // 折叠屏展开态横竖都是 md/md，分栏还要看窗口横竖（layoutBreakpoint.KEY_WINDOW_PORTRAIT）。
+      const rect: window.Rect = win.getWindowProperties().windowRect;
+      AppStorage.setOrCreate(KEY_WINDOW_PORTRAIT, !(rect.width > rect.height));
+    } catch (e) {
+      logE(`publishBreakpoints failed: ${(e as Error).message}`);
+    }
+  }
+
+  onForeground(): void {
+    // Ability has brought to foreground
+    refreshPowerSavingState();
+    // Re-awaken TDLib with the last confirmed bearer immediately. The full
+    // NetworkKit probe below is asynchronous and may take longer after a long
+    // suspended period (especially through VPN); waiting for it leaves the UI
+    // in connectionStateConnecting/WaitingForNetwork unnecessarily.
+    republishNetworkTypeToTd();
+    refreshNetworkState(true);
+    AppStorage.setOrCreate('appIsForeground', true);
+    mirrorChatEnvKey('appIsForeground', true);
+    // 代理巡检是 30 秒一轮的常驻定时器，后台整条停掉，回前台再起。
+    proxyAutoSwitchService.foregroundChanged(true);
+    // 小程序/内置浏览器走自己的网络栈，要把 TDLib 当前启用的代理单独接过去。
+    syncWebBridgeFromTd(getTdClient());
+    // 回前台：释放短时任务配额（下次切后台再申请）。
+    backgroundGraceTask.end();
+    AppStorage.setOrCreate('appForegroundEpoch', Date.now());
+    setTdOnlineState(true);
+    // 1.5.5 在这里挂过一个看门狗：卡在连接中就把回前台之前建的中继隧道掐掉，
+    // 逼 TDLib 立刻重拨。中继层删掉之后没有隧道可掐了，看门狗随之删除——重拨
+    // 节奏交回 TDLib 自己的心跳与重连逻辑。
+    const limit: number = AppStorage.get<number>(KEY_CACHE_LIMIT) ?? CACHE_LIMIT_DEFAULT;
+    const now = Date.now();
+    if (shouldTrimNow(limit, this.lastCacheTrimAt, now)) {
+      this.lastCacheTrimAt = now;
+      // applyCacheLimit 内部已吞掉 TdError，这里的 catch 只兜底 Promise 层面的意外异常。
+      applyCacheLimit(limit).catch((e: Error): void => {
+        logE(`EntryAbility cache trim failed: ${e.message}`);
+      });
+    }
+    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
+  }
+
+  onBackground(): void {
+    // Ability has back to background
+    AppStorage.setOrCreate('appIsForeground', false);
+    mirrorChatEnvKey('appIsForeground', false);
+    proxyAutoSwitchService.foregroundChanged(false);
+    // 申请短时任务：切后台后多存活几分钟，这段时间内新消息仍能实时收到并通知。
+    // 保持 TDLib 的 online 选项，代理连接也就能复用；宽限期耗尽、进程即将
+    // 被挂起时再切 offline，回前台不必每次都重新连代理。
+    backgroundGraceTask.begin((): void => setTdOnlineState(false));
+    // 日志平时攒够 300 行才落盘，后台被回收时最后那几行就没了——正好是出事的
+    // 那几行。诊断页现在没有入口，这份落盘就是唯一能拿到的现场。
+    flushDiagLog();
+    // 解码后的位图很占内存（几十 MB 量级），后台留着只会抬高被系统查杀的概率。
+    // 还挂在组件上的那些由引用计数保住，回前台重新解码代价很小。
+    // 后台不拖着"已无 owner、还在 2 秒宽限期里"的壁纸光栅：先把它们结清，
+    // 再让 trimPixelCache 按引用计数回收。仍挂在组件上的那些由 refs 保住，
+    // 回前台代价只是重新 pin（缓存命中，不重解码）。
+    settleParkedWallpaperPins();
+    trimPixelCache();
+    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
+  }
+}

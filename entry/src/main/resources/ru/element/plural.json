@@ -1,0 +1,1579 @@
+{
+  "plural": [
+    {
+      "name": "duration_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d день"
+        },
+        {
+          "quantity": "few",
+          "value": "%d дня"
+        },
+        {
+          "quantity": "many",
+          "value": "%d дней"
+        },
+        {
+          "quantity": "other",
+          "value": "%d дн."
+        }
+      ]
+    },
+    {
+      "name": "duration_days_premium",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d день Premium"
+        },
+        {
+          "quantity": "few",
+          "value": "%d дня Premium"
+        },
+        {
+          "quantity": "many",
+          "value": "%d дней Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d дн. Premium"
+        }
+      ]
+    },
+    {
+      "name": "duration_months",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d месяц"
+        },
+        {
+          "quantity": "few",
+          "value": "%d месяца"
+        },
+        {
+          "quantity": "many",
+          "value": "%d месяцев"
+        },
+        {
+          "quantity": "other",
+          "value": "%d мес."
+        }
+      ]
+    },
+    {
+      "name": "duration_months_premium",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d месяц Premium"
+        },
+        {
+          "quantity": "few",
+          "value": "%d месяца Premium"
+        },
+        {
+          "quantity": "many",
+          "value": "%d месяцев Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d мес. Premium"
+        }
+      ]
+    },
+    {
+      "name": "gift_stars_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d звезда"
+        },
+        {
+          "quantity": "few",
+          "value": "%d звезды"
+        },
+        {
+          "quantity": "many",
+          "value": "%d звёзд"
+        },
+        {
+          "quantity": "other",
+          "value": "%d звёзд"
+        }
+      ]
+    },
+    {
+      "name": "gift_worth_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Ценой в %d звезду"
+        },
+        {
+          "quantity": "few",
+          "value": "Ценой в %d звезды"
+        },
+        {
+          "quantity": "many",
+          "value": "Ценой в %d звёзд"
+        },
+        {
+          "quantity": "other",
+          "value": "Ценой в %d звёзд"
+        }
+      ]
+    },
+    {
+      "name": "live_media_in_room",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d человек в комнате"
+        },
+        {
+          "quantity": "few",
+          "value": "%d человека в комнате"
+        },
+        {
+          "quantity": "many",
+          "value": "%d человек в комнате"
+        },
+        {
+          "quantity": "other",
+          "value": "%d чел. в комнате"
+        }
+      ]
+    },
+    {
+      "name": "live_status_watching",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d человек смотрит"
+        },
+        {
+          "quantity": "few",
+          "value": "%d человека смотрят"
+        },
+        {
+          "quantity": "many",
+          "value": "%d человек смотрят"
+        },
+        {
+          "quantity": "other",
+          "value": "%d чел. смотрят"
+        }
+      ]
+    },
+    {
+      "name": "prize_premium_months",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d месяц Premium"
+        },
+        {
+          "quantity": "few",
+          "value": "%d месяца Premium"
+        },
+        {
+          "quantity": "many",
+          "value": "%d месяцев Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d мес. Premium"
+        }
+      ]
+    },
+    {
+      "name": "prize_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d звезда"
+        },
+        {
+          "quantity": "few",
+          "value": "%d звезды"
+        },
+        {
+          "quantity": "many",
+          "value": "%d звёзд"
+        },
+        {
+          "quantity": "other",
+          "value": "%d звёзд"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d день"
+        },
+        {
+          "quantity": "few",
+          "value": "%d дня"
+        },
+        {
+          "quantity": "many",
+          "value": "%d дней"
+        },
+        {
+          "quantity": "other",
+          "value": "%d дн."
+        }
+      ]
+    },
+    {
+      "name": "session_unit_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d час"
+        },
+        {
+          "quantity": "few",
+          "value": "%d часа"
+        },
+        {
+          "quantity": "many",
+          "value": "%d часов"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ч"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d минута"
+        },
+        {
+          "quantity": "few",
+          "value": "%d минуты"
+        },
+        {
+          "quantity": "many",
+          "value": "%d минут"
+        },
+        {
+          "quantity": "other",
+          "value": "%d мин"
+        }
+      ]
+    },
+    {
+      "name": "user_status_days_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d день назад"
+        },
+        {
+          "quantity": "few",
+          "value": "%d дня назад"
+        },
+        {
+          "quantity": "many",
+          "value": "%d дней назад"
+        },
+        {
+          "quantity": "other",
+          "value": "%d дн. назад"
+        }
+      ]
+    },
+    {
+      "name": "user_status_hours_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d час назад"
+        },
+        {
+          "quantity": "few",
+          "value": "%d часа назад"
+        },
+        {
+          "quantity": "many",
+          "value": "%d часов назад"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ч назад"
+        }
+      ]
+    },
+    {
+      "name": "user_status_minutes_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d минуту назад"
+        },
+        {
+          "quantity": "few",
+          "value": "%d минуты назад"
+        },
+        {
+          "quantity": "many",
+          "value": "%d минут назад"
+        },
+        {
+          "quantity": "other",
+          "value": "%d мин назад"
+        }
+      ]
+    },
+    {
+      "name": "sticker_set_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d стикер"
+        },
+        {
+          "quantity": "few",
+          "value": "%d стикера"
+        },
+        {
+          "quantity": "many",
+          "value": "%d стикеров"
+        },
+        {
+          "quantity": "other",
+          "value": "%d стик."
+        }
+      ]
+    },
+    {
+      "name": "cw_disconnect_all_confirm",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Выйти из аккаунта на %d сайте"
+        },
+        {
+          "quantity": "few",
+          "value": "Выйти из аккаунта на %d сайтах"
+        },
+        {
+          "quantity": "many",
+          "value": "Выйти из аккаунта на %d сайтах"
+        },
+        {
+          "quantity": "other",
+          "value": "Выйти из аккаунта на %d сайтах"
+        }
+      ]
+    },
+    {
+      "name": "pe_group_exceptions_kept",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "На сервере сохранено %d исключение для групп"
+        },
+        {
+          "quantity": "few",
+          "value": "На сервере сохранено %d исключения для групп"
+        },
+        {
+          "quantity": "many",
+          "value": "На сервере сохранено %d исключений для групп"
+        },
+        {
+          "quantity": "other",
+          "value": "На сервере сохранено %d исключений для групп"
+        }
+      ]
+    },
+    {
+      "name": "storage_file_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d файл"
+        },
+        {
+          "quantity": "few",
+          "value": "%d файла"
+        },
+        {
+          "quantity": "many",
+          "value": "%d файлов"
+        },
+        {
+          "quantity": "other",
+          "value": "%d файлов"
+        }
+      ]
+    },
+    {
+      "name": "bu_account_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d аккаунт"
+        },
+        {
+          "quantity": "few",
+          "value": "%d аккаунта"
+        },
+        {
+          "quantity": "many",
+          "value": "%d аккаунтов"
+        },
+        {
+          "quantity": "other",
+          "value": "%d акк."
+        }
+      ]
+    },
+    {
+      "name": "calls_about_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Около %d записи"
+        },
+        {
+          "quantity": "few",
+          "value": "Около %d записей"
+        },
+        {
+          "quantity": "many",
+          "value": "Около %d записей"
+        },
+        {
+          "quantity": "other",
+          "value": "Около %d записей"
+        }
+      ]
+    },
+    {
+      "name": "calls_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d запись"
+        },
+        {
+          "quantity": "few",
+          "value": "%d записи"
+        },
+        {
+          "quantity": "many",
+          "value": "%d записей"
+        },
+        {
+          "quantity": "other",
+          "value": "%d зап."
+        }
+      ]
+    },
+    {
+      "name": "calls_participants",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d человек"
+        },
+        {
+          "quantity": "few",
+          "value": "%d человека"
+        },
+        {
+          "quantity": "many",
+          "value": "%d человек"
+        },
+        {
+          "quantity": "other",
+          "value": "%d чел."
+        }
+      ]
+    },
+    {
+      "name": "cf_about_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Около %d чата"
+        },
+        {
+          "quantity": "few",
+          "value": "Около %d чатов"
+        },
+        {
+          "quantity": "many",
+          "value": "Около %d чатов"
+        },
+        {
+          "quantity": "other",
+          "value": "Около %d чатов"
+        }
+      ]
+    },
+    {
+      "name": "cf_delete_and_leave",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Удалить и выйти из %d чата"
+        },
+        {
+          "quantity": "few",
+          "value": "Удалить и выйти из %d чатов"
+        },
+        {
+          "quantity": "many",
+          "value": "Удалить и выйти из %d чатов"
+        },
+        {
+          "quantity": "other",
+          "value": "Удалить и выйти из %d чатов"
+        }
+      ]
+    },
+    {
+      "name": "fl_new_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d новый чат"
+        },
+        {
+          "quantity": "few",
+          "value": "%d новых чата"
+        },
+        {
+          "quantity": "many",
+          "value": "%d новых чатов"
+        },
+        {
+          "quantity": "other",
+          "value": "%d новых чатов"
+        }
+      ]
+    },
+    {
+      "name": "fl_selected_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Выбран %d чат"
+        },
+        {
+          "quantity": "few",
+          "value": "Выбрано %d чата"
+        },
+        {
+          "quantity": "many",
+          "value": "Выбрано %d чатов"
+        },
+        {
+          "quantity": "other",
+          "value": "Выбрано %d чатов"
+        }
+      ]
+    },
+    {
+      "name": "fl_add_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Добавить %d чат"
+        },
+        {
+          "quantity": "few",
+          "value": "Добавить %d чата"
+        },
+        {
+          "quantity": "many",
+          "value": "Добавить %d чатов"
+        },
+        {
+          "quantity": "other",
+          "value": "Добавить %d чатов"
+        }
+      ]
+    },
+    {
+      "name": "ds_cached_files",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d кэшированный файл"
+        },
+        {
+          "quantity": "few",
+          "value": "%d кэшированных файла"
+        },
+        {
+          "quantity": "many",
+          "value": "%d кэшированных файлов"
+        },
+        {
+          "quantity": "other",
+          "value": "%d кэш-файлов"
+        }
+      ]
+    },
+    {
+      "name": "ct_result_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d контакт"
+        },
+        {
+          "quantity": "few",
+          "value": "%d контакта"
+        },
+        {
+          "quantity": "many",
+          "value": "%d контактов"
+        },
+        {
+          "quantity": "other",
+          "value": "%d конт."
+        }
+      ]
+    },
+    {
+      "name": "ng_max_members",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "В обычной группе можно выбрать не более %d участника"
+        },
+        {
+          "quantity": "few",
+          "value": "В обычной группе можно выбрать не более %d участников"
+        },
+        {
+          "quantity": "many",
+          "value": "В обычной группе можно выбрать не более %d участников"
+        },
+        {
+          "quantity": "other",
+          "value": "В обычной группе можно выбрать не более %d участников"
+        }
+      ]
+    },
+    {
+      "name": "ng_member_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d участник"
+        },
+        {
+          "quantity": "few",
+          "value": "%d участника"
+        },
+        {
+          "quantity": "many",
+          "value": "%d участников"
+        },
+        {
+          "quantity": "other",
+          "value": "%d участников"
+        }
+      ]
+    },
+    {
+      "name": "ng_people_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d человек"
+        },
+        {
+          "quantity": "few",
+          "value": "%d человека"
+        },
+        {
+          "quantity": "many",
+          "value": "%d человек"
+        },
+        {
+          "quantity": "other",
+          "value": "%d чел."
+        }
+      ]
+    },
+    {
+      "name": "ps_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d день"
+        },
+        {
+          "quantity": "few",
+          "value": "%d дня"
+        },
+        {
+          "quantity": "many",
+          "value": "%d дней"
+        },
+        {
+          "quantity": "other",
+          "value": "%d дн."
+        }
+      ]
+    },
+    {
+      "name": "px_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d штука"
+        },
+        {
+          "quantity": "few",
+          "value": "%d штуки"
+        },
+        {
+          "quantity": "many",
+          "value": "%d штук"
+        },
+        {
+          "quantity": "other",
+          "value": "%d шт."
+        }
+      ]
+    },
+    {
+      "name": "fe_chosen_limit",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Нельзя выбрать более %d чата отдельно"
+        },
+        {
+          "quantity": "few",
+          "value": "Нельзя выбрать более %d чатов отдельно"
+        },
+        {
+          "quantity": "many",
+          "value": "Нельзя выбрать более %d чатов отдельно"
+        },
+        {
+          "quantity": "other",
+          "value": "Нельзя выбрать более %d чатов отдельно"
+        }
+      ]
+    },
+    {
+      "name": "fe_removed_invalid",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Удалён %d чат, которого нет в списке"
+        },
+        {
+          "quantity": "few",
+          "value": "Удалено %d чата, которых нет в списке"
+        },
+        {
+          "quantity": "many",
+          "value": "Удалено %d чатов, которых нет в списке"
+        },
+        {
+          "quantity": "other",
+          "value": "Удалено %d чатов, которых нет в списке"
+        }
+      ]
+    },
+    {
+      "name": "fe_pick_limit",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Можно выбрать не более %d чата"
+        },
+        {
+          "quantity": "few",
+          "value": "Можно выбрать не более %d чатов"
+        },
+        {
+          "quantity": "many",
+          "value": "Можно выбрать не более %d чатов"
+        },
+        {
+          "quantity": "other",
+          "value": "Можно выбрать не более %d чатов"
+        }
+      ]
+    },
+    {
+      "name": "fe_preview_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Ожидается около %d чата"
+        },
+        {
+          "quantity": "few",
+          "value": "Ожидается около %d чатов"
+        },
+        {
+          "quantity": "many",
+          "value": "Ожидается около %d чатов"
+        },
+        {
+          "quantity": "other",
+          "value": "Ожидается около %d чатов"
+        }
+      ]
+    },
+    {
+      "name": "fe_selected_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Выбран %d"
+        },
+        {
+          "quantity": "few",
+          "value": "Выбрано %d"
+        },
+        {
+          "quantity": "many",
+          "value": "Выбрано %d"
+        },
+        {
+          "quantity": "other",
+          "value": "Выбрано %d"
+        }
+      ]
+    },
+    {
+      "name": "mp_item_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d элемент"
+        },
+        {
+          "quantity": "few",
+          "value": "%d элемента"
+        },
+        {
+          "quantity": "many",
+          "value": "%d элементов"
+        },
+        {
+          "quantity": "other",
+          "value": "%d эл."
+        }
+      ]
+    },
+    {
+      "name": "fw_forwarded_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Переслано %d сообщение"
+        },
+        {
+          "quantity": "few",
+          "value": "Переслано %d сообщения"
+        },
+        {
+          "quantity": "many",
+          "value": "Переслано %d сообщений"
+        },
+        {
+          "quantity": "other",
+          "value": "Переслано %d сообщений"
+        }
+      ]
+    },
+    {
+      "name": "fw_forward_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Переслать %d сообщение"
+        },
+        {
+          "quantity": "few",
+          "value": "Переслать %d сообщения"
+        },
+        {
+          "quantity": "many",
+          "value": "Переслать %d сообщений"
+        },
+        {
+          "quantity": "other",
+          "value": "Переслать %d сообщений"
+        }
+      ]
+    },
+    {
+      "name": "poll_voters",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Проголосовал %d человек"
+        },
+        {
+          "quantity": "few",
+          "value": "Проголосовало %d человека"
+        },
+        {
+          "quantity": "many",
+          "value": "Проголосовало %d человек"
+        },
+        {
+          "quantity": "other",
+          "value": "Проголосовало %d чел."
+        }
+      ]
+    },
+    {
+      "name": "gw_winners_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d победитель"
+        },
+        {
+          "quantity": "few",
+          "value": "%d победителя"
+        },
+        {
+          "quantity": "many",
+          "value": "%d победителей"
+        },
+        {
+          "quantity": "other",
+          "value": "%d поб."
+        }
+      ]
+    },
+    {
+      "name": "gw_unclaimed_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Не получен %d приз"
+        },
+        {
+          "quantity": "few",
+          "value": "Не получено %d приза"
+        },
+        {
+          "quantity": "many",
+          "value": "Не получено %d призов"
+        },
+        {
+          "quantity": "other",
+          "value": "Не получено %d призов"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Живая геопозиция · %d час"
+        },
+        {
+          "quantity": "few",
+          "value": "Живая геопозиция · %d часа"
+        },
+        {
+          "quantity": "many",
+          "value": "Живая геопозиция · %d часов"
+        },
+        {
+          "quantity": "other",
+          "value": "Живая геопозиция · %d ч"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Живая геопозиция · %d минута"
+        },
+        {
+          "quantity": "few",
+          "value": "Живая геопозиция · %d минуты"
+        },
+        {
+          "quantity": "many",
+          "value": "Живая геопозиция · %d минут"
+        },
+        {
+          "quantity": "other",
+          "value": "Живая геопозиция · %d мин"
+        }
+      ]
+    },
+    {
+      "name": "loc_accuracy",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Точность около %d метра"
+        },
+        {
+          "quantity": "few",
+          "value": "Точность около %d метров"
+        },
+        {
+          "quantity": "many",
+          "value": "Точность около %d метров"
+        },
+        {
+          "quantity": "other",
+          "value": "Точность около %d м"
+        }
+      ]
+    },
+    {
+      "name": "loc_proximity",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Радиус оповещения: %d метр"
+        },
+        {
+          "quantity": "few",
+          "value": "Радиус оповещения: %d метра"
+        },
+        {
+          "quantity": "many",
+          "value": "Радиус оповещения: %d метров"
+        },
+        {
+          "quantity": "other",
+          "value": "Радиус оповещения: %d м"
+        }
+      ]
+    },
+    {
+      "name": "ft_topic_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d тема"
+        },
+        {
+          "quantity": "few",
+          "value": "%d темы"
+        },
+        {
+          "quantity": "many",
+          "value": "%d тем"
+        },
+        {
+          "quantity": "other",
+          "value": "%d тем"
+        }
+      ]
+    },
+    {
+      "name": "mb_comments_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d комментарий"
+        },
+        {
+          "quantity": "few",
+          "value": "%d комментария"
+        },
+        {
+          "quantity": "many",
+          "value": "%d комментариев"
+        },
+        {
+          "quantity": "other",
+          "value": "%d коммент."
+        }
+      ]
+    },
+    {
+      "name": "lv_new_interactions",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d новое взаимодействие"
+        },
+        {
+          "quantity": "few",
+          "value": "%d новых взаимодействия"
+        },
+        {
+          "quantity": "many",
+          "value": "%d новых взаимодействий"
+        },
+        {
+          "quantity": "other",
+          "value": "%d новых взаимодействий"
+        }
+      ]
+    },
+    {
+      "name": "lv_more_sources",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Ещё %d источник"
+        },
+        {
+          "quantity": "few",
+          "value": "Ещё %d источника"
+        },
+        {
+          "quantity": "many",
+          "value": "Ещё %d источников"
+        },
+        {
+          "quantity": "other",
+          "value": "Ещё %d источников"
+        }
+      ]
+    },
+    {
+      "name": "lv_open_chat_unread",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Открыть чат трансляции: %d новое сообщение"
+        },
+        {
+          "quantity": "few",
+          "value": "Открыть чат трансляции: %d новых сообщения"
+        },
+        {
+          "quantity": "many",
+          "value": "Открыть чат трансляции: %d новых сообщений"
+        },
+        {
+          "quantity": "other",
+          "value": "Открыть чат трансляции: %d новых сообщений"
+        }
+      ]
+    },
+    {
+      "name": "lv_view_members",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Показать %d участника"
+        },
+        {
+          "quantity": "few",
+          "value": "Показать %d участников"
+        },
+        {
+          "quantity": "many",
+          "value": "Показать %d участников"
+        },
+        {
+          "quantity": "other",
+          "value": "Показать %d участников"
+        }
+      ]
+    },
+    {
+      "name": "cp_live_online_now",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Сейчас на связи: %d человек."
+        },
+        {
+          "quantity": "few",
+          "value": "Сейчас на связи: %d человека."
+        },
+        {
+          "quantity": "many",
+          "value": "Сейчас на связи: %d человек."
+        },
+        {
+          "quantity": "other",
+          "value": "Сейчас на связи: %d чел."
+        }
+      ]
+    },
+    {
+      "name": "cp_n_online",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d человек онлайн"
+        },
+        {
+          "quantity": "few",
+          "value": "%d человека онлайн"
+        },
+        {
+          "quantity": "many",
+          "value": "%d человек онлайн"
+        },
+        {
+          "quantity": "other",
+          "value": "%d чел. онлайн"
+        }
+      ]
+    },
+    {
+      "name": "cp_media_skipped",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Не удалось прочитать %d медиафайл, остальное отправлено"
+        },
+        {
+          "quantity": "few",
+          "value": "Не удалось прочитать %d медиафайла, остальное отправлено"
+        },
+        {
+          "quantity": "many",
+          "value": "Не удалось прочитать %d медиафайлов, остальное отправлено"
+        },
+        {
+          "quantity": "other",
+          "value": "Не удалось прочитать %d медиафайлов, остальное отправлено"
+        }
+      ]
+    },
+    {
+      "name": "cp_copied_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Скопировано %d сообщение"
+        },
+        {
+          "quantity": "few",
+          "value": "Скопировано %d сообщения"
+        },
+        {
+          "quantity": "many",
+          "value": "Скопировано %d сообщений"
+        },
+        {
+          "quantity": "other",
+          "value": "Скопировано %d сообщений"
+        }
+      ]
+    },
+    {
+      "name": "cp_n_typing",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d человек печатает…"
+        },
+        {
+          "quantity": "few",
+          "value": "%d человека печатают…"
+        },
+        {
+          "quantity": "many",
+          "value": "%d человек печатают…"
+        },
+        {
+          "quantity": "other",
+          "value": "%d чел. печатают…"
+        }
+      ]
+    },
+    {
+      "name": "cp_unread_a11y",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Непрочитанное сообщение: %d, перейти к последним"
+        },
+        {
+          "quantity": "few",
+          "value": "Непрочитанных сообщения: %d, перейти к последним"
+        },
+        {
+          "quantity": "many",
+          "value": "Непрочитанных сообщений: %d, перейти к последним"
+        },
+        {
+          "quantity": "other",
+          "value": "Непрочитанных сообщений: %d, перейти к последним"
+        }
+      ]
+    },
+    {
+      "name": "sm_paid_per_message",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "За каждое сообщение — %d звезда"
+        },
+        {
+          "quantity": "few",
+          "value": "За каждое сообщение — %d звезды"
+        },
+        {
+          "quantity": "many",
+          "value": "За каждое сообщение — %d звёзд"
+        },
+        {
+          "quantity": "other",
+          "value": "За каждое сообщение — %d звёзд"
+        }
+      ]
+    },
+    {
+      "name": "sm_refunded_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Возвращена %d звезда"
+        },
+        {
+          "quantity": "few",
+          "value": "Возвращено %d звезды"
+        },
+        {
+          "quantity": "many",
+          "value": "Возвращено %d звёзд"
+        },
+        {
+          "quantity": "other",
+          "value": "Возвращено %d звёзд"
+        }
+      ]
+    },
+    {
+      "name": "sm_channel_dm_price",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "В этом канале сообщение можно отправить за %d звезду"
+        },
+        {
+          "quantity": "few",
+          "value": "В этом канале сообщение можно отправить за %d звезды"
+        },
+        {
+          "quantity": "many",
+          "value": "В этом канале сообщение можно отправить за %d звёзд"
+        },
+        {
+          "quantity": "other",
+          "value": "В этом канале сообщение можно отправить за %d звёзд"
+        }
+      ]
+    },
+    {
+      "name": "unit_seconds",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d секунда"
+        },
+        {
+          "quantity": "few",
+          "value": "%d секунды"
+        },
+        {
+          "quantity": "many",
+          "value": "%d секунд"
+        },
+        {
+          "quantity": "other",
+          "value": "%d сек."
+        }
+      ]
+    },
+    {
+      "name": "unit_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d минута"
+        },
+        {
+          "quantity": "few",
+          "value": "%d минуты"
+        },
+        {
+          "quantity": "many",
+          "value": "%d минут"
+        },
+        {
+          "quantity": "other",
+          "value": "%d мин"
+        }
+      ]
+    },
+    {
+      "name": "unit_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d час"
+        },
+        {
+          "quantity": "few",
+          "value": "%d часа"
+        },
+        {
+          "quantity": "many",
+          "value": "%d часов"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ч"
+        }
+      ]
+    },
+    {
+      "name": "unit_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d день"
+        },
+        {
+          "quantity": "few",
+          "value": "%d дня"
+        },
+        {
+          "quantity": "many",
+          "value": "%d дней"
+        },
+        {
+          "quantity": "other",
+          "value": "%d дн."
+        }
+      ]
+    },
+    {
+      "name": "sm_proximity_metres",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d метр"
+        },
+        {
+          "quantity": "few",
+          "value": "%d метра"
+        },
+        {
+          "quantity": "many",
+          "value": "%d метров"
+        },
+        {
+          "quantity": "other",
+          "value": "%d м"
+        }
+      ]
+    },
+    {
+      "name": "lg_resend_in",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Повторно можно отправить через %d секунду"
+        },
+        {
+          "quantity": "few",
+          "value": "Повторно можно отправить через %d секунды"
+        },
+        {
+          "quantity": "many",
+          "value": "Повторно можно отправить через %d секунд"
+        },
+        {
+          "quantity": "other",
+          "value": "Повторно можно отправить через %d сек."
+        }
+      ]
+    },
+    {
+      "name": "cl_unread_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d непрочитанное"
+        },
+        {
+          "quantity": "few",
+          "value": "%d непрочитанных"
+        },
+        {
+          "quantity": "many",
+          "value": "%d непрочитанных"
+        },
+        {
+          "quantity": "other",
+          "value": "%d непрочитанных"
+        }
+      ]
+    },
+    {
+      "name": "ap_chats_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d чат"
+        },
+        {
+          "quantity": "few",
+          "value": "%d чата"
+        },
+        {
+          "quantity": "many",
+          "value": "%d чатов"
+        },
+        {
+          "quantity": "other",
+          "value": "%d чатов"
+        }
+      ]
+    },
+    {
+      "name": "gs_free_left",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Осталось %d бесплатный поиск на сегодня"
+        },
+        {
+          "quantity": "few",
+          "value": "Осталось %d бесплатных поиска на сегодня"
+        },
+        {
+          "quantity": "many",
+          "value": "Осталось %d бесплатных поисков на сегодня"
+        },
+        {
+          "quantity": "other",
+          "value": "Осталось %d бесплатных поисков на сегодня"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1371 @@
+import { senderLabelWidths } from '../../util/senderLabelWidths';
+import { BubbleGlassGeometry } from './BubbleGlassGeometry';
+import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
+import { RowLeaveChannel } from '../../util/rowLeaveChannel';
+import { MessageDragGesture } from '../../util/messageDragGesture';
+import { configureMessageDrag } from '../../services/MessageDragSource';
+import { messageDragType } from '../../util/messageDrag';
+import { JUMP_FOCUS_BRIGHTNESS, JUMP_FOCUS_SCALE } from '../../util/bubbleFocusChannel';
+import { SymbolGlyphModifier } from '@kit.ArkUI';
+import { MessageMenuTransitions } from '../../util/messageMenuTransitions';
+import {
+  isEdgeSwipeStart, SWIPE_REPLY_MAX, SWIPE_REPLY_TRIGGER,
+  SWIPE_SELECT_MAX, SWIPE_SELECT_TRIGGER
+} from '../../util/swipeReplyGesture';
+import { MessageEntry } from '../../store/MessageEntry';
+import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
+import { getAccentColorStore, getTdClient, getUserStore } from '../../tdkit/Globals';
+import {
+  BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth,
+  hitSenderAvatarColumn
+} from '../../util/mediaBox';
+import { editableCached, ensureEditable } from '../../util/messageEditable';
+import { deletableCached, ensureDeletable } from '../../util/messageDeletable';
+import {
+  animationDurationFor, scrollActiveNow
+} from '../../util/scrollEffects';
+import { MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
+import {
+  overlayBackdropBlur, containerBlur, overlayGlassFill, overlayMaterial
+} from '../../util/overlayMaterial';
+import {
+  GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands
+} from '../../util/bubbleTail';
+import {
+  glassBodyFallbackPainted, glassBodyPainted, glassPaintReady, tailShapeCommands
+} from '../../util/bubbleGlassPath';
+import { timeLayerMinWidth } from '../../util/timeLayerWidth';
+import { cornerPx } from '../../util/bubbleCornerInset';
+import {
+  senderAvatarFor, senderChannelKey, subscribeSenderAvatar
+} from '../../util/senderAvatarChannel';
+import { sendStateFor, subscribeSendState } from '../../util/sendStateChannel';
+import { str } from '../../util/strings';
+import {
+  subscribeTranslationStatus, TranslationStatus, translationStatusFor
+} from '../../util/translationChannel';
+import {
+  subscribeViewCount, viewCountLabelFor, viewsReserve
+} from '../../util/viewCountChannel';
+import { pinForTranslationGrowth } from '../../util/translationGrowthPin';
+import {
+  accentSoft, AVATAR_PALETTE, COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT,
+  COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, bubbleTextFor
+} from '../../util/theme';
+import { formatClockTime } from '../../util/formatTime';
+import { probeHit } from '../../util/panelProbe';
+import { CachedImage } from '../common/CachedImage';
+import { SenderRoleTag } from './SenderRoleTag';
+import { SenderAnimatedLayer } from './SenderAnimatedLayer';
+import { senderHasAnimatedPhoto } from '../../services/PhotoAnimationFetch';
+import { logW } from '../../util/log';
+import { menuPreviewCompact } from '../../util/menuPreview';
+// 气泡玻璃自绘：明确不指望 systemMaterial（系统已收回组件级材质），
+// 和输入栏同一对函数，受「界面模糊质感」开关与档位控制。
+import { bubbleGlassBlurStyle, bubbleGlassFill } from '../../util/surfaceGlass';
+import { firstFinger } from '../../util/firstFinger';
+import { linkifyRuns } from '../../util/linkify';
+import { RichRun } from '../../util/richText';
+import { linkTextHidesUrl } from '../../util/messageLinkAction';
+
+const QUICK_REACTIONS: string[] = ['❤️', '👍', '👎', '🔥', '🥰', '👏'];
+// 左滑回复的几何与边缘判据见 util/swipeReplyGesture（与 MessageBubble 共用）。
+const REPLY_QUOTE_WIDTH_RATIO: number = 0.76;
+const REPLY_QUOTE_LINE_H: number = 16;
+
+// Narrow contract on purpose: the lightweight renderer never receives media,
+// poll, game, file or playback callbacks. The page-owned MessageBubbleActions
+// object is structurally compatible with this subset.
+export interface LightweightPlainTextActions {
+  rowLeave: RowLeaveChannel;
+  onAvatarTap: (userId: number) => void;
+  onAvatarLongPress: (userId: number, name: string) => void;
+  onReplyTap: (messageId: number, fromId: number) => void;
+  onSetReaction: (messageId: number, emoji: string, chosen: boolean) => void;
+  onReplyTo: (messageId: number) => void;
+  onEditMsg: (messageId: number) => void;
+  onTranslateMsg: (messageId: number) => void;
+  onPinMsg: (messageId: number, unpin: boolean) => void;
+  onSetDefaultReaction: (emoji: string) => void;
+  onCopyText: (messageId: number) => void;
+  onSelectText: (messageId: number) => void;
+  onLinkTap: (url: string, askFirst: boolean) => void;
+  onCopyLink: (messageId: number) => void;
+  onForwardMessages: (messageIds: number[]) => void;
+  onSaveMessages: (messageIds: number[]) => void;
+  onRepeatMessages: (messageIds: number[]) => void;
+  onViewSenderHistory: (senderId: number) => void;
+  onReportMsg: (messageId: number) => void;
+  onSelectMessages: (messageIds: number[]) => void;
+  onDeleteMsg: (messageId: number) => void;
+  onOpenReactions: (messageId: number) => void;
+  onRetryTranslation: (messageId: number) => void;
+}
+
+const EMPTY_ACTIONS: LightweightPlainTextActions = {
+  rowLeave: new RowLeaveChannel(),
+  onAvatarTap: (_id: number): void => {},
+  onAvatarLongPress: (_id: number, _name: string): void => {},
+  onReplyTap: (_id: number, _fromId: number): void => {},
+  onSetReaction: (_id: number, _emoji: string, _chosen: boolean): void => {},
+  onReplyTo: (_id: number): void => {}, onEditMsg: (_id: number): void => {},
+  onTranslateMsg: (_id: number): void => {},
+  onPinMsg: (_id: number, _unpin: boolean): void => {},
+  onSetDefaultReaction: (_emoji: string): void => {},
+  onCopyText: (_id: number): void => {}, onSelectText: (_id: number): void => {},
+  onLinkTap: (_url: string, _askFirst: boolean): void => {},
+  onCopyLink: (_id: number): void => {},
+  onForwardMessages: (_ids: number[]): void => {},
+  onSaveMessages: (_ids: number[]): void => {},
+  onRepeatMessages: (_ids: number[]): void => {},
+  onViewSenderHistory: (_id: number): void => {},
+  onReportMsg: (_id: number): void => {},
+  onSelectMessages: (_ids: number[]): void => {},
+  onDeleteMsg: (_id: number): void => {},
+  onOpenReactions: (_id: number): void => {},
+  onRetryTranslation: (_id: number): void => {}
+};
+
+// The avatar remains independently subscribed so an asynchronous avatar path
+// refreshes only this 38vp node, not the whole lightweight row.
+//
+// P4 批 1：迁 @ComponentV2。判读依据（批 0.5，1370 个真机复用样本）：
+// aboutToRecycle/aboutToReuse 都触发；aboutToReuse 时 @Param 已是新值、
+// @Local 已重置——所以重挂订阅在 aboutToReuse 里**同步**做，V1 时代的
+// nextFrameQueue 延帧兜底、reuseParam 读参、按 recycledKey 保留 path
+// （issue #137 的修法）整套都不再需要：同步重播种的窗口是零帧，比"保留旧
+// 值等下一帧纠正"更不闪。收益本体：@Param 引用语义替掉 @Prop 深拷贝。
+// （原 struct 里的 appearanceEpoch/accent() 是死代码，build 从未引用，随迁移清掉。）
+// 占位用的内边距（第四刀，2026-09-14）：原来这两个位置各垫一个定宽空 Column，每行白付
+// 一个节点、一层测量和一份复用时要重跑的更新。换成所在容器的内边距，占的宽度逐像素不变。
+// 没有尾巴时给尾巴留的 7vp 位（原来的空 Column 就写死 7；尾巴节点本身宽 TAIL_W=8，
+// 靠负外边距往气泡里压），见 tailGutterPadding。
+const TAIL_GUTTER_LEFT: Padding = { left: 7 };
+const TAIL_GUTTER_RIGHT: Padding = { right: 7 };
+// 群聊来信不显示头像时给头像留的 44vp 位（头像 38 + 右边距 6），见 avatarGutterPadding。
+const AVATAR_GUTTER: Padding = { left: BUBBLE_AVATAR_GUTTER_VP };
+const NO_GUTTER: Padding = {};
+const SOLID_BUBBLE_SHADOW: ShadowOptions = {
+  radius: 2, color: '#14000000', offsetX: 0, offsetY: 1
+};
+
+@ComponentV2
+struct LightweightSenderAvatar {
+  @Param senderId: number = 0;
+  @Param senderIsUser: boolean = true;
+  @Param initialPath: string = '';
+  @Param initials: string = '?';
+  @Local path: string = '';
+  // 头像带不带动画；带的话叠一层 SenderAnimatedLayer（issue #140，同 LiveSenderAvatar）。
+  @Local animated: boolean = false;
+  // 无装饰器成员复用时不重置（官方表格 + 批 0.5 实测），照旧记订阅与回收态。
+  private unsub: (() => void) | null = null;
+  private attachedKey: string = '';
+
+  private attach(senderId: number, senderIsUser: boolean, initialPath: string): void {
+    const key: string = senderChannelKey(senderId, senderIsUser);
+    const known: string = senderAvatarFor(key);
+    this.animated = senderHasAnimatedPhoto(senderId, senderIsUser);
+    if (this.unsub !== null && this.attachedKey === key) {
+      // 同 key 短路：订阅不动，只重新播种（@Local 复用时被框架清空）。
+      this.path = known !== '' ? known : initialPath;
+      return;
+    }
+    this.detach();
+    this.attachedKey = key;
+    this.path = known !== '' ? known : initialPath;
+    this.unsub = subscribeSenderAvatar(key, (path: string): void => {
+      this.path = path;
+      this.animated = senderHasAnimatedPhoto(this.senderId, this.senderIsUser);
+    });
+  }
+
+  // 非复用路径上同一实例真的换了发送者时兜底重挂。复用路径靠 aboutToReuse
+  // ——批 0.5 实测 @Monitor 在复用期完全静默（453 次换行复用 0 触发），
+  // 这里永远替代不了 aboutToReuse 里的无条件重挂。
+  // 第三个参数传 ''：@Param 逐个落地，senderId 变化时 initialPath 可能还是
+  // 上一行的（I-2 的串行头像坑在非复用路径依旧成立），最差先显示首字母。
+  @Monitor('senderId', 'senderIsUser')
+  onSenderChanged(): void {
+    this.attach(this.senderId, this.senderIsUser, '');
+  }
+
+  // 与 LiveSenderAvatar 同一处理：上面传 '' 是为了不画上一个人的头像，代价是
+  // 通道没缓存时会空一下（Repeat 外壳复用打开后走的正是这条路，那一闪就显出来
+  // 了）。这里**只在 path 为空时**补种，两头都不吃亏。
+  @Monitor('initialPath')
+  onInitialPathArrived(): void {
+    if (this.path === '' && this.initialPath !== '') {
+      this.path = this.initialPath;
+    }
+  }
+
+  private detach(): void {
+    if (this.unsub !== null) {
+      this.unsub();
+      this.unsub = null;
+    }
+    this.attachedKey = '';
+  }
+
+  aboutToAppear(): void {
+    this.attach(this.senderId, this.senderIsUser, this.initialPath);
+  }
+  aboutToDisappear(): void {
+    this.detach();
+  }
+  aboutToRecycle(): void {
+    this.detach();
+  }
+  aboutToReuse(): void {
+    // @Param 已是新值（批 0.5 判读 Q1b），直接同步重挂+重播种。initialPath
+    // 也是新行的值，V1 时代"watch 里不敢用 initialPath"的 I-2 坑在这条路
+    // 不存在。
+    this.attach(this.senderId, this.senderIsUser, this.initialPath);
+  }
+
+  build() {
+    Stack() {
+      // 底色圆和首字母合成一个 Text（背景色 + 19 圆角 = 原来的 Circle），头像少一个节点。
+      // 有图时只清空文字、不藏背景：解码到手之前垫着的仍是原来的彩色圆底。
+      Text(this.path === '' ? this.initials : '')
+        .width(38).height(38).borderRadius(19)
+        .backgroundColor(AVATAR_PALETTE[Math.abs(this.senderId) % AVATAR_PALETTE.length])
+        .textAlign(TextAlign.Center).align(Alignment.Center)
+        .fontColor(Color.White).fontSize(15.2).fontWeight(FontWeight.Medium);
+      CachedImage({ spec: {
+        path: this.path, boxWidth: 38, boxHeight: 38, radius: 19, fit: ImageFit.Cover,
+        // 和 LiveSenderAvatar 同一理由：头像被大图挤出 LRU 后重解码会闪
+        // （issue #137）。两处要一起开，否则纯文本行的头像仍然会闪。
+        pinBounded: true,
+        syncDisplay: true
+      } }).visibility(this.path !== '' ? Visibility.Visible : Visibility.None);
+      if (this.animated) {
+        SenderAnimatedLayer({ senderId: this.senderId, senderIsUser: this.senderIsUser, avatarSize: 38 });
+      }
+    }.width(38).height(38);
+  }
+}
+
+
+// 按压反馈这四组样式不读任何组件状态，随批 2 迁成全局 @Styles——
+// @ComponentV2 不支持成员 @Styles。
+@Styles
+function plainBubbleNormalStyle() { .renderGroup(false).opacity(1).scale({ x: 1, y: 1 }) }
+
+@Styles
+function plainBubblePressedStyle() { .renderGroup(true).opacity(0.84).scale({ x: 0.992, y: 0.992 }) }
+
+@Styles
+function plainMenuNormalStyle() { .opacity(1).scale({ x: 1, y: 1 }) }
+
+@Styles
+function plainMenuPressedStyle() { .opacity(0.72).scale({ x: 0.94, y: 0.94 }) }
+
+// P4 批 2：主体迁 @ComponentV2（判读依据同批 1，见 survey 批 0.5 节）。
+// 收益本体：@Prop 深拷贝 → @Param 引用（msg/memberIds/actions 都是每次复用
+// 整套重灌的大头）；延帧兜底（nextFrameQueue/reuseParam）整套退役。
+@ComponentV2
+export struct LightweightPlainTextBubble {
+  @Param jumpFocus: number = 0;
+  // 1 = 这一行正在被删除，淡出等 TDLib 的删除到达（issue #149）。
+  @Param leaving: number = 0;
+
+  // 全局环境值走 chatEnv 镜像（批 0 建的，V2 没有 @StorageProp）。@Trace
+  // 字段在 build 里读到即登记依赖，写入点双写保证跟手。
+  private env: ChatEnvMirror = chatEnv;
+
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.env.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
+  @Require @Param msg: MessageEntry;
+  // **这里刻意不合并成 group/data 两个对象**，和 MessageBubble 相反。
+  //
+  // 09-03 两份真机对照把这条钉死了：合并省的是"逐个 @Param 登记 + 每次
+  // fireChange 同步排一遍 idle 队列"的固定开销，代价是"整棵子树被粗粒度失效"。
+  //   相册行（MessageBubble）：12 个数组下发、子树里还有 6–9 个 LiveThumbImage
+  //     各自一份 @Param —— 省的远大于赔的，复用 −48%、首建 −62%。
+  //   纯文本行（本组件）：本来就没几个 @Param —— 只赔不赚，复用 +38%。
+  // 所以这一支保留细粒度字段。**别为了"两边写法一致"把它合了。**
+  @Param chatId: number = 0;
+  @Param contentWidth: number = 360;
+  // 「能不能编辑」到货后触发菜单重绘。判据与理由和 MessageBubble 完全一致，
+  // 见 util/messageEditable 文件头（issue #179）。
+  // 菜单「能否编辑/删除」的异步答案到达计数。两个用途合成一个：**每多一个
+  // @Local，复用重置就多一次 fireChange**，而这两个计数的语义完全相同——都只是
+  // "答案到了、重算一遍"。读到它 >= 0 即建立依赖（值本身无意义）。
+  @Local private menuTick: number = 0;
+  // 「能不能删」到货后触发菜单重绘。判据与理由和 MessageBubble 完全一致，
+  // 见 util/messageDeletable 文件头。
+  @Param isGroup: boolean = false;
+  @Param themeBubbleOut: string = '';
+  @Param showUnreadDivider: boolean = false;
+  @Param dividerIsResume: boolean = false;
+  @Param dateLabel: string = '';
+  @Param editingActive: boolean = false;
+  @Param canReply: boolean = false;
+  @Param isPinnedMsg: boolean = false;
+  @Param canReport: boolean = true;
+  @Param showAvatar: boolean = true;
+  @Param showSenderName: boolean = true;
+  @Param animateIn: boolean = false;
+  @Param memberIds: number[] = [];
+  @Param nowSec: number = 0;
+  // 档位判据不再看"这一行在不在屏上"（2026-11-06）：onVisibleAreaChange 在
+  // 滚动与行重建期间会在行仍可见时翻 false，导致同一屏里一半气泡走玻璃档、
+  // 一半掉进实心档，看起来就是"两种厚度"。见 bubbleMaterialLive()。
+  // 玻璃层的尺寸。**普通字段，不是 @Local**（2026-11-06，Insight 采集驱动）。
+  //
+  // 玻璃层的几何缓存（可观测，属性级依赖）。所有玻璃背景属性直接读 geo.w/geo.h：
+  // 测量完成只会重算"读过这两个字段"的那几个属性，不会重跑内容 build。
+  // 历史：@Local 版本在 18.7s 滚动采集里变了 2588 次、单次最多波及 51 个组件
+  // （复用把 @Local 重置成 0 再填回）；中间态用过 glassStamp 记号，依赖关系不直观。
+  private geo: BubbleGlassGeometry = new BubbleGlassGeometry();
+  // 长按菜单的两条动效链，按实例缓存（普通字段，写它不该惊动任何节点）。
+  private menuFx: MessageMenuTransitions = new MessageMenuTransitions();
+  // 这次布局实测到的尺寸。普通成员，复用不重置——复用时用它把 geo 填回去
+  // （尺寸没变时 onSizeChange 不会再回调）。
+  private measuredGlassW: number = 0;
+  private measuredGlassH: number = 0;
+
+  // 名字行宽度：读当前发送者的可观测单元（首次读取惰性创建，不产生通知）。
+  // 这样依赖只落在"这个发送者"上，别的发送者量到宽度不会惊动本行。
+  private senderLabelWidth(): number {
+    return senderLabelWidths.cell(this.msg.senderName).width;
+  }
+
+  private bubbleFillColor(): ResourceColor {
+    if (this.env.appearanceEpoch < 0) {
+      return Color.Transparent; // 只为让 ArkUI 记下对 epoch 的依赖
+    }
+    if (this.msg.isOutgoing) {
+      return this.themeBubbleOut !== '' ? this.themeBubbleOut : COLOR_BUBBLE_OUT;
+    }
+    return COLOR_BUBBLE_IN;
+  }
+
+  private tailCornerRadius(): number {
+    const corners = this.bubbleCorners();
+    const radius = cornerPx(this.msg.isOutgoing ? corners.bottomRight : corners.bottomLeft);
+    if (this.geo.w <= 0 || this.geo.h <= 0) {
+      return radius;
+    }
+    return Math.max(0, Math.min(radius, (this.geo.w - (TAIL_W - 2)) / 2, this.geo.h / 2));
+  }
+
+  @Builder
+  bubbleTail(outgoing: boolean) {
+    if (this.glassBodyOn()) {
+      // 玻璃气泡的尾巴：实心玻璃色三角。材质是合成层、不吃 clipShape，挂上去会
+      // 在三角外糊出一块矩形背板，所以这里只用它的回退色（见 glassTailFill）。
+      // 玻璃档下尾巴只占位：整块形状由上层容器的轮廓裁剪画出来。
+      Column().width(TAIL_W).height(TAIL_H).margin(outgoing ? { left: -1 } : { right: -1 });
+    } else {
+      // 和玻璃档同一条曲线（tailShapeCommands），两档尾巴必须长得一样。
+      // strokeWidth(0)：Path 不显式关描边就会沿轮廓画一圈黑线，尾巴看着像被
+      // 勾了边（真机实拍确认）。填充色由 fill 给，描边一律不要。
+      Path({ width: TAIL_W + this.tailCornerRadius(), height: Math.max(TAIL_H, this.tailCornerRadius()) })
+        .commands(tailShapeCommands(outgoing, TAIL_W, TAIL_H, vp2px(1), this.tailCornerRadius(), 2))
+        .fill(this.bubbleFillColor())
+        .stroke(Color.Transparent)
+        .strokeWidth(0)
+        // 压叠 2px 而不是 1px：去掉黑描边之后，尾巴和气泡是两个相邻节点，
+        // 1px 压叠下拼缝的抗锯齿会露出一条细线（之前被那圈黑边盖住了）。
+        // 只影响实心档——玻璃档整块是一条轮廓裁出来的，没有拼缝。
+        .margin(outgoing ? { left: -2 - this.tailCornerRadius() } : { right: -2 - this.tailCornerRadius() });
+    }
+  }
+
+  // 材质档只看全局开关：**不看单行可见性**。
+  //
+  // 原来还有 `&& this.onScreen`，本意是省掉离屏行的模糊合成。代价是
+  // onVisibleAreaChange([0, 0.01]) 在滚动/复用期间并不可靠——实测同一行会连续
+  // 收到两次 false，而它还在屏上。于是一屏里玻璃档与实心档混着出现：玻璃档是
+  // 半透明 + 1vp 描边，实心档是不透明底 + 外投影，肉眼就是"两种气泡厚度"。
+  private bubbleMaterialLive(): boolean {
+    return this.env.bubbleMaterialOn && !this.env.powerSaving;
+  }
+
+  // 见 MessageBubble.glassReady()：**容器**这一层要等量到尺寸，
+  // 否则没裁剪的那一帧会把 7vp 尾巴留白一起涂满，左边缘外扩。
+  private glassReady(): boolean {
+    return this.bubbleMaterialLive() && glassPaintReady(true, this.geo.w, this.geo.h);
+  }
+
+  // 见 MessageBubble.glassBodyOn()：玻璃结构不等测量，避免首帧退回实心档。
+  private glassBodyOn(): boolean {
+    return this.bubbleMaterialLive() && glassBodyPainted(true, this.geo.w, this.geo.h);
+  }
+
+  private glassBodyFallbackOn(): boolean {
+    return this.bubbleMaterialLive() && glassBodyFallbackPainted(true, this.geo.w, this.geo.h);
+  }
+
+  private bubbleBg(): ResourceColor {
+    if (!this.bubbleMaterialLive()) {
+      return this.bubbleFillColor();
+    }
+    return this.glassBodyFallbackOn() ? this.glassBg() : Color.Transparent;
+  }
+
+  // 见 MessageBubble 同一处：这里只是外层轮廓就绪前的本体玻璃兜底。
+  private glassBg(): ResourceColor {
+    return this.glassBodyFallbackOn()
+      ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
+  }
+
+  // 【不要再给气泡本体挂 backgroundBlurStyle】(2026-11-06)
+  //
+  // 本体的模糊只在"还没量到尺寸"的首帧用，量到之后本体会变成 Transparent。
+  // 但 backgroundBlurStyle(undefined) **不会撤掉已经挂上的模糊**——那一层会留在
+  // 节点上，叠在容器的玻璃下面，看起来就是"气泡多叠了一层/厚一层"。滑出去再
+  // 复用回来的行因为一开始就有尺寸、从没挂过本体模糊，所以看起来是正常的，
+  // 正好对应用户报的"刚进会话厚，滑动后正常"。
+  //
+  // 现在本体只承担填充色（见 bubbleBg），模糊一律由容器负责。首帧的差别只剩
+  // "模糊晚一帧出现"，不再有残留层。
+
+  private containerGlassBg(): ResourceColor {
+    return this.glassReady() ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
+  }
+
+  private containerGlassBlurStyle(): BlurStyle | undefined {
+    // 滚动期不上模糊：真机 GPU 采集里，聊天页滚动 85–91% 满载，
+    // 两个材质开关都关只掉 5–6 点——模糊就是这 5–6 点，滚动时省掉它。
+    // 填充色与轮廓保留，所以只是"模糊晚一点出现"，不是换档。
+    if (this.env.scrollActive) {
+      return undefined;
+    }
+    return this.glassReady() ? bubbleGlassBlurStyle() : undefined;
+  }
+
+  // 材质本体按节点的 borderRadius 画圆角，裁剪路径只管尾巴那一侧：尾巴侧的底角设 0。
+  private glassRadius(): BorderRadiuses {
+    const r = this.bubbleCorners();
+    if (!this.hasTail()) {
+      return r;
+    }
+    return this.msg.isOutgoing
+      ? { topLeft: r.topLeft, topRight: r.topRight, bottomRight: 0, bottomLeft: r.bottomLeft }
+      : { topLeft: r.topLeft, topRight: r.topRight, bottomRight: r.bottomRight, bottomLeft: 0 };
+  }
+
+  private solidBodyShadow(): ShadowOptions | undefined {
+    // 滚动期不画投影：每条消息一次阴影模糊，逐行叠加就是按行计的填充成本。
+    if (this.env.scrollActive || this.bubbleMaterialLive() || this.hasTail()) {
+      return undefined;
+    }
+    return SOLID_BUBBLE_SHADOW;
+  }
+
+  // 见 MessageBubble.glassOutline()：材质的边框只沿节点 border-box 画，尾巴那一侧
+  // 补不上，自己沿整条轮廓描一圈；画在 .background() 里，不参与命中测试。
+  @Builder
+  solidShellShadow() {
+    // 滚动期整块不建（同 MessageBubbleShell：clipShape + shadow 都是离屏开销）。
+    if (!this.env.scrollActive && this.hasTail() && this.geo.w > TAIL_W - 1 && this.geo.h > 0) {
+      // 有尾角时在尾巴（zIndex 0）与主体（zIndex 1）正下方垫与主体同尺寸的标准圆角矩形投影：
+      // 尾角根部投影被上方不透明的尾巴 Path 盖死（无竖向暗缝），同时避开 PathShape 裁剪与 fill:false 离屏遮罩。
+      Column() {}
+        .width(this.geo.w - (TAIL_W - 2)).height(this.geo.h)
+        .position({ x: this.msg.isOutgoing ? 0 : TAIL_W - 2, y: 0 })
+        .backgroundColor(this.bubbleFillColor())
+        .borderRadius(this.bubbleCorners())
+        .shadow(SOLID_BUBBLE_SHADOW)
+        .hitTestBehavior(HitTestMode.None).accessibilityLevel('no');
+    }
+  }
+
+  @Builder
+  glassOutline() {
+    if (this.glassReady()) {
+      Path({ width: this.geo.w, height: this.geo.h })
+        .position({ x: 0, y: 0 })
+        .hitTestBehavior(HitTestMode.None).accessibilityLevel('no')
+        .commands(glassOutlineCommands(this.geo.w, this.geo.h, this.msg.isOutgoing,
+          this.hasTail(), this.bubbleCorners()))
+        .fill(Color.Transparent)
+        .stroke(GLASS_OUTLINE_COLOR)
+        .strokeWidth(GLASS_OUTLINE_WIDTH);
+    } else if (!this.glassBodyOn()) {
+      this.solidShellShadow();
+    }
+  }
+
+  // V2 里无装饰器成员是纯本地常量、禁止外部构造传参（编译错误 10905324，
+  // 见 ReusableMessageBubble 的同名注释）——必须 @Param。页面持有的引用全
+  // 生命周期不变，每帧只多一次恒等比较。
+  @Param actions: LightweightPlainTextActions = EMPTY_ACTIONS;
+
+  // 环境值（内容列宽/键盘高/字号/圆角/省电系……）都在 this.env 里，见顶部。
+
+  @Local private liveSendState: string = '';
+  @Local private translationStatus: TranslationStatus | null = null;
+  // 频道消息的浏览数标签（「5.2K」），'' = 不显示。走 viewCountChannel 旁路：
+  // 只有标签变了才会被写，浏览数 +1 但仍是 5.2K 时这个组件不会被叫醒。
+  @Local private liveViews: string = '';
+  @Local private menuShown: boolean = false;
+  @Local private swipeX: number = 0;
+  // 这一次按下是不是落在窗口边缘死区里（见 util/swipeReplyGesture）。
+  // 在 TouchType.Down 判定一次、整个手势期间沿用。
+  private swipeFromEdge: boolean = false;
+  // 名字行量出来的宽度。名字行比正文宽时，时间层要拿它兜最小宽度，时间戳才落在
+  // 气泡右下角、引用块才能拉到气泡边缘。V1 靠「复用不清零」留住上一行的近似值；
+  // 名字行宽度按发送者存在可观测单元里（见 util/senderLabelWidths）：
+  // 不再用 @Local，复用不会被重置成 0，也就没有「归零 + 回填」两次通知。
+  // 复用当口播种，比 V1 的近似更准（同名即同宽，V1 拿的是上一行随机名字的宽）。
+
+  private menuOffsetX: number = 0;
+  private gestureClaimed: boolean = false;
+  private unsubSend: (() => void) | null = null;
+  private unsubTranslation: (() => void) | null = null;
+  private unsubViews: (() => void) | null = null;
+
+  // 订阅当前挂在哪条消息上。发送状态按 rowId 订阅、翻译态按 message.id 订阅，
+  // 所以 key 要把两者都算进去。用途同头像：同 key 短路 + 按 key 自愈。
+  private attachedKey: string = '';
+
+  private attachChannels(message: MessageEntry): void {
+    // 浏览数按 (chatId, id) 订阅，会话也进 key。
+    const key: string = `${this.chatId}:${message.rowId}:${message.id}`;
+    if (this.unsubSend !== null && this.attachedKey === key) {
+      // 同 key 短路：退订+重订阅整轮省掉，只重新播种数值——清理是无条件的，
+      // 不补种会空一帧。
+      this.seedChannelValues(message);
+      return;
+    }
+    this.detachChannels();
+    this.attachedKey = key;
+    this.seedChannelValues(message);
+    this.unsubSend = subscribeSendState(message.rowId,
+      (state: string): void => { this.liveSendState = state; });
+    this.unsubTranslation = subscribeTranslationStatus(message.id,
+      (next: TranslationStatus | null): void => {
+        this.translationStatus = next;
+        // 「翻译中」一行出现/消失会改行高：贴底时同一帧钉住底部（util/translationGrowthPin）。
+        pinForTranslationGrowth(this.chatId);
+      });
+    this.unsubViews = subscribeViewCount(this.chatId, message.id,
+      (label: string): void => { this.liveViews = label; });
+  }
+
+  // 先读通道现值，没有才用 @Prop 带来的初值（滚回历史消息时不会有新的发布）。
+  private seedChannelValues(message: MessageEntry): void {
+    const known: string = sendStateFor(message.rowId);
+    this.liveSendState = known !== '' ? known : message.sendState;
+    this.translationStatus = translationStatusFor(message.id);
+    this.liveViews = viewCountLabelFor(this.chatId, message.id);
+  }
+
+  private detachChannels(): void {
+    if (this.unsubSend !== null) { this.unsubSend(); this.unsubSend = null; }
+    if (this.unsubTranslation !== null) {
+      this.unsubTranslation();
+      this.unsubTranslation = null;
+    }
+    if (this.unsubViews !== null) { this.unsubViews(); this.unsubViews = null; }
+    this.attachedKey = '';
+  }
+
+  // 只剩无装饰器成员要手工归零：官方表格明确它们复用时**不重置**。
+  // @Local（menuShown/swipeX/通道值/玻璃尺寸）由框架在 aboutToReuse
+  // 之前统一重置（批 0.5 实测 1370/1370）。
+  private resetTransient(): void {
+    this.dragGesture = new MessageDragGesture();
+    this.menuOffsetX = 0;
+    this.gestureClaimed = false;
+    this.draggingMessage = false;
+  }
+
+  aboutToAppear(): void {
+    probeHit('message.plain.mount');
+    this.attachChannels(this.msg);
+  }
+  aboutToDisappear(): void {
+    this.detachChannels();
+  }
+  aboutToRecycle(): void {
+    probeHit('message.plain.recycle');
+    this.detachChannels();
+    this.resetTransient();
+  }
+  aboutToReuse(): void {
+    probeHit('message.plain.reuse');
+    // @Param 已是新值、@Local 已重置（批 0.5 判读 Q1b/Q2）：同步重挂+重播种，
+    // V1 时代的 reuseParam 读参和 nextFrameQueue 延帧兜底整套退役。
+    this.resetTransient();
+    // 见 measuredGlassW：复用后尺寸没变时 onSizeChange 不再回调，这里回填。
+    this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
+    this.attachChannels(this.msg);
+  }
+
+  // 非复用路径上同一实例换消息时兜底重挂；复用路径靠 aboutToReuse（@Monitor
+  // 复用期静默，批 0.5 实测 0 触发）。
+  // 换了行身份时瞬时态也要清（菜单弹出位置、手势认领），否则沿用上一行的值。
+  // aboutToReuse 里做的是同一件事——但那条路只在 @ReusableV2 复用时触发，打开
+  // Repeat 自己的复用时不会被调用（官方：「Repeat 自身能够进行复用，不会走到
+  // 自定义组件复用的生命周期」）。**只在身份变化时清**：msg 对象在编辑/状态
+  // 更新时也会换，那时清 gestureClaimed 会打断正在进行的手势。
+  @Monitor('msg')
+  onMessageChanged(): void {
+    if (this.attachedKey !== `${this.msg.rowId}:${this.msg.id}`) {
+      this.resetTransient();
+    }
+    this.attachChannels(this.msg);
+  }
+
+  // 判据与 MessageBubble.avatarReserve 一致：只有群聊来信被头像顶开 44vp。
+  private bubbleMaxW(): number {
+    return bubbleMaxWidth(this.contentWidth,
+      this.isGroup && !this.msg.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0);
+  }
+  private inlineMaxW(): number { return this.bubbleMaxW() - 16; }
+  private runRadius(): number { return Math.min(this.env.bubbleRadius, 7); }
+  private hasTail(): boolean { return this.showAvatar; }
+  // 尾巴位：有尾巴时由尾巴节点自己占；没有时由「尾巴 + 气泡」容器的内边距占（原来是
+  // bubbleCluster 里的定宽空 Column）。容器尺寸不变，玻璃的量值与裁剪轮廓也就不变。
+  private tailGutterPadding(): Padding {
+    if (this.hasTail()) {
+      return NO_GUTTER;
+    }
+    return this.msg.isOutgoing ? TAIL_GUTTER_RIGHT : TAIL_GUTTER_LEFT;
+  }
+  // 头像位：群聊来信不显示头像时由挂菜单的那层 Row 的内边距占（原来是定宽空 Column）。
+  // 那层 Row 是长按菜单预览截图的范围，原来就包着这块透明的 44vp，截图边界不变。
+  // 【整行热区】纯文本行走的是本组件（LightweightPlainTextBubble），不经过
+  // MessageBubbleShell —— 那边加的行级 onClick 对纯文字消息完全不会生效
+  // （真机实测：只有带图/带壳的消息能点空白弹菜单）。这里补上同一套：
+  // 行容器满宽，气泡只占其中一段，把点击换算回气泡内坐标再交给 recordMenuOffset。
+  // 命中范围与菜单锚点是两件事：先保证整行都能唤起，再谈锚点精度。
+  private recordRowMenu(eventX: number, rowW: number): void {
+    const w: number = this.geo.w > 0 ? this.geo.w : Math.max(1, rowW - BUBBLE_ROW_SIDE_VP * 2);
+    const gutter: number = BUBBLE_ROW_SIDE_VP + (this.isGroup && !this.msg.isOutgoing && this.showAvatar
+      ? BUBBLE_AVATAR_GUTTER_VP : 0);
+    const left: number = this.msg.isOutgoing ? rowW - BUBBLE_ROW_SIDE_VP - w : gutter;
+    const local: number = Math.max(0, Math.min(eventX - left, w));
+    this.recordMenuOffset(local, w);
+  }
+
+  private avatarGutterPadding(): Padding {
+    return this.isGroup && !this.msg.isOutgoing && !this.showAvatar ? AVATAR_GUTTER : NO_GUTTER;
+  }
+  private rowTopPadding(): number { return this.showSenderName ? 3 : 1; }
+  private rowBottomPadding(): number { return this.showAvatar ? 3 : 1; }
+  private effectDuration(ms: number): number {
+    return animationDurationFor(
+      this.env.chatEffects && this.env.messageEffects && !this.env.powerSaving,
+      scrollActiveNow(), ms);
+  }
+  private reactionDuration(ms: number): number {
+    return animationDurationFor(
+      this.env.chatEffects && this.env.reactionEffects && this.env.animatedEmoji &&
+        this.env.emojiReactions && !this.env.powerSaving,
+      scrollActiveNow(), ms);
+  }
+
+  private bubbleCorners(): BorderRadiuses {
+    return {
+      topLeft: this.msg.isOutgoing ? this.env.bubbleRadius :
+        (this.showSenderName ? this.env.bubbleRadius : this.runRadius()),
+      topRight: this.msg.isOutgoing ?
+        (this.showSenderName ? this.env.bubbleRadius : this.runRadius()) : this.env.bubbleRadius,
+      bottomLeft: this.msg.isOutgoing ? this.env.bubbleRadius :
+        (this.showAvatar ? this.env.bubbleRadius : this.runRadius()),
+      bottomRight: this.msg.isOutgoing ?
+        (this.showAvatar ? this.env.bubbleRadius : this.runRadius()) : this.env.bubbleRadius
+    };
+  }
+
+  private senderColor(): ResourceColor {
+    const accentId: number = this.msg.senderId > 0
+      ? getUserStore().accentColorId(this.msg.senderId) : -1;
+    if (accentId >= 0) {
+      const color: string = getAccentColorStore().nameColorHex(accentId, false);
+      if (color !== '') { return color; }
+    }
+    return AVATAR_PALETTE[Math.abs(this.msg.senderId) % AVATAR_PALETTE.length];
+  }
+
+  private messageTime(): string { return formatClockTime(this.msg.date); }
+  private timeReserve(): string {
+    const edit: string = this.msg.editDate > 0 ? '         ' : '';
+    return `${viewsReserve(this.liveViews)}${edit}  ${this.messageTime()}${this.msg.isOutgoing ? '   ' : ''}`;
+  }
+
+  private replyMaxW(): number { return Math.round(this.inlineMaxW() * REPLY_QUOTE_WIDTH_RATIO); }
+
+  // 气泡宽度从**事件**里取，不再常驻 onAreaChange。
+  //
+  // 这个宽度只有一个用途：菜单相对气泡中心的横向偏移，也就是只在长按/点击
+  // 那一刻需要。而 onAreaChange 是全局派发的——注册了就每帧参与一次遍历，
+  // 09-03 的 Frame 录制里 HandleOnAreaChangeEvent 每帧固定 1.07ms、注册节点
+  // 从 28 涨到 193 且滚动期间不回落。手势事件的 target.area 给的就是同一个
+  // 节点的尺寸，白拿。
+  private recordMenuOffset(localX: number, width: number): void {
+    this.menuOffsetX = width > 0 ? localX - width / 2 : 0;
+  }
+
+  private canEditNow(): boolean {
+    const known: boolean | undefined =
+      this.menuTick >= 0 ? editableCached(this.msg.id) : undefined;
+    if (known !== undefined) {
+      return known;
+    }
+    return this.msg.isOutgoing && this.nowSec - this.msg.date < 172800;
+  }
+
+  private askEditable(): void {
+    ensureEditable(this.chatId, this.msg.id, (): void => {
+      this.menuTick = this.menuTick + 1;
+    });
+  }
+
+  private canDeleteNow(): boolean {
+    // 同 menuTick：必须在这一支里被读到，答案到货才会重绘菜单。
+    const known: boolean | undefined =
+      this.menuTick >= 0 ? deletableCached(this.msg.id) : undefined;
+    // 未知时按能删显示，理由见 util/messageDeletable 文件头。
+    return known !== false;
+  }
+
+  private askDeletable(): void {
+    ensureDeletable(getTdClient(), this.chatId, this.msg.id, (): void => {
+      this.menuTick = this.menuTick + 1;
+    });
+  }
+
+  private dragGesture: MessageDragGesture = new MessageDragGesture();
+
+  private canDragMessage(): boolean { return !this.editingActive && this.msg.id > 0 && messageDragType(this.msg.contentType) !== ''; }
+
+  private onDragSourceTouch(event: TouchEvent): void {
+    if (!this.canDragMessage()) { return; }
+    const touch = event.touches[0] ?? event.changedTouches[0];
+    const now = Date.now();
+    if (event.type === TouchType.Down && touch !== undefined) {
+      this.dragGesture.begin(touch.windowX, touch.windowY, now);
+      this.recordMenuOffset(touch.x, Number(event.target.area.width));
+    } else if (event.type === TouchType.Move && touch !== undefined) {
+      this.dragGesture.move(touch.windowX, touch.windowY, now);
+    } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+      if (touch !== undefined) { this.dragGesture.move(touch.windowX, touch.windowY, now); }
+      if (this.dragGesture.end(now, event.type === TouchType.Cancel)) { this.onLongPress(); }
+    }
+  }
+
+  @Local private draggingMessage: boolean = false;
+
+  private onLongPress(event?: GestureEvent): void {
+    if (this.draggingMessage) { return; }
+    const finger: FingerInfo | undefined = event === undefined ? undefined : firstFinger(event.fingerList);
+    if (finger !== undefined && event !== undefined) {
+      this.recordMenuOffset(finger.localX, Number(event.target.area.width));
+    }
+    this.gestureClaimed = true;
+    this.askEditable();
+    this.askDeletable();
+    const policy: MessageGesturePolicy = messageGesturePolicy(this.env.gestureScheme);
+    // 诊断（issue #114）：和 MessageBubble 那条 [Menu114] 对照。报告人 1.4.2 的日志
+    // 里一条菜单相关的行都没有，正是因为长按落在本组件、而本组件什么都不记。
+    logW(`[Menu114] longPress(plain) kbd=${Math.round(this.env.keyboardHeightVp)}`
+      + ` winH=${Math.round(this.env.screenHeightVp)}`
+      + ` compact=${menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp)}`);
+    if (policy.longPressOpensMenu) {
+      this.menuShown = true;
+    } else if (policy.longPressSelects) {
+      this.actions.onSelectMessages(this.memberIds);
+    }
+  }
+
+  private onSwipeUpdate(offsetX: number): void {
+    if (this.editingActive || this.swipeFromEdge || this.draggingMessage ||
+      (this.canDragMessage() && this.dragGesture.prefersDrag(Date.now()))) { return; }
+    // 两个方向都跟手：向左（负）回复，向右（正）进多选。
+    this.swipeX = Math.max(SWIPE_REPLY_MAX, Math.min(SWIPE_SELECT_MAX, offsetX));
+    if (this.swipeX !== 0) { this.gestureClaimed = true; }
+  }
+
+  private onSwipeEnd(): void {
+    const usable: boolean = !this.editingActive && !this.swipeFromEdge && !this.draggingMessage &&
+      !(this.canDragMessage() && this.dragGesture.prefersDrag(Date.now()));
+    const reply: boolean = usable && this.swipeX <= SWIPE_REPLY_TRIGGER;
+    const select: boolean = usable && this.swipeX >= SWIPE_SELECT_TRIGGER;
+    animateTo({
+      duration: this.env.powerSaving || this.env.reduceAnim ? 0 : 180,
+      curve: Curve.EaseOut
+    }, (): void => { this.swipeX = 0; });
+    if (reply) {
+      this.actions.onReplyTo(this.msg.id);
+    } else if (select) {
+      this.actions.onSelectMessages(this.memberIds);
+    }
+  }
+
+  @Builder
+  statusIcon() {
+    Row() {
+      SymbolGlyph($r(this.liveSendState === 'sending'
+        ? 'sys.symbol.clock'
+        : (this.liveSendState === 'failed'
+          ? 'sys.symbol.exclamationmark_circle' : 'sys.symbol.checkmark')))
+        .fontSize(12)
+        .fontColor([this.liveSendState === 'failed' ? Color.Red
+          : (this.liveSendState === 'read' ? this.accent() : COLOR_TEXT_SECONDARY)])
+        .visibility(this.liveSendState === 'none' || this.liveSendState === ''
+          ? Visibility.None : Visibility.Visible);
+      SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontColor([this.accent()])
+        .margin({ left: -8 })
+        .visibility(this.liveSendState === 'read' ? Visibility.Visible : Visibility.None);
+    }
+  }
+
+  @Builder
+  replyQuote() {
+    Column() {
+      Text(this.msg.replySenderName).fontSize(12).fontColor(this.accent()).maxLines(1)
+        .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
+        .constraintSize({ maxWidth: this.replyMaxW() })
+        .textOverflow({ overflow: TextOverflow.Ellipsis });
+      Text(this.msg.replyText).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).maxLines(1)
+        .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
+        .constraintSize({ maxWidth: this.replyMaxW() })
+        .textOverflow({ overflow: TextOverflow.Ellipsis });
+    }
+    .alignItems(HorizontalAlign.Start)
+    .alignSelf(ItemAlign.Stretch)
+    .constraintSize({ maxWidth: this.inlineMaxW() })
+    .backgroundColor(accentSoft())
+    .border({ width: { left: 4 }, color: this.accent() })
+    .borderRadius(4)
+    .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+    .margin({ bottom: 4 })
+    .onClick((): void => {
+      if (!this.gestureClaimed) {
+        this.actions.onReplyTap(this.msg.replyToMessageId, this.msg.id);
+      }
+    });
+  }
+
+  @Builder
+  translationState() {
+    if (this.translationStatus !== null) {
+      // Divider 在收缩布局里会按父级上限取宽；空 Row 只在正文定宽后拉伸。
+      Row()
+        .height(0.6)
+        .alignSelf(ItemAlign.Stretch)
+        .backgroundColor(COLOR_TEXT_SECONDARY)
+        .opacity(0.3)
+        .margin({ top: 6, bottom: 5 });
+      if (this.translationStatus?.phase === 'loading') {
+        Row({ space: 5 }) {
+          LoadingProgress().width(12).height(12).color(COLOR_ICON_SECONDARY);
+          Text($r('app.string.mb_translating')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+          Text(this.timeReserve()).fontSize(11).fontColor(Color.Transparent);
+        }.constraintSize({ maxWidth: this.inlineMaxW() });
+      } else {
+        Row({ space: 4 }) {
+          Text(str('mb_translate_failed', this.translationStatus?.error ?? ''))
+            .fontSize(11).fontColor(COLOR_TEXT_SECONDARY)
+            .maxLines(3).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
+          Text($r('app.string.settings_retry')).fontSize(11)
+            .fontColor(this.accent()).fontWeight(FontWeight.Medium);
+          Text(this.timeReserve()).fontSize(11).fontColor(Color.Transparent);
+        }
+        .constraintSize({ maxWidth: this.inlineMaxW() })
+        .onClick((): void => {
+          if (!this.gestureClaimed) { this.actions.onRetryTranslation(this.msg.id); }
+        });
+      }
+    }
+  }
+
+  private senderLabelShown(): boolean {
+    return this.isGroup && !this.msg.isOutgoing && this.msg.senderName !== '' && this.showSenderName;
+  }
+
+  // 与 MessageBubble.measuredTimeLayerWidth 同一策略；轻量气泡只有名字行这一个
+  // 可能比正文宽的兄弟（没有转发标签、没有评论行）。
+  private measuredTimeLayerWidth(): number {
+    return timeLayerMinWidth(this.inlineMaxW(), {
+      forwardShown: false, forwardW: 0,
+      senderShown: this.senderLabelShown(), senderW: this.senderLabelWidth(),
+      commentsShown: false, commentsW: 0
+    });
+  }
+
+  @Builder
+  bodyContents() {
+      if (this.msg.replyToMessageId !== 0) { this.replyQuote(); }
+      Text() {
+        // **只有链接那一段才挂 onClick。** 给每一段都挂一个（哪怕回调里先判
+        // run.link）会让普通文字变成独立的点击目标，把气泡自己的 onClick 吃掉
+        // ——那个 onClick 才是"打开消息菜单"。真机实测：点气泡的留白弹菜单，
+        // 点字本身毫无反应；长按同样被挡。富文本那条路径（MessageBubbleText
+        // 的 richInlineRun）一直是按 if/else 分开写的，这里照它来。
+        ForEach(linkifyRuns(this.msg.text, []), (run: RichRun) => {
+          if (run.link) {
+            Span(run.text)
+              .fontColor(this.accent())
+              .decoration({ type: TextDecorationType.Underline, color: this.accent() })
+              .onClick((): void => {
+                if (!this.gestureClaimed) {
+                  this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url));
+                }
+              });
+          } else {
+            Span(run.text).fontColor(bubbleTextFor(this.msg.isOutgoing));
+          }
+        }, (run: RichRun, index: number): string =>
+          `light_text_${index}_${run.offset}_${run.text}`);
+        if (this.translationStatus === null) {
+          Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
+        }
+      }
+      .fontSize(this.env.msgTextSize).lineHeight(this.env.msgTextSize * 1.34)
+      .wordBreak(WordBreak.BREAK_WORD)
+      // minWidth 也挂在这个 Text 上：Column 给子节点做 Stretch 是按最宽的孩子量的，
+      // Column 自己的 minWidth 钳位发生在那之后——只挂 Column 时引用块拉不到边
+      // （真机看到时间到了右边缘、引用块没跟上）。Text 是最宽的孩子，它够宽
+      // Column 才够宽，引用块的 alignSelf(Stretch) 才有得伸。
+      .constraintSize({ minWidth: this.measuredTimeLayerWidth(), maxWidth: this.inlineMaxW() });
+      this.translationState();
+  }
+
+  @Builder
+  body() {
+    if (this.msg.replyToMessageId !== 0) {
+      // Only reply rows need Flex's cross-axis Stretch. Keep ordinary rows cheap.
+      Flex({ direction: FlexDirection.Column, alignItems: ItemAlign.Start }) {
+        this.bodyContents();
+      }
+      .width(LayoutPolicy.wrapContent)
+      .height(LayoutPolicy.wrapContent)
+      .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
+    } else {
+      Column() { this.bodyContents(); }
+        .alignItems(HorizontalAlign.Start)
+        .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
+    }
+  }
+
+  @Builder
+  viewsLabel() {
+    Row({ space: 2 }) {
+      SymbolGlyph($r('sys.symbol.eye')).fontSize(11).fontColor([COLOR_TEXT_SECONDARY]);
+      Text(this.liveViews).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+    }.alignItems(VerticalAlign.Center);
+  }
+
+  @Builder
+  timeOverlay() {
+    Row({ space: 4 }) {
+      if (this.liveViews !== '') { this.viewsLabel(); }
+      if (this.msg.editDate > 0) {
+        Text($r('app.string.mb_edited')).fontSize(10.5).fontColor(COLOR_TEXT_SECONDARY);
+      }
+      if (this.messageTime() !== '') {
+        Text(this.messageTime()).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+      }
+      if (this.msg.isOutgoing) { this.statusIcon(); }
+    }.margin({ bottom: 2 });
+  }
+
+  @Builder
+  messageReactionMenuItem() {
+    Row({ space: 2 }) {
+      ForEach(QUICK_REACTIONS, (emoji: string) => {
+        Row() { Text(emoji).fontSize(23); }
+          .width(32).height(34).borderRadius(17).justifyContent(FlexAlign.Center)
+          .stateStyles({ normal: plainMenuNormalStyle, pressed: plainMenuPressedStyle })
+          .animation({ duration: this.reactionDuration(120), curve: Curve.EaseOut })
+          .onClick((): void => { this.actions.onSetReaction(this.msg.id, emoji, false); })
+          .gesture(LongPressGesture().onAction((): void => {
+            this.actions.onSetDefaultReaction(emoji);
+          }));
+      }, (emoji: string): string => emoji);
+      Blank();
+      Row() {
+        SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
+      }
+      .width(30).height(30).borderRadius(15).backgroundColor('#0000000F')
+      .justifyContent(FlexAlign.Center)
+      .stateStyles({ normal: plainMenuNormalStyle, pressed: plainMenuPressedStyle })
+      .onClick((): void => { this.actions.onOpenReactions(this.msg.id); });
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center);
+  }
+
+  @Builder
+  contextMenu() {
+    Menu() {
+      MenuItem(this.messageReactionMenuItem);
+      if (this.canReply && !this.editingActive) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.arrowshape_turn_up_left')),
+          content: $r('app.string.mb_reply')
+        }).onClick((): void => { this.actions.onReplyTo(this.msg.id); });
+      }
+      if (this.canEditNow()) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.square_and_pencil')),
+          content: $r('app.string.edit')
+        }).onClick((): void => { this.actions.onEditMsg(this.msg.id); });
+      }
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.plus_square_on_square')),
+        content: $r('app.string.mb_copy_text')
+      }).onClick((): void => { this.actions.onCopyText(this.msg.id); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.character_textbox')),
+        content: $r('app.string.mb_select_text')
+      }).onClick((): void => { this.actions.onSelectText(this.msg.id); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.translate')),
+        content: $r('app.string.mb_translate')
+      }).onClick((): void => { this.actions.onTranslateMsg(this.msg.id); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.arrowshape_turn_up_right')),
+        content: $r('app.string.mb_forward')
+      }).onClick((): void => { this.actions.onForwardMessages(this.memberIds); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.bookmark')),
+        content: $r('app.string.mb_save_to_saved')
+      }).onClick((): void => { this.actions.onSaveMessages(this.memberIds); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.repeat')),
+        content: $r('app.string.mb_repeat')
+      }).onClick((): void => { this.actions.onRepeatMessages(this.memberIds); });
+      if (this.isGroup && this.msg.senderIsUser && this.msg.senderId > 0) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.person')),
+          content: $r('app.string.mb_view_history')
+        }).onClick((): void => { this.actions.onViewSenderHistory(this.msg.senderId); });
+      }
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.pin')),
+        content: this.isPinnedMsg ? $r('app.string.ft_unpin') : $r('app.string.ft_pin')
+      }).onClick((): void => { this.actions.onPinMsg(this.msg.id, this.isPinnedMsg); });
+      if (this.canReport && !this.msg.isOutgoing) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.exclamationmark_circle')).fontColor([Color.Red]),
+          content: $r('app.string.mb_report')
+        }).onClick((): void => { this.actions.onReportMsg(this.msg.id); });
+      }
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark_circle')),
+        content: $r('app.string.mb_select')
+      }).onClick((): void => { this.actions.onSelectMessages(this.memberIds); });
+      // 不可删的消息不出这一项，理由见 MessageBubbleShell 那一处。
+      if (this.canDeleteNow()) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.trash')).fontColor([Color.Red]),
+          content: $r('app.string.delete')
+        }).onClick((): void => { this.actions.onDeleteMsg(this.msg.id); });
+      }
+    }
+    // 和完整气泡保持同宽，避免表情行的 100% 宽度把菜单撑到屏幕边缘。
+    .width(262)
+  }
+
+  @Builder
+  unreadDivider() {
+    Row() {
+      Divider()
+        .layoutWeight(1)
+        .strokeWidth(1)
+        .color(COLOR_TEXT_SECONDARY)
+        .opacity(0.55);
+      Text(this.dividerIsResume
+        ? $r('app.string.mb_last_viewed_position') : $r('app.string.mb_unread'))
+        .fontSize(13)
+        .fontColor(this.accent())
+        .fontWeight(FontWeight.Medium)
+        .margin({ left: 10, right: 10 });
+      Divider()
+        .layoutWeight(1)
+        .strokeWidth(1)
+        .color(COLOR_TEXT_SECONDARY)
+        .opacity(0.55);
+    }
+    .width('100%')
+    .height(26)
+    .padding({ left: 12, right: 12, bottom: 4 })
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center);
+  }
+
+  // 「尾巴 + 气泡本体」。build() 里材质开/关两支容器共用这一份（见那里的分支说明）；
+  // 无参 @Builder，碰不到「参数按值传不刷新」的坑。
+  @Builder
+  bubbleCluster() {
+    // 没有尾巴时的 7vp 尾巴位由容器内边距占（见 tailGutterPadding），不再垫定宽空 Column。
+    if (!this.msg.isOutgoing && this.hasTail()) {
+      this.bubbleTail(false);
+    }
+    Column() {
+      if (this.senderLabelShown()) {
+        Row({ space: 5 }) {
+          Text(this.msg.senderName).fontSize(14).fontColor(this.senderColor())
+            .fontWeight(FontWeight.Medium).maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis }).flexShrink(1);
+          SenderRoleTag({
+            chatId: this.chatId, senderId: this.msg.senderId,
+            presetTag: this.msg.senderTag
+          });
+        }
+        .margin({ bottom: 2 }).alignItems(VerticalAlign.Center)
+        // onSizeChange 而不是 onAreaChange：后者每帧对所有注册节点逐个比对
+        // （PipelineContext::HandleOnAreaChangeEvent，15:25 trace 翻页段每帧约 0.9ms），
+        // 这里只要宽度。复用后尺寸没变就不会回调——那种情况 aboutToReuse 已按名字
+        // 宽度来自 senderLabelWidths 的可观测单元（首次读到 0，量到后自动刷新）。
+        .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+          const w: Length | undefined = size.width;
+          // remember 内部同值不写，且只唤醒同一发送者的行。
+          if (typeof w === 'number') {
+            senderLabelWidths.remember(this.msg.senderName, w as number);
+          }
+        });
+      }
+      Stack({ alignContent: Alignment.BottomEnd }) {
+        this.body();
+        this.timeOverlay();
+      }
+      // 名字行比正文宽时时间戳停在正文末尾、够不到气泡右边缘（用户报的），
+      // 拿量到的名字行宽度兜一个最小宽度。
+      .constraintSize({ maxWidth: this.inlineMaxW(), minWidth: this.measuredTimeLayerWidth() });
+    }
+    .alignItems(HorizontalAlign.Start)
+    // 与 MessageBubble 同一策略、同一理由（见那边的长注释）：气泡根节点上
+    // 不挂常驻 .animation()，按下态直接切换。真机 trace 已证明换位置留不住
+    // 动画边界，只有节点上完全没有常驻动画，普通数据更新才不会进入动画
+    // 上下文、连带整张消息 List 的重测。两支气泡必须同改。
+    .constraintSize({ maxWidth: this.bubbleMaxW() })
+    .backgroundColor(this.bubbleBg())
+    .borderRadius(this.bubbleCorners()).padding(8)
+    .shadow(this.solidBodyShadow())
+    // 与富气泡一致：内容层高于尾巴，避免尾巴伸入主体的部分盖住文字。
+    .zIndex(1)
+    // 主体不能单独投影到尾角上，避免连接处出现竖向暗缝（与富气泡壳一致）。
+    .parallelGesture(this.canDragMessage() ? undefined : LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+      .onAction((event: GestureEvent): void => { this.onLongPress(event); }))
+    .onTouch((event: TouchEvent): void => { this.onDragSourceTouch(event); })
+    .onClick((event: ClickEvent): void => {
+      if (!this.gestureClaimed && messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
+        this.recordMenuOffset(event.x, Number(event.target.area.width));
+        this.askDeletable();
+        this.menuShown = true;
+      }
+    });
+    if (this.msg.isOutgoing && this.hasTail()) {
+      this.bubbleTail(true);
+    }
+  }
+
+  build() {
+    Column() {
+      if (this.dateLabel !== '') {
+        // 日期胶囊直接挂在根 Column 里（Column 默认水平居中）。原来外面那层满宽 Row 只负责
+        // 居中和上下 5/3 的留白，换成胶囊自己的外边距，占的高度一样（首屏估高里的 +30）。
+        Text(this.dateLabel).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+          .fontWeight(FontWeight.Medium).backgroundColor($r('app.color.system_pill'))
+          .borderRadius(11).padding({ left: 10, right: 10, top: 3, bottom: 3 })
+          .margin({ top: 5, bottom: 3 });
+      }
+      if (this.showUnreadDivider) {
+        this.unreadDivider();
+      }
+      Row() {
+        Row() {
+          // 群聊来信不显示头像时，头像位由这层 Row 的内边距占（avatarGutterPadding），
+          // 不再垫定宽空 Column；两层 if 也并成一层。
+          if (this.isGroup && !this.msg.isOutgoing && this.showAvatar) {
+            LightweightSenderAvatar({
+              senderId: this.msg.senderId,
+              senderIsUser: this.msg.senderIsUser,
+              initialPath: this.msg.senderAvatarPath,
+              initials: this.msg.senderInitials
+            })
+              .margin({ right: BUBBLE_AVATAR_GAP_VP })
+              .onClick((): void => {
+                if (!this.gestureClaimed && this.msg.senderIsUser && this.msg.senderId > 0) {
+                  this.actions.onAvatarTap(this.msg.senderId);
+                }
+              })
+              .gesture(LongPressGesture().onAction((): void => {
+                if (this.msg.senderIsUser && this.msg.senderId > 0) {
+                  this.actions.onAvatarLongPress(this.msg.senderId, this.msg.senderName);
+                }
+              }));
+          }
+          // 【按材质开关分两支容器，2026-09-14】玻璃关着（默认）时，下面这串玻璃属性的值
+          // 全是空的——透明底、无模糊、不裁剪、描边不画——却在每次更新和复用时照样把
+          // glassReady() 那一串重算一遍、new 一个修饰器、建一次描边背景，外加一个每帧参与
+          // 全局遍历的可见区回调（15:25 trace 翻页段 30 个节点每帧 0.2ms）。关着的那一支
+          // 只留与材质无关的几个属性；切换开关时这一块整体重建一次。两支气泡必须同改。
+          DissolveDeleteEffect({ instanceKey: 'message-' + this.chatId, rowId: this.msg.rowId,
+            leaving: this.leaving, channel: this.actions.rowLeave }) {
+            // 整个气泡壳统一变暗/缩放，菜单预览中的尾角与主体保持同色。
+            Row() {
+              if (this.env.bubbleMaterialOn) {
+                Row() {
+                  this.glassOutline();
+                  Row() { this.bubbleCluster(); }
+                    .alignItems(VerticalAlign.Bottom)
+                    .padding(this.tailGutterPadding());
+                }
+                // 「尾巴 + 气泡」整块由**上层**渲染：材质挂在这一层，形状由整体轮廓裁剪
+                // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
+                // 不存在「一边材质一边普通渲染」对不齐的问题。
+                // 见 MessageBubble 同一处：容器跨着 7vp 留白，必须等量到尺寸才上色；
+                // 完整态本体同步退为透明，避免两层玻璃在同一区域重复合成。
+                .backgroundColor(this.containerGlassBg())
+                .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
+                  y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
+                  centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
+                .backgroundBlurStyle(this.containerGlassBlurStyle())
+                // 见 MessageBubble 同一处：材质的边框沿本节点 border-box 画、吃 borderRadius，
+                // 不设圆角就是个直角框，裁剪之后剩下半条亮线。
+                .borderRadius(this.glassRadius())
+                .attributeModifier(bubbleGlassModifier(this.glassReady(), this.geo.w, this.geo.h,
+                  this.msg.isOutgoing, this.hasTail(), this.bubbleCorners()))
+                // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
+                // 上的长注释：apply*Attribute 里注册是叠加，会把注册表撑爆）。
+                // onSizeChange 而不是 onAreaChange：后者每帧参与一次全局遍历（HandleOnAreaChangeEvent）。
+                // 复用后尺寸没变不会回调，由 aboutToReuse 用 measuredGlassW/H 回填。
+                // 同值不写：@Local 赋同一个数也会走一遍变更通知。
+                .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+                  const w: Length | undefined = size.width;
+                  const h: Length | undefined = size.height;
+                  if (typeof w !== 'number' || typeof h !== 'number') {
+                    return;
+                  }
+                  this.measuredGlassW = w as number;
+                  this.measuredGlassH = h as number;
+                  // 同值不写：只有几何真的变了才通知背景。
+                  this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
+                })
+              } else {
+                Row() {
+                  // Absolute live decoration cannot grow the flow layout.
+                  this.solidShellShadow();
+                  Row() { this.bubbleCluster(); }
+                    .alignItems(VerticalAlign.Bottom)
+                    .padding(this.tailGutterPadding());
+                }
+                .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+                  const w: Length | undefined = size.width;
+                  const h: Length | undefined = size.height;
+                  if (typeof w !== 'number' || typeof h !== 'number') {
+                    return;
+                  }
+                  this.measuredGlassW = w as number;
+                  this.measuredGlassH = h as number;
+                  // 无尾巴实心行在 solidShellShadow() 首条件 hasTail() 短路，不订阅 geo.w/h（0 重绘开销），
+                  // 但仍写入 geo 以供长按空白区菜单锚点与删消息后原地补尾巴使用。
+                  this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
+                })
+                .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
+                  y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
+                  centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
+              }
+            }
+            .stateStyles({ normal: plainBubbleNormalStyle, pressed: plainBubblePressedStyle })
+          }
+        }
+        .alignItems(VerticalAlign.Bottom)
+        .padding(this.avatarGutterPadding())
+        .draggable(this.canDragMessage())
+        .onDragStart((event: DragEvent): DragItemInfo => {
+          this.dragGesture.claim();
+          this.draggingMessage = true;
+          this.gestureClaimed = true;
+          this.menuShown = false;
+          return configureMessageDrag(event, this.chatId, this.msg.id, messageDragType(this.msg.contentType));
+        })
+        .onDragEnd((): void => { this.draggingMessage = false; })
+        .bindContextMenu(this.menuShown, this.contextMenu(), {
+          offset: { x: this.menuOffsetX, y: 0 },
+          preview: (this.menuShown && menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp))
+            ? MenuPreviewMode.NONE : MenuPreviewMode.IMAGE,
+          previewBorderRadius: this.bubbleCorners(),
+          // 两条动效链按实例缓存（见 util/messageMenuTransitions）。
+          previewAnimationOptions: {
+            scale: [0.98, 1.035],
+            transition: this.menuFx.preview()
+          },
+          borderRadius: 16,
+          backgroundColor: Color.Transparent,
+          backgroundBlurStyle: containerBlur('menu'),
+          systemMaterial: overlayMaterial('menu'),
+          transition: this.menuFx.menu(),
+          mask: { color: '#52000000', backgroundBlurStyle: BlurStyle.BACKGROUND_THIN },
+          modalMode: ModalMode.TARGET_WINDOW,
+          hapticFeedbackMode: HapticFeedbackMode.AUTO,
+          onDisappear: (): void => { this.menuShown = false; }
+        });
+      }
+      // 行边距与气泡最大宽同源（util/mediaBox.BUBBLE_ROW_SIDE_VP）。
+      // 【这里原来写死 10】而 bubbleMaxWidth 按 BUBBLE_ROW_SIDE_VP 算，两边
+      // 对不上：纯文本是聊天里最常见的一类，之前几轮收窄留白它一点没吃到。
+      .width('100%').padding({
+        left: BUBBLE_ROW_SIDE_VP, right: BUBBLE_ROW_SIDE_VP,
+        top: this.rowTopPadding(), bottom: this.rowBottomPadding()
+      })
+      .justifyContent(this.msg.isOutgoing ? FlexAlign.End : FlexAlign.Start)
+      .alignItems(VerticalAlign.Bottom).translate({ x: this.swipeX })
+      // 只认左滑：右滑本来就被 Math.min(0, offsetX) 夹成 0，而右滑正是从左边缘
+      // 返回的方向，认领之后 gestureClaimed 置位会把后续点击静默吞掉。
+      // 双向：左滑回复、右滑多选。边缘冲突由 36vp 死区兜底。
+      .parallelGesture(PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 8 })
+        .onActionUpdate((event: GestureEvent): void => { this.onSwipeUpdate(event.offsetX); })
+        .onActionEnd((): void => { this.onSwipeEnd(); })
+        .onActionCancel((): void => { this.onSwipeEnd(); }))
+      // 整行热区：空白处也要能唤出本条消息的菜单（与 MessageBubbleShell 同策略）。
+      .onClick((event: ClickEvent): void => {
+        if (this.gestureClaimed || this.menuShown) { return; }
+        if (!messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) { return; }
+        this.recordRowMenu(event.x, Number(event.target.area.width));
+        this.askEditable();
+        this.askDeletable();
+        this.menuShown = true;
+      })
+      .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+        .onAction((event: GestureEvent): void => {
+          if (this.gestureClaimed || this.menuShown) { return; }
+          const fingers: FingerInfo[] = event.fingerList;
+          const x: number = fingers && fingers.length > 0 ? fingers[0].localX : 0;
+          // 这一下按在发送者头像上：整手归头像（长按 = @ 对方），满宽行不弹菜单。
+          // 头像自己的 gesture 拦不住这里的 parallelGesture（父子并行触发）。
+          if (fingers && fingers.length > 0
+            && hitSenderAvatarColumn(x, this.isGroup, this.msg.isOutgoing, this.showAvatar)) {
+            return;
+          }
+          // 长按统一交给 messageGesturePolicy：tapFirst 进多选、classic 出菜单。
+          // 这里原先写死了「弹菜单」，tapFirst 下 500ms 就先把菜单弹出来，松手时
+          // 合成的那次长按再进多选 —— 用户看到的是菜单与多选同时出现。
+          // 与 MessageBubbleShell 行级长按（:2276 this.onLongPress(event)）保持一致。
+          this.onLongPress(event);
+          // 偏移换算仍用行坐标：onLongPress 内部按气泡内坐标夹取，靠近气泡边缘会偏。
+          this.recordRowMenu(x, Number(event.target.area.width));
+        }))
+      .onTouch((event: TouchEvent): void => {
+        if (event.type === TouchType.Down) {
+          this.gestureClaimed = false;
+          this.draggingMessage = false;
+          const touches: TouchObject[] = event.touches;
+          this.swipeFromEdge = touches.length > 0
+            && isEdgeSwipeStart(touches[0].windowX, this.env.screenWidthVp);
+        }
+      });
+    }
+    .width('100%')
+    .transition(this.animateIn
+      ? TransitionEffect.translate({ y: 16 }).combine(TransitionEffect.OPACITY)
+        .animation({ duration: this.effectDuration(220), curve: Curve.FastOutSlowIn })
+      : TransitionEffect.IDENTITY);
+  }
+}

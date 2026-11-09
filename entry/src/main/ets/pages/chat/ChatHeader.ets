@@ -1,0 +1,501 @@
+// 【自绘玻璃，不走组件级系统材质】系统已经把**组件级**的 systemMaterial 收回，
+// 只有 HDS 导航级的栏（HdsNavigation 的 titleBar、HdsTabs 的 barFloatingStyle）
+// 还拿得到。继续用 overlayGlassFill + overlayBackdropBlur 的面会两头落空——
+// 前者按"底下还有材质在画"返回 25% 的淡色，后者按"把观感让给材质"返回 0 半径，
+// 结果既没有材质也没有自己的玻璃，就是一块平板（用户 2026-09-07：
+// 「会话详情底下的几个控制条实现样式和输入框不太一样」）。
+// 输入框（ChatComposerInput）早已迁到 plainGlassFill + plainBackdropBlur +
+// hdsVisualEffect 这一套，这里跟上，三者的档位保持各自原有的 surface 不变。
+import { AvatarView } from '../chatlist/AvatarView';
+import { TgsStickerView } from './TgsStickerView';
+import { WebmStickerView } from './WebmStickerView';
+import { COLOR_PRIMARY } from '../../util/theme';
+import { chromeIconColorOf, chromeTextColorOf } from '../../util/chatChrome';
+import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { hdsVisualEffect } from '../../util/hdsPointLight';
+import { str } from '../../util/strings';
+import { HeaderIdentitySession } from './HeaderIdentitySession';
+import { TypingIndicatorState } from './TypingIndicatorState';
+import { headerTypingTextOf } from '../../util/typingIndicator';
+import { emojiStatusVisible } from '../../util/emojiStatus';
+
+// 聊天页顶栏：返回、头像+名称+副标题、⋮ 菜单。整条画在 HdsNavDestination 的
+// **stackBuilder** 里，HDS 只负责背板和滚动模糊。
+//
+// **两颗动作键为什么自绘，而不是用 HDS 的 backIconStyle / content.menu。**
+// 首页（ChatListPage.topAction）早就是这么做的，理由在这一页同样成立，而且更硬：
+//
+//   1. HdsNavigationIconItemStyle 只有 backgroundColor / iconColor / textColor，
+//      **没有模糊、没有材质**。顶栏浮在壁纸上，只靠一个底色画不出玻璃——深色模式
+//      下尤其明显（用户报「深色模式两个按钮玻璃样式没有了」）。自绘才能把
+//      overlayGlassFill + backdropBlur + 材质三层都挂上。
+//   2. 按压反馈（stateStyles 的缩放/透明度）HDS 也不给。
+//   3. **菜单展开时汉堡变叉这类高频状态，绝不能进 TitleBarContentOptions。**
+//      那个对象每次重建都会让 HDS 把整条标题栏（菜单 + stackBuilder +
+//      bottomBuilder）重画一遍——实测就是"点一下整条 bar 闪一下"。状态待在
+//      stackBuilder 的子树里，重画的才只有那一颗键。
+
+export const CHAT_HEADER_ACTION_SIZE: number = 42;
+export const CHAT_HEADER_RADIUS: number = 22;
+
+// 状态管理 V2（B2 批：六个 V1 宿主迁 @ComponentV2）。迁移本身不为性能——它是
+// **前置**：V1 @Component 既不能声明 @Param，也订阅不了 @ObservedV2 类上的
+// @Trace，后面「宿主接收控制器实例、在自己的 build() 里读 @Trace」那一整套
+// （B5–B13，唯一能真正缩小 ChatPage 重渲染半径的做法）落不了地。配方照既有
+// 先例 25d3797（MediaViewerOverlay / ReactionSheet 那次）。
+// 本文件的 @Prop 全是 string/number/boolean，V1 的「深拷贝」与 V2 的「引用
+// 传递」在基本类型上等价，所以这一批是零行为变更的。
+//
+// 子组件都过了「V2 普通组件 → V1 **复用**组件不支持」这一关（官方混用支持表；
+// 本仓实测是运行时静默失败、连编译告警都没有，整块子树一个节点都不建）：
+// AvatarView 是 V1 **普通**组件（V2 → V1 普通组件：支持），TgsStickerView /
+// WebmStickerView 早在 P4 批 6b 就是 @ComponentV2 了。
+@ComponentV2
+export struct ChatHeader {
+  @Param animationsAllowed: boolean = true;
+  // V2 没有 @StorageProp 的等价物（官方：V2 组件不提供 @StorageProp/@StorageLink）。
+  // 三个全局键（外观纪元 / 材质纪元 / 深色模式）改由 ChatPage 透传——页面自己
+  // 就持有这三个 @Param（来自 V1 外壳 ChatPageEntry）。纪元变化的路径从「本层
+  // 自订阅 AppStorage」变成「ChatPageChrome → ChatPage → 本层」，多两次 ===
+  // 比较，无行为差。（B2 迁移）
+  @Param appearanceEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  // B2 迁移：原来是 @StorageProp(MATERIAL_EPOCH) private，见上面那条——改成由
+  // ChatPage 透传的 @Param，private 去掉（@Param 要由父组件构造传参）。
+  @Param materialEpoch: number = 0;
+  // 顶栏浮在聊天壁纸上：深色模式 + 浅色壁纸时它其实坐在亮底上，白色前景会掉到
+  // 2.22:1。由 ChatPage 算好传进来（判据见 util/chatChrome），这里只按它选前景。
+  @Param onLightBg: boolean = false;
+  // 浅色模式 + 暗壁纸那一侧，见 util/chatChrome.chromeOnDarkBgOf。
+  @Param onDarkBg: boolean = false;
+  // B2 迁移前是 @StorageProp(KEY_APP_DARK)，同样改成 ChatPage 透传。
+  @Param appDark: boolean = false;
+  // B8：titleText/subtitleText/headerState/avatarPath/avatarAnimPath/initials/
+  // savedMessages/emojiPath/emojiFormat/isMuted/muteUpdating/profileOpening 这
+  // 12 个标量 @Param 换成一个控制器引用——本组件直接持有 HeaderIdentitySession、
+  // 在自己的 build()/@Builder 里读它的 @Trace。
+  //
+  // 副标题是这一步唯一改变"谁读"的地方：改前页面用 this.headerText().
+  // subtitleText 把 subtitle/secretSubtitle 拼好再传进来，页面 build 因此订阅了
+  // 这两个字段——对方在线/输入中每次翻转 subtitle，都要重跑一遍页面的
+  // chatTitleBar 闭包。改后本组件在 build 里自己调 this.header.subtitleTextOf()，
+  // 页面不再算 subtitleText、也就不再读 subtitle/secretSubtitle；页面仍然会算
+  // titleText（confirmLeaveChat/openDeleteConfirm 等簇外读者也要用），但那是
+  // 通过控制器的 titleTextOf() 现取，不再经这个组件的 @Param 转手。
+  // 引用由 ChatPage 的字段初始化器 new 出来、全生命周期不变，@Require 已保证
+  // 调用点必须传，不带默认值（同 TopBanners.topCard / ChatSearchBars 的写法）。
+  @Require @Param header: HeaderIdentitySession;
+  @Param typing: TypingIndicatorState = new TypingIndicatorState();
+  @Param chatId: number = 0;
+  // 菜单展开态：只用来把汉堡切成叉。真正的开关在页面那边（ChatHeaderMenuController）。
+  @Param menuShow: boolean = false;
+  // 菜单浮层的锚点。promptAction.openMenu 按组件 id 定位，所以这颗键要挂上它。
+  @Param menuAnchorId: string = '';
+  // 四个回调一律 @Event：调用点传的是内联箭头函数，页面每重建一次都是新闭包，
+  // 若用 @Param，那个 `!==` 恒不相等会让本层跟着页面的每一次重建白刷一遍；
+  // @Event 不具备观测能力，正好复现迁移前「普通字段只在构造时赋值一次」的行为。
+  // 空实现默认值是仓库惯例（让组件能脱离父组件独立预览）。（B2 迁移）
+  @Event onBack: () => void = (): void => {};
+  @Event onMenuTap: () => void = (): void => {};
+  @Event onOpenProfile: () => void = (): void => {};
+  @Event onResolveIdentity: () => void = (): void => {};
+
+  // 返回 / 菜单两颗键的按压态、菜单图标的展开态，全部显式驱动（2026-09-15）。
+  //
+  // 原来是 stateStyles + 键上常驻的 .animation(120)、两个图标上常驻的 .animation(180)。常驻修饰器在
+  // ChatHeader **每次**重渲染时都会开隐式动画上下文，并在里面冲刷渲染任务——进会话时真实壁纸颜色到货、
+  // 返回键图标换色被卷了进去，系统给符号配了一个 1.4s 的弹簧缩放（先压到 0.92 再冲到 1.02）；它下面是
+  // 带 backdropBlur 的胶囊，RS 整页每帧重算模糊、关掉硬件合成，连续 1.4s（trace 20260915T174809，调用链
+  // CustomNodeUpdate ChatHeader → JSAnimation duration:120 → Text paint → SetSymbolAnimation）。
+  // 现在 animateTo 只包按压 / 展开这一个状态，别的更新不再进动画。
+  //
+  // 低于 API 26 自己画玻璃时底色必须半透明，否则 backdropBlur 被盖死；按下时也留在玻璃上（换成不透明的
+  // surface_alt 会让玻璃"闪一下变实心"），按压反馈由 opacity + scale 表达。
+  @Local private backPressed: boolean = false;
+  @Local private menuPressed: boolean = false;
+  @Local private menuIconOpen: boolean = false;
+  @Local private typingDotPhase: number = 0;
+  private typingAnimTimer: number = -1;
+
+  aboutToAppear(): void {
+    this.menuIconOpen = this.menuShow;
+    this.syncTypingAnimTimer();
+  }
+
+  aboutToDisappear(): void {
+    this.stopTypingAnimTimer();
+  }
+
+  @Monitor('typing.label', 'animationsAllowed')
+  onTypingAnimStateChanged(): void {
+    this.syncTypingAnimTimer();
+  }
+
+  private stopTypingAnimTimer(): void {
+    if (this.typingAnimTimer !== -1) {
+      clearInterval(this.typingAnimTimer);
+      this.typingAnimTimer = -1;
+    }
+  }
+
+  private syncTypingAnimTimer(): void {
+    const shouldRun = this.typing.label !== '' && this.animationsAllowed;
+    if (!shouldRun) {
+      this.stopTypingAnimTimer();
+      this.typingDotPhase = 0;
+      return;
+    }
+    if (this.typingAnimTimer !== -1) {
+      return;
+    }
+    this.typingAnimTimer = setInterval((): void => {
+      if (this.typing.label === '' || !this.animationsAllowed) {
+        this.stopTypingAnimTimer();
+        return;
+      }
+      try {
+        this.getUIContext().animateTo({
+          duration: 240,
+          curve: Curve.EaseInOut
+        }, (): void => {
+          this.typingDotPhase = (this.typingDotPhase + 1) % 3;
+        });
+      } catch (_e) {
+        this.typingDotPhase = (this.typingDotPhase + 1) % 3;
+      }
+    }, 280);
+  }
+
+  private typingDotOpacity(index: number): number {
+    if (!this.animationsAllowed) {
+      return 1;
+    }
+    if (this.typingDotPhase === index) {
+      return 1;
+    }
+    if ((this.typingDotPhase + 2) % 3 === index) {
+      return 0.65;
+    }
+    return 0.35;
+  }
+
+  private typingDotScale(index: number): number {
+    if (!this.animationsAllowed) {
+      return 1;
+    }
+    if (this.typingDotPhase === index) {
+      return 1.12;
+    }
+    if ((this.typingDotPhase + 2) % 3 === index) {
+      return 0.92;
+    }
+    return 0.78;
+  }
+
+  @Monitor('menuShow')
+  onMenuShowChanged(): void {
+    this.getUIContext().animateTo({
+      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+      curve: Curve.EaseInOut
+    }, (): void => {
+      this.menuIconOpen = this.menuShow;
+    });
+  }
+
+  // 1 = 按下，0 = 抬起 / 取消，-1 = 其它（Move 不动状态）。
+  private pressEdge(event: TouchEvent): number {
+    if (event.type === TouchType.Down) {
+      return 1;
+    }
+    if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+      return 0;
+    }
+    return -1;
+  }
+
+  private animatePress(apply: () => void): void {
+    this.getUIContext().animateTo({
+      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
+      curve: Curve.EaseOut
+    }, apply);
+  }
+
+  private actionFill(pressed: boolean): ResourceColor {
+    return plainGlassFill(pressed ? $r('app.color.surface_alt') : $r('app.color.surface'));
+  }
+
+  @Styles
+  identityNormalStyle() {
+    .backgroundColor(plainGlassFill($r('app.color.surface')))
+    .opacity(1)
+    .scale({ x: 1, y: 1 })
+  }
+
+  @Styles
+  identityPressedStyle() {
+    .backgroundColor(plainGlassFill($r('app.color.surface_alt')))
+    .opacity(0.78)
+    .scale({ x: 0.985, y: 0.96 })
+  }
+
+  @Builder
+  titleAccessory() {
+    if (this.header.state === 'loading' || this.header.profileOpening) {
+      LoadingProgress().width(15).height(15).color(this.accent()).margin({ left: 5 });
+    } else if (emojiStatusVisible(this.header.emojiPath, this.header.emojiUid)) {
+      if (!this.animationsAllowed) {
+        // 保持标题占位，隐藏时不挂动态表情播放器。
+        Row().width(18).height(18).margin({ left: 4 });
+      } else if (this.header.emojiFormat === 'tgs') {
+        TgsStickerView({
+          tgsPath: this.header.emojiPath, boxWidth: 18, boxHeight: 18, powerCategory: 'emojiStatus'
+        }).margin({ left: 4 });
+      } else if (this.header.emojiFormat === 'webm') {
+        WebmStickerView({
+          webmPath: this.header.emojiPath, stickerUid: this.header.emojiUid,
+          boxWidth: 18, boxHeight: 18, powerCategory: 'emojiStatus'
+        }).margin({ left: 4 });
+      } else {
+        Image(`file://${this.header.emojiPath}`).draggable(false)
+          .width(18).height(18).objectFit(ImageFit.Contain).margin({ left: 4 });
+      }
+    }
+    if (this.header.muteUpdating) {
+      LoadingProgress().width(14).height(14).color(this.fgSecondary()).margin({ left: 4 });
+    } else if (this.header.isMuted) {
+      SymbolGlyph($r('sys.symbol.bell_slash'))
+        .fontSize(14).fontColor([chromeIconColorOf(this.onLightBg, this.appDark, this.onDarkBg)]).margin({ left: 4 });
+    }
+  }
+
+  // B8（顺手去重，记在 B3 抽出 chromeTextColorOf/chromeIconColorOf 时留下的账）：
+  // 这两个方法原来在这里各自重写了一遍 util/chatChrome 里同名纯函数逐字相同的
+  // if/else——B3 把判据抽出去时漏了这一处调用点。现在直接调
+  // chromeTextColorOf(this.onLightBg, this.onDarkBg) / chromeIconColorOf(this.onLightBg,
+  // this.appDark) 取代，本文件不再维护第二份判据。
+
+  private fgSecondary(): ResourceColor {
+    // **和主标题同色，深浅色模式都是。** 这条规则原本只在 onLightBg 那一支生效，
+    // 而 onLightBg 自己带着 `appDark &&` 的闸（见 ChatPage.chromeOnLightBg）——于是
+    // 浅色模式下这整套对比度机制是关着的：副标题拿到 #8E8E93，压在「25% 白胶囊 +
+    // 深色壁纸」的合成底上只有约 1:1，屏幕上就是一行看不见的字（真机
+    // 2026-09-03 截图，用户报「标题下面字体颜色根本看不清」）。
+    //
+    // 顶栏浮在用户自己挑的壁纸上，底色**事先不可知**，所以这一层就不该出现
+    // "次级灰"这种预设了底色的颜色。副标题（成员数/在线数）本来就短，和主标题
+    // 同色不会喧宾夺主——层次交给字号和字重（12 常规 vs 16 加粗）。
+    return chromeTextColorOf(this.onLightBg, this.onDarkBg);
+  }
+
+  private activeSubtitleText(): string {
+    if (this.typing.label !== '' && this.header.state !== 'error') {
+      return headerTypingTextOf(this.typing.label);
+    }
+    return this.header.subtitleTextOf();
+  }
+
+  @Builder
+  backButton() {
+    Row() {
+      SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(22)
+        .fontColor([chromeTextColorOf(this.onLightBg, this.onDarkBg)]);
+    }
+    .width(CHAT_HEADER_ACTION_SIZE)
+    .height(CHAT_HEADER_ACTION_SIZE)
+    .borderRadius(CHAT_HEADER_RADIUS)
+    .justifyContent(FlexAlign.Center)
+    .shadow({ radius: this.appDark ? 0 : 4, color: this.appDark ? '#00000000' : '#12000000', offsetX: 0, offsetY: this.appDark ? 0 : 1 })
+    .backgroundColor(this.actionFill(this.backPressed))
+    .opacity(this.backPressed ? 0.72 : 1)
+    .scale({ x: this.backPressed ? 0.9 : 1, y: this.backPressed ? 0.9 : 1 })
+    .backdropBlur(plainBackdropBlur('bar'))
+    .visualEffect(hdsVisualEffect('bar', !this.appDark))
+    .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
+    .clip(this.appDark)
+    .accessibilityText($r('app.string.cp_back_to_chat'))
+    .onTouch((event: TouchEvent): void => {
+      const edge: number = this.pressEdge(event);
+      if (edge >= 0 && (edge === 1) !== this.backPressed) {
+        this.animatePress((): void => {
+          this.backPressed = edge === 1;
+        });
+      }
+    })
+    .onClick((): void => { this.onBack(); });
+  }
+
+  @Builder
+  menuButton() {
+    Row() {
+      // 菜单展开时汉堡变叉。两个图标叠着做交叉淡入淡出 + 反向旋转，比直接
+      // 替换更像"同一个东西转过去了"。SVG 是位图路径、没法真正形变，这是
+      // 视觉上最接近的做法。
+      //
+      // 系统符号库里没有汉堡线条（list_bullet 带项目符号，不是一回事），
+      // 所以横线用自带的 SVG；fillColor 能染色，深浅色主题下跟其它图标一致。
+      Stack() {
+        Image($r('app.media.ic_header_menu'))
+          .width(18).height(18)
+          .fillColor(chromeTextColorOf(this.onLightBg, this.onDarkBg))
+          .draggable(false)
+          // 交叉淡入 + 反向旋转由 onMenuShowChanged 的 animateTo 驱动，图标上不挂常驻 .animation()
+          // （理由见本组件开头按压态那段）。
+          .opacity(this.menuIconOpen ? 0 : 1)
+          .rotate({ angle: this.menuIconOpen ? 90 : 0 });
+        SymbolGlyph($r('sys.symbol.xmark'))
+          .fontSize(19).fontColor([chromeTextColorOf(this.onLightBg, this.onDarkBg)])
+          .opacity(this.menuIconOpen ? 1 : 0)
+          .rotate({ angle: this.menuIconOpen ? 0 : -90 });
+      }
+      .width(CHAT_HEADER_ACTION_SIZE).height(CHAT_HEADER_ACTION_SIZE);
+    }
+    .width(CHAT_HEADER_ACTION_SIZE)
+    .height(CHAT_HEADER_ACTION_SIZE)
+    .borderRadius(CHAT_HEADER_RADIUS)
+    .justifyContent(FlexAlign.Center)
+    .shadow({ radius: this.appDark ? 0 : 4, color: this.appDark ? '#00000000' : '#12000000', offsetX: 0, offsetY: this.appDark ? 0 : 1 })
+    .backgroundColor(this.actionFill(this.menuPressed))
+    .opacity(this.menuPressed ? 0.72 : 1)
+    .scale({ x: this.menuPressed ? 0.9 : 1, y: this.menuPressed ? 0.9 : 1 })
+    // 和身份胶囊同一档：半透明底 + backdropBlur 自绘玻璃，API 26 上让位给材质。
+    .backdropBlur(plainBackdropBlur('bar'))
+    .visualEffect(hdsVisualEffect('bar', !this.appDark))
+    .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
+    .clip(this.appDark)
+    // 菜单浮层按这个 id 定位（ChatHeaderMenuController.open 的 targetId）。
+    .id(this.menuAnchorId)
+    .enabled(this.chatId !== 0)
+    .onTouch((event: TouchEvent): void => {
+      const edge: number = this.pressEdge(event);
+      if (edge >= 0 && (edge === 1) !== this.menuPressed) {
+        this.animatePress((): void => {
+          this.menuPressed = edge === 1;
+        });
+      }
+    })
+    .accessibilityText($r('app.string.cp_more_actions'))
+    .onClick((): void => { this.onMenuTap(); });
+  }
+
+  build() {
+    Row({ space: 8 }) {
+      this.backButton();
+      Row({ space: 10 }) {
+      AvatarView({
+        avatarPath: this.header.avatarPath,
+        // 顶栏身份胶囊自身带 backdropBlur('bar')，内部若挂载 30fps XComponent 视频纹理
+        // 会每帧作废毛玻璃 FilterCache 并迫使整屏退出硬件直接合成（与 ChatRow 同理保持静态，
+        // 点进资料页 ChatProfilePage 才播放大图动态头像）。
+        animPath: '',
+        animationPaused: !this.animationsAllowed,
+        initials: this.header.initials,
+        colorSeed: this.chatId,
+        avatarSize: 38,
+        autoDeleteTime: this.header.autoDeleteTime,
+        // 「我的收藏」判定不读任何 @Trace（现查 ChatStore），本来就该在 build
+        // 期间现取；不再由页面算好经 @Param 传入。
+        savedMessages: this.header.isSavedMessages()
+      })
+        .margin({ left: -4, right: 0 });
+      Column() {
+        Row() {
+          Text(this.header.titleTextOf())
+            .fontSize(16)
+            // Medium 与会话列表行的标题同一档（issue #169 第 4 条：从列表点进来群名「变粗了」）。
+            .fontWeight(FontWeight.Medium)
+            .fontColor(chromeTextColorOf(this.onLightBg, this.onDarkBg))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .flexShrink(1);
+          this.titleAccessory();
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center);
+        // B8：副标题不再由页面用 headerText().subtitleText 算好传入——那样页面
+        // build 就订阅了 subtitle/secretSubtitle，对方在线/输入中每次翻转都要
+        // 重跑一遍页面的 chatTitleBar 闭包。本组件直接持有控制器引用，这里现读
+        // 它的 @Trace 自己合成，翻转只刷新这一个 Text 节点，页面一个字都不读——
+        // 这是本批性能收益的关键。
+        if (this.typing.label !== '' && this.header.state !== 'error') {
+          Row() {
+            Row({ space: 2.5 }) {
+              Circle({ width: 4.5, height: 4.5 })
+                .fill(this.accent())
+                .opacity(this.typingDotOpacity(0))
+                .scale({ x: this.typingDotScale(0), y: this.typingDotScale(0) });
+              Circle({ width: 4.5, height: 4.5 })
+                .fill(this.accent())
+                .opacity(this.typingDotOpacity(1))
+                .scale({ x: this.typingDotScale(1), y: this.typingDotScale(1) });
+              Circle({ width: 4.5, height: 4.5 })
+                .fill(this.accent())
+                .opacity(this.typingDotOpacity(2))
+                .scale({ x: this.typingDotScale(2), y: this.typingDotScale(2) });
+            }
+            .alignItems(VerticalAlign.Center)
+            .margin({ right: 5 })
+            .flexShrink(0);
+            Text(headerTypingTextOf(this.typing.label))
+              .fontSize(12)
+              .fontColor(this.accent())
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .flexShrink(1);
+            Row({ space: 1.5 }) {
+              Circle({ width: 2.2, height: 2.2 }).fill(this.accent());
+              Circle({ width: 2.2, height: 2.2 }).fill(this.accent());
+              Circle({ width: 2.2, height: 2.2 }).fill(this.accent());
+            }
+            .alignItems(VerticalAlign.Center)
+            .margin({ left: 2, top: 3 })
+            .flexShrink(0);
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .margin({ top: 1 });
+        } else {
+          Text(this.header.subtitleTextOf())
+            .fontSize(12)
+            .fontColor(this.header.state === 'error' ? '#E64646' : this.fgSecondary())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ top: 1 });
+        }
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start);
+      }
+      .layoutWeight(1)
+      .height(CHAT_HEADER_ACTION_SIZE)
+      .padding({ left: 7, right: 12 })
+      .borderRadius(CHAT_HEADER_RADIUS)
+      .shadow({ radius: this.appDark ? 0 : 4, color: this.appDark ? '#00000000' : '#12000000', offsetX: 0, offsetY: this.appDark ? 0 : 1 })
+      .stateStyles({ normal: this.identityNormalStyle, pressed: this.identityPressedStyle })
+      // 暗色模式与输入栏统一：关闭光晕和阴影，使用标准描边及圆角裁剪。
+      .backdropBlur(plainBackdropBlur('bar'))
+      .visualEffect(hdsVisualEffect('bar', !this.appDark))
+      .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
+      .clip(this.appDark)
+      .accessibilityText(str('cp_header_a11y', this.header.titleTextOf(), this.activeSubtitleText()))
+      .onClick((): void => {
+        if (this.header.state === 'error') {
+          this.onResolveIdentity();
+        } else {
+          this.onOpenProfile();
+        }
+      });
+      this.menuButton();
+    }
+    .width('100%')
+    .padding({ left: 12, right: 12 })
+    .margin({ top: 8, bottom: 8 })
+    .alignItems(VerticalAlign.Center);
+  }
+}

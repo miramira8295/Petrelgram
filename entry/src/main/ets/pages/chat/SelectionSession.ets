@@ -1,0 +1,285 @@
+// 消息多选（长按菜单的"选择"）状态机。
+// 从 ChatPage 整体搬出（B7 批）。
+//
+// 【为什么要搬】
+// 长按进多选、逐行点选、被撤回时被动摘除——这几步共享的其实只有两个字段：
+// 是否在多选态、选中了哪些 id。搬之前 selecting/selectedIds 是 ChatPage 的
+// @Local，任何一次点选都要重跑一遍页面的 chatTitleBar/bottomDock/timelineRow
+// 三个闭包。搬进 @ObservedV2 之后，这三个闭包仍在页面里、仍然直读
+// `this.selection.active/ids`（依赖粒度不变——本批不像 B5 的 TopBanners 那样
+// 把宿主也一起改成直读控制器，SelectionHeader/timelineRow 仍是 ChatPage 自己
+// 的 @Builder，收益只是把状态和判定收进一个能单测的对象）。
+//
+// 选择集合属于本次多选会话，不属于当前加载窗口。搜索远跳/历史裁剪只更新
+// 已选消息快照；只有真实 updateDeleteMessages 才摘除 id。保留的消息引用仅限
+// 已选条目，取消选择、退出或切会话时释放，避免把整段历史锁在内存里。
+//
+// 【为什么是 per-ChatPage 实例，不是模块级单例】
+// 平板分栏、导航栈多层时同时活着多个 ChatPage，各自的多选态互不相干。做成
+// 单例会让两页互相清对方选中的消息。页面用字段初始化器 new 一个：首帧前就
+// 已存在、引用全生命周期稳定、类型非空。
+//
+// 【为什么没有 …Seq / 定时器】
+// 本簇的每一次变更都是同步的用户点击或同步的列表快照回调，不存在"发出去的
+// 请求晚于后来的操作回来"这种竞态，因此没有序号守卫要守；也没有定时器。
+// dispose() 仍然提供，只是为了和其余控制器统一的 bind/dispose 生命周期——
+// ChatPage.aboutToDisappear 可以对每个控制器无差别地调一遍 dispose()。
+//
+// 【不在本类里声明 @Monitor】
+// 官方规则：类中 @Monitor 的解注册依赖 GC，销毁时机不可靠。本簇的所有联动都
+// 用显式方法调用表达。
+//
+// 【animateTo 包 @Trace 翻转，尚未上机验证】
+// animateSelection 用 animateTo 包住 active/ids 的翻转，和搬之前包 @Local 翻转
+// 在写法上等价，但本仓从没有在真机上验证过 animateTo 对 @ObservedV2 的
+// @Trace 字段翻转是否与对 @Local 翻转给出同样的过渡效果——理论上状态管理 V2
+// 的响应式更新走的是同一条 UI 刷新管线，但这条链路本仓是头一次这么用。
+// 真机验收请专门看多选工具栏（SelectionHeader）和消息行底色两处的淡入淡出，
+// 若观察到跳变而不是过渡，把 animateTo 挪回页面、包住对
+// `this.selection.enter()/exit()` 的调用。
+
+import { AlbumGroup } from '../../util/collapseAlbums';
+import { MessageEntry } from '../../store/MessageEntry';
+import { TdObject } from '../../tdkit/TdTypes';
+import {
+  forwardableIds, memberSelected, rowSelectable, rowSelected, selectRow, toggleMember, toggleRow
+} from '../../util/messageSelection';
+import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+
+// 宿主（ChatPage）暴露给控制器的那一小片接口，全是箭头函数字段——取值器读
+// 页面当下的真值，动作回调把副作用交回页面执行。仿
+// LiveTopCardController.ets 的 LiveTopCardHost。
+//
+// 两条纪律（与其余控制器一致）：
+// 1. 这里只放**取值器**，不放页面的 @Local 引用。控制器不缓存页面的值。
+// 2. 与本簇无关的页面子系统（反应面板、表情/贴纸抽屉）只经这里的动作回调
+//    触达，不在本类里直接实现。
+export interface SelectionSessionHost {
+  messages: () => MessageEntry[];
+  // animateSelection 的时长依据：与 GIF/TGS 密集滑动同一时间线时要把过渡砍成
+  // 0（搬之前是 `this.chatTgsScrollActive` 这个页面字段，与本簇无关，只读）。
+  chatTgsScrollActive: () => boolean;
+  // enter() 的两个副作用，伸到多选簇之外的页面子系统：关掉正在弹的反应
+  // 面板、收起底部表情/贴纸抽屉。
+  closeReactionSheet: () => void;
+  setEmojiPanel: (show: boolean) => void;
+  onActiveChange: (active: boolean) => void;
+}
+
+@ObservedV2
+export class SelectionSession {
+  // ——— 显示态：ChatPage 的 chatTitleBar/bottomDock/timelineRow 直接读这两个
+  // @Trace（原 selecting/selectedIds）———
+
+  @Trace active: boolean = false;
+  @Trace ids: number[] = [];
+  private retained: Map<number, MessageEntry> = new Map<number, MessageEntry>();
+
+  // 未 bind 时的空宿主：字段类型非空，且控制器在 aboutToAppear 之前就已经被
+  // 构造出来（页面的字段初始化器 new）。取值器返回的都是"什么都还没有"的值。
+  private host: SelectionSessionHost = {
+    messages: (): MessageEntry[] => [],
+    chatTgsScrollActive: (): boolean => false,
+    closeReactionSheet: (): void => {},
+    setEmojiPanel: (_show: boolean): void => {},
+    onActiveChange: (_active: boolean): void => {}
+  };
+
+  // ChatPage.aboutToAppear 里调一次。
+  bind(host: SelectionSessionHost): void {
+    this.host = host;
+  }
+
+  // ChatPage.aboutToDisappear 调用。本簇没有定时器/序号守卫要清，保留这个
+  // 方法只是为了和其余控制器统一的 bind/dispose 生命周期——见文件头「为什么
+  // 没有 …Seq / 定时器」。裸清一次 active/ids 是无害的幂等操作。
+  dispose(): void {
+    this.clearState();
+  }
+
+  // --- multi-select ---
+  // 从消息菜单进多选：选中的是**整行**，不是被长按的那一条。
+  //
+  // messageSelection 开篇写明的不变量是"一行要么整体选中、要么整体不选"，而
+  // 这里原来只放被长按消息的 id。相册行被长按时，那是相册的头一条：行在 UI 上
+  // 显示为选中（rowSelected 是"沾上就算"），计数却是 1，接着转发也只发出这一
+  // 张——九图相册转发成一张。
+  //
+  // 参数按原实现叫 memberIds（长按那一行全部成员的 id），不是单个 id：调用方
+  // （长按菜单的 onSelectMessages）传的就是整行的 id 数组。
+  enter(memberIds: number[]): void {
+    ContextMenu.close();
+    this.host.closeReactionSheet();
+    this.host.setEmojiPanel(false);
+    this.animateSelection((): void => {
+      this.retained.clear();
+      this.ids = toggleRow([], memberIds);
+      this.remember(this.host.messages());
+      this.setActive(true);
+    });
+  }
+
+  // 长按 / 右滑 / 菜单「选择」的统一入口。还没进多选：同 enter（从这一行起步）。
+  // 已在多选：把这一行补进已选集合，不清掉之前选好的（见 util/messageSelection.selectRow）。
+  selectRow(memberIds: number[]): void {
+    if (!this.active) {
+      this.enter(memberIds);
+      return;
+    }
+    ContextMenu.close();
+    const next: number[] = selectRow(this.ids, memberIds);
+    if (next === this.ids) {
+      return;
+    }
+    this.animateSelection((): void => {
+      this.ids = next;
+      this.remember(this.host.messages());
+    });
+  }
+
+  // 行底色的 150ms 淡入淡出。原来是消息行上一条常驻的 .animation()，现在在
+  // 改动发生的那一刻显式驱动一次——时长与曲线照搬，包括滑动中给 0 那一支。
+  private animateSelection(apply: () => void): void {
+    animateTo({
+      duration: this.host.chatTgsScrollActive() ? 0 :
+        powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
+      curve: Curve.EaseOut
+    }, apply);
+  }
+
+  exit(): void {
+    this.animateSelection((): void => { this.clearState(); });
+  }
+
+  // 不带动画的裸改，供已经在 animateSelection 闭包里的调用点用（原
+  // clearSelectionState）。
+  private clearState(): void {
+    this.ids = [];
+    this.retained.clear();
+    this.setActive(false);
+  }
+
+  private setActive(active: boolean): void {
+    if (this.active === active) {
+      return;
+    }
+    this.active = active;
+    this.host.onActiveChange(active);
+  }
+
+  // resetMessageActionSession 里 selecting/selectedIds 那半的搬迁落点（B7）。
+  // 会话级重置（路由切换、新会话进入）原样不套动画：搬之前
+  // resetMessageActionSession 是直接裸赋值，并不经过 exitSelect/
+  // clearSelectionState 那条 animateTo 路径，这里保持同样的"不动画"语义。
+  // reactionSheet 的另一半（showReactionSheet/reactionTargetId/
+  // reactionPendingKey/paidMediaPendingIds/closeForwardSheet()）与本簇无关，
+  // 仍由页面在同一个调用点自己清。
+  reset(): void {
+    this.clearState();
+  }
+
+  // 单条是否选中（相册逐格勾选）。
+  isMemberSelected(messageId: number): boolean {
+    return memberSelected(this.ids, messageId);
+  }
+
+  // 只切一条，不动同一行的其它成员。选空了就退出多选，语义与 toggleRow 一致。
+  toggleMember(messageId: number): void {
+    this.animateSelection((): void => {
+      this.ids = toggleMember(this.ids, messageId);
+      this.remember(this.host.messages());
+      if (this.ids.length === 0) {
+        this.clearState();
+      }
+    });
+  }
+
+  isRowSelected(g: AlbumGroup): boolean {
+    return rowSelected(this.ids, g.memberIds);
+  }
+
+  // Toggle a whole display row (an album row selects all its members).
+  toggleRow(g: AlbumGroup): void {
+    if (!rowSelectable(g.head.contentType)) {
+      return;
+    }
+    this.animateSelection((): void => {
+      this.ids = toggleRow(this.ids, g.memberIds);
+      this.remember(this.host.messages());
+      if (this.ids.length === 0) {
+        this.clearState();
+      }
+    });
+  }
+
+  // 当前窗口不是完整历史；不在窗口中不代表被删除。
+  reconcile(list: MessageEntry[]): void {
+    if (this.active) {
+      this.remember(list);
+    }
+  }
+
+  private remember(list: MessageEntry[]): void {
+    const selected: Set<number> = new Set<number>(this.ids);
+    this.retained.forEach((_entry: MessageEntry, id: number): void => {
+      if (!selected.has(id)) {
+        this.retained.delete(id);
+      }
+    });
+    for (const entry of list) {
+      if (selected.has(entry.id)) {
+        this.retained.set(entry.id, entry);
+      }
+    }
+  }
+
+  // 只消费当前聊天的真实删除；TDLib 缓存淘汰不取消用户选择。
+  applyDeletion(chatId: number, update: TdObject): void {
+    if (!this.active || update['chat_id'] !== chatId ||
+      (update['from_cache'] === true && update['is_permanent'] !== true)) {
+      return;
+    }
+    const deleted: Set<number> = new Set<number>((update['message_ids'] as number[] | undefined) ?? []);
+    const next: number[] = this.ids.filter((id: number): boolean => !deleted.has(id));
+    if (next.length === this.ids.length) {
+      return;
+    }
+    this.ids = next;
+    deleted.forEach((id: number): void => { this.retained.delete(id); });
+    if (this.ids.length === 0) {
+      this.exit();
+    }
+  }
+
+  entries(): MessageEntry[] {
+    this.remember(this.host.messages());
+    const result: MessageEntry[] = [];
+    for (const id of this.ids) {
+      const entry: MessageEntry | undefined = this.retained.get(id);
+      if (entry !== undefined) {
+        result.push(entry);
+      }
+    }
+    return result;
+  }
+
+  forwardIds(ids: number[]): number[] {
+    const current: Map<number, MessageEntry> = new Map<number, MessageEntry>();
+    for (const entry of this.host.messages()) {
+      current.set(entry.id, entry);
+    }
+    return forwardableIds(ids, (id: number): string => {
+      const entry: MessageEntry | undefined = current.get(id) ?? this.retained.get(id);
+      if (entry !== undefined) {
+        return entry.contentType;
+      }
+      // 搜索导航先选 id、后异步加载窗口。尚未落地的已选消息也必须传给 TDLib，
+      // 不能静默缩成当前窗口内的一条；非已选的失效菜单目标仍过滤。
+      return id > 0 && this.isMemberSelected(id) ? '' : 'hidden';
+    });
+  }
+
+  count(): number {
+    return this.ids.length;
+  }
+}

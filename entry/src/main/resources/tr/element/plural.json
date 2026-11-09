@@ -1,0 +1,979 @@
+{
+  "plural": [
+    {
+      "name": "duration_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d gün"
+        },
+        {
+          "quantity": "other",
+          "value": "%d gün"
+        }
+      ]
+    },
+    {
+      "name": "duration_days_premium",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d gün Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d gün Premium"
+        }
+      ]
+    },
+    {
+      "name": "duration_months",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ay"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ay"
+        }
+      ]
+    },
+    {
+      "name": "duration_months_premium",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ay Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ay Premium"
+        }
+      ]
+    },
+    {
+      "name": "gift_stars_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d Yıldız"
+        },
+        {
+          "quantity": "other",
+          "value": "%d Yıldız"
+        }
+      ]
+    },
+    {
+      "name": "gift_worth_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d Yıldız değerinde"
+        },
+        {
+          "quantity": "other",
+          "value": "%d Yıldız değerinde"
+        }
+      ]
+    },
+    {
+      "name": "live_media_in_room",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d kişi yayın odasında"
+        },
+        {
+          "quantity": "other",
+          "value": "%d kişi yayın odasında"
+        }
+      ]
+    },
+    {
+      "name": "live_status_watching",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d kişi izliyor"
+        },
+        {
+          "quantity": "other",
+          "value": "%d kişi izliyor"
+        }
+      ]
+    },
+    {
+      "name": "prize_premium_months",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d aylık Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d aylık Premium"
+        }
+      ]
+    },
+    {
+      "name": "prize_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d Yıldızı"
+        },
+        {
+          "quantity": "other",
+          "value": "%d Yıldızı"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d gün"
+        },
+        {
+          "quantity": "other",
+          "value": "%d gün"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d saat"
+        },
+        {
+          "quantity": "other",
+          "value": "%d saat"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d dakika"
+        },
+        {
+          "quantity": "other",
+          "value": "%d dakika"
+        }
+      ]
+    },
+    {
+      "name": "user_status_days_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d gün önce"
+        },
+        {
+          "quantity": "other",
+          "value": "%d gün önce"
+        }
+      ]
+    },
+    {
+      "name": "user_status_hours_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d saat önce"
+        },
+        {
+          "quantity": "other",
+          "value": "%d saat önce"
+        }
+      ]
+    },
+    {
+      "name": "user_status_minutes_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d dakika önce"
+        },
+        {
+          "quantity": "other",
+          "value": "%d dakika önce"
+        }
+      ]
+    },
+    {
+      "name": "sticker_set_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d çıkartma"
+        },
+        {
+          "quantity": "other",
+          "value": "%d çıkartma"
+        }
+      ]
+    },
+    {
+      "name": "cw_disconnect_all_confirm",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d sitedeki oturum kapatılacak."
+        },
+        {
+          "quantity": "other",
+          "value": "%d sitedeki oturum kapatılacak."
+        }
+      ]
+    },
+    {
+      "name": "pe_group_exceptions_kept",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d grup istisnası sunucu tarafından korundu"
+        },
+        {
+          "quantity": "other",
+          "value": "%d grup istisnası sunucu tarafından korundu"
+        }
+      ]
+    },
+    {
+      "name": "storage_file_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d dosya"
+        },
+        {
+          "quantity": "other",
+          "value": "%d dosya"
+        }
+      ]
+    },
+    {
+      "name": "bu_account_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d hesap"
+        },
+        {
+          "quantity": "other",
+          "value": "%d hesap"
+        }
+      ]
+    },
+    {
+      "name": "calls_about_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "yaklaşık %d kayıt"
+        },
+        {
+          "quantity": "other",
+          "value": "yaklaşık %d kayıt"
+        }
+      ]
+    },
+    {
+      "name": "calls_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d kayıt"
+        },
+        {
+          "quantity": "other",
+          "value": "%d kayıt"
+        }
+      ]
+    },
+    {
+      "name": "calls_participants",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d kişi"
+        },
+        {
+          "quantity": "other",
+          "value": "%d kişi"
+        }
+      ]
+    },
+    {
+      "name": "cf_about_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "yaklaşık %d sohbet"
+        },
+        {
+          "quantity": "other",
+          "value": "yaklaşık %d sohbet"
+        }
+      ]
+    },
+    {
+      "name": "cf_delete_and_leave",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d sohbeti sil ve ayrıl"
+        },
+        {
+          "quantity": "other",
+          "value": "%d sohbeti sil ve ayrıl"
+        }
+      ]
+    },
+    {
+      "name": "fl_new_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d yeni sohbet"
+        },
+        {
+          "quantity": "other",
+          "value": "%d yeni sohbet"
+        }
+      ]
+    },
+    {
+      "name": "fl_selected_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d sohbet seçildi"
+        },
+        {
+          "quantity": "other",
+          "value": "%d sohbet seçildi"
+        }
+      ]
+    },
+    {
+      "name": "fl_add_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d sohbet ekle"
+        },
+        {
+          "quantity": "other",
+          "value": "%d sohbet ekle"
+        }
+      ]
+    },
+    {
+      "name": "ds_cached_files",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d önbellek dosyası"
+        },
+        {
+          "quantity": "other",
+          "value": "%d önbellek dosyası"
+        }
+      ]
+    },
+    {
+      "name": "ct_result_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d kişi"
+        },
+        {
+          "quantity": "other",
+          "value": "%d kişi"
+        }
+      ]
+    },
+    {
+      "name": "ng_max_members",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Temel gruplara en fazla %d üye seçilebilir"
+        },
+        {
+          "quantity": "other",
+          "value": "Temel gruplara en fazla %d üye seçilebilir"
+        }
+      ]
+    },
+    {
+      "name": "ng_member_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d üye"
+        },
+        {
+          "quantity": "other",
+          "value": "%d üye"
+        }
+      ]
+    },
+    {
+      "name": "ng_people_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d kişi"
+        },
+        {
+          "quantity": "other",
+          "value": "%d kişi"
+        }
+      ]
+    },
+    {
+      "name": "ps_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d gün"
+        },
+        {
+          "quantity": "other",
+          "value": "%d gün"
+        }
+      ]
+    },
+    {
+      "name": "px_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d adet"
+        },
+        {
+          "quantity": "other",
+          "value": "%d adet"
+        }
+      ]
+    },
+    {
+      "name": "fe_chosen_limit",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Tek tek seçilen sohbet sayısı %d'i aşamaz"
+        },
+        {
+          "quantity": "other",
+          "value": "Tek tek seçilen sohbet sayısı %d'i aşamaz"
+        }
+      ]
+    },
+    {
+      "name": "fe_removed_invalid",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Sohbet listesinde olmayan %d sohbet kaldırıldı"
+        },
+        {
+          "quantity": "other",
+          "value": "Sohbet listesinde olmayan %d sohbet kaldırıldı"
+        }
+      ]
+    },
+    {
+      "name": "fe_pick_limit",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "En fazla %d sohbet seçin"
+        },
+        {
+          "quantity": "other",
+          "value": "En fazla %d sohbet seçin"
+        }
+      ]
+    },
+    {
+      "name": "fe_preview_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "yaklaşık %d sohbet bekleniyor"
+        },
+        {
+          "quantity": "other",
+          "value": "yaklaşık %d sohbet bekleniyor"
+        }
+      ]
+    },
+    {
+      "name": "fe_selected_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d seçildi"
+        },
+        {
+          "quantity": "other",
+          "value": "%d seçildi"
+        }
+      ]
+    },
+    {
+      "name": "mp_item_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d öğe"
+        },
+        {
+          "quantity": "other",
+          "value": "%d öğe"
+        }
+      ]
+    },
+    {
+      "name": "fw_forwarded_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d mesaj iletildi"
+        },
+        {
+          "quantity": "other",
+          "value": "%d mesaj iletildi"
+        }
+      ]
+    },
+    {
+      "name": "fw_forward_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d mesajı ilet"
+        },
+        {
+          "quantity": "other",
+          "value": "%d mesajı ilet"
+        }
+      ]
+    },
+    {
+      "name": "poll_voters",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d kişi katıldı"
+        },
+        {
+          "quantity": "other",
+          "value": "%d kişi katıldı"
+        }
+      ]
+    },
+    {
+      "name": "gw_winners_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d kazanan"
+        },
+        {
+          "quantity": "other",
+          "value": "%d kazanan"
+        }
+      ]
+    },
+    {
+      "name": "gw_unclaimed_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d alınmamış ödül"
+        },
+        {
+          "quantity": "other",
+          "value": "%d alınmamış ödül"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Canlı konum · %d saat"
+        },
+        {
+          "quantity": "other",
+          "value": "Canlı konum · %d saat"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Canlı konum · %d dakika"
+        },
+        {
+          "quantity": "other",
+          "value": "Canlı konum · %d dakika"
+        }
+      ]
+    },
+    {
+      "name": "loc_accuracy",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "yaklaşık %d metre hassasiyet"
+        },
+        {
+          "quantity": "other",
+          "value": "yaklaşık %d metre hassasiyet"
+        }
+      ]
+    },
+    {
+      "name": "loc_proximity",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d metre uyarı aralığı"
+        },
+        {
+          "quantity": "other",
+          "value": "%d metre uyarı aralığı"
+        }
+      ]
+    },
+    {
+      "name": "ft_topic_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d konu"
+        },
+        {
+          "quantity": "other",
+          "value": "%d konu"
+        }
+      ]
+    },
+    {
+      "name": "mb_comments_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d yorum"
+        },
+        {
+          "quantity": "other",
+          "value": "%d yorum"
+        }
+      ]
+    },
+    {
+      "name": "lv_new_interactions",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d yeni etkileşim"
+        },
+        {
+          "quantity": "other",
+          "value": "%d yeni etkileşim"
+        }
+      ]
+    },
+    {
+      "name": "lv_more_sources",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d görüntü daha"
+        },
+        {
+          "quantity": "other",
+          "value": "%d görüntü daha"
+        }
+      ]
+    },
+    {
+      "name": "lv_open_chat_unread",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Canlı yayın etkileşimini aç, %d yeni mesaj var"
+        },
+        {
+          "quantity": "other",
+          "value": "Canlı yayın etkileşimini aç, %d yeni mesaj var"
+        }
+      ]
+    },
+    {
+      "name": "lv_view_members",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d üyeyi görüntüle"
+        },
+        {
+          "quantity": "other",
+          "value": "%d üyeyi görüntüle"
+        }
+      ]
+    },
+    {
+      "name": "cp_live_online_now",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Şu an %d kişi çevrimiçi."
+        },
+        {
+          "quantity": "other",
+          "value": "Şu an %d kişi çevrimiçi."
+        }
+      ]
+    },
+    {
+      "name": "cp_n_online",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d kişi çevrimiçi"
+        },
+        {
+          "quantity": "other",
+          "value": "%d kişi çevrimiçi"
+        }
+      ]
+    },
+    {
+      "name": "cp_media_skipped",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d medya öğesi okunamadı, geri kalanı gönderildi"
+        },
+        {
+          "quantity": "other",
+          "value": "%d medya öğesi okunamadı, geri kalanı gönderildi"
+        }
+      ]
+    },
+    {
+      "name": "cp_copied_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d mesaj kopyalandı"
+        },
+        {
+          "quantity": "other",
+          "value": "%d mesaj kopyalandı"
+        }
+      ]
+    },
+    {
+      "name": "cp_n_typing",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d kişi yazıyor…"
+        },
+        {
+          "quantity": "other",
+          "value": "%d kişi yazıyor…"
+        }
+      ]
+    },
+    {
+      "name": "cp_unread_a11y",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d okunmamış mesaj, en son mesaja dön"
+        },
+        {
+          "quantity": "other",
+          "value": "%d okunmamış mesaj, en son mesaja dön"
+        }
+      ]
+    },
+    {
+      "name": "sm_paid_per_message",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Her mesaj için %d Yıldız ödenir"
+        },
+        {
+          "quantity": "other",
+          "value": "Her mesaj için %d Yıldız ödenir"
+        }
+      ]
+    },
+    {
+      "name": "sm_refunded_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d Yıldız iade edildi"
+        },
+        {
+          "quantity": "other",
+          "value": "%d Yıldız iade edildi"
+        }
+      ]
+    },
+    {
+      "name": "sm_channel_dm_price",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Bu kanalda her mesaj için %d Yıldız ödenir"
+        },
+        {
+          "quantity": "other",
+          "value": "Bu kanalda her mesaj için %d Yıldız ödenir"
+        }
+      ]
+    },
+    {
+      "name": "unit_seconds",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d saniye"
+        },
+        {
+          "quantity": "other",
+          "value": "%d saniye"
+        }
+      ]
+    },
+    {
+      "name": "unit_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d dakika"
+        },
+        {
+          "quantity": "other",
+          "value": "%d dakika"
+        }
+      ]
+    },
+    {
+      "name": "unit_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d saat"
+        },
+        {
+          "quantity": "other",
+          "value": "%d saat"
+        }
+      ]
+    },
+    {
+      "name": "unit_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d gün"
+        },
+        {
+          "quantity": "other",
+          "value": "%d gün"
+        }
+      ]
+    },
+    {
+      "name": "sm_proximity_metres",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d metre"
+        },
+        {
+          "quantity": "other",
+          "value": "%d metre"
+        }
+      ]
+    },
+    {
+      "name": "lg_resend_in",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d saniye sonra yeniden gönderilebilir"
+        },
+        {
+          "quantity": "other",
+          "value": "%d saniye sonra yeniden gönderilebilir"
+        }
+      ]
+    },
+    {
+      "name": "cl_unread_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d okunmamış"
+        },
+        {
+          "quantity": "other",
+          "value": "%d okunmamış"
+        }
+      ]
+    },
+    {
+      "name": "ap_chats_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d sohbet"
+        },
+        {
+          "quantity": "other",
+          "value": "%d sohbet"
+        }
+      ]
+    },
+    {
+      "name": "gs_free_left",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Bugün için %d ücretsiz arama kaldı"
+        },
+        {
+          "quantity": "other",
+          "value": "Bugün için %d ücretsiz arama kaldı"
+        }
+      ]
+    }
+  ]
+}

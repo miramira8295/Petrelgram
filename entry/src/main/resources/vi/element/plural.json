@@ -1,0 +1,679 @@
+{
+  "plural": [
+    {
+      "name": "duration_days",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d ngày"
+        }
+      ]
+    },
+    {
+      "name": "duration_days_premium",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d ngày Premium"
+        }
+      ]
+    },
+    {
+      "name": "duration_months",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d tháng"
+        }
+      ]
+    },
+    {
+      "name": "duration_months_premium",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d tháng Premium"
+        }
+      ]
+    },
+    {
+      "name": "gift_stars_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d Star"
+        }
+      ]
+    },
+    {
+      "name": "gift_worth_stars",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "trị giá %d Star"
+        }
+      ]
+    },
+    {
+      "name": "live_media_in_room",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d người trong phòng phát trực tiếp"
+        }
+      ]
+    },
+    {
+      "name": "live_status_watching",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d người đang xem"
+        }
+      ]
+    },
+    {
+      "name": "prize_premium_months",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d tháng Premium"
+        }
+      ]
+    },
+    {
+      "name": "prize_stars",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d Star"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_days",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d ngày"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_hours",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d giờ"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_minutes",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d phút"
+        }
+      ]
+    },
+    {
+      "name": "user_status_days_ago",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d ngày trước"
+        }
+      ]
+    },
+    {
+      "name": "user_status_hours_ago",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d giờ trước"
+        }
+      ]
+    },
+    {
+      "name": "user_status_minutes_ago",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d phút trước"
+        }
+      ]
+    },
+    {
+      "name": "sticker_set_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d nhãn dán"
+        }
+      ]
+    },
+    {
+      "name": "cw_disconnect_all_confirm",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Sẽ ngắt đăng nhập trên %d trang web."
+        }
+      ]
+    },
+    {
+      "name": "pe_group_exceptions_kept",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d ngoại lệ nhóm đã được máy chủ giữ lại"
+        }
+      ]
+    },
+    {
+      "name": "storage_file_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d tệp"
+        }
+      ]
+    },
+    {
+      "name": "bu_account_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d tài khoản"
+        }
+      ]
+    },
+    {
+      "name": "calls_about_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "khoảng %d bản ghi"
+        }
+      ]
+    },
+    {
+      "name": "calls_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d bản ghi"
+        }
+      ]
+    },
+    {
+      "name": "calls_participants",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d người"
+        }
+      ]
+    },
+    {
+      "name": "cf_about_chats",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "khoảng %d cuộc trò chuyện"
+        }
+      ]
+    },
+    {
+      "name": "cf_delete_and_leave",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Xóa và rời %d cuộc trò chuyện"
+        }
+      ]
+    },
+    {
+      "name": "fl_new_chats",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d cuộc trò chuyện mới"
+        }
+      ]
+    },
+    {
+      "name": "fl_selected_chats",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Đã chọn %d cuộc trò chuyện"
+        }
+      ]
+    },
+    {
+      "name": "fl_add_chats",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Thêm %d cuộc trò chuyện"
+        }
+      ]
+    },
+    {
+      "name": "ds_cached_files",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d tệp đã lưu trong bộ nhớ đệm"
+        }
+      ]
+    },
+    {
+      "name": "ct_result_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d người"
+        }
+      ]
+    },
+    {
+      "name": "ng_max_members",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Nhóm cơ bản có thể chọn tối đa %d thành viên"
+        }
+      ]
+    },
+    {
+      "name": "ng_member_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d thành viên"
+        }
+      ]
+    },
+    {
+      "name": "ng_people_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d người"
+        }
+      ]
+    },
+    {
+      "name": "ps_days",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d ngày"
+        }
+      ]
+    },
+    {
+      "name": "px_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d"
+        }
+      ]
+    },
+    {
+      "name": "fe_chosen_limit",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Không thể chọn riêng quá %d cuộc trò chuyện"
+        }
+      ]
+    },
+    {
+      "name": "fe_removed_invalid",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Đã gỡ %d cuộc trò chuyện không nằm trong danh sách trò chuyện"
+        }
+      ]
+    },
+    {
+      "name": "fe_pick_limit",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Chọn tối đa %d cuộc trò chuyện"
+        }
+      ]
+    },
+    {
+      "name": "fe_preview_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Dự kiến khoảng %d cuộc trò chuyện"
+        }
+      ]
+    },
+    {
+      "name": "fe_selected_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Đã chọn %d"
+        }
+      ]
+    },
+    {
+      "name": "mp_item_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d mục"
+        }
+      ]
+    },
+    {
+      "name": "fw_forwarded_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Đã chuyển tiếp %d tin nhắn"
+        }
+      ]
+    },
+    {
+      "name": "fw_forward_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Chuyển tiếp %d tin nhắn"
+        }
+      ]
+    },
+    {
+      "name": "poll_voters",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d người tham gia"
+        }
+      ]
+    },
+    {
+      "name": "gw_winners_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d người trúng thưởng"
+        }
+      ]
+    },
+    {
+      "name": "gw_unclaimed_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d chưa nhận"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_hours",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Vị trí thời gian thực · %d giờ"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_minutes",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Vị trí thời gian thực · %d phút"
+        }
+      ]
+    },
+    {
+      "name": "loc_accuracy",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Chính xác đến khoảng %d mét"
+        }
+      ]
+    },
+    {
+      "name": "loc_proximity",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Phạm vi nhắc nhở %d mét"
+        }
+      ]
+    },
+    {
+      "name": "ft_topic_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d chủ đề"
+        }
+      ]
+    },
+    {
+      "name": "mb_comments_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d bình luận"
+        }
+      ]
+    },
+    {
+      "name": "lv_new_interactions",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d tương tác mới"
+        }
+      ]
+    },
+    {
+      "name": "lv_more_sources",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "còn %d hình ảnh nữa"
+        }
+      ]
+    },
+    {
+      "name": "lv_open_chat_unread",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Mở tương tác phát trực tiếp, có %d tin nhắn mới"
+        }
+      ]
+    },
+    {
+      "name": "lv_view_members",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Xem %d thành viên"
+        }
+      ]
+    },
+    {
+      "name": "cp_live_online_now",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Hiện có %d người trực tuyến."
+        }
+      ]
+    },
+    {
+      "name": "cp_n_online",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d người trực tuyến"
+        }
+      ]
+    },
+    {
+      "name": "cp_media_skipped",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d mục phương tiện đọc thất bại, đã gửi phần còn lại"
+        }
+      ]
+    },
+    {
+      "name": "cp_copied_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Đã sao chép %d tin nhắn"
+        }
+      ]
+    },
+    {
+      "name": "cp_n_typing",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d người đang nhập…"
+        }
+      ]
+    },
+    {
+      "name": "cp_unread_a11y",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d tin nhắn chưa đọc, quay lại tin nhắn mới nhất"
+        }
+      ]
+    },
+    {
+      "name": "sm_paid_per_message",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Mỗi tin nhắn cần thanh toán %d Star"
+        }
+      ]
+    },
+    {
+      "name": "sm_refunded_stars",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Đã hoàn trả %d Star"
+        }
+      ]
+    },
+    {
+      "name": "sm_channel_dm_price",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Kênh này cho phép nhắn riêng với %d Star mỗi tin"
+        }
+      ]
+    },
+    {
+      "name": "unit_seconds",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d giây"
+        }
+      ]
+    },
+    {
+      "name": "unit_minutes",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d phút"
+        }
+      ]
+    },
+    {
+      "name": "unit_hours",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d giờ"
+        }
+      ]
+    },
+    {
+      "name": "unit_days",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d ngày"
+        }
+      ]
+    },
+    {
+      "name": "sm_proximity_metres",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d mét"
+        }
+      ]
+    },
+    {
+      "name": "lg_resend_in",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Có thể gửi lại sau %d giây"
+        }
+      ]
+    },
+    {
+      "name": "cl_unread_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d chưa đọc"
+        }
+      ]
+    },
+    {
+      "name": "ap_chats_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d cuộc trò chuyện"
+        }
+      ]
+    },
+    {
+      "name": "gs_free_left",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "Hôm nay còn %d lần tìm kiếm miễn phí"
+        }
+      ]
+    }
+  ]
+}

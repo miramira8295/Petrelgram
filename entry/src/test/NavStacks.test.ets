@@ -1,0 +1,177 @@
+import { describe, it, expect, beforeEach } from '@ohos/hypium';
+import {
+  registerStack, stackOf, clearAllStacks, resetStacksForTest, snapshotOf,
+  NavStackLike, NavPathInfoLike, lastParamOfDest
+} from '../main/ets/util/navStacks';
+import { StackFrame } from '../main/ets/util/splitRouting';
+
+class FakeStack implements NavStackLike {
+  names: string[] = [];
+  params: (Object | undefined)[] = [];
+  cleared: number = 0;
+
+  clear(animated?: boolean): void {
+    this.cleared = this.cleared + 1;
+    this.names = [];
+    this.params = [];
+  }
+  popped: number = 0;
+
+  pop(animated?: boolean): void {
+    this.popped = this.popped + 1;
+    this.names.pop();
+    this.params.pop();
+  }
+  pushPath(info: NavPathInfoLike): void {
+    this.names.push(info.name);
+    this.params.push(info.param);
+  }
+  size(): number { return this.names.length; }
+  getAllPathName(): string[] { return this.names; }
+  getParamByIndex(index: number): Object | undefined {
+    return index >= 0 && index < this.params.length ? this.params[index] : undefined;
+  }
+}
+
+function idKey(name: string, param: Object | undefined): string {
+  if (param === undefined) { return ''; }
+  const bag = param as Record<string, Object>;
+  const v = bag['id'] as number | undefined;
+  return v === undefined ? '' : `${v}`;
+}
+
+export default function navStacksTest(): void {
+  describe('navStacks', (): void => {
+
+    beforeEach((): void => { resetStacksForTest(); });
+
+    it('没注册过取到 undefined', 0, (): void => {
+      expect(stackOf('chat') === undefined).assertTrue();
+    });
+
+    it('注册后能取回同一个对象', 0, (): void => {
+      const s = new FakeStack();
+      registerStack('chat', s);
+      expect(stackOf('chat') === s).assertTrue();
+    });
+
+    it('三个 tab 各存各的，互不串', 0, (): void => {
+      const a = new FakeStack();
+      const b = new FakeStack();
+      registerStack('chat', a);
+      registerStack('settings', b);
+      expect(stackOf('chat') === a).assertTrue();
+      expect(stackOf('settings') === b).assertTrue();
+      expect(stackOf('contacts') === undefined).assertTrue();
+    });
+
+    it('个人资料页签有自己的一条栈，和设置那条互不串', 0, (): void => {
+      const settings = new FakeStack();
+      const profile = new FakeStack();
+      registerStack('settings', settings);
+      registerStack('profile', profile);
+      profile.pushPath({ name: 'AccountEditPage' });
+      // 同一个页面可能同时压在两条栈上（设置列表进一次、个人资料进一次），
+      // 两条栈必须各记各的。
+      expect(stackOf('profile') === profile).assertTrue();
+      expect(stackOf('settings') === settings).assertTrue();
+      expect(settings.size()).assertEqual(0);
+      expect(profile.size()).assertEqual(1);
+    });
+
+    it('clearAllStacks 覆盖新加的 profile 栈', 0, (): void => {
+      const profile = new FakeStack();
+      profile.pushPath({ name: 'AccountEditPage' });
+      registerStack('profile', profile);
+      clearAllStacks();
+      expect(profile.cleared).assertEqual(1);
+      expect(profile.size()).assertEqual(0);
+    });
+
+    it('重复注册同一 tab 以后者为准（账号切换会重建组件树）', 0, (): void => {
+      const a = new FakeStack();
+      const b = new FakeStack();
+      registerStack('chat', a);
+      registerStack('chat', b);
+      expect(stackOf('chat') === b).assertTrue();
+    });
+
+    it('clearAllStacks 清掉每一条已注册的栈', 0, (): void => {
+      const a = new FakeStack();
+      const b = new FakeStack();
+      a.pushPath({ name: 'ChatPage' });
+      b.pushPath({ name: 'AboutPage' });
+      registerStack('chat', a);
+      registerStack('settings', b);
+      clearAllStacks();
+      expect(a.cleared).assertEqual(1);
+      expect(b.cleared).assertEqual(1);
+      expect(a.size()).assertEqual(0);
+      expect(b.size()).assertEqual(0);
+    });
+
+    it('clearAllStacks 不会因某个 tab 没注册而抛', 0, (): void => {
+      const a = new FakeStack();
+      registerStack('chat', a);
+      clearAllStacks();
+      expect(a.cleared).assertEqual(1);
+    });
+
+    it('snapshotOf 空栈得到空数组', 0, (): void => {
+      const s = new FakeStack();
+      const snap: StackFrame[] = snapshotOf(s, idKey);
+      expect(snap.length).assertEqual(0);
+    });
+
+    it('snapshotOf 按顺序还原 name 与 key', 0, (): void => {
+      const s = new FakeStack();
+      const p1: Record<string, Object> = { 'id': 10 };
+      const p2: Record<string, Object> = { 'id': 20 };
+      s.pushPath({ name: 'ChatPage', param: p1 });
+      s.pushPath({ name: 'ProfilePage', param: p2 });
+      const snap: StackFrame[] = snapshotOf(s, idKey);
+      expect(snap.length).assertEqual(2);
+      expect(snap[0].name).assertEqual('ChatPage');
+      expect(snap[0].key).assertEqual('10');
+      expect(snap[1].name).assertEqual('ProfilePage');
+      expect(snap[1].key).assertEqual('20');
+    });
+
+    // ── lastParamOfDest：目的页在 aboutToAppear 里拿不到自己的栈时的取参数路子 ──
+    // 真实事故见 util/navStacks 里该函数的注释（#话题标签进搜索页不自动搜）。
+
+    it('取同名目的地里最靠上的那个的 param', 0, (): void => {
+      const s: FakeStack = new FakeStack();
+      s.pushPath({ name: 'GlobalSearchPage', param: { 'query': 'first' } as Record<string, Object> });
+      s.pushPath({ name: 'ChatPage', param: { 'chatId': 7 } as Record<string, Object> });
+      s.pushPath({ name: 'GlobalSearchPage', param: { 'query': 'second' } as Record<string, Object> });
+      const got = lastParamOfDest(s, 'GlobalSearchPage') as Record<string, Object>;
+      // 后推的那个才是本次进来的：从搜索结果进会话、再点标签又推一个搜索页。
+      expect(got['query'] as string).assertEqual('second');
+    });
+
+    it('只有一个时就取它', 0, (): void => {
+      const s: FakeStack = new FakeStack();
+      s.pushPath({ name: 'GlobalSearchPage', param: { 'query': '#tag' } as Record<string, Object> });
+      const got = lastParamOfDest(s, 'GlobalSearchPage') as Record<string, Object>;
+      expect(got['query'] as string).assertEqual('#tag');
+    });
+
+    it('栈里没有这个目的地就是 undefined', 0, (): void => {
+      const s: FakeStack = new FakeStack();
+      s.pushPath({ name: 'ChatPage', param: { 'chatId': 7 } as Record<string, Object> });
+      expect(lastParamOfDest(s, 'GlobalSearchPage') === undefined).assertTrue();
+    });
+
+    it('空栈也不炸', 0, (): void => {
+      expect(lastParamOfDest(new FakeStack(), 'GlobalSearchPage') === undefined).assertTrue();
+    });
+
+    it('推进去时没带 param 的，取到 undefined 而不是抛', 0, (): void => {
+      const s: FakeStack = new FakeStack();
+      s.pushPath({ name: 'GlobalSearchPage' });
+      expect(lastParamOfDest(s, 'GlobalSearchPage') === undefined).assertTrue();
+    });
+
+  });
+}

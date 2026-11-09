@@ -1,0 +1,36 @@
+diff --git a/tgcalls/group/AVIOContextImpl.cpp b/tgcalls/group/AVIOContextImpl.cpp
+index 4c65965..6830b5f 100644
+--- a/tgcalls/group/AVIOContextImpl.cpp
++++ b/tgcalls/group/AVIOContextImpl.cpp
+@@ -49,8 +49,17 @@ int64_t AVIOContextImplSeek(void *opaque, int64_t offset, int whence) {
+ 
+ AVIOContextImpl::AVIOContextImpl(std::vector<uint8_t> &&fileData) :
+ _fileData(std::move(fileData)) {
+-    _buffer.resize(4 * 1024);
+-    _context = avio_alloc_context(_buffer.data(), (int)_buffer.size(), 0, this, &AVIOContextImplRead, NULL, &AVIOContextImplSeek);
++    // avio_context_free() also frees AVIOContext::buffer with av_free().
++    // Passing std::vector::data() made FFmpeg free C++-owned storage and the
++    // vector destructor free it a second time. HarmonyOS' allocator catches
++    // that immediately when an RTMP audio part is released.
++    const int bufferSize = 4 * 1024;
++    auto *buffer = static_cast<unsigned char *>(av_malloc(bufferSize));
++    if (buffer != nullptr) {
++        _context = avio_alloc_context(
++            buffer, bufferSize, 0, this, &AVIOContextImplRead, NULL, &AVIOContextImplSeek);
++        if (_context == nullptr) { av_free(buffer); }
++    }
+ }
+ 
+ AVIOContextImpl::~AVIOContextImpl() {
+diff --git a/tgcalls/group/AVIOContextImpl.h b/tgcalls/group/AVIOContextImpl.h
+index 92022f2..ee0435c 100644
+--- a/tgcalls/group/AVIOContextImpl.h
++++ b/tgcalls/group/AVIOContextImpl.h
+@@ -31,7 +31,6 @@ public:
+     std::vector<uint8_t> _fileData;
+     int _fileReadPosition = 0;
+ 
+-    std::vector<uint8_t> _buffer;
+     AVIOContext *_context = nullptr;
+ };
+ 

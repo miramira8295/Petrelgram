@@ -1,0 +1,42 @@
+/node_modules
+/oh_modules
+.DS_Store
+/local.properties
+/.idea
+**/build
+/.hvigor
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+# Local ArkTS compiler/linter cache
+/.cache/
+# API credentials — never commit
+**/ApiCredentials.ets
+# Prebuilt native libraries — fetched via scripts/fetch-tdlib.sh
+entry/libs/
+# 原生产物一律不进版本库，由 scripts/build-*.sh 构建（同 entry/libs/）。
+third_party/libvpx-ohos/
+# rlottie 同理：由 scripts/build-rlottie-ohos.sh 生成（1.1MB 静态库 + 头文件）。
+third_party/rlottie-ohos/
+# Local MCP config (machine-specific absolute paths)
+.mcp.json
+# Internal docs & AI tooling — not published
+/docs
+/.claude
+/.superpowers
+# 翻译中间产物（分块 JSON）。成品是 resources/<locale>/element/string.json，
+# 由 scripts/i18n-assemble-locale.mjs 从这些块拼出来。
+/i18n-work
+
+# 重构期间的对照备份，不进版本库
+*.ets.bak
+
+# 本地构建产物与工具目录，不进版本库
+dist/
+.codegenie/
+
+# 自编 ijkplayer 的 har（scripts/fetch-ijkplayer.sh 拉取或从 fork 编），不进版本库
+/libs/*.har

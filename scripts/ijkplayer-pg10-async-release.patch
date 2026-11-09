@@ -1,0 +1,192 @@
+diff --git a/ijkplayer/oh-package.json5 b/ijkplayer/oh-package.json5
+index d75fe3a..58c9026 100644
+--- a/ijkplayer/oh-package.json5
++++ b/ijkplayer/oh-package.json5
+@@ -15,7 +15,7 @@
+   "main": "index.ets",
+   "type": "module",
+   "repository": "https://gitcode.com/CPF-ApplicationTPC/ohos_ijkplayer",
+-  "version": "2.0.13-pg.9",
++  "version": "2.0.13-pg.10",
+   "tags": [
+     "Media"
+   ],
+diff --git a/ijkplayer/src/main/cpp/napi/ijkplayer_napi.cpp b/ijkplayer/src/main/cpp/napi/ijkplayer_napi.cpp
+index d3544b6..e6ba90a 100644
+--- a/ijkplayer/src/main/cpp/napi/ijkplayer_napi.cpp
++++ b/ijkplayer/src/main/cpp/napi/ijkplayer_napi.cpp
+@@ -1127,45 +1127,94 @@ napi_value IJKPlayerNapi::stopAsync(napi_env env, napi_callback_info info)
+     return promise;
+ }
+ 
++struct AsyncReleaseJob {
++    napi_async_work work = nullptr;
++    napi_deferred deferred = nullptr;
++    IjkMediaPlayer *player = nullptr;
++    OHNativeWindow *window = nullptr;
++};
++
+ napi_value IJKPlayerNapi::releaseAsync(napi_env env, napi_callback_info info)
+ {
+-    LOGI("napi-->releaseAsync");
+     size_t argc = PARAM_COUNT_1;
+     napi_value args[PARAM_COUNT_1] = {nullptr};
+     napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+-    std::string xcomponentId;
+-    NapiUtil::JsValueToString(env, args[INDEX_0], STR_DEFAULT_SIZE, xcomponentId);
+-    if (xcomponentId == "") {
+-        xcomponentId = IJKPlayerNapi::getXComponentId(env, info);
++    std::string id;
++    NapiUtil::JsValueToString(env, args[INDEX_0], STR_DEFAULT_SIZE, id);
++    if (id.empty()) {
++        id = IJKPlayerNapi::getXComponentId(env, info);
+     }
+-    napi_deferred deferred;
+     napi_value promise;
+-    NAPI_CALL(env, napi_create_promise(env, &deferred, &promise));
+-    CommonCallBackInfo *commonCallBackInfo = new CommonCallBackInfo{
+-        .env = env,
+-        .asyncWork = nullptr,
+-        .deferred = deferred,
+-        .xcomponentId = xcomponentId,
+-    };
+-    napi_value resourceName;
+-    napi_create_string_latin1(env, "releaseAsync", NAPI_AUTO_LENGTH, &resourceName);
+-    napi_create_async_work(
+-        env, nullptr, resourceName,
+-        [](napi_env env, void *data) {
+-            CommonCallBackInfo *commonCallBackInfo = (CommonCallBackInfo *)data;
+-            IJKPlayerNapi::getInstance(commonCallBackInfo->xcomponentId)->
+-            ijkPlayerNapiProxy_->IjkMediaPlayer_release();
++    auto *job = new AsyncReleaseJob;
++    if (napi_create_promise(env, &job->deferred, &promise) != napi_ok) {
++        delete job;
++        return nullptr;
++    }
++    napi_value resource;
++    napi_create_string_utf8(env, "PetrelVideoRelease", NAPI_AUTO_LENGTH, &resource);
++    napi_status status = napi_create_async_work(env, nullptr, resource,
++        [](napi_env, void *data) {
++            auto *job = static_cast<AsyncReleaseJob *>(data);
++            if (job->player != nullptr) {
++                ijkmp_shutdown(job->player);
++                ijkmp_dec_ref_p(&job->player);
++            }
++            if (job->window != nullptr) {
++                OH_NativeWindow_NativeObjectUnreference(job->window);
++                job->window = nullptr;
++            }
+         },
+         [](napi_env env, napi_status status, void *data) {
+-            CommonCallBackInfo *commonCallBackInfo = (CommonCallBackInfo *)data;
++            auto *job = static_cast<AsyncReleaseJob *>(data);
+             napi_value result;
+-            napi_create_int32(env, 1, &result);
+-            napi_resolve_deferred(commonCallBackInfo->env, commonCallBackInfo->deferred, result);
+-            napi_delete_async_work(env, commonCallBackInfo->asyncWork);
+-            delete commonCallBackInfo;
+-        },
+-        (void *)commonCallBackInfo, &commonCallBackInfo->asyncWork);
+-    napi_queue_async_work(env, commonCallBackInfo->asyncWork);
++            // Work is never cancelled: resolution means native teardown finished.
++            napi_get_boolean(env, status == napi_ok, &result);
++            napi_resolve_deferred(env, job->deferred, result);
++            napi_delete_async_work(env, job->work);
++            delete job;
++        }, job, &job->work);
++    if (status == napi_ok) {
++        // On the JS thread, detach exactly this player before its Surface can
++        // disappear. The worker never touches a NAPI instance or a mutable ID map.
++        job->player = IJKPlayerNapiProxy::take_media_player(id);
++        {
++            std::lock_guard<std::mutex> lock(mapMutex_);
++            auto it = ijkPlayerNapi_.find(id);
++            if (job->player != nullptr && it != ijkPlayerNapi_.end()) {
++                auto windowIt = it->second->nativeWindowMap_.find(id);
++                if (windowIt != it->second->nativeWindowMap_.end()) {
++                    auto *window = static_cast<OHNativeWindow *>(windowIt->second);
++                    if (window != nullptr) {
++                        if (OH_NativeWindow_NativeObjectReference(window) == 0) {
++                            job->window = window;
++                        } else {
++                            status = napi_generic_failure;
++                        }
++                    }
++                }
++            }
++        }
++        if (status == napi_ok) {
++            status = napi_queue_async_work(env, job->work);
++        }
++    }
++    if (status != napi_ok) {
++        // Queueing failed before returning to JS: no replacement can exist yet.
++        if (job->player != nullptr) {
++            IJKPlayerNapiProxy::restore_media_player(id, job->player);
++        }
++        if (job->window != nullptr) {
++            OH_NativeWindow_NativeObjectUnreference(job->window);
++        }
++        if (job->work != nullptr) {
++            napi_delete_async_work(env, job->work);
++        }
++        napi_value message, error;
++        napi_create_string_utf8(env, "Unable to queue video release", NAPI_AUTO_LENGTH, &message);
++        napi_create_error(env, nullptr, message, &error);
++        napi_reject_deferred(env, job->deferred, error);
++        delete job;
++    }
+     return promise;
+ }
+ 
+diff --git a/ijkplayer/src/main/cpp/proxy/ijkplayer_napi_proxy.cpp b/ijkplayer/src/main/cpp/proxy/ijkplayer_napi_proxy.cpp
+index 888e6d0..e913438 100644
+--- a/ijkplayer/src/main/cpp/proxy/ijkplayer_napi_proxy.cpp
++++ b/ijkplayer/src/main/cpp/proxy/ijkplayer_napi_proxy.cpp
+@@ -292,6 +292,24 @@ IjkMediaPlayer *IJKPlayerNapiProxy::set_media_player(std::string id, IjkMediaPla
+     return GLOBAL_IJKMP[id];
+ }
+ 
++IjkMediaPlayer *IJKPlayerNapiProxy::take_media_player(const std::string &id)
++{
++    std::lock_guard<std::mutex> lock(g_globalIjkmpMutex);
++    auto it = GLOBAL_IJKMP.find(id);
++    if (it == GLOBAL_IJKMP.end()) {
++        return nullptr;
++    }
++    IjkMediaPlayer *mp = it->second;
++    GLOBAL_IJKMP.erase(it);
++    return mp;
++}
++
++void IJKPlayerNapiProxy::restore_media_player(const std::string &id, IjkMediaPlayer *mp)
++{
++    std::lock_guard<std::mutex> lock(g_globalIjkmpMutex);
++    GLOBAL_IJKMP.emplace(id, mp);
++}
++
+ void IJKPlayerNapiProxy::delete_media_player(std::string id)
+ {
+     std::lock_guard<std::mutex> lock(g_globalIjkmpMutex);
+@@ -784,4 +802,4 @@ int IJKPlayerNapiProxy::IjkMediaPlayer_setRecordDefaultFrameRate(const int frame
+     }
+     ijkmp_dec_ref_p(&mp);
+     return retval;
+-}
+\ No newline at end of file
++}
+diff --git a/ijkplayer/src/main/cpp/proxy/ijkplayer_napi_proxy.h b/ijkplayer/src/main/cpp/proxy/ijkplayer_napi_proxy.h
+index d75a3bd..849be4d 100644
+--- a/ijkplayer/src/main/cpp/proxy/ijkplayer_napi_proxy.h
++++ b/ijkplayer/src/main/cpp/proxy/ijkplayer_napi_proxy.h
+@@ -67,6 +67,10 @@ class IJKPlayerNapiProxy {
+     IjkMediaPlayer *set_media_player(std::string id, IjkMediaPlayer *mp);
+     IjkMediaPlayer *get_media_player(std::string id);
+     void delete_media_player(std::string id);
++    // Transfer the registry's reference to an async release job. Never look up
++    // by ID again after this: that ID may already belong to a new player.
++    static IjkMediaPlayer *take_media_player(const std::string &id);
++    static void restore_media_player(const std::string &id, IjkMediaPlayer *mp);
+     
+     int IjkMediaPlayer_startRecord(const char *recordFilePath);
+     int IjkMediaPlayer_stopRecord();

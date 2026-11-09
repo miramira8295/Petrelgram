@@ -1,0 +1,53 @@
+diff --git a/tgcalls/group/StreamingMediaContext.cpp b/tgcalls/group/StreamingMediaContext.cpp
+index 7784b12..4d8b75e 100644
+--- a/tgcalls/group/StreamingMediaContext.cpp
++++ b/tgcalls/group/StreamingMediaContext.cpp
+@@ -425,7 +425,7 @@ public:
+             } else if (segment->unifiedAudio) {
+                 const auto available = [&] {
+                     _audioDataMutex.Lock();
+-                    const auto result = (_audioRingBuffer.availableForWriting() >= 480);
++                    const auto result = (_audioRingBuffer.availableForWriting() >= 480 * _audioRingBufferNumChannels);
+                     _audioDataMutex.Unlock();
+ 
+                     return result;
+@@ -531,6 +531,17 @@ public:
+                     RTC_LOG(LS_INFO) << "render: discarding video frames at the end of a segment (displayed " << segment->unified[0]->_displayedFrames << " frames)";
+                 }
+ 
++                _availableSegments.erase(_availableSegments.begin());
++            } else if (
++                _availableSegments.size() > 1 &&
++                (!segment->audio || segment->audio->getRemainingMilliseconds() <= 0) &&
++                (segment->video.empty() || !segment->video[0]->part->getActiveEndpointId()) &&
++                (segment->unified.empty() || !segment->unified[0]->videoPart->hasRemainingFrames()) &&
++                (!segment->unifiedAudio || !segment->unifiedAudio->hasRemainingFrames())
++            ) {
++                _playbackReferenceTimestamp += segment->duration;
++                _waitForBufferredMillisecondsBeforeRendering = absl::nullopt;
++
+                 _availableSegments.erase(_availableSegments.begin());
+             }
+ 
+@@ -1052,7 +1063,7 @@ private:
+     int64_t _playbackReferenceTimestamp = 0;
+ 
+     const int _audioRingBufferNumChannels = 2;
+-    const size_t _audioDataRingBufferMaxSize = 4800 * 2;
++    const size_t _audioDataRingBufferMaxSize = 4800 * 8;
+     webrtc::Mutex _audioDataMutex;
+     SampleRingBuffer _audioRingBuffer;
+     std::vector<int16_t> _tempAudioBuffer;
+diff --git a/tgcalls/group/VideoStreamingPart.cpp b/tgcalls/group/VideoStreamingPart.cpp
+index 7e113c0..c957db9 100644
+--- a/tgcalls/group/VideoStreamingPart.cpp
++++ b/tgcalls/group/VideoStreamingPart.cpp
+@@ -846,7 +846,7 @@ public:
+     }
+     
+     bool hasRemainingFrames() const {
+-        return !_parsedVideoParts.empty();
++        return !_parsedVideoParts.empty() || !_parsedAudioParts.empty();
+     }
+ 
+     int getAudioRemainingMilliseconds() {

@@ -1,0 +1,226 @@
+import { COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import {
+  displayFileName, fileStatusText, fileTypeVisual, FileTypeVisual, isAudioFileName
+} from '../../util/fileMessage';
+import { str } from '../../util/strings';
+
+// P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
+@ComponentV2
+export struct FileBubble {
+  @Param fileId: number = 0;
+  @Param fileName: string = '';
+  @Param mimeType: string = '';
+  @Param fileSize: number = 0;
+  @Param filePath: string = '';
+  @Param downloadProgress: number = 0;
+  @Param downloadFailed: boolean = false;
+  @Param downloadActive: boolean = false;
+  // 出站发送中：图块画上传环，点击不打开也不暂停，右侧箭头朝上。
+  @Param uploading: boolean = false;
+  @Param maxWidth: number = 250;
+  @Param onOpen: () => void = (): void => {};
+  @Param onSave: () => void = (): void => {};
+  // 下载中点一下 = 暂停（issue #93）。已下的那部分留着，再点继续断点续传。
+  @Param onPause: () => void = (): void => {};
+
+  @Styles
+  private cardNormalStyle(): void {
+    .scale({ x: 1, y: 1 })
+    .opacity(1)
+  }
+
+  @Styles
+  private cardPressedStyle(): void {
+    .scale({ x: 0.988, y: 0.988 })
+    .opacity(0.84)
+  }
+
+  @Styles
+  private actionNormalStyle(): void {
+    .scale({ x: 1, y: 1 })
+    .opacity(1)
+  }
+
+  @Styles
+  private actionPressedStyle(): void {
+    .scale({ x: 0.88, y: 0.88 })
+    .opacity(0.65)
+  }
+
+  private visual(): FileTypeVisual {
+    return fileTypeVisual(this.fileName, this.mimeType);
+  }
+
+  private sourceUnavailable(): boolean {
+    return this.fileId === 0 && this.filePath === '';
+  }
+
+  private status(): string {
+    return fileStatusText(
+      this.fileId,
+      this.filePath,
+      this.fileSize,
+      this.downloadActive,
+      this.downloadProgress,
+      this.downloadFailed,
+      this.uploading
+    );
+  }
+
+  private actionAccessibilityText(): string {
+    if (this.sourceUnavailable()) {
+      return str('file_unavailable');
+    }
+    if (this.filePath === '') {
+      return this.downloadFailed ? str('file_redownload_to_save') : str('file_download_to_save');
+    }
+    return str('file_save_as');
+  }
+
+  @Builder
+  private typeTile(): void {
+    Stack() {
+      Column()
+        .width(48).height(48)
+        .borderRadius(13)
+        .backgroundColor(this.sourceUnavailable() ? '#AEB6BF' : this.visual().color);
+      if (this.uploading) {
+        // 一个 Progress 兼任转圈与百分比：没有字节时 LOADING（系统自带的不确定
+        // 态动效），有百分比后切回 PROGRESSING，不用在两个节点之间换来换去。
+        Progress({ value: this.downloadProgress, total: 100, type: ProgressType.Ring })
+          .width(40).height(40)
+          .color(Color.White)
+          .style({
+            strokeWidth: 2,
+            status: this.downloadProgress > 0 ? ProgressStatus.PROGRESSING : ProgressStatus.LOADING
+          });
+        if (this.downloadProgress > 0) {
+          Text(`${this.downloadProgress}`)
+            .fontSize(9)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(Color.White);
+        }
+      } else if (this.downloadActive) {
+        if (this.downloadProgress > 0) {
+          Progress({ value: this.downloadProgress, total: 100, type: ProgressType.Ring })
+            .width(40).height(40)
+            .color(Color.White)
+            .style({ strokeWidth: 2 });
+          Text(`${this.downloadProgress}`)
+            .fontSize(9)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(Color.White);
+        } else {
+          LoadingProgress().width(21).height(21).color(Color.White);
+        }
+      } else if (!this.downloadFailed && this.filePath === '' && this.downloadProgress > 0) {
+        // 暂停态：停在百分比上的静止环 + ▶，一眼看出"点一下会继续"。
+        Progress({ value: this.downloadProgress, total: 100, type: ProgressType.Ring })
+          .width(40).height(40)
+          .color(Color.White)
+          .style({ strokeWidth: 2 });
+        // 音频用 ▶（这类文件暂停后点一下就是「继续听」）；文档类用下载箭头，
+        // 在 APP/TXT 上放播放三角语义是错的。
+        SymbolGlyph($r(isAudioFileName(this.fileName, this.mimeType)
+          ? 'sys.symbol.play_fill' : 'sys.symbol.arrow_down'))
+          .fontSize(14).fontColor([Color.White]);
+      } else if (this.downloadFailed) {
+        Text('!')
+          .fontSize(22)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Color.White);
+      } else {
+        Text(this.visual().label)
+          .fontSize(this.visual().label.length > 4 ? 8.5 : 10.5)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Color.White)
+          .maxLines(1);
+        if (this.filePath !== '') {
+          Stack() {
+            Circle({ width: 16, height: 16 }).fill('#F7FFFFFF');
+            SymbolGlyph($r('sys.symbol.checkmark'))
+              .fontSize(10)
+              .fontColor([this.visual().color]);
+          }
+          .width(16).height(16)
+          .position({ x: 33, y: 33 });
+        }
+      }
+    }
+    .width(48).height(48);
+  }
+
+  build() {
+    Row({ space: 10 }) {
+      Row({ space: 10 }) {
+        this.typeTile();
+        Column({ space: 4 }) {
+          Text(displayFileName(this.fileName))
+            .fontSize(14.5)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(COLOR_TEXT_PRIMARY)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%');
+          Text(this.status())
+            .fontSize(11)
+            .fontColor(this.downloadFailed ? '#D95B57' : COLOR_TEXT_SECONDARY)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%');
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start);
+      }
+      .layoutWeight(1)
+      .alignItems(VerticalAlign.Center)
+      .stateStyles({
+        normal: this.cardNormalStyle,
+        pressed: this.cardPressedStyle
+      })
+      .animation({ duration: 110, curve: Curve.EaseOut })
+      .onClick((): void => {
+        if (this.sourceUnavailable() || this.uploading) {
+          return;
+        }
+        if (this.downloadActive) {
+          this.onPause();
+          return;
+        }
+        this.onOpen();
+      });
+    // 右侧动作按钮：**没下载 = 下载图标，下载完 = 保存图标**，两者都是图标
+    // （用户 2026-11-05）。下载中/上传中不显示，让左侧的进度环独占表达状态。
+    if (!this.uploading && !this.downloadActive && !this.sourceUnavailable()) {
+      Row() {
+        if (this.filePath === '') {
+          SymbolGlyph($r('sys.symbol.arrow_down_to_line'))
+            .fontSize(18).fontColor([COLOR_ICON_SECONDARY]);
+        } else {
+          SymbolGlyph($r('sys.symbol.square_and_arrow_down'))
+            .fontSize(18).fontColor([COLOR_ICON_SECONDARY]);
+        }
+      }
+      .width(28).height(28).borderRadius(14)
+      .justifyContent(FlexAlign.Center)
+      .stateStyles({
+        normal: this.actionNormalStyle,
+        pressed: this.actionPressedStyle
+      })
+      .animation({ duration: 110, curve: Curve.EaseOut })
+      .accessibilityText(this.actionAccessibilityText())
+      .onClick((): void => {
+        if (this.filePath === '') {
+          this.onOpen();
+        } else {
+          this.onSave();
+        }
+      });
+    }
+  }
+  .width(Math.max(190, Math.min(262, this.maxWidth)))
+  .alignItems(VerticalAlign.Center)
+  // 右侧给动作按钮留位（28vp + 间距），其余交给时间浮层。
+  .padding({ top: 1, bottom: 10, right: this.uploading || this.downloadActive ? 12 : 4 });
+}
+}

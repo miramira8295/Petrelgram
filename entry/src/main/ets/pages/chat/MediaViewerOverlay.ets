@@ -1,0 +1,2419 @@
+import { floatingVideoWindow, FloatingVideoSource } from './VideoFloatingWindow';
+import { closeFloatingVideo, VideoPlaybackControls } from '../../util/floatingVideoRuntime';
+import { common } from '@kit.AbilityKit';
+import { batteryInfo } from '@kit.BasicServicesKit';
+import { viewerSystemBarsOwner } from '../../util/systemBarsHidden';
+import { setSystemBarsHidden } from '../../util/systemBarsWindow';
+import { MEDIA_VIEWING_PRIORITY } from '../../util/downloadPriority';
+import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
+import {
+  hopDirection, hopProgress, hopThreshold, nextMediaGroupIndex
+} from '../../util/viewerGroupHop';
+import { MessageEntry } from '../../store/MessageEntry';
+import { MessageStore } from '../../store/MessageStore';
+import { AlbumGroup } from '../../util/collapseAlbums';
+import { formatClockTime, formatTime } from '../../util/formatTime';
+import { VideoPlayerHost } from './VideoPlayerHost';
+import { isLivePhotoVideo } from '../../util/livePhoto';
+import { extractLiveStill } from '../../util/livePhotoEmbed';
+import { extractFirstFrame, saveMovingPhoto } from '../../util/livePhotoSave';
+import { fileIo as fs } from '@kit.CoreFileKit';
+import { promptAction } from '@kit.ArkUI';
+import { logE } from '../../util/log';
+import { setMediaViewerOrientation } from './LiveViewerUi';
+import { subscribeThumbPath, thumbPathFor } from '../../util/mediaThumbChannel';
+import { progressFor, subscribeProgress } from '../../util/mediaProgressChannel';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { ViewerFilmstripCell } from './ViewerFilmstripCell';
+import {
+  FilmCellVM, buildFilmCells, cellKeys, filmCellIds, idIndexMap, indexOfId
+} from '../../util/viewerFilmstrip';
+import { guardKey } from '../../util/keyGuard';
+import { posterFor, requestPoster } from '../../util/videoPosterStore';
+import {
+  KEY_CURRENT_NETWORK_TYPE, KEY_POWER_EFFECT_BLUR, KEY_POWER_SMOOTH_TRANSITIONS,
+  KEY_REDUCE_ANIM, KEY_VIEWER_CONTINUOUS_HOP, powerAnimationDuration
+} from '../../store/AppSettings';
+import { chatEffectDurationOf } from '../../util/chatEffects';
+import { mediaEntryIsVideo } from '../../util/mediaEntryKind';
+import { str } from '../../util/strings';
+import { startBackgroundCache } from '../../services/BackgroundCache';
+import { ensureCacheRegistry, noteCachedMedia } from '../../store/CacheRegistry';
+import { CacheRecord } from '../../util/cacheRegistryModel';
+import { DC_KIND_PHOTO, DC_KIND_VIDEO } from '../../util/downloadCenterModel';
+import { firstFinger } from '../../util/firstFinger';
+import { ViewerVideoChips } from './ViewerVideoChips';
+import { QUALITY_AUTO, VideoVariant, variantLabel } from '../../util/videoVariants';
+import { entryPlaybackVariant, entryVideoVariants } from '../../util/entryVideoVariant';
+import { VideoStatsPanel } from './VideoStatsPanel';
+import { VideoStatsSnapshot } from '../../util/videoStats';
+import { ViewerUnderlay } from '../../util/viewerUnderlay';
+import { formatSpeed } from '../../util/playerChrome';
+
+// 控制层的底色。材质接管时它会被 overlayGlassFill 清成透明（不透明底色会盖在
+// 材质层之上，官方常见问题写死），只有低于 API 26 时才真正画出来——那时
+// overlayMaterial 里持有的 viewer 回退色和这个是同一个值，观感不变。
+const VIEWER_CHROME_BG: string = '#6e3e3e40';
+// 顶部通栏里那一行（状态栏之下）的高度。加上 topSafe 才是整条栏的高度，
+// 而底下那两个提示胶囊挂在 topSafe + 76 上——56 给它们留出了余量。
+const CHROME_BAR_ROW_H: number = 56;
+// 从气泡放大进来时控制层的初始显隐（issue #217）。**默认收起**：顶栏、操作条、
+// 相册缩略图条、以及视频的播放控制器一开始都不画，单击一下才出来。
+//
+// 【为什么这不是"少给了一个入口"】收起来之后仍然有三条出路，一条都没少：
+// 单击切回控制层（onPhotoTap / 视频的 onBackgroundTap）、下滑关闭
+// （onDismissUpdate）、系统返回键。真正变掉的只是"第一眼看到的是图还是 chrome"。
+//
+// 【为什么单击是安全的切换手势】2026 年早些时候单击还是"关闭查看器"（照官方端），
+// 后来改掉了，理由写在 onPhotoTap 上方：那让"看清这张图"和"退出"抢同一个手势。
+// 现在收起/展开归单击、退出归下滑，本条正是建立在那次分工之上——否则默认收起
+// 就意味着第一下点击会把查看器关掉。
+export const VIEWER_CHROME_ON_OPEN: boolean = false;
+
+const VIEWER_MIN_SCALE: number = 1;
+const VIEWER_MAX_SCALE: number = 4;
+const VIEWER_DOUBLE_TAP_SCALE: number = 2.5;
+// 连续翻页切组时新组滑入的起始位移，占视口宽度的比例（issue #167）。整屏滑太重，一点都不滑读不出方向。
+const HOP_SLIDE_IN_RATIO: number = 0.35;
+
+interface ViewerFit {
+  w: number;
+  h: number;
+}
+
+// Fullscreen photo/video viewer, extracted from ChatPage.
+//
+// Ownership split with the page: the page owns *which* message is open
+// (viewerMsgId) and the open/close animation, because the hero transition is
+// anchored to the tapped thumbnail's position in the chat list. Everything that
+// only matters while the viewer is up — zoom/pan, paging, landscape, the chrome
+// layer — lives here. The component is created and destroyed by the page's
+// `if (viewerMsgId !== 0)` branch, so this state resets per open for free and
+// no explicit teardown is needed.
+// 状态管理 V2（P3 批 2 第 2 项）。迁移的理由是还债，不是顺手统一：V1 的 @Prop
+// 对复杂类型是**深拷贝**，而且是单向**同步** —— 父组件里的源每换一次新数组就
+// 重拷一次。查看器开着的时候，页面的 messages 每跳一次下载进度就换一个新数组，
+// 几百个 MessageEntry 会整体深拷一遍（下面 messages 那条注释里预告的就是这件
+// 事）。V2 的 @Param 是引用传递，这笔债到此还清。
+@ComponentV2
+export struct MediaViewerOverlay {
+  // V2 没有 @StorageProp 的等价物，顶部安全区由页面透传——页面自己就持有它。
+  //
+  // 语言纪元与材质纪元曾经也在这里透传，但**组件从来没读过它们**（全文件
+  // this.langEpoch / this.materialEpoch 各 0 处命中）：材质是
+  // overlayGlassFill / overlayBackdropBlur / materialModifier('viewer') 现读的，
+  // 语言是 $r() 资源本身跟随的。两个纪元连同 tapX/tapY 一起删于 S1。
+  // 单向入 + 回调出，而不是 @Link：@Link 只能被 V1 状态变量初始化，页面已经是
+  // 状态管理 V2，接不上。翻页/关闭时先改本地副本，再把新值交给页面，页面回灌
+  // 同一个值，语义与双向同步等价。
+  //
+  // @Param @Once（不是裸 @Param）：@Param 只读，而这三个变量组件内部要改。官方
+  // 《组件内状态变量迁移》@Prop -> @Param 第三条：「如果子组件需要修改传入的
+  // 参数，使用 @Once 允许子组件在本地修改该变量」。代价是「后续无父组件到子
+  // 组件的同步能力」，这里付得起：页面侧对这三个变量的写入只发生在**打开**
+  // （onMediaTap，本组件尚未构造）和**关闭**（closeViewer，本组件正被 if 摘掉）
+  // 两处，查看器开着的整段时间里页面一次都不往下推新值。
+  @Param @Once viewerMsgId: number = 0;
+  @Event onViewerMsgIdChange: (msgId: number) => void = (): void => {};
+  @Param @Once chromeVisible: boolean = VIEWER_CHROME_ON_OPEN;
+  @Event onChromeVisibleChange: (visible: boolean) => void = (): void => {};
+  // 材质档位是设置里的用户偏好，而 overlayMaterial 那几个是普通函数、订阅不了
+  // @Param（不是普通字段）：普通字段会冻结在构造时的值，历史加载进来之后查看器
+  // 就翻不动相册了。@Param 走引用，不再有 @Prop 的整表深拷贝。
+  @Param messages: MessageEntry[] = [];
+  @Param groups: AlbumGroup[] = [];
+  // 越界方向上已加载的消息里没有下一组媒体时调用（dir 同 hopDirection 的约定，
+  // -1 = 要更旧的历史）。groups 是从**已加载的聊天窗口**折叠出来的，窗口边缘
+  // 不等于会话边缘——不补历史的话，切几组就"到头"，其实服务器上还有。
+  @Event onNeedHistory: (dir: number) => void = (): void => {};
+
+  @Param topSafe: number = 0;
+
+  // Window coordinates (vp) of the tap that opened the viewer — anchor for the
+  // expand-from-tap open / shrink-back-to-tap close transition. The transition
+  // lives on this component's own root Stack rather than on the component
+  // instance in the page: `.transition()` is documented for containers and
+  // their inserted/removed children, not for custom-component instances. The
+  // page's `if` removing this component still triggers it, because removal
+  // recursively fires the transitions of everything being removed.
+
+  // Set once at construction by the page (index of the tapped album member).
+  // @Param 而不是无装饰器成员：V2 里无装饰器成员是纯本地常量，父组件初始化它
+  // 是编译错误 10905324（P3 批 1 实测）。下面几个同理。
+  @Param initIdx: number = 0;
+  // Bubble→viewer handoff: the play position the page had recorded for the
+  // tapped message (see ChatPage.bubblePositionMs), read once here just like
+  // initIdx. Only applies to that one message — a different album member
+  // reached by swiping starts at 0, since it never had a bubble play slot in
+  // this session.
+  @Param initStartPositionMs: number = 0;
+  @Param store: MessageStore | null = null;
+  // 会话 id。**只用于 geometryTransition 的 id 作用域**（见 :1064 那行的说明）：
+  // TDLib 的 message id 是会话内 id，跨会话重合，而本仓允许多个 ChatPage 同时
+  // 活着。MessageStore.chatId 是私有的，所以由页面传。
+  // 页面化之后这个值会从 pathInfo.param 里来，本入参形状不变。
+  @Param chatId: number = 0;
+  @Param chatTitle: string = '';
+  // 从下载中心打开（pages/main/DownloadPreviewPage）：成员是下载中心拼的临时相册，id 是 1…N 的临时编号、chatId 为 0。
+  // 这时「所有媒体」「后台缓存」没有意义，缓存登记也必须跳过——否则会按临时 id 往 CacheRegistry 里写假记录。
+  @Param downloadsMode: boolean = false;
+  // 这一条能不能「在聊天中显示」。判据与列表长按菜单一致（downloadCenterRowVM 的
+  // canJump：chatId !== 0 && messageId !== 0）——下载中心磁盘扫出来的条目两者都是 0，
+  // 菜单还照常列出来的话，点了就是**静默无反应**（用户 2026-09-16 报）。
+  @Param canShowInChat: boolean = true;
+  @Param nowSec: number = 0;
+
+  // 全部函数型入参一律 @Event，包括这两个「查询型」的。理由是观测能力：调用点
+  // 传的是**内联箭头函数**，页面每重建一次都是一个新闭包，若用 @Param，那个
+  // `!==` 恒不相等，本层就会跟着页面的每一次重建白刷一遍。@Event 不具备观测
+  // 能力，正好复现迁移前「普通字段只在构造时赋值一次」的行为。官方《@Event》：
+  // 「@Event 装饰的回调方法中参数以及返回值由开发者决定」——带返回值是允许的。
+  @Event onRequestClose: () => void = (): void => {};
+  @Param closing: boolean = false;
+  @Param underlay: ViewerUnderlay | null = null;
+  private underlaySession: number = 0;
+  private underlayMotion: number = 0;
+  private underlayEntranceFinished: (transitionIn: boolean) => void = (): void => {};
+  @Event onSaveMedia: () => void = (): void => {};
+  // 实况打开时把整段视频**下全**。
+  //
+  // 【为什么必须提前下】播放走的是 StreamingVideoPlayer 流式，不需要本地文件，
+  // 所以 entry.videoPath 一直是空；而存回图库要真实文件（抽帧/取夹带都要）。
+  // 结果就是保存按钮永远弹「正在下载」而没有任何人去下载它——死路（真机实测
+  // 2026-09-07：日志里只有 saveLiveToGallery: video not downloaded yet）。
+  //
+  // 又不能在保存回调里边下边等：那份写权限只在 SaveButton 的这一次 onClick 内
+  // 有效（见 util/livePhotoSave 文件头）。所以只能在**打开的时候**就下。
+  @Event onEnsureLiveDownload: (messageId: number) => void = (): void => {};
+  // 保存到文件（首次授权 Download，之后保存到 Download/Petrelgram）——issue #97/#65。
+  @Event onSaveMediaToFiles: () => void = (): void => {};
+  // 右上角菜单的两个跳转（issue #166）：回到这条消息在时间线里的位置 /
+  // 打开资料页的「媒体」页签看全部。
+  @Event onShowInChat: () => void = (): void => {};
+  @Event onShowAllMedia: () => void = (): void => {};
+  // Viewer→bubble handoff (the other direction): the page samples this on
+  // every tick and writes it back to bubblePositionMs when the viewer closes.
+  // 350ms-ish cadence from StreamingVideoPlayer, same "plain field, no @State"
+  // reasoning as the bubble side.
+  @Event onPositionChanged: (positionMs: number) => void = (_positionMs: number): void => {};
+  // Captured once in aboutToAppear: which message initStartPositionMs belongs
+  // to, since viewerMsgId itself moves as the user swipes.
+  private initialViewerMsgId: number = 0;
+  private playbackControls: VideoPlaybackControls | null = null;
+
+  @Local pageIdx: number = 0;
+  // 横屏状态页面也要看得见：它的 onBackPress 得先认出"现在是横屏"、先退横屏
+  // 而不是关查看器。同样走 @Prop + 回调而不是 @Link。
+  @Param @Once videoLandscape: boolean = false;
+  @Event onVideoLandscapeChange: (landscape: boolean) => void = (): void => {};
+  // Zoom is viewer-owned. Keeping it out of the message row prevents the
+  // gesture from mutating a recycled Image node in the chat list.
+  //
+  // Model (per the official picture-preview best practice): the Image scales
+  // around its own center and pans via translate, so screen = offset + scale
+  // * content-point (measured from the image center). Pinch anchoring and
+  // boundary clamping are both computed against that model.
+  @Local photoScale: number = VIEWER_MIN_SCALE;
+  @Local photoOffsetX: number = 0;
+  @Local photoOffsetY: number = 0;
+
+  private pinchStartScale: number = VIEWER_MIN_SCALE;
+  private pinchStartOffsetX: number = 0;
+  private pinchStartOffsetY: number = 0;
+  // Pinch anchor relative to the viewer center (vp) — the content point that
+  // was under the fingers at pinch start stays under them while zooming.
+  private pinchAnchorX: number = 0;
+  private pinchAnchorY: number = 0;
+  private panStartOffsetX: number = 0;
+  private panStartOffsetY: number = 0;
+  private areaW: number = 0;
+  private areaH: number = 0;
+  private ignoreTapUntilMs: number = 0;
+  // 放大态下拖到左右边界后继续拖动的累计量。达到阈值即翻页，
+  // 让"滑到边上还能翻下一张"在放大时也成立（此时 Swiper 收不到手势）。
+  private edgeOverscroll: number = 0;
+  // 下滑关闭：整层（图片 + 控制层）跟着手指往下走的位移。松手时要么越过阈值
+  // 关闭，要么弹回 0。
+  @Local private dismissY: number = 0;
+  // 越界切组：方向（+1 下一组 / -1 上一组 / 0 无）、拉拽进度 0..1、目标组下标。
+  // 松手时按 gestureHopProgress 是否到 1 决定切还是弹回。
+  // 连续翻页模式（continuousHop=true）不画气泡，跟手过程只改非响应式字段，避免每帧触发组件重绘。
+  @Local private hopDir: number = 0;
+  @Local private hopProgress: number = 0;
+  private gestureHopDir: number = 0;
+  private gestureHopProgress: number = 0;
+  private hopTargetIdx: number = -1;
+  // 看图连续翻页（交互设置，issue #167）。打开查看器时读一次。
+  private continuousHop: boolean = true;
+  // 连续翻页切组后，新组从拉的那一侧滑进来的起始位移（vp），动画到 0。
+  @Local private hopSlideX: number = 0;
+  // 缩略图条自己的滚动控制器。切组之后内容会整体换掉（siblingIds 从
+  // viewerMsgId 推出来），但横向偏移不会自动回位——往前切落在新组的最后一张
+  // 时，那张会停在屏幕右边看不见的地方。
+  private filmScroller: Scroller = new Scroller();
+  // 缩略图条与大图层的懒加载数据源（2026-09-16）。**一份源喂两个 LazyForEach**：
+  // KeyedListDataSource 自己维护 listeners 数组，两处各注册各的。
+  // 原来两处都是 ForEach(siblingIds())：n 张就建 n 棵子树 + n 个 Swiper 页。聊天里
+  // 相册最多十张，下载中心把整个页签当一个相册（util/downloadViewerSet 无上限）。
+  private filmCells: FilmCellVM[] = [];
+  private filmSource: KeyedListDataSource<FilmCellVM> =
+    new KeyedListDataSource<FilmCellVM>('viewer-film');
+  // 大图层 Swiper 的懒加载数据源：开启连续翻页（continuousHop=true）时包含当前已加载会话窗口里的全部媒体项，
+  // 使跨消息左右切换与同消息多图相册共用同一套原生跟手滑动与预解码；缩略图条（filmSource）仍只展示当前相册。
+  private pagerCells: FilmCellVM[] = [];
+  private pagerSource: KeyedListDataSource<FilmCellVM> =
+    new KeyedListDataSource<FilmCellVM>('viewer-pager');
+  private pagerIds: number[] = [];
+  private pagerIndex: Map<number, number> = new Map<number, number>();
+  private lastPagerKeys: string[] = [];
+  // id → 下标两张表：memberIndex 对当前相册成员，messageIndex 对 this.messages。
+  private memberIndex: Map<number, number> = new Map<number, number>();
+  private messageIndex: Map<number, number> = new Map<number, number>();
+  private indexedMessages: MessageEntry[] = [];
+  private currentGroupVal: AlbumGroup | null = null;
+  private currentGroupIdx: number = -1;
+  private currentSiblingIds: number[] = [];
+  private lastFilmKeys: string[] = [];
+  @Local private thumbTick: number = 0;
+  private thumbUnsubs: Map<number, () => void> = new Map<number, () => void>();
+  @Local private progressTick: number = 0;
+  private progressUnsubs: Map<number, () => void> = new Map<number, () => void>();
+  @Local private loadingHoldMsgId: number = 0;
+  private loadingHoldTimer: number = -1;
+  private rebuildingPager: boolean = false;
+  private swiperCtrl: SwiperController = new SwiperController();
+  // 系统栏跟着控制栏走：控制栏收起（沉浸）就把状态栏和导航条一起藏掉，显示控制栏
+  // 时放回来，关掉查看器一律恢复（util/systemBarsHidden 仲裁，直播全屏共用同一个
+  // 开关）。
+  private readonly barsOwner: string = viewerSystemBarsOwner();
+  private initialBarsTimer: number = -1;
+  private disappearing: boolean = false;
+
+  @Monitor('closing')
+  onClosingChanged(): void {
+    if (this.closing) {
+      this.disappearing = true;
+      this.cancelInitialBarsTimer();
+      this.cancelLoadingHoldTimer();
+      this.clearThumbUnsubs();
+      this.clearProgressUnsubs();
+    }
+  }
+
+  private clearThumbUnsubs(): void {
+    this.thumbUnsubs.forEach((unsub: () => void): void => { unsub(); });
+    this.thumbUnsubs.clear();
+  }
+
+  private clearProgressUnsubs(): void {
+    this.progressUnsubs.forEach((unsub: () => void): void => { unsub(); });
+    this.progressUnsubs.clear();
+  }
+
+  private cancelLoadingHoldTimer(): void {
+    if (this.loadingHoldTimer !== -1) {
+      clearTimeout(this.loadingHoldTimer);
+      this.loadingHoldTimer = -1;
+    }
+  }
+
+  private startLoadingHold(msgId: number): void {
+    this.cancelLoadingHoldTimer();
+    if (msgId <= 0 || this.siblingIsVideo(msgId) || this.photoSrcFor(msgId) !== '') {
+      this.loadingHoldMsgId = 0;
+      return;
+    }
+    this.loadingHoldMsgId = msgId;
+    this.loadingHoldTimer = setTimeout((): void => {
+      this.loadingHoldTimer = -1;
+      if (this.loadingHoldMsgId === msgId) {
+        this.loadingHoldMsgId = 0;
+      }
+    }, 1500);
+  }
+
+  // 滑到（或点开）某张未加载的图片时才启动下载并进入加载进度态，不提前预下邻图。
+  private activatePhotoLoad(msgId: number, forceRetry: boolean = false): void {
+    if (msgId <= 0 || this.siblingIsVideo(msgId)) {
+      this.cancelLoadingHoldTimer();
+      this.loadingHoldMsgId = 0;
+      return;
+    }
+    this.startLoadingHold(msgId);
+    if (this.store !== null) {
+      this.store.requestFullPhoto(msgId, forceRetry, MEDIA_VIEWING_PRIORITY);
+    }
+  }
+
+  private liveFileProgress(fileId: number): number {
+    if (fileId === 0) {
+      return 0;
+    }
+    const _tick: number = this.progressTick;
+    if (!this.disappearing && _tick >= 0 && !this.progressUnsubs.has(fileId)) {
+      const unsub: () => void = subscribeProgress(fileId, (_pct: number): void => {
+        this.progressTick = (this.progressTick + 1) & 0x7fffffff;
+      });
+      this.progressUnsubs.set(fileId, unsub);
+    }
+    return progressFor(fileId);
+  }
+
+  private liveThumbPath(fileId: number): string {
+    if (fileId === 0) {
+      return '';
+    }
+    const p: string = thumbPathFor(fileId);
+    if (p !== '') {
+      return p;
+    }
+    if (!this.disappearing && !this.thumbUnsubs.has(fileId)) {
+      const unsub: () => void = subscribeThumbPath(fileId, (_landed: string): void => {
+        const existing: (() => void) | undefined = this.thumbUnsubs.get(fileId);
+        if (existing !== undefined) {
+          existing();
+          this.thumbUnsubs.delete(fileId);
+        }
+        this.thumbTick = (this.thumbTick + 1) & 0x7fffffff;
+      });
+      this.thumbUnsubs.set(fileId, unsub);
+    }
+    return '';
+  }
+
+  private cancelInitialBarsTimer(): void {
+    if (this.initialBarsTimer !== -1) {
+      clearTimeout(this.initialBarsTimer);
+      this.initialBarsTimer = -1;
+    }
+  }
+
+  private syncSystemBars(): void {
+    if (this.disappearing) {
+      return;
+    }
+    // 竖屏下控制栏展开时保留手机系统状态栏；横屏下全程隐藏系统状态栏，由顶栏内直接展示时间与电量。
+    setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner,
+      this.videoLandscape || !this.chromeVisible);
+  }
+
+  private requestClose(): void {
+    this.disappearing = true;
+    this.cancelInitialBarsTimer();
+    this.cancelLoadingHoldTimer();
+    this.clearThumbUnsubs();
+    this.clearProgressUnsubs();
+    setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner, false);
+    this.onRequestClose();
+  }
+
+  aboutToAppear(): void {
+    closeFloatingVideo();
+    this.underlaySession = this.underlay?.mount() ?? 0;
+    const session: number = this.underlaySession;
+    this.underlayEntranceFinished = (transitionIn: boolean): void => {
+      if (transitionIn) {
+        this.underlay?.entranceFinished(session);
+        this.cancelInitialBarsTimer();
+        if (!this.disappearing && this.dismissY <= 0) {
+          this.syncSystemBars();
+        }
+      }
+    };
+    this.continuousHop = AppStorage.get<boolean>(KEY_VIEWER_CONTINUOUS_HOP) ?? true;
+    this.rebuildViewerSources();
+    const initialPagerIdx: number = indexOfId(this.pagerIndex, this.viewerMsgId);
+    this.pageIdx = initialPagerIdx >= 0 ? initialPagerIdx : this.initIdx;
+    this.initialViewerMsgId = this.viewerMsgId;
+    this.activatePhotoLoad(this.viewerMsgId, false);
+    this.noteViewedVideo();
+    const entranceMs: number = this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300);
+    if (this.underlay !== null && entranceMs > 0) {
+      // 等入场黑幕盖住会话页后再藏系统状态栏，避免入场动画中途 TYPE_SYSTEM 变 0
+      // 把底下还没退完的 HdsNavDestination 标题栏往上扯。
+      this.initialBarsTimer = setTimeout((): void => {
+        this.initialBarsTimer = -1;
+        if (!this.disappearing && this.dismissY <= 0) {
+          this.syncSystemBars();
+        }
+      }, entranceMs);
+    } else {
+      this.syncSystemBars();
+    }
+  }
+
+  // Leaving the viewer in landscape would strand the chat page sideways.
+  aboutToDisappear(): void {
+    this.disappearing = true;
+    this.cancelInitialBarsTimer();
+    this.cancelLoadingHoldTimer();
+    this.clearThumbUnsubs();
+    this.clearProgressUnsubs();
+    this.underlay?.unmount(this.underlaySession);
+    setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner, false);
+    if (this.videoLandscape) {
+      setMediaViewerOrientation(getContext(this) as common.UIAbilityContext, false);
+    }
+  }
+
+  // 动效时长自服务。原来是 @Event effectDuration 回调进 ChatPage 拿
+  // this.reduceAnimations 再调 chatEffectDurationOf——但那条回调是查询型 @Event、
+  // 不具备观测能力，值只在本层 build 时现取；直读 AppStorage 与之**行为等价**，
+  // 且省掉一个每次页面重建都要重新捕获的闭包。
+  //
+  // 直读而不是走 util/chatEnvMirror 的 @Trace 镜像。
+  //
+  // 【更正】S1 落地时这里写的理由是"那个镜像全仓零消费者"——**那句是错的**，
+  // 当时 grep 的是 `chatEnv.`，而消费方的写法是先起别名
+  // （`private env: ChatEnvMirror = chatEnv`）再读 `this.env.xxx`，所以搜漏了。
+  // 实际至少有 5 个消费者：MessageBubble、TgsStickerView、WebmStickerView、
+  // LightweightPlainTextBubble、SelectTextOverlay。镜像机制是成立且在用的。
+  //
+  // 保持直读的真实理由：本函数是**非响应式取值**——原来的 @Event effectDuration
+  // 也不具备观测能力，值只在本层 build 时现取，直读与之行为等价。改走镜像会
+  // 让它变得比改动前更响应（多登记一处 @Trace 依赖），那是行为变化而不是等价
+  // 替换。本文件已有两处同样的直读先例：networkMetered() 与 :861 的
+  // powerAnimationDuration。
+  private effectDuration(key: string, ms: number): number {
+    return chatEffectDurationOf(AppStorage.get<boolean>(KEY_REDUCE_ANIM) ?? false, key, ms);
+  }
+
+  private networkMetered(): boolean {
+    const type: string = AppStorage.get<string>(KEY_CURRENT_NETWORK_TYPE) ?? 'other';
+    return type === 'mobile' || type === 'roaming';
+  }
+
+  // 翻到已加载窗口首尾附近时补一页历史，但**不提前预下邻图**：未加载的图片按交互约定
+  // 等用户真正滑到该页时再启动下载并展示实时加载进度，避免后台抢带宽与预取报错污染状态。
+  private prefetchNeighbours(index: number): void {
+    const ids: number[] = this.pagerIds.length > 0 ? this.pagerIds : this.siblingIds();
+    if (this.continuousHop && ids.length > 0) {
+      if (index <= 1) {
+        this.onNeedHistory(-1);
+      }
+      if (index >= ids.length - 2) {
+        this.onNeedHistory(1);
+      }
+    }
+  }
+
+  @Styles
+  chromeNormalStyle() {
+    .backgroundColor(Color.Transparent)
+    .opacity(1)
+    .scale({ x: 1, y: 1 })
+  }
+
+  @Styles
+  chromePressedStyle() {
+    .backgroundColor($r('app.color.surface_alt'))
+    .opacity(0.76)
+    .scale({ x: 0.985, y: 0.96 })
+  }
+
+  private minimizeVideo(): void {
+    const controls = this.playbackControls;
+    if (controls === null || this.isLiveNow() || !this.isVideo()) { return; }
+    const source: FloatingVideoSource = {
+      fileId: this.playingFileId(), fileSize: this.playingFileSize(),
+      mimeType: this.videoMimeType(), videoWidth: this.playingWidth(), videoHeight: this.playingHeight(),
+      localPath: this.playingLocalPath(), posterPath: this.siblingPath(this.viewerMsgId), title: this.infoTitle()
+    };
+    if (!floatingVideoWindow.show(this.getUIContext(), source, controls)) {
+      this.getUIContext().getPromptAction().showToast({ message: str('player_preparing') });
+      return;
+    }
+    this.setVideoLandscape(false);
+    this.requestClose();
+  }
+
+  private setVideoLandscape(landscape: boolean): void {
+    if (landscape && !this.isVideo()) {
+      return;
+    }
+    if (this.videoLandscape === landscape) {
+      return;
+    }
+    this.videoLandscape = landscape;
+    this.onVideoLandscapeChange(landscape);
+    this.chromeVisible = true;
+    this.onChromeVisibleChange(true);
+    this.cancelInitialBarsTimer();
+    this.syncSystemBars();
+    setMediaViewerOrientation(getContext(this) as common.UIAbilityContext, landscape);
+  }
+
+  private toggleChrome(): void {
+    const next: boolean = !this.chromeVisible;
+    this.chromeVisible = next;
+    this.onChromeVisibleChange(next);
+    this.cancelInitialBarsTimer();
+    this.syncSystemBars();
+  }
+
+  private zoomed(): boolean {
+    return this.photoScale > VIEWER_MIN_SCALE + 0.01;
+  }
+
+  // Contain-fitted display size of the current photo at 1x, in vp. Falls back
+  // to the viewport itself when the photo's pixel size is unknown.
+  private fittedSize(): ViewerFit {
+    const w = this.areaW;
+    const h = this.areaH;
+    const e = this.entry();
+    const pw = e !== null ? e.photoWidth : 0;
+    const ph = e !== null ? e.photoHeight : 0;
+    if (w <= 0 || h <= 0 || pw <= 0 || ph <= 0) {
+      return { w: w, h: h };
+    }
+    const fit = Math.min(w / pw, h / ph);
+    return { w: pw * fit, h: ph * fit };
+  }
+
+  // Boundary restriction (per the official best practice): an axis whose
+  // scaled size still fits the viewport stays centered; otherwise the photo
+  // edge stops at the viewport edge — no black gaps, never dragged off-screen.
+  private clampOffset(): void {
+    const s = this.photoScale;
+    const fitted = this.fittedSize();
+    const maxX = Math.max(0, (fitted.w * s - this.areaW) / 2);
+    const maxY = Math.max(0, (fitted.h * s - this.areaH) / 2);
+    this.photoOffsetX = Math.min(maxX, Math.max(-maxX, this.photoOffsetX));
+    this.photoOffsetY = Math.min(maxY, Math.max(-maxY, this.photoOffsetY));
+  }
+
+  private resetPhotoZoom(animated: boolean): void {
+    this.pinchStartScale = VIEWER_MIN_SCALE;
+    if (animated) {
+      animateTo({
+        duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 180), curve: Curve.EaseOut
+      }, () => {
+        this.photoScale = VIEWER_MIN_SCALE;
+        this.photoOffsetX = 0;
+        this.photoOffsetY = 0;
+      });
+    } else {
+      this.photoScale = VIEWER_MIN_SCALE;
+      this.photoOffsetX = 0;
+      this.photoOffsetY = 0;
+    }
+  }
+
+  private onPinchStart(event: GestureEvent): void {
+    this.pinchStartScale = this.photoScale;
+    this.pinchStartOffsetX = this.photoOffsetX;
+    this.pinchStartOffsetY = this.photoOffsetY;
+    this.pinchAnchorX = event.pinchCenterX - this.areaW / 2;
+    this.pinchAnchorY = event.pinchCenterY - this.areaH / 2;
+    this.ignoreTapUntilMs = Number.MAX_VALUE;
+  }
+
+  // Keep the content point that was under the initial pinch center glued to
+  // the CURRENT pinch center: zooming follows the fingers and moving both
+  // fingers together doubles as a two-finger pan.
+  private onPinchUpdate(event: GestureEvent): void {
+    const s0 = this.pinchStartScale;
+    const next = Math.max(VIEWER_MIN_SCALE, Math.min(VIEWER_MAX_SCALE, s0 * event.scale));
+    const ratio = next / s0;
+    const px = event.pinchCenterX - this.areaW / 2;
+    const py = event.pinchCenterY - this.areaH / 2;
+    this.photoScale = next;
+    this.photoOffsetX = px - (this.pinchAnchorX - this.pinchStartOffsetX) * ratio;
+    this.photoOffsetY = py - (this.pinchAnchorY - this.pinchStartOffsetY) * ratio;
+    this.clampOffset();
+  }
+
+  private onPinchEnd(): void {
+    this.ignoreTapUntilMs = Date.now() + 200;
+    if (!this.zoomed()) {
+      this.resetPhotoZoom(false);
+    } else {
+      this.pinchStartScale = this.photoScale;
+    }
+  }
+
+  private onPanStart(): void {
+    this.underlayMotion = this.underlay?.reveal(this.underlaySession) ?? 0;
+    this.panStartOffsetX = this.photoOffsetX;
+    this.panStartOffsetY = this.photoOffsetY;
+    this.edgeOverscroll = 0;
+  }
+
+  // 1x 下拖：整层跟着手指走。只跟随向下，往上拖不动——向上没有"退出"的语义，
+  // 让它跟手只会让用户以为还有别的东西可以拉出来。
+  private onDismissUpdate(event: GestureEvent): void {
+    const nextY: number = Math.max(0, event.offsetY);
+    if (nextY > 0 && this.dismissY <= 0) {
+      this.cancelInitialBarsTimer();
+      setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner, false);
+    }
+    this.dismissY = nextY;
+  }
+
+  // 松手：越过阈值就关，否则弹回。阈值取视口高度的 1/5，比写死一个 vp 数更
+  // 跨设备一致——pad 上 120vp 只是轻轻一划，手机上却已经是小半屏。
+  private onDismissEnd(): void {
+    const threshold: number = Math.max(80, this.areaH / 5);
+    if (this.dismissY >= threshold) {
+      this.requestClose();
+      return;
+    }
+    this.restoreDismiss();
+  }
+
+  private restoreDismiss(): void {
+    const session: number = this.underlaySession;
+    this.underlayMotion = this.underlay?.reveal(session) ?? 0;
+    const motion: number = this.underlayMotion;
+    const duration: number = this.effectDuration(KEY_POWER_EFFECT_BLUR, 220);
+    if (duration <= 0) {
+      this.dismissY = 0;
+      this.underlay?.settled(session, motion);
+      if (!this.disappearing) {
+        this.syncSystemBars();
+      }
+      return;
+    }
+    animateTo({
+      duration, curve: Curve.Friction,
+      onFinish: (): void => {
+        this.underlay?.settled(session, motion);
+        if (!this.disappearing && this.dismissY <= 0) {
+          this.syncSystemBars();
+        }
+      }
+    }, () => { this.dismissY = 0; });
+  }
+
+  // 下滑过程中背景由黑渐透，露出底下的聊天页——"整层往下走然后退出"这件事
+  // 靠这个才读得出来，否则只是一张图在黑幕里滑动。
+  private dismissProgress(): number {
+    const span: number = Math.max(1, this.areaH / 3);
+    return Math.min(1, this.dismissY / span);
+  }
+
+  private onPanEnd(): void {
+    if (!this.zoomed()) {
+      this.onDismissEnd();
+      return;
+    }
+    if (this.dismissY > 0) {
+      this.restoreDismiss();
+    } else {
+      this.underlay?.settled(this.underlaySession, this.underlayMotion);
+    }
+    if (Math.abs(this.edgeOverscroll) < 60) {
+      this.edgeOverscroll = 0;
+      return;
+    }
+    const forward: boolean = this.edgeOverscroll < 0; // 向左拖 = 看下一张
+    this.edgeOverscroll = 0;
+    // 翻页前回到 1x，否则新图会沿用上一张的缩放与偏移。
+    this.resetPhotoZoom(false);
+    if (forward) {
+      this.swiperCtrl.showNext();
+    } else {
+      this.swiperCtrl.showPrevious();
+    }
+  }
+
+  // One-finger drag pans the zoomed photo; clamping keeps it on-screen. At
+  // the fitted 1x size this is a no-op and the Swiper keeps paging instead.
+  private onPanUpdate(event: GestureEvent): void {
+    if (!this.zoomed()) {
+      this.onDismissUpdate(event);
+      return;
+    }
+    const desiredX: number = this.panStartOffsetX + event.offsetX;
+    this.photoOffsetX = desiredX;
+    this.photoOffsetY = this.panStartOffsetY + event.offsetY;
+    this.clampOffset();
+    // clamp 吃掉的水平位移就是"已经贴边还在继续拖"的量。
+    this.edgeOverscroll = desiredX - this.photoOffsetX;
+  }
+
+  // 单击一律切换控制层的显隐，**不再关闭查看器**。
+  //
+  // 原来 1x 的图片上单击是关闭（照官方端的行为）。改掉是因为那让"看清这张图"
+  // 和"退出"抢同一个手势：想把顶栏和缩略图条收起来只看图，唯一的办法反而是
+  // 退出去。现在收起控制层交给单击，退出交给下滑（onDismissUpdate），两个
+  // 意图各有各的手势。
+  //
+  // 视频本来就是切换，不受影响。
+  private onPhotoTap(): void {
+    if (Date.now() < this.ignoreTapUntilMs) {
+      return;
+    }
+    if (!this.isVideo() && this.photoSrc() === '' && this.photoEmptyFailed()) {
+      this.retryPhoto();
+      return;
+    }
+    this.toggleChrome();
+  }
+
+  // Double tap zooms around the actual touch point instead of the center of the
+  // screen. A second double tap is a quick way back to the fitted 1x image.
+  private onPhotoDoubleTap(event: GestureEvent): void {
+    if (this.zoomed()) {
+      this.resetPhotoZoom(true);
+      return;
+    }
+    let px = 0;
+    let py = 0;
+    const finger: FingerInfo | undefined = firstFinger(event.fingerList);
+    if (finger !== undefined) {
+      px = finger.localX - this.areaW / 2;
+      py = finger.localY - this.areaH / 2;
+    }
+    this.pinchStartScale = VIEWER_DOUBLE_TAP_SCALE;
+    animateTo({
+      duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 200), curve: Curve.EaseOut
+    }, () => {
+      this.photoScale = VIEWER_DOUBLE_TAP_SCALE;
+      this.photoOffsetX = px * (1 - VIEWER_DOUBLE_TAP_SCALE);
+      this.photoOffsetY = py * (1 - VIEWER_DOUBLE_TAP_SCALE);
+      this.clampOffset();
+    });
+  }
+
+  // 这一行是不是媒体行。用户拉的是"下一组媒体"，中间隔着几十条文字消息不该
+  // 让这个动作失效，所以要能跳过非媒体行。
+  private groupIsMedia(index: number): boolean {
+    const g = this.groups[index];
+    return g !== undefined &&
+      (g.head.contentType === 'photo' || mediaEntryIsVideo(g.head));
+  }
+
+  private currentGroupIndex(): number {
+    if (this.currentGroupIdx >= 0 && this.currentGroupIdx < this.groups.length &&
+      this.groups[this.currentGroupIdx].memberIds.indexOf(this.viewerMsgId) >= 0) {
+      return this.currentGroupIdx;
+    }
+    return this.groups.findIndex(
+      (g: AlbumGroup): boolean => g.memberIds.indexOf(this.viewerMsgId) >= 0);
+  }
+
+  // Swiper 拖动中：判断有没有越界，以及拉了多少。
+  private onSwiperGesture(offset: number): void {
+    if (this.disappearing || this.closing || this.rebuildingPager) {
+      return;
+    }
+    const ids: number[] = this.pagerIds.length > 0 ? this.pagerIds : this.siblingIds();
+    const dir: number = hopDirection(this.pageIdx, ids.length, offset);
+    if (dir === 0) {
+      this.clearHop();
+      return;
+    }
+    if (dir !== this.gestureHopDir) {
+      // 换了方向：重新找目标组。找不到就当没越界——没有下一组时不该弹气泡。
+      const from: number = this.currentGroupIndex();
+      const target: number = from < 0 ? -1 : nextMediaGroupIndex(
+        this.groups.length, from, dir,
+        (i: number): boolean => this.groupIsMedia(i));
+      if (target < 0) {
+        // 已加载的消息里没有这一方向的下一组。多半是历史窗口没拉到那儿，先把
+        // 那个方向的历史翻一页；消息一到 groups 会自己更新，用户再拉一次就能
+        // 切过去。这一次先当没越界处理。
+        this.onNeedHistory(dir);
+        this.clearHop();
+        return;
+      }
+      this.hopTargetIdx = target;
+      this.gestureHopDir = dir;
+      if (!this.continuousHop) {
+        this.hopDir = dir;
+      }
+    }
+    const nextProgress: number = hopProgress(offset, hopThreshold(this.areaW, this.continuousHop));
+    this.gestureHopProgress = nextProgress;
+    if (!this.continuousHop) {
+      this.hopProgress = nextProgress;
+    }
+  }
+
+  private clearHop(): void {
+    this.gestureHopDir = 0;
+    this.gestureHopProgress = 0;
+    this.hopTargetIdx = -1;
+    if (this.hopDir === 0 && this.hopProgress === 0) {
+      return;
+    }
+    this.hopDir = 0;
+    this.hopProgress = 0;
+  }
+
+  // 松手：拉够了就切组，没拉够就把气泡收回去、什么都不做。
+  private settleHop(): void {
+    if (this.disappearing || this.closing || this.rebuildingPager) {
+      this.clearHop();
+      return;
+    }
+    const dir: number = this.gestureHopDir;
+    const target: number = this.hopTargetIdx;
+    const progress: number = this.gestureHopProgress;
+    if (dir === 0 || target < 0 || progress < 1) {
+      if (!this.continuousHop && (this.hopDir !== 0 || this.hopProgress !== 0)) {
+        animateTo({
+          duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 180), curve: Curve.Friction
+        }, () => { this.clearHop(); });
+      } else {
+        this.clearHop();
+      }
+      return;
+    }
+    this.clearHop();
+    const g = this.groups[target];
+    if (g === undefined || g.memberIds.length === 0) {
+      return;
+    }
+    // 往后切落在新组的第一张，往前切落在最后一张——都是"接着刚才的方向继续
+    // 看下去"的那一张，而不是让用户从组的另一头重新开始。
+    const landing: number = dir > 0 ? g.memberIds[0] : g.memberIds[g.memberIds.length - 1];
+    const landingFilmIdx: number = dir > 0 ? 0 : g.memberIds.length - 1;
+    this.resetPhotoZoom(false);
+    this.dismissY = 0;
+    this.underlay?.settled(this.underlaySession, this.underlayMotion);
+    // 与 onPageChange 同一个理由：换了消息就把胶囊打回「未播放」。这条是**越界
+    // 切组**那条换页路，不经过 onPageChange，漏掉它就会在跨组时残留暂停图标。
+    // 旧播放器卸载兜不住——livePlaying 住在本组件上，而新播放器在预热模式下
+    // 从头到尾不会报一次 true。
+    this.livePlaying = false;
+    this.viewerMsgId = landing;
+    this.onViewerMsgIdChange(landing);
+    this.rebuildViewerSources();
+    const landingPagerIdx: number = indexOfId(this.pagerIndex, landing);
+    this.pageIdx = landingPagerIdx >= 0 ? landingPagerIdx : landingFilmIdx;
+    this.ensureLiveDownload(landing);
+    this.noteViewedVideo();
+    this.activatePhotoLoad(landing, false);
+    this.prefetchNeighbours(this.pageIdx);
+    // 缩略图条的内容随 viewerMsgId 自动换掉，但滚动偏移不会——手动带回去。
+    // 放在下一帧：这一帧新的那批缩略图还没挂上，量不出位置。
+    if (this.chromeVisible && g.memberIds.length > 1) {
+      setTimeout((): void => { this.scrollFilmstripTo(landingFilmIdx); }, 0);
+    }
+    if (this.continuousHop) {
+      this.slideInFromHop(dir);
+    }
+  }
+
+  // 连续翻页：换组是整册内容一下子换掉，Swiper 自己没有翻页动画。补一段短横滑——新组从
+  // 手指拉过去的那一侧进来——读起来才像"翻到了下一张"，而不是闪一下换了图。
+  private slideInFromHop(dir: number): void {
+    const duration: number = this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220);
+    if (duration <= 0 || this.areaW <= 0) {
+      return;
+    }
+    this.hopSlideX = dir * this.areaW * HOP_SLIDE_IN_RATIO;
+    animateTo({ duration, curve: Curve.Friction }, () => { this.hopSlideX = 0; });
+  }
+
+  // 气泡里那张缩略图。目标组的封面：往后切给第一张，往前切给最后一张，
+  // 和真正会落到的那一张保持一致。
+  private hopThumbPath(): string {
+    const g = this.groups[this.hopTargetIdx];
+    if (g === undefined || g.photoPaths.length === 0) {
+      return '';
+    }
+    const p: string = this.hopDir > 0
+      ? g.photoPaths[0] : g.photoPaths[g.photoPaths.length - 1];
+    return p !== '' && p.startsWith('/') ? `file://${p}` : p;
+  }
+
+  // messages / groups / viewerMsgId 任一变化都重算数据源与两张下标表。
+  //
+  // ⚠️ @Monitor 的名字必须与 @Param 逐字一致：写错既不报编译错也不告警，自愈会
+  // 静默失效（本仓踩过——LiveThumbImage 的 fileId/initialPath 那次，50 次 attach
+  // 触发 0 次）。这里三个名字与上面的 @Param 声明逐字对齐。
+  //
+  // 选中态**不依赖**这个回调：高亮走 ViewerFilmstripCell 的 current @Param，
+  // 万一本回调哪天失灵，坏的也只是跨组切换，不是每次翻页。
+  @Monitor('messages', 'groups', 'viewerMsgId')
+  onViewerDataChanged(): void {
+    this.rebuildViewerSources();
+  }
+
+  private rebuildViewerSources(): void {
+    if (this.indexedMessages !== this.messages || this.messageIndex.size !== this.messages.length) {
+      this.indexedMessages = this.messages;
+      this.messageIndex = idIndexMap(this.messages.map((m: MessageEntry): number => m.id));
+    }
+    let foundIdx: number = -1;
+    let g: AlbumGroup | null = null;
+    for (let i = 0; i < this.groups.length; i++) {
+      if (this.groups[i].memberIds.indexOf(this.viewerMsgId) >= 0) {
+        foundIdx = i;
+        g = this.groups[i];
+        break;
+      }
+    }
+    this.currentGroupIdx = foundIdx;
+    this.currentGroupVal = g;
+    const ids: number[] = (g !== null && g.memberIds.length > 1)
+      ? g.memberIds
+      : (this.viewerMsgId !== 0 ? [this.viewerMsgId] : []);
+    this.currentSiblingIds = ids;
+    this.memberIndex = idIndexMap(ids);
+    // 取值顺序与 siblingPath 一致：先相册行（通道的 fileId 在这儿），再退回 entry。
+    const paths: string[] = [];
+    const fileIds: number[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      const gPath: string = g !== null && i < g.photoPaths.length ? g.photoPaths[i] : '';
+      const gFile: number = g !== null && i < g.photoFileIds.length ? g.photoFileIds[i] : 0;
+      if (gFile !== 0 || gPath !== '') {
+        paths.push(gPath);
+        fileIds.push(gFile);
+        continue;
+      }
+      const e: MessageEntry | null = this.entryById(ids[i]);
+      paths.push(e !== null ? e.photoPath : '');
+      fileIds.push(e !== null ? e.photoFileId : 0);
+    }
+    this.filmCells = buildFilmCells(ids, paths, fileIds,
+      (id: number): boolean => this.siblingIsVideo(id),
+      (id: number): string => {
+        // 只有「本地文件在、又没有 TDLib 缩略图」的视频才需要我们自己抽首帧。
+        // 聊天里的视频有 photoFileId（缩略图），走原来的通道，这里返回空串。
+        const e: MessageEntry | null = this.entryById(id);
+        return e !== null && e.photoFileId === 0 ? e.videoPath : '';
+      });
+    for (const cell of this.filmCells) {
+      if (cell.videoPath !== '') {
+        const e: MessageEntry | null = this.entryById(cell.id);
+        // mtime 按**整秒**传：列表那侧拿的是毫秒，两边不一致会算出两个签名、白抽两次。
+        requestPoster(cell.videoPath, e !== null ? e.videoFileSize : 0,
+          (e !== null ? e.date : 0) * 1000);
+      }
+    }
+    const nextKeys: string[] = cellKeys(this.filmCells);
+    let keysSame: boolean = nextKeys.length === this.lastFilmKeys.length;
+    if (keysSame) {
+      for (let i = 0; i < nextKeys.length; i++) {
+        if (nextKeys[i] !== this.lastFilmKeys[i]) {
+          keysSame = false;
+          break;
+        }
+      }
+    }
+    if (!keysSame) {
+      this.lastFilmKeys = nextKeys;
+      this.filmSource.update(this.filmCells, filmCellIds(this.filmCells), nextKeys);
+    }
+
+    // 构造大图层 Swiper 的数据源：开启连续翻页时把当前已加载窗口里的全部媒体项编入同一个 Swiper，
+    // 使跨消息左右切换走原生跟手翻页与邻页预挂载；关闭连续翻页时退回仅含当前相册成员。
+    if (this.continuousHop && this.groups.length > 0) {
+      const pIds: number[] = [];
+      const pPaths: string[] = [];
+      const pFileIds: number[] = [];
+      for (let gi = 0; gi < this.groups.length; gi++) {
+        if (!this.groupIsMedia(gi)) {
+          continue;
+        }
+        const grp: AlbumGroup = this.groups[gi];
+        for (let mi = 0; mi < grp.memberIds.length; mi++) {
+          const mid: number = grp.memberIds[mi];
+          pIds.push(mid);
+          const gPath: string = mi < grp.photoPaths.length ? grp.photoPaths[mi] : '';
+          const gFile: number = mi < grp.photoFileIds.length ? grp.photoFileIds[mi] : 0;
+          if (gFile !== 0 || gPath !== '') {
+            pPaths.push(gPath);
+            pFileIds.push(gFile);
+            continue;
+          }
+          const e: MessageEntry | null = this.entryById(mid);
+          pPaths.push(e !== null ? e.photoPath : '');
+          pFileIds.push(e !== null ? e.photoFileId : 0);
+        }
+      }
+      if (pIds.length > 0 && pIds.indexOf(this.viewerMsgId) >= 0) {
+        this.pagerIds = pIds;
+        this.pagerCells = buildFilmCells(pIds, pPaths, pFileIds,
+          (id: number): boolean => this.siblingIsVideo(id),
+          (id: number): string => {
+            const e: MessageEntry | null = this.entryById(id);
+            return e !== null && e.photoFileId === 0 ? e.videoPath : '';
+          });
+      } else {
+        this.pagerIds = ids;
+        this.pagerCells = this.filmCells;
+      }
+    } else {
+      this.pagerIds = ids;
+      this.pagerCells = this.filmCells;
+    }
+    this.pagerIndex = idIndexMap(this.pagerIds);
+    const nextPageIdx: number = indexOfId(this.pagerIndex, this.viewerMsgId);
+    const nextPagerKeys: string[] = cellKeys(this.pagerCells);
+    let pagerKeysSame: boolean = nextPagerKeys.length === this.lastPagerKeys.length;
+    if (pagerKeysSame) {
+      for (let i = 0; i < nextPagerKeys.length; i++) {
+        if (nextPagerKeys[i] !== this.lastPagerKeys[i]) {
+          pagerKeysSame = false;
+          break;
+        }
+      }
+    }
+    if (nextPageIdx >= 0 && nextPageIdx !== this.pageIdx) {
+      this.pageIdx = nextPageIdx;
+    }
+    if (!pagerKeysSame) {
+      this.lastPagerKeys = nextPagerKeys;
+      this.rebuildingPager = true;
+      this.pagerSource.update(this.pagerCells, filmCellIds(this.pagerCells), nextPagerKeys);
+      this.rebuildingPager = false;
+    }
+  }
+
+  private entryById(id: number): MessageEntry | null {
+    const len: number = this.messages.length;
+    const _tick: number = this.thumbTick;
+    if (len === 0 || id === 0 || _tick < 0) {
+      return null;
+    }
+    if (this.indexedMessages !== this.messages || this.messageIndex.size !== len) {
+      this.indexedMessages = this.messages;
+      this.messageIndex = idIndexMap(this.messages.map((m: MessageEntry): number => m.id));
+    }
+    const idx: number = indexOfId(this.messageIndex, id);
+    if (idx >= 0 && idx < len && this.messages[idx].id === id) {
+      return this.messages[idx];
+    }
+    const found: number = this.messages.findIndex((m: MessageEntry): boolean => m.id === id);
+    if (found >= 0) {
+      this.messageIndex.set(id, found);
+      return this.messages[found];
+    }
+    return null;
+  }
+
+  private entry(): MessageEntry | null {
+    return this.entryById(this.viewerMsgId);
+  }
+
+  private infoTitle(): string {
+    const e: MessageEntry | null = this.entry();
+    if (e === null) {
+      return this.chatTitle;
+    }
+    if (mediaEntryIsVideo(e) && e.videoFileName !== '') {
+      return e.videoFileName;
+    }
+    return e.senderName !== '' ? e.senderName : this.chatTitle;
+  }
+
+  private infoSubtitle(): string {
+    const e: MessageEntry | null = this.entry();
+    if (e === null) {
+      return '';
+    }
+    const ids: number[] = this.siblingIds();
+    const index: number = ids.indexOf(this.viewerMsgId);
+    const position: string = ids.length > 1 && index >= 0 ? `${index + 1} / ${ids.length} · ` : '';
+    return `${position}${formatTime(e.date, this.nowSec)}`;
+  }
+
+  // The album (media group) containing the viewer's current message, if any.
+  private group(): AlbumGroup | null {
+    if (this.currentGroupVal !== null && this.memberIndex.has(this.viewerMsgId)) {
+      return this.currentGroupVal;
+    }
+    for (const g of this.groups) {
+      if (g.memberIds.indexOf(this.viewerMsgId) >= 0) {
+        return g;
+      }
+    }
+    return null;
+  }
+
+  // Sibling message ids for swipe/filmstrip navigation — just the current
+  // message when it isn't part of a multi-item album.
+  private siblingIds(): number[] {
+    if (this.currentSiblingIds.length > 0 && this.memberIndex.has(this.viewerMsgId)) {
+      return this.currentSiblingIds;
+    }
+    const g = this.group();
+    if (g !== null && g.memberIds.length > 1) {
+      return g.memberIds;
+    }
+    return this.viewerMsgId !== 0 ? [this.viewerMsgId] : [];
+  }
+
+  // 查看器里那张"预览图"（大图没解码出来之前顶上的缩略图，以及底部胶片条）。
+  //
+  // **先问旁路通道，再看行对象**（用户报：图片组放大之后预览图不展示）。
+  // AlbumGroup.photoPaths 是**刻意不进行 key** 的（见 collapseAlbums：缩略图路径
+  // 走 mediaThumbChannel 直达气泡，进 key 会让每张图落地都拖着整行重建）。代价是
+  // reuseUnchangedRows 在 key 没变时**把旧行对象还回来**，于是缩略图落地之后
+  // photoPaths 永远停在 ''——AlbumGroupDataSource.test 里那条
+  // `prefetch_source_must_be_fed_the_fresh_rows_not_the_merged_ones` 钉的就是它。
+  // 气泡不受影响（LiveThumbImage 自己订阅通道），**只有查看器**这一处直接读行对象，
+  // 所以只有它拿到空路径：大图照常出来（photoSrcFor 读的是新鲜的 entry），
+  // 预览图却是空的。这与 453c00f 修掉的 photoFailed 是同一类问题的另一处。
+  //
+  // 修法不是把 photoPaths 塞回 key 或 sameRenderSnapshot——那正是重建风暴的来源。
+  // 通道按 fileId 索引、永远是最新的，而 photoFileIds **在** key 里（所以是新鲜的）。
+  private siblingPath(id: number): string {
+    const pIdx: number = indexOfId(this.pagerIndex, id);
+    if (pIdx >= 0 && pIdx < this.pagerCells.length) {
+      const cell: FilmCellVM = this.pagerCells[pIdx];
+      const live: string = cell.fileId !== 0 ? this.liveThumbPath(cell.fileId) : '';
+      if (live !== '') {
+        return live;
+      }
+      if (cell.path !== '') {
+        return cell.path;
+      }
+    }
+    const g = this.group();
+    if (g !== null) {
+      const idx: number = indexOfId(this.memberIndex, id);
+      if (idx >= 0 && idx < g.photoPaths.length) {
+        const fileId: number = idx < g.photoFileIds.length ? g.photoFileIds[idx] : 0;
+        const live: string = fileId !== 0 ? this.liveThumbPath(fileId) : '';
+        if (live !== '') {
+          return live;
+        }
+        if (g.photoPaths[idx] !== '') {
+          return g.photoPaths[idx];
+        }
+        // 行对象和通道都没有：往下走 entry 那一支（this.messages 是每次发布都换
+        // 的新鲜列表，不受 reuseUnchangedRows 影响）。
+      }
+    }
+    const entry: MessageEntry | null = this.entryById(id);
+    if (entry === null) {
+      return '';
+    }
+    const live: string = entry.photoFileId !== 0 ? this.liveThumbPath(entry.photoFileId) : '';
+    if (live !== '') {
+      return live;
+    }
+    if (entry.photoPath !== '') {
+      return entry.photoPath;
+    }
+    // 下载中心的本地视频：没有 TDLib 缩略图，用我们自己抽的首帧（按路径索引）。
+    return entry.videoPath !== '' ? posterFor(entry.videoPath) : '';
+  }
+
+  private siblingIsVideo(id: number): boolean {
+    const e: MessageEntry | null = this.entryById(id);
+    return e !== null && mediaEntryIsVideo(e);
+  }
+
+  // Best available image for a viewer page: full-res once downloaded, else thumbnail.
+  // 【为什么要问 mediaThumbChannel】页面快照里的 entry 可能是**陈旧的**：
+  // MessageStore 的行内缩略图那一支明写"这一支因此一律不再发 notifySoon()"
+  // ——缩略图落地走旁路通道直达气泡的 LiveThumbImage，不触发快照发布。于是
+  // 气泡里图好好的，查看器手里那份 entry 仍然 photoPath === ''，只能干转圈。
+  //
+  // 隔壁的 siblingPath() 早就是"先问通道、再退回行对象"（见上），本函数没跟上
+  // ——那是上一次「图片组放大后预览图不展示」只修了一半留下的不对称。
+  // 这一条也是"点开半天不出图"最省事的一半解法：不改 store 的发布节奏
+  // （给那一支补 notify 会把发布风暴引进来），只在读侧多问一句。
+  private photoSrcFor(id: number): string {
+    const e = this.entryById(id);
+    if (e === null) {
+      return '';
+    }
+    const fullLive: string = e.photoFullFileId !== 0 ? this.liveThumbPath(e.photoFullFileId) : '';
+    const live: string = e.photoFileId !== 0 ? this.liveThumbPath(e.photoFileId) : '';
+    const p = e.photoFullPath !== ''
+      ? e.photoFullPath
+      : (fullLive !== ''
+        ? fullLive
+        : (e.photoPath !== '' ? e.photoPath : (live !== '' ? live : this.siblingPath(id))));
+    return p.startsWith('/') ? `file://${p}` : p;
+  }
+
+  // Programmatic paging: the Swiper animates the transition; onChange keeps
+  // viewerMsgId in sync.
+  private switchViewer(delta: number): void {
+    if (delta > 0) {
+      this.swiperCtrl.showNext();
+    } else {
+      this.swiperCtrl.showPrevious();
+    }
+  }
+
+  // Filmstrip tap: page the Swiper to the tapped album member.
+  private jumpToSibling(id: number): void {
+    const i: number = indexOfId(this.pagerIndex, id);
+    if (i >= 0) {
+      this.swiperCtrl.changeIndex(i, true);
+    }
+  }
+
+  private onPageChange(index: number): void {
+    if (this.disappearing || this.closing || this.rebuildingPager) {
+      return;
+    }
+    const ids: number[] = this.pagerIds.length > 0 ? this.pagerIds : this.siblingIds();
+    if (index < 0 || index >= ids.length) {
+      return;
+    }
+    const id = ids[index];
+    if (id === this.viewerMsgId) {
+      this.pageIdx = index;
+      return;
+    }
+    if (this.videoLandscape) {
+      this.setVideoLandscape(false);
+    }
+    this.dismissY = 0;
+    this.underlay?.settled(this.underlaySession, this.underlayMotion);
+    this.resetPhotoZoom(false);
+    // 翻页要显式把胶囊打回「未播放」。**改成不自动播之后这一句才成为必需**：
+    // 原来它是靠「新播放器 onPrepared 报一次 true」被隐式拉回的，现在那一下没有
+    // 了（@Watch 不在初始赋值时触发，新播放器的 isPlaying 初值 false 不产生变化
+    // 事件）。漏掉的话，从一张播过的实况翻到下一张，胶囊会残留暂停图标而画面
+    // 其实是静止的。
+    this.livePlaying = false;
+    this.pageIdx = index;
+    this.viewerMsgId = id;
+    this.onViewerMsgIdChange(id);
+    this.rebuildViewerSources();
+    this.ensureLiveDownload(id);
+    this.noteViewedVideo();
+    this.activatePhotoLoad(id, false);
+    this.prefetchNeighbours(this.pageIdx);
+    // 组内翻页也把缩略图条带过去：不然翻到第七张时高亮的那一格还在条外面。
+    const siblings: number[] = this.siblingIds();
+    if (this.chromeVisible && siblings.length > 1) {
+      const filmIdx: number = indexOfId(this.memberIndex, id);
+      if (filmIdx >= 0) {
+        this.scrollFilmstripTo(filmIdx);
+      }
+    }
+  }
+
+  // 当前这一项的缓存记录（services/BackgroundCache、store/CacheRegistry）。视频取整段视频文件，图片取原图。
+  private cacheRecordForCurrent(background: boolean): CacheRecord | null {
+    if (this.downloadsMode) {
+      return null;
+    }
+    const e: MessageEntry | null = this.entry();
+    if (e === null) {
+      return null;
+    }
+    const video: boolean = mediaEntryIsVideo(e);
+    const fileId: number = video ? e.videoFileId : (e.photoFullFileId !== 0 ? e.photoFullFileId : e.photoFileId);
+    if (fileId === 0) {
+      return null;
+    }
+    return {
+      fileId: fileId, chatId: this.chatId, messageId: e.id,
+      kind: video ? DC_KIND_VIDEO : DC_KIND_PHOTO,
+      name: video ? e.videoFileName : '', size: video ? e.videoFileSize : 0,
+      mimeType: video ? e.videoMimeType : '', preview: e.text, background: background, addedAt: Date.now()
+    };
+  }
+
+  private currentAlreadyCached(): boolean {
+    const e: MessageEntry | null = this.entry();
+    if (e === null) {
+      return false;
+    }
+    if (mediaEntryIsVideo(e)) {
+      return e.videoPath !== '';
+    }
+    return e.photoFullFileId !== 0 ? e.photoFullPath !== '' : e.photoPath !== '';
+  }
+
+  // 右上角「⋮」菜单。从下载中心打开时去掉「所有媒体」「后台缓存」：前者没有会话可去，后者本来就在下载中心里。
+  private chromeMenu(): MenuElement[] {
+    const showInChat: MenuElement = {
+      value: $r('app.string.mv_show_in_chat'),
+      action: (): void => { this.onShowInChat(); }
+    };
+    const allMedia: MenuElement = {
+      value: $r('app.string.mv_show_all_media'),
+      action: (): void => { this.onShowAllMedia(); }
+    };
+    const toGallery: MenuElement = {
+      value: $r('app.string.ms_save_to_gallery'),
+      action: (): void => { this.onSaveMedia(); }
+    };
+    const toFiles: MenuElement = {
+      value: $r('app.string.ms_save_to_files'),
+      action: (): void => { this.onSaveMediaToFiles(); }
+    };
+    const backgroundCache: MenuElement = {
+      value: $r('app.string.dc_background_cache'),
+      action: (): void => { this.cacheCurrentInBackground(); }
+    };
+    return this.downloadsMode
+      ? (this.canShowInChat ? [showInChat, toGallery, toFiles] : [toGallery, toFiles])
+      : [showInChat, allMedia, toGallery, toFiles, backgroundCache];
+  }
+
+  // 右上角菜单「后台缓存」（2026-09-15）：走 downloadFile 缓存进 TDLib，不存相册、不进下载管理器；
+  // 进度在「设置 › 下载中心」看。关掉查看器、滑出可见窗口都不会把它取消（见 MessageStore 里的 isBackgroundCaching）。
+  private cacheCurrentInBackground(): void {
+    if (this.currentAlreadyCached()) {
+      promptAction.showToast({ message: str('dc_background_cache_done'), duration: 1600 });
+      return;
+    }
+    const rec: CacheRecord | null = this.cacheRecordForCurrent(true);
+    if (rec === null) {
+      promptAction.showToast({ message: str('dc_background_cache_failed'), duration: 1600 });
+      return;
+    }
+    startBackgroundCache(getContext(this) as common.UIAbilityContext, rec).then((): void => {
+      promptAction.showToast({ message: str('dc_background_cache_started'), duration: 2000 });
+    }).catch((e: Object): void => {
+      logE(`MediaViewer.cacheCurrentInBackground failed: ${JSON.stringify(e)}`);
+      promptAction.showToast({ message: str('dc_background_cache_failed'), duration: 1800 });
+    });
+  }
+
+  // 看过的视频登记进缓存记录：边看边缓存的那部分，下载中心才找得到（TDLib 没有列出缓存文件的接口）。
+  private noteViewedVideo(): void {
+    if (!this.isVideo()) {
+      return;
+    }
+    const rec: CacheRecord | null = this.cacheRecordForCurrent(false);
+    if (rec === null) {
+      return;
+    }
+    ensureCacheRegistry(getContext(this) as common.UIAbilityContext).then((): void => { noteCachedMedia(rec); });
+  }
+
+  private isVideo(): boolean {
+    const e = this.entry();
+    return e !== null && mediaEntryIsVideo(e);
+  }
+
+  private videoLocalPath(): string {
+    const e = this.entry();
+    return e !== null ? e.videoPath : '';
+  }
+
+  // ── 播放档（多清晰度）─────────────────────────────────────────────────
+  // 下面这组只给播放器用；保存、分享等仍然读上面的原片字段。
+  // 规则与列表头部预取共用（util/entryVideoVariant）：预取的正是「自动」点开要播的那档。
+  private videoVariantList(): VideoVariant[] {
+    const e = this.entry();
+    return e !== null ? entryVideoVariants(e) : [];
+  }
+
+  private playingVariant(): VideoVariant | null {
+    const e = this.entry();
+    return e !== null
+      ? entryPlaybackVariant(e, this.videoQuality, AppStorage.get<string>(KEY_CURRENT_NETWORK_TYPE) ?? '')
+      : null;
+  }
+
+  private playingFileId(): number {
+    const v: VideoVariant | null = this.playingVariant();
+    return v !== null ? v.fileId : this.videoFileId();
+  }
+
+  private playingIsOriginal(): boolean {
+    return this.playingFileId() === this.videoFileId();
+  }
+
+  private playingFileSize(): number {
+    const v: VideoVariant | null = this.playingVariant();
+    return v !== null && v.size > 0 ? v.size : this.videoFileSize();
+  }
+
+  private playingWidth(): number {
+    const v: VideoVariant | null = this.playingVariant();
+    return v !== null && v.width > 0 ? v.width : this.videoWidth();
+  }
+
+  private playingHeight(): number {
+    const v: VideoVariant | null = this.playingVariant();
+    return v !== null && v.height > 0 ? v.height : this.videoHeight();
+  }
+
+  // 本地文件只认原片的（下载中心、自动播放下好的都是原片）；换了档就流式播那一档。
+  private playingLocalPath(): string {
+    return this.playingIsOriginal() ? this.videoLocalPath() : '';
+  }
+
+  private onPickQuality(quality: number): void {
+    if (quality === this.videoQuality) {
+      return;
+    }
+    this.qualityResumeMsgId = this.viewerMsgId;
+    this.qualityResumeMs = this.lastVideoPositionMs;
+    this.videoQuality = quality;
+  }
+
+  // 统计面板 Quality 那一行：原片还是哪一档。
+  private qualityStatsText(): string {
+    const v: VideoVariant | null = this.playingVariant();
+    if (v === null || this.playingIsOriginal()) {
+      return v !== null && variantLabel(v) !== '' ? `${variantLabel(v)} · Original` : 'Original';
+    }
+    return `${variantLabel(v)} · ${v.codec !== '' ? v.codec : '?'} (alternative)`;
+  }
+
+  private playingKey(): string {
+    const id: number = this.playingFileId();
+    return id !== 0 ? `f${id}` : `p${this.playingLocalPath()}`;
+  }
+
+  private decoderLabel(): string {
+    return this.decoderKey !== '' && this.decoderKey !== 'p' && this.decoderKey === this.playingKey()
+      ? (this.decoderHardware ? 'hw' : 'sw') : '';
+  }
+
+  // ── 实况照片（util/livePhoto）───────────────────────────────────────────
+  // PG 发出去的实况在协议上就是一段普通有声视频，只有文件名带标记。这里认出来
+  // 之后按 iOS 的样子渲染：**进来停在静态首帧**，左下角一枚「实况」胶囊，点一下
+  // 才开始播；标准控制栏关掉，给胶囊让位。
+  //
+  // 「停在首帧」不是靠不起播实现的——那样屏幕上只有 TDLib 那张低清缩略图。
+  // 播放器侧走的是「静音预热到真首帧再暂停」，见 StreamingVideoPlayer 的
+  // primingFirstFrame。这里要做的只有三件：liveMode 传下去、胶囊初值改成
+  // 「未播放」、以及翻页时把它显式重置。
+  //
+  // 别的客户端发的视频一概不走这条路——判定要文件名标记 + 时长 ≤10s 同时成立。
+  @Local private liveToggleSeq: number = 0;
+  // 视频清晰度与解码器（2026-10-10；规则在 util/videoVariants，标签在 ViewerVideoChips）。
+  // 选的档跨条目沿用（看完这条翻下一条还是 480p）；解码器按文件记，换档/换条自然失效。
+  @Local private videoQuality: number = QUALITY_AUTO;
+  // 解码器标签属于哪一路播放：文件 id，没有 id（下载中心 / 磁盘扫出来的本地视频）就用本地路径。
+  @Local private decoderKey: string = '';
+  @Local private decoderHardware: boolean = false;
+  // 详细统计信息面板（VideoStatsPanel）：开着与否、当前播放器交出的取数函数。
+  @Local private statsOpen: boolean = false;
+  @Local private statsSource: (() => VideoStatsSnapshot) | null = null;
+  @Local private speedTick: number = 0;
+  // 切档后从这条消息的这个位置接着播（0 = 不是切档）。
+  private qualityResumeMsgId: number = 0;
+  private qualityResumeMs: number = 0;
+  private lastVideoPositionMs: number = 0;
+  // 胶囊图标跟随播放器的真实状态，由 onPlayStateChanged 回报。初值 false：
+  // 进来停在静态首帧，图标是播放三角。
+  //
+  // **只改这个初值没有用**——播放器一 start 就会经 onPlayStateChanged 把它翻回
+  // 来，必须和 StreamingVideoPlayer 侧的 liveMode 分支配套。
+  @Local private livePlaying: boolean = false;
+
+  // 只对实况、且还没有本地文件的那条发一次下载请求。已经下过或正在下的由
+  // MessageStore 自己去重，这里只挡住"每次翻页都重复喊一遍"。
+  private liveDownloadAsked: number = 0;
+
+  private ensureLiveDownload(id: number): void {
+    if (id <= 0 || !this.isLiveEntry(id) || this.liveDownloadAsked === id) {
+      return;
+    }
+    const idx: number = this.messages.findIndex((m: MessageEntry) => m.id === id);
+    if (idx < 0 || this.messages[idx].videoPath !== '') {
+      return;
+    }
+    this.liveDownloadAsked = id;
+    this.onEnsureLiveDownload(id);
+  }
+
+  private isLiveEntry(id: number): boolean {
+    const idx: number = this.messages.findIndex((m: MessageEntry) => m.id === id);
+    if (idx < 0) {
+      return false;
+    }
+    const e: MessageEntry = this.messages[idx];
+    return mediaEntryIsVideo(e) && isLivePhotoVideo(e.videoFileName, e.videoDuration);
+  }
+
+  private isLiveNow(): boolean {
+    return this.isLiveEntry(this.viewerMsgId);
+  }
+
+  private videoFileId(): number {
+    const e = this.entry();
+    return e !== null ? e.videoFileId : 0;
+  }
+
+  private videoFileSize(): number {
+    const e = this.entry();
+    return e !== null ? e.videoFileSize : 0;
+  }
+
+  private videoMimeType(): string {
+    const e = this.entry();
+    return e !== null ? e.videoMimeType : '';
+  }
+
+  private videoWidth(): number {
+    const e = this.entry();
+    return e !== null ? e.photoWidth : 0;
+  }
+
+  private videoHeight(): number {
+    const e = this.entry();
+    return e !== null ? e.photoHeight : 0;
+  }
+
+  private photoSrc(): string {
+    return this.photoSrcFor(this.viewerMsgId);
+  }
+
+  private photoUpgrading(): boolean {
+    const e = this.entry();
+    return e !== null && e.photoFullPath === '' && e.photoFullFileId !== 0 &&
+      !e.photoFullFailed;
+  }
+
+  private photoProgressFor(id: number): number {
+    const e = this.entryById(id);
+    if (e === null) {
+      return 0;
+    }
+    const liveFull: number = e.photoFullFileId !== 0 ? this.liveFileProgress(e.photoFullFileId) : 0;
+    const fullPct: number = Math.max(e.photoFullProgress, liveFull);
+    if (fullPct > 0 && fullPct < 100) {
+      return fullPct;
+    }
+    if (e.photoFullPath === '' && e.photoPath === '') {
+      const liveThumb: number = e.photoFileId !== 0 ? this.liveFileProgress(e.photoFileId) : 0;
+      const thumbPct: number = Math.max(e.photoProgress, liveThumb);
+      if (thumbPct > 0 && thumbPct < 100) {
+        return thumbPct;
+      }
+    }
+    return fullPct > 0 ? fullPct : e.photoProgress;
+  }
+
+  private photoProgress(): number {
+    return this.photoProgressFor(this.viewerMsgId);
+  }
+
+  private photoFailed(): boolean {
+    const e: MessageEntry | null = this.entry();
+    if (e === null) {
+      // 条目还没解析出来 ≠ 加载失败。打开的第一帧查看器可能还查不到这条
+      // 消息，之前赋值是同步的、这一帧挤不出来；改用 animateTo 挂载做一镜
+      // 到底之后，它就露出来了——表现为放大瞬间闪一下"图片加载失败"。
+      //
+      // 未知一律按加载中处理：条目通常一两帧内就位；真的消息没了，ChatPage
+      // 会直接关掉查看器（见它对 viewerMsgId 的守卫），轮不到这里报错。
+      return false;
+    }
+    if (e.photoFullFailed) {
+      return true;
+    }
+    return e.photoPath === '' && e.photoFullPath === '' &&
+      e.photoFileId === 0 && e.photoFullFileId === 0;
+  }
+
+  private photoEmptyFailedFor(id: number): boolean {
+    if (id !== this.viewerMsgId || this.loadingHoldMsgId === id) {
+      return false;
+    }
+    const e: MessageEntry | null = this.entryById(id);
+    if (e === null) {
+      return false;
+    }
+    // 空白画面下（预览图与原图都未落地），只要缩略图或原图任意一路还有有效 fileId 且未失败，
+    // 就保持展示居中加载态，避免预取或原图单路报错时直接跳过加载状态显示"图片加载失败"。
+    const thumbPending: boolean = e.photoFileId !== 0 && !e.photoFailed;
+    const fullPending: boolean = e.photoFullFileId !== 0 && !e.photoFullFailed;
+    if (thumbPending || fullPending) {
+      return false;
+    }
+    return true;
+  }
+
+  private photoEmptyFailed(): boolean {
+    return this.photoEmptyFailedFor(this.viewerMsgId);
+  }
+
+  private retryPhoto(): void {
+    if (this.store === null || this.viewerMsgId === 0) {
+      return;
+    }
+    this.activatePhotoLoad(this.viewerMsgId, true);
+    this.store.retryPhoto(this.viewerMsgId);
+  }
+
+  @Builder
+  photoLoadingStateFor(id: number) {
+    Column({ space: 10 }) {
+      if (this.photoProgressFor(id) > 0 && this.photoProgressFor(id) < 100) {
+        Stack() {
+          Progress({ value: this.photoProgressFor(id), total: 100, type: ProgressType.Ring })
+            .width(44).height(44).color(Color.White);
+          Text(`${this.photoProgressFor(id)}%`).fontSize(10).fontColor(Color.White);
+        }
+      } else {
+        LoadingProgress().width(38).height(38).color(Color.White);
+      }
+      Text($r('app.string.mv_loading')).fontSize(13).fontColor('#D9FFFFFF');
+    }
+    .padding({ left: 18, right: 18, top: 16, bottom: 16 })
+    .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG)).borderRadius(16)
+    .backdropBlur(overlayBackdropBlur('viewer'))
+    .attributeModifier(materialModifier('viewer'))
+    .transition(TransitionEffect.OPACITY
+      .combine(TransitionEffect.scale({ x: 0.92, y: 0.92 }))
+      .animation({ duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 180), curve: Curve.EaseOut }));
+  }
+
+  @Builder
+  photoErrorState() {
+    Column({ space: 10 }) {
+      SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
+        .fontSize(30).fontColor([Color.White]);
+      Text($r('app.string.mv_load_failed')).fontSize(14).fontColor(Color.White).fontWeight(FontWeight.Medium);
+      Text($r('app.string.tap_to_retry')).fontSize(12).fontColor('#D9FFFFFF');
+    }
+    .padding({ left: 22, right: 22, top: 16, bottom: 16 })
+    .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG)).borderRadius(16)
+    .backdropBlur(overlayBackdropBlur('viewer'))
+    .attributeModifier(materialModifier('viewer'))
+    .stateStyles({
+      normal: this.chromeNormalStyle,
+      pressed: this.chromePressedStyle
+    })
+    .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120), curve: Curve.EaseOut })
+    .onClick((): void => { this.retryPhoto(); });
+  }
+
+  // Fullscreen viewer content: a Swiper over the album's members, so pages
+  // follow the finger and slide continuously to the neighbor. Only the CURRENT
+  // page mounts a video player; inactive video pages show their thumbnail.
+  // 左下角的「实况」胶囊。标准元素：同心圆图标（sys.symbol.livephoto，暂停时
+  // 用 livephoto_slash 的斜杠版）+ 文案，点一下切换播放/暂停，播完点它重播。
+  //
+  // 位置选在标准控制栏原本占的那条带子上（底部 40vp 左右）：实况把控制栏关掉了，
+  // 那块地方空着，而缩略图带在更上面的 110vp，两者不会打架。
+  // 把这条实况存回图库，变回一张**真的**动态照片而不是一段视频。
+  //
+  // 必须挂在 SaveButton 的 onClick 里：创建动态照片资产只有 createAssetRequest
+  // 那一条路，而它要么申请常驻的媒体写权限、要么由用户点一次安全控件临时授权。
+  // 本应用一贯避开常驻权限，所以用后者——理由与推导见 util/livePhotoSave。
+  private async saveLiveToGallery(): Promise<void> {
+    const video: string = this.videoLocalPath();
+    if (video === '') {
+      // **还没下完就没有本地文件可存。**
+      //
+      // 这一支原来和真正的失败共用「保存失败」，而且一行日志都不打——用户报
+      // 「保存提示保存失败」时，日志里既没有 extractFirstFrame 也没有
+      // saveLiveToGallery，正是走的这里。现在换成「正在下载」并留一行日志，
+      // 两种失败一眼分得开。
+      //
+      // 不能"先下载完再自动保存"：这个方法必须跑在 SaveButton 的 onClick 里，
+      // 那份临时写权限只在这一次回调内有效，异步等下载回来就没有了。
+      logE('MediaViewer.saveLiveToGallery: video not downloaded yet');
+      promptAction.showToast({
+        message: str('transfer_downloading', 0), duration: 1800
+      });
+      return;
+    }
+    const ctx = getContext(this) as common.UIAbilityContext;
+    const still: string = `${ctx.filesDir}/live_save_${Date.now()}.jpg`;
+    try {
+      // 静图那一半从视频里抽首帧，而不是拿 TDLib 的缩略图——缩略图只有几百像素
+      // 宽，而这张就是用户之后在图库里看到的照片。
+      //
+      // **不再把消息声明的宽高传进去**（issue #193）：实况这条路上那对值被填成了
+      // 静图尺寸（全传感器几千万像素），抽帧会把 1080p 的视频帧放大上去，存进
+      // 图库就是糊的。抽帧一律按原生分辨率，见 extractFirstFrame 的注释。
+      //
+      // 先试夹带的原图：PG 发的实况在 mp4 尾部藏了全尺寸静图（util/livePhotoBox）。
+      // 取到就用它——那才是真正的原图；取不到（对方不是 PG 发的、或者服务端没有
+      // 原样保存字节）就退回抽帧，行为和以前一致。
+      // ⚠️ 这也是「字节存活实验」的观测点：日志 [LiveBox] found / no embedded
+      // 直接回答"夹带能不能活着回来"。
+      let ok: boolean = await extractLiveStill(video, still);
+      if (!ok) {
+        ok = await extractFirstFrame(video, still);
+      }
+      if (!ok) {
+        promptAction.showToast({ message: str('media_save_failed'), duration: 1800 });
+        return;
+      }
+      await saveMovingPhoto(ctx, still, video, `live_${Date.now()}`);
+      promptAction.showToast({ message: str('media_saved_gallery'), duration: 2000 });
+    } catch (error) {
+      logE(`MediaViewer.saveLiveToGallery failed: ${error}`);
+      promptAction.showToast({ message: str('media_save_failed'), duration: 1800 });
+    } finally {
+      // 抽出来的首帧只是中转，落库之后就没用了。删不掉不该打断流程。
+      try {
+        fs.unlinkSync(still);
+      } catch (error) {
+        logE(`MediaViewer.saveLiveToGallery cleanup failed: ${error}`);
+      }
+    }
+  }
+
+  // 「存为实况」。放在右下角，和左下角那枚实况胶囊分居两侧，互不遮挡。
+  @Builder
+  liveSaveButton() {
+    Column() {
+      SaveButton({
+        icon: SaveIconStyle.FULL_FILLED,
+        text: SaveDescription.SAVE_IMAGE,
+        buttonType: ButtonType.Capsule
+      })
+        .onClick((event: ClickEvent, result: SaveButtonOnClickResult): void => {
+          if (result !== SaveButtonOnClickResult.SUCCESS) {
+            return;
+          }
+          this.saveLiveToGallery();
+        });
+    }
+    .width('100%').height('100%')
+    .justifyContent(FlexAlign.End)
+    .alignItems(HorizontalAlign.End)
+    .padding({ right: 16, bottom: 40 })
+    .hitTestBehavior(HitTestMode.Transparent);
+  }
+
+  @Builder
+  liveCapsule() {
+    Column() {
+      Row({ space: 5 }) {
+        // 三个时刻都是播放键：刚打开（停在静态首帧）、用户按停、播完
+        // （onCompletion 会把 isPlaying 置 false）——一眼就知道点它能看动的那份；
+        // 播放中则是标准的同心圆实况标，点它暂停。
+        SymbolGlyph($r(this.livePlaying ? 'sys.symbol.livephoto' : 'sys.symbol.play_fill'))
+          .fontSize(17).fontColor([Color.White]);
+        Text($r('app.string.cp_live_photo'))
+          .fontSize(13).fontColor(Color.White).fontWeight(FontWeight.Medium);
+      }
+      .height(30)
+      .padding({ left: 10, right: 12 })
+      .backgroundColor('#66000000')
+      .borderRadius(15)
+      .onClick((): void => { this.liveToggleSeq++; });
+    }
+    .width('100%').height('100%')
+    .justifyContent(FlexAlign.End)
+    .alignItems(HorizontalAlign.Start)
+    .padding({ left: 16, bottom: 44 })
+    .hitTestBehavior(HitTestMode.Transparent);
+  }
+
+  @Builder
+  viewerContent() {
+    Swiper(this.swiperCtrl) {
+      LazyForEach(this.pagerSource, (vm: FilmCellVM) => {
+        Stack() {
+          if (this.siblingIsVideo(vm.id)) {
+            Stack() {
+              // 原生 Surface 退场/释放时保留海报底图，几何转场仍有可绘制内容。
+              if (this.siblingPath(vm.id) !== '') {
+                Image(this.siblingPath(vm.id).startsWith('/')
+                  ? `file://${this.siblingPath(vm.id)}` : this.siblingPath(vm.id))
+                  .syncLoad(true)
+                  .draggable(false)
+                  .objectFit(ImageFit.Contain).width('100%').height('100%');
+              }
+              // 本地文件在就挂播放器，不能只认 fileId：下载中心磁盘扫出来的视频
+              // fileId 恒为 0（TDLib 没有「路径 → fileId」的接口），而两个引擎的取源
+              // 顺序都是 localPath 优先（AvVideoPlayer / StreamingVideoPlayer）。
+              // 只认 fileId 的后果是这一页只画海报、播不了（用户 2026-09-16）。
+              if (vm.id === this.viewerMsgId &&
+                (this.videoFileId() !== 0 || this.videoLocalPath() !== '')) {
+                // 按播放档的文件建：换清晰度 = 换 key = 整个播放器重建（StreamingVideoPlayer
+                // 不监听 fileId 变化），起播位见 startPositionMs 里的切档那一支。
+                ForEach([this.playingFileId()], (playingId: number) => {
+                VideoPlayerHost({
+                  fileId: playingId,
+                  onPlaybackControls: (controls: VideoPlaybackControls | null): void => {
+                    this.playbackControls = controls;
+                  },
+                  fileSize: this.playingFileSize(),
+                  mimeType: this.videoMimeType(),
+                  videoWidth: this.playingWidth(),
+                  videoHeight: this.playingHeight(),
+                  localPath: this.playingLocalPath(),
+                  posterPath: this.siblingPath(vm.id),
+                  // 实况走自己的胶囊，标准控制栏（进度条/倍速）让位。
+                  showControls: this.chromeVisible && !this.isLiveEntry(vm.id),
+                  liveMode: this.isLiveEntry(vm.id),
+                  liveToggleSeq: this.liveToggleSeq,
+                  onPlayStateChanged: (playing: boolean): void => { this.livePlaying = playing; },
+                  landscape: this.videoLandscape,
+                  // 全屏就该有声音，不受气泡自动播放静音开关影响。
+                  muted: false,
+                  // 实况恒从 0 起。续播位是给普通视频的——从一条播到一半的实况
+                  // 气泡点进来，停在中途那一帧当「静态照片」是不对的。
+                  startPositionMs: (vm.id === this.qualityResumeMsgId && !this.isLiveEntry(vm.id))
+                    ? this.qualityResumeMs
+                    : ((vm.id === this.initialViewerMsgId && !this.isLiveEntry(vm.id))
+                      ? this.initStartPositionMs : 0),
+                  onPositionChanged: (positionMs: number): void => {
+                    this.lastVideoPositionMs = positionMs;
+                    this.speedTick = (this.speedTick + 1) & 0x7fffffff;
+                    this.onPositionChanged(positionMs);
+                  },
+                  onStatsSource: (source: (() => VideoStatsSnapshot) | null): void => {
+                    this.statsSource = source;
+                  },
+                  onDecoderKnown: (hardware: boolean): void => {
+                    this.decoderKey = this.playingKey();
+                    this.decoderHardware = hardware;
+                  },
+                  onBackgroundTap: () => { this.toggleChrome(); },
+                  onSwipeNext: () => { this.switchViewer(1); },
+                  onSwipePrev: () => { this.switchViewer(-1); },
+                  onOrientationChange: (landscape: boolean) => {
+                    this.setVideoLandscape(landscape);
+                  }
+                });
+                }, (playingId: number): string => `${playingId}`);
+              } else {
+                Stack() {
+                  Circle({ width: 56, height: 56 }).fill('#66000000');
+                  Text('▶').fontSize(24).fontColor(Color.White);
+                }.width(56).height(56);
+              }
+            }
+            .width('100%').height('100%')
+            .clip(true)
+            // 和图片一样，每页固定绑定自己的消息；翻页后退出也回到对应缩略图。
+            // 绑定外层容器，播放器的旋转和 Surface 尺寸仍由内部独立管理。
+            .geometryTransition(`media_${this.chatId}_${vm.id}`);
+          } else {
+            // Gestures live on this UNSCALED wrapper, not on the Image: a
+            // scaled component reports gesture coordinates/offsets in its own
+            // scaled space, which made panning lag the finger by the zoom
+            // factor. The Image only carries the scale/translate transform.
+            Stack() {
+              if (this.photoSrcFor(vm.id) !== '') {
+                Image(this.photoSrcFor(vm.id))
+                  .syncLoad(true)
+                  .draggable(false)
+                  .objectFit(ImageFit.Contain).width('100%').height('100%')
+                  .scale({
+                    x: vm.id === this.viewerMsgId ? this.photoScale : VIEWER_MIN_SCALE,
+                    y: vm.id === this.viewerMsgId ? this.photoScale : VIEWER_MIN_SCALE
+                  })
+                  .translate({
+                    x: vm.id === this.viewerMsgId ? this.photoOffsetX : 0,
+                    y: vm.id === this.viewerMsgId ? this.photoOffsetY : 0
+                  });
+              } else {
+                Column() {
+                  if (this.photoEmptyFailedFor(vm.id)) {
+                    this.photoErrorState();
+                  } else {
+                    this.photoLoadingStateFor(vm.id);
+                  }
+                }
+                .width('100%').height('100%')
+                .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+                .hitTestBehavior(HitTestMode.Transparent);
+              }
+            }
+            .width('100%').height('100%')
+            // 一镜到底的落点：与气泡里同一条消息的媒体框绑同一个 vm.id，系统负责
+            // 把宽高和位置从缩略图过渡到全屏。
+            //
+            // 只有当前页绑真实 vm.id——同一时刻一个 vm.id 只能有一对节点，左右邻页
+            // 若也绑上，系统就不知道该跟谁配对了。内层 Image 身上挂着捏合缩放
+            // 与拖动的 scale/translate，所以绑在外层这个不带变换的 Stack 上，
+            // 两套变换才不会打架（官方要求绑定节点的宽高动画不能有跳变）。
+            // 每一页永久绑自己的 vm.id，**绝不在活节点上改 vm.id**。
+            //
+            // 原来是「只有当前页绑真 vm.id，其余绑 media_idle_<vm.id>」，翻页时同一个
+            // 活节点的 vm.id 会来回改。日志证实这一侧的取值全程正确（当前页总是
+            // 真 vm.id，关闭时也对得上），可退出动画的落点仍然错——说明框架的配对
+            // 登记不跟着活节点的 vm.id 走，退场时按最初登记的那一页去找落点，
+            // 于是翻过页就落在第一张的位置上。不翻页正好没暴露。
+            //
+            // 静态之后每个 vm.id 恰好一对节点：相册里的那一格 + 查看器里的那一页，
+            // 正是 geometryTransition 要求的形状，动画仍由节点的出现/消失驱动。
+            // vm.id 三处必须逐字一致（本行 + MessageBubble 的单图与相册格两行），
+            // 而**编译器不校验配对**，漏一端只在真机上表现为落点错。
+            .geometryTransition(`media_${this.chatId}_${vm.id}`)
+            // Parallel, not Exclusive. Exclusive has to hold the single tap
+            // back until the double-tap window expires, and since a single tap
+            // at 1x now closes the viewer, that wait showed up as a stall
+            // before the shrink animation started. In parallel the single tap
+            // fires on release.
+            //
+            // The gesture tree stays static on purpose: choosing the recogniser
+            // from this.zoomed() looked tidier but left the tap bound to
+            // nothing at all, because the binding is not re-evaluated when the
+            // condition changes.
+            //
+            // 并行组的后果：一次双击也会把单击触发两次。单击现在是切换控制层
+            // 的显隐，切两次等于没切，落回原样——所以双击放大在 1x 上现在是
+            // 真的可用了。（以前 1x 的单击是关闭查看器，第一下就把整层关掉，
+            // 双击根本没有机会成立，进放大只能靠双指捏合。）
+            .gesture(
+              GestureGroup(GestureMode.Parallel,
+                TapGesture({ count: 2, fingers: 1 })
+                  .onAction((event: GestureEvent) => { this.onPhotoDoubleTap(event); }),
+                TapGesture({ count: 1, fingers: 1 })
+                  .onAction(() => { this.onPhotoTap(); })
+              )
+            )
+            .priorityGesture(
+              GestureGroup(GestureMode.Parallel,
+                PinchGesture({ fingers: 2 })
+                  .onActionStart((event: GestureEvent) => { this.onPinchStart(event); })
+                  .onActionUpdate((event: GestureEvent) => { this.onPinchUpdate(event); })
+                  .onActionEnd(() => { this.onPinchEnd(); })
+                  .onActionCancel(() => { this.onPinchEnd(); }),
+                // 放大态：全方向、阈值小，单指拖动平移图片。
+                // 1x：**只认竖直**，横向原样留给 Swiper 翻页——这比原来单靠
+                // 一个大阈值（50）挡住横向更可靠，那样横向拖过 50vp 仍会把
+                // Swiper 的手势抢走。竖直方向拖的是"下滑关闭"，阈值取 20 让
+                // 它跟手，又不至于被列表式的轻微竖向抖动误触发。
+                PanGesture({
+                  fingers: 1,
+                  distance: this.zoomed() ? 3 : 20,
+                  direction: this.zoomed() ? PanDirection.All : PanDirection.Vertical
+                })
+                  .onActionStart(() => { this.onPanStart(); })
+                  .onActionUpdate((event: GestureEvent) => { this.onPanUpdate(event); })
+                  .onActionEnd(() => { this.onPanEnd(); })
+                  .onActionCancel((): void => { this.restoreDismiss(); })
+              )
+            );
+          }
+        }.width('100%').height('100%');
+      }, (vm: FilmCellVM, index: number): string =>
+        guardKey(this.pagerSource.keyTableId, index, `vm_${vm.id}|${vm.fileId}`));
+    }
+    .indicator(false)
+    .loop(false)
+    // 懒加载之后左右各预建两页，连续滑动时邻页已提前挂载并完成同步解码。
+    .cachedCount(2)
+    .index(this.pageIdx)
+    // While enlarged, one-finger movement must not page the album out from
+    // under the zoomed photo. Resetting to 1x re-enables normal paging.
+    .disableSwipe(this.zoomed() || this.videoLandscape)
+    // 拖动中上报当前位移。停在头/尾还继续往外拖时，这个值会越过 0 继续走，
+    // 那段就是"越界量"——切组的气泡跟着它长。
+    .onGestureSwipe((_index: number, extra: SwiperAnimationEvent) => {
+      this.onSwiperGesture(extra.currentOffset);
+    })
+    // 松手的判定放在 onTouch 而不是 onAnimationStart：后者在"拖了但不足以翻页"
+    // 时不一定触发，而这恰恰是气泡最需要收回去的那种情形。
+    .onTouch((e: TouchEvent) => {
+      if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+        this.settleHop();
+      }
+    })
+    .onChange((i: number) => { this.onPageChange(i); })
+    .onAreaChange((_old: Area, area: Area) => {
+      this.areaW = Number(area.width);
+      this.areaH = Number(area.height);
+    })
+    .translate({ x: this.hopSlideX })
+    .width('100%').height('100%');
+    if (!this.isVideo() && this.photoSrc() !== '' && this.photoUpgrading() && this.chromeVisible) {
+      Row({ space: 7 }) {
+        LoadingProgress().width(15).height(15).color(Color.White);
+        Text(this.photoProgress() > 0
+          ? str('mv_loading_full_pct', this.photoProgress()) : $r('app.string.mv_loading_full'))
+          .fontSize(12).fontColor(Color.White);
+      }
+      .padding({ left: 11, right: 11, top: 7, bottom: 7 })
+      .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG)).borderRadius(16)
+    .backdropBlur(overlayBackdropBlur('viewer'))
+    .attributeModifier(materialModifier('viewer'))
+      .position({ x: 14, y: this.topSafe + 76 })
+      .hitTestBehavior(HitTestMode.None)
+      .transition(TransitionEffect.OPACITY
+        .combine(TransitionEffect.translate({ y: -5 }))
+        .animation({ duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 160), curve: Curve.EaseOut }));
+    } else if (!this.isVideo() && this.photoSrc() !== '' && this.photoFailed() && this.chromeVisible) {
+      Row({ space: 6 }) {
+        SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(14).fontColor([Color.White]);
+        Text($r('app.string.mv_full_failed')).fontSize(12).fontColor(Color.White);
+      }
+      .padding({ left: 11, right: 11, top: 7, bottom: 7 })
+      .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG)).borderRadius(16)
+    .backdropBlur(overlayBackdropBlur('viewer'))
+    .attributeModifier(materialModifier('viewer'))
+      .position({ x: 14, y: this.topSafe + 76 })
+      .onClick((): void => { this.retryPhoto(); });
+    }
+  }
+
+  // Thumbnail strip for the current message's album (photo/video list) —
+  // tap a thumbnail to switch the viewer to that item.
+  // 把第 index 张缩略图滚到可视范围中间。
+  //
+  // 改 List 之后用 scrollToIndex(…, Center)，不再自己算像素：原来那段
+  // `12 + index * 58 + 26 - areaW / 2` 把「每格 52 + 间距 6 + 左内边距 12」写死在
+  // 算术里，任何一个数字改了都得同步改这里；而懒加载下未建出来的格子本来就没有
+  // 真实宽度可算。
+  private scrollFilmstripTo(index: number): void {
+    if (index < 0) {
+      return;
+    }
+    try {
+      // **不能用 smooth**：懒加载列表上带动画的 scrollToIndex 要一项项走过去才知道
+      // 尺寸，屏幕上就是「从头滚到尾」（用户 2026-09-16 实测：停在最后一张时每次
+      // 左右滑都重演一遍）。官方在 scroll.d.ts 自己写了这条：要平滑得先无动画跳到
+      // 目标附近再平滑一小段。这里只要「当前格居中」，一步到位即可。
+      this.filmScroller.scrollToIndex(index, false, ScrollAlign.CENTER);
+    } catch (e) {
+      // 条还没挂上（切组的同一帧）时会抛，下一次 onPageChange 会再来一次。
+    }
+  }
+
+  @Builder
+  viewerFilmstrip() {
+    // 横向 List + LazyForEach + @ReusableV2 单元格：只建可视区 + cachedCount 那几格。
+    // 与 pages/main/DownloadCenterList 同一套做法（那边是竖向）。
+    List({ space: 6, scroller: this.filmScroller }) {
+      LazyForEach(this.filmSource, (vm: FilmCellVM) => {
+        ListItem() {
+          ViewerFilmstripCell({
+            cell: vm,
+            current: vm.id === this.viewerMsgId,
+            effectMs: this.effectDuration(KEY_POWER_EFFECT_BLUR, 160)
+          })
+            .reuse({ reuseId: (): string => 'film' });
+        }
+        .onClick(() => { this.jumpToSibling(vm.id); });
+      }, (vm: FilmCellVM, index: number): string =>
+        guardKey(this.filmSource.keyTableId, index, `${vm.id}|${vm.fileId}`));
+    }
+    .listDirection(Axis.Horizontal)
+    .width('100%').height(56)
+    .padding({ left: 12, right: 12 })
+    .scrollBar(BarState.Off)
+    .cachedCount(4)
+    // 控制层是 `if (this.chromeVisible …)`：隐藏再显示、以及切组，都会把这条整块
+    // 重建，偏移随之归零——不在这里补一次，回来看到的就是第一张而不是当前这张
+    // （用户 2026-09-16 实测）。下一帧再滚：这一帧行还没排版，量不到位置。
+    .onAppear((): void => {
+      const filmIdx: number = indexOfId(this.memberIndex, this.viewerMsgId);
+      setTimeout((): void => { this.scrollFilmstripTo(filmIdx >= 0 ? filmIdx : 0); }, 0);
+    });
+  }
+
+  private videoDownloadSpeedText(): string {
+    const _tick: number = this.nowSec + this.speedTick;
+    const speed: number = AppStorage.get<number>('viewerVideoDownloadSpeed') ?? 0;
+    return _tick >= 0 && speed > 0 ? formatSpeed(speed) : '';
+  }
+
+  @Builder
+  videoDownloadSpeedChip() {
+    Row({ space: 3 }) {
+      SymbolGlyph($r('sys.symbol.arrow_down'))
+        .fontSize(11)
+        .fontColor(['#E6FFFFFF']);
+      Text(this.videoDownloadSpeedText())
+        .fontSize(11)
+        .fontColor('#E6FFFFFF')
+        .fontWeight(FontWeight.Medium)
+        .maxLines(1);
+    }
+    .height(24)
+    .padding({ left: 7, right: 8 })
+    .backgroundColor('#33FFFFFF')
+    .borderRadius(12)
+    .alignItems(VerticalAlign.Center);
+  }
+
+  private currentClockText(): string {
+    const sec: number = this.nowSec > 0 ? this.nowSec : Math.floor(Date.now() / 1000);
+    return formatClockTime(sec);
+  }
+
+  private currentBatterySoc(): number {
+    try {
+      const soc: number = batteryInfo.batterySOC;
+      if (Number.isFinite(soc) && soc >= 0 && soc <= 100) {
+        return Math.round(soc);
+      }
+    } catch (_e) {
+    }
+    return -1;
+  }
+
+  private isBatteryCharging(): boolean {
+    try {
+      const state: batteryInfo.BatteryChargeState = batteryInfo.chargingStatus;
+      return state === batteryInfo.BatteryChargeState.ENABLE ||
+        state === batteryInfo.BatteryChargeState.FULL;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  @Builder
+  landscapeStatusInfo() {
+    Row({ space: 6 }) {
+      Text(this.currentClockText())
+        .fontSize(12)
+        .fontColor('#E6FFFFFF')
+        .fontWeight(FontWeight.Medium);
+      if (this.currentBatterySoc() >= 0) {
+        Row({ space: 3 }) {
+          Row({ space: 1 }) {
+            Stack({ alignContent: Alignment.Start }) {
+              Row()
+                .width(18).height(10)
+                .border({ width: 1, color: '#CCFFFFFF', radius: 2.5 })
+                .backgroundColor(Color.Transparent);
+              Row()
+                .width(Math.max(2, Math.round(14 * (this.currentBatterySoc() / 100))))
+                .height(6)
+                .margin({ left: 2 })
+                .borderRadius(1)
+                .backgroundColor(this.isBatteryCharging()
+                  ? '#34C759'
+                  : (this.currentBatterySoc() <= 20 ? '#FF453A' : '#E6FFFFFF'));
+            }
+            .width(18).height(10);
+            Column()
+              .width(1.5).height(4)
+              .borderRadius({ topRight: 1, bottomRight: 1 })
+              .backgroundColor('#CCFFFFFF');
+          }
+          .alignItems(VerticalAlign.Center);
+          Text(`${this.currentBatterySoc()}%`)
+            .fontSize(11)
+            .fontColor('#E6FFFFFF')
+            .fontWeight(FontWeight.Medium);
+        }
+        .alignItems(VerticalAlign.Center);
+      }
+    }
+    .height(24)
+    .padding({ left: 8, right: 8 })
+    .backgroundColor('#33FFFFFF')
+    .borderRadius(12)
+    .alignItems(VerticalAlign.Center);
+  }
+
+  @Builder
+  chromeLayer() {
+    // 顶部通栏。**一整条，不是三块浮在照片上的玻璃胶囊。**
+    //
+    // 原来是「✕ 圆片 + 标题胶囊 + ⋮ 圆片」三块各自带玻璃背板，状态栏那一条
+    // 则什么都没有——照片直接透到系统时钟和图标底下。而本应用的前景色规则是
+    // 「玻璃上的前景跟主题走」（见下面图标的颜色），状态栏没有玻璃可跟，浅色
+    // 主题下就是黑字压在任意一张照片上，深浅全看运气（issue #122）。
+    //
+    // 通栏一铺，状态栏就有了和标题同一块背板：**全局那套跟随主题的状态栏内容
+    // 色于是自动变成对的**，一行 setWindowSystemBarProperties 都不用调，也不
+    // 用去猜照片亮度。三块胶囊的背板随之失去意义，按钮只留热区和按压态。
+    //
+    // 横屏模式下全程隐藏系统状态栏，不再留出 topSafe 状态栏高度，改在顶栏右侧
+    // 直接展示当前系统时间与手机电量。
+    Column() {
+      if (!this.videoLandscape) {
+        // 竖屏状态栏占位。玻璃铺到这里，系统时钟和图标就压在它上面。
+        Row().width('100%').height(this.topSafe).hitTestBehavior(HitTestMode.None);
+      }
+      Row({ space: 6 }) {
+        Stack() {
+          SymbolGlyph($r('sys.symbol.xmark')).fontSize(18).fontColor([Color.White]);
+        }
+        .width(this.videoLandscape ? 36 : 40)
+        .height(this.videoLandscape ? 36 : 40)
+        .borderRadius(this.videoLandscape ? 18 : 20)
+        .stateStyles({
+          normal: this.chromeNormalStyle,
+          pressed: this.chromePressedStyle
+        })
+        .animation({
+          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
+          curve: Curve.EaseOut
+        })
+        .onClick(() => { this.requestClose(); });
+        Column({ space: 1 }) {
+          Text(this.infoTitle()).fontSize(this.videoLandscape ? 14 : 15).fontColor(Color.White)
+            .fontWeight(FontWeight.Medium)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+          if (this.infoSubtitle() !== '' && !this.videoLandscape) {
+            Text(this.infoSubtitle()).fontSize(11).fontColor('#D9FFFFFF')
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+          }
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1);
+        if (this.siblingIsVideo(this.viewerMsgId) && !this.isLiveNow()) {
+          if (this.videoDownloadSpeedText() !== '') {
+            this.videoDownloadSpeedChip();
+          }
+          ViewerVideoChips({
+            decoder: this.decoderLabel(),
+            variants: this.videoVariantList(),
+            quality: this.videoQuality,
+            playing: this.playingVariant(),
+            onPickQuality: (quality: number): void => { this.onPickQuality(quality); },
+            onShowStats: (): void => { this.statsOpen = true; },
+            onMinimize: (): void => { this.minimizeVideo(); }
+          });
+        }
+        if (this.videoLandscape) {
+          this.landscapeStatusInfo();
+        }
+        // No download indicator up here: the seek bar's lighter track shows
+        // the downloaded span, and a stalled player draws a centered ring.
+        // "⋮" menu — 保存到相册 etc.
+        Stack() {
+          SymbolGlyph($r('sys.symbol.more')).fontSize(18).fontColor([Color.White]);
+        }
+        .width(this.videoLandscape ? 36 : 40)
+        .height(this.videoLandscape ? 36 : 40)
+        .borderRadius(this.videoLandscape ? 18 : 20)
+        .stateStyles({
+          normal: this.chromeNormalStyle,
+          pressed: this.chromePressedStyle
+        })
+        .animation({
+          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
+          curve: Curve.EaseOut
+        })
+        .bindMenu(this.chromeMenu());
+      }
+      .width('100%')
+      .height(this.videoLandscape ? 44 : CHROME_BAR_ROW_H)
+      .padding({
+        left: this.videoLandscape
+          ? Math.max(12, (AppStorage.get<number>('cutoutLeftSafeWidth') ?? 0) + 6)
+          : 6,
+        right: this.videoLandscape
+          ? Math.max(12, (AppStorage.get<number>('cutoutRightSafeWidth') ?? 0) + 6)
+          : 6
+      })
+      .alignItems(VerticalAlign.Center);
+    }
+    .width('100%')
+    .position({ x: 0, y: 0 })
+    // 玻璃与材质挂在通栏本身上，三块胶囊的背板因此全部撤掉。
+    .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
+    .backdropBlur(overlayBackdropBlur('viewer'))
+    .attributeModifier(materialModifier('viewer'))
+    .transition(TransitionEffect.OPACITY
+      .combine(TransitionEffect.translate({ y: -8 }))
+      .animation({
+        duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 180),
+        curve: Curve.EaseOut
+      }));
+  }
+
+  // 越界切组的气泡。跟着手指长，拉满时换成"松手即可查看"。
+  //
+  // 贴在越界的那一侧：往下一组是从右边出来，往上一组从左边——方向和手指
+  // 拖出去的方向一致，才读得出"那边还有东西"。
+  @Builder
+  hopBubble() {
+    Row({ space: 8 }) {
+      // 前景一律白：这一面的底是固定的深色半透明，不参与沉浸材质，也就不跟
+      // 主题走（见 util/overlayMaterial 的 usesImmersiveMaterial）。
+      if (this.hopDir < 0) {
+        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(15).fontColor([Color.White]);
+      }
+      if (this.hopThumbPath() !== '') {
+        Image(this.hopThumbPath()).draggable(false)
+          .width(34).height(34).borderRadius(6).objectFit(ImageFit.Cover);
+      }
+      Text(this.hopProgress >= 1
+        ? $r('app.string.mv_hop_release')
+        : (this.hopDir > 0 ? $r('app.string.mv_hop_next') : $r('app.string.mv_hop_prev')))
+        .fontSize(12).fontColor(Color.White)
+        .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+        .constraintSize({ maxWidth: 132 });
+      if (this.hopDir > 0) {
+        SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(15).fontColor([Color.White]);
+      }
+    }
+    .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+    .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
+    .backdropBlur(overlayBackdropBlur('viewer'))
+    .attributeModifier(materialModifier('viewer'))
+    .borderRadius(18)
+    .alignItems(VerticalAlign.Center)
+    // 跟手：越拉越显、越拉越实。拉满前是"还差一点"的观感，拉满才定下来。
+    .opacity(0.35 + 0.65 * this.hopProgress)
+    .scale({ x: 0.88 + 0.12 * this.hopProgress, y: 0.88 + 0.12 * this.hopProgress })
+    .hitTestBehavior(HitTestMode.None);
+  }
+
+  build() {
+    Stack() {
+      this.viewerContent();
+      // 连续翻页不弹气泡：轻轻一带松手就切，提示反而是打断。
+      if (this.hopDir !== 0 && !this.continuousHop) {
+        Row() {
+          this.hopBubble();
+        }
+        .width('100%').height('100%')
+        .padding({ left: 16, right: 16 })
+        .justifyContent(this.hopDir > 0 ? FlexAlign.End : FlexAlign.Start)
+        .alignItems(VerticalAlign.Center)
+        .hitTestBehavior(HitTestMode.None);
+      }
+      if (this.chromeVisible) {
+        this.chromeLayer();
+      }
+      // 统计面板不跟控制条一起隐藏（YouTube 也是这样）：看数据时常要把控制条点掉。
+      if (this.statsOpen && this.isVideo()) {
+        Column() {
+          VideoStatsPanel({
+            source: this.statsSource,
+            quality: this.qualityStatsText(),
+            onClose: (): void => { this.statsOpen = false; }
+          });
+        }
+        .width('100%').height('100%')
+        .padding({
+          top: (this.videoLandscape ? 44 : this.topSafe + CHROME_BAR_ROW_H) + 8
+        })
+        .alignItems(HorizontalAlign.Center)
+        .hitTestBehavior(HitTestMode.Transparent);
+      }
+      if (this.chromeVisible && this.isLiveNow()) {
+        this.liveCapsule();
+        this.liveSaveButton();
+      }
+      if (this.chromeVisible && !this.videoLandscape && this.siblingIds().length > 1) {
+        Column() {
+          this.viewerFilmstrip();
+        }
+        .width('100%').height('100%')
+        .justifyContent(FlexAlign.End)
+        .padding({ bottom: this.isVideo() ? 68 : 30 })
+        .hitTestBehavior(HitTestMode.Transparent)
+        .transition(TransitionEffect.OPACITY
+          .combine(TransitionEffect.translate({ y: 10 }))
+          .animation({
+            duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 180),
+            curve: Curve.EaseOut
+          }));
+      }
+    }
+    .width('100%').height('100%')
+    // 整层（图片 + 控制层）一起跟着手指往下走，退出的是"这一整块沉浸"，
+    // 不是单独一张图。
+    .translate({ y: this.dismissY })
+    .backgroundColor(this.dismissY > 0 ? `#${
+      Math.round((1 - this.dismissProgress()) * 255).toString(16).padStart(2, '0')
+    }000000` : Color.Black)
+    // The fullscreen surface owns its transition. The chat thumbnail stays
+    // mounted and decoded underneath, so closing can never leave that cell
+    // as a grey/background placeholder or an empty Image node.
+    // 只留不透明度：几何过渡已经交给 geometryTransition（气泡 ↔ 全屏图），
+    // 这里再叠一套"从点击点缩放"就是两套几何动画抢同一个节点。
+    //
+    // 【tapX/tapY 已于 S1(2650ac3) 删除】原注释说它们"仍然保留着，回退到这套
+    // 转场时不用重新接线"——那句现在不成立了。真要回退，从那个提交里取。
+    //
+    // 时长与页面侧的开合同闸（KEY_POWER_SMOOTH_TRANSITIONS），不再挂
+    // EFFECT_BLUR：那个键默认关，会让这层淡入与一镜到底一起变成硬切。
+    // 理由详见 ChatPage.openViewer 里的说明。
+    .transition(
+      TransitionEffect.OPACITY
+        .animation({ duration: this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300), curve: Curve.Friction }),
+      this.underlayEntranceFinished
+    )
+    .onAppear((): void => {
+      // Reduced-motion/zero-duration opens are opaque on their first frame.
+      if (this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300) <= 0) {
+        this.underlayEntranceFinished(true);
+      }
+    });
+  }
+}

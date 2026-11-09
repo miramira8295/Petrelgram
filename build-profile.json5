@@ -1,0 +1,57 @@
+{
+  app: {
+    signingConfigs: [
+      {
+        name: 'default',
+        type: 'HarmonyOS',
+        material: {
+          certpath: 'C:\\Users\\anshu\\.ohos\\config\\default_Petrelgram_xSlvZSON1ceDx79edVRV36GfYsPdRufGOfmzgfvK74=.cer',
+          keyAlias: 'debugKey',
+          keyPassword: '0000001a10f6d78d7abcf0f5666714d8da5f0f16332bc7d202028692c9e020182b7a8968b3a63d402d54',
+          profile: 'C:\\Users\\anshu\\.ohos\\config\\default_Petrelgram_xSlvZSON1ceDx79edVRV36GfYsPdRufGOfmzgfvK74=.p7b',
+          signAlg: 'SHA256withECDSA',
+          storeFile: 'C:\\Users\\anshu\\.ohos\\config\\default_Petrelgram_xSlvZSON1ceDx79edVRV36GfYsPdRufGOfmzgfvK74=.p12',
+          storePassword: '0000001a10f6d78d7abcf0f5666714d8da5f0f16332bc7d202028692c9e020182b7a8968b3a63d402d54',
+        },
+      },
+    ],
+    products: [
+      {
+        name: 'default',
+        signingConfig: 'default',
+        targetSdkVersion: '26.0.0',
+        compatibleSdkVersion: '6.0.0(20)',
+        runtimeOS: 'HarmonyOS',
+        buildOption: {
+          nativeCompiler: 'BiSheng',
+          strictMode: {
+            caseSensitiveCheck: true,
+            useNormalizedOHMUrl: true,
+          },
+        },
+      },
+    ],
+    buildModeSet: [
+      {
+        name: 'debug',
+      },
+      {
+        name: 'release',
+      },
+    ],
+  },
+  modules: [
+    {
+      name: 'entry',
+      srcPath: './entry',
+      targets: [
+        {
+          name: 'default',
+          applyToProducts: [
+            'default',
+          ],
+        },
+      ],
+    },
+  ],
+}

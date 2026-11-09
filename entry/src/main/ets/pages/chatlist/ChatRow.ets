@@ -1,0 +1,1109 @@
+import {
+  KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM
+} from '../../util/layoutBreakpoint';
+import { unreadBadgeText } from '../../util/unreadBadge';
+import { homeCardMarginVp } from '../../util/pageMargin';
+import { CHATLIST_PREVIEW_THUMB_ENABLED, stripPreviewIcon } from '../../util/formatPreview';
+import { DRAFT_EPOCH, localDraftPreview } from '../../store/DraftStore';
+import { router, promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
+import { GLASS_OUTLINE_COLOR } from '../../util/bubbleTail';
+import { HOME_CARD_INSET_VP } from '../../util/listCardGeometry';
+import { CHAT_SWIPE_VERTICAL_GUTTER_VP } from '../../util/chatListSwipe';
+import { ChatRowSpec, chatRowSpec } from '../../util/chatRowMetrics';
+import { ChatEntry, ChatKind, effectiveMuted } from '../../store/ChatEntry';
+import { scopeMutedForKind } from '../../store/ScopeMuteStore';
+import { FOLDER_TAGS_ENABLED, FolderInfo } from '../../store/FolderStore';
+import {
+  MUTE_OPTIONS, MuteOption, togglePin, setMute, markAsRead, markUnread,
+  setArchived, setInFolder, clearHistory, leaveOrDeleteChat, leaveLabel, leaveConfirmMessage,
+  blockAndDeleteChat
+} from '../../store/ChatActions';
+import { ClearHistoryOption, clearHistoryOptions, canClearHistory } from '../../store/ClearHistoryOptions';
+import { getActiveTdUserId, getChatStore, getFolderStore, getTdClient } from '../../tdkit/Globals';
+import { ConfirmedChatRemoval } from '../../util/confirmedChatRemoval';
+import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
+import {
+  KEY_POWER_ACTIVE, KEY_POWER_PARTICLES, KEY_POWER_SMOOTH_TRANSITIONS,
+  KEY_THREE_LINES, powerAnimationDuration
+} from '../../store/AppSettings';
+import { CHAT_LIST_NOW, CHAT_MENU_OPEN } from './ChatListFreeze';
+import { CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
+import { navigateToDirectMessagesTopics, navigateToForumTopics } from '../../util/profileNav';
+import {
+  closeForumDrawer, FORUM_DRAWER_CLOSE_MS, FORUM_DRAWER_OPEN_MS,
+  KEY_ACTIVE_FORUM_CHAT_ID, KEY_ACTIVE_FORUM_OPEN, openForumDrawer
+} from '../../util/forumDrawerState';
+import { chatListRowOrigin } from '../../util/splitRouting';
+import { AvatarView } from './AvatarView';
+import { formatTime } from '../../util/formatTime';
+import {
+  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
+  COLOR_MUTED_BADGE, mainCardFill, ROW_PAD_H, ROW_PAD_V
+} from '../../util/theme';
+import { A11Y_EPOCH, screenReaderOn } from '../../util/a11yState';
+import { KEY_APP_BG_ON } from '../../store/AppSettings';
+import { folderColor } from '../../util/FolderVisuals';
+import { plural, str } from '../../util/strings';
+import {
+  overlayBackdropBlur, containerBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+} from '../../util/overlayMaterial';
+import { materialModifierWhen } from '../../util/materialModifier';
+import {
+  KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT,
+  surfaceGlassBlurStyle, surfaceGlassFill, surfaceGlassOn
+} from '../../util/surfaceGlass';
+import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
+import { logI } from '../../util/log';
+import { APPEARANCE_EPOCH } from '../../util/appearance';
+import { firstFinger } from '../../util/firstFinger';
+import { ChatListRowState } from './ChatListRowState';
+import { headerTypingTextOf } from '../../util/typingIndicator';
+
+// 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
+// 对话框会挂死（Promise 既不 resolve 也不 reject）。
+const MENU_DISMISS_MS: number = 150;
+// 卡片上下外沿。**相邻两张卡片之间的间距是它的两倍**（外边距不折叠），
+// 所以这个数就是「item 间距 ÷ 2」；左右滑动作的背景用同一个数（CHAT_SWIPE_VERTICAL_GUTTER_VP），
+// 改了这里那边也要跟着改，否则滑出来的底色和卡片对不齐。
+export const CHAT_ROW_VERTICAL_GUTTER: number = CHAT_SWIPE_VERTICAL_GUTTER_VP;
+// 行高/头像/间距/预览字号是一组的，两套档位与那条不变式见 util/chatRowMetrics。
+// 走哪一档由列表算好后用 compact 传进来——**判据不在行里算**：三个
+// @StorageProp 挂在每一行上就是每行三份订阅，而同屏有十来行。
+
+// Reused across list rows. Every chat row is the same shape, so there is no
+// reuseId to split: one pool serves the whole list.
+@Reusable
+@Component
+export struct ChatRow {
+  // 卡片外沿按系统横向断点取值（util/pageMargin）；滑动操作背景复用同一个值。
+  @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 读屏开关的纪元。必须在 build 链路里**被真正读到**才建立依赖——见下面
+  // rowGlassEnabled() 里 surfaceGlassEpoch 那段（同一个坑，有用户实测背书：
+  // "开关打开了，不重建页面不生效"）。所以 accessibilitySummary() 里那句
+  // `this.a11yEpoch >= 0` 恒真但**不能删**。
+  @StorageProp(A11Y_EPOCH) private a11yEpoch: number = 0;
+  // 草稿纪元：本地草稿一变，列表行重算预览（同 a11yEpoch 的手法，必须在 build
+  // 链路里被真正读到才建立依赖——draftPreview() 里读了它）。
+  @StorageProp(DRAFT_EPOCH) private draftEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  // 全局界面模糊：开关和档位都要能立刻重绘（见 util/surfaceGlass）。
+  @StorageProp(KEY_SURFACE_GLASS_ON) private surfaceGlass: boolean = SURFACE_GLASS_ON_DEFAULT;
+  @StorageProp(SURFACE_GLASS_EPOCH) private surfaceGlassEpoch: number = 0;
+  // 由 MainScreen 算好写进 AppStorage 的「APP 壁纸生效中」，见 store/AppSettings。
+  @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
+  @ObjectLink @Watch('onRowChanged') row: ChatListRowState;
+  // The list this row is being shown in — pinning is per-list, and the menu
+  // offers 取消归档 instead of 归档 inside the archive.
+  @Prop listKey: string;
+  // 隐藏页签可暂停实时滤镜；当前页滚动时始终保持完整玻璃效果。
+  @Prop liveEffects: boolean = true;
+  @Prop loadImages: boolean = true;
+  @StorageProp(CHAT_LIST_NOW) nowSec: number = Math.floor(Date.now() / 1000);
+  // 聊天设置 → 聊天列表视图: the preview line wraps to two lines in 三行 mode.
+  @StorageProp(KEY_THREE_LINES) threeLines: boolean = false;
+  // 紧凑档（手机，含平板强制单栏）。由 MainTabBody / ChatListView 按
+  // layoutBreakpoint.isSplitByBreakpoint 算好传进来，默认紧凑。
+  @Prop compact: boolean = true;
+  @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
+  @StorageProp(KEY_POWER_PARTICLES) particlesEnabled: boolean = true;
+  @StorageProp(FOLDER_TAGS_ENABLED) folderTagsEnabled: boolean = false;
+  @StorageProp(KEY_ACTIVE_FORUM_OPEN) private forumDrawerOpen: boolean = false;
+  @StorageProp(KEY_ACTIVE_FORUM_CHAT_ID) private activeForumChatId: number = 0;
+  @State livePulseExpanded: boolean = false;
+  @State typingDotPhase: number = 0;
+  @State contextMenuShown: boolean = false;
+  // 长按落点相对行中心的水平偏移，交给 bindContextMenu 的 offset。
+  @State menuOffsetX: number = 0;
+  private livePulseTimer: number = -1;
+  private typingPulseTimer: number = -1;
+  private rowActive: boolean = false;
+  private deletion: ConfirmedChatRemoval = new ConfirmedChatRemoval();
+  @State private deleteLeaving: number = 0;
+  private unsubDelete: (() => void) | null = null;
+  private deleteChatId: number = 0;
+  // A long press is only valid for the exact row snapshot that was under the
+  // finger on TouchType.Down. A new message can update the row revision or
+  // reorder it while the recognition timer is running.
+  private pressActive: boolean = false;
+  private pressRevision: number = -1;
+  private pressIndex: number = -1;
+  // A successful long press and the row click share the same pointer
+  // sequence. Keep the click from navigating when release follows the menu.
+  private pressConsumedByMenu: boolean = false;
+
+  aboutToAppear(): void {
+    this.rowActive = true;
+    this.attachDeletion(this.row.snapshot.chat.id);
+    this.startLivePulse(this.row.snapshot.chat.isLive);
+    this.syncTypingPulse(this.row.snapshot.chat.typingText ?? '');
+  }
+
+  // Recycling is NOT destruction: a reused row goes to the pool and
+  // aboutToDisappear never runs for it. Without this the live pulse interval
+  // would outlive the row and keep ticking for every row the list ever showed.
+  aboutToRecycle(): void {
+    this.teardown();
+  }
+
+  aboutToReuse(params: Record<string, Object>): void {
+    // ObjectLink is rebound by the framework. Do not assign the parent row.
+    this.rowActive = true;
+    this.livePulseExpanded = false;
+    this.typingDotPhase = 0;
+    this.contextMenuShown = false;
+    this.pressActive = false;
+    this.pressRevision = -1;
+    this.pressIndex = -1;
+    this.pressConsumedByMenu = false;
+    // Params cover the reuse callback; ObjectLink watch covers later rebinding
+    // and subsequent content changes while the component remains mounted.
+    const next = params.row as ChatListRowState | undefined;
+    this.attachDeletion(next?.snapshot.chat.id ?? this.row.snapshot.chat.id);
+    this.syncLivePulse(next !== undefined && next.snapshot.chat.isLive);
+    this.syncTypingPulse(next?.snapshot.chat.typingText ?? this.row.snapshot.chat.typingText ?? '');
+  }
+
+  aboutToDisappear(): void {
+    this.teardown();
+  }
+
+  private onRowChanged(): void {
+    if (this.rowActive) {
+      this.attachDeletion(this.row.snapshot.chat.id);
+      this.syncLivePulse(this.row.snapshot.chat.isLive);
+      this.syncTypingPulse(this.row.snapshot.chat.typingText ?? '');
+    }
+  }
+
+  private attachDeletion(chatId: number): void {
+    if (this.unsubDelete !== null && this.deleteChatId === chatId) { return; }
+    this.detachDeletion();
+    this.deleteChatId = chatId;
+    this.unsubDelete = this.deletion.channel.subscribe(chatId,
+      (strength: number): void => { this.deleteLeaving = strength; });
+  }
+
+  private detachDeletion(): void {
+    this.unsubDelete?.();
+    this.unsubDelete = null;
+    this.deletion.channel.restore(this.deleteChatId);
+    this.deleteChatId = 0;
+    this.deleteLeaving = 0;
+  }
+
+  private syncLivePulse(isLive: boolean): void {
+    if (!isLive) {
+      if (this.livePulseTimer !== -1) { clearInterval(this.livePulseTimer); this.livePulseTimer = -1; }
+      this.livePulseExpanded = false;
+      return;
+    }
+    this.startLivePulse(true);
+  }
+
+  private startLivePulse(isLive: boolean): void {
+    if (this.livePulseTimer !== -1 || !isLive) {
+      return;
+    }
+    this.livePulseTimer = setInterval((): void => {
+      if (!(AppStorage.get<boolean>(CHAT_LIST_RENDER_ACTIVE_KEY) ?? true)) {
+        return;
+      }
+      if (this.powerSaving || !this.particlesEnabled) {
+        this.livePulseExpanded = false;
+        return;
+      }
+      this.livePulseExpanded = !this.livePulseExpanded;
+    }, 760);
+  }
+
+  private syncTypingPulse(typingText: string): void {
+    if (typingText === '') {
+      if (this.typingPulseTimer !== -1) {
+        clearInterval(this.typingPulseTimer);
+        this.typingPulseTimer = -1;
+      }
+      this.typingDotPhase = 0;
+      return;
+    }
+    if (this.typingPulseTimer !== -1) {
+      return;
+    }
+    this.typingPulseTimer = setInterval((): void => {
+      if (!this.rowActive || this.typingText() === '') {
+        if (this.typingPulseTimer !== -1) {
+          clearInterval(this.typingPulseTimer);
+          this.typingPulseTimer = -1;
+        }
+        this.typingDotPhase = 0;
+        return;
+      }
+      if (!(AppStorage.get<boolean>(CHAT_LIST_RENDER_ACTIVE_KEY) ?? true)) {
+        return;
+      }
+      if (this.powerSaving || !this.liveEffects) {
+        this.typingDotPhase = 0;
+        return;
+      }
+      try {
+        this.getUIContext().animateTo({
+          duration: 240,
+          curve: Curve.EaseInOut
+        }, (): void => {
+          this.typingDotPhase = (this.typingDotPhase + 1) % 3;
+        });
+      } catch (_e) {
+        this.typingDotPhase = (this.typingDotPhase + 1) % 3;
+      }
+    }, 280);
+  }
+
+  private typingDotOpacity(index: number): number {
+    if (this.powerSaving || !this.liveEffects) {
+      return 1;
+    }
+    if (this.typingDotPhase === index) {
+      return 1;
+    }
+    if ((this.typingDotPhase + 2) % 3 === index) {
+      return 0.65;
+    }
+    return 0.35;
+  }
+
+  private typingDotScale(index: number): number {
+    if (this.powerSaving || !this.liveEffects) {
+      return 1;
+    }
+    if (this.typingDotPhase === index) {
+      return 1.12;
+    }
+    if ((this.typingDotPhase + 2) % 3 === index) {
+      return 0.92;
+    }
+    return 0.78;
+  }
+
+  private typingText(): string {
+    return this.row.snapshot.chat.typingText ?? '';
+  }
+
+  private teardown(): void {
+    this.rowActive = false;
+    this.detachDeletion();
+    if (this.livePulseTimer !== -1) {
+      clearInterval(this.livePulseTimer);
+      this.livePulseTimer = -1;
+    }
+    if (this.typingPulseTimer !== -1) {
+      clearInterval(this.typingPulseTimer);
+      this.typingPulseTimer = -1;
+    }
+    if (this.contextMenuShown) {
+      this.contextMenuShown = false;
+      AppStorage.setOrCreate(CHAT_MENU_OPEN, false);
+    }
+  }
+
+  private folders(): FolderInfo[] {
+    return getFolderStore().getFolders();
+  }
+
+  // 分组归属随快照下发（第二层 B3）：build 里不再问 ChatStore。
+  // 这里只用 FolderStore 换标题/颜色——那是全局的、按文件夹定义变化的元数据。
+  private matchingFolders(): FolderInfo[] {
+    if (!this.folderTagsEnabled) { return []; }
+    const ids: number[] = this.row.snapshot.flags.folderIds;
+    if (ids.length === 0) { return []; }
+    return this.folders().filter((folder: FolderInfo): boolean => ids.indexOf(folder.id) >= 0);
+  }
+
+  private isPinned(): boolean {
+    return this.row.snapshot.flags.pinned;
+  }
+
+  // 这一行的草稿预览（空串 = 没有草稿）。读一下 draftEpoch 才会建立依赖。
+  private draftPreview(): string {
+    return this.draftEpoch >= 0 ? localDraftPreview(this.row.snapshot.chat.id) : '';
+  }
+
+  private isArchived(): boolean {
+    return this.row.snapshot.flags.archived;
+  }
+
+  // Unread by count OR by the manual flag — either state offers 标记为已读.
+  private isUnread(): boolean {
+    return this.row.snapshot.chat.unreadCount > 0 || this.row.snapshot.chat.isMarkedUnread;
+  }
+
+  private unreadLabel(): string {
+    return unreadBadgeText(this.row.snapshot.chat.unreadCount);
+  }
+
+  private lastSendState(): string {
+    return this.row.snapshot.chat.lastMessageSendState ?? 'none';
+  }
+
+  // 自己发的消息展示「你」（跟随语言切换即时刷新）；我的收藏与广播频道不挂前缀。
+  private senderLabel(): string {
+    if (this.row.snapshot.chat.isSavedMessages || this.row.snapshot.chat.kind === 'channel') {
+      return '';
+    }
+    if (this.lastSendState() !== 'none') {
+      return str('sm_you');
+    }
+    return this.row.snapshot.chat.lastSenderName;
+  }
+
+  // 这一行到底静不静音。**不能直接读 chat.isMuted**：那是 TDLib 的
+  // mute_for > 0，而 use_default_mute_for 为 true 时 mute_for 是无意义的，
+  // 真实状态在分类默认里（issue #110：官版显示静音、我们显示没静音）。
+  private muted(): boolean {
+    return effectiveMuted(this.row.snapshot.chat, scopeMutedForKind(this.row.snapshot.chat.kind));
+  }
+
+  // 读屏关着时不拼这段话——它每行每次渲染都要求值，里面还有一次 plural()
+  // 的 NAPI，2026-09-09 的 Frame 录制量到它占 ChatRow 复用体的 **63%**
+  // （38.07 / 60.33ms）。关着的时候这段话没有任何人读。
+  //
+  // a11yEpoch 让"运行期间打开读屏"也能生效：翻转时纪元 +1，本行按
+  // @StorageProp 订阅它，整表重刷一次（见 util/a11yState）。
+  private accessibilitySummary(): string {
+    // `this.a11yEpoch >= 0` 恒真但不能删，理由见该字段的声明处。
+    if (this.a11yEpoch >= 0 && !screenReaderOn()) {
+      return '';
+    }
+    const parts: string[] = [this.row.snapshot.chat.title];
+    if (this.isPinned()) {
+      parts.push(str('cl_pinned'));
+    }
+    if (this.muted()) {
+      parts.push(str('cl_muted'));
+    }
+    if (this.isUnread()) {
+      parts.push(this.row.snapshot.chat.unreadCount > 0 ? plural('cl_unread_n', this.row.snapshot.chat.unreadCount, this.row.snapshot.chat.unreadCount) : str('cl_mark_unread'));
+    }
+    if (this.row.snapshot.chat.unreadMentionCount > 0) { parts.push(str('cp_unread_mentions')); }
+    if (this.row.snapshot.chat.lastMessageText !== '') {
+      parts.push(this.row.snapshot.chat.lastMessageText);
+    }
+    return parts.join('，');
+  }
+
+  private currentIndex(): number {
+    return this.row.position;
+  }
+
+  private beginPress(): void {
+    const current = getChatStore().entryOf(this.row.snapshot.chat.id);
+    this.pressConsumedByMenu = false;
+    this.pressActive = current !== undefined;
+    this.pressRevision = current?.revision ?? -1;
+    this.pressIndex = this.currentIndex();
+  }
+
+  private endPress(): void {
+    this.pressActive = false;
+  }
+
+  // 记下长按落点相对行中心的水平偏移。在手势回调里记而不是在 onTouch 的 Down 里：
+  // 实测行右半边的按下到不了 onTouch（被行内子元素吃掉），放在那儿会让菜单沿用
+  private spec(): ChatRowSpec {
+    return chatRowSpec(!this.compact);
+  }
+
+  // 上一次按压的旧偏移。
+  private recordMenuOffset(event: GestureEvent): void {
+    const finger: FingerInfo | undefined = firstFinger(event.fingerList);
+    const rowWidth: number = event.target.area.width as number;
+    if (finger === undefined || rowWidth <= 0) {
+      this.menuOffsetX = 0;
+      return;
+    }
+    this.menuOffsetX = finger.localX - rowWidth / 2;
+  }
+
+  private openContextMenuIfCurrent(event: GestureEvent): void {
+    this.recordMenuOffset(event);
+    const current = getChatStore().entryOf(this.row.snapshot.chat.id);
+    const unchanged = this.pressActive && current !== undefined
+      && current.revision === this.pressRevision
+      && this.currentIndex() === this.pressIndex;
+    this.pressActive = false;
+    if (!unchanged) {
+      // The row was refreshed or moved before recognition completed. Ignore
+      // this long press instead of opening a menu for stale screen content.
+      return;
+    }
+    this.pressConsumedByMenu = true;
+    this.contextMenuShown = true;
+  }
+
+  // 能不能清、能怎么清完全由 chat 的两个能力位决定（见 ClearHistoryOptions）。
+  // 老逻辑对任何会话都硬给 revoke=false，超级群/频道因此必然报
+  // "Can't delete history of X only for self"（issue: 老张观影群）。
+  private clearOptions(): ClearHistoryOption[] {
+    return clearHistoryOptions(
+      this.row.snapshot.chat.canDeleteOnlyForSelf, this.row.snapshot.chat.canDeleteForAllUsers, this.row.snapshot.chat.kind);
+  }
+
+  private canClear(): boolean {
+    return canClearHistory(this.row.snapshot.chat.canDeleteOnlyForSelf, this.row.snapshot.chat.canDeleteForAllUsers);
+  }
+
+  private confirmClearHistory(): void {
+    const options: ClearHistoryOption[] = this.clearOptions();
+    if (options.length === 0) {
+      // 菜单项本来就不该出现；这里兜一道，避免弹一个只有取消的空对话框。
+      return;
+    }
+    const buttons: promptAction.Button[] = [{ text: $r('app.string.cancel'), color: COLOR_TEXT_SECONDARY as string }];
+    for (const opt of options) {
+      // 用 str() 而不是 $r()：$r 的 key 必须是编译期字面量，这里是按能力位选出来的。
+      buttons.push({ text: str(opt.labelKey), color: '#E64646' });
+    }
+    const chatId: number = this.row.snapshot.chat.id;
+    this.showConfirm({
+      title: $r('app.string.cp_clear_history'),
+      message: str('cl_clear_confirm', this.row.snapshot.chat.title),
+      buttons: buttons
+    }, 'confirmClearHistory', (index: number): void => {
+      // index 0 是取消，其余按钮与 options 一一对应。
+      const picked: ClearHistoryOption | undefined =
+        index >= 1 && index <= options.length ? options[index - 1] : undefined;
+      if (picked !== undefined) {
+        clearHistory(chatId, picked.revoke);
+      }
+    });
+  }
+
+  // 上下文菜单的 onClick 里直接调全局 promptAction.showDialog 会静默挂死：
+  // 菜单是独立子窗口，收起过程中弹出的对话框没有可依附的 UI 上下文，Promise
+  // 既不 resolve 也不 reject，界面上什么都不发生（排查时极难定位）。
+  // 两处修正：用 UIContext 作用域的 promptAction，并延后到菜单收起动画之后。
+  private showConfirm(
+    options: promptAction.ShowDialogOptions, what: string,
+    onConfirm: (index: number) => void
+  ): void {
+    const prompt = this.getUIContext().getPromptAction();
+    setTimeout((): void => {
+      prompt.showDialog(options).then((res: promptAction.ShowDialogSuccessResponse): void => {
+        onConfirm(res.index);
+      }).catch((e: Object): void => {
+        // 点击遮罩关闭也会走到这里，所以只记录不打扰用户。
+        logI(`ChatRow.${what} dialog dismissed: ${JSON.stringify(e)}`);
+      });
+    }, MENU_DISMISS_MS);
+  }
+
+  private confirmLeave(): void {
+    const client = getTdClient();
+    const selfId = getActiveTdUserId();
+    const active = (): boolean => getTdClient() === client && getActiveTdUserId() === selfId;
+    const label = leaveLabel(this.row.snapshot.chat.kind);
+    const chatId: number = this.row.snapshot.chat.id;
+    const kind: ChatKind = this.row.snapshot.chat.kind;
+    const title: string = this.row.snapshot.chat.title;
+    // 只有私聊能屏蔽：私聊的 chat_id 就是对方 user_id；密聊的 chat_id 是会话
+    // id，群和频道也没有单一发送者可屏蔽。
+    const canBlock: boolean = kind === 'private';
+    const canOnlyForSelf: boolean = this.row.snapshot.chat.canDeleteOnlyForSelf;
+    const canForAllUsers: boolean = this.row.snapshot.chat.canDeleteForAllUsers;
+    const buttons: promptAction.Button[] = canBlock
+      ? [
+        { text: $r('app.string.cancel'), color: COLOR_TEXT_SECONDARY as string },
+        { text: $r('app.string.ca_delete_chat'), color: '#E64646' },
+        { text: $r('app.string.cl_delete_and_block'), color: '#E64646' }
+      ]
+      : [
+        { text: $r('app.string.cancel'), color: COLOR_TEXT_SECONDARY as string },
+        { text: label, color: '#E64646' }
+      ];
+    this.showConfirm({
+      title: label,
+      message: canBlock
+        ? str('cl_delete_block_confirm', title)
+        : leaveConfirmMessage(kind, title),
+      buttons: buttons
+    }, 'confirmLeave', (index: number): void => {
+      if (!active()) { return; }
+      if (index === 1) {
+        if (kind === 'basicGroup' || kind === 'supergroup' || kind === 'channel') {
+          leaveOrDeleteChat(chatId, kind, canOnlyForSelf, canForAllUsers);
+        } else {
+          this.deletion.perform(chatId, !this.powerSaving && this.particlesEnabled &&
+            powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 550) > 0, active,
+            (): Promise<boolean> => leaveOrDeleteChat(chatId, kind, canOnlyForSelf, canForAllUsers))
+            .catch((e: Object): void => { logI(`ChatRow.delete failed: ${e}`); });
+        }
+        return;
+      }
+      if (index === 2 && canBlock) {
+        this.deletion.perform(chatId, !this.powerSaving && this.particlesEnabled &&
+            powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 550) > 0, active,
+          (): Promise<boolean> => blockAndDeleteChat(chatId)).then((success: boolean): void => {
+          if (success && active()) {
+            promptAction.showToast({ message: str('cl_deleted_blocked', title), duration: 1800 });
+          }
+        }).catch((e: Object): void => { logI(`ChatRow.blockAndDelete failed: ${e}`); });
+      }
+    });
+  }
+
+  // Native pressed feedback starts as soon as the finger goes down. Besides
+  // making ordinary taps feel responsive, it also makes the long-press wait
+  // visible before the context menu appears.
+  // 只有 APP 壁纸生效时才给每一行挂玻璃：普通纯色页面继续走实色 surface，
+  // 避免在没有视觉收益时给滚动列表增加合成层。materialEpoch 虽然不参与数值
+  // 计算，但必须在这里读到，用户改厚度/光感后可复用行才会重新应用材质修饰器。
+  // **只看「界面模糊质感」这一个开关。**
+  //
+  // 原来的判据是「应用壁纸开着」——那是把两件事绑在了一起：铺壁纸和要玻璃。
+  // 全局开关存在的意义就是让它成为唯一真相，所以壁纸那条不再单独开玻璃。
+  //
+  // 后果说清楚：**开着壁纸、但没打开新开关的用户，行会从玻璃变回实底。**
+  // 新开关默认关，所以升级后要自己去 设置 → 聊天 → 界面模糊质感 打开。
+  private rowGlassEnabled(): boolean {
+    // `this.surfaceGlassEpoch >= 0` 恒真，**但不能删**：@StorageProp 只有在
+    // build 链路里被真正读到才建立依赖，光声明不读，改设置时这一行不会重绘
+    // （用户实测"开关打开了，不重建页面不生效"）。原来 materialEpoch 那一处
+    // 也是同一个套路，我把它删了才踩出这个坑。
+    return this.surfaceGlass && this.surfaceGlassEpoch >= 0;
+  }
+
+  private rowFill(pressed: boolean): ResourceColor {
+    if (!this.rowGlassEnabled()) {
+      // **不走玻璃就是实底。**
+      //
+      // 这里不能再用 mainCardFill(wallpaperOn, ...)：壁纸档那对颜色
+      // （card_on_wallpaper = #CCFFFFFF，80% 不透明）**是为玻璃配的**——半透是
+      // 为了让底下的 backdropBlur 透出来。开关关掉之后模糊没了，颜色还留在半透
+      // 档，壁纸上就是一层灰蒙蒙的纱（用户实测）。要么两样都有，要么两样都没有。
+      return pressed ? $r('app.color.surface_alt') : $r('app.color.surface');
+    }
+    // 玻璃档的底色由 surfaceGlass 统一决定，与传进去的实色无关
+    // （不透明底色会把 backdropBlur 完全盖住）。
+    return surfaceGlassFill(mainCardFill(this.appWallpaperOn, pressed));
+  }
+
+  private rowBlurStyle(): BlurStyle | undefined {
+    if (!this.rowGlassEnabled() || !this.liveEffects) {
+      return undefined;
+    }
+    // **背后没有壁纸就不挂模糊。**
+    //
+    // 行背后此时是一整块纯色（页面底色），而**模糊一块纯色得到的还是同一块
+    // 纯色**——观感一模一样，代价却是实打实的：2026-09-09 的 Frame 录制里，
+    // 会话行的 backdrop 模糊做了 8431 次快照、435ms CPU，占滤镜总开销的 48%，
+    // 缓存命中率只有 2.9%（行在滚、节点位置每帧都变，缓存必然失效）。
+    //
+    // 半透明的纱色（rowFill 里的 surfaceGlassFill）照旧留着，所以开着玻璃开关
+    // 的用户在没有壁纸时看到的东西和以前**一个像素都不差**。
+    if (!this.appWallpaperOn) {
+      return undefined;
+    }
+    return surfaceGlassBlurStyle();
+  }
+
+  @Styles
+  rowNormalStyle() {
+    .backgroundColor(this.rowFill(false))
+  }
+
+  @Styles
+  rowPressedStyle() {
+    .backgroundColor(this.rowFill(true))
+  }
+
+  @Builder
+  muteSubMenu() {
+    Menu() {
+      ForEach(MUTE_OPTIONS, (opt: MuteOption) => {
+        MenuItem({ content: opt.label })
+          .onClick(() => { setMute(this.row.snapshot.chat.id, opt.seconds); });
+      }, (opt: MuteOption) => `${opt.seconds}`);
+    }
+  }
+
+  @Builder
+  folderSubMenu() {
+    Menu() {
+      if (this.folders().length === 0) {
+        MenuItem({ content: $r('app.string.cl_no_folders') }).enabled(false);
+      } else {
+        ForEach(this.folders(), (f: FolderInfo) => {
+          // Tapping a folder the chat already belongs to removes it again.
+          MenuItem({
+            content: getChatStore().isInFolder(f.id, this.row.snapshot.chat.id) ? `${f.title}  ✓` : f.title
+          })
+            .onClick(() => {
+              setInFolder(f.id, this.row.snapshot.chat.id, !getChatStore().isInFolder(f.id, this.row.snapshot.chat.id));
+            });
+        }, (f: FolderInfo) => `${f.id}`);
+      }
+    }
+  }
+
+  @Builder
+  contextMenu() {
+    Menu() {
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.pin')),
+        content: this.isPinned() ? $r('app.string.ft_unpin') : $r('app.string.ft_pin')
+      })
+        .onClick(() => { togglePin(this.listKey, this.row.snapshot.chat.id, !this.isPinned()); });
+
+      if (this.muted()) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.bell')),
+          content: $r('app.string.cp_unmute')
+        })
+          .onClick(() => { setMute(this.row.snapshot.chat.id, 0); });
+      } else {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.bell_slash')),
+          content: $r('app.string.cp_mute'),
+          builder: (): void => { this.muteSubMenu(); }
+        });
+      }
+
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark_circle')),
+        content: this.isUnread() ? $r('app.string.cl_mark_read') : $r('app.string.cl_mark_unread')
+      })
+        .onClick(() => {
+          if (this.isUnread()) {
+            markAsRead(this.row.snapshot.chat.id, this.row.snapshot.chat.lastMessageId);
+          } else {
+            markUnread(this.row.snapshot.chat.id, true);
+          }
+        });
+
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.archivebox')),
+        content: this.isArchived() ? $r('app.string.cl_unarchive') : $r('app.string.cl_archive')
+      })
+        .onClick(() => { setArchived(this.row.snapshot.chat.id, !this.isArchived()); });
+
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.folder_badge_plus')),
+        content: $r('app.string.cl_add_to_folder'),
+        builder: (): void => { this.folderSubMenu(); }
+      });
+
+      if (this.canClear()) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.trash')),
+          content: $r('app.string.cp_clear_history')
+        })
+          .onClick(() => { this.confirmClearHistory(); });
+      }
+
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.xmark_circle')).fontColor([Color.Red]),
+        content: leaveLabel(this.row.snapshot.chat.kind)
+      })
+        .onClick(() => { this.confirmLeave(); });
+    }
+  }
+
+  // 首页会话卡片外沿（util/pageMargin）：手机 6，折叠屏 10，平板 14。
+  private cardGutter(): number {
+    return homeCardMarginVp(this.widthBp);
+  }
+
+  build() {
+    DissolveDeleteEffect({
+      instanceKey: 'chat-list-' + this.listKey,
+      rowId: this.row.snapshot.chat.id, leaving: this.deleteLeaving, channel: this.deletion.channel
+    }) {
+      Row({ space: 12 }) {
+        Stack({ alignContent: Alignment.Center }) {
+          if (this.activeForumChatId === this.row.snapshot.chat.id && this.listKey !== 'archive') {
+            Row()
+              .width(this.spec().avatar + 10)
+              .height(this.spec().avatar + 10)
+              .borderRadius(16)
+              .backgroundColor('#1F007AFF')
+              .margin({ left: -5, right: -5, top: -5, bottom: -5 })
+              .opacity(this.forumDrawerOpen ? 1 : 0)
+              .scale({
+                x: this.forumDrawerOpen ? 1 : 0.85,
+                y: this.forumDrawerOpen ? 1 : 0.85
+              })
+              .animation({
+                duration: powerAnimationDuration(
+                  KEY_POWER_SMOOTH_TRANSITIONS,
+                  this.forumDrawerOpen ? FORUM_DRAWER_OPEN_MS : FORUM_DRAWER_CLOSE_MS
+                ),
+                curve: Curve.FastOutSlowIn
+              });
+          }
+          Stack({ alignContent: Alignment.BottomEnd }) {
+            AvatarView({
+              avatarSize: this.spec().avatar,
+              avatarPath: this.row.snapshot.chat.avatarPath,
+              initials: this.row.snapshot.chat.initials,
+              colorSeed: this.row.snapshot.chat.id,
+              autoDeleteTime: this.row.snapshot.chat.autoDeleteTime,
+              isLive: this.row.snapshot.chat.isLive,
+              livePulseExpanded: this.livePulseExpanded,
+              savedMessages: this.row.snapshot.chat.isSavedMessages,
+              loadImage: this.loadImages
+            });
+            if (this.listKey !== 'archive' && this.row.snapshot.chat.unreadCount > 0) {
+              Text(this.unreadLabel())
+                .fontSize(10)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(Color.White)
+                .constraintSize({ minWidth: 18, maxWidth: 46 })
+                .height(18)
+                .padding({ left: 5, right: 5 })
+                .textAlign(TextAlign.Center)
+                .backgroundColor(this.muted() ? COLOR_MUTED_BADGE : this.accent())
+                .borderRadius(9)
+                .border({ width: 1.5, color: $r('app.color.surface') })
+                .margin({ right: -3, bottom: -2 })
+                .opacity(this.forumDrawerOpen ? 1 : 0)
+                .scale({
+                  x: this.forumDrawerOpen ? 1 : 0.7,
+                  y: this.forumDrawerOpen ? 1 : 0.7
+                })
+                .animation({
+                  duration: powerAnimationDuration(
+                    KEY_POWER_SMOOTH_TRANSITIONS,
+                    this.forumDrawerOpen ? FORUM_DRAWER_OPEN_MS : FORUM_DRAWER_CLOSE_MS
+                  ),
+                  curve: Curve.FastOutSlowIn
+                });
+            }
+          }
+          .width(this.spec().avatar)
+          .height(this.spec().avatar);
+        }
+        .width(this.spec().avatar)
+        .height(this.spec().avatar);
+
+        // 头像右侧内容区：左边界裁剪，打开超级群时向左滑入头像列后方，退出时从头像列后方向右滑出原位还原
+        Row() {
+          Row({ space: 8 }) {
+            // 标题与预览之间。这个数和行高、头像、预览字号是一组的，见 CHAT_ROW_MIN_HEIGHT。
+            Column({ space: this.spec().titleGap }) {
+              Row() {
+                // 密聊在名字前挂一把锁：这是行里唯一能把它和普通私聊区分开的标记，
+                // 而两者的行为差别很大（端到端、不同步到别的设备、可能已关闭）。
+                // 颜色用绿色而不是强调色——和 Telegram 各端一致，也不会随主题变淡。
+                if (this.row.snapshot.chat.kind === 'secret') {
+                  SymbolGlyph($r('sys.symbol.lock_fill'))
+                    .fontSize(13).fontColor(['#31C48D'])
+                    .margin({ right: 3 }).flexShrink(0);
+                }
+                Text(this.row.snapshot.chat.isSavedMessages
+                  ? $r('app.string.cl_saved_messages') : this.row.snapshot.chat.title)
+                  .fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
+                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).flexShrink(1);
+                if (this.muted()) {
+                  SymbolGlyph($r('sys.symbol.bell_slash')).fontSize(13).fontColor([COLOR_ICON_SECONDARY]).margin({ left: 4 }).flexShrink(0);
+                }
+                if (this.matchingFolders().length > 0) {
+                  Text(this.matchingFolders()[0].title)
+                    .fontSize(9).fontWeight(FontWeight.Medium)
+                    .fontColor(folderColor(this.matchingFolders()[0].colorId))
+                    .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .constraintSize({ maxWidth: 58 })
+                    .padding({ left: 5, right: 5, top: 2, bottom: 2 })
+                    .margin({ left: 5 })
+                    .backgroundColor(`${folderColor(this.matchingFolders()[0].colorId)}18`)
+                    .borderRadius(7).flexShrink(0);
+                  if (this.matchingFolders().length > 1) {
+                    Text(`+${this.matchingFolders().length - 1}`).fontSize(9)
+                      .fontColor(COLOR_TEXT_SECONDARY).margin({ left: 3 }).flexShrink(0);
+                  }
+                }
+              }.width('100%');
+              Row() {
+                if (this.draftPreview() === '' && this.typingText() !== '') {
+                  Row({ space: 2.5 }) {
+                    Circle({ width: 4.5, height: 4.5 })
+                      .fill(this.accent())
+                      .opacity(this.typingDotOpacity(0))
+                      .scale({ x: this.typingDotScale(0), y: this.typingDotScale(0) });
+                    Circle({ width: 4.5, height: 4.5 })
+                      .fill(this.accent())
+                      .opacity(this.typingDotOpacity(1))
+                      .scale({ x: this.typingDotScale(1), y: this.typingDotScale(1) });
+                    Circle({ width: 4.5, height: 4.5 })
+                      .fill(this.accent())
+                      .opacity(this.typingDotOpacity(2))
+                      .scale({ x: this.typingDotScale(2), y: this.typingDotScale(2) });
+                  }
+                  .alignItems(VerticalAlign.Center)
+                  .margin({ right: 5 })
+                  .flexShrink(0);
+                  Text(headerTypingTextOf(this.typingText()))
+                    .fontSize(this.spec().previewFont)
+                    .fontColor(this.accent())
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .flexShrink(1);
+                  Row({ space: 1.5 }) {
+                    Circle({ width: 2.2, height: 2.2 }).fill(this.accent());
+                    Circle({ width: 2.2, height: 2.2 }).fill(this.accent());
+                    Circle({ width: 2.2, height: 2.2 }).fill(this.accent());
+                  }
+                  .alignItems(VerticalAlign.Center)
+                  .margin({ left: 2, top: 3 })
+                  .flexShrink(0);
+                } else {
+                  // 有草稿就顶掉"谁说了什么"（Telegram 各端都是这样）。
+                  if (this.draftPreview() !== '') {
+                    Text($r('app.string.cl_draft_prefix'))
+                      .fontSize(14).fontColor('#E5484D')
+                      .maxLines(1).flexShrink(0);
+                  } else if (this.senderLabel() !== '') {
+                    Text(`${this.senderLabel()}: `)
+                      .fontSize(14).fontColor(this.accent())
+                      .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .constraintSize({ maxWidth: 112 });
+                  }
+                  // 预览小图（issue #202）：minithumbnail 的 data URL，18vp，只在有媒体时多这一个节点。
+                  if (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== '') {
+                    Image(this.row.snapshot.chat.lastMessageThumb).draggable(false)
+                      .width(18).height(18).borderRadius(3).objectFit(ImageFit.Cover)
+                      .sourceSize({ width: 54, height: 54 }).autoResize(true)
+                      .margin({ right: 5, top: 1 }).flexShrink(0);
+                  }
+                  Text(this.draftPreview() !== '' ? this.draftPreview()
+                    : (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== ''
+                      ? stripPreviewIcon(this.row.snapshot.chat.lastMessageText) : this.row.snapshot.chat.lastMessageText))
+                    .fontSize(this.spec().previewFont).fontColor(COLOR_TEXT_SECONDARY)
+                    .maxLines(this.threeLines ? 2 : 1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
+                }
+              }.width('100%').alignItems(this.draftPreview() === '' && this.typingText() !== ''
+                ? VerticalAlign.Center : VerticalAlign.Top);
+            }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+            Column({ space: 6 }) {
+              Row({ space: 3 }) {
+                if (this.isPinned()) {
+                  SymbolGlyph($r('sys.symbol.pin')).fontSize(11).fontColor([COLOR_ICON_SECONDARY]);
+                }
+                if (this.lastSendState() !== 'none') {
+                  Row() {
+                    SymbolGlyph($r(this.lastSendState() === 'sending'
+                      ? 'sys.symbol.clock'
+                      : (this.lastSendState() === 'failed'
+                        ? 'sys.symbol.exclamationmark_circle' : 'sys.symbol.checkmark')))
+                      .fontSize(12)
+                      .fontColor([this.lastSendState() === 'failed' ? Color.Red
+                        : (this.lastSendState() === 'read' ? this.accent() : COLOR_ICON_SECONDARY)]);
+                    if (this.lastSendState() === 'read') {
+                      SymbolGlyph($r('sys.symbol.checkmark'))
+                        .fontSize(12)
+                        .fontColor([this.accent()])
+                        .margin({ left: -8 });
+                    }
+                  }.alignItems(VerticalAlign.Center);
+                }
+                Text(formatTime(this.row.snapshot.chat.lastMessageDate, this.nowSec))
+                  .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+              }.alignItems(VerticalAlign.Center);
+              Row({ space: 5 }) {
+                if (this.row.snapshot.chat.unreadMentionCount > 0) {
+                  Text('@').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.accent())
+                    .height(22).align(Alignment.Center).accessibilityText($r('app.string.cp_unread_mentions'));
+                }
+                if (this.row.snapshot.chat.unreadCount > 0) {
+                  // 数字胶囊与独立的重点色 @ 并排，静音只淡化数字。
+                  Text(this.unreadLabel())
+                    .fontSize(12).fontColor(Color.White)
+                    .fontWeight(FontWeight.Medium)
+                    .constraintSize({ minWidth: 22 })
+                    .height(22).padding({ left: 7, right: 7 })
+                    .align(Alignment.Center).textAlign(TextAlign.Center)
+                    .backgroundColor(this.muted() ? COLOR_MUTED_BADGE : this.accent())
+                    .borderRadius(11);
+                } else if (this.row.snapshot.chat.isMarkedUnread) {
+                  // Manually flagged unread — a plain dot, like the official clients.
+                  Circle({ width: 10, height: 10 })
+                    .fill(this.muted() ? COLOR_MUTED_BADGE : this.accent());
+                }
+              }
+            }.alignItems(HorizontalAlign.End);
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .translate({ x: (this.forumDrawerOpen && this.listKey !== 'archive') ? -320 : 0 })
+          .animation({
+            duration: powerAnimationDuration(
+              KEY_POWER_SMOOTH_TRANSITIONS,
+              this.forumDrawerOpen ? FORUM_DRAWER_OPEN_MS : FORUM_DRAWER_CLOSE_MS
+            ),
+            curve: Curve.FastOutSlowIn
+          });
+        }
+        .layoutWeight(1)
+        .clip(true);
+      }
+      // 真卡片外沿 4vp、上下 2vp（相邻两张之间 2+2 = 4vp），头像内缩 8vp
+      // ——外边距不折叠，两张卡片之间就是两条 margin 相加。2026-09-18 用户把
+      // 四周收到 4vp；头像因此落在 4+8=12vp，与顶部大标题 16vp 的对齐有意放弃
+      // （见 util/listCardGeometry）。壁纸生效时卡片交给现有 'card'
+      // 稳定玻璃：所有 API 都随“材质厚度”改变锁定的模糊半径；用户关闭材质时
+      // overlayGlassFill 会自然退回原来的可读性实底。
+      .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
+      .margin({
+        left: this.cardGutter(), right: this.cardGutter(),
+        top: CHAT_ROW_VERTICAL_GUTTER, bottom: CHAT_ROW_VERTICAL_GUTTER
+      })
+      .borderRadius(16)
+      // 描边跟着玻璃走，**颜色也要跟着换**。
+      //
+      // 原来是 `COLOR_DIVIDER`：行是不透明白卡片时它就是一条正常的灰细线；换成
+      // 半透玻璃之后，它在壁纸上成了一圈发暗的框，圆角处两条边的抗锯齿叠在一起
+      // 四角最明显（用户实测"四角黑边"）。而 divider 在**深色模式下是 #101921**，
+      // 几乎全黑，那一档更糟。
+      // GLASS_OUTLINE_COLOR（#4DFFFFFF，30% 白）是玻璃气泡描边用的同一个色，
+      // 专门为"玻璃边缘"配的，深浅两种模式下都是提亮而不是压暗。
+      //
+      // 【不走玻璃就**完全不描边**】原来还有一档 `appWallpaperOn ? 0.5 : 0`，
+      // 意思是"卡片浮在壁纸照片上要有一圈边"。问题在 `appWallpaperOn`，它对
+      // **纯色背景也成立**（只判背景串非空，见 util/localWallpaper.appWallpaperActive），
+      // 而行底色在没有玻璃时又退回不透明的 surface。于是背景设成白色的用户
+      // 拿到的是"白卡片 + 白背景 + 一圈灰线"，这圈线成了整页唯一看得见的卡片
+      // 轮廓（2026-10-30 用户："白色背景下 item 带有了个细边框"）。
+      // 不透明卡片本来也不需要边——它旁边没有照片要分隔。只留玻璃那一档。
+      .border({
+        width: this.rowGlassEnabled() ? 0.5 : 0,
+        color: GLASS_OUTLINE_COLOR
+      })
+      // 用框架容器材质而不是 backdropBlur：后者在节点边缘有采样衰减，四角最明显
+      // （见 util/surfaceGlass.surfaceGlassBlurStyle 的说明）。
+      .backgroundBlurStyle(this.rowBlurStyle())
+      // 无壁纸时保持原来的系统材质表现；隐藏页签才暂停壁纸背后的实时采样。
+      .attributeModifier(materialModifierWhen('card', this.rowGlassEnabled() &&
+        (!this.appWallpaperOn || this.liveEffects)))
+      .clip(true)
+      .constraintSize({ minHeight: this.spec().minHeight })
+      .padding({ left: HOME_CARD_INSET_VP, right: ROW_PAD_H, top: ROW_PAD_V, bottom: ROW_PAD_V })
+      .alignItems(VerticalAlign.Center)
+      .stateStyles({
+        normal: this.rowNormalStyle,
+        pressed: this.rowPressedStyle
+      })
+      .accessibilityText(this.accessibilitySummary())
+      .onClick(() => {
+        if (this.pressConsumedByMenu || this.contextMenuShown) {
+          this.pressConsumedByMenu = false;
+          return;
+        }
+        if (getChatStore().isAdministeredDirectMessagesGroup(this.row.snapshot.chat.id)) {
+          const directParams: Record<string, Object> = {
+            'chatId': this.row.snapshot.chat.id, 'title': this.row.snapshot.chat.title
+          };
+          navigateToDirectMessagesTopics(
+            directParams, chatListRowOrigin(this.listKey));
+          return;
+        }
+        // 论坛超级群：首页列表点击展开「左侧会话头像窄栏 + 右侧话题列表」双栏视图（图 1 形态）；
+        // 归档页内点击进入话题列表页。
+        if (getChatStore().isForumSupergroup(this.row.snapshot.chat.id)) {
+          if (this.listKey === 'archive') {
+            navigateToForumTopics({
+              'chatId': this.row.snapshot.chat.id,
+              'title': this.row.snapshot.chat.title
+            }, chatListRowOrigin(this.listKey));
+          } else if (this.forumDrawerOpen && this.activeForumChatId === this.row.snapshot.chat.id) {
+            closeForumDrawer();
+          } else {
+            openForumDrawer(this.row.snapshot.chat.id, this.listKey);
+          }
+          return;
+        }
+        const params: Record<string, Object> = { 'chatId': this.row.snapshot.chat.id };
+        navigateToChat(params, chatListRowOrigin(this.listKey)).catch(logChatNavFailure);
+      })
+      .onTouch((event: TouchEvent): void => {
+        if (event.type === TouchType.Down) {
+          this.beginPress();
+        } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+          this.endPress();
+        }
+      })
+      // Keep List's pan recognizer active. Movement cancels this recognizer,
+      // while a stationary hold reaches the data-consistency check above.
+      .parallelGesture(
+        LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+          .onAction((event: GestureEvent): void => { this.openContextMenuIfCurrent(event); })
+          .onActionCancel((): void => { this.endPress(); })
+      )
+      // While the menu is open the list must not rebuild: an incoming message
+      // increments the row revision and would otherwise take the menu down.
+      // The flag freezes the list (see CHAT_MENU_OPEN).
+      .bindContextMenu(this.contextMenuShown, this.contextMenu, {
+        // 钉死 placement：不指定时 ArkUI 按可用空间自己挑锚定角，锚点一换偏移的
+        // 参照就变了。钉死之后 offset 才是一个稳定的水平平移。
+        placement: Placement.BottomLeft,
+        // **符号取反，这里必须解释清楚。**
+        //
+        // 实测（平板，同一行两次长按，日志记的 offset 与截图量的菜单左缘）：
+        //   不取反   offset −110 -> 菜单左缘 418 ； offset +110 -> 176   （反向）
+        //   取反后   offset −110 -> 菜单左缘 176 ； offset +110 -> 418   （正向）
+        // 取反之后单调且方向正确：按行左侧菜单在左，按右侧在右。
+        //
+        // **我解释不了为什么这里要取反而 MessageBubble 不用**——那边同样是
+        // bindContextMenu + preview: IMAGE，用未取反的 offset 方向就是对的
+        // （左缘长按菜单左缘 521、右缘 827）。两处唯一的结构差别是预览的宽度：
+        // 这里的预览是整行满宽，那边是一个小气泡。先按实测结果写，别按推测写；
+        // 哪天 ArkUI 这块行为变了，上面那四组数字就是重新验证的基准。
+        offset: { x: -this.menuOffsetX, y: 0 },
+        // IMAGE captures this exact chat strip. The framework then lifts that
+        // snapshot above the mask, so list inertia can no longer move the
+        // focused item away from the menu.
+        preview: MenuPreviewMode.IMAGE,
+        previewBorderRadius: 14,
+        previewAnimationOptions: {
+          scale: [0.98, 1.035],
+          transition: TransitionEffect.OPACITY
+            .combine(TransitionEffect.scale({ x: 0.98, y: 0.98 }))
+            .animation({
+              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+              curve: Curve.FastOutSlowIn
+            })
+        },
+        borderRadius: 16,
+        backgroundColor: Color.Transparent,
+        backgroundBlurStyle: containerBlur('menu'),
+        systemMaterial: overlayMaterial('menu'),
+        transition: TransitionEffect.OPACITY
+          .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
+          .animation({
+            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+            curve: Curve.FastOutSlowIn
+          }),
+        // A modal blurred mask keeps the page visually behind the lifted row
+        // and absorbs taps until the operation panel is dismissed.
+        mask: {
+          color: '#52000000',
+          backgroundBlurStyle: BlurStyle.BACKGROUND_THIN
+        },
+        modalMode: ModalMode.TARGET_WINDOW,
+        hapticFeedbackMode: HapticFeedbackMode.AUTO,
+        aboutToAppear: (): void => {
+          AppStorage.setOrCreate(CHAT_MENU_OPEN, true);
+        },
+        onDisappear: (): void => {
+          this.contextMenuShown = false;
+          AppStorage.setOrCreate(CHAT_MENU_OPEN, false);
+        }
+      });
+    }
+  }
+}

@@ -1,0 +1,1682 @@
+import { mediaPanelColumns, mediaPanelTemplate } from './EmojiDrawerState';
+import { StickerPreviewHold } from './StickerPreviewHold';
+import { StickerPreviewDialog } from './StickerPreviewDialog';
+import { getTdClient } from '../../tdkit/Globals';
+import { guardKey } from '../../util/keyGuard';
+import { StickerGridCell } from './StickerGridCell';
+import {
+  pauseStickerPanelForScroll, resetStickerPanelGate, resumeStickerPanelAfterScroll
+} from '../../util/stickerPanelGate';
+import { StickerPoster } from '../common/StickerPoster';
+import { ChangeDrainQueue } from '../../util/changeDrainQueue';
+import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
+import {
+  KEY_POWER_ACTIVE, KEY_POWER_EMOJI, KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY, KEY_REDUCE_ANIM
+} from '../../store/AppSettings';
+import {
+  accentSoft, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
+} from '../../util/theme';
+import {
+  getFavoriteStickers, getRecentStickers, rememberRecentSticker
+} from '../../store/StickerApi';
+import { promptAction, LengthMetrics } from '@kit.ArkUI';
+import { i18n } from '@kit.LocalizationKit';
+import { str } from '../../util/strings';
+import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { looksLikeEmojiOnly } from '../../util/liveInteractionPresentation';
+import {
+  overlayGlassFill, overlayBackdropBlur, MATERIAL_EPOCH
+} from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
+import { logE, logI } from '../../util/log';
+import { stickerFramesCached, warmStickerFrameIndex } from '../../services/stickerFrameIndex';
+import { remoteUniqueIdOf } from '../../util/stickerSetItems';
+import { alphaStickerHighBudget } from '../../util/webm/AlphaStickerBudget';
+import { chatContentWidth } from '../../util/chatContentWidth';
+
+export interface StickerItem {
+  fileId: number;   // the sticker's own file (what gets sent)
+  width: number;
+  height: number;
+  thumbPath: string; // raster thumbnail local path ('' while downloading)
+  thumbFileId: number; // raster thumbnail file id (0 if none)
+  emoji: string;
+  format: string;    // 'webp' | 'tgs' | 'webm' | 'unicode'
+  srcPath: string;   // local TGS source path ('' until downloaded) — drives animation
+  customEmojiId: string; // custom emoji id ('' for regular stickers)
+}
+
+// One row of the continuous grid: a full-width pack header or a sticker cell.
+interface FlatEntry {
+  kind: string;   // 'header' | 'sticker'
+  title: string;
+  setIdx: number; // owning pack index — drives the tab highlight while scrolling
+  // Position within the owning pack. It exists only to make the grid key
+  // unique: the same sticker legitimately appears in several packs — recents
+  // and favourites repeat what the packs already hold — so a key built only
+  // from fileId produced two cells with the SAME key. That is the
+  // "Use repeat key" warning in the device log, and it makes the grid reuse
+  // the wrong cell.
+  pos: number;
+  sticker: StickerItem | null;
+}
+
+// Minimal IDataSource so the grid virtualizes (only visible cells mount their
+// Lottie canvases — a full set would otherwise run 100+ animations at once).
+// 一格内容的"到达状态"令牌。**模块级函数**，因为它同时被两处用到：
+// StickerDataSource.renderKeyOf（决定发不发 CHANGE）与 build 里 LazyForEach 的
+// keyGenerator（决定 ArkUI 认不认这是新组件）。两处必须同源——各写一遍迟早漂移，
+// 而漂移的后果是静默的（格子刷不出来，没人报错）。
+function stickerArrivalToken(sticker: StickerItem): string {
+  if (sticker.srcPath !== '') {
+    return 's';
+  }
+  return sticker.thumbPath !== '' ? 't' : '0';
+}
+
+// 内容变化（缩略图/动画源到达）每帧最多报这么多格：一次十几个 CHANGE 会让它们挤在
+// 同一个 VSync 里重建、建图、重测 Grid（见 util/changeDrainQueue）。
+const CHANGES_PER_FRAME: number = 3;
+const CHANGE_DRAIN_INTERVAL_MS: number = 16;
+
+class StickerDataSource implements IDataSource {
+  private items: FlatEntry[] = [];
+  private listeners: DataChangeListener[] = [];
+  private changeQueue: ChangeDrainQueue = new ChangeDrainQueue();
+  private drainTimer: number = -1;
+  private disposed: boolean = false;
+  // 优先报的下标范围：可视区加上下各一行预加载（由 Grid 的 onScrollIndex 喂进来）。
+  private priorityFirst: number = 0;
+  private priorityLast: number = -1;
+
+  totalCount(): number {
+    return this.items.length;
+  }
+
+  getData(index: number): FlatEntry {
+    return this.items[index];
+  }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (this.listeners.indexOf(listener) < 0) {
+      this.listeners.push(listener);
+    }
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    this.listeners = this.listeners.filter((l: DataChangeListener) => l !== listener);
+  }
+
+  update(next: FlatEntry[]): void {
+    const previous: FlatEntry[] = this.items;
+    this.items = next;
+
+    // Thumbnail and animation downloads change one existing cell at a time.
+    // Treating those patches as a full RELOAD tears down every visible native
+    // player, which is the source of the grid flash and switching jank.
+    if (previous.length === next.length) {
+      let identityChanged: boolean = false;
+      const changes: DataOperation[] = [];
+      for (let i = 0; i < next.length; i++) {
+        if (this.identityOf(previous[i]) !== this.identityOf(next[i])) {
+          identityChanged = true;
+          break;
+        }
+        if (this.renderKeyOf(previous[i]) !== this.renderKeyOf(next[i])) {
+          changes.push({ type: DataOperationType.CHANGE, index: i } as DataChangeOperation);
+        }
+      }
+      if (!identityChanged) {
+        this.enqueueChanges(changes);
+        return;
+      }
+    }
+
+    // 纯尾部追加：往下滚触发 loadNextSet，加载完一个贴纸包就多出一个 header
+    // 加一整包贴纸（20~50 张）。原来长度一变就整表 RELOAD，而本类文件头那段
+    // 注释自己写着 RELOAD「tears down every visible native player」——
+    // **每往下滚几行就把满屏正在播的贴纸全部拆掉重建一次**，这正是"没播完又从头"
+    // 的一个成因。同仓的 ChatListDataSource 早就为翻页加了这条 notifyInsert。
+    //
+    // 判据故意收得很紧：只认"前 previous.length 项 identity 逐个相同"的纯追加。
+    // 前插（loadQuickSections）、重排、删除一律不认，继续走 RELOAD——那些场景
+    // 下每个下标坐着的是**另一个**条目，报成 ADD/CHANGE 会让 key 注册到错误的
+    // 下标上（ChatListDataSource:102-106 记着这个坑的症状）。
+    if (next.length > previous.length && previous.length > 0) {
+      let pureAppend: boolean = true;
+      const changes: DataOperation[] = [];
+      for (let i = 0; i < previous.length; i++) {
+        if (this.identityOf(previous[i]) !== this.identityOf(next[i])) {
+          pureAppend = false;
+          break;
+        }
+        if (this.renderKeyOf(previous[i]) !== this.renderKeyOf(next[i])) {
+          changes.push({ type: DataOperationType.CHANGE, index: i } as DataChangeOperation);
+        }
+      }
+      if (pureAppend) {
+        // **结构通知与内容通知分两批发。** 混在一批里，ADD 会一边移动后续下标、
+        // CHANGE 又按原下标定位，落点取决于框架的应用顺序——
+        // ChatListDataSource:119-121 记着 AlbumGroupDataSource 为此翻过车。
+        // 这里是纯尾部追加，前段下标不移动，所以内容通知的下标与结构变化前后
+        // 相同；仍然分批，是为了不依赖"下标恰好没变"这个偶然。
+        //
+        // 不带 key：DataAddOperation.key 是可选的（key?: string | Array<string>），
+        // 不给就由框架去问 keyGenerator。而真正的 key 是 build 里
+        // guardKey('stickers', ...) 包出来的，在这里复刻一遍等于新造一个
+        // "两处必须一致"的漂移源——已经有一个 arrivalToken 要维护了，不再加第二个。
+        this.notify([{
+          type: DataOperationType.ADD,
+          index: previous.length,
+          count: next.length - previous.length
+        } as DataAddOperation]);
+        this.enqueueChanges(changes);
+        return;
+      }
+    }
+
+    // 整表重载：排着的 CHANGE 下标对新数组没有意义了。
+    this.cancelChanges();
+    this.notify([{ type: DataOperationType.RELOAD } as DataReloadOperation]);
+  }
+
+  // 一格内容的"到达状态"：还没有任何文件 / 只有缩略图 / 已有动画源。
+  //
+  // **这个令牌同时进 LazyForEach 的 key 与 renderKeyOf，两处必须同源**——
+  // 各写一遍迟早漂移，而漂移的后果是静默的（格子刷不出来，没人报错）。
+  //
+  // 【为什么要把它放回 key】ArkUI 的契约：keyGenerator 生成的键值不变 ⇒
+  // 对应组件**不会被更新**；而 DataChangeOperation 的 key 字段"默认使用原键值"。
+  // 本文件发的 CHANGE 不带 key（见 update()），key 又只由 setIdx/pos/fileId 组成，
+  // 所以 srcPath 到达时那次 CHANGE **打不出刷新**——格子拿不到新路径，只能等一次
+  // RELOAD 或者滚出去再滚回来才顺带捡到。
+  //
+  // 785af67 之前的 key 是 `..._${thumbPath}_${srcPath}`，上面还写着注释
+  // 「the paths stay in so the cell still rebuilds as its files arrive」——
+  // 当年是**故意**拿路径当刷新通道的。那次改动把路径从 key 里拿掉、改发不带 key
+  // 的 CHANGE，等于把通道一起掐了。
+  //
+  // 现在放回来的是**三值令牌**而不是完整路径：一格一生最多重建 2 次
+  // （'0'→'t'→'s'），两次都发生在还没有播放器的时候，**不可能打断正在播的动画**；
+  // 而完整路径会让"晚到的缩略图"在动画已经起播之后再顶一次 key，正是要避免的。
+  private arrivalToken(sticker: StickerItem): string {
+    return stickerArrivalToken(sticker);
+  }
+
+  // 单格内容到达的快路（见 StickerPicker.patchFlatEntries）：换掉这一格，渲染键变了才排 CHANGE。
+  patchAt(index: number, previous: FlatEntry, next: FlatEntry): void {
+    if (index < 0 || index >= this.items.length) {
+      return;
+    }
+    this.items[index] = next;
+    if (this.renderKeyOf(previous) !== this.renderKeyOf(next)) {
+      this.enqueueChanges([{ type: DataOperationType.CHANGE, index: index } as DataChangeOperation]);
+    }
+  }
+
+  setPriorityRange(first: number, last: number): void {
+    this.priorityFirst = Math.max(0, first);
+    this.priorityLast = last;
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.cancelChanges();
+  }
+
+  // 第一批当场报（到达的格子不多时和原来一样快），剩下的每帧报一小批。
+  private enqueueChanges(changes: DataOperation[]): void {
+    for (const op of changes) {
+      this.changeQueue.add((op as DataChangeOperation).index);
+    }
+    if (this.drainTimer === -1 && this.changeQueue.size() > 0) {
+      this.drainChanges();
+    }
+  }
+
+  private drainChanges(): void {
+    this.drainTimer = -1;
+    if (this.disposed) {
+      return;
+    }
+    const batch: number[] = this.changeQueue.takeBatch(this.priorityFirst, this.priorityLast, CHANGES_PER_FRAME)
+      .filter((index: number): boolean => index < this.items.length);
+    if (batch.length > 0) {
+      this.notify(batch.map((index: number): DataOperation =>
+        ({ type: DataOperationType.CHANGE, index: index } as DataChangeOperation)));
+    }
+    if (this.changeQueue.size() > 0) {
+      this.drainTimer = setTimeout((): void => { this.drainChanges(); }, CHANGE_DRAIN_INTERVAL_MS);
+    }
+  }
+
+  private cancelChanges(): void {
+    if (this.drainTimer !== -1) {
+      clearTimeout(this.drainTimer);
+      this.drainTimer = -1;
+    }
+    this.changeQueue.clear();
+  }
+
+  private identityOf(entry: FlatEntry): string {
+    if (entry.kind === 'header') {
+      return `h:${entry.setIdx}`;
+    }
+    const fileId: number = entry.sticker !== null ? entry.sticker.fileId : 0;
+    return `s:${entry.setIdx}:${entry.pos}:${fileId}`;
+  }
+
+  private renderKeyOf(entry: FlatEntry): string {
+    if (entry.kind === 'header') {
+      return `${entry.title}`;
+    }
+    if (entry.sticker === null) {
+      return '';
+    }
+    const sticker: StickerItem = entry.sticker;
+    // 与 key 同源（见 arrivalToken）。emoji/format 也在里面：它们变了这一格的
+    // 渲染分支就变了，但它们在一格的生命周期里基本不变，不会造成额外重建。
+    return `${this.arrivalToken(sticker)}|${sticker.emoji}|${sticker.format}`;
+  }
+
+  private notify(operations: DataOperation[]): void {
+    for (const l of this.listeners) {
+      l.onDatasetChange(operations);
+    }
+  }
+}
+
+interface StickerSetTab {
+  id: string;    // int64 set id — kept as the string TDLib's JSON delivers
+  title: string;
+  iconPath: string; // pack cover thumbnail for the tab strip ('' = text fallback)
+  iconText: string; // emoji glyph tab icon (classic unicode packs)
+  loaded: boolean;
+  failed: boolean;
+  stickers: StickerItem[];
+}
+
+// A built-in unicode emoji section shown as a synthetic pack before the
+// network packs (the chat panel's classic emoji).
+export interface ClassicPack {
+  title: string;
+  icon: string;
+  emoji: string[];
+}
+
+const SET_LIMIT: number = 20;
+
+// Sticker picker for the input panel: installed sticker sets as horizontal
+// tabs, the selected set as a grid. Tapping a sticker sends it.
+// stickerType 'custom_emoji' (+ includeTrending) turns it into the emoji
+// library used by the avatar builder — installed emoji packs plus the
+// server's trending packs, like the official client.
+@Component
+export struct StickerPicker {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
+  // 正在被按住的格子（setIdx_pos）。空串表示没有。
+  @State private pressedCell: string = '';
+  @State @Watch('syncPickerAnimate') private previewOpen: boolean = false;
+  @Provide('stickerPickerAnimate') pickerAnimate: boolean = true;
+  @State private panelWidth: number = Math.max(100, (chatContentWidth() > 0 ? chatContentWidth() : 396) - 16);
+  private previewController: CustomDialogController | null = null;
+  private quickSeq: number = 0;
+  private previewGeneration: number = 0;
+  private previewHold: StickerPreviewHold | null = null;
+  // 贴纸包标题整行占位。用 GridLayoutOptions 声明，而不是在标题的 GridItem 上写
+  // columnStart/columnEnd：后者让 Grid 在跳转、推算位置时从头逐个遍历子节点（官方 GridItem
+  // 文档与 Code Linter 都点了名），包越加越多越慢。数组要整体换成新对象才生效（官方 Grid
+  // 示例 3「通过备份对象整体赋值，强制 layoutOptions 刷新」），见 syncGridLayout。
+  @State private gridLayout: GridLayoutOptions = { regularSize: [1, 1], irregularIndexes: [] };
+  onPick: (s: StickerItem, x: number, y: number) => void = (): void => {};
+  @Prop @Watch('onPlaybackSettingsChanged') active: boolean = true;
+  // 能不能显示搜索框。挂在自定义键盘里时必须关掉：
+  // 官方《自定义键盘》写明"自定义键盘无法获取焦点，但是会拦截手势事件"，
+  // 里面的 TextInput 点得到却永远输不进字。聊天抽屉现在是页面 dock，不受这个限制。
+  allowSearch: boolean = true;
+  stickerType: string = 'regular'; // 'regular' | 'custom_emoji'
+  includeTrending: boolean = false;
+  classicPacks: ClassicPack[] = []; // built-in unicode sections, shown first
+  // false = static thumbnails only (no Lottie/ijkplayer cells) — used by the
+  // avatar picker dialog where a grid full of players stutters.
+  animate: boolean = true;
+  @StorageProp(KEY_POWER_ACTIVE) @Watch('onPlaybackSettingsChanged') powerSaving: boolean = false;
+  @StorageProp(KEY_REDUCE_ANIM) @Watch('onPlaybackSettingsChanged') reduceAnimations: boolean = false;
+  @StorageProp(KEY_POWER_STICKERS) @Watch('onPlaybackSettingsChanged') stickersEnabled: boolean = true;
+  @StorageProp(KEY_POWER_STICKER_AUTOPLAY) @Watch('onPlaybackSettingsChanged') stickerAutoplay: boolean = true;
+  @StorageProp(KEY_POWER_EMOJI) @Watch('onPlaybackSettingsChanged') emojiEnabled: boolean = true;
+  @State sets: StickerSetTab[] = [];
+  @State curSet: number = 0;
+  @State loading: boolean = true;
+  @State loadError: string = '';
+  @State searchLoading: boolean = false;
+  @State searchError: string = '';
+  @State contentError: string = '';
+  private initialized: boolean = false;
+  private disposed: boolean = false;
+  private setsRequested: boolean = false;
+  private initLoadTimer: number = -1;
+  private loadSeq: number = 0;
+  private sourceLoading: Set<number> = new Set<number>();
+  // 贴纸源文件 id -> remote.unique_id（2026-10-09）。webm 贴纸的帧缓存按它命名：命中了
+  // 就不下载源文件，格子直接从缓存播。旁路一张表而不是加进 StickerItem——后者在十来处
+  // 整对象重建（patch*），漏一处就静默丢字段。
+  private srcUids: Map<number, string> = new Map<number, string>();
+  private gridData: StickerDataSource = new StickerDataSource();
+
+  private scheduleInitialSetsLoad(): void {
+    if (this.setsRequested || this.disposed) {
+      return;
+    }
+    if (this.classicPacks.length === 0) {
+      this.setsRequested = true;
+      this.loadSets();
+      this.loadQuickSections();
+      return;
+    }
+    if (!this.active) {
+      return;
+    }
+    if (this.initLoadTimer !== -1) {
+      return;
+    }
+    this.initLoadTimer = setTimeout((): void => {
+      this.initLoadTimer = -1;
+      if (this.disposed || this.setsRequested || !this.active) {
+        return;
+      }
+      this.setsRequested = true;
+      this.loadSets();
+      this.loadQuickSections();
+    }, 260);
+  }
+
+  aboutToAppear(): void {
+    warmStickerFrameIndex();
+    this.disposed = false;
+    this.syncPickerAnimate();
+    if (this.initialized) {
+      this.scheduleInitialSetsLoad();
+      return;
+    }
+    this.initialized = true;
+    if (this.classicPacks.length > 0) {
+      this.sets = this.classicPacks.map((c: ClassicPack, i: number): StickerSetTab => ({
+        id: `classic_${i}`,
+        title: c.title,
+        iconPath: '',
+        iconText: c.icon,
+        loaded: true,
+        failed: false,
+        stickers: c.emoji.map((ch: string): StickerItem => ({
+          fileId: 0, width: 0, height: 0, thumbPath: '', thumbFileId: 0, emoji: ch, format: 'unicode', srcPath: '', customEmojiId: ''
+        }))
+      }));
+      this.loading = false;
+      this.flushGridNow();
+    }
+    this.scheduleInitialSetsLoad();
+  }
+
+  aboutToDisappear(): void {
+    this.closePreview();
+    this.disposed = true;
+    resetStickerPanelGate();
+    this.gridData.dispose();
+    this.loadSeq++;
+    this.searchSeq++;
+    this.sourceLoading.clear();
+    if (this.initLoadTimer !== -1) {
+      clearTimeout(this.initLoadTimer);
+      this.initLoadTimer = -1;
+    }
+    if (this.searchTimer !== -1) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = -1;
+    }
+    if (this.refreshTimer !== -1) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = -1;
+    }
+  }
+
+  // 收藏 / 最近 sections, prepended before the installed packs like the
+  // official clients. Custom-emoji mode has no such server lists.
+  private loadQuickSections(): void {
+    if (this.stickerType === 'custom_emoji') { return; }
+    const seq = this.loadSeq;
+    const quickSeq = ++this.quickSeq;
+    const client = getTdClient();
+    Promise.all([getFavoriteStickers(), getRecentStickers()])
+      .then((lists: TdObject[][]): void => {
+        if (this.disposed || seq !== this.loadSeq || quickSeq !== this.quickSeq || client !== getTdClient()) { return; }
+        const sections: StickerSetTab[] = [];
+        const specs: string[][] = [
+          ['fav', str('sp_favourites'), '⭐'], ['recent', str('sp_recent'), '🕘']
+        ];
+        lists.forEach((raw: TdObject[], index: number): void => {
+          if (raw.length === 0) { return; }
+          const spec = specs[index];
+          const items = raw.map((st: TdObject): StickerItem => this.stickerItemOf(st))
+            .filter((it: StickerItem): boolean => it.fileId !== 0);
+          if (items.length === 0) { return; }
+          sections.push({
+            id: spec[0], title: spec[1], iconPath: '', iconText: spec[2],
+            loaded: true, failed: false, stickers: items
+          });
+        });
+        const currentId = this.sets[this.curSet]?.id ?? '';
+        const anchorId = this.sets[this.anchor]?.id ?? '';
+        const remaining = this.sets.filter((section: StickerSetTab): boolean => section.id !== 'fav' && section.id !== 'recent');
+        this.sets = [...sections, ...remaining];
+        this.curSet = Math.max(0, this.sets.findIndex((section: StickerSetTab): boolean => section.id === currentId));
+        this.anchor = Math.max(0, this.sets.findIndex((section: StickerSetTab): boolean => section.id === anchorId));
+        this.refreshGrid();
+        // Publish the sections before starting cached downloads. A synchronous
+        // completion can otherwise patch the old array before the cells exist.
+        lists.forEach((raw: TdObject[], index: number): void => {
+          const setId: string = specs[index][0];
+          for (const st of raw) {
+            const file = st['sticker'] as TdObject | undefined;
+            const fileId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
+            if (fileId !== 0) {
+              this.downloadThumb(setId, fileId, st['thumbnail'] as TdObject | undefined);
+            }
+          }
+        });
+      }).catch((): void => {});
+  }
+
+  private closePreview(): void {
+    this.previewHold?.cancel();
+    this.previewHold = null;
+    this.previewGeneration++;
+    this.previewController?.close();
+    this.previewController = null;
+    this.previewOpen = false;
+  }
+
+  private previewSticker(s: StickerItem): void {
+    if (this.disposed || !this.active || s.fileId === 0 || this.previewOpen) { return; }
+    this.previewOpen = true;
+    const generation = ++this.previewGeneration;
+    const hold = new StickerPreviewHold();
+    this.previewHold = hold;
+    hold.begin();
+    hold.onFinish = (send: boolean, x: number, y: number): void => {
+      if (generation !== this.previewGeneration) { return; }
+      this.previewController?.close();
+      this.previewController = null;
+      this.previewOpen = false;
+      this.previewHold = null;
+      if (send && !this.disposed && this.active) {
+        if (this.stickerType !== 'custom_emoji') { rememberRecentSticker(s.fileId); }
+        this.onPick(s, x, y);
+      }
+    };
+    this.pressedCell = '';
+    this.previewController = new CustomDialogController({
+      builder: StickerPreviewDialog({ hold: hold, data: { fileId: s.fileId, format: s.format, emoji: s.emoji,
+        thumbPath: s.thumbPath, width: s.width, height: s.height, canFavorite: this.stickerType !== 'custom_emoji' },
+        ownerActive: (): boolean => !this.disposed && this.active && generation === this.previewGeneration,
+        onClosed: (): void => {
+          if (generation === this.previewGeneration) { this.previewOpen = false; this.previewController = null; }
+        },
+        onFavorite: (favorite: boolean): void => {
+          if (generation === this.previewGeneration) { this.applyPreviewFavorite(s, favorite); }
+        } }),
+      autoCancel: false, customStyle: true, isModal: false, alignment: DialogAlignment.Center
+    });
+    this.previewController.open();
+  }
+
+  private applyPreviewFavorite(s: StickerItem, favorite: boolean): void {
+    if (this.disposed) { return; }
+    this.quickSeq++;
+    const currentId = this.sets[this.curSet]?.id ?? '';
+    const anchorId = this.sets[this.anchor]?.id ?? '';
+    const old = this.sets.find((section: StickerSetTab): boolean => section.id === 'fav');
+    let items = (old?.stickers ?? []).filter((item: StickerItem): boolean => item.fileId !== s.fileId);
+    if (favorite) { items = [s, ...items]; }
+    const remaining = this.sets.filter((section: StickerSetTab): boolean => section.id !== 'fav');
+    this.sets = items.length === 0 ? remaining : [{ id: 'fav', title: str('sp_favourites'), iconPath: '',
+      iconText: '⭐', loaded: true, failed: false, stickers: items } as StickerSetTab, ...remaining];
+    this.curSet = Math.max(0, this.sets.findIndex((section: StickerSetTab): boolean => section.id === currentId));
+    this.anchor = Math.max(0, this.sets.findIndex((section: StickerSetTab): boolean => section.id === anchorId));
+    this.refreshGrid();
+    this.loadQuickSections();
+  }
+
+  // Shared TDLib sticker → StickerItem mapping (packs, search, quick sections).
+  private stickerItemOf(st: TdObject): StickerItem {
+    const file = st['sticker'] as TdObject | undefined;
+    const fileId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
+    const fmt = st['format'] as TdObject | undefined;
+    const fmtName = fmt !== undefined ? ((fmt['@type'] as string | undefined) ?? '') : '';
+    const format = fmtName === 'stickerFormatWebp' ? 'webp'
+      : (fmtName === 'stickerFormatTgs' ? 'tgs' : 'webm');
+    const fullType = st['full_type'] as TdObject | undefined;
+    const ceId = fullType !== undefined
+      && ((fullType['@type'] as string | undefined) ?? '') === 'stickerFullTypeCustomEmoji'
+      ? `${fullType['custom_emoji_id']}` : '';
+    const rasterThumb = this.rasterThumbFile(st['thumbnail'] as TdObject | undefined);
+    this.noteSrcUid(fileId, file);
+    return {
+      fileId,
+      width: (st['width'] as number | undefined) ?? 512,
+      height: (st['height'] as number | undefined) ?? 512,
+      thumbPath: '',
+      thumbFileId: rasterThumb !== undefined ? ((rasterThumb['id'] as number | undefined) ?? 0) : 0,
+      emoji: (st['emoji'] as string | undefined) ?? '',
+      format, srcPath: '', customEmojiId: ceId
+    };
+  }
+
+  private typeObj(): TdObject {
+    return {
+      '@type': this.stickerType === 'custom_emoji' ? 'stickerTypeCustomEmoji' : 'stickerTypeRegular'
+    } as TdObject;
+  }
+
+  private playbackEnabled(): boolean {
+    if (!this.active || !this.animate || this.powerSaving || this.reduceAnimations) {
+      return false;
+    }
+    return this.stickerType === 'custom_emoji'
+      ? this.emojiEnabled
+      : this.stickersEnabled && this.stickerAutoplay;
+  }
+
+  private syncPickerAnimate(): void {
+    const next: boolean = this.playbackEnabled() && !this.previewOpen;
+    if (this.pickerAnimate !== next) {
+      this.pickerAnimate = next;
+    }
+  }
+
+  private onPlaybackSettingsChanged(): void {
+    this.syncPickerAnimate();
+    if (!this.active) {
+      this.closePreview();
+      if (this.initLoadTimer !== -1) {
+        clearTimeout(this.initLoadTimer);
+        this.initLoadTimer = -1;
+      }
+    } else {
+      this.scheduleInitialSetsLoad();
+    }
+    this.requestVisibleSources();
+  }
+
+  private loadSets(): void {
+    const seq: number = ++this.loadSeq;
+    this.loadError = '';
+    if (this.sets.length === 0) {
+      this.loading = true;
+    }
+    const req: TdRequest = { '@type': 'getInstalledStickerSets' };
+    req['sticker_type'] = this.typeObj();
+    getTdClient().send(req).then((res: TdObject) => {
+      if (this.disposed || seq !== this.loadSeq) {
+        return;
+      }
+      const raw = (res['sets'] as TdObject[] | undefined) ?? [];
+      const tabs: StickerSetTab[] = [];
+      for (const s of raw.slice(0, SET_LIMIT)) {
+        const id = `${s['id']}`; // int64 arrives as a string in TDLib JSON — keep verbatim
+        tabs.push({
+          id,
+          title: (s['title'] as string | undefined) ?? '',
+          iconPath: '',
+          iconText: '',
+          loaded: false,
+          failed: false,
+          stickers: []
+        });
+      }
+      this.sets = [...this.sets, ...tabs];
+      for (const s of raw.slice(0, SET_LIMIT)) {
+        this.resolveTabIcon(`${s['id']}`, s);
+      }
+      this.loading = false;
+      if (this.classicPacks.length === 0 && tabs.length > 0) {
+        this.selectSet(0);
+      } else {
+        this.refreshGrid();
+      }
+      if (this.includeTrending) {
+        this.loadTrending();
+      }
+    }).catch((e: TdError) => {
+      if (this.disposed || seq !== this.loadSeq) {
+        return;
+      }
+      logE(`StickerPicker.getInstalledStickerSets failed: ${e.message}`);
+      this.loading = false;
+      if (this.sets.length === 0) {
+        this.loadError = this.stickerType === 'custom_emoji' ? str('sp_emoji_load_failed') : str('sp_sticker_load_failed');
+      }
+      if (this.includeTrending) {
+        this.loadTrending();
+      }
+    });
+  }
+
+  // Server-trending packs appended after the installed ones (deduped).
+  private loadTrending(): void {
+    const seq: number = this.loadSeq;
+    const req: TdRequest = { '@type': 'getTrendingStickerSets' };
+    req['sticker_type'] = this.typeObj();
+    req['offset'] = 0;
+    req['limit'] = 30;
+    getTdClient().send(req).then((res: TdObject) => {
+      if (this.disposed || seq !== this.loadSeq) {
+        return;
+      }
+      const raw = (res['sets'] as TdObject[] | undefined) ?? [];
+      const known = new Set<string>(this.sets.map((t: StickerSetTab) => t.id));
+      const extra: StickerSetTab[] = [];
+      for (const s of raw) {
+        const id = `${s['id']}`;
+        if (known.has(id)) {
+          continue;
+        }
+        known.add(id);
+        extra.push({
+          id,
+          title: (s['title'] as string | undefined) ?? '',
+          iconPath: '',
+          iconText: '',
+          loaded: false,
+          failed: false,
+          stickers: []
+        });
+      }
+      if (extra.length > 0) {
+        const hadNone = this.sets.length === 0;
+        this.sets = [...this.sets, ...extra];
+        const extraIds = new Set<string>(extra.map((t: StickerSetTab) => t.id));
+        for (const s of raw) {
+          const id = `${s['id']}`;
+          if (extraIds.has(id)) {
+            this.resolveTabIcon(id, s);
+          }
+        }
+        this.loading = false;
+        if (hadNone) {
+          this.selectSet(0);
+        }
+      }
+    }).catch((e: TdError) => {
+      if (this.disposed || seq !== this.loadSeq) {
+        return;
+      }
+      logE(`StickerPicker.getTrendingStickerSets failed: ${e.message}`);
+    });
+  }
+
+  // Only raster thumbnails render in an Image — animated (tgs/webm) covers
+  // would show as a blank tab.
+  private rasterThumbFile(thumb: TdObject | undefined): TdObject | undefined {
+    if (thumb === undefined) {
+      return undefined;
+    }
+    const fmt = thumb['format'] as TdObject | undefined;
+    const name = fmt !== undefined ? ((fmt['@type'] as string | undefined) ?? '') : '';
+    const isRaster = name === 'thumbnailFormatWebp' || name === 'thumbnailFormatJpeg'
+      || name === 'thumbnailFormatPng';
+    return isRaster ? (thumb['file'] as TdObject | undefined) : undefined;
+  }
+
+  // Pack cover → tab icon (thumbnail of the set's thumbnail or first cover).
+  private resolveTabIcon(setId: string, info: TdObject): void {
+    let file = this.rasterThumbFile(info['thumbnail'] as TdObject | undefined);
+    if (file === undefined) {
+      const covers = (info['covers'] as TdObject[] | undefined) ?? [];
+      if (covers.length > 0) {
+        file = this.rasterThumbFile(covers[0]['thumbnail'] as TdObject | undefined);
+      }
+    }
+    const fileId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
+    if (fileId === 0) {
+      return;
+    }
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = fileId;
+    req['priority'] = 1;
+    req['synchronous'] = true;
+    getTdClient().send(req).then((f: TdObject) => {
+      if (this.disposed) {
+        return;
+      }
+      const local = f['local'] as TdObject | undefined;
+      const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
+      if (path === '') {
+        return;
+      }
+      this.sets = this.sets.map((t: StickerSetTab): StickerSetTab => t.id === setId
+        ? {
+          id: t.id, title: t.title, iconPath: path, iconText: t.iconText,
+          loaded: t.loaded, failed: t.failed, stickers: t.stickers
+        } : t);
+    }).catch((e: TdError) => {
+      logE(`StickerPicker.resolveTabIcon failed: ${e.message}`);
+    });
+  }
+
+  // --- search (searchStickers over public packs) ---
+  // 搜索条不再常占一行：折进包条右端那颗按钮里，点开才展开成输入框。
+  @State searchOpen: boolean = false;
+  @State searchQuery: string = '';
+  @State searchItems: StickerItem[] = [];
+  private searchTimer: number = -1;
+  private searchSeq: number = 0;
+
+  // 关搜索时把结果和请求一起丢掉，回到当前包——否则再点开会闪一下旧结果。
+  private toggleSearch(): void {
+    if (this.searchOpen) {
+      this.searchSeq++;
+      this.searchOpen = false;
+      this.searchQuery = '';
+      this.searchItems = [];
+      this.searchLoading = false;
+      this.searchError = '';
+      this.refreshGrid();
+      return;
+    }
+    this.searchOpen = true;
+  }
+
+  private onSearchChanged(v: string): void {
+    this.searchQuery = v;
+    this.searchError = '';
+    if (this.searchTimer !== -1) {
+      clearTimeout(this.searchTimer);
+    }
+    if (v.trim() === '') {
+      this.searchSeq++;
+      this.searchLoading = false;
+      this.searchItems = [];
+      this.refreshGrid();
+      return;
+    }
+    this.searchLoading = true;
+    this.searchTimer = setTimeout(() => {
+      this.searchTimer = -1;
+      this.runStickerSearch();
+    }, 300);
+  }
+
+  private searchLanguageCodes(): string[] {
+    try {
+      const preferred: string = i18n.System.getAppPreferredLanguage();
+      const language: string = preferred === '' || preferred === 'default'
+        ? i18n.System.getSystemLanguage() : preferred;
+      return language === '' ? [] : [language];
+    } catch (_e) {
+      return [];
+    }
+  }
+
+  private runStickerSearch(): void {
+    const q = this.searchQuery.trim();
+    const seq = ++this.searchSeq;
+    if (q === '') {
+      this.searchLoading = false;
+      this.searchError = '';
+      this.searchItems = [];
+      this.refreshGrid();
+      return;
+    }
+    const req: TdRequest = { '@type': 'searchStickers' };
+    req['sticker_type'] = this.typeObj();
+    const emojiOnly: boolean = looksLikeEmojiOnly(q);
+    // TDLib treats these as different inputs: `emojis` must contain only
+    // space-separated emoji, while natural-language text belongs in `query`.
+    req['emojis'] = emojiOnly ? q : '';
+    req['query'] = emojiOnly ? '' : q;
+    req['input_language_codes'] = emojiOnly ? [] : this.searchLanguageCodes();
+    req['offset'] = 0;
+    req['limit'] = 60;
+    getTdClient().send(req).then((res: TdObject) => {
+      if (this.disposed || seq !== this.searchSeq) {
+        return;
+      }
+      const raw = (res['stickers'] as TdObject[] | undefined) ?? [];
+      const items: StickerItem[] = [];
+      for (const st of raw) {
+        const file = st['sticker'] as TdObject | undefined;
+        const fileId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
+        if (fileId === 0) {
+          continue;
+        }
+        this.noteSrcUid(fileId, file);
+        const fmt = st['format'] as TdObject | undefined;
+        const fmtName = fmt !== undefined ? ((fmt['@type'] as string | undefined) ?? '') : '';
+        const format = fmtName === 'stickerFormatWebp' ? 'webp'
+          : (fmtName === 'stickerFormatTgs' ? 'tgs' : 'webm');
+        const fullType = st['full_type'] as TdObject | undefined;
+        const ceId = fullType !== undefined
+          && ((fullType['@type'] as string | undefined) ?? '') === 'stickerFullTypeCustomEmoji'
+          ? `${fullType['custom_emoji_id']}` : '';
+        const rasterThumb = this.rasterThumbFile(st['thumbnail'] as TdObject | undefined);
+        items.push({
+          fileId,
+          width: (st['width'] as number | undefined) ?? 512,
+          height: (st['height'] as number | undefined) ?? 512,
+          thumbPath: '',
+          thumbFileId: rasterThumb !== undefined ? ((rasterThumb['id'] as number | undefined) ?? 0) : 0,
+          emoji: (st['emoji'] as string | undefined) ?? '',
+          format, srcPath: '', customEmojiId: ceId
+        });
+      }
+      this.searchItems = items;
+      this.searchLoading = false;
+      this.searchError = '';
+      this.refreshGrid();
+      // Publish results before downloading thumbnails so a fast completion
+      // cannot patch the previous empty array.
+      for (const st of raw) {
+        const file = st['sticker'] as TdObject | undefined;
+        const fileId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
+        if (fileId !== 0) {
+          this.downloadSearchThumb(fileId, st['thumbnail'] as TdObject | undefined, seq);
+        }
+      }
+    }).catch((e: TdError) => {
+      if (this.disposed || seq !== this.searchSeq) {
+        return;
+      }
+      logE(`StickerPicker.searchStickers failed: ${e.message}`);
+      this.searchLoading = false;
+      this.searchError = str('search_failed');
+      this.searchItems = [];
+      this.refreshGrid();
+    });
+  }
+
+  private downloadSearchThumb(stickerFileId: number, thumb: TdObject | undefined, seq: number): void {
+    const file = this.rasterThumbFile(thumb);
+    const fileId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
+    if (fileId === 0) {
+      return;
+    }
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = fileId;
+    req['priority'] = 1;
+    req['synchronous'] = true;
+    getTdClient().send(req).then((f: TdObject) => {
+      if (this.disposed || seq !== this.searchSeq) {
+        return;
+      }
+      const local = f['local'] as TdObject | undefined;
+      const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
+      if (path === '') {
+        return;
+      }
+      const patch = (it: StickerItem): StickerItem => ({
+        fileId: it.fileId, width: it.width, height: it.height,
+        thumbPath: path, thumbFileId: it.thumbFileId, emoji: it.emoji,
+        format: it.format, srcPath: it.srcPath, customEmojiId: it.customEmojiId
+      });
+      this.searchItems = this.searchItems.map((it: StickerItem): StickerItem =>
+        it.fileId === stickerFileId ? patch(it) : it);
+      if (this.searchQuery.trim() !== '') {
+        this.patchFlatEntries(-1, stickerFileId, patch);
+      }
+    }).catch((e: TdError) => {
+      logE(`StickerPicker.downloadSearchThumb failed: ${e.message}`);
+    });
+  }
+
+  // The grid shows sets[anchor..] as ONE continuous scroll; packs load in
+  // order as the user scrolls down, and the tab highlight follows the pack
+  // at the top of the viewport. Tapping a tab re-anchors the grid there.
+  private anchor: number = 0;
+  private flatEntries: FlatEntry[] = [];
+  // （所属包下标:fileId）→ 它在 flatEntries 里的下标。整表重排时重建（refreshGrid）；缩略图/动画源
+  // 单格到达时靠它直接改那几格，不再整表 flatten + 逐项比对（包多了以后每 80ms 一遍 O(N)）。
+  private flatIndex: Map<string, number[]> = new Map();
+  private gridScroller: Scroller = new Scroller();
+  @State loadingSet: boolean = false;
+  private visibleFirst: number = 0;
+  private visibleLast: number = 24;
+
+  private selectSet(idx: number): void {
+    this.contentError = '';
+    this.curSet = idx;
+    this.anchor = idx;
+    this.refreshGrid();
+    this.gridScroller.scrollToIndex(0);
+    if (idx >= 0 && idx < this.sets.length && !this.sets[idx].loaded) {
+      this.loadSetContents(idx);
+    }
+  }
+
+  // Load the next unloaded pack after the anchor (keeps the flat list contiguous).
+  private loadNextSet(): void {
+    for (let i = this.anchor; i < this.sets.length; i++) {
+      if (!this.sets[i].loaded && !this.sets[i].failed) {
+        this.loadSetContents(i);
+        return;
+      }
+    }
+  }
+
+  private flatten(): FlatEntry[] {
+    const out: FlatEntry[] = [];
+    for (let i = this.anchor; i < this.sets.length; i++) {
+      const t = this.sets[i];
+      if (!t.loaded) {
+        break; // contiguity: stop at the first not-yet-loaded pack
+      }
+      out.push({ kind: 'header', title: t.title, setIdx: i, pos: -1, sticker: null });
+      let pos = 0;
+      for (const st of t.stickers) {
+        out.push({ kind: 'sticker', title: '', setIdx: i, pos: pos, sticker: st });
+        pos++;
+      }
+    }
+    return out;
+  }
+
+  // Scroll position → owning pack: highlight its tab and keep it visible.
+  private onGridScrolled(first: number, last: number): void {
+    this.visibleFirst = first;
+    this.visibleLast = last;
+    this.gridData.setPriorityRange(first - this.gridColumns(), last + this.gridColumns());
+    this.requestVisibleSources();
+    if (this.searchQuery.trim() !== '') {
+      return;
+    }
+    if (first >= 0 && first < this.flatEntries.length) {
+      const owner = this.flatEntries[first].setIdx;
+      if (owner !== this.curSet) {
+        this.curSet = owner;
+        this.tabScroller.scrollTo({
+          xOffset: Math.max(0, owner * 44 - 120), yOffset: 0,
+          animation: { duration: 200, curve: Curve.EaseOut }
+        });
+      }
+    }
+    if (last >= this.flatEntries.length - 12 && !this.loadingSet) {
+      this.loadNextSet();
+    }
+  }
+
+  private tabScroller: Scroller = new Scroller();
+
+  private loadSetContents(idx: number): void {
+    if (idx < 0 || idx >= this.sets.length || this.sets[idx].loaded || this.loadingSet) {
+      return;
+    }
+    this.loadingSet = true;
+    this.contentError = '';
+    const setId = this.sets[idx].id;
+    this.sets = this.sets.map((t: StickerSetTab): StickerSetTab =>
+      t.id === setId
+        ? {
+          id: t.id, title: t.title, iconPath: t.iconPath, iconText: t.iconText,
+          loaded: t.loaded, failed: false, stickers: t.stickers
+        }
+        : t);
+    const req: TdRequest = { '@type': 'getStickerSet' };
+    req['set_id'] = setId;
+    getTdClient().send(req).then((res: TdObject) => {
+      if (this.disposed) {
+        return;
+      }
+      const raw = (res['stickers'] as TdObject[] | undefined) ?? [];
+      const items: StickerItem[] = [];
+      for (const st of raw) {
+        const file = st['sticker'] as TdObject | undefined;
+        const fileId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
+        if (fileId === 0) {
+          continue;
+        }
+        this.noteSrcUid(fileId, file);
+        const fmt = st['format'] as TdObject | undefined;
+        const fmtName = fmt !== undefined ? ((fmt['@type'] as string | undefined) ?? '') : '';
+        const format = fmtName === 'stickerFormatWebp' ? 'webp'
+          : (fmtName === 'stickerFormatTgs' ? 'tgs' : 'webm');
+        const fullType = st['full_type'] as TdObject | undefined;
+        const ceId = fullType !== undefined
+          && ((fullType['@type'] as string | undefined) ?? '') === 'stickerFullTypeCustomEmoji'
+          ? `${fullType['custom_emoji_id']}` : '';
+        const rasterThumb = this.rasterThumbFile(st['thumbnail'] as TdObject | undefined);
+        items.push({
+          fileId,
+          width: (st['width'] as number | undefined) ?? 512,
+          height: (st['height'] as number | undefined) ?? 512,
+          thumbPath: '',
+          thumbFileId: rasterThumb !== undefined ? ((rasterThumb['id'] as number | undefined) ?? 0) : 0,
+          emoji: (st['emoji'] as string | undefined) ?? '',
+          format,
+          srcPath: '',
+          customEmojiId: ceId
+        });
+      }
+      let tgs = 0;
+      let webm = 0;
+      let webp = 0;
+      for (const it of items) {
+        if (it.format === 'tgs') { tgs++; } else if (it.format === 'webm') { webm++; } else { webp++; }
+      }
+      logI(`StickerPicker: set ${setId} loaded ${items.length} stickers (tgs=${tgs} webm=${webm} webp=${webp})`);
+      this.sets = this.sets.map((t: StickerSetTab): StickerSetTab =>
+        t.id === setId
+          ? {
+            id: t.id, title: t.title, iconPath: t.iconPath, iconText: t.iconText,
+            loaded: true, failed: false, stickers: items
+          }
+          : t);
+      this.loadingSet = false;
+      this.contentError = '';
+      this.refreshGrid();
+      // Start tiny thumbnail downloads only after the items are published.
+      // Cached synchronous completions can now always find their target cell.
+      for (const st of raw) {
+        const file = st['sticker'] as TdObject | undefined;
+        const fileId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
+        if (fileId !== 0) {
+          this.downloadThumb(setId, fileId, st['thumbnail'] as TdObject | undefined);
+        }
+      }
+    }).catch((e: TdError) => {
+      if (this.disposed) {
+        return;
+      }
+      this.loadingSet = false;
+      this.contentError = str('sp_sticker_load_failed');
+      this.sets = this.sets.map((t: StickerSetTab): StickerSetTab =>
+        t.id === setId
+          ? {
+            id: t.id, title: t.title, iconPath: t.iconPath, iconText: t.iconText,
+            loaded: false, failed: true, stickers: t.stickers
+          }
+          : t);
+      logE(`StickerPicker.getStickerSet failed: ${e.message}`);
+    });
+  }
+
+  // Download the raster thumbnail (synchronous download — thumbs are tiny),
+  // then patch it into the right set/sticker immutably.
+  private downloadThumb(setId: string, stickerFileId: number, thumb: TdObject | undefined) {
+    const format = thumb !== undefined ? (thumb['format'] as TdObject | undefined) : undefined;
+    const formatName = format !== undefined ? ((format['@type'] as string | undefined) ?? '') : '';
+    const isRaster = formatName === 'thumbnailFormatWebp' || formatName === 'thumbnailFormatJpeg'
+      || formatName === 'thumbnailFormatPng';
+    const thumbFile = thumb !== undefined && isRaster ? (thumb['file'] as TdObject | undefined) : undefined;
+    const thumbFileId = thumbFile !== undefined ? ((thumbFile['id'] as number | undefined) ?? 0) : 0;
+    if (thumbFileId === 0) {
+      return;
+    }
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = thumbFileId;
+    req['priority'] = 1;
+    req['synchronous'] = true;
+    getTdClient().send(req).then((f: TdObject) => {
+      if (this.disposed) {
+        return;
+      }
+      const local = f['local'] as TdObject | undefined;
+      const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
+      if (path === '') {
+        return;
+      }
+      this.patchSticker(setId, stickerFileId, (s: StickerItem): StickerItem => ({
+        fileId: s.fileId, width: s.width, height: s.height, thumbPath: path,
+        thumbFileId: s.thumbFileId, emoji: s.emoji, format: s.format,
+        srcPath: s.srcPath, customEmojiId: s.customEmojiId
+      }));
+    }).catch((e: TdError) => {
+      logE(`StickerPicker.downloadThumb failed: ${e.message}`);
+    });
+  }
+
+  private patchSticker(setId: string, stickerFileId: number,
+    patch: (s: StickerItem) => StickerItem): void {
+    this.sets = this.sets.map((t: StickerSetTab): StickerSetTab => {
+      if (t.id !== setId) {
+        return t;
+      }
+      const stickers = t.stickers.map((s: StickerItem): StickerItem =>
+        s.fileId === stickerFileId ? patch(s) : s);
+      return {
+        id: t.id, title: t.title, iconPath: t.iconPath, iconText: t.iconText,
+        loaded: t.loaded, failed: t.failed, stickers
+      };
+    });
+    if (this.searchQuery.trim() === '') {
+      const setIdx: number = this.sets.findIndex((t: StickerSetTab): boolean => t.id === setId);
+      this.patchFlatEntries(setIdx, stickerFileId, patch);
+    }
+  }
+
+  private flatKey(setIdx: number, fileId: number): string {
+    return `${setIdx}:${fileId}`;
+  }
+
+  private rebuildFlatIndex(entries: FlatEntry[]): void {
+    const index: Map<string, number[]> = new Map();
+    for (let i = 0; i < entries.length; i++) {
+      const sticker: StickerItem | null = entries[i].sticker;
+      if (sticker === null) {
+        continue;
+      }
+      const key: string = this.flatKey(entries[i].setIdx, sticker.fileId);
+      const positions: number[] | undefined = index.get(key);
+      if (positions === undefined) {
+        index.set(key, [i]);
+      } else {
+        positions.push(i);
+      }
+    }
+    this.flatIndex = index;
+  }
+
+  // 单格到达（sets / searchItems 已经改好）：直接改平铺列表里对应的格子。
+  // 已经排着整表刷新时交给它——它会从 sets / searchItems 重新平铺，快路再做一遍是重复劳动。
+  private patchFlatEntries(setIdx: number, fileId: number, patch: (s: StickerItem) => StickerItem): void {
+    if (this.refreshTimer !== -1) {
+      return;
+    }
+    const positions: number[] | undefined = this.flatIndex.get(this.flatKey(setIdx, fileId));
+    if (positions === undefined) {
+      return;   // 不在当前平铺范围里（包还没加载到、或者不连续），格子上没有它
+    }
+    for (const i of positions) {
+      const previous: FlatEntry | undefined = this.flatEntries[i];
+      if (previous === undefined || previous.sticker === null || previous.sticker.fileId !== fileId) {
+        this.refreshGrid();   // 索引和数组对不上：退回整表刷新，别改错格子
+        return;
+      }
+      const next: FlatEntry = {
+        kind: previous.kind, title: previous.title, setIdx: previous.setIdx, pos: previous.pos,
+        sticker: patch(previous.sticker)
+      };
+      this.flatEntries[i] = next;
+      this.gridData.patchAt(i, previous, next);
+    }
+  }
+
+  private refreshTimer: number = -1;
+
+  private flushGridNow(): void {
+    if (this.refreshTimer !== -1) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = -1;
+    }
+    if (this.searchQuery.trim() !== '') {
+      this.flatEntries = this.searchItems.map((st: StickerItem, idx: number): FlatEntry =>
+        ({ kind: 'sticker', title: '', setIdx: -1, pos: idx, sticker: st }));
+    } else {
+      this.flatEntries = this.flatten();
+    }
+    this.rebuildFlatIndex(this.flatEntries);
+    this.syncGridLayout(this.flatEntries);
+    this.gridData.update(this.flatEntries);
+    this.requestVisibleSources();
+  }
+
+  // Debounced: a freshly opened set fires many thumbnail patches in quick
+  // succession. Coalesce them before calculating targeted cell changes.
+  private refreshGrid(): void {
+    if (this.refreshTimer !== -1) {
+      return;
+    }
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = -1;
+      this.flushGridNow();
+    }, 80);
+  }
+
+  // 标题下标变了才换新对象：同一份布局选项反复赋值也会让 Grid 重新布局。
+  private syncGridLayout(entries: FlatEntry[]): void {
+    const headers: number[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      if (entries[i].kind === 'header') {
+        headers.push(i);
+      }
+    }
+    const current: number[] = this.gridLayout.irregularIndexes ?? [];
+    if (current.length === headers.length &&
+      current.every((v: number, i: number): boolean => v === headers[i])) {
+      return;
+    }
+    this.gridLayout = { regularSize: [1, 1], irregularIndexes: headers };
+  }
+
+  private requestVisibleSources(): void {
+    if (!this.playbackEnabled() || this.flatEntries.length === 0) {
+      return;
+    }
+    // 搜索态走另一条：搜索结果不在 sets 里（setIdx 恒为 -1），patch 的目标是
+    // searchItems 而不是 sets，所以不能复用下面那段。
+    //
+    // 【这里原来是直接 return 的】于是搜出来的贴纸永远拿不到 srcPath，而
+    // stickerCell 的 tgs/webm 分支条件是 srcPath !== ''——**搜索结果里的动态贴纸
+    // 永远不会动**，只显示缩略图。downloadSearchThumb 只补 thumbPath，补不了这个。
+    if (this.searchQuery.trim() !== '') {
+      this.requestVisibleSearchSources();
+      return;
+    }
+    const first: number = Math.max(0, this.visibleFirst);
+    // One extra row keeps a fast scroll from exposing a static frame.
+    const last: number = Math.min(this.flatEntries.length - 1,
+      Math.max(this.visibleLast, first + 16) + 8);
+    for (let i = first; i <= last; i++) {
+      const entry: FlatEntry = this.flatEntries[i];
+      if (entry.sticker === null || entry.setIdx < 0 || entry.setIdx >= this.sets.length) {
+        continue;
+      }
+      const sticker: StickerItem = entry.sticker;
+      if ((sticker.format === 'tgs' || sticker.format === 'webm') && sticker.srcPath === '' &&
+        !this.sourceLoading.has(sticker.fileId) && !this.webmFramesCached(sticker)) {
+        this.downloadSource(this.sets[entry.setIdx].id, sticker.fileId);
+      }
+    }
+  }
+
+  // 搜索结果的源文件下载。与 requestVisibleSources 同样**只对可视窗口**发起
+  // （一次搜索最多 60 条，全下会把 TDLib 队列塞满，而贴纸下载是最低优先级 1，
+  // 本来就是被饿死的一方），并复用 sourceLoading 去重。
+  private requestVisibleSearchSources(): void {
+    const first: number = Math.max(0, this.visibleFirst);
+    const last: number = Math.min(this.flatEntries.length - 1,
+      Math.max(this.visibleLast, first + 16) + 8);
+    for (let i = first; i <= last; i++) {
+      const entry: FlatEntry = this.flatEntries[i];
+      if (entry.sticker === null) {
+        continue;
+      }
+      const sticker: StickerItem = entry.sticker;
+      if ((sticker.format === 'tgs' || sticker.format === 'webm') && sticker.srcPath === '' &&
+        !this.sourceLoading.has(sticker.fileId) && !this.webmFramesCached(sticker)) {
+        this.downloadSearchSource(sticker.fileId, this.searchSeq);
+      }
+    }
+  }
+
+  // 形状照 downloadSearchThumb：patch 的是 searchItems，且带 searchSeq 守卫
+  // （换了搜索词之后旧请求的回包必须作废，否则会把上一次的结果塞进新列表）。
+  private downloadSearchSource(stickerFileId: number, seq: number): void {
+    if (this.sourceLoading.has(stickerFileId)) {
+      return;
+    }
+    this.sourceLoading.add(stickerFileId);
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = stickerFileId;
+    req['priority'] = 1;
+    req['synchronous'] = true;
+    getTdClient().send(req).then((f: TdObject) => {
+      this.sourceLoading.delete(stickerFileId);
+      if (this.disposed || seq !== this.searchSeq) {
+        return;
+      }
+      const local = f['local'] as TdObject | undefined;
+      const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
+      if (path === '') {
+        return;
+      }
+      const patch = (it: StickerItem): StickerItem => ({
+        fileId: it.fileId, width: it.width, height: it.height,
+        thumbPath: it.thumbPath, thumbFileId: it.thumbFileId, emoji: it.emoji,
+        format: it.format, srcPath: path, customEmojiId: it.customEmojiId
+      });
+      this.searchItems = this.searchItems.map((it: StickerItem): StickerItem =>
+        it.fileId === stickerFileId ? patch(it) : it);
+      if (this.searchQuery.trim() !== '') {
+        this.patchFlatEntries(-1, stickerFileId, patch);
+      }
+    }).catch((e: TdError) => {
+      this.sourceLoading.delete(stickerFileId);
+      logE(`StickerPicker.downloadSearchSource failed: ${e.message}`);
+    });
+  }
+
+  // Sticker source download (small) → animate the grid cell (Lottie / ijk).
+  private downloadSource(setId: string, stickerFileId: number): void {
+    if (this.sourceLoading.has(stickerFileId)) {
+      return;
+    }
+    this.sourceLoading.add(stickerFileId);
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = stickerFileId;
+    req['priority'] = 1;
+    req['synchronous'] = true;
+    getTdClient().send(req).then((f: TdObject) => {
+      this.sourceLoading.delete(stickerFileId);
+      if (this.disposed) {
+        return;
+      }
+      const local = f['local'] as TdObject | undefined;
+      const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
+      if (path === '') {
+        return;
+      }
+      this.patchSticker(setId, stickerFileId, (s: StickerItem): StickerItem => ({
+        fileId: s.fileId, width: s.width, height: s.height, thumbPath: s.thumbPath,
+        thumbFileId: s.thumbFileId, emoji: s.emoji, format: s.format,
+        srcPath: path, customEmojiId: s.customEmojiId
+      }));
+    }).catch((e: TdError) => {
+      this.sourceLoading.delete(stickerFileId);
+      logE(`StickerPicker.downloadSource failed: ${e.message}`);
+    });
+  }
+
+  private gridColumns(): number {
+    return mediaPanelColumns(this.panelWidth, this.stickerType === 'custom_emoji' ? 'emoji' : 'sticker');
+  }
+
+  // Emoji grids use smaller cells (8 columns) to keep the picker dense.
+  private noteSrcUid(fileId: number, file: TdObject | undefined): void {
+    const uid: string = remoteUniqueIdOf(file);
+    if (fileId !== 0 && uid !== '') {
+      this.srcUids.set(fileId, uid);
+    }
+  }
+
+  private srcUidOf(s: StickerItem): string {
+    return s.format === 'webm' ? (this.srcUids.get(s.fileId) ?? '') : '';
+  }
+
+  // 这一格的帧缓存已在磁盘上：不必下载源文件（判断与 StickerGridCell 同源）。
+  private webmFramesCached(s: StickerItem): boolean {
+    return stickerFramesCached(this.srcUidOf(s), vp2px(this.cellPx()),
+      alphaStickerHighBudget(this.playbackCategory()));
+  }
+
+  private cellPx(): number {
+    return this.stickerType === 'custom_emoji' ? 38 : 62;
+  }
+
+  private playbackCategory(): string {
+    return this.stickerType === 'custom_emoji' ? 'emojiPicker' : 'sticker';
+  }
+
+  private retryInitialLoad(): void {
+    this.loadError = '';
+    this.loading = true;
+    this.sets = this.sets.filter((t: StickerSetTab): boolean => t.id.startsWith('classic_'));
+    this.refreshGrid();
+    this.loadSets();
+  }
+
+  private retryCurrentSet(): void {
+    if (this.curSet >= 0 && this.curSet < this.sets.length) {
+      this.loadSetContents(this.curSet);
+    }
+  }
+
+  // 按压态自己管，不用 stateStyles。格子在 Grid 里，而 Grid 自带的滑动手势
+  // 优先级更高，stateStyles 的按压判定要等它先放弃——表现出来就是"按下去
+  // 半天才有反应"。onTouch 是基础事件，按下即到。
+  private pressedCellStyleScale(cellKey: string): number {
+    return this.pressedCell === cellKey ? 0.9 : 1;
+  }
+
+  @Builder
+  stickerCell(s: StickerItem, cellKey: string) {
+    Stack() {
+      // 画的部分见 StickerGridCell；点击、长按、按压反馈留在这一层。
+      StickerGridCell({
+        format: s.format, srcPath: s.srcPath, thumbPath: s.thumbPath, emoji: s.emoji,
+        srcUid: this.srcUidOf(s),
+        animate: this.active && this.animate && !this.previewOpen, cellPx: this.cellPx(),
+        category: this.playbackCategory(),
+        emojiFontSize: this.stickerType === 'custom_emoji' ? 26 : 30
+      });
+    }
+    .width('100%').aspectRatio(1)
+    // 这里**不挂材质**。每格挂一层 THIN 材质之后，每个 emoji 都变成一块独立
+    // 的玻璃砖，边缘连成一片网格线——API 26 真机上一眼就能看到（截图为证）。
+    // 材质属于面板那一层，格子只负责按压反馈。
+    .opacity(this.pressedCell === cellKey ? 0.72 : 1)
+    .scale({ x: this.pressedCellStyleScale(cellKey), y: this.pressedCellStyleScale(cellKey) })
+    .onTouch((event: TouchEvent): void => {
+      this.previewHold?.touch(event);
+      if (event.type === TouchType.Down) {
+        this.pressedCell = cellKey;
+      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+        this.pressedCell = '';
+      }
+    })
+    .animation({
+      duration: this.reduceAnimations || this.powerSaving ? 0 : 110,
+      curve: Curve.EaseOut
+    })
+    .gesture(GestureGroup(GestureMode.Exclusive,
+      LongPressGesture().onAction((): void => { this.previewSticker(s); })
+                  .onActionCancel((): void => { this.previewHold?.finish(0, 0, true); }),
+      TapGesture().onAction((e: GestureEvent): void => {
+        if (this.previewOpen || !this.active || this.disposed) { return; }
+        if (s.fileId !== 0 && this.stickerType !== 'custom_emoji') { rememberRecentSticker(s.fileId); }
+        this.onPick(s, e.fingerList[0]?.globalX ?? 0, e.fingerList[0]?.globalY ?? 0);
+      })
+    ));
+  }
+
+  @Builder
+  stateMessage(symbol: Resource, title: string, detail: string, retry: boolean) {
+    Column({ space: 8 }) {
+      SymbolGlyph(symbol).fontSize(28).fontColor([COLOR_ICON_SECONDARY]);
+      Text(title).fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
+      Text(detail).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).textAlign(TextAlign.Center);
+      if (retry) {
+        Text($r('app.string.settings_reload'))
+          .fontSize(14).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
+          .padding({ left: 16, right: 16, top: 7, bottom: 7 })
+          .backgroundColor($r('app.color.selected_pill')).borderRadius(16)
+          .onClick(() => { this.retryInitialLoad(); });
+      }
+    }
+    .layoutWeight(1).width('100%')
+    .justifyContent(FlexAlign.Center);
+  }
+
+  build() {
+    Column() {
+      if (this.loading) {
+        Column() {
+          LoadingProgress().width(28).height(28).color(COLOR_PRIMARY);
+          Text(this.stickerType === 'custom_emoji' ? $r('app.string.sp_loading_emoji') : $r('app.string.sp_loading_stickers'))
+            .fontSize(13).fontColor(COLOR_TEXT_SECONDARY).margin({ top: 8 });
+        }
+        .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+      } else if (this.loadError !== '') {
+        this.stateMessage($r('sys.symbol.exclamationmark_circle'), this.loadError,
+          str('check_network_retry'), true);
+      } else if (this.sets.length === 0) {
+        this.stateMessage(
+          this.stickerType === 'custom_emoji' ? $r('sys.symbol.face_smiling') : $r('sys.symbol.gift'),
+          this.stickerType === 'custom_emoji' ? str('sp_no_emoji_packs') : str('sp_no_sticker_sets'),
+          this.stickerType === 'custom_emoji' ? str('sp_classic_still_works') : str('sp_install_hint'),
+          false
+        );
+      } else {
+        // 顶部这一行身兼两职：平时是包切换条，点右端的放大镜就整行变成搜索框。
+        // 原先搜索独占一行 30 高，在 260 的抽屉里和包条、标签条一起吃掉 108，
+        // 留给表情网格的还不到一半。
+        Stack({ alignContent: Alignment.End }) {
+          if (!this.searchOpen) {
+            // Pack tabs: cover thumbnails (official-style), title initial fallback.
+            Scroll(this.tabScroller) {
+              Row({ space: 6 }) {
+                ForEach(this.sets, (t: StickerSetTab, idx: number) => {
+                  Column() {
+                    if (t.iconPath !== '') {
+                      StickerPoster({ path: t.iconPath, boxWidth: 30, boxHeight: 30 });
+                    } else if (t.iconText !== '') {
+                      Text(t.iconText).fontSize(22);
+                    } else {
+                      Text(t.title.length > 0 ? t.title.substring(0, 1) : '?')
+                        .fontSize(15).fontWeight(FontWeight.Medium)
+                        .fontColor(this.curSet === idx ? COLOR_PRIMARY : COLOR_TEXT_PRIMARY);
+                    }
+                  }
+                  .width(38).height(38)
+                  .justifyContent(FlexAlign.Center)
+                  .backgroundColor(this.curSet === idx && this.searchQuery.trim() === ''
+                    ? accentSoft() : Color.Transparent)
+                  .opacity(this.curSet === idx && this.searchQuery.trim() === '' ? 1 : 0.62)
+                  .borderRadius(8)
+                  .animation({
+                    duration: this.reduceAnimations || this.powerSaving ? 0 : 120,
+                    curve: Curve.EaseOut
+                  })
+                  .onClick(() => {
+                    this.searchQuery = '';
+                    this.searchItems = [];
+                    this.selectSet(idx);
+                  });
+                }, (t: StickerSetTab) => `${t.id}_${t.iconPath}`);
+              }
+              // 右边留出按钮的位置，否则最后一个包永远压在按钮底下点不着。
+              .padding({ left: 10, right: 52 });
+            }
+            .scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off)
+            // 让内容自己在右端淡出，而不是拿一块底色去挡。垫底色那版试过，
+            // 玻璃面板上就是一块突兀的白，比露半个包还难看。
+            .fadingEdge(true, { fadingEdgeLength: LengthMetrics.vp(28) })
+            .width('100%').height(44);
+          } else if (this.allowSearch) {
+            Row({ space: 6 }) {
+              SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
+              TextInput({
+                text: this.searchQuery,
+                placeholder: this.stickerType === 'custom_emoji' ? $r('app.string.sp_search_emoji') : $r('app.string.sp_search_stickers')
+              })
+                .fontSize(14).layoutWeight(1).height(30)
+                .backgroundColor(Color.Transparent).padding(0)
+                .placeholderColor(COLOR_TEXT_SECONDARY)
+                .defaultFocus(true)
+                .onChange((v: string) => { this.onSearchChanged(v); });
+            }
+            // 宽度得把两边的外边距一起扣掉。写 100% 再挂 margin，父容器是
+            // Stack 且右对齐，多出来的 32 全从左边溢出去了。
+            .width('calc(100% - 64vp)').height(32)
+            .padding({ left: 12, right: 12 })
+            .backgroundColor($r('app.color.surface_alt')).borderRadius(16)
+            .alignItems(VerticalAlign.Center)
+            // 右边 48 是给常驻按钮留的位置。
+            .margin({ left: 16, right: 48 });
+          }
+
+          // 常驻按钮。自己是一块独立的玻璃（'control' 档：带按压光感），
+          // 所以不用垫底色去挡——包滑到它下面时，两层玻璃叠着反而分得清。
+          if (this.allowSearch) {
+            Row() {
+              Column() {
+                SymbolGlyph(this.searchOpen ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'))
+                  .fontSize(17)
+                  .fontColor([this.searchOpen ? COLOR_PRIMARY : COLOR_ICON_SECONDARY]);
+              }
+              .width(32).height(32).borderRadius(16).clip(true)
+              .justifyContent(FlexAlign.Center)
+              .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
+              .backdropBlur(overlayBackdropBlur('control'))
+              .attributeModifier(materialModifier('control'))
+              .onClick(() => { this.toggleSearch(); });
+            }
+            .width(48).height(44)
+            .justifyContent(FlexAlign.Center)
+            .padding({ right: 12 })
+            .hitTestBehavior(HitTestMode.Transparent);
+          }
+        }
+        .width('100%').height(44);
+        if (this.contentError !== '' && this.searchQuery.trim() === '') {
+          Row({ space: 8 }) {
+            SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
+              .fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
+            Text(this.contentError).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
+            Blank().layoutWeight(1);
+            Text($r('app.string.settings_retry')).fontSize(13).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
+              .onClick(() => { this.retryCurrentSet(); });
+          }
+          .width('100%').height(30).padding({ left: 14, right: 14 })
+          .backgroundColor($r('app.color.surface_alt'));
+        } else if (this.loadingSet && this.searchQuery.trim() === '') {
+          Row({ space: 7 }) {
+            LoadingProgress().width(15).height(15).color(COLOR_PRIMARY);
+            Text($r('app.string.sp_loading_sets')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+          }
+          .width('100%').height(26).padding({ left: 14, right: 14 });
+        }
+        // Continuous grid: every loaded pack in one scroll, section headers
+        // between packs; the tab strip follows the pack at the viewport top.
+        if (this.searchLoading) {
+          Column() {
+            LoadingProgress().width(24).height(24).color(COLOR_PRIMARY);
+            Text($r('app.string.searching')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).margin({ top: 7 });
+          }
+          .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        } else if (this.searchError !== '') {
+          Column({ space: 8 }) {
+            SymbolGlyph($r('sys.symbol.exclamationmark_circle')).fontSize(24)
+              .fontColor([COLOR_ICON_SECONDARY]);
+            Text(this.searchError).fontSize(14).fontColor(COLOR_TEXT_PRIMARY);
+            Text($r('app.string.settings_retry')).fontSize(14).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
+              .onClick(() => { this.runStickerSearch(); });
+          }
+          .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        } else if (this.searchQuery.trim() !== '' && this.searchItems.length === 0) {
+          Column({ space: 7 }) {
+            SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(24)
+              .fontColor([COLOR_ICON_SECONDARY]);
+            Text($r('app.string.no_results')).fontSize(14).fontColor(COLOR_TEXT_PRIMARY);
+            Text($r('app.string.sp_try_another')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+          }
+          .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        } else {
+          Grid(this.gridScroller, this.gridLayout) {
+            // LazyForEach: only visible cells mount, so at most a screenful of
+            // Lottie canvases animate at once.
+            LazyForEach(this.gridData, (e: FlatEntry) => {
+              if (e.kind === 'header') {
+                GridItem() {
+                  Text(e.title)
+                    .fontSize(13).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_SECONDARY)
+                    .width('100%')
+                    .padding({ top: 8, bottom: 2 });
+                }
+              } else if (e.sticker !== null) {
+                GridItem() {
+                  this.stickerCell(e.sticker, `${e.setIdx}_${e.pos}`);
+                }
+              }
+            }, (e: FlatEntry, index: number) => guardKey('stickers', index,
+              e.kind === 'header'
+                ? `h_${e.setIdx}`
+                // 末尾的到达状态令牌是**刷新通道**：不带它的话，srcPath 落地时
+                // 发出的 CHANGE 打不出更新（ArkUI：键值不变则组件不更新），
+                // 格子会一直停在缩略图上。见 stickerArrivalToken 的说明。
+                : `s_${e.setIdx}_${e.pos}_${e.sticker!.fileId}_${stickerArrivalToken(e.sticker!)}`));
+          }
+          .columnsTemplate(mediaPanelTemplate(this.gridColumns()))
+          .columnsGap(6).rowsGap(6)
+          // 预加载只留上下各一行（默认是一整屏的行数，最多 16）：屏外挂着的格子一样在建图、开动画。
+          .cachedCount(1)
+          .padding({ left: 10, right: 10, top: 4, bottom: 10 })
+          .layoutWeight(1).width('100%')
+          .onScrollIndex((first: number, last: number) => { this.onGridScrolled(first, last); })
+          // 滑动时整屏定格，停稳后屏幕上的先放、逐个起播（util/stickerPanelGate）。
+          .onScrollStart((): void => { pauseStickerPanelForScroll(); })
+          .onScrollStop((): void => { resumeStickerPanelAfterScroll(); });
+        }
+      }
+    }
+    .width('100%').height('100%')
+    .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+      if (typeof size.width === 'number' && size.width > 0 && Math.abs(size.width - this.panelWidth) > 0.5) {
+        this.panelWidth = size.width;
+        this.syncGridLayout(this.flatEntries);
+      }
+    });
+  }
+}

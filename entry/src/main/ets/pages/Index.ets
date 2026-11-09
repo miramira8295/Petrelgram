@@ -1,0 +1,457 @@
+import { collapseFloatingVideo } from '../util/floatingVideoRuntime';
+import { accountRegistry, TdAccountSummary } from '../tdkit/AccountRegistry';
+import { notifySlotAction, NOTIFY_DROP, NOTIFY_SWITCH } from '../util/notifySlot';
+import { switchAccountWithLiveWindow } from '../util/accountSwitch';
+import { common } from '@kit.AbilityKit';
+import { str } from '../util/strings';
+import { promptAction, router } from '@kit.ArkUI';
+import { AuthStage } from '../tdkit/AuthService';
+import {
+  activeSummaryHasUser, canReturnToPreviousTdAccount, getAuthService, healActiveSlotIfSignedOut, returnToPreviousTdAccount
+} from '../tdkit/Globals';
+import { PhoneNumberPage } from './login/PhoneNumberPage';
+import { CodePage } from './login/CodePage';
+import { PasswordPage } from './login/PasswordPage';
+import { RegisterPage } from './login/RegisterPage';
+import { QrLoginPage } from './login/QrLoginPage';
+import { MainScreen } from './main/MainScreen';
+import { handleIncomingLink } from '../util/deepLink';
+import { COLOR_TEXT_PRIMARY } from '../util/theme';
+import { refreshNetworkState } from '../services/NetworkStateService';
+import { logChatNavFailure, navigateToChat } from '../util/chatNav';
+import { getTdClient } from '../tdkit/Globals';
+import { resumeBackgroundCachesOnce } from '../services/BackgroundCache';
+import { DOWNLOAD_CENTER_DEST, KEY_PENDING_DOWNLOAD_CENTER } from '../util/downloadCenterWant';
+import { navigateToSetting } from '../util/settingsNav';
+import { TdObject } from '../tdkit/TdTypes';
+import { logE, logW } from '../util/log';
+import { StartupSplash } from './common/StartupSplash';
+import { isStartupStage } from '../util/startupStage';
+import { ShareTargetSheet } from './share/ShareTargetSheet';
+import { dismissAllSheets, pushSheetDismiss } from '../util/sheetDismissStack';
+import {
+  hasPendingShare, notifyShareTargeted, peekPendingShare
+} from '../services/ShareInbox';
+import { resetShareTargets } from '../services/ShareTargetService';
+import { clearRecentOutgoing } from '../util/recentOutgoing';
+import { closeForumDrawer } from '../util/forumDrawerState';
+import { SharedPayload, previewOf } from '../util/sharedContent';
+
+// 冷启动时等连接就绪的上限。超过就照常放行——离线时压着链接不处理更糟。
+const DEEP_LINK_CONNECT_WAIT_MS: number = 8000;
+
+@Entry
+@Preview
+@Component
+struct Index {
+  @State stage: AuthStage = AuthStage.Init;
+  @StorageProp('topSafeHeight') topSafe: number = 0;
+  @StorageLink('tdSessionEpoch') @Watch('onTdSessionEpoch') tdSessionEpoch: number = 0;
+  @StorageLink('tdAccountRegistryEpoch') tdAccountRegistryEpoch: number = 0;
+  @StorageLink('tdAccountSwitching') tdAccountSwitching: boolean = false;
+  // Set by EntryAbility when the app is opened via a tg:// deep link. Held here
+  // until auth is Ready (routing needs a logged-in session + a live router).
+  @StorageLink('pendingDeepLink') @Watch('onDeepLink') pendingDeepLink: string = '';
+  // 点击本地通知进入的目标会话（EntryAbility 写入，登录就绪后路由）。
+  @StorageLink('pendingNotifyChatId') @Watch('onNotifyChat') pendingNotifyChatId: number = 0;
+  // 同一次点击带来的目标消息（EntryAbility 在 chatId 之前写入），>0 时走 jumpTo 定位。
+  @StorageLink('pendingNotifyMessageId') pendingNotifyMessageId: number = 0;
+  @StorageLink('pendingNotifySlotId') pendingNotifySlotId: string = '';
+  // 后台缓存的通知栏点进来：打开「设置 › 下载中心」（util/downloadCenterWant）。
+  @StorageLink(KEY_PENDING_DOWNLOAD_CENTER) @Watch('onOpenDownloadCenter') pendingOpenDownloadCenter: number = 0;
+  // 别的应用分享东西过来（EntryAbility 写入，登录就绪后消费）。epoch 是
+  // 清零-再置位的触发器，chatId 是分享面板里已经选好的目标（0 = 还没选）。
+  @StorageLink('pendingShareEpoch') @Watch('onShare') pendingShareEpoch: number = 0;
+  @StorageLink('pendingShareChatId') pendingShareChatId: number = 0;
+  // 面板上选的那一档：true = 进会话就发、发完退回后台（见 util/shareSendMode）。
+  @StorageLink('pendingShareAutoSend') pendingShareAutoSend: boolean = false;
+  // 选择器开着。载荷本身在 ShareInbox 里，这里只管界面。
+  @State @Watch('onShareSheetChanged') private showShareSheet: boolean = false;
+  // 选择器在「返回键该关谁」那张表里的登记。开着时登记、关了注销。
+  private shareSheetOff: (() => void) | null = null;
+  // 本进程里到达过 Ready。分享名单的清理要靠它区分"换账号"和"刚开机"。
+  private hadReadySession: boolean = false;
+  private offAuth: (() => void) | null = null;
+  // 深链要等的是**连接**就绪，不是登录就绪。见 consumeDeepLink 的说明。
+  private offConn: (() => void) | null = null;
+  private connReady: boolean = false;
+  private deepLinkTimer: number = -1;
+
+  aboutToAppear(): void {
+    this.bindAuthService();
+    this.offConn = getTdClient().onUpdate('updateConnectionState', (u: TdObject): void => {
+      const st: TdObject | undefined = u['state'] as TdObject | undefined;
+      const name: string = st !== undefined ? ((st['@type'] as string | undefined) ?? '') : '';
+      // Updating 也算连上了：那时已经能发请求，只是还在补历史。
+      this.connReady = name === 'connectionStateReady' || name === 'connectionStateUpdating';
+      if (this.connReady) {
+        this.consumeDeepLink();
+      }
+    });
+  }
+
+  aboutToDisappear(): void {
+    if (this.offConn !== null) {
+      this.offConn();
+      this.offConn = null;
+    }
+    if (this.deepLinkTimer !== -1) {
+      clearTimeout(this.deepLinkTimer);
+      this.deepLinkTimer = -1;
+    }
+    if (this.offAuth !== null) {
+      this.offAuth();
+      this.offAuth = null;
+    }
+  }
+
+  private onTdSessionEpoch(): void {
+    this.bindAuthService();
+    // Account switching replaces the TDLib client while the Ability can stay in
+    // foreground. Republish the current bearer to the new client immediately.
+    refreshNetworkState(true);
+    // 换账号 = 换了一整套会话 id。分享目标名单和"最近主动聊过"都是上一个
+    // 账号的，留着会把陌生人的名字显示在分享面板里（快照还落在磁盘上，
+    // 连没登录都能被读到）。
+    //
+    // **只在本进程真的登录过之后才清**：冷启动时这个 epoch 也会跳一次，
+    // 那时候清等于每次开机都把攒好的名单丢掉，用户不打开应用就永远没有推荐。
+    if (this.hadReadySession) {
+      this.hadReadySession = false;
+      resetShareTargets();
+      clearRecentOutgoing();
+    }
+  }
+
+  private bindAuthService(): void {
+    if (this.offAuth !== null) {
+      this.offAuth();
+      this.offAuth = null;
+    }
+    this.stage = AuthStage.Init;
+    this.offAuth = getAuthService().onStageChange((s: AuthStage): void => {
+      this.stage = s;
+      // 停在登录页却写着已登录 = 活跃槽和 TDLib 对不上，自动切回去（见方法说明）。
+      this.healSignedOutSlotIfNeeded();
+      // A link that arrived (or waited) through cold start / login flow.
+      this.consumeDeepLink();
+      this.consumeNotifyChat();
+      this.consumeShare();
+      this.consumeDownloadCenter();
+      if (s === AuthStage.Ready) {
+        this.hadReadySession = true;
+        // 续上上次没缓存完的后台缓存（services/BackgroundCache，每个进程只跑一次）。
+        resumeBackgroundCachesOnce(getContext(this) as common.UIAbilityContext);
+      } else if (s === AuthStage.LoggedOut) {
+        // 真退登：无条件抹掉磁盘上的名单。这里不能只靠"本进程写过"——
+        // 退登后杀进程再开机分享，读到的会是上一个账号的联系人。
+        this.hadReadySession = false;
+        resetShareTargets(true);
+        clearRecentOutgoing();
+      }
+    });
+  }
+
+  // Fires when a deep link arrives while the app is already running.
+  private onDeepLink(): void {
+    this.consumeDeepLink();
+  }
+
+  private onNotifyChat(): void {
+    this.consumeNotifyChat();
+  }
+
+  private onOpenDownloadCenter(): void {
+    this.consumeDownloadCenter();
+  }
+
+  private consumeDownloadCenter(): void {
+    if (this.stage !== AuthStage.Ready || this.pendingOpenDownloadCenter === 0) {
+      return;
+    }
+    this.pendingOpenDownloadCenter = 0;
+    navigateToSetting(DOWNLOAD_CENTER_DEST);
+  }
+
+  private onShare(): void {
+    this.consumeShare();
+  }
+
+  // 「分享到…」选择器也要进「返回键该关谁」那张表。
+  //
+  // 【为什么只挂在 Index.onBackPress 上不够】那是最外面的兜底。会话页的
+  // HdsNavDestination 自己接管了返回键（ChatPage.handleBackPressed），它不认识
+  // 这个面板就返回 false，框架直接把会话出栈，选择器留在原地——用户 2026-10-30：
+  // 「分享弹窗不会响应返回事件」。登记之后，那个 handler 的第一句
+  // dismissTopSheet() 就会先关它。
+  //
+  // 登记/注销都挂在 showShareSheet 这一个状态上：不管是 ✕、点抽屉外面、
+  // 还是返回键关的，最后都会走回这里，不会留下一条指向已关面板的登记
+  // （那会让下一次返回键"按了没反应"）。
+  private onShareSheetChanged(): void {
+    if (this.showShareSheet) {
+      if (this.shareSheetOff === null) {
+        this.shareSheetOff = pushSheetDismiss((): void => { this.showShareSheet = false; });
+      }
+      return;
+    }
+    if (this.shareSheetOff !== null) {
+      this.shareSheetOff();
+      this.shareSheetOff = null;
+    }
+  }
+
+  // 分享进来的内容。目标已经在分享面板里选好了就直接进那个会话；没选就弹
+  // 选择器。**只等登录就绪**，不像深链那样还要等连接——内容全在本地，
+  // 进会话之后由发送链自己排队重试。
+  private consumeShare(): void {
+    if (this.stage !== AuthStage.Ready || this.pendingShareEpoch === 0) {
+      return;
+    }
+    if (!hasPendingShare()) {
+      // 载荷解析失败（文件读不了、格式不认）。标志清掉，什么都不做。
+      this.pendingShareEpoch = 0;
+      return;
+    }
+    this.pendingShareEpoch = 0;
+    // 先把已经开着的面板收掉再谈进哪个会话。贴纸合集/全屏编辑这些是 bindSheet，
+    // 画在窗口浮层里，会把下面这个「分享到…」整块盖住（用户 2026-10-30：
+    // 「系统分享抽屉应该在最上方吧，现在会显示在添加贴纸抽屉下方」）。
+    dismissAllSheets();
+    const chatId: number = this.pendingShareChatId;
+    const autoSend: boolean = this.pendingShareAutoSend;
+    this.pendingShareChatId = 0;
+    this.pendingShareAutoSend = false;
+    if (chatId !== 0) {
+      this.openShareTarget(chatId, autoSend);
+      return;
+    }
+    this.showShareSheet = true;
+  }
+
+  // 进目标会话。载荷留在 ShareInbox 里，由 ChatPage 在应用路由参数时取走
+  // （见 util/shareStaging）——不走路由参数是因为里面有一串路径和长文本，
+  // 而路由参数会被序列化进导航栈。
+  private openShareTarget(chatId: number, autoSend: boolean = false): void {
+    this.showShareSheet = false;
+    // 先广播：目标会话可能已经开在栈顶，那时 navigateToChat 会 skip，
+    // 路由参数不会被重新应用（见 ShareInbox 里那条旁路的说明）。
+    notifyShareTargeted(chatId);
+    const params: Record<string, Object> =
+      { 'chatId': chatId, 'sharePending': true, 'shareAutoSend': autoSend };
+    navigateToChat(params).catch(logChatNavFailure);
+  }
+
+  private sharePreview(): string {
+    const payload: SharedPayload | null = peekPendingShare();
+    return payload === null ? '' : previewOf(payload);
+  }
+
+  private consumeNotifyChat(): void {
+    if (this.stage !== AuthStage.Ready || this.pendingNotifyChatId === 0) {
+      return;
+    }
+    const chatId: number = this.pendingNotifyChatId;
+    const messageId: number = this.pendingNotifyMessageId;
+    const slotId: string = this.pendingNotifySlotId;
+    this.pendingNotifyChatId = 0;
+    this.pendingNotifyMessageId = 0;
+    this.pendingNotifySlotId = '';
+    // 这条通知属于哪个账号（util/notifySlot）。切过账号之后再点旧通知，不能把
+    // 那个 chatId 丢给当前账号——它在别的库里是另一个会话，或者根本不存在。
+    const known: string[] = accountRegistry.all()
+      .map((a: TdAccountSummary): string => a.slotId);
+    const action: string = notifySlotAction(slotId, accountRegistry.activeSlotId(), known);
+    if (action === NOTIFY_DROP) {
+      logW(`[Notify] dropped: slot ${slotId} is gone (chat ${chatId})`);
+      return;
+    }
+    if (action === NOTIFY_SWITCH) {
+      // 先切回发通知的那个账号，切成了再把这条通知重新投一次（登录就绪后消费）。
+      logW(`[Notify] switching to slot ${slotId} before opening chat ${chatId}`);
+      switchAccountWithLiveWindow(slotId).then((): void => {
+        AppStorage.setOrCreate('pendingNotifyMessageId', messageId);
+        AppStorage.setOrCreate('pendingNotifySlotId', slotId);
+        AppStorage.setOrCreate('pendingNotifyChatId', 0);
+        AppStorage.setOrCreate('pendingNotifyChatId', chatId);
+      }).catch((e: Error): void => {
+        logE(`[Notify] account switch failed: ${e.message}`);
+      });
+      return;
+    }
+    const params: Record<string, Object> = { 'chatId': chatId };
+    if (messageId > 0) {
+      params['jumpTo'] = messageId;
+    }
+    navigateToChat(params).catch(logChatNavFailure);
+  }
+
+  // 路由待处理的深链。条件是**登录就绪 + 连接就绪**，两个都要。
+  //
+  // 只等 AuthStage.Ready 是不够的：那对应 TDLib 的 authorizationStateReady，
+  // 意思是"你已登录"——它从本地库读出登录态就立刻发出来，比真正连上服务器早
+  // 得多，走代理时差得更远。而 t.me/<用户名> 这类链接的解析（searchPublicChat）
+  // 必须走一次实时往返，连接没建好就会失败，最后弹一句"无法识别该链接"。
+  // 用户看到的现象正是：同一个链接应用内点能跳，从浏览器冷启动进来就说不认识。
+  //
+  // 兜底超时：真的离线时也不能把链接一直压着不处理，到点照常放行，让它走正常
+  // 的失败路径给出提示。
+  private consumeDeepLink(): void {
+    if (this.stage !== AuthStage.Ready || this.pendingDeepLink === '') {
+      return;
+    }
+    if (!this.connReady) {
+      if (this.deepLinkTimer === -1) {
+        this.deepLinkTimer = setTimeout((): void => {
+          this.deepLinkTimer = -1;
+          this.connReady = true; // 等够了就按"能发请求"处理，失败自有提示
+          this.consumeDeepLink();
+        }, DEEP_LINK_CONNECT_WAIT_MS);
+      }
+      return;
+    }
+    if (this.deepLinkTimer !== -1) {
+      clearTimeout(this.deepLinkTimer);
+      this.deepLinkTimer = -1;
+    }
+    const uri = this.pendingDeepLink;
+    this.pendingDeepLink = '';
+    handleIncomingLink(getContext(this) as common.UIAbilityContext, uri);
+  }
+
+  // 登录/加账号阶段，只要注册表里还有别的登录过的槽，就给一个回去的出口。
+  // 原来只认「当前槽是 pendingLogin 且记着来路」，漏掉了清理重复登录失败留下的
+  // 那种状态，用户被锁在登录页（真机事故，见 Globals.healActiveSlotIfSignedOut）。
+  private isAddingAccount(): boolean {
+    return this.stage !== AuthStage.Ready && canReturnToPreviousTdAccount();
+  }
+
+  // 停在登录页、而活跃槽的摘要里还写着用户身份：两边对不上，自动切回去。
+  // 一次会话只尝试一次，失败就把出口留给上面那个按钮。
+  private healedSignedOutSlot: boolean = false;
+
+  private healSignedOutSlotIfNeeded(): void {
+    if (this.healedSignedOutSlot || this.tdAccountSwitching) {
+      return;
+    }
+    if (this.stage !== AuthStage.WaitPhone && this.stage !== AuthStage.LoggedOut) {
+      return;
+    }
+    if (!activeSummaryHasUser()) {
+      return;
+    }
+    this.healedSignedOutSlot = true;
+    if (healActiveSlotIfSignedOut()) {
+      promptAction.showToast({ message: str('ar_recovered_account'), duration: 1800 });
+    }
+  }
+
+  private returnToOriginalAccount(): void {
+    if (this.tdAccountSwitching || !this.isAddingAccount()) { return; }
+    returnToPreviousTdAccount().catch((caught: Error): void => {
+      logE(`Index.returnToOriginalAccount failed: ${caught.message}`);
+      promptAction.showToast({ message: str('ar_back_to_account_failed'), duration: 1800 });
+    });
+  }
+
+  onBackPress(): boolean {
+    if (collapseFloatingVideo()) { return true; }
+    // 分享选择器开着时先吃掉返回键。它是画在 Index 这一层的浮层，不在
+    // Navigation 的栈里——不拦的话返回键会去弹 Navigation 的目的地，
+    // 抽屉留在原地不动（用户实测"不受返回键控制"）。
+    if (this.showShareSheet) {
+      this.showShareSheet = false;
+      return true;
+    }
+    if (this.isAddingAccount()) {
+      this.returnToOriginalAccount();
+      return true;
+    }
+    if (this.stage !== AuthStage.Ready) {
+      return false;
+    }
+    // 主屏返回键两级递退：设置/联系人/个人资料 → 聊天页签；聊天页签在别的
+    // 文件夹 → 先回"所有"；都在原位了就放行，应用直接退到后台。
+    //
+    // 2026-10-30：原来还有第三级「两秒内再按一次才退出」（issue #71/#48 的防误触）。
+    // 用户要求去掉——回到原位后按一下就该走，不要停在这儿弹提示。
+    const tab: number = AppStorage.get<number>('mainTabIndex') ?? 0;
+    if (tab !== 0) {
+      AppStorage.setOrCreate<number>('mainTabIndex', 0);
+      return true;
+    }
+    if (closeForumDrawer()) {
+      return true;
+    }
+    const folder: number = AppStorage.get<number>('chatFolderIndex') ?? 0;
+    if (folder !== 0) {
+      AppStorage.setOrCreate<number>('chatFolderIndex', 0);
+      return true;
+    }
+    return false;
+  }
+
+  build() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Column() {
+        if (isStartupStage(this.stage, this.tdAccountSwitching)) {
+          // 系统启动窗刚消失、TDLib 还没就绪的那一帧。它照抄系统启动窗，为的就是
+          // 让这一次交接看不出来——详见 StartupSplash。
+          StartupSplash()
+        } else if (this.tdAccountSwitching) {
+          LoadingProgress().width(48).height(48)
+        } else if (this.stage === AuthStage.WaitPhone) {
+          PhoneNumberPage()
+        } else if (this.stage === AuthStage.WaitQrCode) {
+          QrLoginPage()
+        } else if (this.stage === AuthStage.WaitCode) {
+          CodePage()
+        } else if (this.stage === AuthStage.WaitPassword) {
+          PasswordPage()
+        } else if (this.stage === AuthStage.WaitRegistration) {
+          RegisterPage()
+        } else if (this.stage === AuthStage.Ready) {
+          MainScreen()
+        } else {
+          // LoggedOut 与其余情况都回到手机号登录页。上面那条 isStartupStage
+          // 已经把"还没有界面可画"的阶段挑走了，走到这里的一定是有界面的。
+          PhoneNumberPage()
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center);
+
+      if (this.showShareSheet) {
+        ShareTargetSheet({
+          preview: this.sharePreview(),
+          onPick: (chatId: number): void => this.openShareTarget(chatId),
+          onCancel: (): void => { this.showShareSheet = false; }
+        })
+      }
+
+      if (this.isAddingAccount() && !this.tdAccountSwitching) {
+        Row({ space: 5 }) {
+          SymbolGlyph($r('sys.symbol.chevron_left'))
+            .fontSize(23).fontColor([COLOR_TEXT_PRIMARY]);
+          Text($r('app.string.ar_back_to_account'))
+            .fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
+        }
+        .height(42)
+        .padding({ left: 8, right: 12 })
+        .margin({ left: 8, top: 4 })
+        .borderRadius(21)
+        .onClick((): void => this.returnToOriginalAccount());
+      }
+    }
+    .width('100%')
+    .height('100%')
+    // ChatListPage does its own full-screen top inset; pad only the login stages.
+    // 启动图也不能留这段：它要顶到屏幕最上沿才能和系统启动窗对齐，下移一个状态栏
+    // 高度就会先错位一下再跳回来——正是这一版要消掉的那种割裂。
+    .padding({
+      top: (this.stage === AuthStage.Ready || isStartupStage(this.stage, this.tdAccountSwitching))
+        ? 0 : this.topSafe
+    })
+  }
+}

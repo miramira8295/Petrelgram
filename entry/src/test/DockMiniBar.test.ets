@@ -1,0 +1,129 @@
+import { describe, it, expect, beforeEach } from '@ohos/hypium';
+import {
+  DOCK_COLLAPSED, DOCK_EXPANDED, DOCK_FULL, dockMiniBarState, dockShowsAlbumBall,
+  dockShowsPlayer, dockShowsTabs, nowPlayingTitle
+} from '../main/ets/util/dockMiniBar';
+import {
+  HDS_LEVEL_ADAPTIVE, HDS_LEVEL_EXQUISITE, HDS_LEVEL_GENTLE, HDS_LEVEL_SMOOTH,
+  hdsLevelIndexOf, LIGHT_ADAPTIVE, LIGHT_EXQUISITE, LIGHT_GENTLE, LIGHT_SMOOTH
+} from '../main/ets/util/materialTuning';
+import {
+  clearNowPlaying, currentNowPlaying, NowPlaying, publishNowPlaying,
+  resetNowPlayingChannel, subscribeNowPlaying
+} from '../main/ets/util/nowPlayingChannel';
+
+function track(messageId: number): NowPlaying {
+  return {
+    chatId: 7, messageId, title: 'Espresso', performer: 'Sabrina Carpenter',
+    coverPath: '/data/cover.jpg', path: '/data/a.mp3', durationSec: 175
+  };
+}
+
+export default function dockMiniBarTest() {
+  describe('dockMiniBar', () => {
+    it('没有播放、音乐中心也关着，就是完整四格，展开标志不起作用', 0, (): void => {
+      expect(dockMiniBarState(false, false)).assertEqual(DOCK_FULL);
+      expect(dockMiniBarState(false, true)).assertEqual(DOCK_FULL);
+      // 第三个参数省略时按"关着"算，老调用点行为逐字不变。
+      expect(dockMiniBarState(false, false, false)).assertEqual(DOCK_FULL);
+    });
+
+    // 2026-09-18 用户：「不要播不播的逻辑了，只要开着，那个 minitab 就不关」。
+    // 开关开着时这个判据**完全不看播放状态**——下面两组的唯一差别就是在不在播，
+    // 结果必须一模一样。
+    it('音乐中心开着时，播放状态不参与判断', 0, (): void => {
+      expect(dockMiniBarState(false, false, true)).assertEqual(DOCK_COLLAPSED);
+      expect(dockMiniBarState(true, false, true)).assertEqual(DOCK_COLLAPSED);
+      expect(dockMiniBarState(false, true, true)).assertEqual(DOCK_EXPANDED);
+      expect(dockMiniBarState(true, true, true)).assertEqual(DOCK_EXPANDED);
+    });
+
+    it('音乐中心开着时，球常驻且页签一格不少', 0, (): void => {
+      expect(dockShowsAlbumBall(dockMiniBarState(false, false, true))).assertTrue();
+      // 球是加出来的，不是换掉页签。
+      expect(dockShowsTabs(dockMiniBarState(false, false, true))).assertTrue();
+      // 展开过就一直展开，曲子放完也不收（这正是"就不关"）。
+      expect(dockShowsPlayer(dockMiniBarState(false, true, true))).assertTrue();
+    });
+
+    it('在播放：默认折叠，展开后是展开态', 0, (): void => {
+      expect(dockMiniBarState(true, false)).assertEqual(DOCK_COLLAPSED);
+      expect(dockMiniBarState(true, true)).assertEqual(DOCK_EXPANDED);
+    });
+
+    // 这条是这个判据存在的主要理由：播放一停必须掉回四格，否则底栏永远停在
+    // 「只有一个头像」，用户再也点不到会话页签。
+    it('播放结束时即使还标着展开，也必须掉出展开态', 0, (): void => {
+      expect(dockMiniBarState(false, true)).assertEqual(DOCK_FULL);
+      expect(dockShowsTabs(dockMiniBarState(false, true))).assertTrue();
+      // 这条护栏只管**开关关着**的那一半：开着时是用户自己要的常驻，不掉。
+    });
+
+    it('三态各画什么', 0, (): void => {
+      expect(dockShowsTabs(DOCK_FULL)).assertTrue();
+      expect(dockShowsAlbumBall(DOCK_FULL)).assertFalse();
+      expect(dockShowsPlayer(DOCK_FULL)).assertFalse();
+
+      expect(dockShowsTabs(DOCK_COLLAPSED)).assertTrue();
+      expect(dockShowsAlbumBall(DOCK_COLLAPSED)).assertTrue();
+      expect(dockShowsPlayer(DOCK_COLLAPSED)).assertFalse();
+
+      expect(dockShowsTabs(DOCK_EXPANDED)).assertFalse();
+      expect(dockShowsAlbumBall(DOCK_EXPANDED)).assertFalse();
+      expect(dockShowsPlayer(DOCK_EXPANDED)).assertTrue();
+    });
+
+    // HDS 的 systemMaterialEffect 只收 materialLevel，我们那四档和它一一对应；
+    // 接上之后用户在「外观」里调的光感等级对 HDS 自己画的栏也生效。
+    it('光感四档一一映射到 HDS 的材质等级', 0, (): void => {
+      expect(hdsLevelIndexOf(LIGHT_EXQUISITE)).assertEqual(HDS_LEVEL_EXQUISITE);
+      expect(hdsLevelIndexOf(LIGHT_GENTLE)).assertEqual(HDS_LEVEL_GENTLE);
+      expect(hdsLevelIndexOf(LIGHT_SMOOTH)).assertEqual(HDS_LEVEL_SMOOTH);
+      expect(hdsLevelIndexOf(LIGHT_ADAPTIVE)).assertEqual(HDS_LEVEL_ADAPTIVE);
+    });
+
+    it('非法档位落到自适应', 0, (): void => {
+      expect(hdsLevelIndexOf('')).assertEqual(HDS_LEVEL_ADAPTIVE);
+      expect(hdsLevelIndexOf('nonsense')).assertEqual(HDS_LEVEL_ADAPTIVE);
+    });
+
+    it('曲名兜底到文件名', 0, (): void => {
+      expect(nowPlayingTitle('Espresso', 'a.mp3')).assertEqual('Espresso');
+      expect(nowPlayingTitle('   ', 'a.mp3')).assertEqual('a.mp3');
+      expect(nowPlayingTitle('', '')).assertEqual('');
+    });
+  });
+
+  describe('nowPlayingChannel', () => {
+    beforeEach((): void => { resetNowPlayingChannel(); });
+
+    // 底栏是在播放开始很久之后才挂上来的（用户从会话页退回列表），所以订阅
+    // 必须立刻回灌当前值，否则退回列表时播放条是空的。
+    it('订阅时立刻收到当前值', 0, (): void => {
+      publishNowPlaying(track(11));
+      let got: NowPlaying | null = null;
+      subscribeNowPlaying((s: NowPlaying | null): void => { got = s; });
+      expect(got !== null).assertTrue();
+      expect(currentNowPlaying()?.messageId).assertEqual(11);
+    });
+
+    it('退订之后不再收到', 0, (): void => {
+      let hits = 0;
+      const off = subscribeNowPlaying((): void => { hits++; });
+      expect(hits).assertEqual(1);
+      off();
+      publishNowPlaying(track(12));
+      expect(hits).assertEqual(1);
+    });
+
+    // 切下一首时旧条目的收尾回调可能晚于新条目的发布到达；无条件清会把刚
+    // 开始播的那一首一起抹掉，底栏于是闪一下变空。
+    it('只有当前那条能清空自己', 0, (): void => {
+      publishNowPlaying(track(11));
+      clearNowPlaying(10);
+      expect(currentNowPlaying()?.messageId).assertEqual(11);
+      clearNowPlaying(11);
+      expect(currentNowPlaying() === null).assertTrue();
+    });
+  });
+}

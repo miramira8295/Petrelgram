@@ -1,0 +1,308 @@
+import { ChatListPublicationMode } from '../main/ets/store/ChatListSubscription';
+import { afterEach, describe, expect, it } from '@ohos/hypium';
+import {
+  CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, ChatListFreeze, chatOrderUnchanged,
+  contentOnlyUpdate, chatListPageCanRun, chatListPublicationMode
+} from '../main/ets/pages/chatlist/ChatListFreeze';
+import { ChatEntry } from '../main/ets/store/ChatEntry';
+
+// 闸门只看「发布还是缓冲」，不看内容——空数组的身份就足够断言。
+function snapshot(): ChatEntry[] {
+  return [] as ChatEntry[];
+}
+
+// chatOrderUnchanged 只读 id 和长度，其余字段给合法默认值即可。
+function chat(id: number): ChatEntry {
+  return {
+    id, revision: 0, title: `c${id}`, isMuted: false, usesDefaultMute: true,
+    unreadCount: 0, unreadMentionCount: 0, rawUnreadCount: 0, lastReadInboxId: 0,
+    lastMessageText: '', lastMessageThumb: '', lastMessageDate: 0, lastMessageId: 0, lastSenderName: '',
+    photoFileId: 0, avatarPath: '', initials: '', autoDeleteTime: 0,
+    kind: 'supergroup', isMarkedUnread: false, actionBar: '', actionBarCanUnarchive: false,
+    canDeleteOnlyForSelf: false, canDeleteForAllUsers: false,
+    isSavedMessages: false, background: null, themeName: '',
+    liveGroupCallId: 0, isLive: false, isRtmpLive: false
+  };
+}
+
+function chats(ids: number[]): ChatEntry[] {
+  return ids.map((id: number): ChatEntry => chat(id));
+}
+
+function openAllGates(): void {
+  AppStorage.setOrCreate('appIsForeground', true);
+  AppStorage.setOrCreate(CHAT_MENU_OPEN, false);
+  AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, false);
+}
+
+export default function chatListFreezeTest() {
+  describe('chatListBackgroundPublication', () => {
+    afterEach((): void => { openAllGates(); });
+
+    it('普通可见列表批量，覆盖或非活跃列表暂停准备快照', 0, () => {
+      openAllGates();
+      expect(chatListPublicationMode(true, true, false, false, false)).assertEqual(ChatListPublicationMode.Batched);
+      expect(chatListPublicationMode(true, false, false, false, false)).assertEqual(ChatListPublicationMode.Paused);
+      expect(chatListPublicationMode(false, true, false, false, false)).assertEqual(ChatListPublicationMode.Paused);
+    });
+
+    it('返回内容旁路及时但不能穿透触摸菜单滚动和后台', 0, () => {
+      openAllGates();
+      expect(chatListPublicationMode(true, false, false, true, false)).assertEqual(ChatListPublicationMode.Immediate);
+      AppStorage.setOrCreate(CHAT_MENU_OPEN, true);
+      expect(chatListPublicationMode(true, false, false, true, false)).assertEqual(ChatListPublicationMode.Paused);
+      openAllGates();
+      AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, true);
+      expect(chatListPublicationMode(true, false, false, true, false)).assertEqual(ChatListPublicationMode.Paused);
+      openAllGates();
+      expect(chatListPublicationMode(true, false, true, true, false)).assertEqual(ChatListPublicationMode.Paused);
+      AppStorage.setOrCreate('appIsForeground', false);
+      expect(chatListPublicationMode(true, false, false, true, false)).assertEqual(ChatListPublicationMode.Paused);
+    });
+
+    it('邻居页首份内容可预载但不能穿透后台', 0, () => {
+      openAllGates();
+      AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, true);
+      expect(chatListPublicationMode(false, false, false, false, true)).assertEqual(ChatListPublicationMode.Immediate);
+      AppStorage.setOrCreate('appIsForeground', false);
+      expect(chatListPublicationMode(false, false, false, false, true)).assertEqual(ChatListPublicationMode.Paused);
+    });
+
+    it('后台期间普通列表和独立归档的打开渲染闸均不能发布', 0, (): void => {
+      openAllGates();
+      AppStorage.setOrCreate('appIsForeground', false);
+      const main = new ChatListFreeze();
+      const archive = new ChatListFreeze();
+      expect(main.accept(chats([1]), true) === null).assertTrue();
+      expect(archive.accept(chats([2]), true) === null).assertTrue();
+    });
+
+    it('后台首次非空快照不能通过forceInitial穿透', 0, (): void => {
+      openAllGates();
+      AppStorage.setOrCreate('appIsForeground', false);
+      const gate = new ChatListFreeze();
+      const list = chats([1]);
+      expect(gate.accept(list, true, true) === null).assertTrue();
+      AppStorage.setOrCreate('appIsForeground', true);
+      expect(gate.flush() === list).assertTrue();
+    });
+
+    it('转场旁路在后台不能取走缓冲快照', 0, (): void => {
+      openAllGates();
+      const gate = new ChatListFreeze();
+      const list = chats([1]);
+      gate.accept(list, false);
+      AppStorage.setOrCreate('appIsForeground', false);
+      expect(gate.flush() === null).assertTrue();
+      expect(gate.flush() === null).assertTrue();
+      AppStorage.setOrCreate('appIsForeground', true);
+      expect(gate.flush() === list).assertTrue();
+    });
+
+    it('后台连续更新合并为最新快照且恢复只消费一次', 0, (): void => {
+      openAllGates();
+      AppStorage.setOrCreate('appIsForeground', false);
+      const gate = new ChatListFreeze();
+      gate.accept(chats([1]), true);
+      gate.accept(chats([2]), true);
+      const latest = chats([3, 2, 1]);
+      gate.accept(latest, true);
+      AppStorage.setOrCreate('appIsForeground', true);
+      expect(gate.flush() === latest).assertTrue();
+      expect(gate.flush() === null).assertTrue();
+    });
+
+    it('恢复前台不会让隐藏页签的新更新绕过renderActive', 0, (): void => {
+      openAllGates();
+      AppStorage.setOrCreate('appIsForeground', false);
+      const gate = new ChatListFreeze();
+      gate.accept(chats([1]), true);
+      AppStorage.setOrCreate('appIsForeground', true);
+      const latest = chats([2]);
+      expect(gate.accept(latest, false) === null).assertTrue();
+      expect(gate.flush() === latest).assertTrue();
+    });
+
+    it('恢复前台仍保留菜单和触摸发布限制', 0, (): void => {
+      openAllGates();
+      const gate = new ChatListFreeze();
+      AppStorage.setOrCreate('appIsForeground', false);
+      gate.accept(chats([1]), true);
+      AppStorage.setOrCreate('appIsForeground', true);
+      AppStorage.setOrCreate(CHAT_MENU_OPEN, true);
+      expect(gate.accept(chats([2]), true) === null).assertTrue();
+      AppStorage.setOrCreate(CHAT_MENU_OPEN, false);
+      AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, true);
+      expect(gate.accept(chats([3]), true) === null).assertTrue();
+      AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, false);
+      const latest = chats([4]);
+      expect(gate.accept(latest, true) === latest).assertTrue();
+      expect(gate.flush() === null).assertTrue();
+    });
+
+    it('已安排的延迟恢复必须重读前后台状态', 0, (): void => {
+      openAllGates();
+      expect(chatListPageCanRun(true, true)).assertTrue();
+      const delayedResume = (): boolean => chatListPageCanRun(true, true);
+      AppStorage.setOrCreate('appIsForeground', false);
+      expect(delayedResume()).assertFalse();
+      AppStorage.setOrCreate('appIsForeground', true);
+      expect(delayedResume()).assertTrue();
+    });
+
+    it('恢复前台仍不能打开被覆盖或已销毁页面的发布闸', 0, (): void => {
+      openAllGates();
+      expect(chatListPageCanRun(true, false)).assertFalse();
+      expect(chatListPageCanRun(false, true)).assertFalse();
+      expect(chatListPageCanRun(false, false)).assertFalse();
+      expect(chatListPageCanRun(true, true)).assertTrue();
+    });
+  });
+
+  describe('chatListFreeze', () => {
+    it('闸全开时直通', 0, (): void => {
+      openAllGates();
+      const gate = new ChatListFreeze();
+      const list = snapshot();
+      expect(gate.accept(list, true) === list).assertTrue();
+      // 直通后没有积压。
+      expect(gate.flush() === null).assertTrue();
+    });
+    it('触摸按住时缓冲，flush 只吐最新一份', 0, (): void => {
+      openAllGates();
+      AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, true);
+      const gate = new ChatListFreeze();
+      const first = snapshot();
+      const second = snapshot();
+      expect(gate.accept(first, true) === null).assertTrue();
+      expect(gate.accept(second, true) === null).assertTrue();
+      AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, false);
+      expect(gate.flush() === second).assertTrue();
+      expect(gate.flush() === null).assertTrue();
+    });
+    it('菜单开着时同样缓冲（原有行为不回归）', 0, (): void => {
+      openAllGates();
+      AppStorage.setOrCreate(CHAT_MENU_OPEN, true);
+      const gate = new ChatListFreeze();
+      expect(gate.accept(snapshot(), true) === null).assertTrue();
+      AppStorage.setOrCreate(CHAT_MENU_OPEN, false);
+      expect(gate.flush() !== null).assertTrue();
+    });
+    it('开闸后的 accept 直通并清掉积压', 0, (): void => {
+      openAllGates();
+      AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, true);
+      const gate = new ChatListFreeze();
+      gate.accept(snapshot(), true);
+      AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, false);
+      const live = snapshot();
+      expect(gate.accept(live, true) === live).assertTrue();
+      expect(gate.flush() === null).assertTrue();
+    });
+    it('renderActive 为 false 时不受触摸闸影响照样缓冲', 0, (): void => {
+      openAllGates();
+      const gate = new ChatListFreeze();
+      expect(gate.accept(snapshot(), false) === null).assertTrue();
+      expect(gate.flush() !== null).assertTrue();
+    });
+    it('相邻页首份非空内容可穿过渲染闸和触摸闸', 0, (): void => {
+      openAllGates();
+      AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, true);
+      const gate = new ChatListFreeze();
+      const initial = chats([7, 8]);
+      expect(gate.accept(initial, false, true) === initial).assertTrue();
+      expect(gate.flush() === null).assertTrue();
+      openAllGates();
+    });
+  });
+
+  // issue #159 的返回转场旁路要靠这个判断决定"能不能在闸关着时放行"：
+  // 只有内容变了的快照可以直接发；顺序变了的必须等闸开，否则重排动画正好
+  // 压在返回转场那 640ms 上——那就是这道闸当初存在的理由。
+  describe('chatOrderUnchanged', () => {
+    it('同一串 id 同一个顺序 ⇒ 只是内容变了', 0, (): void => {
+      const before = chats([7, 8, 9]);
+      const after = chats([7, 8, 9]);
+      after[1].unreadCount = 12;
+      after[1].lastMessageText = 'hi';
+      // 内容随便怎么变都不影响判断：它只问身份顺序。
+      expect(chatOrderUnchanged(before, after)).assertTrue();
+    });
+    it('置顶/新消息导致重排 ⇒ 顺序变了', 0, (): void => {
+      expect(chatOrderUnchanged(chats([7, 8, 9]), chats([9, 7, 8]))).assertFalse();
+    });
+    it('长度不同 ⇒ 顺序变了（新会话进来 / 会话被删）', 0, (): void => {
+      expect(chatOrderUnchanged(chats([7, 8]), chats([7, 8, 9]))).assertFalse();
+      expect(chatOrderUnchanged(chats([7, 8, 9]), chats([7, 8]))).assertFalse();
+    });
+    it('两边都空 ⇒ 算没变（首帧空列表不该被当成重排）', 0, (): void => {
+      expect(chatOrderUnchanged([], [])).assertTrue();
+    });
+    it('同一批 id 换了位置但长度相同 ⇒ 仍然算变了', 0, (): void => {
+      // 只比长度会漏掉这一档，钉住逐项比较。
+      expect(chatOrderUnchanged(chats([1, 2]), chats([2, 1]))).assertFalse();
+    });
+  });
+
+  // 用户报「有的时候聊天数字消失得快，有的时候又要等一会」。快慢的分岔是：
+  // 顺序一变，整份快照被扣住等闸开，刚清零的角标也跟着等。这组用例钉住
+  // "内容和顺序拆开走"。
+  describe('contentOnlyUpdate', () => {
+    it('顺序变了也照样把新内容贴到旧顺序上', 0, (): void => {
+      const current = chats([7, 8, 9]);
+      // 新快照里 8 冒到最前（别的会话来了新消息），同时 9 的角标清零了。
+      const next = chats([8, 7, 9]);
+      next[2].revision = 1;
+      next[2].unreadCount = 0;
+      const merged = contentOnlyUpdate(current, next);
+      expect(merged !== null).assertTrue();
+      const out = merged as ChatEntry[];
+      // 顺序仍是旧的 7,8,9——重排留给闸开。
+      expect(out[0].id).assertEqual(7);
+      expect(out[1].id).assertEqual(8);
+      expect(out[2].id).assertEqual(9);
+      // 但 9 换成了新的那份，角标已经是 0。
+      expect(out[2].revision).assertEqual(1);
+      expect(out[2].unreadCount).assertEqual(0);
+    });
+
+    it('没有任何内容变化 ⇒ null，不做无谓的发布', 0, (): void => {
+      // 只是顺序变了（别人来了新消息，但我关心的那几行内容没动）。
+      expect(contentOnlyUpdate(chats([7, 8, 9]), chats([9, 8, 7])) === null).assertTrue();
+    });
+
+    it('revision 没动的行原样留着（同一个对象）', 0, (): void => {
+      const current = chats([7, 8]);
+      const next = chats([8, 7]);
+      next[1].revision = 5;
+      const out = contentOnlyUpdate(current, next) as ChatEntry[];
+      // 7 换成了新的（revision 变了），8 还是原来那个。
+      expect(out[0].revision).assertEqual(5);
+      expect(out[1] === current[1]).assertTrue();
+    });
+
+    it('不在新快照里的会话原样留着，不被删掉', 0, (): void => {
+      const current = chats([7, 8, 9]);
+      const next = chats([8, 9]);
+      next[0].revision = 3;
+      const out = contentOnlyUpdate(current, next) as ChatEntry[];
+      expect(out.length).assertEqual(3);
+      expect(out[0].id).assertEqual(7);
+      // 8 是新的那份。
+      expect(out[1].revision).assertEqual(3);
+    });
+
+    it('新快照里多出来的会话这一轮不进来——那属于重排，等闸开', 0, (): void => {
+      const current = chats([7]);
+      const next = chats([99, 7]);
+      next[1].revision = 2;
+      const out = contentOnlyUpdate(current, next) as ChatEntry[];
+      expect(out.length).assertEqual(1);
+      expect(out[0].id).assertEqual(7);
+    });
+
+    it('任一侧为空 ⇒ null（首帧还没有行可贴）', 0, (): void => {
+      expect(contentOnlyUpdate([], chats([7])) === null).assertTrue();
+      expect(contentOnlyUpdate(chats([7]), []) === null).assertTrue();
+    });
+  });
+}

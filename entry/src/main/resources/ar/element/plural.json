@@ -1,0 +1,1579 @@
+{
+  "plural": [
+    {
+      "name": "duration_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d يوم"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أيام"
+        },
+        {
+          "quantity": "many",
+          "value": "%d يومًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d يومًا"
+        }
+      ]
+    },
+    {
+      "name": "duration_days_premium",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d يوم Premium"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أيام Premium"
+        },
+        {
+          "quantity": "many",
+          "value": "%d يومًا Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d يومًا Premium"
+        }
+      ]
+    },
+    {
+      "name": "duration_months",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d شهر"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أشهر"
+        },
+        {
+          "quantity": "many",
+          "value": "%d شهرًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d شهرًا"
+        }
+      ]
+    },
+    {
+      "name": "duration_months_premium",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d شهر Premium"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أشهر Premium"
+        },
+        {
+          "quantity": "many",
+          "value": "%d شهرًا Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d شهرًا Premium"
+        }
+      ]
+    },
+    {
+      "name": "gift_stars_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d نجمة"
+        },
+        {
+          "quantity": "few",
+          "value": "%d نجوم"
+        },
+        {
+          "quantity": "many",
+          "value": "%d نجمًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d نجمًا"
+        }
+      ]
+    },
+    {
+      "name": "gift_worth_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "بقيمة %d نجمة"
+        },
+        {
+          "quantity": "few",
+          "value": "بقيمة %d نجوم"
+        },
+        {
+          "quantity": "many",
+          "value": "بقيمة %d نجمًا"
+        },
+        {
+          "quantity": "other",
+          "value": "بقيمة %d نجمًا"
+        }
+      ]
+    },
+    {
+      "name": "live_media_in_room",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d شخص في غرفة البث"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أشخاص في غرفة البث"
+        },
+        {
+          "quantity": "many",
+          "value": "%d شخصًا في غرفة البث"
+        },
+        {
+          "quantity": "other",
+          "value": "%d شخصًا في غرفة البث"
+        }
+      ]
+    },
+    {
+      "name": "live_status_watching",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d شخص يشاهد الآن"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أشخاص يشاهدون الآن"
+        },
+        {
+          "quantity": "many",
+          "value": "%d شخصًا يشاهدون الآن"
+        },
+        {
+          "quantity": "other",
+          "value": "%d شخصًا يشاهدون الآن"
+        }
+      ]
+    },
+    {
+      "name": "prize_premium_months",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d شهر Premium"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أشهر Premium"
+        },
+        {
+          "quantity": "many",
+          "value": "%d شهرًا Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d شهرًا Premium"
+        }
+      ]
+    },
+    {
+      "name": "prize_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d نجمة"
+        },
+        {
+          "quantity": "few",
+          "value": "%d نجوم"
+        },
+        {
+          "quantity": "many",
+          "value": "%d نجمًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d نجمًا"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d يوم"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أيام"
+        },
+        {
+          "quantity": "many",
+          "value": "%d يومًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d يومًا"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ساعة"
+        },
+        {
+          "quantity": "few",
+          "value": "%d ساعات"
+        },
+        {
+          "quantity": "many",
+          "value": "%d ساعة"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ساعة"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d دقيقة"
+        },
+        {
+          "quantity": "few",
+          "value": "%d دقائق"
+        },
+        {
+          "quantity": "many",
+          "value": "%d دقيقة"
+        },
+        {
+          "quantity": "other",
+          "value": "%d دقيقة"
+        }
+      ]
+    },
+    {
+      "name": "user_status_days_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "قبل %d يوم"
+        },
+        {
+          "quantity": "few",
+          "value": "قبل %d أيام"
+        },
+        {
+          "quantity": "many",
+          "value": "قبل %d يومًا"
+        },
+        {
+          "quantity": "other",
+          "value": "قبل %d يومًا"
+        }
+      ]
+    },
+    {
+      "name": "user_status_hours_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "قبل %d ساعة"
+        },
+        {
+          "quantity": "few",
+          "value": "قبل %d ساعات"
+        },
+        {
+          "quantity": "many",
+          "value": "قبل %d ساعة"
+        },
+        {
+          "quantity": "other",
+          "value": "قبل %d ساعة"
+        }
+      ]
+    },
+    {
+      "name": "user_status_minutes_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "قبل %d دقيقة"
+        },
+        {
+          "quantity": "few",
+          "value": "قبل %d دقائق"
+        },
+        {
+          "quantity": "many",
+          "value": "قبل %d دقيقة"
+        },
+        {
+          "quantity": "other",
+          "value": "قبل %d دقيقة"
+        }
+      ]
+    },
+    {
+      "name": "sticker_set_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ملصق"
+        },
+        {
+          "quantity": "few",
+          "value": "%d ملصقات"
+        },
+        {
+          "quantity": "many",
+          "value": "%d ملصقًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ملصقًا"
+        }
+      ]
+    },
+    {
+      "name": "cw_disconnect_all_confirm",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "سيُقطع تسجيل الدخول على %d موقع."
+        },
+        {
+          "quantity": "few",
+          "value": "سيُقطع تسجيل الدخول على %d مواقع."
+        },
+        {
+          "quantity": "many",
+          "value": "سيُقطع تسجيل الدخول على %d موقعًا."
+        },
+        {
+          "quantity": "other",
+          "value": "سيُقطع تسجيل الدخول على %d موقعًا."
+        }
+      ]
+    },
+    {
+      "name": "pe_group_exceptions_kept",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "احتفظ الخادم بـ %d استثناء للمجموعات"
+        },
+        {
+          "quantity": "few",
+          "value": "احتفظ الخادم بـ %d استثناءات للمجموعات"
+        },
+        {
+          "quantity": "many",
+          "value": "احتفظ الخادم بـ %d استثناءً للمجموعات"
+        },
+        {
+          "quantity": "other",
+          "value": "احتفظ الخادم بـ %d استثناءً للمجموعات"
+        }
+      ]
+    },
+    {
+      "name": "storage_file_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ملف"
+        },
+        {
+          "quantity": "few",
+          "value": "%d ملفات"
+        },
+        {
+          "quantity": "many",
+          "value": "%d ملفًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ملفًا"
+        }
+      ]
+    },
+    {
+      "name": "bu_account_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d حساب"
+        },
+        {
+          "quantity": "few",
+          "value": "%d حسابات"
+        },
+        {
+          "quantity": "many",
+          "value": "%d حسابًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d حسابًا"
+        }
+      ]
+    },
+    {
+      "name": "calls_about_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "حوالي %d سجل"
+        },
+        {
+          "quantity": "few",
+          "value": "حوالي %d سجلات"
+        },
+        {
+          "quantity": "many",
+          "value": "حوالي %d سجلًا"
+        },
+        {
+          "quantity": "other",
+          "value": "حوالي %d سجلًا"
+        }
+      ]
+    },
+    {
+      "name": "calls_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d سجل"
+        },
+        {
+          "quantity": "few",
+          "value": "%d سجلات"
+        },
+        {
+          "quantity": "many",
+          "value": "%d سجلًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d سجلًا"
+        }
+      ]
+    },
+    {
+      "name": "calls_participants",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d شخص"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أشخاص"
+        },
+        {
+          "quantity": "many",
+          "value": "%d شخصًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d شخصًا"
+        }
+      ]
+    },
+    {
+      "name": "cf_about_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "حوالي %d محادثة"
+        },
+        {
+          "quantity": "few",
+          "value": "حوالي %d محادثات"
+        },
+        {
+          "quantity": "many",
+          "value": "حوالي %d محادثة"
+        },
+        {
+          "quantity": "other",
+          "value": "حوالي %d محادثة"
+        }
+      ]
+    },
+    {
+      "name": "cf_delete_and_leave",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "حذف ومغادرة %d محادثة"
+        },
+        {
+          "quantity": "few",
+          "value": "حذف ومغادرة %d محادثات"
+        },
+        {
+          "quantity": "many",
+          "value": "حذف ومغادرة %d محادثة"
+        },
+        {
+          "quantity": "other",
+          "value": "حذف ومغادرة %d محادثة"
+        }
+      ]
+    },
+    {
+      "name": "fl_new_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d محادثة جديدة"
+        },
+        {
+          "quantity": "few",
+          "value": "%d محادثات جديدة"
+        },
+        {
+          "quantity": "many",
+          "value": "%d محادثة جديدة"
+        },
+        {
+          "quantity": "other",
+          "value": "%d محادثة جديدة"
+        }
+      ]
+    },
+    {
+      "name": "fl_selected_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "تم تحديد %d محادثة"
+        },
+        {
+          "quantity": "few",
+          "value": "تم تحديد %d محادثات"
+        },
+        {
+          "quantity": "many",
+          "value": "تم تحديد %d محادثة"
+        },
+        {
+          "quantity": "other",
+          "value": "تم تحديد %d محادثة"
+        }
+      ]
+    },
+    {
+      "name": "fl_add_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "إضافة %d محادثة"
+        },
+        {
+          "quantity": "few",
+          "value": "إضافة %d محادثات"
+        },
+        {
+          "quantity": "many",
+          "value": "إضافة %d محادثة"
+        },
+        {
+          "quantity": "other",
+          "value": "إضافة %d محادثة"
+        }
+      ]
+    },
+    {
+      "name": "ds_cached_files",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ملف مخزّن مؤقتًا"
+        },
+        {
+          "quantity": "few",
+          "value": "%d ملفات مخزّنة مؤقتًا"
+        },
+        {
+          "quantity": "many",
+          "value": "%d ملفًا مخزّنًا مؤقتًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ملفًا مخزّنًا مؤقتًا"
+        }
+      ]
+    },
+    {
+      "name": "ct_result_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d شخص"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أشخاص"
+        },
+        {
+          "quantity": "many",
+          "value": "%d شخصًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d شخصًا"
+        }
+      ]
+    },
+    {
+      "name": "ng_max_members",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "يمكن للمجموعة الأساسية اختيار %d عضو كحد أقصى"
+        },
+        {
+          "quantity": "few",
+          "value": "يمكن للمجموعة الأساسية اختيار %d أعضاء كحد أقصى"
+        },
+        {
+          "quantity": "many",
+          "value": "يمكن للمجموعة الأساسية اختيار %d عضوًا كحد أقصى"
+        },
+        {
+          "quantity": "other",
+          "value": "يمكن للمجموعة الأساسية اختيار %d عضوًا كحد أقصى"
+        }
+      ]
+    },
+    {
+      "name": "ng_member_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d عضو"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أعضاء"
+        },
+        {
+          "quantity": "many",
+          "value": "%d عضوًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d عضوًا"
+        }
+      ]
+    },
+    {
+      "name": "ng_people_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d شخص"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أشخاص"
+        },
+        {
+          "quantity": "many",
+          "value": "%d شخصًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d شخصًا"
+        }
+      ]
+    },
+    {
+      "name": "ps_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d يوم"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أيام"
+        },
+        {
+          "quantity": "many",
+          "value": "%d يومًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d يومًا"
+        }
+      ]
+    },
+    {
+      "name": "px_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d وكيل"
+        },
+        {
+          "quantity": "few",
+          "value": "%d وكلاء"
+        },
+        {
+          "quantity": "many",
+          "value": "%d وكيلًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d وكيلًا"
+        }
+      ]
+    },
+    {
+      "name": "fe_chosen_limit",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "لا يمكن أن تتجاوز المحادثات المختارة فرديًا %d محادثة"
+        },
+        {
+          "quantity": "few",
+          "value": "لا يمكن أن تتجاوز المحادثات المختارة فرديًا %d محادثات"
+        },
+        {
+          "quantity": "many",
+          "value": "لا يمكن أن تتجاوز المحادثات المختارة فرديًا %d محادثة"
+        },
+        {
+          "quantity": "other",
+          "value": "لا يمكن أن تتجاوز المحادثات المختارة فرديًا %d محادثة"
+        }
+      ]
+    },
+    {
+      "name": "fe_removed_invalid",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "أُزيلت %d محادثة غير موجودة في قائمة المحادثات"
+        },
+        {
+          "quantity": "few",
+          "value": "أُزيلت %d محادثات غير موجودة في قائمة المحادثات"
+        },
+        {
+          "quantity": "many",
+          "value": "أُزيلت %d محادثة غير موجودة في قائمة المحادثات"
+        },
+        {
+          "quantity": "other",
+          "value": "أُزيلت %d محادثة غير موجودة في قائمة المحادثات"
+        }
+      ]
+    },
+    {
+      "name": "fe_pick_limit",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "حدد %d محادثة كحد أقصى"
+        },
+        {
+          "quantity": "few",
+          "value": "حدد %d محادثات كحد أقصى"
+        },
+        {
+          "quantity": "many",
+          "value": "حدد %d محادثة كحد أقصى"
+        },
+        {
+          "quantity": "other",
+          "value": "حدد %d محادثة كحد أقصى"
+        }
+      ]
+    },
+    {
+      "name": "fe_preview_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "من المتوقع أن يشمل حوالي %d محادثة"
+        },
+        {
+          "quantity": "few",
+          "value": "من المتوقع أن يشمل حوالي %d محادثات"
+        },
+        {
+          "quantity": "many",
+          "value": "من المتوقع أن يشمل حوالي %d محادثة"
+        },
+        {
+          "quantity": "other",
+          "value": "من المتوقع أن يشمل حوالي %d محادثة"
+        }
+      ]
+    },
+    {
+      "name": "fe_selected_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "تم تحديد %d"
+        },
+        {
+          "quantity": "few",
+          "value": "تم تحديد %d"
+        },
+        {
+          "quantity": "many",
+          "value": "تم تحديد %d"
+        },
+        {
+          "quantity": "other",
+          "value": "تم تحديد %d"
+        }
+      ]
+    },
+    {
+      "name": "mp_item_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d عنصر"
+        },
+        {
+          "quantity": "few",
+          "value": "%d عناصر"
+        },
+        {
+          "quantity": "many",
+          "value": "%d عنصرًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d عنصرًا"
+        }
+      ]
+    },
+    {
+      "name": "fw_forwarded_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "أُعيد توجيه %d رسالة"
+        },
+        {
+          "quantity": "few",
+          "value": "أُعيد توجيه %d رسائل"
+        },
+        {
+          "quantity": "many",
+          "value": "أُعيد توجيه %d رسالة"
+        },
+        {
+          "quantity": "other",
+          "value": "أُعيد توجيه %d رسالة"
+        }
+      ]
+    },
+    {
+      "name": "fw_forward_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "إعادة توجيه %d رسالة"
+        },
+        {
+          "quantity": "few",
+          "value": "إعادة توجيه %d رسائل"
+        },
+        {
+          "quantity": "many",
+          "value": "إعادة توجيه %d رسالة"
+        },
+        {
+          "quantity": "other",
+          "value": "إعادة توجيه %d رسالة"
+        }
+      ]
+    },
+    {
+      "name": "poll_voters",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "شارك %d شخص"
+        },
+        {
+          "quantity": "few",
+          "value": "شارك %d أشخاص"
+        },
+        {
+          "quantity": "many",
+          "value": "شارك %d شخصًا"
+        },
+        {
+          "quantity": "other",
+          "value": "شارك %d شخصًا"
+        }
+      ]
+    },
+    {
+      "name": "gw_winners_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d فائز"
+        },
+        {
+          "quantity": "few",
+          "value": "%d فائزون"
+        },
+        {
+          "quantity": "many",
+          "value": "%d فائزًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d فائزًا"
+        }
+      ]
+    },
+    {
+      "name": "gw_unclaimed_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d جائزة غير مستلمة"
+        },
+        {
+          "quantity": "few",
+          "value": "%d جوائز غير مستلمة"
+        },
+        {
+          "quantity": "many",
+          "value": "%d جائزة غير مستلمة"
+        },
+        {
+          "quantity": "other",
+          "value": "%d جائزة غير مستلمة"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "موقع مباشر · %d ساعة"
+        },
+        {
+          "quantity": "few",
+          "value": "موقع مباشر · %d ساعات"
+        },
+        {
+          "quantity": "many",
+          "value": "موقع مباشر · %d ساعة"
+        },
+        {
+          "quantity": "other",
+          "value": "موقع مباشر · %d ساعة"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "موقع مباشر · %d دقيقة"
+        },
+        {
+          "quantity": "few",
+          "value": "موقع مباشر · %d دقائق"
+        },
+        {
+          "quantity": "many",
+          "value": "موقع مباشر · %d دقيقة"
+        },
+        {
+          "quantity": "other",
+          "value": "موقع مباشر · %d دقيقة"
+        }
+      ]
+    },
+    {
+      "name": "loc_accuracy",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "بدقة تصل إلى حوالي %d متر"
+        },
+        {
+          "quantity": "few",
+          "value": "بدقة تصل إلى حوالي %d أمتار"
+        },
+        {
+          "quantity": "many",
+          "value": "بدقة تصل إلى حوالي %d مترًا"
+        },
+        {
+          "quantity": "other",
+          "value": "بدقة تصل إلى حوالي %d مترًا"
+        }
+      ]
+    },
+    {
+      "name": "loc_proximity",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "نطاق التنبيه %d متر"
+        },
+        {
+          "quantity": "few",
+          "value": "نطاق التنبيه %d أمتار"
+        },
+        {
+          "quantity": "many",
+          "value": "نطاق التنبيه %d مترًا"
+        },
+        {
+          "quantity": "other",
+          "value": "نطاق التنبيه %d مترًا"
+        }
+      ]
+    },
+    {
+      "name": "ft_topic_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d موضوع"
+        },
+        {
+          "quantity": "few",
+          "value": "%d موضوعات"
+        },
+        {
+          "quantity": "many",
+          "value": "%d موضوعًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d موضوعًا"
+        }
+      ]
+    },
+    {
+      "name": "mb_comments_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d تعليق"
+        },
+        {
+          "quantity": "few",
+          "value": "%d تعليقات"
+        },
+        {
+          "quantity": "many",
+          "value": "%d تعليقًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d تعليقًا"
+        }
+      ]
+    },
+    {
+      "name": "lv_new_interactions",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d تفاعل جديد"
+        },
+        {
+          "quantity": "few",
+          "value": "%d تفاعلات جديدة"
+        },
+        {
+          "quantity": "many",
+          "value": "%d تفاعلًا جديدًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d تفاعلًا جديدًا"
+        }
+      ]
+    },
+    {
+      "name": "lv_more_sources",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "و%d مصدر إضافي"
+        },
+        {
+          "quantity": "few",
+          "value": "و%d مصادر إضافية"
+        },
+        {
+          "quantity": "many",
+          "value": "و%d مصدرًا إضافيًا"
+        },
+        {
+          "quantity": "other",
+          "value": "و%d مصدرًا إضافيًا"
+        }
+      ]
+    },
+    {
+      "name": "lv_open_chat_unread",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "افتح تفاعلات البث المباشر، لديك %d رسالة جديدة"
+        },
+        {
+          "quantity": "few",
+          "value": "افتح تفاعلات البث المباشر، لديك %d رسائل جديدة"
+        },
+        {
+          "quantity": "many",
+          "value": "افتح تفاعلات البث المباشر، لديك %d رسالة جديدة"
+        },
+        {
+          "quantity": "other",
+          "value": "افتح تفاعلات البث المباشر، لديك %d رسالة جديدة"
+        }
+      ]
+    },
+    {
+      "name": "lv_view_members",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "عرض %d عضو"
+        },
+        {
+          "quantity": "few",
+          "value": "عرض %d أعضاء"
+        },
+        {
+          "quantity": "many",
+          "value": "عرض %d عضوًا"
+        },
+        {
+          "quantity": "other",
+          "value": "عرض %d عضوًا"
+        }
+      ]
+    },
+    {
+      "name": "cp_live_online_now",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "هناك %d شخص متصل الآن."
+        },
+        {
+          "quantity": "few",
+          "value": "هناك %d أشخاص متصلون الآن."
+        },
+        {
+          "quantity": "many",
+          "value": "هناك %d شخصًا متصلًا الآن."
+        },
+        {
+          "quantity": "other",
+          "value": "هناك %d شخصًا متصلًا الآن."
+        }
+      ]
+    },
+    {
+      "name": "cp_n_online",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d متصل الآن"
+        },
+        {
+          "quantity": "few",
+          "value": "%d متصلون الآن"
+        },
+        {
+          "quantity": "many",
+          "value": "%d متصلًا الآن"
+        },
+        {
+          "quantity": "other",
+          "value": "%d متصلًا الآن"
+        }
+      ]
+    },
+    {
+      "name": "cp_media_skipped",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "فشلت قراءة %d وسيط، وأُرسل الباقي"
+        },
+        {
+          "quantity": "few",
+          "value": "فشلت قراءة %d وسائط، وأُرسل الباقي"
+        },
+        {
+          "quantity": "many",
+          "value": "فشلت قراءة %d وسيطًا، وأُرسل الباقي"
+        },
+        {
+          "quantity": "other",
+          "value": "فشلت قراءة %d وسيطًا، وأُرسل الباقي"
+        }
+      ]
+    },
+    {
+      "name": "cp_copied_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "تم نسخ %d رسالة"
+        },
+        {
+          "quantity": "few",
+          "value": "تم نسخ %d رسائل"
+        },
+        {
+          "quantity": "many",
+          "value": "تم نسخ %d رسالة"
+        },
+        {
+          "quantity": "other",
+          "value": "تم نسخ %d رسالة"
+        }
+      ]
+    },
+    {
+      "name": "cp_n_typing",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d شخص يكتب…"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أشخاص يكتبون…"
+        },
+        {
+          "quantity": "many",
+          "value": "%d شخصًا يكتبون…"
+        },
+        {
+          "quantity": "other",
+          "value": "%d شخصًا يكتبون…"
+        }
+      ]
+    },
+    {
+      "name": "cp_unread_a11y",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d رسالة غير مقروءة، ارجع إلى أحدث الرسائل"
+        },
+        {
+          "quantity": "few",
+          "value": "%d رسائل غير مقروءة، ارجع إلى أحدث الرسائل"
+        },
+        {
+          "quantity": "many",
+          "value": "%d رسالة غير مقروءة، ارجع إلى أحدث الرسائل"
+        },
+        {
+          "quantity": "other",
+          "value": "%d رسالة غير مقروءة، ارجع إلى أحدث الرسائل"
+        }
+      ]
+    },
+    {
+      "name": "sm_paid_per_message",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "تتطلب كل رسالة دفع %d نجمة"
+        },
+        {
+          "quantity": "few",
+          "value": "تتطلب كل رسالة دفع %d نجوم"
+        },
+        {
+          "quantity": "many",
+          "value": "تتطلب كل رسالة دفع %d نجمًا"
+        },
+        {
+          "quantity": "other",
+          "value": "تتطلب كل رسالة دفع %d نجمًا"
+        }
+      ]
+    },
+    {
+      "name": "sm_refunded_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "أُعيدت %d نجمة"
+        },
+        {
+          "quantity": "few",
+          "value": "أُعيدت %d نجوم"
+        },
+        {
+          "quantity": "many",
+          "value": "أُعيد %d نجمًا"
+        },
+        {
+          "quantity": "other",
+          "value": "أُعيد %d نجمًا"
+        }
+      ]
+    },
+    {
+      "name": "sm_channel_dm_price",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "يسمح هذا القناة برسائل خاصة بقيمة %d نجمة لكل رسالة"
+        },
+        {
+          "quantity": "few",
+          "value": "يسمح هذا القناة برسائل خاصة بقيمة %d نجوم لكل رسالة"
+        },
+        {
+          "quantity": "many",
+          "value": "يسمح هذا القناة برسائل خاصة بقيمة %d نجمًا لكل رسالة"
+        },
+        {
+          "quantity": "other",
+          "value": "يسمح هذا القناة برسائل خاصة بقيمة %d نجمًا لكل رسالة"
+        }
+      ]
+    },
+    {
+      "name": "unit_seconds",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ثانية"
+        },
+        {
+          "quantity": "few",
+          "value": "%d ثوانٍ"
+        },
+        {
+          "quantity": "many",
+          "value": "%d ثانية"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ثانية"
+        }
+      ]
+    },
+    {
+      "name": "unit_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d دقيقة"
+        },
+        {
+          "quantity": "few",
+          "value": "%d دقائق"
+        },
+        {
+          "quantity": "many",
+          "value": "%d دقيقة"
+        },
+        {
+          "quantity": "other",
+          "value": "%d دقيقة"
+        }
+      ]
+    },
+    {
+      "name": "unit_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ساعة"
+        },
+        {
+          "quantity": "few",
+          "value": "%d ساعات"
+        },
+        {
+          "quantity": "many",
+          "value": "%d ساعة"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ساعة"
+        }
+      ]
+    },
+    {
+      "name": "unit_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d يوم"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أيام"
+        },
+        {
+          "quantity": "many",
+          "value": "%d يومًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d يومًا"
+        }
+      ]
+    },
+    {
+      "name": "sm_proximity_metres",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d متر"
+        },
+        {
+          "quantity": "few",
+          "value": "%d أمتار"
+        },
+        {
+          "quantity": "many",
+          "value": "%d مترًا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d مترًا"
+        }
+      ]
+    },
+    {
+      "name": "lg_resend_in",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "يمكن إعادة الإرسال بعد %d ثانية"
+        },
+        {
+          "quantity": "few",
+          "value": "يمكن إعادة الإرسال بعد %d ثوانٍ"
+        },
+        {
+          "quantity": "many",
+          "value": "يمكن إعادة الإرسال بعد %d ثانية"
+        },
+        {
+          "quantity": "other",
+          "value": "يمكن إعادة الإرسال بعد %d ثانية"
+        }
+      ]
+    },
+    {
+      "name": "cl_unread_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d غير مقروء"
+        },
+        {
+          "quantity": "few",
+          "value": "%d غير مقروءة"
+        },
+        {
+          "quantity": "many",
+          "value": "%d غير مقروء"
+        },
+        {
+          "quantity": "other",
+          "value": "%d غير مقروء"
+        }
+      ]
+    },
+    {
+      "name": "ap_chats_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d محادثة"
+        },
+        {
+          "quantity": "few",
+          "value": "%d محادثات"
+        },
+        {
+          "quantity": "many",
+          "value": "%d محادثة"
+        },
+        {
+          "quantity": "other",
+          "value": "%d محادثة"
+        }
+      ]
+    },
+    {
+      "name": "gs_free_left",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "بقي %d بحث مجاني اليوم"
+        },
+        {
+          "quantity": "few",
+          "value": "بقيت %d عمليات بحث مجانية اليوم"
+        },
+        {
+          "quantity": "many",
+          "value": "بقي %d بحثًا مجانيًا اليوم"
+        },
+        {
+          "quantity": "other",
+          "value": "بقي %d بحثًا مجانيًا اليوم"
+        }
+      ]
+    }
+  ]
+}

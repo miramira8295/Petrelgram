@@ -1,0 +1,7175 @@
+import { rememberOpenedChat } from '../services/RecentChatHistoryService';
+import { SharedPayload } from '../util/sharedContent';
+import { sharedSendPermissions } from '../util/sendPermissions';
+import { sendWithChatPermissions, requireSendPermissions, showSendPermissionError } from './SendPermissionApi';
+import { TdClient, TIMEOUT_ERROR_CODE } from '../tdkit/TdClient';
+import { publishViewCount } from '../util/viewCountChannel';
+import { interactionChanged } from '../util/interactionDelta';
+import { isBackgroundCaching } from './CacheRegistry';
+import { stickerSetIdOf } from '../util/stickerSetItems';
+import { viewMessageSourceType } from '../util/viewMessageSource';
+import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
+import { UserStore } from './UserStore';
+import { MessageEntry, cloneMessage, buildMessageEntry, commentInfoFromInteraction, CommentInfo, reactionsFromInteraction, ReactionInfo, parseInlineKeyboard, refreshSystemUserLabel } from './MessageEntry';
+import { ReplyKeyboard, parseReplyKeyboard } from './ReplyKeyboard';
+import { publishSenderAvatar, senderChannelKey } from '../util/senderAvatarChannel';
+import { scrollActiveNow } from '../util/scrollEffects';
+import { publishThumbPath } from '../util/mediaThumbChannel';
+import { inlineThumbEntryChanged } from '../util/inlineThumbUpdate';
+import { patchNeedsNotify, PatchSignature } from '../util/patchNotifyGate';
+import { formatUserStatus } from '../util/formatUserStatus';
+import {
+  decideNewerTail, liveArrivalContiguous, liveArrivalStep, NewerPageOutcome,
+  NewerTailVerdict, reachedLiveTail
+} from '../util/liveTail';
+import { formatPreview } from '../util/formatPreview';
+import { PinnedEntry, pinnedEntryOf, PINNED_FETCH_LIMIT } from '../util/pinnedEntry';
+import { unpinAllRequest } from '../util/unpinAllRequest';
+import { historyPageDetached, windowHasUnsent } from '../util/historyWindowJoin';
+import { resumeBeatsUnread } from '../util/chatResume';
+import { formatMemberCount } from '../util/formatMemberCount';
+import {
+  KEY_POWER_ACTIVE, KEY_POWER_AUTOPLAY_GIF, KEY_POWER_AUTOPLAY_VIDEO, powerFeatureEnabled,
+  reduceAnimations
+} from './AppSettings';
+import { decideMedia, subjectOfEntry, MediaContext, MediaIntent } from './MediaPolicy';
+import { PollOptionInfo } from '../util/formatMsgContent';
+import { reactionTypeOf } from '../util/reactions';
+import { str } from '../util/strings';
+import { publishProgress } from '../util/mediaProgressChannel';
+import { uploadPercentOf } from '../util/uploadProgress';
+import { publishSendState } from '../util/sendStateChannel';
+import { logE, logI, logW } from '../util/log';
+import { noteOutgoingChat } from '../util/recentOutgoing';
+import { replySnippetOf } from '../util/replySnippet';
+import {
+  INITIAL_AROUND_LIMIT, INITIAL_LATEST_LIMIT, INITIAL_RESUME_LIMIT,
+  InitialPageRoute, ROUTE_AROUND,
+  canPrefetchChat, initialPageRoute, takePrefetchedPage
+} from '../util/chatPrefetch';
+import { replyDiceLayers, replyThumbIsSticker, replyThumbOf } from '../util/replyThumb';
+import {
+  MEDIA_PREFETCH_PRIORITY, MEDIA_USER_PRIORITY, MEDIA_VIEWING_PRIORITY, THUMBNAIL_PRIORITY,
+  mediaDownloadPriority
+} from '../util/downloadPriority';
+import { animationShapeRejected } from '../util/animationShape';
+import { isAnimationPath, isVideoPath } from '../util/mediaPick';
+import {
+  applyMessageTopicScope, messageOutsideTopicScope, messageTopicObject
+} from '../util/messageTopicScope';
+import { stickerFramesCached, warmStickerFrameIndex } from '../services/stickerFrameIndex';
+import { ALPHA_MAX_BUCKET } from '../util/webm/alphaCacheKey';
+
+const PAGE: number = 30;
+// 首屏填充最多续追几次。三次足以把 14 + 2 + 30 这种序列填过一页，又不至于在
+// 填不满的会话里一直问下去。
+const INITIAL_FILL_TRIES: number = 3;
+// TDLib 的消息 id 每条递增 2^20。
+const ID_STEP: number = 1048576;
+// 向上分页时，新页最旧一条和窗口最新一条之间隔多少条才算"接不上"。
+// 被删过的消息会留下永久空档，所以小差值属正常；43 那种才是本地库缺了一段。
+const NEWER_GAP_TOLERANCE: number = 5;
+// 接不上时从同一个锚点重问几次。TDLib 会在后台向服务端补，重问通常能拿到
+// 连续的那一段；用完还接不上就照旧合并，宁可有洞也别把消息卡住不显示。
+const NEWER_GAP_RETRIES: number = 2;
+const REPLY_KB_PROBE_PAGE: number = 100;
+const REPLY_KB_PROBE_LIMIT: number = 500;
+// Re-request a still-missing thumbnail at most this often (stalled downloads
+// whose bounded retries were exhausted by a transient network failure).
+const THUMB_REKICK_MS: number = 8000;
+// 向上翻页拿到空页时的重试次数。3 次之后仍然一条更旧的都没有，才认为到顶。
+const OLDER_EMPTY_RETRIES: number = 3;
+// 缩略图同时在途上限。放开时几十个请求互相抢带宽，首屏那几张反而最晚到；
+// 4 条既能压满一般家宽，又给整段媒体和消息同步留出余量。
+const THUMB_MAX_ACTIVE: number = 4;
+
+// 被回复消息的预览快照（发送者 + 摘要）。
+interface RepliedPreview {
+  senderName: string;
+  text: string;
+  // 引用块的缩略图。也进缓存：窗口整体重建后条目会丢掉它，不缓存就得重新拉。
+  thumbPath: string;
+  thumbSticker: boolean;
+  diceLayers: string[];
+}
+// 一帧的量级：下载进度的发布合并到这个窗口里，见 notifySoon()。
+const NOTIFY_COALESCE_MS: number = 16;
+// 滚动冻结 update 后安全网轮询的间隔（主冲刷路径是 onTimelineScrollStop）。
+const SCROLL_DEFER_FLUSH_MS: number = 600;
+// 自定义 emoji 位图水合的合并窗与「滚动中顺延」上限，见 scheduleCustomEmojiHydrate。
+const HYDRATE_COALESCE_MS: number = 64;
+const HYDRATE_SCROLL_CAP_MS: number = 800;
+// 初始历史发布后的安置期。首页刚建好的这段时间里，头像回填、回复引用、缩略
+// 图会各到一批——16ms 的窗口把它们放成两三波，每波都是近乎整页的 CHANGE 重建
+// （实测每波 27-30 行、各吃一个掉帧）。HdsNavigation 推入转场约 600ms，原来
+// 400ms 的安置窗口刚好落在转场最后收尾阶段（t ≈ 450ms）触发整页重建造成尾帧掉帧；
+// 拉长到 720ms 让安置期合并刷新完全跨过推页转场后再放行，期满恢复 16ms。见 notifySoon()。
+const INITIAL_SETTLE_WINDOW_MS: number = 720;
+// 首屏历史页的条数。30 条一帧建完是实测的首帧掉帧来源；12 条先铺满屏幕，
+// 剩余由短页补链/滚动分页在后续帧补齐。
+const INITIAL_FIRST_PAGE: number = 12;
+// **向上翻页**的每页条数。和 INITIAL_FIRST_PAGE 同一个道理，只是当时只治了首屏。
+//
+// 09-03 的 Frame 录制：6 次 applyOlderPage，每次合页那一帧要一次性建 ~15 行
+// （PAGE=30 条消息，相册折叠后约一半），单帧 87–126ms，而 120Hz 的预算是
+// 8.31ms。这 6 帧连同它们引出的重渲染帧占了全部超预算时间的 67.4%。
+// 减半不会减少总工作量，减少的是**峰值**——卡顿看的是峰值不是总量。
+// 预取（prefetchOlder）已经把下一页提前拿在手里，多一轮往返不进用户等待。
+const OLDER_PAGE: number = 15;
+
+// 消息窗口的行数上限。攒到 ChatPage 的触发线之后，停稳时砍回这个数。
+// 数字来自真机实测，理由写在 MessageStore.trimWindowTo 的注释里。
+export const MESSAGE_WINDOW_CAP: number = 200;
+
+function pollVoteErrorText(raw: string): string {
+  const normalized = raw.trim().toUpperCase();
+  if (normalized.indexOf('POLL_MEMBER_RESTRICTED') >= 0) {
+    return str('ms_poll_subscribers_only');
+  }
+  if (normalized.indexOf('POLL_COUNTRY_RESTRICTED') >= 0) {
+    return str('ms_poll_region_only');
+  }
+  if (normalized.indexOf('REVOTE_NOT_ALLOWED') >= 0) {
+    return str('ms_poll_no_change');
+  }
+  if (normalized.indexOf('MESSAGE_POLL_CLOSED') >= 0 ||
+    normalized.indexOf('POLL_CLOSED') >= 0) {
+    return str('ms_poll_closed');
+  }
+  if (normalized.indexOf('OPTION_INVALID') >= 0 ||
+    normalized.indexOf('POLL_OPTION_INVALID') >= 0) {
+    return str('ms_poll_option_stale');
+  }
+  return raw.trim() !== '' ? str('ms_vote_failed_msg', raw.trim()) : str('ms_vote_failed');
+}
+
+type MsgListener = (msgs: MessageEntry[]) => void;
+type SubtitleListener = (s: string) => void;
+type ReplyKeyboardListener = (kb: ReplyKeyboard | null) => void;
+
+interface KeyboardMarkupHit {
+  messageId: number;
+  keyboard: ReplyKeyboard | null;
+}
+
+export interface MediaSendItem {
+  path: string;
+  isVideo: boolean;
+  // 视频封面（本地路径）。**TDLib 的 inputMessageVideo.thumbnail 是发送方提供
+  // 封面的唯一入口，不给接收端就没有预览图。** 空串 = 没有，按老行为发。
+  thumbPath?: string;
+  // 本端高清封面（原图分辨率的首帧或实况静图）。与 <=320px 的 thumbPath 分开，
+  // 保证自己发出的视频在发送中与发完后始终展示高清封面。
+  posterPath?: string;
+  // 封面**自己**的宽高。inputThumbnail.width/height 说的是缩略图的尺寸，不是
+  // 视频的——填成视频尺寸等于声明了一张 1440x1920 的内联缩略图，越界。
+  thumbWidth?: number;
+  thumbHeight?: number;
+  // 视频的**显示**宽高（即旋转之后的）。不给的话接收侧按容器里旋转前的那对值
+  // 排版，竖着拍的视频会横过来。
+  width?: number;
+  height?: number;
+  durationSec?: number;
+}
+
+export class MessageStore {
+  private client: TdClient;
+  private users: UserStore;
+  private chatId: number;
+  private messages: MessageEntry[] = [];
+  // When the view is parked at an unread/around window, an outgoing update
+  // must not be appended after that window. Hold it until jumpToLatest has
+  // installed the server's real latest page.
+  private deferOutgoingUntilLatest: boolean = false;
+  private deferredOutgoing: MessageEntry[] = [];
+  private oldestId: number = 0;
+  private subtitle: string = '';
+  private pinnedPreview: string = '';
+  // 置顶条只要 id（判"这条是不是置顶"，每行 build 都问一次），所以 id 单独
+  // 留一份平铺数组；「全部置顶」面板还要发送人和时间，那三样一起装在
+  // pinnedEntries 里，与 pinnedIds 逐位对齐。两份一起写、一起改，没有第三个写点。
+  private pinnedIds: number[] = [];
+  private pinnedEntries: PinnedEntry[] = [];
+  private pinnedLoadState: string = 'loading';
+  private coalesceTimer: number = -1;
+  // ChatPage starts TDLib work while the destination is entering, but holds the
+  // first ready message snapshot until the system page transition has settled.
+  // Loading stays concurrent; only the expensive UI subscriber publication is
+  // deferred and collapsed to the newest store state.
+  private initialPublicationReleaseAt: number = 0;
+  private initialPublicationTimer: number = -1;
+  private initialPublicationKind: string = '';
+  private pinnedResolveSeq: number = 0;
+  private msgSubs: MsgListener[] = [];
+  private subSubs: SubtitleListener[] = [];
+  private pinnedSubs: SubtitleListener[] = [];
+  private unsubs: Array<() => void> = [];
+  private fileToMsg: Map<number, number> = new Map();
+  private linkFileToMsg: Map<number, number> = new Map();
+  private linkThumbAttempts: Map<number, number> = new Map();
+  private linkThumbLastKick: Map<number, number> = new Map();
+  private fullPhotoFileToMsg: Map<number, number> = new Map();
+  private videoFileToMsg: Map<number, number> = new Map();
+  private voiceListenPending: Set<number> = new Set();
+  private stickerFileToMsg: Map<number, number> = new Map();
+  // fileId -> 上次发出 downloadFile 的时间。见 requestStickerSource 里的说明：
+  // 没有它时，一次静默卡死的下载会把贴纸永久钉在 0%。
+  private stickerLastKick: Map<number, number> = new Map();
+  // 诊断：临时消息 id -> 点发送的时刻。sendMessage 的应答只说明 TDLib 本地
+  // 接下了（实测 8ms），真正走网络的是到 updateMessageSendSucceeded 那一段。
+  private sendStartedAt: Map<number, number> = new Map();
+  // Live incoming media is the only automatic-download/autosave candidate.
+  // Initial history never starts a burst of full-resolution downloads.
+  // Consumed by ChatPage's autosave-to-gallery flow (consumeLiveIncomingMediaIds).
+  private liveIncomingMediaIds: number[] = [];
+  private inlineCustomEmojiFileToId: Map<number, string> = new Map();
+  private inlineCustomEmojiPathById: Map<string, string> = new Map();
+  // Telegram reuses the same thumbnail/source file ids whenever the same
+  // sticker is sent again. Keep completed paths independently from a message
+  // id so a newly-created outgoing bubble can render immediately.
+  private completedFilePaths: Map<number, string> = new Map();
+  // 自己发出去的视频的**本地封面**，按 videoFileId 记。
+  //
+  // 为什么要单独一张表：发送时 rememberLocalMedia 往 entry 上填的 photoPath，
+  // 会被随后的 TDLib 更新（send-succeeded / updateMessageContent）重建整条 entry
+  // 时冲掉——用户实测发完就是灰底。而 hydrateFromFileCache 是每次 upsert 都跑的
+  // 那道重新水合，把封面钉在那里才活得下来。
+  private localVideoPosters: Map<number, string> = new Map();
+  // 贴纸本体下载的失败次数（fileId → 次数）。原来失败一次就永久放弃、只等用户
+  // 点 ↻；缩略图那边一直是 3 次退避重试，贴纸没理由更脆。
+  private stickerAttempts: Map<number, number> = new Map();
+  private fullPhotoAttempts: Map<number, number> = new Map();
+  // 已经为它重取过消息的 fileId。重取只做一次：新 id 再失败就是真失败。
+  private refreshedFiles: Set<number> = new Set();
+  // 大图下载失败后正在等待 getMessage 刷新新 fileId 的消息（messageId -> priority）。
+  // 刷新期间不把 entry 标成 photoFullFailed，等新 id 拿到后自动按原优先级重发起下载。
+  private fullPhotoPendingRefresh: Map<number, number> = new Map();
+  private thumbLastKick: Map<number, number> = new Map();
+  private peerUserId: number = 0;
+  private peerUserStatus: TdObject | undefined = undefined;
+  private statusRefreshTimer: number = -1;
+  private groupId: number = 0;
+  private lastReadInboxId: number = 0;
+  private lastReadOutboxId: number = 0;
+  private unreadCount: number = 0;
+  private viewedUpTo: number = 0;
+  private viewedMentions: Set<number> = new Set();
+  private chatResolved: boolean = false;
+  private historyPending: boolean = false;
+  private historyPendingKind: string = 'history';
+  private isGroupFlag: boolean = false;
+  private repliedFetched: number[] = [];
+  // Reply previews already fetched, kept so a window replacement can restore
+  // them without a second request (repliedFetched would refuse one anyway).
+  private repliedPreview: Map<number, RepliedPreview> = new Map();
+  private isChannel: boolean = false;
+  private chatPhotoFileId: number = 0;
+  private chatPhotoPath: string = '';
+  private headerAvatarSubs: SubtitleListener[] = [];
+  private chatTitle: string = '';
+  private headerTitleSubs: SubtitleListener[] = [];
+  private senderAvatarPaths: Map<string, string> = new Map();
+  private senderRequested: Set<string> = new Set();
+  private avatarFileToSender: Map<number, string> = new Map();
+  // Monotonic membership indexes for the current store lifetime. Keeping a
+  // stale id after a message leaves the bounded window is harmless; it avoids
+  // rescanning every message for every global updateUser event.
+  private senderUserIds: Set<number> = new Set();
+  private systemLabelUserIds: Set<number> = new Set();
+  private contactUserIds: Set<number> = new Set();
+  private commentUserIds: Set<number> = new Set();
+  private forwardTitleCache: Map<number, string> = new Map();
+  private forwardTitleRequested: Set<number> = new Set();
+  private thumbAttempts: Map<number, number> = new Map();
+  private replierAvatarPaths: Map<number, string> = new Map();
+  private replierAvatarRequested: Set<number> = new Set();
+  private avatarFileToReplier: Map<number, number> = new Map();
+  private contactAvatarPaths: Map<number, string> = new Map();
+  private contactAvatarRequested: Set<number> = new Set();
+  private avatarFileToContact: Map<number, number> = new Map();
+  private requestedAroundMessageId: number = 0;
+  // A remembered browsing position is weaker than a newly arrived unread
+  // boundary. Explicit links/thread targets are not: they must always win.
+  private requestedAroundIsResume: boolean = false;
+  private initialLoadStarted: boolean = false;
+  private initialHistoryState: string = 'loading'; // loading | ready | error
+  private initialHistoryError: string = '';
+  private olderPending: boolean = false;
+  // Two older pages are fetched after the first viewport settles, but kept as
+  // raw TDLib data until the user reaches the top. Parsing/publishing it here
+  // would rebuild media rows during the first scroll and recreate the jump the
+  // prefetch is meant to avoid.
+  private olderPrefetchPending: boolean = false;
+  private olderPrefetchAnchorId: number = 0;
+  private olderPrefetchResult: TdObject | null = null;
+  private olderPrefetchRemainderAnchorId: number = 0;
+  private olderPrefetchRemainder: TdObject | null = null;
+  private olderPrefetchDemanded: boolean = false;
+  private olderPrefetchEmptyRetries: number = OLDER_EMPTY_RETRIES;
+  private olderPrefetchSeq: number = 0;
+  // onHistory notifies subscribers synchronously. While one cached page is
+  // being consumed, keep those callbacks from starting a duplicate prefetch
+  // before the second cached page has been promoted into the primary slot.
+  private olderPrefetchPromotionActive: boolean = false;
+  private newerPending: boolean = false;
+  // chat.last_message captured at open. TDLib can hang a LOCAL service message
+  // (e.g. "您已加入此群组") off chat.last_message that getChatHistory never
+  // returns — it is also the chat's one unread message, so a timeline built
+  // purely from history can never view it and the unread badge sticks at 1.
+  // Grafted into the timeline once the loaded window reaches the live tail.
+  private pendingLastMessage: TdObject | null = null;
+  // A newly joined chat can expose its sole unread join notice only through
+  // chat.last_message. Because it is guaranteed to be the initial unread
+  // target, acknowledge it once the first real timeline snapshot is ready.
+  private initialJoinServiceReadId: number = 0;
+  private initialJoinServiceReadPending: boolean = false;
+  private manualUnreadClearSent: boolean = false;
+  private latestPending: boolean = false;
+  private hasMoreOlder: boolean = true;
+  private hasMoreNewer: boolean = false;
+  // 会话最后一条消息的 id，由 updateChatLastMessage 直接给。这是"到没到实时
+  // 尾部"的权威判据——分页自己那套在有洞的活跃会话里追不上，见 util/liveTail。
+  private chatLastMessageId: number = 0;
+  // Pagination errors never replace an already-readable timeline. The page
+  // renders them as compact edge pills with an explicit retry action.
+  private olderLoadState: string = 'idle'; // idle | loading | error | end
+  private newerLoadState: string = 'idle'; // idle | loading | error | end
+  // Exposed only while listeners are being notified. The page uses this to
+  // distinguish a real-time arrival from a newer-history page whose maximum
+  // id also increases, but must not animate or auto-follow like a new message.
+  private currentNotifyKind: string = 'update';
+  private memberCount: number = 0;
+  private onlineCount: number = 0;
+  // Bot custom reply keyboard. Chat-level: replyMarkupMessageId names the
+  // message carrying the active markup (0 = none, per chat.reply_markup_message_id).
+  private replyMarkupMessageId: number = 0;
+  private replyKeyboard: ReplyKeyboard | null = null;
+  private replyKbSubs: ReplyKeyboardListener[] = [];
+  // Fallback for when TDLib reports chat.reply_markup_message_id as 0 even though
+  // a keyboard is live (seen in supergroups, and after a one_time keyboard is
+  // used — other clients keep showing it). Tracks the NEWEST loaded message
+  // carrying a keyboard-affecting markup, and the keyboard it implies
+  // (null when that newest markup is replyMarkupRemoveKeyboard).
+  private kbMarkupMsgId: number = 0;
+  private kbFromHistory: ReplyKeyboard | null = null;
+  private kbHistoryProbeSeq: number = 0;
+  private kbHistoryProbeRunning: boolean = false;
+  private chatOpened: boolean = false;
+
+  // >0: this store is scoped to one message thread (channel-post comments) —
+  // history comes from getMessageThreadHistory and sends target the thread.
+  private threadRootId: number = 0;
+  private historyPageSize: number = PAGE;
+
+  constructor(client: TdClient, users: UserStore, chatId: number,
+    threadRootId: number = 0, historyPageSize: number = PAGE, forumTopicId: number = 0,
+    directMessagesTopicId: number = 0) {
+    this.client = client;
+    this.users = users;
+    this.chatId = chatId;
+    // 贴纸帧缓存的按 ID 索引：进会话就开始扫目录，第一屏贴纸大多来得及查。
+    warmStickerFrameIndex();
+    this.threadRootId = threadRootId;
+    this.forumTopicId = forumTopicId;
+    this.directMessagesTopicId = directMessagesTopicId;
+    this.historyPageSize = Math.max(1, Math.min(100, historyPageSize));
+  }
+
+  // 论坛话题（forum_topic_id，独立于评论线程的 message_thread_id）。
+  // 历史走 getForumTopicHistory，发送带 topic_id: messageTopicForum。
+  private forumTopicId: number = 0;
+  // 管理员侧频道私信按来信者拆成独立 topic。这个 id 只属于
+  // is_administered_direct_messages_group，不能拿普通 chat history 读取。
+  private directMessagesTopicId: number = 0;
+
+  private topicIdObject(): TdObject {
+    return messageTopicObject(
+      this.threadRootId, this.forumTopicId, this.directMessagesTopicId) ??
+      ({ '@type': 'messageTopicForum' } as TdObject);
+  }
+
+  // 发送/输入指示类请求的作用域。本 td 版本这些请求已无 message_thread_id
+  // 参数，评论线程同样要走 topic_id（messageTopicThread）。
+  private applyTopicScope(req: TdRequest): void {
+    applyMessageTopicScope(
+      req, this.threadRootId, this.forumTopicId, this.directMessagesTopicId);
+  }
+
+  // 实时更新过滤：不属于当前话题/线程窗口的消息不进入本窗口。
+  private outsideTopicScope(m: TdObject): boolean {
+    return messageOutsideTopicScope(
+      m, this.threadRootId, this.forumTopicId, this.directMessagesTopicId);
+  }
+
+  // getChatHistory, or getMessageThreadHistory when scoped to a comment thread
+  // (same paging contract: from_message_id + offset + limit).
+  private historyRequest(fromId: number, offset: number,
+    limit: number = this.historyPageSize): TdRequest {
+    if (this.directMessagesTopicId > 0) {
+      const topicReq: TdRequest = { '@type': 'getDirectMessagesChatTopicHistory' };
+      topicReq['chat_id'] = this.chatId;
+      topicReq['topic_id'] = this.directMessagesTopicId;
+      topicReq['from_message_id'] = fromId;
+      topicReq['offset'] = offset;
+      topicReq['limit'] = limit;
+      return topicReq;
+    }
+    if (this.forumTopicId > 0) {
+      const topicReq: TdRequest = { '@type': 'getForumTopicHistory' };
+      topicReq['chat_id'] = this.chatId;
+      topicReq['forum_topic_id'] = this.forumTopicId;
+      topicReq['from_message_id'] = fromId;
+      topicReq['offset'] = offset;
+      topicReq['limit'] = limit;
+      return topicReq;
+    }
+    const req: TdRequest = { '@type': this.threadRootId > 0 ? 'getMessageThreadHistory' : 'getChatHistory' };
+    req['chat_id'] = this.chatId;
+    req['from_message_id'] = fromId;
+    req['offset'] = offset;
+    req['limit'] = limit;
+    if (this.threadRootId > 0) {
+      req['message_id'] = this.threadRootId;
+    } else {
+      req['only_local'] = false;
+    }
+    return req;
+  }
+
+  // 应用切后台：TDLib 对"打开中"的会话不生成通知（认为用户正在看）。
+  // 暂时 closeChat，回前台再 openChat，否则停留在会话页时永远收不到通知。
+  suspendOpenChat(): void {
+    if (!this.chatOpened) {
+      return;
+    }
+    this.sendSimple('closeChat');
+    this.chatOpened = false;
+    this.chatSuspended = true;
+  }
+
+  resumeOpenChat(): void {
+    if (!this.chatSuspended || this.chatOpened) {
+      return;
+    }
+    this.chatSuspended = false;
+    this.sendSimple('openChat');
+    this.chatOpened = true;
+    this.readAllReactions();
+    // The suspended stretch is a blind spot: the OS freezes the process, the
+    // connection drops, and messages delivered meanwhile are synced by TDLib
+    // without ever passing through updateNewMessage. The window then holds
+    // [old tail] + [messages arriving after resume] with the in-between pages
+    // simply absent — rendered as a seamless jump (10:46 followed by 10:57).
+    // Refetch the newest page; onHistory's continuity check decides whether it
+    // merges into the window or replaces it.
+    logI(`[StoreDiag] resume rows=${this.messages.length}` +
+      ` oldest=${this.oldestId} state=${this.initialHistoryState}` +
+      ` hasMoreNewer=${this.hasMoreNewer} olderPending=${this.olderPending}`);
+    if (this.initialHistoryState === 'ready' && !this.hasMoreNewer) {
+      this.loadHistory(0);
+    }
+  }
+
+  // 首屏填充还能再追几次。
+  //
+  // TDLib 只给本地库里已有的，不够时返回更少并在后台向服务端补，契约是
+  // 「再问一次」——**一次往往不够**：实测首屏 around 回 14 条、补链只补到 2 条。
+  // 所以按短页继续追，直到窗口够一页、或者对方回 0（真到顶了），或者用完次数。
+  //
+  // 上限存在的意义是防死循环：某些会话（被限流、纯服务消息）可能每次都回少量
+  // 却永远填不满，没有上限就会一直问下去。
+  private initialFillTries: number = 0;
+  // 向上分页遇到"接不上"时还能重问几次。
+  private newerGapRetries: number = NEWER_GAP_RETRIES;
+
+  private chatSuspended: boolean = false;
+
+  open(aroundMessageId?: number, passive: boolean = false,
+    aroundIsResume: boolean = false): void {
+    // Embedded consumers such as the livestream interaction panel need chat
+    // history and updates without changing TDLib's open-chat lifecycle for the
+    // full ChatPage underneath them.
+    if (!passive) {
+      this.sendSimple('openChat');
+      rememberOpenedChat(this.client, this.chatId);
+      this.chatOpened = true;
+      // Reactions retain their existing behavior; mentions are read per visible message.
+      this.readAllReactions();
+    }
+    this.unsubs.push(this.client.onUpdate('updateNewMessage', (u: TdObject) => this.onNewMessage(u)));
+    this.unsubs.push(this.client.onUpdate('updateMessageSendSucceeded', (u: TdObject) => this.onSendSucceeded(u)));
+    this.unsubs.push(this.client.onUpdate('updateMessageSendFailed', (u: TdObject) => this.onSendFailed(u)));
+    this.unsubs.push(this.client.onUpdate('updateMessageContent', (u: TdObject) => this.onContent(u)));
+    this.unsubs.push(this.client.onUpdate('updateMessageMentionRead', (u: TdObject): void => {
+      if (u['chat_id'] !== this.chatId) { return; }
+      const id = u['message_id'] as number;
+      this.viewedMentions.delete(id);
+      this.patch(id, (message: MessageEntry): void => { message.containsUnreadMention = false; });
+    }));
+    this.unsubs.push(this.client.onUpdate('updatePoll', (u: TdObject) => this.onPoll(u)));
+    this.unsubs.push(this.client.onUpdate('updateDeleteMessages', (u: TdObject) => this.onDelete(u)));
+    this.unsubs.push(this.client.onUpdate('updateChatReadOutbox', (u: TdObject) => this.onReadOutbox(u)));
+    this.unsubs.push(this.client.onUpdate('updateDirectMessagesChatTopic',
+      (u: TdObject) => this.onDirectMessagesTopic(u)));
+    this.unsubs.push(this.client.onUpdate('updateForumTopic',
+      (u: TdObject) => this.onForumTopic(u)));
+    this.unsubs.push(this.client.onUpdate('updateFile', (u: TdObject) => this.onFile(u)));
+    this.unsubs.push(this.client.onUpdate('updateUserStatus', (u: TdObject) => this.onUserStatus(u)));
+    this.unsubs.push(this.client.onUpdate('updateBasicGroup', (u: TdObject) => this.onGroup(u)));
+    this.unsubs.push(this.client.onUpdate('updateSupergroup', (u: TdObject) => this.onGroup(u)));
+    this.unsubs.push(this.client.onUpdate('updateUser', (u: TdObject) => this.onUserUpdated(u)));
+    this.unsubs.push(this.client.onUpdate('updateMessageInteractionInfo', (u: TdObject) => this.onInteractionInfo(u)));
+    this.unsubs.push(this.client.onUpdate('updateChatOnlineMemberCount', (u: TdObject) => this.onOnlineCount(u)));
+    // A message got (un)pinned while the chat is open — re-resolve the pinned
+    // list so the banner reflects the new pin without re-entering the chat.
+    this.unsubs.push(this.client.onUpdate('updateMessageIsPinned', (u: TdObject) => {
+      if ((u['chat_id'] as number | undefined) === this.chatId) {
+        this.onPinnedUpdate(u);
+      }
+    }));
+    this.unsubs.push(this.client.onUpdate('updateMessageEdited', (u: TdObject) => this.onEdited(u)));
+    // Bot showed/removed its custom reply keyboard.
+    this.unsubs.push(this.client.onUpdate('updateChatReplyMarkup', (u: TdObject) => this.onChatReplyMarkup(u)));
+    // 会话最后一条变了：可能因此已经追到尾部，重新判一次。
+    this.unsubs.push(this.client.onUpdate('updateChatLastMessage', (u: TdObject) => {
+      // 【话题作用域下必须整条忽略】chat.last_message 是**会话级**的，在论坛话题 /
+      // 评论线程 / 私信话题里它多半属于**别的**话题，拿它当本窗口的尾巴会导致：
+      // 窗口永远追不上它 → 向下翻页的闸永不关闭 → "在最底下"永不成立 → 角标不清、
+      // 已读推不到底 → 每次进来又按同一个未读锚点落位（用户 2026-09-16 实测：
+      // 频道每次进入都固定位置、未读一直挂着）。
+      // 原来这里只排除了私信话题，论坛话题和评论线程漏了——同一个问题只修了三分之一。
+      if (this.inTopicScope() ||
+        (u['chat_id'] as number | undefined) !== this.chatId) {
+        return;
+      }
+      const last = u['last_message'] as TdObject | undefined;
+      const id: number = last !== undefined ? ((last['id'] as number | undefined) ?? 0) : 0;
+      if (id > this.chatLastMessageId) {
+        this.chatLastMessageId = id;
+      }
+      this.syncTailFromChatLast();
+    }));
+    this.requestedAroundMessageId = aroundMessageId !== undefined ? aroundMessageId : 0;
+    this.requestedAroundIsResume = aroundIsResume && this.requestedAroundMessageId > 0;
+    this.resolveChat();
+    this.resolvePinned();
+    if (this.threadRootId > 0) {
+      this.fetchThreadRoot();
+    }
+  }
+
+  // Comment thread: the root (the channel post as forwarded into the discussion
+  // group) heads the view — thread history alone may not include it.
+  private fetchThreadRoot(): void {
+    const req: TdRequest = { '@type': 'getMessage' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = this.threadRootId;
+    this.client.send(req).then((m: TdObject) => {
+      const entry: MessageEntry = buildMessageEntry(m, this.users);
+      this.upsert(entry);
+      this.requestPhotos();
+      this.resolveSenderAvatars([entry]);
+      this.notifySoon();
+    }).catch((e: TdError) => {
+      logE(`MessageStore.fetchThreadRoot failed: ${e.message}`);
+    });
+  }
+
+  close(): void {
+    this.viewedMentions.clear();
+    this.clearOlderPrefetch();
+    if (this.coalesceTimer !== -1) {
+      clearTimeout(this.coalesceTimer);
+      this.coalesceTimer = -1;
+    }
+    if (this.initialPublicationTimer !== -1) {
+      clearTimeout(this.initialPublicationTimer);
+      this.initialPublicationTimer = -1;
+    }
+    if (this.scrollDeferFlushTimer !== -1) {
+      clearTimeout(this.scrollDeferFlushTimer);
+      this.scrollDeferFlushTimer = -1;
+    }
+    this.scrollDeferredUpdate = false;
+    if (this.hydrateTimer !== -1) {
+      clearTimeout(this.hydrateTimer);
+      this.hydrateTimer = -1;
+    }
+    this.initialPublicationReleaseAt = 0;
+    this.initialPublicationKind = '';
+    this.pinnedResolveSeq++;
+    this.kbHistoryProbeSeq++;
+    this.kbHistoryProbeRunning = false;
+    if (this.chatOpened) {
+      this.sendSimple('closeChat');
+      this.chatOpened = false;
+    }
+    for (const un of this.unsubs) {
+      un();
+    }
+    this.unsubs = [];
+    if (this.statusRefreshTimer !== -1) {
+      clearInterval(this.statusRefreshTimer);
+      this.statusRefreshTimer = -1;
+    }
+  }
+
+  getMessages(): MessageEntry[] {
+    return this.messages;
+  }
+
+  consumeLiveIncomingMediaIds(): number[] {
+    const ids = this.liveIncomingMediaIds.slice();
+    this.liveIncomingMediaIds = [];
+    return ids;
+  }
+
+  getSubtitle(): string {
+    return this.subtitle;
+  }
+
+  // Chat unread count snapshot captured at open time (for the scroll-to-bottom badge).
+  getUnreadCount(): number {
+    return this.unreadCount;
+  }
+
+  // True for basic groups / supergroups / channels — drives per-message avatars + sender names.
+  getIsGroup(): boolean {
+    return this.isGroupFlag;
+  }
+
+  // True only for broadcast channels — reply_info.reply_count is a generic
+  // Peer user id for private chats (0 for groups/channels) — used to open the
+  // user profile page from the chat header.
+  getPeerUserId(): number {
+    return this.peerUserId;
+  }
+
+  // "times replied" counter shared with ordinary in-chat reply threads, so the
+  // "N Comments" chip must only render for real channel posts.
+  getIsChannel(): boolean {
+    return this.isChannel;
+  }
+
+  // Id of the first unread message captured at open time (0 = none / all read).
+  // Used by the page to position the initial scroll at the unread boundary.
+  getFirstUnreadId(): number {
+    if (this.unreadCount <= 0 || this.lastReadInboxId <= 0) {
+      return 0;
+    }
+    for (const m of this.messages) {
+      // last_read_inbox 只记**收到**的消息，自己发的不算未读——否则「自己刚发了
+      // 几条、又来一条新的」时第一条未读落在自己那条上，分隔线画在那里、开会话
+      // 定位到已读的历史（issue #101）。官方客户端的查法同样是 mid > ? AND out = 0。
+      if (m.id > this.lastReadInboxId && !m.isOutgoing) {
+        return m.id;
+      }
+    }
+    return 0;
+  }
+
+  getReplyKeyboard(): ReplyKeyboard | null {
+    return this.replyKeyboard;
+  }
+
+  subscribeReplyKeyboard(l: ReplyKeyboardListener): () => void {
+    this.replyKbSubs = [...this.replyKbSubs, l];
+    l(this.replyKeyboard);
+    return (): void => { this.replyKbSubs = this.replyKbSubs.filter((x: ReplyKeyboardListener) => x !== l); };
+  }
+
+  private setReplyKeyboard(kb: ReplyKeyboard | null): void {
+    this.replyKeyboard = kb;
+    for (const l of this.replyKbSubs) {
+      l(kb);
+    }
+  }
+
+  // Resolve replyMarkupMessageId into an actual keyboard. The message is usually
+  // already in the loaded window; otherwise fetch it (the markup often comes from
+  // a message far above the current view, so we can't rely on history alone).
+  private resolveReplyKeyboard(): void {
+    const id = this.replyMarkupMessageId;
+    if (id === 0) {
+      // TDLib reports 0 here even when a keyboard is live (supergroups; a
+      // one_time keyboard that's already been used) while other clients keep
+      // showing it — so trust the newest keyboard markup seen in history.
+      this.setReplyKeyboard(this.kbFromHistory);
+      return;
+    }
+    const req: TdRequest = { '@type': 'getMessage' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = id;
+    this.client.send(req).then((m: TdObject) => {
+      if (this.replyMarkupMessageId !== id) {
+        return; // superseded while in flight
+      }
+      this.setReplyKeyboard(parseReplyKeyboard(m));
+    }).catch((e: TdError) => {
+      logE(`MessageStore.resolveReplyKeyboard(${id}) failed: ${e.message}`);
+      this.setReplyKeyboard(this.kbFromHistory);
+      this.startKeyboardHistoryProbe();
+    });
+  }
+
+  private onChatReplyMarkup(u: TdObject): void {
+    if ((u['chat_id'] as number | undefined) !== this.chatId) {
+      return;
+    }
+    this.replyMarkupMessageId = (u['reply_markup_message_id'] as number | undefined) ?? 0;
+    this.resolveReplyKeyboard();
+    if (this.replyMarkupMessageId === 0) {
+      // Restart from the live tail: this update can mean a removal, but some
+      // supergroups also publish 0 while a persistent keyboard remains active.
+      this.startKeyboardHistoryProbe(true);
+    }
+  }
+
+  private newestKeyboardMarkup(arr: TdObject[]): KeyboardMarkupHit | null {
+    let hit: KeyboardMarkupHit | null = null;
+    for (const m of arr) {
+      const mk = m['reply_markup'] as TdObject | undefined;
+      if (mk === undefined) {
+        continue;
+      }
+      const t = (mk['@type'] as string | undefined) ?? '';
+      if (t !== 'replyMarkupShowKeyboard' && t !== 'replyMarkupRemoveKeyboard') {
+        continue;
+      }
+      const id = (m['id'] as number | undefined) ?? 0;
+      if (id <= 0 || (hit !== null && id <= hit.messageId)) {
+        continue;
+      }
+      hit = {
+        messageId: id,
+        keyboard: t === 'replyMarkupShowKeyboard' ? parseReplyKeyboard(m) : null
+      };
+    }
+    return hit;
+  }
+
+  private applyKeyboardMarkupHit(hit: KeyboardMarkupHit): void {
+    if (hit.messageId < this.kbMarkupMsgId) {
+      return;
+    }
+    this.kbMarkupMsgId = hit.messageId;
+    this.kbFromHistory = hit.keyboard;
+    if (this.replyMarkupMessageId === 0 ||
+      this.replyMarkupMessageId === hit.messageId) {
+      this.setReplyKeyboard(hit.keyboard);
+    }
+  }
+
+  // Track a real-time message that shows or removes a reply keyboard.
+  // (replyMarkupInlineKeyboard is NOT one of these — those buttons live in the
+  // bubble and are rendered separately.)
+  private scanKeyboardMarkup(arr: TdObject[]): void {
+    const hit: KeyboardMarkupHit | null = this.newestKeyboardMarkup(arr);
+    if (hit === null) {
+      return;
+    }
+    this.kbHistoryProbeSeq++;
+    this.kbHistoryProbeRunning = false;
+    this.applyKeyboardMarkupHit(hit);
+  }
+
+  // In busy groups the active keyboard message can be far above the currently
+  // rendered 30-message window, and TDLib can publish reply_markup_message_id
+  // as 0. Probe from the LIVE tail independently of the user's history anchor;
+  // the first show/remove marker encountered is the authoritative newest one.
+  private startKeyboardHistoryProbe(force: boolean = false): void {
+    if (this.kbHistoryProbeRunning && !force) {
+      return;
+    }
+    const seq: number = ++this.kbHistoryProbeSeq;
+    this.kbHistoryProbeRunning = true;
+    this.probeKeyboardHistoryPage(seq, 0, 0);
+  }
+
+  private finishKeyboardHistoryProbe(seq: number): void {
+    if (seq === this.kbHistoryProbeSeq) {
+      this.kbHistoryProbeRunning = false;
+    }
+  }
+
+  private probeKeyboardHistoryPage(seq: number, fromMessageId: number,
+    scanned: number): void {
+    if (seq !== this.kbHistoryProbeSeq) {
+      return;
+    }
+    const req: TdRequest = { '@type': 'getChatHistory' };
+    req['chat_id'] = this.chatId;
+    req['from_message_id'] = fromMessageId;
+    req['offset'] = 0;
+    req['limit'] = REPLY_KB_PROBE_PAGE;
+    req['only_local'] = false;
+    this.client.send(req).then((res: TdObject): void => {
+      if (seq !== this.kbHistoryProbeSeq) {
+        return;
+      }
+      const arr: TdObject[] = (res['messages'] as TdObject[] | undefined) ?? [];
+      const hit: KeyboardMarkupHit | null = this.newestKeyboardMarkup(arr);
+      if (hit !== null) {
+        this.applyKeyboardMarkupHit(hit);
+        this.finishKeyboardHistoryProbe(seq);
+        return;
+      }
+      const nextScanned: number = scanned + arr.length;
+      if (arr.length === 0 || nextScanned >= REPLY_KB_PROBE_LIMIT) {
+        this.finishKeyboardHistoryProbe(seq);
+        return;
+      }
+      let oldestId: number = 0;
+      for (const m of arr) {
+        const id: number = (m['id'] as number | undefined) ?? 0;
+        if (id > 0 && (oldestId === 0 || id < oldestId)) {
+          oldestId = id;
+        }
+      }
+      if (oldestId === 0 || oldestId === fromMessageId) {
+        this.finishKeyboardHistoryProbe(seq);
+        return;
+      }
+      this.probeKeyboardHistoryPage(seq, oldestId, nextScanned);
+    }).catch((e: TdError): void => {
+      this.finishKeyboardHistoryProbe(seq);
+      if (e.code !== 404) {
+        logE(`MessageStore keyboard history probe failed: ${e.message}`);
+      }
+    });
+  }
+
+  private ensureKeyboardHistoryProbe(): void {
+    if (this.isGroupFlag && this.replyMarkupMessageId === 0 &&
+      this.kbMarkupMsgId === 0) {
+      this.startKeyboardHistoryProbe();
+    }
+  }
+
+  subscribe(l: MsgListener): () => void {
+    this.msgSubs = [...this.msgSubs, l];
+    l(this.messages);
+    return (): void => { this.msgSubs = this.msgSubs.filter((x: MsgListener) => x !== l); };
+  }
+
+  deferInitialPublication(delayMs: number): void {
+    if (this.initialPublicationTimer !== -1) {
+      clearTimeout(this.initialPublicationTimer);
+      this.initialPublicationTimer = -1;
+    }
+    this.initialPublicationKind = '';
+    this.initialPublicationReleaseAt = delayMs > 0 ? Date.now() + delayMs : 0;
+  }
+
+  subscribeSubtitle(l: SubtitleListener): () => void {
+    this.subSubs = [...this.subSubs, l];
+    l(this.subtitle);
+    return (): void => { this.subSubs = this.subSubs.filter((x: SubtitleListener) => x !== l); };
+  }
+
+  subscribePinned(l: SubtitleListener): () => void {
+    this.pinnedSubs = [...this.pinnedSubs, l];
+    l(this.pinnedPreview);
+    return (): void => { this.pinnedSubs = this.pinnedSubs.filter((x: SubtitleListener) => x !== l); };
+  }
+
+  getPinnedLoadState(): string {
+    return this.pinnedLoadState;
+  }
+
+  refreshPinned(): void {
+    this.resolvePinned();
+  }
+
+  // Header avatar path, resolved from the chat photo. Authoritative for the chat
+  // page header (works even for channels/chats not present in the loaded lists).
+  subscribeHeaderAvatar(l: SubtitleListener): () => void {
+    this.headerAvatarSubs = [...this.headerAvatarSubs, l];
+    l(this.chatPhotoPath);
+    return (): void => { this.headerAvatarSubs = this.headerAvatarSubs.filter((x: SubtitleListener) => x !== l); };
+  }
+
+  // Chat title resolved from getChat — a fallback header title/initials for chats
+  // opened by t.me link that aren't in ChatStore's cache yet.
+  subscribeHeaderTitle(l: SubtitleListener): () => void {
+    this.headerTitleSubs = [...this.headerTitleSubs, l];
+    l(this.chatTitle);
+    return (): void => { this.headerTitleSubs = this.headerTitleSubs.filter((x: SubtitleListener) => x !== l); };
+  }
+
+  private notifyHeaderTitle(): void {
+    for (const l of this.headerTitleSubs) {
+      l(this.chatTitle);
+    }
+  }
+
+  private notifyHeaderAvatar(): void {
+    for (const l of this.headerAvatarSubs) {
+      l(this.chatPhotoPath);
+    }
+  }
+
+  // Load the previous (older) page. Guarded so scroll-driven prefetch can call
+  // this repeatedly without stacking duplicate in-flight requests.
+  private loadOlderRefusalSeen: Set<string> = new Set<string>();
+  // 向上翻页遇到"这一页没有更旧的"时，还允许再问几次。见 loadOlder 里的说明：
+  // TDLib 返回空不等于没有历史，它的契约是"再问一次"。
+  private olderEmptyRetries: number = OLDER_EMPTY_RETRIES;
+
+  private clearOlderPrefetch(): void {
+    const resetPromotedLoad: boolean = this.olderPrefetchDemanded &&
+      !this.olderPending && this.olderLoadState === 'loading';
+    this.olderPrefetchSeq++;
+    this.olderPrefetchPending = false;
+    this.olderPrefetchAnchorId = 0;
+    this.olderPrefetchResult = null;
+    this.olderPrefetchRemainderAnchorId = 0;
+    this.olderPrefetchRemainder = null;
+    this.olderPrefetchDemanded = false;
+    this.olderPrefetchEmptyRetries = OLDER_EMPTY_RETRIES;
+    if (resetPromotedLoad) {
+      this.olderLoadState = 'idle';
+    }
+  }
+
+  private olderPageHasEntry(res: TdObject, anchorId: number): boolean {
+    const arr = (res['messages'] as TdObject[] | undefined) ?? [];
+    for (const message of arr) {
+      const id = (message['id'] as number | undefined) ?? 0;
+      if (id > 0 && id < anchorId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private oldestMessageId(arr: TdObject[]): number {
+    let oldestId: number = 0;
+    for (const message of arr) {
+      const id: number = (message['id'] as number | undefined) ?? 0;
+      if (id > 0 && (oldestId === 0 || id < oldestId)) {
+        oldestId = id;
+      }
+    }
+    return oldestId;
+  }
+
+  private historyPageSlice(res: TdObject, messages: TdObject[]): TdObject {
+    const page: TdObject = { '@type': 'messages' };
+    page['messages'] = messages;
+    const totalCount: number | undefined = res['total_count'] as number | undefined;
+    if (totalCount !== undefined) {
+      page['total_count'] = totalCount;
+    }
+    return page;
+  }
+
+  private stageOlderPrefetch(res: TdObject, anchorId: number): void {
+    const arr: TdObject[] = (res['messages'] as TdObject[] | undefined) ?? [];
+    const pageSize: number = this.olderRequestLimit();
+    this.olderPrefetchAnchorId = anchorId;
+    this.olderPrefetchRemainderAnchorId = 0;
+    this.olderPrefetchRemainder = null;
+    if (pageSize <= 1 || arr.length <= pageSize) {
+      this.olderPrefetchResult = res;
+      return;
+    }
+    const first: TdObject[] = arr.slice(0, pageSize);
+    const remainder: TdObject[] = arr.slice(pageSize - 1);
+    const remainderAnchorId: number = this.oldestMessageId(first);
+    this.olderPrefetchResult = this.historyPageSlice(res, first);
+    if (remainderAnchorId > 0) {
+      const remainderPage: TdObject = this.historyPageSlice(res, remainder);
+      if (this.olderPageHasEntry(remainderPage, remainderAnchorId)) {
+        this.olderPrefetchRemainderAnchorId = remainderAnchorId;
+        this.olderPrefetchRemainder = remainderPage;
+      }
+    }
+  }
+
+  private consumeStagedOlderPrefetch(): boolean {
+    if (this.olderPrefetchResult === null ||
+      this.olderPrefetchAnchorId !== this.oldestId) {
+      return false;
+    }
+    const anchorId: number = this.olderPrefetchAnchorId;
+    const res: TdObject = this.olderPrefetchResult;
+    const remainderAnchorId: number = this.olderPrefetchRemainderAnchorId;
+    const remainder: TdObject | null = this.olderPrefetchRemainder;
+    this.olderPrefetchAnchorId = 0;
+    this.olderPrefetchResult = null;
+    this.olderPrefetchRemainderAnchorId = 0;
+    this.olderPrefetchRemainder = null;
+    this.olderPrefetchDemanded = false;
+    this.olderPrefetchPromotionActive = true;
+    this.applyOlderPage(res, anchorId);
+    this.olderPrefetchPromotionActive = false;
+    if (remainder !== null && remainderAnchorId === this.oldestId && this.hasMoreOlder) {
+      this.olderPrefetchAnchorId = remainderAnchorId;
+      this.olderPrefetchResult = remainder;
+    } else if (this.hasMoreOlder && this.initialFillTries === 0) {
+      this.prefetchOlder();
+    }
+    return true;
+  }
+
+  // 向上翻页要几条。
+  //
+  // 首屏补链（initialFillTries > 0）仍走整页：那几次的目标是尽快铺满一屏，
+  // 此时屏上还没有行要重建，分小页只是多几轮往返。真正要压峰值的是滚动翻页。
+  // historyPageSize 由调用方配置（可低于 OLDER_PAGE），所以取两者较小的。
+  private olderRequestLimit(): number {
+    return this.initialFillTries > 0
+      ? this.historyPageSize : Math.min(OLDER_PAGE, this.historyPageSize);
+  }
+
+  private olderPrefetchRequestLimit(): number {
+    const page: number = this.olderRequestLimit();
+    // 两页共享一条边界消息，所以 15 + 15 只需取 29 条。
+    return page > 1 ? page * 2 - 1 : page;
+  }
+
+  private applyOlderPage(res: TdObject, anchorId: number): void {
+    const arr = (res['messages'] as TdObject[] | undefined) ?? [];
+    if (!this.olderPageHasEntry(res, anchorId)) {
+      // An empty/cache-only TDLib page is not authoritative. Retry from the
+      // same anchor before declaring the history exhausted.
+      if (this.olderEmptyRetries > 0) {
+        this.olderEmptyRetries--;
+        this.olderLoadState = 'idle';
+        logW(`[StoreDiag] older empty, retrying left=${this.olderEmptyRetries}` +
+          ` anchor=${anchorId} rows=${this.messages.length}`);
+        this.onHistory(res, 'older');
+        this.loadOlder();
+        return;
+      }
+      this.hasMoreOlder = false;
+      this.olderLoadState = 'end';
+    } else {
+      this.olderEmptyRetries = OLDER_EMPTY_RETRIES;
+      this.olderLoadState = 'idle';
+    }
+    this.onHistory(res, 'older');
+    if (arr.length > 0 && this.hasMoreOlder && this.initialFillTries === 0) {
+      this.prefetchOlder();
+    }
+  }
+
+  private failOlderLoad(e: TdError): void {
+    if ((e as TdError).code === 404) {
+      this.hasMoreOlder = false;
+      this.olderLoadState = 'end';
+    } else {
+      this.olderLoadState = 'error';
+      logE(`MessageStore.loadOlder failed: ${e.message}`);
+    }
+    this.notify('paginationState');
+  }
+
+  private requestOlderPrefetch(anchorId: number, seq: number): void {
+    this.olderPrefetchPending = true;
+    const req = this.historyRequest(anchorId, 0, this.olderPrefetchRequestLimit());
+    this.client.send(req).then((res: TdObject): void => {
+      if (seq !== this.olderPrefetchSeq || anchorId !== this.oldestId) {
+        return;
+      }
+      if (!this.olderPageHasEntry(res, anchorId)) {
+        if (this.olderPrefetchEmptyRetries > 0) {
+          this.olderPrefetchEmptyRetries--;
+          logW(`[StoreDiag] older prefetch empty, retrying left=${this.olderPrefetchEmptyRetries}` +
+            ` anchor=${anchorId} rows=${this.messages.length}`);
+          this.requestOlderPrefetch(anchorId, seq);
+          return;
+        }
+        this.olderPrefetchPending = false;
+        this.olderPrefetchAnchorId = 0;
+        this.olderPrefetchDemanded = false;
+        this.hasMoreOlder = false;
+        this.olderLoadState = 'end';
+        this.notify('paginationState');
+        return;
+      }
+      this.olderPrefetchPending = false;
+      this.olderPrefetchEmptyRetries = OLDER_EMPTY_RETRIES;
+      this.stageOlderPrefetch(res, anchorId);
+      if (this.olderPrefetchDemanded) {
+        this.olderLoadState = 'idle';
+        this.consumeStagedOlderPrefetch();
+        return;
+      }
+    }).catch((e: TdError): void => {
+      if (seq !== this.olderPrefetchSeq) {
+        return;
+      }
+      const demanded: boolean = this.olderPrefetchDemanded;
+      this.olderPrefetchPending = false;
+      this.olderPrefetchAnchorId = 0;
+      this.olderPrefetchDemanded = false;
+      this.olderPrefetchEmptyRetries = OLDER_EMPTY_RETRIES;
+      if (demanded) {
+        this.failOlderLoad(e);
+      } else if ((e as TdError).code === 404) {
+        this.hasMoreOlder = false;
+        this.olderLoadState = 'end';
+        this.notify('paginationState');
+      } else {
+        logW(`MessageStore.prefetchOlder failed: ${e.message}`);
+      }
+    });
+  }
+
+  // Warm two older pages without changing the observable timeline. Repeated
+  // calls are cheap; ChatPage invokes this after its first anchor is latched.
+  prefetchOlder(): boolean {
+    if (this.olderPrefetchPromotionActive) {
+      return true;
+    }
+    if (this.olderPrefetchAnchorId !== 0 &&
+      this.olderPrefetchAnchorId !== this.oldestId) {
+      this.clearOlderPrefetch();
+    }
+    if (this.olderPrefetchPending || this.olderPrefetchResult !== null) {
+      return true;
+    }
+    if (this.olderPending || this.initialFillTries > 0 ||
+      this.olderLoadState !== 'idle' || !this.hasMoreOlder || this.oldestId === 0) {
+      return false;
+    }
+    const anchorId: number = this.oldestId;
+    const seq: number = ++this.olderPrefetchSeq;
+    this.olderPrefetchAnchorId = anchorId;
+    this.olderPrefetchEmptyRetries = OLDER_EMPTY_RETRIES;
+    this.requestOlderPrefetch(anchorId, seq);
+    return true;
+  }
+
+  // 把**已经取回、还没发布**的两页合成一次前插发布。停稳时用它代替 loadOlder()，
+  // 少撞一次"顶到头干等"的墙（真机实测那段等待 835~1187ms）。
+  //
+  // 【为什么必须合并，不能连发两次】连发的写法在真机上会跳页（2026-09-10）：
+  // 第一页发布后行数变了，而 onScrollIndex 还没来得及再上报，第二页的
+  // anchorIndexFresh 判据失败 → [PrependAnchor] skip reason=stale-index →
+  // 那一页毫无补偿地插在上面，内容整屏下推。
+  //
+  // 试过让第二页也能记锚点（发布后就地推进已上报下标），逻辑成立但真机上"更乱"，
+  // 已放弃——两页本来就来自**同一个请求**：stageOlderPrefetch 按 pageSize 把它切成
+  // first + remainder，且两者共用边界那一条（remainder = arr.slice(pageSize-1)）。
+  // 合回去时去掉重复的那一条，就还原成原始那一页。一次前插、一次锚点、一次 prime，
+  // 和单页路径完全同构。
+  //
+  // 手上没有两页时退化成普通 loadOlder()（含"一页都没预取"这种情况）。
+  loadOlderMerged(): boolean {
+    const first: TdObject | null = this.olderPrefetchResult;
+    const second: TdObject | null = this.olderPrefetchRemainder;
+    if (first === null || second === null || this.olderPrefetchAnchorId !== this.oldestId) {
+      return this.loadOlder();
+    }
+    const anchorId: number = this.olderPrefetchAnchorId;
+    const firstArr: TdObject[] = (first['messages'] as TdObject[] | undefined) ?? [];
+    const secondArr: TdObject[] = (second['messages'] as TdObject[] | undefined) ?? [];
+    // slice(1)：去掉与 first 末条重复的边界那一条。
+    //
+    // 【这条假设必须被验证，不能默认成立】两页来自同一次预取的连续请求，第二页
+    // 的第一条**应当**就是第一页的最后一条（共用边界）。假设不成立时 slice(1)
+    // 会**吞掉一条真消息**，而且正好吞在接缝上——表现就是"某条消息凭空消失、
+    // 相册整个不见"。2026-09-10 用户怀疑"前插插错数据"，这里是唯一有此风险的
+    // 地方，所以把它变成可判定的事实而不是注释里的一句话。
+    const firstLast: number = firstArr.length > 0
+      ? ((firstArr[firstArr.length - 1]['id'] as number | undefined) ?? 0) : 0;
+    const secondFirst: number = secondArr.length > 0
+      ? ((secondArr[0]['id'] as number | undefined) ?? 0) : 0;
+    const boundaryShared: boolean = firstLast !== 0 && firstLast === secondFirst;
+    if (!boundaryShared && secondArr.length > 0) {
+      logW(`[MergeGuard] older pages do not share a boundary:` +
+        ` firstLast=${firstLast} secondFirst=${secondFirst}` +
+        ` first=${firstArr.length} second=${secondArr.length} anchor=${anchorId}`);
+    }
+    // 边界不共用时**不能** slice——那会吞掉第二页的第一条。
+    const merged: TdObject[] = firstArr.concat(
+      boundaryShared ? secondArr.slice(1) : secondArr);
+    const page: TdObject = this.historyPageSlice(first, merged);
+    this.olderPrefetchAnchorId = 0;
+    this.olderPrefetchResult = null;
+    this.olderPrefetchRemainderAnchorId = 0;
+    this.olderPrefetchRemainder = null;
+    this.olderPrefetchDemanded = false;
+    // 与 consumeStagedOlderPrefetch 同样的护栏：applyOlderPage 里的 notify 是同步的，
+    // 订阅回调会立刻再调 loadOlder——不挡住就是同帧自激环（jscrash 20260902143829）。
+    this.olderPrefetchPromotionActive = true;
+    this.applyOlderPage(page, anchorId);
+    this.olderPrefetchPromotionActive = false;
+    if (this.hasMoreOlder && this.initialFillTries === 0) {
+      this.prefetchOlder();
+    }
+    return true;
+  }
+
+  // ── 窗口裁剪 ────────────────────────────────────────────────────
+  //
+  // 【为什么必须有】消息窗口原本没有任何上限。真机实测（2026-09-10）：一路
+  // 往上翻到 1430 行时，**每一次发布**要 15ms——约两帧——而发布很频繁
+  // （下载心跳、缩略图落地、译文落地）。发布这条路上的三段
+  // （collapseAlbums 整表重建 / 逐行发通道 / reuseUnchangedRows）**全是
+  // O(行数)**，且在 1200+ 行时三段一样贵（6/6/4ms），抠单段已无出路：就算把
+  // 最贵那段做成 O(1)，15ms 也只降到 9ms，仍然超帧。真正的自变量是行数本身。
+  //
+  // 400 行时按线性推约 4~5ms，一步进预算。
+  //
+  // 【谁来调】ChatPage，且**只在停稳且手指抬起**时——滑动热路径里绝不改行数。
+  // 保留范围由调用方按可见区 ± 余量给出，屏幕上的行一根都不许被删。
+  //
+  // 【位置为什么不会飘】删的是可见区外很远的行，且剩下的行身份一个不变，属于
+  // List.maintainVisibleContentPosition(true) 明确支持的纯删除。它在本项目里
+  // 失手过一次，但那是"相册跨页合并导致旧行身份消失"，和这里不是一回事
+  // （见 capturePrependAnchorSample 的注释）。ChatPage 那侧配了漂移探针盯着。
+  //
+  // 【砍完要能拉回来】砍了老的一端就把 hasMoreOlder 重新置真、清掉预取（预取
+  // 锚点是按 oldestId 记的，砍完就失效了）；砍了新的一端就把 hasMoreNewer 置
+  // 真——新端分页本来就为跳转场景存在，往回滑会经 loadNewer 重新取。
+  trimWindowTo(firstKeepId: number, lastKeepId: number): boolean {
+    const msgs: MessageEntry[] = this.messages;
+    // 门槛交给调用方（ChatPage 有滞后策略，还知道视口在哪）；这里只挡住
+    // 空区间这种明显错误的请求。
+    if (firstKeepId > lastKeepId) {
+      return false;
+    }
+    let from: number = 0;
+    while (from < msgs.length && msgs[from].id < firstKeepId) {
+      from++;
+    }
+    let to: number = msgs.length - 1;
+    while (to >= 0 && msgs[to].id > lastKeepId) {
+      to--;
+    }
+    // 保留区必须非空，而且真有东西可砍。
+    if (to < from || (from === 0 && to === msgs.length - 1)) {
+      // ⚠️ 临时：查"裁剪不触发"。msgs 是**消息**不是行，两者可能差很多。
+      logW(`[Trim] refused msgs=${msgs.length} from=${from} to=${to}` +
+        ` keep=${firstKeepId}..${lastKeepId}` +
+        ` msgFirst=${msgs[0].id} msgLast=${msgs[msgs.length - 1].id}`);
+      return false;
+    }
+    const cutOlder: number = from;
+    const cutNewer: number = msgs.length - 1 - to;
+    this.messages = msgs.slice(from, to + 1);
+    // 窗口整体换掉：任何没走 noteCustomEmoji 的路径由这次兜底扫一遍。
+    this.customEmojiFullScanPending = true;
+    if (cutOlder > 0) {
+      this.hasMoreOlder = true;
+      this.olderLoadState = 'idle';
+      this.olderEmptyRetries = OLDER_EMPTY_RETRIES;
+      this.clearOlderPrefetch();
+      this.oldestId = this.messages[0].id;
+    }
+    if (cutNewer > 0) {
+      this.hasMoreNewer = true;
+      this.newerLoadState = 'idle';
+      this.newerEmptyAnchor = 0;
+      this.newerEmptyStreak = 0;
+    }
+    logW(`[Trim] rows=${msgs.length}->${this.messages.length}` +
+      ` cutOlder=${cutOlder} cutNewer=${cutNewer}` +
+      ` keep=${firstKeepId}..${lastKeepId}` +
+      ` hasMoreOlder=${this.hasMoreOlder} hasMoreNewer=${this.hasMoreNewer}`);
+    this.notify('trim');
+    return true;
+  }
+
+  loadOlder(): boolean {
+    if (this.olderPrefetchAnchorId !== 0 &&
+      this.olderPrefetchAnchorId !== this.oldestId) {
+      this.clearOlderPrefetch();
+    }
+    if (this.olderPrefetchResult !== null &&
+      this.olderPrefetchAnchorId === this.oldestId) {
+      return this.consumeStagedOlderPrefetch();
+    }
+    if (this.olderPrefetchPending &&
+      this.olderPrefetchAnchorId === this.oldestId) {
+      // The gesture arrived before the warm request completed. Promote that
+      // same request to visible loading instead of starting a duplicate.
+      //
+      // 幂等（jscrash 20260902143829 的爆栈修复）：升级只在**第一次**通知。
+      // 这里的 notify 是同步的，订阅回调里 fillViewportIfNeeded 看到行数
+      // 未变、守卫依旧成立，会立刻重新上膛再调 loadOlder——若每次都重复
+      // notify，就是 fillViewport → loadOlder → notify → fillViewport 的
+      // 同帧自激环，直到 Stack overflow（内容恰好一屏内 + 预取在飞时触发）。
+      // 已在 demanded/loading 态时静默返回 true 即可：状态没有变化，无事可报。
+      if (!this.olderPrefetchDemanded || this.olderLoadState !== 'loading') {
+        this.olderPrefetchDemanded = true;
+        this.olderLoadState = 'loading';
+        this.notify('paginationState');
+      }
+      return true;
+    }
+    if (this.olderPending || this.olderLoadState === 'error' ||
+      !this.hasMoreOlder || this.oldestId === 0) {
+      // 诊断：反馈过"有会话进去只有一页、往上翻不动"，且不必现。这里是历史
+      // 分页唯一的拒绝点，四个条件各指一处原因。
+      //
+      // 每个会话只打一行：正常翻到顶也会走这里，逐次打会把环形缓冲刷爆，
+      // 等偶发现象时反而把证据挤掉。
+      // 每种**理由**各打一次，而不是整个会话只打一次：先因为"请求在途"被拒
+      // （正常），之后因为 hasMore=false 被拒（异常）就再也看不见了——那正是
+      // 要查的那种。
+      const reason: string = `${this.olderPending}/${this.olderLoadState}/${this.hasMoreOlder}`;
+      if (!this.loadOlderRefusalSeen.has(reason)) {
+        this.loadOlderRefusalSeen.add(reason);
+        logW(`loadOlder refused pending=${this.olderPending}` +
+          ` state=${this.olderLoadState} hasMore=${this.hasMoreOlder}` +
+          ` oldest=${this.oldestId} rows=${this.messages.length}`);
+      }
+      return false;
+    }
+    const anchorId = this.oldestId;
+    this.olderPending = true;
+    this.olderLoadState = 'loading';
+    this.notify('paginationState');
+    const req = this.historyRequest(anchorId, 0, this.olderRequestLimit());
+    this.client.send(req).then((res: TdObject) => {
+      this.olderPending = false;
+      this.applyOlderPage(res, anchorId);
+    }).catch((e: TdError) => {
+      this.olderPending = false;
+      this.failOlderLoad(e);
+    });
+    return true;
+  }
+
+  // True while unloaded newer pages exist below the loaded window (i.e. we
+  // jumped into the middle of history and haven't reached the live tail).
+  getHasMoreNewer(): boolean {
+    return this.hasMoreNewer;
+  }
+
+  getHasMoreOlder(): boolean {
+    return this.hasMoreOlder;
+  }
+
+  getOlderLoadState(): string {
+    return this.olderLoadState;
+  }
+
+  getNewerLoadState(): string {
+    return this.newerLoadState;
+  }
+
+  getCurrentNotifyKind(): string {
+    return this.currentNotifyKind;
+  }
+
+  // ChatPage cannot choose between a remembered position and the unread
+  // boundary until getChat resolves. Expose the store's authoritative choice
+  // so the page prepares exactly one first-frame anchor.
+  // 记住的位置这次赢不赢未读锚点。判据在 util/chatResume（有单测）——尤其是
+  // 「只有记住的位置落在已读区时才赢」那条方向性，issue #216。
+  isResumeLandingSelected(): boolean {
+    return this.requestedAroundIsResume && resumeBeatsUnread(
+      this.requestedAroundMessageId, this.unreadCount, this.lastReadInboxId);
+  }
+
+  getInitialHistoryState(): string {
+    return this.initialHistoryState;
+  }
+
+  // The first TDLib history response may contain only the newest message even
+  // though older history exists. onHistory chains bounded `older` requests in
+  // that case. ChatPage must keep its lightweight initial-message admission
+  // open until that chain settles; otherwise the one-row snapshot completes
+  // staging and the following page is published in one expensive layout pass.
+  isInitialFillPending(): boolean {
+    return this.initialFillTries > 0 &&
+      (this.olderPending || this.olderLoadState === 'loading');
+  }
+
+  getInitialHistoryError(): string {
+    return this.initialHistoryError;
+  }
+
+  retryInitialHistory(): void {
+    if (this.initialHistoryState !== 'error') {
+      return;
+    }
+    this.initialHistoryState = 'loading';
+    this.initialHistoryError = '';
+    this.notify('initialState');
+    this.requestInitialPage();
+  }
+
+  retryOlder(): void {
+    if (this.olderLoadState !== 'error') {
+      return;
+    }
+    this.olderLoadState = 'idle';
+    this.loadOlder();
+  }
+
+  retryNewer(): void {
+    if (this.newerLoadState !== 'error') {
+      return;
+    }
+    this.newerLoadState = 'idle';
+    // 用户点了"重试"：这一页和手势翻出来的那一页一样属于用户主动请求。
+    this.loadNewer(true);
+  }
+
+  // Jump straight to the newest messages: drop the loaded window and reload
+  // latest page. The replacement is atomic: keep the current window visible
+  // until the request succeeds, so a network failure never leaves a blank list.
+  // Used by the scroll-to-bottom button when thousands of unloaded messages
+  // separate the user from the tail.
+  //
+  // probeSeq：调用方的点击序号，只用于把 [JumpLatest] 日志串成一次点击。
+  jumpToLatest(onComplete?: (success: boolean) => void, probeSeq: number = 0): void {
+    if (this.latestPending) {
+      // 早退分支也要出声：「什么都没打」和「打了但早退」是两种诊断。
+      logW(`[JumpLatest] #${probeSeq} store abort reason=latestPending`);
+      if (onComplete !== undefined) {
+        onComplete(false);
+      }
+      return;
+    }
+    this.latestPending = true;
+    const req = this.historyRequest(0, 0);
+    logW(`[JumpLatest] #${probeSeq} store request limit=${this.historyPageSize}` +
+      ` rows=${this.messages.length} hasMoreNewer=${this.hasMoreNewer}` +
+      ` chatLast=${this.chatLastMessageId}`);
+    this.client.send(req).then((res: TdObject): void => {
+      this.latestPending = false;
+      const got: number = ((res['messages'] as TdObject[] | undefined) ?? []).length;
+      // 空回复不能把窗口清空。原来是先 `this.messages = []` 再 onHistory，
+      // TDLib 合法地回 0 条时窗口就整个没了，而 ChatPage 那边的贴底意图挂着
+      // `list.length > 0`，于是意图既不落地也不释放——用户看到的正是"点了没
+      // 反应"。留着旧窗口按失败返回，调用方会提示并让用户重试。
+      if (got === 0) {
+        logW(`[JumpLatest] #${probeSeq} store empty reply, window kept` +
+          ` rows=${this.messages.length}`);
+        if (onComplete !== undefined) {
+          onComplete(false);
+        }
+        this.flushDeferredOutgoing();
+        return;
+      }
+      this.hasMoreNewer = false;
+      this.hasMoreOlder = true;
+      this.newerPending = false;
+      this.olderPending = false;
+      this.olderEmptyRetries = OLDER_EMPTY_RETRIES;
+      this.newerLoadState = 'end';
+      this.olderLoadState = 'idle';
+      this.clearOlderPrefetch();
+      this.messages = [];
+      this.oldestId = 0;
+      this.onHistory(res, 'latest');
+      this.deferOutgoingUntilLatest = false;
+      this.flushDeferredOutgoing();
+      const windowLast: number = this.messages.length > 0
+        ? this.messages[this.messages.length - 1].id : 0;
+      logW(`[JumpLatest] #${probeSeq} store applied got=${got} rows=${this.messages.length}` +
+        ` windowLast=${windowLast} chatLast=${this.chatLastMessageId}` +
+        ` windowAtTail=${reachedLiveTail(windowLast, this.chatLastMessageId)}` +
+        ` hasMoreNewer=${this.hasMoreNewer}`);
+      if (onComplete !== undefined) {
+        onComplete(true);
+      }
+    }).catch((e: TdError): void => {
+      this.latestPending = false;
+      logW(`[JumpLatest] #${probeSeq} store failed code=${(e as TdError).code}`);
+      if ((e as TdError).code !== 404) {
+        logE(`MessageStore.jumpToLatest failed: ${e.message}`);
+      }
+      if (onComplete !== undefined) {
+        onComplete(false);
+      }
+      this.flushDeferredOutgoing();
+    });
+  }
+
+  // Called before sending while the loaded window has a newer-page gap.
+  // The server history request remains the sole source of the latest window.
+  deferOutgoingForLatest(): void {
+    if (this.hasMoreNewer) {
+      this.deferOutgoingUntilLatest = true;
+    }
+  }
+
+  // Recovery path for a failed/aborted latest jump. The message must remain
+  // visible even when the network cannot replace the window right now.
+  flushDeferredOutgoing(): void {
+    if (this.deferredOutgoing.length === 0) {
+      this.deferOutgoingUntilLatest = false;
+      return;
+    }
+    const pending: MessageEntry[] = this.deferredOutgoing;
+    this.deferredOutgoing = [];
+    this.deferOutgoingUntilLatest = false;
+    for (const entry of pending) {
+      this.upsert(entry);
+    }
+    this.resolveReplies();
+    this.requestPhotos();
+    this.notifySoon();
+  }
+
+  private publishOutgoing(entry: MessageEntry): void {
+    if (this.deferOutgoingUntilLatest && this.hasMoreNewer && entry.isOutgoing) {
+      const index: number = this.deferredOutgoing.findIndex((e: MessageEntry): boolean => e.id === entry.id);
+      if (index >= 0) {
+        this.deferredOutgoing[index] = entry;
+      } else {
+        this.deferredOutgoing.push(entry);
+      }
+      return;
+    }
+    if (this.deferOutgoingUntilLatest && this.hasMoreNewer && entry.isOutgoing) {
+      this.publishOutgoing(entry);
+      return;
+    }
+    this.upsert(entry);
+  }
+
+  // Anchor of the one allowed cache-warm retry — see the comment in loadNewer.
+  // Reset implicitly: a successful page moves newestId, and the next stall (if
+  // any) is a different anchor.
+  private newerRetryAnchor: number = 0;
+
+  // 同一个锚点上"服务端没给出更新的消息"连续发生了几次。给 decideNewerTail 的
+  // 认输计数用：chatLast 指着一条永远取不回来的消息时不能无限挂着。
+  private newerEmptyAnchor: number = 0;
+  private newerEmptyStreak: number = 0;
+
+  // 有一页用户主动翻出来的 newer 已经发布/即将发布，还没被 ChatPage 消费。
+  private userDrivenAppendPending: boolean = false;
+
+  // 置位。只在**这一页真的要合进窗口**的那一刻调用（onHistory(res,'newer') 前
+  // 一行），不在 .then() 开头——不然缓存预热重问、页首断链整页丢弃这些一行都不
+  // 追加的分支也会置位，而它们置的位没人消费，会永久闩住。
+  private markUserDrivenAppend(userDriven: boolean): void {
+    if (userDriven) {
+      this.userDrivenAppendPending = true;
+    }
+  }
+
+  // 取走并清掉上面那个标记。
+  //
+  // ChatPage 在**每一次**发布都无条件调用它（用不用得上再看这次发布有没有真的
+  // 追加行）。所以标记最多活过一次发布，跨页残留不可能发生。
+  consumeUserDrivenAppend(): boolean {
+    const pending: boolean = this.userDrivenAppendPending;
+    this.userDrivenAppendPending = false;
+    return pending;
+  }
+
+  // Load the next (newer) page — only meaningful after a loadAround jump into
+  // the middle of history left unloaded messages below the window.
+  //
+  // userDriven: 这一页是用户手势推出来的（手指按着列表 / 惯性滑动中越过底部
+  // 触发线），而不是首屏自动预取、补链或查看器换组。判定在**请求发出时**做，
+  // 由调用方给出，一路带到发布点——ChatPage 据此决定要不要复位视口锚点
+  // （见 util/appendAnchor）。默认假：没有明确说是用户打的，就当成程序性的。
+  loadNewer(userDriven: boolean = false): boolean {
+    // 'error' 原来是**粘住**的：一次网络失败之后 loadNewer 永远返回 false，
+    // 直到用户在时间线上找到那条重试提示点一下（retryNewer）。而向下翻页的
+    // 失败提示挂在列表末尾，用户正往下滑时未必看得见——表现就是"会话突然
+    // 再也翻不动了"，且不必现、极难复现。
+    //
+    // 这里给它一条自愈路径：**用户驱动的请求自带一次重试**。程序性请求仍然
+    // 被挡住（否则一个失败会变成后台重试风暴），而用户驱动的请求现在最快也
+    // 要攒够 PAGE_GATE_REARM_DRAG_VP 的手指位移才发得出来（见 util/pageGate），
+    // 天然就是节流的：用户再往下推一段，就重试一次。
+    // 显式的 retryNewer() 保留不动，两条路互不影响。
+    if (this.newerLoadState === 'error') {
+      if (!userDriven) {
+        return false;
+      }
+      this.newerLoadState = 'idle';
+    }
+    if (this.newerPending || !this.hasMoreNewer || this.messages.length === 0) {
+      return false;
+    }
+    const newestId = this.messages[this.messages.length - 1].id;
+    this.newerPending = true;
+    this.newerLoadState = 'loading';
+    this.notify('paginationState');
+    const req = this.historyRequest(newestId, -(this.historyPageSize - 1));
+    this.client.send(req).then((res: TdObject) => {
+      this.newerPending = false;
+      // 标记**不**在这里置位。这一页还没合并，下面好几条分支（缓存预热重问、
+      // 页首断链整页丢弃）一行都不会追加就返回，在这里置位等于凭空造一个没人
+      // 消费的闩。置位挪到真正调用 onHistory(res, 'newer') 合并那两处。
+      const arr = (res['messages'] as TdObject[] | undefined) ?? [];
+      let maxId = 0;
+      for (const m of arr) {
+        const id = (m['id'] as number | undefined) ?? 0;
+        if (id > maxId) {
+          maxId = id;
+        }
+      }
+      // 连续性检查。loadNewer 从窗口最新一条往上取，如果本地库里紧邻的那段
+      // 是空的，TDLib 会返回**更上面**的一段——和窗口接不上。无条件合并就会
+      // 在中间留下一个洞，而且再也不会自己合上（后续加载都发生在更新的那端）。
+      // 实测抓到过 43 条的洞卡在第 223 行、窗口涨到 630 行它还在。
+      //
+      // latest 那边早有同样的检查，newer 一直漏着。
+      let pageOldest: number = 0;
+      for (const m of arr) {
+        const id = (m['id'] as number | undefined) ?? 0;
+        if (id > 0 && (pageOldest === 0 || id < pageOldest)) {
+          pageOldest = id;
+        }
+      }
+      const skipped: number = pageOldest > newestId
+        ? Math.round((pageOldest - newestId) / ID_STEP) : 0;
+      if (skipped > NEWER_GAP_TOLERANCE && this.newerGapRetries > 0) {
+        // 页首就和窗口接不上：整页都不要，从同一个锚点重问，等 TDLib 把中间
+        // 那段取回来。
+        this.newerGapRetries--;
+        this.newerLoadState = 'idle';
+        logW(`[StoreDiag] newer discontinuous skipped=${skipped}` +
+          ` newestId=${newestId} pageOldest=${pageOldest}` +
+          ` retriesLeft=${this.newerGapRetries}`);
+        this.loadNewer(userDriven);
+        return;
+      }
+      if (skipped > NEWER_GAP_TOLERANCE) {
+        logW(`[StoreDiag] newer discontinuous skipped=${skipped} merged anyway`);
+      }
+      this.newerGapRetries = NEWER_GAP_RETRIES;
+      // 页首连得上还不够：这一页**内部**也可能是断的。本地库里若只剩"紧挨着
+      // 窗口的几条"和"最新那一条"，TDLib 会把两截一起给回来，中间几万条缺着。
+      // 实测抓到过 99689 条的缺口就是这么进来的——页首连续，检查放行，洞跟着
+      // 整页一起进了窗口，而且再也不会自己合上。
+      //
+      // 所以只收与窗口连续的那一段，断点之后的整段丢掉：那部分等用户真翻到
+      // 那里再取，宁可少收也不能留洞。
+      // 只看**严格更新**的那些。页里往往还带着窗口已有的几条，它们与锚点的
+      // 步长是 0，会被当成"连续前缀"留下来——留下来又都是重复的，窗口一行
+      // 不涨、锚点一步不进，于是同一个锚点问同一个问题，永远原地打转。
+      // 实测就是这样卡死的：一页 30 条留 2 条，rows 恒定 14，新消息还被
+      // 实时到达守卫一并挡掉，表现为"999+ 却滑不动、也不更新"。
+      const sorted: TdObject[] = arr.slice()
+        .filter((m: TdObject): boolean => (((m['id'] as number | undefined) ?? 0) > newestId))
+        .sort((a: TdObject, b: TdObject): number =>
+          (((a['id'] as number | undefined) ?? 0) - ((b['id'] as number | undefined) ?? 0)));
+      const contiguous: TdObject[] = [];
+      let prevId: number = newestId;
+      let dropped: number = 0;
+      for (const m of sorted) {
+        const id = (m['id'] as number | undefined) ?? 0;
+        const step: number = prevId > 0 ? Math.round((id - prevId) / ID_STEP) : 1;
+        if (dropped === 0 && step <= NEWER_GAP_TOLERANCE) {
+          contiguous.push(m);
+          prevId = id;
+        } else {
+          dropped++;
+        }
+      }
+      // 一条都接不上：这一页里更新的消息全在缺口之后。再问同一个锚点只会拿到
+      // 同一页，所以不能再丢——整页收下，让窗口带着这个洞往前走。
+      //
+      // 留洞确实是这套过滤当初要避免的，但"洞"和"整个会话冻住"不是一个量级：
+      // 洞还能往下翻、新消息照常进来，冻住则什么都做不了。宁可留洞。
+      if (contiguous.length === 0 && sorted.length > 0) {
+        logW(`[StoreDiag] newer page all behind a gap: taking ${sorted.length}` +
+          ` as-is to avoid stalling (newest=${newestId})`);
+        this.newerEmptyAnchor = 0;
+        this.newerEmptyStreak = 0;
+        // **这一句漏了就是"正在加载较新消息"关不掉。**本分支是三条合并路径里
+        // 唯一没把状态放回 idle 的：请求发出时置了 'loading'，整页收下之后没人
+        // 复位，胶囊于是永远挂在顶上，用户翻多久都消不掉（真机实报）。另外两条
+        // 分支（inner-gap-trimmed / 正常合并）都有这一句，只有这里没有。
+        this.newerLoadState = 'idle';
+        const whole: TdObject = { '@type': 'messages' };
+        whole['messages'] = sorted;
+        this.markUserDrivenAppend(userDriven);
+        this.onHistory(whole, 'newer');
+        this.notify('paginationState');
+        return;
+      }
+      if (dropped > 0) {
+        logW(`[StoreDiag] newer page had inner gap: kept=${contiguous.length}` +
+          ` dropped=${dropped} lastKept=${prevId}`);
+        this.newerEmptyAnchor = 0;
+        this.newerEmptyStreak = 0;
+        // 丢掉了后半段，说明更新的消息还在，别把分页关掉。
+        this.hasMoreNewer = true;
+        this.newerLoadState = 'idle';
+        const trimmed: TdObject = { '@type': 'messages' };
+        trimmed['messages'] = contiguous;
+        this.markUserDrivenAppend(userDriven);
+        this.onHistory(trimmed, 'newer');
+        this.notify('paginationState');
+        return;
+      }
+      if (maxId <= newestId) {
+        // TDLib's classic negative-offset trap: the FIRST getChatHistory with
+        // offset < 0 is often served from the local cache only and returns
+        // nothing newer even though newer messages exist server-side. Treating
+        // that as "reached the live tail" froze newer-paging permanently —
+        // the "unread messages don't fully load" report. The first call warms
+        // TDLib's cache, so ask ONCE more from the same anchor.
+        if (this.newerRetryAnchor !== newestId) {
+          this.newerRetryAnchor = newestId;
+          this.newerLoadState = 'idle';
+          this.onHistory(res, 'newer');
+          this.loadNewer(userDriven);
+          return;
+        }
+        // 第二次仍然没有更新的消息。**这不足以证明到了实时尾部**——只证明这次
+        // 请求没拿到。到底了没有由 decideNewerTail 按 chatLastMessageId 判，见
+        // util/liveTail。原来这里无条件 hasMoreNewer=false / 'end'，真机上就是
+        // 它在谎报到底：用户怎么拖都不取页，可那条更新的消息过一会儿自己从实时
+        // 推送冒出来了。
+        if (this.newerEmptyAnchor === newestId) {
+          this.newerEmptyStreak++;
+        } else {
+          this.newerEmptyAnchor = newestId;
+          this.newerEmptyStreak = 1;
+        }
+        const outcome: NewerPageOutcome = {
+          serverCount: arr.length,
+          mergedCount: 0,
+          windowNewestId: newestId,
+          chatLastMessageId: this.chatLastMessageId,
+          emptyStreak: this.newerEmptyStreak
+        };
+        const tail: NewerTailVerdict = decideNewerTail(outcome);
+        this.hasMoreNewer = tail.hasMoreNewer;
+        this.newerLoadState = tail.state;
+      } else {
+        this.newerEmptyAnchor = 0;
+        this.newerEmptyStreak = 0;
+        this.newerLoadState = 'idle';
+      }
+      // 一行都没合进来时不置标记：置了也只是被下一次发布无条件丢掉（见
+      // util/appendAnchor 的一次性配对），不如根本不置。
+      if (sorted.length > 0) {
+        this.markUserDrivenAppend(userDriven);
+      }
+      this.onHistory(res, 'newer');
+    }).catch((e: TdError) => {
+      this.newerPending = false;
+      if ((e as TdError).code === 404) {
+        this.hasMoreNewer = false;
+        this.newerLoadState = 'end';
+      } else {
+        this.newerLoadState = 'error';
+        logE(`MessageStore.loadNewer failed: ${e.message}`);
+      }
+      this.notify('paginationState');
+    });
+    return true;
+  }
+
+  checkSharePermissions(payload: SharedPayload): Promise<void> {
+    return requireSendPermissions((request: TdRequest): Promise<TdObject> => this.client.send(request, 15000),
+      this.chatId, sharedSendPermissions(payload));
+  }
+
+  send(text: string, replyToId: number = 0): void {
+    this.sendAsync(text, replyToId).catch((e: TdError) => {
+      logE(`MessageStore.send failed code=${e.code}: ${e.message}`);
+      this.reconcileAfterUnknownSend(e);
+    });
+  }
+
+  // 发送超时 ≠ 没发出去。
+  //
+  // 'request timeout' 是 **TdClient 自己的定时器**判的，不是 TDLib 的答复：请求
+  // 多半早已交给 TDLib、消息也已经发到服务器，只是应答没能在窗口内回到 UI
+  // 线程。最常见的成因是切后台被冻住（见 TdClient 的 FROZEN_SLACK_MS）。
+  //
+  // 一旦判了超时，那条气泡就再也进不来了：
+  //   · sendAsync 的 .then 没跑过 ⇒ upsert 没执行 ⇒ 窗口里没有这条消息；
+  //   · 迟到的真应答会被 TdClient.deliverParsed 丢掉——@extra 早从 pending 摘了；
+  //   · 冻结期间送达的消息 TDLib **不会**补发 updateNewMessage（见
+  //     resumeOpenChat 上方那段真机结论）。
+  // 于是用户看到的就是「我自己发的消息看不到，退出再进就有了」。
+  //
+  // 唯一的出路是重新取一次最新页，让真正落地的那条自己回到窗口里——也就是把
+  // 用户手动「退出再进」做的事就地做掉。
+  //
+  // 闸与 resumeOpenChat 保持一致：窗口没停在实时尾部时不动它。那种情况下用户
+  // 本来就不在底部，硬拉一页只会搅乱视口，而消息并没有丢——往下翻页会带回来。
+  private reconcileAfterUnknownSend(e: TdError): void {
+    if (e.code !== TIMEOUT_ERROR_CODE) {
+      return;
+    }
+    if (this.initialHistoryState !== 'ready' || this.hasMoreNewer) {
+      logW(`[StoreDiag] send timed out, tail refetch skipped` +
+        ` state=${this.initialHistoryState} hasMoreNewer=${this.hasMoreNewer}`);
+      return;
+    }
+    logW(`[StoreDiag] send timed out, refetching newest page rows=${this.messages.length}`);
+    this.loadHistory(0);
+  }
+
+  // entities 目前只用于按 user_id 提及没有用户名的成员（见 mentionEntities）。
+  // 其余实体仍由服务器扫文本自行识别，这里不接管。
+  sendAsync(text: string, replyToId: number = 0, entities: TdObject[] = []): Promise<void> {
+    // 记一笔"我主动发过"，系统分享的目标名单按它排（util/recentOutgoing）。
+    noteOutgoingChat(this.chatId);
+    const ft: TdObject = { '@type': 'formattedText' };
+    ft['text'] = text;
+    if (entities.length > 0) {
+      ft['entities'] = entities;
+    }
+    const content: TdObject = { '@type': 'inputMessageText' };
+    content['text'] = ft;
+    const req: TdRequest = { '@type': 'sendMessage' };
+    req['chat_id'] = this.chatId;
+    if (replyToId !== 0) {
+      const rt: TdObject = { '@type': 'inputMessageReplyToMessage' };
+      rt['message_id'] = replyToId;
+      req['reply_to'] = rt;
+    }
+    req['input_message_content'] = content;
+    this.applyTopicScope(req);
+    // 诊断：sendMessage 的往返耗时。用户报"发消息慢"（issue #47），但慢在
+    // 哪一段没量过——TDLib 本地接收下这个请求本该是毫秒级的，真慢的话说明
+    // 应答排在主线程上别的活后面（所有 TDLib 应答都经 threadsafe function
+    // 投递到 UI 线程，updateFile 的洪流也在同一条队里）。先把数拿到。
+    const sentAt: number = Date.now();
+    return sendWithChatPermissions(this.client, req).then((m: TdObject): void => {
+      const roundTripMs: number = Date.now() - sentAt;
+      if (roundTripMs > 300) {
+      } else {
+      }
+      const pendingId: number = (m['id'] as number | undefined) ?? 0;
+      if (pendingId !== 0) {
+        this.sendStartedAt.set(pendingId, sentAt);
+      }
+      this.publishOutgoing(buildMessageEntry(m, this.users));
+      this.resolveReplies();
+      this.notifySoon();
+    });
+  }
+
+  // Replace a text message's content in place. TDLib returns the edited
+  // message; upsert applies it (updateMessageContent also mirrors the change
+  // on other devices).
+  editTextAsync(messageId: number, text: string): Promise<void> {
+    const ft: TdObject = { '@type': 'formattedText' };
+    ft['text'] = text;
+    const content: TdObject = { '@type': 'inputMessageText' };
+    content['text'] = ft;
+    const req: TdRequest = { '@type': 'editMessageText' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    req['input_message_content'] = content;
+    return this.client.send(req).then((m: TdObject): void => {
+      this.upsert(buildMessageEntry(m, this.users));
+      this.resolveReplies();
+      this.notifySoon();
+    });
+  }
+
+  private lastTypingAtMs: number = 0;
+
+  // "typing…" indicator for the peer. Throttled: Telegram clients resend the
+  // action at most every few seconds while input continues.
+  notifyTyping(): void {
+    const now = Date.now();
+    if (now - this.lastTypingAtMs < 4000) { return; }
+    this.lastTypingAtMs = now;
+    const req: TdRequest = { '@type': 'sendChatAction' };
+    req['chat_id'] = this.chatId;
+    this.applyTopicScope(req);
+    req['action'] = { '@type': 'chatActionTyping' } as TdObject;
+    this.client.send(req).catch((): void => {});
+  }
+
+  cancelTyping(): void {
+    if (this.lastTypingAtMs === 0) { return; }
+    this.lastTypingAtMs = 0;
+    const req: TdRequest = { '@type': 'sendChatAction' };
+    req['chat_id'] = this.chatId;
+    this.applyTopicScope(req);
+    req['action'] = { '@type': 'chatActionCancel' } as TdObject;
+    this.client.send(req).catch((): void => {});
+  }
+
+  resetTypingThrottle(): void {
+    this.lastTypingAtMs = 0;
+  }
+
+  // Persist (or clear, when text is empty) the chat draft so it syncs to the
+  // account's other devices. TDLib clears the draft itself on send.
+  saveDraft(text: string, replyToId: number): void {
+    // [Draft] 探针：真机上「退出后草稿没保存」，保存/恢复两步原本都没留痕。
+    logW(`[Draft] save chat=${this.chatId} len=${text.trim().length} reply=${replyToId}`);
+    const req: TdRequest = { '@type': 'setChatDraftMessage' };
+    req['chat_id'] = this.chatId;
+    this.applyTopicScope(req);
+    if (text.trim() !== '') {
+      const ft: TdObject = { '@type': 'formattedText' };
+      ft['text'] = text;
+      const content: TdObject = { '@type': 'inputMessageText' };
+      content['text'] = ft;
+      const draft: TdObject = { '@type': 'draftMessage' };
+      draft['input_message_text'] = content;
+      if (replyToId !== 0) {
+        const rt: TdObject = { '@type': 'inputMessageReplyToMessage' };
+        rt['message_id'] = replyToId;
+        draft['reply_to'] = rt;
+      }
+      req['draft_message'] = draft;
+    }
+    this.client.send(req).catch((e: TdError): void => {
+      logE(`MessageStore.saveDraft failed: ${e.message}`);
+    });
+  }
+
+  // Send a text message at a future time (scheduling_state), or silently.
+  sendScheduledAsync(
+    text: string, replyToId: number, sendDate: number, silent: boolean
+  ): Promise<void> {
+    const ft: TdObject = { '@type': 'formattedText' };
+    ft['text'] = text;
+    const content: TdObject = { '@type': 'inputMessageText' };
+    content['text'] = ft;
+    const options: TdObject = { '@type': 'messageSendOptions' };
+    options['disable_notification'] = silent;
+    if (sendDate > 0) {
+      const schedule: TdObject = { '@type': 'messageSchedulingStateSendAtDate' };
+      schedule['send_date'] = sendDate;
+      options['scheduling_state'] = schedule;
+    }
+    const req: TdRequest = { '@type': 'sendMessage' };
+    req['chat_id'] = this.chatId;
+    if (replyToId !== 0) {
+      const rt: TdObject = { '@type': 'inputMessageReplyToMessage' };
+      rt['message_id'] = replyToId;
+      req['reply_to'] = rt;
+    }
+    req['input_message_content'] = content;
+    req['options'] = options;
+    this.applyTopicScope(req);
+    return sendWithChatPermissions(this.client, req).then((m: TdObject): void => {
+      // Scheduled messages live in a separate list; only immediate silent
+      // sends belong in the visible history.
+      if (sendDate <= 0) {
+        this.upsert(buildMessageEntry(m, this.users));
+        this.notifySoon();
+      }
+    });
+  }
+
+  stopPollAsync(messageId: number): Promise<void> {
+    const req: TdRequest = { '@type': 'stopPoll' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    return this.client.send(req).then((): void => {});
+  }
+
+  // Public-poll voters for one option, resolved to display names.
+  pollVotersAsync(messageId: number, optionId: number): Promise<TdObject> {
+    const req: TdRequest = { '@type': 'getPollVoters' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    req['option_id'] = optionId;
+    req['offset'] = 0;
+    req['limit'] = 50;
+    return this.client.send(req, 12000);
+  }
+
+  setAutoDeleteAsync(seconds: number): Promise<void> {
+    const req: TdRequest = { '@type': 'setChatMessageAutoDeleteTime' };
+    req['chat_id'] = this.chatId;
+    req['message_auto_delete_time'] = seconds;
+    return this.client.send(req).then((): void => {});
+  }
+
+  // Keep unread mentions until their messages are actually visible.
+  private readAllReactions(): void {
+    if (this.directMessagesTopicId > 0) {
+      const request: TdRequest = { '@type': 'readAllDirectMessagesChatTopicReactions' };
+      request['chat_id'] = this.chatId;
+      request['topic_id'] = this.directMessagesTopicId;
+      this.client.send(request).catch((): void => {});
+      return;
+    }
+    const reactions: TdRequest = { '@type': 'readAllChatReactions' };
+    reactions['chat_id'] = this.chatId;
+    this.client.send(reactions).catch((): void => {});
+  }
+
+  // Pin / unpin one message. The pinned banner refreshes through the store's
+  // existing pinned-message tracking (service message + pinned list updates).
+  pinAsync(messageId: number): Promise<void> {
+    const req: TdRequest = { '@type': 'pinChatMessage' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    req['disable_notification'] = false;
+    req['only_for_self'] = false;
+    return this.client.send(req).then((): void => { this.refreshPinned(); });
+  }
+
+  unpinAsync(messageId: number): Promise<void> {
+    const req: TdRequest = { '@type': 'unpinChatMessage' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    return this.client.send(req).then((): void => { this.refreshPinned(); });
+  }
+
+  // 取消当前作用域内的**全部**置顶。请求形状由 util/unpinAllRequest 决定
+  // （会话 / 论坛话题 / 频道私信 topic 三条不同的 td 方法），评论线程里它返回
+  // null——那时置顶条本来就是空的，发会话级请求会误伤整个讨论组。
+  unpinAllAsync(): Promise<void> {
+    const req: TdRequest | null = unpinAllRequest(
+      this.chatId, this.threadRootId, this.forumTopicId, this.directMessagesTopicId);
+    if (req === null) {
+      return Promise.resolve();
+    }
+    return this.client.send(req).then((): void => { this.refreshPinned(); });
+  }
+
+  // 新版 td_api：inputMessageXxx 的媒体字段是包装对象（inputPhoto/inputVideo/
+  // inputAudio/inputDocument/...），内部才是 InputFile。旧的裸 InputFile 会被
+  // 解析成 null，td 报 "InputFile is not specified"。
+  private static wrapInputFile(wrapperType: string, fileField: string,
+    inputFile: TdObject): TdObject {
+    const wrapper: TdObject = { '@type': wrapperType };
+    wrapper[fileField] = inputFile;
+    return wrapper;
+  }
+
+  private static localFile(path: string): TdObject {
+    const inputFile: TdObject = { '@type': 'inputFileLocal' };
+    inputFile['path'] = path;
+    return inputFile;
+  }
+
+  // Swap the media of an already-sent photo/video message (keeps the caption).
+  editMediaAsync(messageId: number, path: string, isVideo: boolean, caption: string): Promise<void> {
+    const inputFile: TdObject = MessageStore.localFile(path);
+    const content: TdObject = {
+      '@type': isVideo ? 'inputMessageVideo' : 'inputMessagePhoto'
+    };
+    content[isVideo ? 'video' : 'photo'] = MessageStore.wrapInputFile(
+      isVideo ? 'inputVideo' : 'inputPhoto', isVideo ? 'video' : 'photo', inputFile);
+    if (caption !== '') {
+      const ft: TdObject = { '@type': 'formattedText' };
+      ft['text'] = caption;
+      content['caption'] = ft;
+    }
+    const req: TdRequest = { '@type': 'editMessageMedia' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    req['input_message_content'] = content;
+    return this.client.send(req, 30000).then((m: TdObject): void => {
+      this.upsert(buildMessageEntry(m, this.users));
+      this.notifySoon();
+    });
+  }
+
+  // Reschedule a pending scheduled message.
+  editScheduleAsync(messageId: number, sendDate: number): Promise<void> {
+    const state: TdObject = { '@type': 'messageSchedulingStateSendAtDate' };
+    state['send_date'] = sendDate;
+    const req: TdRequest = { '@type': 'editMessageSchedulingState' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    req['scheduling_state'] = state;
+    return this.client.send(req, 15000).then((): void => {});
+  }
+
+  // Replace a media message's caption (photo/video/file/audio/voice).
+  editCaptionAsync(messageId: number, caption: string): Promise<void> {
+    const ft: TdObject = { '@type': 'formattedText' };
+    ft['text'] = caption;
+    const req: TdRequest = { '@type': 'editMessageCaption' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    req['caption'] = ft;
+    return this.client.send(req).then((m: TdObject): void => {
+      this.upsert(buildMessageEntry(m, this.users));
+      this.resolveReplies();
+      this.notifySoon();
+    });
+  }
+
+  // Toggle a reaction on a message. `reactionKey` 既可以是标准 emoji，也可以是
+  // 'ce:<custom_emoji_id>' 形式的自定义 emoji（见 util/reactions.ets）。TDLib
+  // 会通过 updateMessageInteractionInfo 推回新的计数，onInteraction() 已处理。
+  setReaction(messageId: number, reactionKey: string, isChosen: boolean): Promise<void> {
+    const rt: TdObject = reactionTypeOf(reactionKey);
+    if (isChosen) {
+      const req: TdRequest = { '@type': 'removeMessageReaction' };
+      req['chat_id'] = this.chatId;
+      req['message_id'] = messageId;
+      req['reaction_type'] = rt;
+      return this.client.send(req).then((): void => {}).catch((e: TdError): Promise<void> => {
+        logE(`MessageStore.removeMessageReaction failed: ${e.message}`);
+        return Promise.reject(e);
+      });
+    }
+    const req: TdRequest = { '@type': 'addMessageReaction' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    req['reaction_type'] = rt;
+    req['is_big'] = false;
+    req['update_recent_reactions'] = true;
+    return this.client.send(req).then((): void => {}).catch((e: TdError): Promise<void> => {
+      logE(`MessageStore.addMessageReaction failed: ${e.message}`);
+      return Promise.reject(e);
+    });
+  }
+
+  // Resolve a public/private t.me link for a message (used by 拷贝消息链接).
+  messageLink(messageId: number, cb: (url: string) => void): void {
+    const req: TdRequest = { '@type': 'getMessageLink' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    this.client.send(req).then((res: TdObject) => {
+      cb((res['link'] as string | undefined) ?? '');
+    }).catch((e: TdError) => {
+      logE(`MessageStore.getMessageLink failed: ${e.message}`);
+      cb('');
+    });
+  }
+
+  // Send a document from a local (sandbox) path. TDLib uploads it and the
+  // pending message arrives via the normal update flow.
+  sendDocument(path: string, caption: string): void {
+    this.sendDocumentAsync(path, caption).catch((e: TdError): void => {
+      logE(`MessageStore.sendDocument failed: ${e.message}`);
+    });
+  }
+
+  sendDocumentAsync(path: string, caption: string): Promise<void> {
+    const content: TdObject = { '@type': 'inputMessageDocument' };
+    content['document'] = MessageStore.wrapInputFile(
+      'inputDocument', 'document', MessageStore.localFile(path));
+    if (caption !== '') {
+      const ft: TdObject = { '@type': 'formattedText' };
+      ft['text'] = caption;
+      content['caption'] = ft;
+    }
+    const req: TdRequest = { '@type': 'sendMessage' };
+    req['chat_id'] = this.chatId;
+    req['input_message_content'] = content;
+    this.applyTopicScope(req);
+    noteOutgoingChat(this.chatId);
+    return sendWithChatPermissions(this.client, req).then((m: TdObject) => {
+      this.upsert(buildMessageEntry(m, this.users));
+      // Media returned by sendMessage still needs the same local-file
+      // resolution as history/new-message entries. Omitting this left a newly
+      // sent sticker on its loading ring until the chat was reopened.
+      this.requestPhotos();
+      this.notifySoon();
+    });
+  }
+
+  // Shared sendMessage plumbing for media content types.
+  private sendContent(content: TdObject, tag: string, replyToId: number = 0, strict: boolean = false): Promise<number> {
+    // 记一笔"我主动发过"，系统分享的目标名单按它排（util/recentOutgoing）。
+    noteOutgoingChat(this.chatId);
+    const req: TdRequest = { '@type': 'sendMessage' };
+    req['chat_id'] = this.chatId;
+    req['input_message_content'] = content;
+    if (replyToId > 0) {
+      const replyTo: TdObject = { '@type': 'inputMessageReplyToMessage' };
+      replyTo['message_id'] = replyToId;
+      req['reply_to'] = replyTo;
+    }
+    this.applyTopicScope(req);
+    return sendWithChatPermissions(this.client, req).then((m: TdObject): number => {
+      this.upsert(buildMessageEntry(m, this.users));
+      this.requestPhotos();
+      this.notifySoon();
+      return (m['id'] as number | undefined) ?? 0;
+    }).catch((e: TdError): Promise<number> => {
+      logE(`MessageStore.${tag} failed: ${e.message}`);
+      return strict ? Promise.reject(e) : Promise.resolve(0);
+    });
+  }
+
+  // 投票：options 为选项文本；isQuiz 时 correctOptionId 指向正确选项下标。
+  // TDLib 1.8.15+ 的 question/options 是 formattedText（纯字符串会被拒）。
+  sendPoll(question: string, options: string[], isAnonymous: boolean,
+    isQuiz: boolean, correctOptionId: number): void {
+    const toFormatted = (text: string): TdObject => {
+      const ft: TdObject = { '@type': 'formattedText' };
+      ft['text'] = text;
+      return ft;
+    };
+    const content: TdObject = { '@type': 'inputMessagePoll' };
+    content['question'] = toFormatted(question);
+    // **options 必须是 inputPollOption，不能直接塞 formattedText。**
+    //
+    // TDLib 从 1.8.30 起把 inputMessagePoll.options 从 vector<formattedText>
+    // 改成了 vector<InputPollOption>（每项 { text: FormattedText, media }）。
+    // 本仓钉的是 1.8.65（scripts/build-tdlib.sh 的 PIN_TDLIB），原生库里能查到
+    // 「inputPollOption」这个类型名，却查不到接受纯 formattedText 的旧路径。
+    //
+    // 旧写法不会报错、也不会抛——sendContent 只 in success 分支里 upsert，
+    // 失败静默。所以症状就是「点了发送没反应」（用户 2026-11-03 报的）。
+    content['options'] = options.map((option: string): TdObject => {
+      const item: TdObject = { '@type': 'inputPollOption' };
+      item['text'] = toFormatted(option);
+      return item;
+    });
+    content['is_anonymous'] = isAnonymous;
+    // **输入侧的投票类型是 inputPollType*，不是 pollType*。**
+    //
+    // 2026-11-03 真机连撞两次，两条错误看起来互相矛盾，其实指向同一件事：
+    //   · 传 {"@type":"pollTypeRegular"} → Unknown class "pollTypeRegular"
+    //     （pollTypeRegular 是**输出侧** Poll 的类型，输入侧的 InputPollType 是
+    //      另一套类，1.8.65 的 td_api.tl 里明写：
+    //        inputPollTypeRegular allow_adding_options:Bool = InputPollType;
+    //        inputPollTypeQuiz correct_option_ids:vector<int32> ... = InputPollType;）
+    //   · 干脆不传 type → Poll type must be non-empty（校验要求必填）
+    //
+    // 所以普通投票也要显式给，只是类名不同。
+    if (isQuiz) {
+      const quizType: TdObject = { '@type': 'inputPollTypeQuiz' };
+      quizType['correct_option_ids'] = [correctOptionId];
+      content['type'] = quizType;
+    } else {
+      const regularType: TdObject = { '@type': 'inputPollTypeRegular' };
+      regularType['allow_adding_options'] = false;
+      content['type'] = regularType;
+    }
+    this.sendContent(content, 'sendPoll');
+  }
+
+  sendLocation(latitude: number, longitude: number): void {
+    const location: TdObject = { '@type': 'location' };
+    location['latitude'] = latitude;
+    location['longitude'] = longitude;
+    const content: TdObject = { '@type': 'inputMessageLocation' };
+    content['location'] = location;
+    this.sendContent(content, 'sendLocation');
+  }
+
+  // 实时位置：live_period 秒内可持续更新。TDLib 用 0x7FFFFFFF 表示"永久"，
+  // 但那个值一般只在特定场景才被接受，这里只给有限时长。
+  //
+  // 必须用 inputMessageLiveLocation —— 捆绑的 libtdjson.so 把实时位置拆成了
+  // 独立的类（strings 里 inputMessageLocation / inputMessageLiveLocation 并存）。
+  // 挂在 inputMessageLocation 上的 live_period 会被 JSON 解析静默丢弃，发出去
+  // 的是一条静态位置，事后怎么 edit 都不会动。
+  sendLiveLocation(latitude: number, longitude: number, livePeriodSec: number): Promise<number> {
+    const location: TdObject = { '@type': 'location' };
+    location['latitude'] = latitude;
+    location['longitude'] = longitude;
+    // location 字段的类型是 liveLocation（一个包装层），不是裸 location：
+    // live_period/heading/proximity_alert_radius 都挂在包装层上。塞裸 location
+    // 会因为 @type 对不上被判为空 —— "Live location must be non-empty"。
+    const live: TdObject = { '@type': 'liveLocation' };
+    live['location'] = location;
+    live['live_period'] = livePeriodSec;
+    live['heading'] = 0;
+    live['proximity_alert_radius'] = 0;
+    const content: TdObject = { '@type': 'inputMessageLiveLocation' };
+    content['location'] = live;
+    return this.sendContent(content, 'sendLiveLocation');
+  }
+
+  // 更新一条已发出的实时位置。location 传 null 即停止共享（schema 里
+  // "pass null to stop sharing the live location"）。
+  updateLiveLocation(messageId: number, latitude: number, longitude: number,
+    livePeriodSec: number): Promise<void> {
+    const location: TdObject = { '@type': 'location' };
+    location['latitude'] = latitude;
+    location['longitude'] = longitude;
+    const live: TdObject = { '@type': 'liveLocation' };
+    live['location'] = location;
+    live['live_period'] = livePeriodSec;
+    live['heading'] = 0;
+    live['proximity_alert_radius'] = 0;
+    return this.editLiveLocation(messageId, live);
+  }
+
+  // 不带 location（即 null）就是停止共享。
+  stopLiveLocation(messageId: number): Promise<void> {
+    return this.editLiveLocation(messageId, null);
+  }
+
+  // location 是 liveLocation 包装层，不是裸 location —— 详见 LiveLocationService。
+  private editLiveLocation(messageId: number, live: TdObject | null): Promise<void> {
+    const req: TdRequest = { '@type': 'editMessageLiveLocation' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    if (live !== null) {
+      req['location'] = live;
+    }
+    return this.client.send(req, 15000).then((): void => {});
+  }
+
+  sendContact(phoneNumber: string, firstName: string, lastName: string, userId: number): void {
+    const contact: TdObject = { '@type': 'contact' };
+    contact['phone_number'] = phoneNumber;
+    contact['first_name'] = firstName;
+    contact['last_name'] = lastName;
+    contact['user_id'] = userId;
+    const content: TdObject = { '@type': 'inputMessageContact' };
+    content['contact'] = contact;
+    this.sendContent(content, 'sendContact');
+  }
+
+  sendAudio(path: string, caption: string): void {
+    this.sendAudioAsync(path, caption).catch((e: TdError): void => {
+      logE(`MessageStore.sendAudio failed: ${e.message}`);
+    });
+  }
+
+  sendAudioAsync(path: string, caption: string): Promise<void> {
+    const content: TdObject = { '@type': 'inputMessageAudio' };
+    content['audio'] = MessageStore.wrapInputFile(
+      'inputAudio', 'audio', MessageStore.localFile(path));
+    if (caption !== '') {
+      const ft: TdObject = { '@type': 'formattedText' };
+      ft['text'] = caption;
+      content['caption'] = ft;
+    }
+    return this.sendContent(content, 'sendAudio', 0, true).then((): void => {});
+  }
+
+  sendDice(emoji: string): void {
+    const content: TdObject = { '@type': 'inputMessageDice' };
+    content['emoji'] = emoji;
+    content['clear_draft'] = false;
+    this.sendContent(content, 'sendDice');
+  }
+
+  sendPhoto(path: string, caption: string, replyToId: number = 0): void {
+    const content: TdObject = { '@type': 'inputMessagePhoto' };
+    content['photo'] = MessageStore.wrapInputFile(
+      'inputPhoto', 'photo', MessageStore.localFile(path));
+    if (caption !== '') {
+      const ft: TdObject = { '@type': 'formattedText' };
+      ft['text'] = caption;
+      content['caption'] = ft;
+    }
+    this.sendContent(content, 'sendPhoto', replyToId);
+  }
+
+  sendVideo(path: string, caption: string, replyToId: number = 0): void {
+    const content: TdObject = { '@type': 'inputMessageVideo' };
+    content['video'] = MessageStore.wrapInputFile(
+      'inputVideo', 'video', MessageStore.localFile(path));
+    if (caption !== '') {
+      const ft: TdObject = { '@type': 'formattedText' };
+      ft['text'] = caption;
+      content['caption'] = ft;
+    }
+    this.sendContent(content, 'sendVideo', replyToId);
+  }
+
+  // GIF 的输入内容。**裸 InputFile，不包装**——与 sticker / voiceNote 同一族，
+  // 见 sendSticker 上那段关于"半新 schema"的说明。
+  //
+  // 不给 width / height / duration：本地 GIF 的这几个值我们没有现成的来源，
+  // 而 TDLib 在上传时会自己探。给一组瞎猜的数反倒会让接收端按错误比例留位。
+  // GIF 的 inputMessageAnimation 要**包装对象**（inputAnimation{animation:InputFile}），
+  // 和 photo/video 一样；1.4.2 里按「sticker 三兄弟仍是裸 InputFile」的旧结论写成
+  // 裸的，服务端一律回 "InputFile is not specified"，GIF 直接发不出去（issue #105
+  // 的回归）。这套 libtdjson 是半新半旧的 schema，所以不单押一边：先发包装的，
+  // 真遇到不认识这个类的库再退回裸的，见 sendAnimations。
+  private animationInputContent(item: MediaSendItem, caption: string, wrapped: boolean): TdObject {
+    const content: TdObject = { '@type': 'inputMessageAnimation' };
+    const file: TdObject = MessageStore.localFile(item.path);
+    content['animation'] = wrapped
+      ? MessageStore.wrapInputFile('inputAnimation', 'animation', file) : file;
+    if (caption !== '') {
+      const ft: TdObject = { '@type': 'formattedText' };
+      ft['text'] = caption;
+      content['caption'] = ft;
+    }
+    return content;
+  }
+
+  private mediaInputContent(item: MediaSendItem, caption: string): TdObject {
+    const inputFile: TdObject = MessageStore.localFile(item.path);
+    const content: TdObject = {
+      '@type': item.isVideo ? 'inputMessageVideo' : 'inputMessagePhoto'
+    };
+    const mediaWrapper: TdObject = MessageStore.wrapInputFile(
+      item.isVideo ? 'inputVideo' : 'inputPhoto', item.isVideo ? 'video' : 'photo', inputFile);
+    content[item.isVideo ? 'video' : 'photo'] = mediaWrapper;
+    if (item.isVideo) {
+      // 三样都是**发送方**的责任，缺一样接收端就少一样：
+      //   thumbnail  没有就没有预览图（气泡一片空白）
+      //   width/height  没有就按容器里旋转前的宽高排版，竖拍视频横过来
+      //   duration      没有就不显示时长
+      const thumb: string = item.thumbPath ?? '';
+      const w: number = item.width ?? 0;
+      const h: number = item.height ?? 0;
+      // ── 两处都写：这套 td_api 把媒体字段包进了 inputVideo，几何/封面很可能
+      // 也跟着搬进了包装里 ──────────────────────────────────────────────
+      //
+      // 实测（09-03，探针 [LivePoster] acked）：按标准写法把 thumbnail /
+      // width / height / duration / supports_streaming 挂在 inputMessageVideo
+      // 上，发送**成功**但服务端回来的 video 对象里
+      //   keys=[duration,width,height,file_name,mime_type,has_stickers,
+      //         supports_streaming,video]，thumbnail 和 minithumbnail 都没有。
+      // 也就是说这几个字段被**静默忽略**了——和 1.4.2 那次 GIF 的
+      // "InputFile is not specified" 是同一族问题：这套库的 schema 比我们假设的新，
+      // inputMessageXxx 的媒体字段是包装对象（见 wrapInputFile 的注释）。
+      //
+      // 未知字段这套解析器是直接丢弃、不报错的（上面那次发送就成功了），所以
+      // **两处都写是安全的**：哪一处对就哪一处生效，另一处被忽略。
+      const thumbInput: TdObject | null = thumb !== '' ? { '@type': 'inputThumbnail' } : null;
+      if (thumbInput !== null) {
+        thumbInput['thumbnail'] = MessageStore.localFile(thumb);
+        // 缩略图自己的宽高。给错（比如填视频的 1440x1920）等于声明了一张
+        // 越界的内联缩略图。
+        const tw: number = item.thumbWidth ?? 0;
+        const th: number = item.thumbHeight ?? 0;
+        if (tw > 0 && th > 0) {
+          thumbInput['width'] = tw;
+          thumbInput['height'] = th;
+        }
+        content['thumbnail'] = thumbInput;
+        mediaWrapper['thumbnail'] = thumbInput;
+      }
+      if (w > 0 && h > 0) {
+        content['width'] = w;
+        content['height'] = h;
+        mediaWrapper['width'] = w;
+        mediaWrapper['height'] = h;
+      }
+      const dur: number = item.durationSec ?? 0;
+      if (dur > 0) {
+        content['duration'] = dur;
+        mediaWrapper['duration'] = dur;
+      }
+      // 有宽高才谈得上边下边播；没有几何时保持老行为。
+      content['supports_streaming'] = w > 0 && h > 0;
+      mediaWrapper['supports_streaming'] = w > 0 && h > 0;
+    } else {
+      const w: number = item.width ?? 0;
+      const h: number = item.height ?? 0;
+      if (w > 0 && h > 0) {
+        content['width'] = w;
+        content['height'] = h;
+        mediaWrapper['width'] = w;
+        mediaWrapper['height'] = h;
+      }
+    }
+    if (caption !== '') {
+      const ft: TdObject = { '@type': 'formattedText' };
+      ft['text'] = caption;
+      content['caption'] = ft;
+    }
+    return content;
+  }
+
+  private rememberLocalMedia(entry: MessageEntry, item: MediaSendItem): MessageEntry {
+    const hydrated = cloneMessage(entry);
+    const itemW: number = item.width ?? 0;
+    const itemH: number = item.height ?? 0;
+    if (itemW > 0 && itemH > 0 && (hydrated.photoWidth <= 0 || hydrated.photoHeight <= 0)) {
+      hydrated.photoWidth = itemW;
+      hydrated.photoHeight = itemH;
+    }
+    if (item.isVideo) {
+      hydrated.videoPath = item.path;
+      hydrated.videoProgress = 100;
+      hydrated.videoFailed = false;
+      hydrated.mediaDownloadActive = false;
+      const itemDur: number = item.durationSec ?? 0;
+      if (itemDur > 0 && hydrated.videoDuration <= 0) {
+        hydrated.videoDuration = itemDur;
+      }
+      // 本端气泡优先展示全分辨率首帧/实况静图（posterPath），其次才退回 320px 缩略图。
+      const poster: string = (item.posterPath ?? '') !== '' ? item.posterPath! : (item.thumbPath ?? '');
+      if (poster !== '') {
+        hydrated.photoPath = poster;
+        hydrated.photoProgress = 100;
+        hydrated.photoFailed = false;
+      }
+      if (hydrated.videoFileId > 0) {
+        // 播放用的是 mp4 本身。
+        this.completedFilePaths.set(hydrated.videoFileId, item.path);
+        // **封面不能给 mp4。** 这里原来把 item.path（那段视频）当缩略图发布，
+        // 而缩略图那条通道的消费者是 Image——它渲染不了 mp4，于是自己发出去的
+        // 视频在本地回显里就是一块空白（用户实测："还是没有预览图"）。
+        // 有真封面就用它；没有就维持原样，至少不比以前差。
+        if (poster !== '') {
+          // 记进表里，之后每次重建 entry 都会被 hydrateFromFileCache 补回来。
+          this.localVideoPosters.set(hydrated.videoFileId, poster);
+          publishThumbPath(hydrated.videoFileId, poster);
+        } else {
+          publishThumbPath(hydrated.videoFileId, item.path);
+        }
+        if (hydrated.sendState === 'sending') {
+          publishProgress(hydrated.videoFileId, 0);
+        }
+      }
+      if (hydrated.photoFileId > 0 && poster !== '') {
+        this.localVideoPosters.set(hydrated.photoFileId, poster);
+        this.completedFilePaths.set(hydrated.photoFileId, poster);
+        publishThumbPath(hydrated.photoFileId, poster);
+      }
+    } else {
+      hydrated.photoPath = item.path;
+      hydrated.photoProgress = 100;
+      hydrated.photoFailed = false;
+      hydrated.photoFullPath = item.path;
+      hydrated.photoFullProgress = 100;
+      if (hydrated.photoFileId > 0) {
+        this.localVideoPosters.set(hydrated.photoFileId, item.path);
+        this.completedFilePaths.set(hydrated.photoFileId, item.path);
+        publishThumbPath(hydrated.photoFileId, item.path);
+        if (hydrated.sendState === 'sending') {
+          publishProgress(hydrated.photoFileId, 0);
+        }
+      }
+      if (hydrated.photoFullFileId > 0) {
+        this.localVideoPosters.set(hydrated.photoFullFileId, item.path);
+        this.completedFilePaths.set(hydrated.photoFullFileId, item.path);
+        publishThumbPath(hydrated.photoFullFileId, item.path);
+        if (hydrated.sendState === 'sending') {
+          publishProgress(hydrated.photoFullFileId, 0);
+        }
+      }
+    }
+    return hydrated;
+  }
+
+  // The picker may return up to nine mixed photos/videos. Two or more items
+  // must use sendMessageAlbum; sending them one-by-one loses media_album_id and
+  // the receiver can never render a real Telegram album.
+  async sendMedia(items: MediaSendItem[], caption: string, replyToId: number = 0): Promise<void> {
+    if (items.length === 0) { return; }
+    // Check the entire mixed selection before sending its first GIF/photo/video.
+    try {
+      await requireSendPermissions((request: TdRequest): Promise<TdObject> => this.client.send(request, 15000),
+        this.chatId, items.map((item: MediaSendItem): string =>
+          item.isVideo ? 'sendVideos' : isAnimationPath(item.path) ? 'sendOtherMessages' : 'sendPhotos'));
+    } catch (error) {
+      showSendPermissionError(error as Error);
+      throw error as Error;
+    }
+    return this.sendMediaChecked(items, caption, replyToId);
+  }
+
+  private sendMediaChecked(items: MediaSendItem[], caption: string, replyToId: number): Promise<void> {
+    if (items.length === 0) {
+      return Promise.resolve();
+    }
+    // 记一笔"我主动发过"，系统分享的目标名单按它排（util/recentOutgoing）。
+    noteOutgoingChat(this.chatId);
+    // **GIF 要单独走。** 相册（sendMessageAlbum）只收 photo/video，塞进
+    // inputMessageAnimation 会被拒；而混选时把 GIF 也按 photo 发就是把它压成
+    // 静态图（issue #105）。所以先把 GIF 摘出来，各自一条 sendMessage 发。
+    const animations: MediaSendItem[] = items.filter(
+      (item: MediaSendItem): boolean => !item.isVideo && isAnimationPath(item.path));
+    if (animations.length > 0) {
+      const rest: MediaSendItem[] = items.filter(
+        (item: MediaSendItem): boolean => animations.indexOf(item) < 0);
+      // 配文跟着第一条走：先发的那一条带上它，与全是照片时的行为一致。
+      return this.sendAnimations(animations, rest.length === 0 ? caption : '', replyToId)
+        .then((): Promise<void> =>
+          rest.length === 0 ? Promise.resolve() : this.sendMediaChecked(rest, caption, replyToId));
+    }
+    const contents: TdObject[] = [];
+    for (let i = 0; i < items.length; i++) {
+      contents.push(this.mediaInputContent(items[i], i === 0 ? caption : ''));
+    }
+    const req: TdRequest = {
+      '@type': items.length > 1 ? 'sendMessageAlbum' : 'sendMessage'
+    };
+    req['chat_id'] = this.chatId;
+    if (items.length > 1) {
+      req['input_message_contents'] = contents;
+    } else {
+      req['input_message_content'] = contents[0];
+    }
+    if (replyToId > 0) {
+      const replyTo: TdObject = { '@type': 'inputMessageReplyToMessage' };
+      replyTo['message_id'] = replyToId;
+      req['reply_to'] = replyTo;
+    }
+    this.applyTopicScope(req);
+    return sendWithChatPermissions(this.client, req).then((result: TdObject): void => {
+      const sent: TdObject[] = items.length > 1
+        ? ((result['messages'] as TdObject[] | undefined) ?? [])
+        : [result];
+      for (let i = 0; i < sent.length; i++) {
+        const source = items[Math.min(i, items.length - 1)];
+        const rawEntry = buildMessageEntry(sent[i], this.users);
+        const existing = this.messages.find((e: MessageEntry): boolean => e.id === rawEntry.id) ??
+          this.deferredOutgoing.find((e: MessageEntry): boolean => e.id === rawEntry.id);
+        if (existing !== undefined && existing.rowId !== 0) {
+          rawEntry.rowId = existing.rowId;
+        }
+        const entry = this.rememberLocalMedia(rawEntry, source);
+        this.publishOutgoing(entry);
+      }
+      this.resolveReplies();
+      this.requestPhotos();
+      this.notifySoon();
+    }).catch((e: TdError): Promise<void> => {
+      logE(`MessageStore.sendMedia failed: ${e.message}`);
+      return Promise.reject(e);
+    });
+  }
+
+  // 逐条发出本地 GIF。相册装不下它们，只能一条一条来（Telegram 官方客户端
+  // 在混选时也是这么做的：GIF 单独成条，其余合成相册）。
+  private sendAnimations(items: MediaSendItem[], caption: string,
+      replyToId: number): Promise<void> {
+    let chain: Promise<void> = Promise.resolve();
+    for (let i = 0; i < items.length; i++) {
+      const item: MediaSendItem = items[i];
+      const own: string = i === 0 ? caption : '';
+      chain = chain.then((): Promise<void> => this.sendOneAnimation(item, own, replyToId, true));
+    }
+    return chain.catch((e: TdError): Promise<void> => {
+      logE(`MessageStore.sendAnimations failed: ${e.message}`);
+      return Promise.reject(e);
+    });
+  }
+
+  // wrapped=true 发包装形状，被库拒了（旧 schema 不认 inputAnimation）再裸发一次。
+  private sendOneAnimation(item: MediaSendItem, caption: string, replyToId: number,
+    wrapped: boolean): Promise<void> {
+    // 记一笔"我主动发过"，系统分享的目标名单按它排（util/recentOutgoing）。
+    noteOutgoingChat(this.chatId);
+    const req: TdRequest = { '@type': 'sendMessage' };
+    req['chat_id'] = this.chatId;
+    req['input_message_content'] = this.animationInputContent(item, caption, wrapped);
+    if (replyToId > 0) {
+      const replyTo: TdObject = { '@type': 'inputMessageReplyToMessage' };
+      replyTo['message_id'] = replyToId;
+      req['reply_to'] = replyTo;
+    }
+    this.applyTopicScope(req);
+    return sendWithChatPermissions(this.client, req).then((sent: TdObject): void => {
+      this.publishOutgoing(buildMessageEntry(sent, this.users));
+      this.resolveReplies();
+      this.notifySoon();
+    }).catch((e: TdError): Promise<void> => {
+      if (wrapped && animationShapeRejected(e.message)) {
+        logW(`MessageStore.sendAnimation wrapped rejected (${e.message}), retrying bare`);
+        return this.sendOneAnimation(item, caption, replyToId, false);
+      }
+      return Promise.reject(e);
+    });
+  }
+
+  // Send a sticker the user picked from an installed set (already on Telegram
+  // servers — reference it by TDLib file id).
+  // 注意：捆绑的 td 快照是"半新" schema —— photo/video/audio/document 用
+  // 包装对象，但 sticker/animation/voiceNote 仍是旧的裸 InputFile
+  // （真机验证：inputSticker 包装报 Unknown class）。升级 tdlib 时重查。
+  sendSticker(fileId: number, width: number, height: number): Promise<boolean> {
+    const inputFile: TdObject = { '@type': 'inputFileId' };
+    inputFile['id'] = fileId;
+    const content: TdObject = { '@type': 'inputMessageSticker' };
+    content['sticker'] = inputFile;
+    content['width'] = width;
+    content['height'] = height;
+    return this.sendContent(content, 'sendSticker').then((id: number): boolean => id !== 0);
+  }
+
+  // Send a saved GIF (server-side file, referenced by id).
+  //
+  // **形状和本地 GIF 那条完全一样**：inputMessageAnimation.animation 要包装成
+  // inputAnimation{animation:InputFile}，裸 InputFile 会被回 "InputFile is not
+  // specified"（issue #105 的成因，见 animationInputContent 上面那段）。
+  // 修 #105 时只改了本地文件那条路（sendOneAnimation），**这条按 id 发的漏了**
+  // ——于是从 GIF 面板发出去的一律失败，而 sendContent 把错误吞进日志不提示，
+  // 界面上就是"点了没反应"。
+  //
+  // 同样保留裸的回退：这套 libtdjson 是半新半旧的 schema，不单押一边。
+  sendAnimation(fileId: number, width: number, height: number, durationSec: number): void {
+    this.sendSavedAnimation(fileId, width, height, durationSec, true);
+  }
+
+  private sendSavedAnimation(fileId: number, width: number, height: number,
+    durationSec: number, wrapped: boolean): void {
+    const inputFile: TdObject = { '@type': 'inputFileId' };
+    inputFile['id'] = fileId;
+    const content: TdObject = { '@type': 'inputMessageAnimation' };
+    content['animation'] = wrapped
+      ? MessageStore.wrapInputFile('inputAnimation', 'animation', inputFile) : inputFile;
+    content['width'] = width;
+    content['height'] = height;
+    content['duration'] = durationSec;
+    const req: TdRequest = { '@type': 'sendMessage' };
+    req['chat_id'] = this.chatId;
+    req['input_message_content'] = content;
+    this.applyTopicScope(req);
+    sendWithChatPermissions(this.client, req).then((m: TdObject): void => {
+      this.upsert(buildMessageEntry(m, this.users));
+      this.requestPhotos();
+      this.notifySoon();
+    }).catch((e: TdError): void => {
+      if (wrapped && animationShapeRejected(e.message)) {
+        logW(`MessageStore.sendAnimation wrapped rejected (${e.message}), retrying bare`);
+        this.sendSavedAnimation(fileId, width, height, durationSec, false);
+        return;
+      }
+      logE(`MessageStore.sendAnimation failed: ${e.message}`);
+    });
+  }
+
+  // 「添加到 GIF」：把一条动图消息里的文件存进账号的 saved animations。
+  // TDLib 收 InputFile，服务端文件用 inputFileId 即可（本地路径那种走
+  // inputFileLocal，这里用不到——菜单只在收到的动图消息上出现）。
+  addSavedAnimation(fileId: number): Promise<void> {
+    const inputFile: TdObject = { '@type': 'inputFileId' };
+    inputFile['id'] = fileId;
+    const req: TdRequest = { '@type': 'addSavedAnimation' };
+    req['animation'] = inputFile;
+    return this.client.send(req).then((): void => {}).catch((e: TdError): Promise<void> => {
+      logE(`MessageStore.addSavedAnimation failed: ${e.message}`);
+      return Promise.reject(e);
+    });
+  }
+
+  sendVoiceNote(path: string, durationSec: number): void {
+    this.sendVoiceNoteAsync(path, durationSec).catch((error: TdError): void => {
+      logE(`MessageStore.sendVoiceNote failed: ${error.message}`);
+    });
+  }
+
+  sendVoiceNoteAsync(path: string, durationSec: number): Promise<void> {
+    const content: TdObject = { '@type': 'inputMessageVoiceNote' };
+    content['voice_note'] = MessageStore.localFile(path);
+    content['duration'] = durationSec;
+    return this.sendContent(content, 'sendVoiceNote', 0, true).then((): void => {});
+  }
+
+  // 圆形视频消息。length 是正方形边长（圆形视频宽高相等）。
+  // video_note 是裸 InputFile，和 voiceNote/sticker/animation 一族一致 —— 捆绑的
+  // libtdjson.so 里根本没有 inputVideoNote 这个类（`strings libtdjson.so` 只有
+  // inputMessageVideoNote），包装对象会被判为未知类型而整条消息发不出去。
+  // 对应地 duration/length 直接挂在 inputMessageVideoNote 外层。
+  sendVideoNote(path: string, durationSec: number, length: number): void {
+    const content: TdObject = { '@type': 'inputMessageVideoNote' };
+    content['video_note'] = MessageStore.localFile(path);
+    content['duration'] = durationSec;
+    content['length'] = length;
+    this.sendContent(content, 'sendVideoNote');
+  }
+
+  // 语音/圆形视频转文字。调用只返回 Ok，识别结果异步经 updateMessageContent
+  // 回流（speech_recognition_result），所以这里只负责发起并把本地状态置为
+  // pending，让气泡立刻有反馈。
+  //
+  // 这是 Premium 功能：非会员账号服务端会直接拒绝，错误原样抛给调用方去提示。
+  recognizeSpeech(messageId: number): Promise<void> {
+    const idx = this.indexOf(messageId);
+    if (idx < 0) {
+      return Promise.reject(new Error(str('ms_message_missing')));
+    }
+    this.patch(messageId, (c: MessageEntry): void => {
+      c.speechState = 'pending';
+      c.speechText = '';
+    });
+    const req: TdRequest = { '@type': 'recognizeSpeech' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    return this.client.send(req, 30000).then((): void => {}).catch((e: TdError): void => {
+      // 失败要把 pending 撤回，否则气泡会永远转圈。
+      this.patch(messageId, (c: MessageEntry): void => {
+        c.speechState = '';
+        c.speechText = '';
+      });
+      throw e as Error;
+    });
+  }
+
+  private sendSimple(type: string): void {
+    const req: TdRequest = { '@type': type };
+    req['chat_id'] = this.chatId;
+    this.client.send(req).catch((e: TdError) => {
+      logE(`MessageStore.${type} failed: ${e.message}`);
+    });
+  }
+
+  private loadHistory(fromId: number): void {
+    const req = this.historyRequest(fromId, 0);
+    // 首屏页刻意取小。实测把通知风暴整个压掉后首帧依然掉帧——瓶颈是一帧里
+    // 构建 30 个 MessageBubble 本身。12 条铺满一屏出头；'latest' 的短页补链
+    // （见 onHistory）随即用增量前插把整页补齐，mvcp 保锚点，肉眼无感。
+    if (fromId === 0 && this.initialHistoryState === 'loading') {
+      req['limit'] = INITIAL_LATEST_LIMIT;
+    }
+    this.client.send(req).then((res: TdObject) => {
+      this.onHistory(res, fromId === 0 ? 'latest' : 'history');
+    })
+      .catch((e: TdError) => {
+      const code = (e as TdError).code;
+      if (code !== 404) {
+        logE(`MessageStore.getChatHistory failed: ${e.message}`);
+      }
+      if (this.initialHistoryState === 'loading') {
+        // A 404 is TDLib's valid "this chat has no messages" result.
+        this.initialHistoryState = code === 404 ? 'ready' : 'error';
+        this.initialHistoryError = code === 404 ? '' : this.historyErrorHint(e);
+        if (code === 404) {
+          this.hasMoreOlder = false;
+          this.olderLoadState = 'end';
+        }
+        this.notify('initialState');
+      }
+    });
+  }
+
+  // 窗口追上会话最后一条就是真尾部，把分页关掉。
+  //
+  // 光靠 loadNewer "取不到更新的消息"来关分页，在有洞的活跃会话里成立不了：
+  // 每次收到带洞的页都会把 hasMoreNewer 显式置回 true，而群里新消息又一直来。
+  // 于是 hasMoreNewer 恒真 → ChatPage 的 atBottom 恒假 → 新消息不自动跟随
+  // （issue #62，平板实测 rows 402→414→442、洞始终在 246 行不合）。
+  //
+  // **只单向关，不反向开**：这里绝不把 hasMoreNewer 置回 true。窗口落后于会话
+  // 最后一条是常态（用户正在翻历史），那时分页状态该由 loadNewer 自己管；
+  // 在这里插一脚会和它打架。
+  private syncTailFromChatLast(): void {
+    if (this.messages.length === 0 || !this.hasMoreNewer) {
+      return;
+    }
+    const newestId: number = this.messages[this.messages.length - 1].id;
+    if (!reachedLiveTail(newestId, this.chatLastMessageId)) {
+      return;
+    }
+    logW(`[StoreDiag] live tail reached: window=${newestId}` +
+      ` chatLast=${this.chatLastMessageId}, closing newer pagination`);
+    this.hasMoreNewer = false;
+    this.newerLoadState = 'end';
+    this.notify('paginationState');
+  }
+
+  private onHistory(res: TdObject, kind: string = 'history'): void {
+    const arr = (res['messages'] as TdObject[] | undefined) ?? [];
+    if (this.initialHistoryState !== 'ready' && (kind === 'latest' || kind === 'around')) {
+      // 首页即将发布：接下来的解析回填进入宽合并窗（见 notifySoon）。
+      this.initialSettleStart = Date.now();
+    }
+    this.initialHistoryState = 'ready';
+    this.initialHistoryError = '';
+    if (kind === 'latest') {
+      // TDLib may legally return FEWER messages than requested — for a chat
+      // visited the first time, commonly just one (its newest message) — even
+      // though more history exists. Only an empty result proves the chat has
+      // no messages; a short non-empty page keeps older-paging enabled and is
+      // backfilled immediately below.
+      this.hasMoreOlder = arr.length > 0;
+      this.olderLoadState = this.hasMoreOlder ? 'idle' : 'end';
+      this.hasMoreNewer = false;
+      this.newerLoadState = 'end';
+    }
+    // Keyboard fallback is probed from the live tail separately. Scanning an
+    // arbitrary around/older page here can resurrect a stale keyboard that a
+    // newer remove marker already superseded.
+    this.ensureKeyboardHistoryProbe();
+    const entries: MessageEntry[] = arr.map((m: TdObject): MessageEntry => buildMessageEntry(m, this.users));
+    logI(`[StoreDiag] onHistory kind=${kind} got=${arr.length}` +
+      ` rowsBefore=${this.messages.length} oldest=${this.oldestId}`);
+    this.logWindowGap(kind);
+    // Continuity check for the newest page. If it does not overlap the loaded
+    // window — its oldest id is newer than everything we hold — then the pages
+    // between were never fetched (they were delivered while the process was
+    // suspended). Merging would render the two runs seamlessly glued with the
+    // middle silently missing, so replace the window instead; older paging
+    // refills downward from the new tail. Skipped when the window's newest id
+    // is a pending outgoing message (huge local id): replacement would drop an
+    // unsent message, and that corner merges as before.
+    if (kind === 'latest' && entries.length > 0 && this.messages.length > 0) {
+      let pageOldest: number = entries[0].id;
+      for (const e of entries) {
+        if (e.id < pageOldest) {
+          pageOldest = e.id;
+        }
+      }
+      const windowNewest: number = this.messages[this.messages.length - 1].id;
+      let pageNewest: number = entries[0].id;
+      for (const e of entries) {
+        if (e.id > pageNewest) {
+          pageNewest = e.id;
+        }
+      }
+      const replaced: boolean = pageOldest > windowNewest;
+      // 诊断：恢复后窗口出现空洞。要判的是这一页到底装了什么——是不是真的
+      // 最新页、和窗口有没有重叠、替换与否。
+      logI(`[StoreDiag] latest page=${entries.length}` +
+        ` [${pageOldest}..${pageNewest}] windowNewest=${windowNewest}` +
+        ` windowLen=${this.messages.length} replaced=${replaced}`);
+      if (replaced) {
+        this.clearOlderPrefetch();
+        this.messages = [];
+        this.hasMoreOlder = true;
+        this.olderLoadState = 'idle';
+      }
+    }
+    // 跳转落点同样要判（issue #213）。**上面那道检查只管 'latest'，'around'
+    // 一直漏着**，而跳转才是最容易造成断层的动作：会话刚打开只有最新一页，
+    // 点媒体页里很早的一张跳过去，两段之间天然隔着整个中段。合并出来的窗口
+    // 看着连续，中间几百上千条无声无息地没了；更要命的是最新页还留在窗口里，
+    // 于是窗口最后一条 == chatLast，syncTailFromChatLast 判定"到实时尾部"把
+    // 向下分页关掉，这个洞再也没人去填。真机日志见 util/historyWindowJoin。
+    //
+    // 判据两侧都要看：新页可能落在窗口下方（跳去更早）也可能落在上方（从很早
+    // 跳回接近最新处）。容差之内（删消息留下的正常小空档）照旧合并。
+    if (kind === 'around' && entries.length > 0 && this.messages.length > 0) {
+      let pageOldest: number = entries[0].id;
+      let pageNewest: number = entries[0].id;
+      for (const e of entries) {
+        if (e.id < pageOldest) { pageOldest = e.id; }
+        if (e.id > pageNewest) { pageNewest = e.id; }
+      }
+      const windowOldest: number = this.messages[0].id;
+      const windowNewest: number = this.messages[this.messages.length - 1].id;
+      const detached: boolean = historyPageDetached(
+        pageOldest, pageNewest, windowOldest, windowNewest, ID_STEP);
+      // 未发送的消息只活在本地，清窗口就没了。这种角落（正在发送 + 同时跳去
+      // 很早的历史）宁可保留旧行为，也不能把用户刚发的那条弄丢。
+      const unsent: boolean = windowHasUnsent(
+        this.messages.map((m: MessageEntry): number => m.id), ID_STEP);
+      logI(`[StoreDiag] around page=${entries.length}` +
+        ` [${pageOldest}..${pageNewest}] window=[${windowOldest}..${windowNewest}]` +
+        ` detached=${detached} unsent=${unsent}`);
+      if (detached && !unsent) {
+        this.clearOlderPrefetch();
+        this.messages = [];
+        this.hasMoreOlder = true;
+        this.olderLoadState = 'idle';
+        // 最新页跟着窗口一起没了，所以向下一定还有东西可取。**这一句不能省**：
+        // 它正是把 #213 那条"live tail reached → closing newer pagination"解开的
+        // 地方。若这次跳转其实就落在实时尾部，本方法末尾的 syncTailFromChatLast
+        // 会照常把它再关上，所以这里开着是安全的。
+        this.hasMoreNewer = true;
+        this.newerLoadState = 'idle';
+        // 新端的几个锚点都是按旧窗口的 id 记的，换窗口之后全部失效。
+        this.newerRetryAnchor = 0;
+        this.newerEmptyAnchor = 0;
+        this.newerEmptyStreak = 0;
+        this.newerGapRetries = NEWER_GAP_RETRIES;
+      }
+    }
+    this.upsertBatch(entries);
+    if (this.messages.length > 0) {
+      this.oldestId = this.messages[0].id;
+    }
+    // First-visit backfill: chain one older-page request when the initial
+    // response came back short, so the page fills in right after the first
+    // (possibly single-message) snapshot renders.
+    if (kind === 'latest' && arr.length > 0 && arr.length < this.historyPageSize) {
+      this.initialFillTries = INITIAL_FILL_TRIES;
+      this.loadOlder();
+    } else if (kind === 'older' && this.initialFillTries > 0) {
+      // 首屏填充的续追：还短就再问一次。回 0 说明真到顶，够一页说明填满了，
+      // 两种情况都收手。
+      this.initialFillTries--;
+      const stillShort: boolean = this.messages.length < this.historyPageSize;
+      if (arr.length > 0 && stillShort && this.initialFillTries > 0) {
+        this.loadOlder();
+      } else {
+        this.initialFillTries = 0;
+      }
+    }
+    this.injectLastMessageAtTail();
+    this.resolveReplies();
+    this.resolveForwardTitles();
+    this.requestPhotos();
+    this.resolveSenderAvatars(entries);
+    this.resolveCommentAvatars(entries);
+    // NOTE: do NOT mark messages read here. Read state is a high-water mark in
+    // TDLib, so viewing the newest loaded message would mark ALL older ones read.
+    // Read-marking is driven by the actually-visible range (see markViewed).
+    // Hold the very first render until getChat supplies the unread anchor, so the
+    // page can position at the first unread message without a race. Later loads
+    // (loadOlder) notify normally.
+    // 这一页合进来之后可能就追上尾部了。只等 updateChatLastMessage 不够——
+    // 用户往下翻的这段时间里会话最后一条可能一直没变，那就永远等不到回调。
+    this.syncTailFromChatLast();
+    if (this.chatResolved) {
+      this.notify(kind);
+    } else {
+      this.historyPending = true;
+      this.historyPendingKind = kind;
+    }
+    this.acknowledgeInitialJoinService();
+  }
+
+  // --- whole-chat translation ------------------------------------------------
+  //
+  // TranslationService owns the cache and the request queue; these methods own
+  // the write path into the entries, because only the store can raise the
+  // CHANGE notifications the list renders from. translatedText feeds the row's
+  // content signature (mutableSig), so a translation landing rebuilds exactly
+  // that row.
+
+  // entities 与 text 同来同去：译文的格式只能由译文自己的实体描述，套原文的
+  // 偏移会串位（见 MessageEntry.translatedEntities）。
+  applyTranslation(
+    messageId: number, lang: string, text: string, entities: TdObject[]
+  ): void {
+    this.patch(messageId, (c: MessageEntry): void => {
+      c.translatedText = text;
+      c.translatedEntities = entities;
+      c.translatedLang = lang;
+    });
+  }
+
+  setTranslationHidden(messageId: number, hidden: boolean): void {
+    this.patch(messageId, (c: MessageEntry): void => {
+      c.translationHidden = hidden;
+    });
+  }
+
+  // Turning whole-chat translation off strips the rendered translations in one
+  // pass; the service keeps its cache, so turning it back on is instant.
+  clearTranslations(): void {
+    let changed = false;
+    const next = this.messages.map((m: MessageEntry): MessageEntry => {
+      if (m.translatedText === '' && !m.translationHidden) {
+        return m;
+      }
+      const c = cloneMessage(m);
+      c.translatedText = '';
+      c.translatedEntities = [];
+      c.translatedLang = '';
+      c.translationHidden = false;
+      changed = true;
+      return c;
+    });
+    if (changed) {
+      this.messages = next;
+      this.notifySoon();
+    }
+  }
+
+  // Message ids in the given display range worth translating: visible text,
+  // no translation for the current target yet. The caller feeds these to
+  // TranslationService.
+  translationCandidates(fromId: number, toId: number, lang: string): MessageEntry[] {
+    const out: MessageEntry[] = [];
+    for (const m of this.messages) {
+      if (m.id < fromId || m.id > toId) {
+        continue;
+      }
+      if (m.text === '' || m.contentType === 'system' || m.contentType === 'hidden') {
+        continue;
+      }
+      if (m.translatedText !== '' && m.translatedLang === lang) {
+        continue;
+      }
+      out.push(m);
+    }
+    return out;
+  }
+
+  // Graft chat.last_message into the timeline when history alone didn't reach
+  // it (local service messages never come back from getChatHistory). Gated on
+  // the loaded window being at the live tail so a jump into old history can't
+  // create a gap between the window and an injected far-future tail message.
+  private injectLastMessageAtTail(): void {
+    const m = this.pendingLastMessage;
+    if (m === null || this.hasMoreNewer) {
+      return;
+    }
+    this.pendingLastMessage = null;
+    const id = (m['id'] as number | undefined) ?? 0;
+    const newestId = this.messages.length > 0 ? this.messages[this.messages.length - 1].id : 0;
+    if (id <= 0 || id <= newestId) {
+      return; // already part of the loaded window
+    }
+    // 诊断：这里是唯一会把一条"远期"消息硬接在窗口尾巴上的地方，观测到的
+    // 空洞形状（一段连续的旧消息 + 孤零零一条最新的）正好是它的产物。
+    // id 与 newestId 的差值就是被跳过的消息条数（TDLib 的 id 每条加 2^20）。
+    // 【不许跨话题】这条是从 chat.last_message 来的，在话题作用域下它可能属于
+    // **别的**话题——硬接上去，用户在第一个话题滑到底再翻页就会看到一条别的话题的
+    // 消息（2026-09-16 实测）。作用域判据与实时更新过滤共用同一个纯函数。
+    if (this.outsideTopicScope(m)) {
+      return;
+    }
+    const skipped: number = Math.round((id - newestId) / 1048576);
+    if (skipped > 1) {
+      logW(`[StoreDiag] inject tail id=${id} newestId=${newestId}` +
+        ` skipped=${skipped} windowLen=${this.messages.length}`);
+    }
+    this.upsert(buildMessageEntry(m, this.users));
+  }
+
+  // `messageChatJoinByLink` / the equivalent member-add notice can be LOCAL:
+  // getChat exposes it as last_message, while getChatHistory omits it forever.
+  // For the narrowly safe case of exactly one unread service notice at the
+  // live tail, insert it immediately instead of waiting for newer pagination
+  // to prove a tail that history can never contain.
+  private injectSoleUnreadJoinService(lastMessage: TdObject | undefined): void {
+    if (this.threadRootId > 0 || this.directMessagesTopicId > 0 ||
+      this.requestedAroundMessageId > 0 ||
+      this.unreadCount !== 1 || lastMessage === undefined) {
+      return;
+    }
+    const entry = buildMessageEntry(lastMessage, this.users);
+    if (entry.id <= 0 || entry.contentType !== 'system' ||
+      (entry.systemType !== 'messageChatJoinByLink' &&
+       entry.systemType !== 'messageChatJoinByRequest' &&
+       entry.systemType !== 'messageChatAddMembers')) {
+      return;
+    }
+    this.upsert(entry);
+    this.pendingLastMessage = null;
+    this.initialJoinServiceReadId = entry.id;
+  }
+
+  private acknowledgeInitialJoinService(): void {
+    const messageId = this.initialJoinServiceReadId;
+    if (messageId <= 0 || this.initialHistoryState !== 'ready' ||
+      this.initialJoinServiceReadPending) {
+      return;
+    }
+    this.initialJoinServiceReadPending = true;
+    const req: TdRequest = { '@type': 'viewMessages' };
+    req['chat_id'] = this.chatId;
+    req['message_ids'] = [messageId];
+    req['source'] = this.viewSource();
+    req['force_read'] = true;
+    this.client.send(req).then((): void => {
+      this.initialJoinServiceReadPending = false;
+      this.initialJoinServiceReadId = 0;
+      this.viewedUpTo = Math.max(this.viewedUpTo, messageId);
+      this.unreadCount = 0;
+      this.clearManualUnreadFlag();
+    }).catch((error: TdError): void => {
+      this.initialJoinServiceReadPending = false;
+      logE(`MessageStore.viewInitialJoinService failed: ${error.message}`);
+    });
+  }
+
+  private clearManualUnreadFlag(): void {
+    if (this.manualUnreadClearSent) {
+      return;
+    }
+    this.manualUnreadClearSent = true;
+    const req: TdRequest = { '@type': this.directMessagesTopicId > 0
+      ? 'setDirectMessagesChatTopicIsMarkedAsUnread' : 'toggleChatIsMarkedAsUnread' };
+    req['chat_id'] = this.chatId;
+    if (this.directMessagesTopicId > 0) {
+      req['topic_id'] = this.directMessagesTopicId;
+    }
+    req['is_marked_as_unread'] = false;
+    this.client.send(req).catch((error: TdError): void => {
+      this.manualUnreadClearSent = false;
+      logE(`MessageStore.clearMarkedUnread failed: ${error.message}`);
+    });
+  }
+
+  private flushInitial(): void {
+    this.chatResolved = true;
+    if (this.historyPending) {
+      this.historyPending = false;
+      this.notify(this.historyPendingKind);
+      this.historyPendingKind = 'history';
+    }
+  }
+
+  private onNewMessage(u: TdObject): void {
+    const m = u['message'] as TdObject | undefined;
+    if (m === undefined || (m['chat_id'] as number | undefined) !== this.chatId) {
+      return;
+    }
+    // Thread mode: only messages of this thread belong in the view.
+    if (this.outsideTopicScope(m)) {
+      return;
+    }
+    // A bot that shows/removes its keyboard does it via a message's markup.
+    this.scanKeyboardMarkup([m]);
+    const entry: MessageEntry = buildMessageEntry(m, this.users);
+    // 窗口停在旧历史里时，实时到达的消息不能直接贴到尾部。
+    //
+    // 它和窗口最后一条之间可能隔着上万条没加载的历史，贴上去就是一个永久的
+    // 洞——后续加载都发生在更新的那一端，中间那段再也没人去取。实测：停在
+    // 未读锚点几分钟，频道来了 5 条，窗口里就出现 13009 条的缺口。
+    //
+    // 不收也不会丢：用户往下翻时由分页把它连同中间那段一起取回来。
+    // injectLastMessageAtTail 早就有同样的门槛（见那边的注释），这里一直漏着。
+    //
+    // 自己发出去的消息例外——那是用户刚做的动作，必须立刻可见。
+    if (this.hasMoreNewer && !entry.isOutgoing) {
+      const windowNewest: number =
+        this.messages.length > 0 ? this.messages[this.messages.length - 1].id : 0;
+      if (liveArrivalContiguous(windowNewest, entry.id, NEWER_GAP_TOLERANCE)) {
+        // 紧接着窗口尾巴：收下不会留洞，而且它证明窗口此刻就在真尾部——向下
+        // 分页该关了。不关的话下一条又会被当成跨洞扔掉，窗口永远追不上
+        // （issue #62，报告人日志里十次 skipped 全是差一步的形状）。
+        logW(`[StoreDiag] live arrival contiguous id=${entry.id} windowNewest=${windowNewest}` +
+          `: closing newer pagination`);
+        this.hasMoreNewer = false;
+        this.newerLoadState = 'end';
+        this.notify('paginationState');
+      } else {
+        logI(`[StoreDiag] live arrival skipped id=${entry.id} windowNewest=${windowNewest}` +
+          ` step=${liveArrivalStep(windowNewest, entry.id)}`);
+        return;
+      }
+    }
+    if (this.deferOutgoingUntilLatest && this.hasMoreNewer && entry.isOutgoing) {
+      this.publishOutgoing(entry);
+      return;
+    }
+    this.upsert(entry);
+    // 实时到达（不是翻历史翻出来的）。整段媒体的可见窗口对这些消息放行：
+    // 它们一次就一条，用户多半正看着尾部，等滚动事件才下会明显发愣。
+    this.liveArrivals.add(entry.id);
+    if (!entry.isOutgoing && (entry.contentType === 'photo' || entry.contentType === 'video' ||
+      entry.contentType === 'audio' || entry.contentType === 'file')) {
+      if (this.liveIncomingMediaIds.indexOf(entry.id) < 0) {
+        this.liveIncomingMediaIds.push(entry.id);
+      }
+    }
+    this.resolveReplies();
+    this.resolveForwardTitles();
+    this.requestPhotos();
+    this.resolveSenderAvatars([entry]);
+    this.resolveCommentAvatars([entry]);
+    // New incoming messages are marked read only when they become visible
+    // (driven by markViewed from the page), not on arrival.
+    this.notifySoon();
+  }
+
+  private onSendSucceeded(u: TdObject): void {
+    const oldId = u['old_message_id'] as number | undefined;
+    const m = u['message'] as TdObject | undefined;
+    if (oldId === undefined || m === undefined ||
+      (m['chat_id'] as number | undefined) !== this.chatId) {
+      return;
+    }
+    if (this.outsideTopicScope(m)) {
+      return;
+    }
+    // 行身份必须跨过这次替换：临时 id 那条的 rowId 传给真实 id 那条，
+    // 列表才不会把它当成新行销毁重建（发完消息"闪一下"的来源）。
+    const startedAt: number = this.sendStartedAt.get(oldId) ?? 0;
+    if (startedAt !== 0) {
+      this.sendStartedAt.delete(oldId);
+      // logW 而不是 console.warn：util/log **不劫持 console**（ArkTS 不许覆写
+      // 对象方法，那边文件头写着），console.* 一个字都进不了诊断环形缓冲。这条
+      // 探针本来就是为了查"发消息慢/发出去看不到"，却从来没在任何一份用户日志
+      // 里出现过——2026-09-10 那份 30837 行的日志里 [SendDiag] 零命中。
+      logW(`[SendDiag] serverAck=${Date.now() - startedAt}ms rows=${this.messages.length}`);
+    }
+    const deferredIndex: number = this.deferredOutgoing.findIndex((e: MessageEntry): boolean => e.id === oldId);
+    const previous = this.messages.find((e: MessageEntry): boolean => e.id === oldId) ??
+      (deferredIndex >= 0 ? this.deferredOutgoing[deferredIndex] : undefined);
+    const carriedRowId: number = previous !== undefined ? previous.rowId : 0;
+    this.messages = this.messages.filter((e: MessageEntry) => e.id !== oldId);
+    if (deferredIndex >= 0) {
+      this.deferredOutgoing.splice(deferredIndex, 1);
+    }
+    const arrived = buildMessageEntry(m, this.users);
+    if (carriedRowId !== 0) {
+      arrived.rowId = carriedRowId;
+    }
+    this.carryLocalVideoAssets(previous, arrived);
+    publishSendState(arrived.rowId, arrived.sendState);
+    this.publishOutgoing(arrived);
+    this.resolveReplies();
+    this.requestPhotos();
+    this.notifySoon();
+  }
+
+  // 发送成功时 TDLib 把整条消息换成真实 id，**媒体文件也会换成服务端的新 fileId**
+  // （实测 14889 → 14928，消息 id 同时 11465129985 → 11466178560）。若不把发送中
+  // 已经就绪的本地原图、高清视频首帧、本地 mp4 以及宽高/时长跨过这次替换：
+  //   · 视频：丢失高清首帧或回退到服务端 320px 模糊缩略图，甚至变成无封面灰底；
+  //   · 图片：新 photoFileId 在通道里还没路径，从本地原图瞬间退化成 40px 模糊占位并重下。
+  private carryLocalVideoAssets(previous: MessageEntry | undefined,
+    arrived: MessageEntry): void {
+    if (previous === undefined) {
+      return;
+    }
+    if ((arrived.photoWidth <= 0 || arrived.photoHeight <= 0) &&
+      previous.photoWidth > 0 && previous.photoHeight > 0) {
+      arrived.photoWidth = previous.photoWidth;
+      arrived.photoHeight = previous.photoHeight;
+    }
+    if (arrived.videoDuration <= 0 && previous.videoDuration > 0) {
+      arrived.videoDuration = previous.videoDuration;
+    }
+    if (previous.contentType === 'photo' || arrived.contentType === 'photo') {
+      const localPhoto: string = previous.photoFullPath !== ''
+        ? previous.photoFullPath
+        : (previous.photoPath !== ''
+          ? previous.photoPath
+          : (previous.photoFileId !== 0 ? (this.completedFilePaths.get(previous.photoFileId) ?? '') : ''));
+      if (localPhoto !== '') {
+        arrived.photoPath = localPhoto;
+        arrived.photoFullPath = localPhoto;
+        arrived.photoProgress = 100;
+        arrived.photoFailed = false;
+        if (arrived.photoFileId !== 0) {
+          this.completedFilePaths.set(arrived.photoFileId, localPhoto);
+          publishThumbPath(arrived.photoFileId, localPhoto);
+        }
+        if (arrived.photoFullFileId !== 0) {
+          this.completedFilePaths.set(arrived.photoFullFileId, localPhoto);
+          publishThumbPath(arrived.photoFullFileId, localPhoto);
+        }
+      }
+      return;
+    }
+    if (previous.videoFileId === 0 && arrived.videoFileId === 0) {
+      return;
+    }
+    const poster: string = (previous.videoFileId !== 0
+      ? (this.localVideoPosters.get(previous.videoFileId) ?? '') : '') ||
+      (previous.photoFileId !== 0
+        ? (this.localVideoPosters.get(previous.photoFileId) ?? '') : '') ||
+      previous.photoPath;
+    if (poster !== '') {
+      arrived.photoPath = poster;
+      arrived.photoProgress = 100;
+      arrived.photoFailed = false;
+      if (arrived.videoFileId !== 0) {
+        this.localVideoPosters.set(arrived.videoFileId, poster);
+        publishThumbPath(arrived.videoFileId, poster);
+      }
+      if (arrived.photoFileId !== 0) {
+        this.localVideoPosters.set(arrived.photoFileId, poster);
+        this.completedFilePaths.set(arrived.photoFileId, poster);
+        publishThumbPath(arrived.photoFileId, poster);
+      }
+    }
+    const localVideo: string = (previous.videoFileId !== 0
+      ? (this.completedFilePaths.get(previous.videoFileId) ?? '') : '') || previous.videoPath;
+    if (localVideo !== '') {
+      arrived.videoPath = localVideo;
+      arrived.videoProgress = 100;
+      arrived.videoFailed = false;
+      arrived.mediaDownloadActive = false;
+      if (arrived.videoFileId !== 0) {
+        this.completedFilePaths.set(arrived.videoFileId, localVideo);
+      }
+    }
+  }
+
+  private onSendFailed(u: TdObject): void {
+    const m = u['message'] as TdObject | undefined;
+    if (m === undefined || (m['chat_id'] as number | undefined) !== this.chatId) {
+      return;
+    }
+    if (this.outsideTopicScope(m)) {
+      return;
+    }
+    const id = m['id'] as number;
+    this.patch(id, (c: MessageEntry) => { c.sendState = 'failed'; });
+  }
+
+  private onContent(u: TdObject): void {
+    if ((u['chat_id'] as number | undefined) !== this.chatId) {
+      return;
+    }
+    const id = u['message_id'] as number | undefined;
+    if (id === undefined) {
+      return;
+    }
+    const idx = this.indexOf(id);
+    if (idx < 0) {
+      return;
+    }
+    // rebuild content by wrapping the new content into a message-like object
+    const fake: TdObject = { '@type': 'message' };
+    fake['content'] = u['new_content'];
+    const rebuilt = this.hydrateFromFileCache(buildMessageEntry(fake, this.users));
+    this.patch(id, (c: MessageEntry) => {
+      const sameVideoFile: boolean = c.videoFileId !== 0 && c.videoFileId === rebuilt.videoFileId;
+      const samePhotoFile: boolean = c.photoFileId !== 0 && c.photoFileId === rebuilt.photoFileId;
+      const samePhotoFullFile: boolean = c.photoFullFileId !== 0 &&
+        c.photoFullFileId === rebuilt.photoFullFileId;
+      const sameStickerFile: boolean = c.stickerFileId !== 0 &&
+        c.stickerFileId === rebuilt.stickerFileId;
+      const sameLinkPhotoFile: boolean = c.linkPhotoFileId !== 0 &&
+        c.linkPhotoFileId === rebuilt.linkPhotoFileId;
+      const sameContactUser: boolean = c.contactUserId !== 0 &&
+        c.contactUserId === rebuilt.contactUserId;
+      const previousContactAvatarPath: string = c.contactAvatarPath;
+      const previousPhotoPath: string = c.photoPath;
+      const previousPhotoProgress: number = c.photoProgress;
+      const previousPhotoFailed: boolean = c.photoFailed;
+      const previousPhotoFullPath: string = c.photoFullPath;
+      const previousPhotoFullProgress: number = c.photoFullProgress;
+      const previousPhotoFullFailed: boolean = c.photoFullFailed;
+      const previousVideoPath: string = c.videoPath;
+      const previousVideoProgress: number = c.videoProgress;
+      const previousVideoFailed: boolean = c.videoFailed;
+      const previousDownloadActive: boolean = c.mediaDownloadActive;
+      const previousLinkPhotoPath: string = c.linkPhotoPath;
+      const previousLinkPhotoProgress: number = c.linkPhotoProgress;
+      const previousLinkPhotoFailed: boolean = c.linkPhotoFailed;
+      const previousLinkPhotoActive: boolean = c.linkPhotoDownloadActive;
+      const keepLocalPhoto: boolean = c.isOutgoing && rebuilt.contentType === 'photo' &&
+        rebuilt.photoPath === '' && (previousPhotoFullPath !== '' || previousPhotoPath !== '');
+      const fallbackLocalPhoto: string = previousPhotoFullPath !== ''
+        ? previousPhotoFullPath : previousPhotoPath;
+      c.contentType = rebuilt.contentType;
+      c.text = rebuilt.text;
+      c.textEntities = rebuilt.textEntities;
+      c.inlineCustomEmojiIds = rebuilt.inlineCustomEmojiIds;
+      c.inlineCustomEmojiPaths = rebuilt.inlineCustomEmojiPaths;
+      c.photoFileId = rebuilt.photoFileId;
+      c.photoWidth = rebuilt.photoWidth > 0 ? rebuilt.photoWidth : c.photoWidth;
+      c.photoHeight = rebuilt.photoHeight > 0 ? rebuilt.photoHeight : c.photoHeight;
+      c.placeholderLabel = rebuilt.placeholderLabel;
+      c.photoPath = samePhotoFile ? previousPhotoPath : (keepLocalPhoto ? fallbackLocalPhoto : rebuilt.photoPath);
+      c.photoProgress = samePhotoFile ? previousPhotoProgress : (keepLocalPhoto ? 100 : rebuilt.photoProgress);
+      c.photoFailed = samePhotoFile ? previousPhotoFailed : (keepLocalPhoto ? false : rebuilt.photoFailed);
+      c.linkSiteName = rebuilt.linkSiteName;
+      c.linkTitle = rebuilt.linkTitle;
+      c.linkDescription = rebuilt.linkDescription;
+      c.linkDescriptionEntities = rebuilt.linkDescriptionEntities;
+      c.linkPhotoFileId = rebuilt.linkPhotoFileId;
+      c.linkPhotoPath = sameLinkPhotoFile ? previousLinkPhotoPath : rebuilt.linkPhotoPath;
+      c.linkPhotoWidth = rebuilt.linkPhotoWidth;
+      c.linkPhotoHeight = rebuilt.linkPhotoHeight;
+      c.linkPhotoProgress = sameLinkPhotoFile ? previousLinkPhotoProgress : rebuilt.linkPhotoProgress;
+      c.linkPhotoFailed = sameLinkPhotoFile ? previousLinkPhotoFailed : rebuilt.linkPhotoFailed;
+      c.linkPhotoDownloadActive = sameLinkPhotoFile
+        ? previousLinkPhotoActive : rebuilt.linkPhotoDownloadActive;
+      c.linkPreviewType = rebuilt.linkPreviewType;
+      c.linkUrl = rebuilt.linkUrl;
+      c.photoFullFileId = rebuilt.photoFullFileId;
+      c.photoFullPath = samePhotoFullFile
+        ? previousPhotoFullPath : (keepLocalPhoto ? fallbackLocalPhoto : rebuilt.photoFullPath);
+      c.photoFullProgress = samePhotoFullFile
+        ? previousPhotoFullProgress : (keepLocalPhoto ? 100 : rebuilt.photoFullProgress);
+      c.photoFullFailed = samePhotoFullFile ? previousPhotoFullFailed : false;
+      if (c.photoFileId !== 0 && c.photoPath !== '') {
+        this.completedFilePaths.set(c.photoFileId, c.photoPath);
+        publishThumbPath(c.photoFileId, c.photoPath);
+      }
+      if (c.photoFullFileId !== 0 && c.photoFullPath !== '') {
+        this.completedFilePaths.set(c.photoFullFileId, c.photoFullPath);
+        publishThumbPath(c.photoFullFileId, c.photoFullPath);
+      }
+      c.videoFileId = rebuilt.videoFileId;
+      c.videoFileSize = rebuilt.videoFileSize;
+      c.videoVariants = rebuilt.videoVariants;
+      c.videoMimeType = rebuilt.videoMimeType;
+      c.videoFileName = rebuilt.videoFileName;
+      c.videoDuration = rebuilt.videoDuration;
+      c.isAnimation = rebuilt.isAnimation;
+      // Listening to a voice note arrives as updateMessageContent. Preserve
+      // the already-downloaded file when only is_listened/waveform changed;
+      // otherwise the bubble jumps back to "loading" while audio is playing.
+      c.videoPath = sameVideoFile ? previousVideoPath : rebuilt.videoPath;
+      c.videoProgress = sameVideoFile ? previousVideoProgress : rebuilt.videoProgress;
+      c.videoFailed = sameVideoFile ? previousVideoFailed : false;
+      c.mediaDownloadActive = sameVideoFile
+        ? previousDownloadActive : rebuilt.mediaDownloadActive;
+      c.voiceWaveform = rebuilt.voiceWaveform;
+      c.voiceListened = rebuilt.voiceListened;
+      // 语音识别结果就是通过 updateMessageContent 回流的，必须跟着更新。
+      c.speechState = rebuilt.speechState;
+      c.speechText = rebuilt.speechText;
+      c.audioTitle = rebuilt.audioTitle;
+      c.audioPerformer = rebuilt.audioPerformer;
+      c.audioCoverMini = rebuilt.audioCoverMini;
+      c.stickerFileId = rebuilt.stickerFileId;
+      c.stickerFormat = rebuilt.stickerFormat;
+      c.stickerUniqueId = rebuilt.stickerUniqueId;
+      c.stickerSetId = rebuilt.stickerSetId;
+      c.isEmojiSticker = rebuilt.isEmojiSticker;
+      c.stickerPath = sameStickerFile ? c.stickerPath : rebuilt.stickerPath;
+      c.stickerProgress = sameStickerFile ? c.stickerProgress : rebuilt.stickerProgress;
+      c.stickerFailed = sameStickerFile ? c.stickerFailed : rebuilt.stickerFailed;
+      c.stickerDownloadActive = sameStickerFile
+        ? c.stickerDownloadActive : rebuilt.stickerDownloadActive;
+      c.customEmojiId = rebuilt.customEmojiId;
+      c.contactPhone = rebuilt.contactPhone;
+      c.contactFirstName = rebuilt.contactFirstName;
+      c.contactLastName = rebuilt.contactLastName;
+      c.contactVcard = rebuilt.contactVcard;
+      c.contactUserId = rebuilt.contactUserId;
+      c.contactAvatarPath = sameContactUser ? previousContactAvatarPath : rebuilt.contactAvatarPath;
+      c.locationLatitude = rebuilt.locationLatitude;
+      c.locationLongitude = rebuilt.locationLongitude;
+      c.locationAccuracy = rebuilt.locationAccuracy;
+      c.locationValid = rebuilt.locationValid;
+      c.locationLivePeriod = rebuilt.locationLivePeriod;
+      c.locationExpiresIn = rebuilt.locationExpiresIn;
+      c.locationHeading = rebuilt.locationHeading;
+      c.locationProximityRadius = rebuilt.locationProximityRadius;
+      c.venueTitle = rebuilt.venueTitle;
+      c.venueAddress = rebuilt.venueAddress;
+      c.venueProvider = rebuilt.venueProvider;
+      c.venueId = rebuilt.venueId;
+      c.venueType = rebuilt.venueType;
+      c.pollId = rebuilt.pollId;
+      c.pollQuestion = rebuilt.pollQuestion;
+      c.pollOptions = rebuilt.pollOptions;
+      c.pollTotalVoterCount = rebuilt.pollTotalVoterCount;
+      c.pollIsAnonymous = rebuilt.pollIsAnonymous;
+      c.pollIsQuiz = rebuilt.pollIsQuiz;
+      c.pollAllowMultiple = rebuilt.pollAllowMultiple;
+      c.pollCorrectOptionId = rebuilt.pollCorrectOptionId;
+      c.pollExplanation = rebuilt.pollExplanation;
+      c.pollOpenPeriod = rebuilt.pollOpenPeriod;
+      c.pollCloseDate = rebuilt.pollCloseDate;
+      c.pollIsClosed = rebuilt.pollIsClosed;
+      c.pollVotePending = rebuilt.pollOptions.some(
+        (option: PollOptionInfo): boolean => option.isBeingChosen
+      );
+      c.pollVoteError = '';
+      c.diceEmoji = rebuilt.diceEmoji;
+      c.diceValue = rebuilt.diceValue;
+      c.diceSuccessFrame = rebuilt.diceSuccessFrame;
+      c.diceHasFinalState = rebuilt.diceHasFinalState;
+      c.gameId = rebuilt.gameId;
+      c.gameShortName = rebuilt.gameShortName;
+      c.gameTitle = rebuilt.gameTitle;
+      c.gameDescription = rebuilt.gameDescription;
+      c.gameText = rebuilt.gameText;
+      c.paidMediaLocked = rebuilt.paidMediaLocked;
+      c.paidMediaStarCount = rebuilt.paidMediaStarCount;
+      c.paidMediaCount = rebuilt.paidMediaCount;
+      c.paidMediaKind = rebuilt.paidMediaKind;
+      c.giftKind = rebuilt.giftKind;
+      c.giftTitle = rebuilt.giftTitle;
+      c.giftValue = rebuilt.giftValue;
+      c.giftStatus = rebuilt.giftStatus;
+      c.giftCode = rebuilt.giftCode;
+      c.giftRefunded = rebuilt.giftRefunded;
+      c.giveawayState = rebuilt.giveawayState;
+      c.giveawayWinnerCount = rebuilt.giveawayWinnerCount;
+      c.giveawayPrize = rebuilt.giveawayPrize;
+      c.giveawayDescription = rebuilt.giveawayDescription;
+      c.giveawaySelectionDate = rebuilt.giveawaySelectionDate;
+      c.giveawayUnclaimedCount = rebuilt.giveawayUnclaimedCount;
+      c.giveawayMessageId = rebuilt.giveawayMessageId;
+      c.giveawayBoostedChatId = rebuilt.giveawayBoostedChatId;
+      c.giveawayRefunded = rebuilt.giveawayRefunded;
+      c.giveawayOnlyNewMembers = rebuilt.giveawayOnlyNewMembers;
+    });
+    this.requestPhotos();
+    if (this.pinnedIds.includes(id)) {
+      this.resolvePinned();
+    }
+  }
+
+  // Poll result changes are delivered globally by poll id rather than by
+  // chat/message id. Patch every loaded bubble carrying that poll and clear
+  // any optimistic "submitting" state once the authoritative result arrives.
+  private onPoll(u: TdObject): void {
+    const poll = u['poll'] as TdObject | undefined;
+    if (poll === undefined) {
+      return;
+    }
+    const pollId = `${poll['id'] ?? ''}`;
+    if (pollId === '') {
+      return;
+    }
+    const content: TdObject = { '@type': 'messagePoll' };
+    content['poll'] = poll;
+    const fake: TdObject = { '@type': 'message' };
+    fake['content'] = content;
+    const rebuilt = buildMessageEntry(fake, this.users);
+    let changed = false;
+    this.messages = this.messages.map((message: MessageEntry): MessageEntry => {
+      if (message.contentType !== 'poll' || message.pollId !== pollId) {
+        return message;
+      }
+      changed = true;
+      const next = cloneMessage(message);
+      next.pollQuestion = rebuilt.pollQuestion;
+      next.pollOptions = rebuilt.pollOptions;
+      next.pollTotalVoterCount = rebuilt.pollTotalVoterCount;
+      next.pollIsAnonymous = rebuilt.pollIsAnonymous;
+      next.pollIsQuiz = rebuilt.pollIsQuiz;
+      next.pollAllowMultiple = rebuilt.pollAllowMultiple;
+      next.pollCorrectOptionId = rebuilt.pollCorrectOptionId;
+      next.pollExplanation = rebuilt.pollExplanation;
+      next.pollOpenPeriod = rebuilt.pollOpenPeriod;
+      next.pollCloseDate = rebuilt.pollCloseDate;
+      next.pollIsClosed = rebuilt.pollIsClosed;
+      next.pollVotePending = rebuilt.pollOptions.some(
+        (option: PollOptionInfo): boolean => option.isBeingChosen
+      );
+      next.pollVoteError = '';
+      return next;
+    });
+    if (changed) {
+      this.notifySoon();
+    }
+  }
+
+  // 诊断：窗口里有没有"洞"。TDLib 的消息 id 每条递增 2^20，所以相邻两行的
+  // 差值除以 2^20 就是它们之间隔了几条。正常相邻是 1；被删过的地方会留下永久
+  // 空档，所以小差值不算异常，只报最大的那个。
+  //
+  // 用来区分两种现象：窗口真的缺了一大段（差值几十），还是分页方向的问题
+  // （窗口连续、只是没往某个方向取）。
+  private logWindowGap(tag: string): void {
+    if (this.messages.length < 2) {
+      return;
+    }
+    let worst: number = 0;
+    let atIdx: number = -1;
+    for (let i = 1; i < this.messages.length; i++) {
+      const step: number = Math.round(
+        (this.messages[i].id - this.messages[i - 1].id) / 1048576);
+      if (step > worst) {
+        worst = step;
+        atIdx = i;
+      }
+    }
+    if (worst > 3) {
+      logW(`[StoreDiag] gap after=${tag} biggest=${worst} atIdx=${atIdx}` +
+        ` rows=${this.messages.length}` +
+        ` around=${this.messages[atIdx - 1].id}..${this.messages[atIdx].id}`);
+    }
+  }
+
+  private onDelete(u: TdObject): void {
+    if ((u['chat_id'] as number | undefined) !== this.chatId) {
+      return;
+    }
+    // from_cache 不是删除，是 TDLib 把消息挪出了本地缓存——服务端还在，之后
+    // 还能取回。当成真删除会把窗口挖空：应用在后台被冻结一段时间后，TDLib
+    // 回收缓存并补发一批这样的通知，实测一次就把 31 条窗口打到只剩 1 条，
+    // 随后的补链再从别的锚点往下取，中间那段就永久缺失了——现象是消息错乱、
+    // 时间线出现跳跃（10:39 后面直接接 10:54）。
+    //
+    // is_permanent 为真时即便带着 from_cache 也是真删除，照常移除。
+    // 同样的判断 CallsStore.onMessagesDeleted 早就有了，这里一直漏着。
+    const permanent = (u['is_permanent'] as boolean | undefined) ?? false;
+    const fromCache = (u['from_cache'] as boolean | undefined) ?? false;
+    const incoming = (u['message_ids'] as number[] | undefined) ?? [];
+    if (fromCache && !permanent) {
+      // 诊断：确认"窗口被挖空"确实来自这一路。查完连同下面那条一起删。
+      let hit: number = 0;
+      for (const e of this.messages) {
+        if (incoming.indexOf(e.id) >= 0) {
+          hit++;
+        }
+      }
+      logW(`[StoreDiag] delete from_cache ids=${incoming.length}` +
+        ` inWindow=${hit} rows=${this.messages.length} ignored`);
+      return;
+    }
+    const removeIds = incoming;
+    if (removeIds.length > 0) {
+      logI(`[StoreDiag] delete real ids=${removeIds.length}` +
+        ` permanent=${permanent} fromCache=${fromCache} rows=${this.messages.length}`);
+    }
+    const set = new Set<number>(removeIds);
+    this.messages = this.messages.filter((e: MessageEntry) => !set.has(e.id));
+    this.notifySoon();
+    if (this.pinnedIds.some((id: number): boolean => set.has(id))) {
+      this.removePinnedIds(set);
+      this.resolvePinned();
+    }
+  }
+
+  // updateMessageEdited carries both the edit timestamp and the fresh inline
+  // keyboard. Keep both in the render model so text edits and bot keyboard
+  // changes invalidate the same bubble row.
+  private onEdited(u: TdObject): void {
+    if ((u['chat_id'] as number | undefined) !== this.chatId) {
+      return;
+    }
+    const id = u['message_id'] as number | undefined;
+    if (id === undefined) {
+      return;
+    }
+    const buttons = parseInlineKeyboard(u['reply_markup'] as TdObject | undefined);
+    const editDate = (u['edit_date'] as number | undefined) ?? 0;
+    this.patch(id, (c: MessageEntry) => {
+      c.inlineButtons = buttons;
+      c.editDate = editDate;
+    });
+  }
+
+  private onInteractionInfo(u: TdObject): void {
+    if ((u['chat_id'] as number | undefined) !== this.chatId) {
+      return;
+    }
+    const id = u['message_id'] as number | undefined;
+    if (id === undefined) {
+      return;
+    }
+    const ii = u['interaction_info'] as TdObject | undefined | null;
+    // 浏览数走旁路通道直达气泡，不碰行（见 util/viewCountChannel）。
+    if (ii !== undefined && ii !== null) {
+      publishViewCount(this.chatId, id, (ii['view_count'] as number | undefined) ?? 0);
+    }
+    const info: TdObject | undefined = ii !== null ? ii : undefined;
+    const cmt: CommentInfo = commentInfoFromInteraction(info);
+    const rx: ReactionInfo[] = reactionsFromInteraction(info);
+    // 频道里这条推送绝大多数只是浏览数 +1：评论和反应都没变就不 patch——
+    // 省掉一次整行克隆、一次数组复制和一轮列表通知（util/interactionDelta）。
+    const idx: number = this.indexOf(id);
+    if (idx >= 0) {
+      const cur: MessageEntry = this.messages[idx];
+      if (!interactionChanged(cur.commentCount, cur.commentReplierIds, cur.reactions,
+        cmt.count, cmt.replierIds, rx)) {
+        return;
+      }
+    }
+    this.patch(id, (c: MessageEntry) => {
+      c.commentCount = cmt.count;
+      c.commentReplierIds = cmt.replierIds;
+      c.commentReplierAvatarPaths = [];
+      c.reactions = rx;
+    });
+    // 反应是随更新推过来的，可能首次出现自定义 emoji：立刻解析位图，
+    // 否则要等下一次 requestPhotos 才会补齐。
+    if (rx.some((r: ReactionInfo): boolean => r.customEmojiId !== '')) {
+      this.resolveCustomEmojis();
+    }
+    for (const userId of cmt.replierIds) {
+      this.commentUserIds.add(userId);
+      this.requestCommentAvatar(userId);
+    }
+  }
+
+  private onReadOutbox(u: TdObject): void {
+    if (this.directMessagesTopicId > 0 ||
+      (u['chat_id'] as number | undefined) !== this.chatId) {
+      return;
+    }
+    this.lastReadOutboxId = (u['last_read_outbox_message_id'] as number | undefined) ?? 0;
+    this.notifySoon(); // notify() applies the read marking centrally
+  }
+
+  // Outgoing messages at or below the outbox-read boundary become 'read'.
+  // Applied on every notify so history pages (already read long ago) get
+  // marked too, not only live updateChatReadOutbox events.
+  private applyReadOutbox(): void {
+    if (this.lastReadOutboxId <= 0) {
+      return;
+    }
+    let changed = false;
+    const mapped = this.messages.map((e: MessageEntry) => {
+      if (e.isOutgoing && e.sendState === 'sent' && e.id <= this.lastReadOutboxId) {
+        const c = cloneMessage(e);
+        c.sendState = 'read';
+        publishSendState(c.rowId, c.sendState);
+        changed = true;
+        return c;
+      }
+      return e;
+    });
+    if (changed) {
+      this.messages = mapped;
+    }
+  }
+
+  // --- photos ---
+  private setThumbnailFailed(fileId: number, failed: boolean): void {
+    let changed = false;
+    this.messages = this.messages.map((m: MessageEntry): MessageEntry => {
+      if (m.photoFileId !== fileId || m.photoFailed === failed || m.photoPath !== '') {
+        return m;
+      }
+      const c = cloneMessage(m);
+      c.photoFailed = failed;
+      if (failed) {
+        c.photoProgress = 0;
+      }
+      publishProgress(c.photoFileId, c.photoProgress);
+      changed = true;
+      return c;
+    });
+    if (changed) {
+      this.notifySoon();
+    }
+  }
+
+  // 缩略图下载闸。requestPhotos() 会对整页每张图各发一次 downloadFile，
+  // 图多的频道一进去就是几十个并发请求 —— 它们互相抢带宽，谁都不先完成，
+  // 首屏那几张反而最晚出来，同时挤占 TDLib 的网络线程让列表发卡。
+  // 这里排队：同时最多 THUMB_MAX_ACTIVE 个在途，其余按入队顺序等待。
+  private thumbActive: number = 0;
+  private thumbQueue: number[] = [];
+  private thumbQueued: Set<number> = new Set();
+
+  // Download an inline thumbnail with up to 2 automatic retries (backoff),
+  // so a transient failure doesn't leave the bubble stuck at 0% forever.
+  // 文件 id 失效时重取消息（issue #68：贴纸偶发不加载，退出重进就好）。
+  //
+  // TDLib 的 file id 不是永久的：消息对象在本地库里被刷新过之后，窗口里还拿着
+  // 旧 id 去 downloadFile 只会一次次失败——缩略图那边重试 3 次、8 秒后再踢，
+  // 踢的都是同一个旧 id，永远不会好；"退出重进"之所以好使，是因为重新拉了
+  // 消息、拿到了新 id。这里做同一件事，不用用户退出：getMessage 重取这条消息，
+  // 只把文件 id 换成新的（其余字段——译文、已读态——由现有 entry 保持），
+  // 再让 requestPhotos 按新 id 走正常下载。每个 fileId 只重取一次。
+  private refreshMessageForFile(fileId: number, messageId: number): void {
+    if (fileId === 0 || messageId <= 0 || this.refreshedFiles.has(fileId)) {
+      this.fullPhotoPendingRefresh.delete(messageId);
+      return;
+    }
+    this.refreshedFiles.add(fileId);
+    const req: TdRequest = { '@type': 'getMessage' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    this.client.send(req).then((m: TdObject): void => {
+      const rebuilt = buildMessageEntry(m, this.users);
+      let changed: boolean = false;
+      let fullChanged: boolean = false;
+      this.patch(messageId, (c: MessageEntry): void => {
+        if (rebuilt.photoFileId !== 0 && rebuilt.photoFileId !== c.photoFileId) {
+          c.photoFileId = rebuilt.photoFileId;
+          c.photoFailed = false;
+          c.photoProgress = 0;
+          changed = true;
+        }
+        if (rebuilt.photoPath !== '' && c.photoPath === '') {
+          c.photoPath = rebuilt.photoPath;
+          c.photoFailed = false;
+          c.photoProgress = 100;
+          if (c.photoFileId !== 0) {
+            publishThumbPath(c.photoFileId, rebuilt.photoPath);
+          }
+          changed = true;
+        }
+        if (rebuilt.photoFullFileId !== 0 && rebuilt.photoFullFileId !== c.photoFullFileId) {
+          c.photoFullFileId = rebuilt.photoFullFileId;
+          c.photoFullFailed = false;
+          c.photoFullProgress = 0;
+          changed = true;
+          fullChanged = true;
+        }
+        if (rebuilt.photoFullPath !== '' && c.photoFullPath === '') {
+          c.photoFullPath = rebuilt.photoFullPath;
+          c.photoFullFailed = false;
+          c.photoFullProgress = 100;
+          if (c.photoFullFileId !== 0) {
+            publishThumbPath(c.photoFullFileId, rebuilt.photoFullPath);
+          }
+          changed = true;
+          fullChanged = true;
+        }
+        if (rebuilt.stickerFileId !== 0 && rebuilt.stickerFileId !== c.stickerFileId) {
+          c.stickerFileId = rebuilt.stickerFileId;
+          c.stickerUniqueId = rebuilt.stickerUniqueId;
+          c.stickerFailed = false;
+          c.stickerProgress = 0;
+          c.stickerDownloadActive = false;
+          changed = true;
+        }
+      });
+      const pendingFullPriority: number | undefined = this.fullPhotoPendingRefresh.get(messageId);
+      this.fullPhotoPendingRefresh.delete(messageId);
+      logW(`[StoreDiag] refresh message ${messageId} for file ${fileId}: ` +
+        `photo ${rebuilt.photoFileId} full ${rebuilt.photoFullFileId} sticker ${rebuilt.stickerFileId} changed=${changed}`);
+      if (changed) {
+        this.requestPhotos();
+        this.notifySoon();
+      }
+      if (pendingFullPriority !== undefined) {
+        if (fullChanged) {
+          this.requestFullPhoto(messageId, true, pendingFullPriority);
+        } else {
+          const curIdx: number = this.indexOf(messageId);
+          const curFullId: number = curIdx >= 0 ? this.messages[curIdx].photoFullFileId : fileId;
+          const attempts: number = this.fullPhotoAttempts.get(curFullId) ?? 0;
+          if (attempts <= 2) {
+            this.fullPhotoPendingRefresh.set(messageId, pendingFullPriority);
+            setTimeout((): void => {
+              this.fullPhotoPendingRefresh.delete(messageId);
+              this.requestFullPhoto(messageId, false, pendingFullPriority);
+            }, 700);
+          } else {
+            this.fullPhotoAttempts.delete(curFullId);
+            this.patch(messageId, (c: MessageEntry): void => {
+              c.photoFullFailed = true;
+              c.photoFullProgress = 0;
+            });
+          }
+        }
+      }
+    }).catch((e: TdError): void => {
+      const pendingFullPriority: number | undefined = this.fullPhotoPendingRefresh.get(messageId);
+      this.fullPhotoPendingRefresh.delete(messageId);
+      if (pendingFullPriority !== undefined) {
+        this.patch(messageId, (c: MessageEntry): void => {
+          c.photoFullFailed = true;
+          c.photoFullProgress = 0;
+        });
+      }
+      logE(`MessageStore.getMessage(refresh ${messageId} for file ${fileId}) failed: ${e.message}`);
+    });
+  }
+
+  private downloadThumb(fileId: number): void {
+    if (this.thumbQueued.has(fileId)) {
+      return; // 已在队列或在途
+    }
+    this.thumbQueued.add(fileId);
+    this.thumbQueue.push(fileId);
+    this.pumpThumbs();
+  }
+
+  private pumpThumbs(): void {
+    while (this.thumbActive < THUMB_MAX_ACTIVE && this.thumbQueue.length > 0) {
+      const fileId = this.thumbQueue.shift() as number;
+      this.thumbActive++;
+      this.startThumbDownload(fileId);
+    }
+  }
+
+  // 队列是先进先出，但滑动之后排在前面的都是已经划走的旧图。把当前可见
+  // 范围内的排到队头 —— 否则用户盯着的位置要等前面几十张下完才轮到。
+  private prioritiseVisibleThumbs(): void {
+    if (this.thumbQueue.length < 2) {
+      return;
+    }
+    const visible: number[] = [];
+    const rest: number[] = [];
+    for (const fileId of this.thumbQueue) {
+      const messageId = this.fileToMsg.get(fileId) ?? 0;
+      if (messageId !== 0 && this.inMediaWindow(messageId)) {
+        visible.push(fileId);
+      } else {
+        rest.push(fileId);
+      }
+    }
+    this.thumbQueue = visible.concat(rest);
+  }
+
+  private startThumbDownload(fileId: number): void {
+    this.setThumbnailFailed(fileId, false);
+    const attempt = (this.thumbAttempts.get(fileId) ?? 0) + 1;
+    this.thumbAttempts.set(fileId, attempt);
+    const priority: number = Math.max(THUMBNAIL_PRIORITY, this.sentFilePriority.get(fileId) ?? 0);
+    this.sentFilePriority.set(fileId, priority);
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = fileId;
+    req['priority'] = priority;
+    const settle = (): void => {
+      this.thumbActive--;
+      this.thumbQueued.delete(fileId);
+      this.pumpThumbs();
+    };
+    this.client.send(req).then((f: TdObject) => {
+      this.applyFile(f);
+      settle();
+    }).catch((err: TdError) => {
+      logE(`MessageStore photo ${fileId} (attempt ${attempt}): ${err.message}`);
+      settle();
+      if (attempt <= 2) {
+        setTimeout(() => this.downloadThumb(fileId), 1000 * attempt);
+      } else {
+        this.setThumbnailFailed(fileId, true);
+        // 三次都不行，多半不是网络而是 id 过期——换新 id 再来（issue #68）。
+        this.refreshMessageForFile(fileId, this.fileToMsg.get(fileId) ?? 0);
+      }
+    });
+  }
+
+  // 【只有非进度字段变了才发快照】每次 notifySoon 都让 ChatPage 把**整个已加载
+  // 窗口**重新 collapseAlbums 一遍（mediaProgressChannel 文件头的真机实测：
+  // 421 条时 8–20ms 主线程 JS，滑动中每秒 10 次），而 messages 只增不减，
+  // 这条开销随停留时长线性增长。
+  //
+  // 进度根本不在行 key 里——它走 mediaProgressChannel 旁路直达进度环——所以
+  // 「进度从 40 跳到 41」触发的那次全窗重建，产生的可见变化恰好是零。
+  // 行内缩略图那一支早就用 inlineThumbEntryChanged 守着（并注明"这一支因此
+  // 一律不再发 notifySoon()"），这里是同一件事漏掉的地方。
+  //
+  // 判据保守：**路径落地/失败翻转/活跃态翻转一律照发**，只跳过"仅进度变化"。
+  // 漏发路径会让内容永远不显示，那个后果比多发几次严重得多。
+  private patchLinkPreviewEntries(fileId: number, fn: (entry: MessageEntry) => void): void {
+    let changed: boolean = false;
+    this.messages = this.messages.map((message: MessageEntry): MessageEntry => {
+      if (message.linkPhotoFileId !== fileId) {
+        return message;
+      }
+      const next: MessageEntry = cloneMessage(message);
+      const before: PatchSignature = {
+        path: message.linkPhotoPath, failed: message.linkPhotoFailed,
+        active: message.linkPhotoDownloadActive
+      };
+      fn(next);
+      publishProgress(next.linkPhotoFileId, next.linkPhotoProgress);
+      const after: PatchSignature = {
+        path: next.linkPhotoPath, failed: next.linkPhotoFailed,
+        active: next.linkPhotoDownloadActive
+      };
+      if (patchNeedsNotify(before, after)) {
+        changed = true;
+      }
+      return next;
+    });
+    if (changed) {
+      this.notifySoon();
+    }
+  }
+
+  private downloadLinkPreviewPhoto(fileId: number): void {
+    this.patchLinkPreviewEntries(fileId, (entry: MessageEntry): void => {
+      entry.linkPhotoFailed = false;
+      entry.linkPhotoDownloadActive = true;
+    });
+    const attempt: number = (this.linkThumbAttempts.get(fileId) ?? 0) + 1;
+    this.linkThumbAttempts.set(fileId, attempt);
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = fileId;
+    req['priority'] = THUMBNAIL_PRIORITY;
+    this.client.send(req).then((file: TdObject): void => {
+      this.applyFile(file);
+    }).catch((error: TdError): void => {
+      logE(`MessageStore link photo ${fileId} (attempt ${attempt}): ${error.message}`);
+      if (attempt <= 2) {
+        setTimeout((): void => { this.downloadLinkPreviewPhoto(fileId); }, 1000 * attempt);
+      } else {
+        this.linkFileToMsg.delete(fileId);
+        this.patchLinkPreviewEntries(fileId, (entry: MessageEntry): void => {
+          entry.linkPhotoProgress = 0;
+          entry.linkPhotoFailed = true;
+          entry.linkPhotoDownloadActive = false;
+        });
+      }
+    });
+  }
+
+  retryLinkPreviewPhoto(messageId: number): void {
+    const index: number = this.indexOf(messageId);
+    if (index < 0) {
+      return;
+    }
+    const entry: MessageEntry = this.messages[index];
+    if (entry.linkPhotoFileId === 0 || entry.linkPhotoPath !== '') {
+      return;
+    }
+    this.linkFileToMsg.delete(entry.linkPhotoFileId);
+    this.linkThumbAttempts.delete(entry.linkPhotoFileId);
+    this.linkThumbLastKick.delete(entry.linkPhotoFileId);
+    this.linkFileToMsg.set(entry.linkPhotoFileId, messageId);
+    this.downloadLinkPreviewPhoto(entry.linkPhotoFileId);
+  }
+
+  // Resolve every custom-emoji id once. A message made of one custom emoji
+  // morphs into the existing animated sticker pipeline; custom emoji embedded
+  // in mixed text use a static WEBP/thumbnail through ArkUI ImageSpan.
+  private customEmojiRequested: Set<string> = new Set();
+  private customEmojiFailed: Set<string> = new Set();
+  // 见 scheduleCustomEmojiHydrate。
+  private hydrateTimer: number = -1;
+  // 滚动中被冻结的 update 发布是否待冲刷（快照语义：pending 只是一位布尔，
+  // 不攒队列——最新一次冲刷天然携带全部状态）。
+  private scrollDeferredUpdate: boolean = false;
+  private scrollDeferFlushTimer: number = -1;
+  private hydrateDeferStart: number = 0;
+
+  // 【增量解析，别再全表扫描】
+  //
+  // 以前这里是"遍历全部消息、每行再遍历 inline ids 与 reactions"。它被
+  // requestPhotos 调用，而 requestPhotos 每次缩略图到货都跑一遍——2026-11-05
+  // 的 insight 采样里，resolveCustomEmojis 占我们代码的 3.93%（两个热点行
+  // 2.55% + 1.38%），仅次于 indexOf 和 requestPhotos 自己。
+  //
+  // 现在改成：新消息入库时把还没解析过的 id 记进 pendingCustomEmoji，解析时
+  // 只遍历这一小撮（通常 0~3 个）。窗口整体换掉（历史重载）时置一次全表兜底
+  // 标记，保证任何没走 noteCustomEmoji 的路径也不会漏。
+  private pendingCustomEmoji: Map<string, number> = new Map();
+  private customEmojiFullScanPending: boolean = true;
+
+  // 把一条消息里所有还没解析过的自定义 emoji id 收进待办。
+  private noteCustomEmoji(m: MessageEntry): void {
+    if (m.contentType === 'customEmoji' && m.customEmojiId !== '') {
+      this.pendingCustomEmoji.set(m.customEmojiId, m.id);
+    }
+    for (const id of m.inlineCustomEmojiIds) {
+      this.pendingCustomEmoji.set(id, m.id);
+    }
+    for (const r of m.reactions) {
+      if (r.customEmojiId !== '') {
+        this.pendingCustomEmoji.set(r.customEmojiId, m.id);
+      }
+    }
+  }
+
+  private resolveCustomEmojis(): void {
+    if (this.customEmojiFullScanPending) {
+      this.customEmojiFullScanPending = false;
+      for (const e of this.messages) {
+        this.noteCustomEmoji(e);
+      }
+    }
+    if (this.pendingCustomEmoji.size === 0) {
+      return;
+    }
+    const pending: Map<string, number> = this.pendingCustomEmoji;
+    this.pendingCustomEmoji = new Map();
+    pending.forEach((messageId: number, ceId: string): void => {
+      this.resolveCustomEmojiId(ceId, messageId);
+    });
+  }
+
+
+
+  // 已下载的位图路径同时回填到「文本内联自定义 emoji」和「自定义 emoji 反应」，
+  // 一次遍历一次 notify，避免两条路径各自刷新列表。
+  private hydrateCustomEmojiPaths(): void {
+    // 惰性建新数组：没有任何一行要改时（滚动中的常态）连一次全表 map 的分配
+    // 都不做，this.messages 原样留着。改了才 slice 一份新的——仍然是"换新对象"
+    // 而不是原地改。
+    let next: MessageEntry[] | null = null;
+    for (let i = 0; i < this.messages.length; i++) {
+      const m: MessageEntry = this.messages[i];
+      const inlinePaths: string[] | null = this.updatedInlineCustomEmojiPaths(m);
+      const reactions: ReactionInfo[] | null = this.updatedReactionCustomEmojiPaths(m);
+      if (inlinePaths === null && reactions === null) {
+        continue;
+      }
+      if (next === null) {
+        next = this.messages.slice();
+      }
+      const c = cloneMessage(m);
+      if (inlinePaths !== null) {
+        c.inlineCustomEmojiPaths = inlinePaths;
+      }
+      if (reactions !== null) {
+        c.reactions = reactions;
+      }
+      next[i] = c;
+    }
+    if (next !== null) {
+      this.messages = next;
+      this.notifySoon();
+    }
+  }
+
+  // 返回 null 表示无变化（调用方据此跳过克隆）。
+  private updatedInlineCustomEmojiPaths(m: MessageEntry): string[] | null {
+    if (m.inlineCustomEmojiIds.length === 0) {
+      return null;
+    }
+    const paths: string[] = [];
+    let differs = m.inlineCustomEmojiPaths.length !== m.inlineCustomEmojiIds.length;
+    for (let i = 0; i < m.inlineCustomEmojiIds.length; i++) {
+      const path = this.inlineCustomEmojiPathById.get(m.inlineCustomEmojiIds[i]) ?? '';
+      paths.push(path);
+      if (!differs && path !== m.inlineCustomEmojiPaths[i]) {
+        differs = true;
+      }
+    }
+    return differs ? paths : null;
+  }
+
+  private updatedReactionCustomEmojiPaths(m: MessageEntry): ReactionInfo[] | null {
+    // 【先看有没有自定义 emoji 反应再 map】(2026-09-11 帧 trace) 这个函数占
+    // 110.7ms，而绝大多数消息压根没有反应、或反应里没有自定义 emoji——却每次
+    // 都要 new 一个同长数组出来。没有任何 customEmojiId 时 differs 恒为 false、
+    // 返回 null，所以提前退出与原结果等价。
+    if (m.reactions.length === 0) {
+      return null;
+    }
+    let hasCustom: boolean = false;
+    for (const r of m.reactions) {
+      if (r.customEmojiId !== '') { hasCustom = true; break; }
+    }
+    if (!hasCustom) {
+      return null;
+    }
+    let differs = false;
+    const next: ReactionInfo[] = m.reactions.map((r: ReactionInfo): ReactionInfo => {
+      if (r.customEmojiId === '') {
+        return r;
+      }
+      const path = this.inlineCustomEmojiPathById.get(r.customEmojiId) ?? '';
+      if (path === r.customEmojiPath) {
+        return r;
+      }
+      differs = true;
+      return {
+        emoji: r.emoji, count: r.count, isChosen: r.isChosen,
+        customEmojiId: r.customEmojiId, customEmojiPath: path
+      };
+    });
+    return differs ? next : null;
+  }
+
+  private applyInlineCustomEmojiPath(customEmojiId: string, path: string): void {
+    if (customEmojiId === '' || path === '' ||
+      this.inlineCustomEmojiPathById.get(customEmojiId) === path) {
+      return;
+    }
+    this.inlineCustomEmojiPathById.set(customEmojiId, path);
+    this.scheduleCustomEmojiHydrate();
+  }
+
+  // 自定义 emoji 位图到货是成批的，而 hydrateCustomEmojiPaths 是全表扫描
+  //（map + 差异行 clone）：每个文件到货都扫一遍，重滚动实测累计 ~60ms
+  //（cpuprofile 20260902T115345）。合并成一个 tick 一次；滚动进行中再顺延，
+  // 但最多多等 HYDRATE_SCROLL_CAP_MS——表情不能迟迟不上屏。
+  private scheduleCustomEmojiHydrate(): void {
+    if (this.hydrateTimer !== -1) {
+      return;
+    }
+    this.hydrateDeferStart = Date.now();
+    this.hydrateTimer = setTimeout((): void => { this.runScheduledHydrate(); },
+      HYDRATE_COALESCE_MS);
+  }
+
+  private runScheduledHydrate(): void {
+    if (scrollActiveNow() && Date.now() - this.hydrateDeferStart < HYDRATE_SCROLL_CAP_MS) {
+      this.hydrateTimer = setTimeout((): void => { this.runScheduledHydrate(); },
+        HYDRATE_COALESCE_MS);
+      return;
+    }
+    this.hydrateTimer = -1;
+    this.hydrateCustomEmojiPaths();
+  }
+
+  private markCustomEmojiResolveFailed(ceId: string): void {
+    this.customEmojiRequested.delete(ceId);
+    this.customEmojiFailed.add(ceId);
+    let changed = false;
+    this.messages = this.messages.map((m: MessageEntry): MessageEntry => {
+      if (m.contentType !== 'customEmoji' || m.customEmojiId !== ceId || m.photoFailed) {
+        return m;
+      }
+      const c = cloneMessage(m);
+      c.photoFailed = true;
+      changed = true;
+      return c;
+    });
+    if (changed) {
+      this.notifySoon();
+    }
+  }
+
+  private completedPathOf(file: TdObject | undefined): string {
+    if (file === undefined) {
+      return '';
+    }
+    const local = file['local'] as TdObject | undefined;
+    if (local === undefined ||
+      !((local['is_downloading_completed'] as boolean | undefined) ?? false)) {
+      return '';
+    }
+    return (local['path'] as string | undefined) ?? '';
+  }
+
+  private resolveCustomEmojiId(ceId: string, messageId: number, forceRetry: boolean = false): void {
+    if (ceId === '' || this.customEmojiRequested.has(ceId) ||
+      (!forceRetry && this.customEmojiFailed.has(ceId))) {
+      return;
+    }
+    if (forceRetry) {
+      this.customEmojiFailed.delete(ceId);
+    }
+    this.customEmojiRequested.add(ceId);
+    logI(`MessageStore: resolving custom emoji ${ceId} for msg ${messageId}`);
+    const req: TdRequest = { '@type': 'getCustomEmojiStickers' };
+    req['custom_emoji_ids'] = [ceId];
+    this.client.send(req).then((res: TdObject) => {
+      const stickers = (res['stickers'] as TdObject[] | undefined) ?? [];
+      if (stickers.length === 0) {
+        this.markCustomEmojiResolveFailed(ceId);
+        return; // Unicode alternative remains visible with a retry affordance.
+      }
+      const st = stickers[0];
+      const fmt = st['format'] as TdObject | undefined;
+      const fmtName = fmt !== undefined ? ((fmt['@type'] as string | undefined) ?? '') : '';
+      const format = fmtName === 'stickerFormatWebp' ? 'webp'
+        : (fmtName === 'stickerFormatTgs' ? 'tgs'
+          : (fmtName === 'stickerFormatWebm' ? 'webm' : ''));
+      const file = st['sticker'] as TdObject | undefined;
+      const srcId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
+      const thumb = st['thumbnail'] as TdObject | undefined;
+      const thumbFile = thumb !== undefined ? (thumb['file'] as TdObject | undefined) : undefined;
+      const thumbId = thumbFile !== undefined ? ((thumbFile['id'] as number | undefined) ?? 0) : 0;
+      if (format === '' || (srcId === 0 && thumbId === 0)) {
+        this.markCustomEmojiResolveFailed(ceId);
+        return;
+      }
+      const sourceLocalPath = this.completedPathOf(file);
+      const thumbLocalPath = this.completedPathOf(thumbFile);
+      if (sourceLocalPath !== '' && srcId !== 0) {
+        this.completedFilePaths.set(srcId, sourceLocalPath);
+        publishThumbPath(srcId, sourceLocalPath);
+      }
+      if (thumbLocalPath !== '' && thumbId !== 0) {
+        this.completedFilePaths.set(thumbId, thumbLocalPath);
+        publishThumbPath(thumbId, thumbLocalPath);
+      }
+
+      // Mixed text needs a raster source. Animated TGS/WEBM uses its thumbnail;
+      // static WEBP can be inserted directly when no separate thumbnail exists.
+      const inlineFileId = thumbId !== 0 ? thumbId : (format === 'webp' ? srcId : 0);
+      if (inlineFileId !== 0) {
+        this.inlineCustomEmojiFileToId.set(inlineFileId, ceId);
+        const cachedPath = this.completedFilePaths.get(inlineFileId) ?? '';
+        if (cachedPath !== '') {
+          this.applyInlineCustomEmojiPath(ceId, cachedPath);
+        } else {
+          const download: TdRequest = { '@type': 'downloadFile' };
+          download['file_id'] = inlineFileId;
+          download['priority'] = THUMBNAIL_PRIORITY;
+          this.client.send(download).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+            logE(`MessageStore inline custom emoji ${inlineFileId}: ${err.message}`);
+          });
+        }
+      }
+
+      let changed = false;
+      this.messages = this.messages.map((m: MessageEntry): MessageEntry => {
+        if (m.contentType !== 'customEmoji' || m.customEmojiId !== ceId) {
+          return m;
+        }
+        changed = true;
+        const c = cloneMessage(m);
+        c.contentType = 'sticker';
+        c.stickerFormat = format;
+        // 自定义表情解析回来也带合集（长按能看"这个表情属于哪一包"）。
+        c.stickerSetId = stickerSetIdOf(st);
+        c.isEmojiSticker = true;
+        c.photoWidth = 100;
+        c.photoHeight = 100;
+        c.photoFailed = false;
+        c.stickerFailed = false;
+        if (format === 'webp') {
+          c.photoFileId = srcId;
+          c.photoPath = sourceLocalPath !== '' ? sourceLocalPath
+            : (this.completedFilePaths.get(srcId) ?? '');
+          c.photoProgress = c.photoPath !== '' ? 100 : 0;
+          c.stickerFileId = 0;
+          c.stickerPath = '';
+          c.stickerProgress = 0;
+          c.stickerDownloadActive = false;
+        } else {
+          c.photoFileId = thumbId;
+          c.photoPath = thumbLocalPath !== '' ? thumbLocalPath
+            : (this.completedFilePaths.get(thumbId) ?? '');
+          c.photoProgress = c.photoPath !== '' ? 100 : 0;
+          c.stickerFileId = srcId;
+          c.stickerPath = sourceLocalPath !== '' ? sourceLocalPath
+            : (this.completedFilePaths.get(srcId) ?? '');
+          c.stickerProgress = c.stickerPath !== '' ? 100 : 0;
+          c.stickerDownloadActive = c.stickerPath === '' && srcId !== 0;
+        }
+        return c;
+      });
+      this.customEmojiFailed.delete(ceId);
+      if (changed) {
+        this.requestPhotos(); // kick thumbnail + animated source downloads
+        this.notifySoon();
+      }
+    }).catch((err: TdError) => {
+      logE(`MessageStore.getCustomEmojiStickers(${ceId}) failed: ${err.message}`);
+      this.markCustomEmojiResolveFailed(ceId);
+    });
+  }
+
+  // Send one custom emoji as its own message (formattedText + custom-emoji
+  // entity — the receiver renders the animated emoji).
+  sendCustomEmoji(emoji: string, customEmojiId: string): void {
+    const ent: TdObject = { '@type': 'textEntity' };
+    ent['offset'] = 0;
+    ent['length'] = emoji.length; // UTF-16 units — matches TDLib's convention
+    const entType: TdObject = { '@type': 'textEntityTypeCustomEmoji' };
+    entType['custom_emoji_id'] = customEmojiId;
+    ent['type'] = entType;
+    const ft: TdObject = { '@type': 'formattedText' };
+    ft['text'] = emoji;
+    ft['entities'] = [ent];
+    const content: TdObject = { '@type': 'inputMessageText' };
+    content['text'] = ft;
+    this.sendContent(content, 'sendCustomEmoji');
+  }
+
+  // 媒体自动下载的可见窗口，由 ChatPage 的 onScrollIndex 推进（消息 id 区间）。
+  // 0/0 表示"还没有视口信息"，此时只允许缩略图，不碰整段媒体 —— 进频道那一
+  // 刻整页 30 条的动图/语音一起抢带宽，就是列表卡死的原因。
+  private mediaWindowFrom: number = 0;
+  private mediaWindowTo: number = 0;
+  // 聊天开着时实时到达的消息 id。见 onNewMessage。
+  private liveArrivals: Set<number> = new Set();
+  // 用户显式点过下载的文件：不受可见窗口约束，滑走也继续。
+  // 豁免可见窗口自动取消的文件。会被 releaseVideoPlayback 摘掉 —— 只加不删
+  // 的话，点开看过一次的视频就永远取消不掉了。
+  private userRequestedFiles: Set<number> = new Set();
+  // 已进 TDLib 下载管理器（addFileToDownloads）的文件。用户明确要留下来的，
+  // 本地不去取消它们。
+  private managedFiles: Set<number> = new Set();
+
+  private mediaContextFor(entry: MessageEntry): MediaContext {
+    return {
+      inWindow: this.inMediaWindow(entry.id),
+      isPlaySlot: false, // 播放位竞选属二期，一期没有任何条目是播放位
+      // decideMedia 不再按 viewerOpen 产出 'full'（见 MediaPolicy 注释），
+      // 全屏查看器是否打开对这里的决策没有影响，固定填 false。
+      viewerOpen: false,
+      autoplayEnabled: powerFeatureEnabled(
+        entry.isAnimation ? KEY_POWER_AUTOPLAY_GIF : KEY_POWER_AUTOPLAY_VIDEO),
+      powerSaving: AppStorage.get<boolean>(KEY_POWER_ACTIVE) ?? false,
+      networkMetered: false,
+      reduceAnimations: reduceAnimations()
+    };
+  }
+
+  setMediaWindow(fromId: number, toId: number): void {
+    if (this.mediaWindowFrom === fromId && this.mediaWindowTo === toId) {
+      return;
+    }
+    this.mediaWindowFrom = fromId;
+    this.mediaWindowTo = toId;
+    this.cancelMediaOutsideWindow();
+    this.prioritiseVisibleThumbs();
+    this.requestPhotos();
+  }
+
+  private inMediaWindow(id: number): boolean {
+    // 实时到达的消息一律放行 —— 判据是"怎么来的"，不是"在不在视口"：
+    // 翻历史整页涌入才需要窗口约束，新来的一条不该等滚动事件。
+    if (this.liveArrivals.has(id)) {
+      return true;
+    }
+    if (this.mediaWindowFrom === 0 && this.mediaWindowTo === 0) {
+      return false; // 视口未知且非实时到达：不预取整段媒体
+    }
+    return id >= this.mediaWindowFrom && id <= this.mediaWindowTo;
+  }
+
+  // 划走即停。TDLib 的 downloadFile 是有状态的后台任务，不主动取消就会把
+  // 整个可见区之外的视频也拉完 —— 用户看到的"下载不会停"。
+  private cancelMediaOutsideWindow(): void {
+    const stale: number[] = [];
+    this.videoFileToMsg.forEach((messageId: number, fileId: number): void => {
+      if (!this.inMediaWindow(messageId)) {
+        stale.push(fileId);
+      }
+    });
+    for (const fileId of stale) {
+      const messageId = this.videoFileToMsg.get(fileId) ?? 0;
+      const idx = this.indexOf(messageId);
+      // 已下完的不动；用户手动点过的也不动。
+      if (idx >= 0 && this.messages[idx].videoPath !== '') {
+        continue;
+      }
+      // 用户点过「后台缓存」的也不动（services/BackgroundCache）。
+      if (this.userRequestedFiles.has(fileId) || this.liveArrivals.has(messageId) || isBackgroundCaching(fileId)) {
+        continue;
+      }
+      this.videoFileToMsg.delete(fileId);
+      const req: TdRequest = { '@type': 'cancelDownloadFile' };
+      req['file_id'] = fileId;
+      req['only_if_pending'] = false;
+      this.client.send(req).catch((): void => { /* 取消失败无副作用 */ });
+      this.patchVideoEntries(fileId, (c: MessageEntry): void => {
+        c.mediaDownloadActive = false;
+        c.videoProgress = 0;
+      });
+    }
+  }
+
+  private requestPhotos(): void {
+    this.resolveCustomEmojis();
+    this.resolveContactAvatars();
+    for (const e of this.messages) {
+      if ((e.contentType === 'photo' || e.contentType === 'video' ||
+        e.contentType === 'videoNote' ||
+        e.contentType === 'sticker' || e.contentType === 'audio' ||
+        e.contentType === 'game' || e.contentType === 'paidMedia' ||
+        e.contentType === 'gift' || e.contentType === 'giveaway')
+        && e.photoFileId !== 0 && e.photoPath === '') {
+        if (!this.fileToMsg.has(e.photoFileId)) {
+          this.fileToMsg.set(e.photoFileId, e.id);
+          this.downloadThumb(e.photoFileId);
+        } else {
+          // Already requested but still no local file: a download that burned
+          // its retries (transient network failure at load time) would sit at
+          // 0% forever — re-kick it, rate-limited. downloadFile is idempotent.
+          const now = Date.now();
+          const lastKick = this.thumbLastKick.get(e.photoFileId) ?? 0;
+          if (now - lastKick > THUMB_REKICK_MS) {
+            this.thumbLastKick.set(e.photoFileId, now);
+            this.downloadThumb(e.photoFileId);
+          }
+        }
+      }
+      // 整段媒体（语音 / videoNote / GIF / 显式整文件下载）统一交给
+      // MediaPolicy 决策：缩略图已在上文入队（含去重与限速重试），高清图
+      // 不再由这里消费——它会对窗口内每一张有 photoFullFileId 的照片都发起
+      // 原图下载，查看器打开时只该给当前这一张升级，其余是浪费带宽（见
+      // MediaPolicy.decideMedia 的注释）。全屏查看器自己对当前图与左右
+      // 邻图调 requestFullPhoto 驱动高清下载。stream 留给二期的播放位
+      // 控制器，一期不会产出。
+      // 【先判据再造对象】(2026-09-11 帧 trace) 这一整段原先对**每一条**已加载
+      // 消息都跑一遍 subjectOfEntry + mediaContextFor + decideMedia，而
+      // requestPhotos 在滚动中会被反复调用：mediaContextFor 自己就占 196.7ms
+      // （每条 new 一个对象，还带两次 AppStorage 读）。
+      //
+      // 下面这个前置判据与结果**等价**，不是近似：
+      //   · decideMedia 在 !ctx.inWindow 时直接返回空；
+      //   · 窗口内若 !needsVideo，它最多产出 'thumb'，而这里只消费 'explicit'
+      //     （'thumb' 的真正入队在本循环上半段，MediaPolicy 注释里写明了）。
+      // 两者任一不成立，这一段本来就什么都不做。
+      if (e.videoFileId !== 0 && e.videoPath === '' && this.inMediaWindow(e.id)) {
+        const intents: MediaIntent[] = decideMedia(subjectOfEntry(e), this.mediaContextFor(e));
+        for (const intent of intents) {
+          if (intent === 'explicit') {
+            this.requestVideoDownload(e.id); // deduped via videoFileToMsg
+          }
+        }
+      }
+      // Animated (TGS) sticker source file — small (<64KB), download eagerly so
+      // the Lottie animation starts as soon as the message is visible.
+      // 骰子（messageDice）的结果动画走同一管线。
+      if ((e.contentType === 'sticker' || e.contentType === 'dice') &&
+        e.stickerFileId !== 0 && e.stickerPath === '') {
+        this.requestStickerSource(e.id);
+      }
+      // 🎰 老虎机 5 层 TGS：逐层下载，完成经 applyFile 回填 diceLayerPaths。
+      if (e.contentType === 'dice' && e.diceLayerFileIds.length > 0) {
+        for (let layerIndex = 0; layerIndex < e.diceLayerFileIds.length; layerIndex++) {
+          const layerFileId: number = e.diceLayerFileIds[layerIndex];
+          if (layerFileId === 0 || e.diceLayerPaths[layerIndex] !== '' ||
+            this.diceLayerRequested.has(layerFileId)) {
+            continue;
+          }
+          const cachedLayerPath: string = this.completedFilePaths.get(layerFileId) ?? '';
+          if (cachedLayerPath !== '') {
+            this.applyDiceLayerPath(layerFileId, cachedLayerPath);
+            continue;
+          }
+          this.diceLayerRequested.add(layerFileId);
+          const layerReq: TdRequest = { '@type': 'downloadFile' };
+          layerReq['file_id'] = layerFileId;
+          layerReq['priority'] = THUMBNAIL_PRIORITY;
+          this.client.send(layerReq).then((f: TdObject) => this.applyFile(f))
+            .catch((err: TdError): void => {
+              this.diceLayerRequested.delete(layerFileId);
+              logE(`MessageStore dice layer ${layerFileId}: ${err.message}`);
+            });
+        }
+      }
+      if (e.linkPhotoFileId !== 0 && e.linkPhotoPath === '') {
+        if (!this.linkFileToMsg.has(e.linkPhotoFileId)) {
+          this.linkFileToMsg.set(e.linkPhotoFileId, e.id);
+          this.linkThumbLastKick.set(e.linkPhotoFileId, Date.now());
+          this.downloadLinkPreviewPhoto(e.linkPhotoFileId);
+        } else if (!e.linkPhotoDownloadActive && !e.linkPhotoFailed) {
+          const now: number = Date.now();
+          const lastKick: number = this.linkThumbLastKick.get(e.linkPhotoFileId) ?? 0;
+          if (now - lastKick > THUMB_REKICK_MS) {
+            this.linkThumbLastKick.set(e.linkPhotoFileId, now);
+            this.downloadLinkPreviewPhoto(e.linkPhotoFileId);
+          }
+        }
+      }
+    }
+  }
+
+  // 每个 file_id 上一次发出去的优先级。**只为"只升不降"这条不变量存在。**
+  //
+  // TDLib 没有"查当前优先级"的接口，所以只能自己记。会话结束随 store 一起走，
+  // 无需清理（同一 file_id 在一次会话里最多几次升档）。
+  private sentFilePriority: Map<number, number> = new Map();
+
+  // **只提优先级，绝不降低**，不碰任何本地状态。
+  //
+  // 前提是文件已经在下载中。TDLib 没有单独的「改优先级」方法，对同一个 file_id
+  // 再发一次 downloadFile 就是官方的重新定优先级方式：不会重头下，也不会丢掉
+  // 已下的那部分。刻意**不**重置 progress —— 重置会让进度条跳回 0%，看起来像
+  // 重新下载。失败无副作用，原来那次下载照常跑着。
+  //
+  // 【为什么必须挡住降档】函数名叫 raise，但它实际发的是一条会**覆盖**当前
+  // 优先级的 downloadFile。查看器把某张图提到 32 之后，用户在查看器里点
+  // "保存到相册"，保存那条路走的是 24（"用户主动要但没在盯着"那一档）——
+  // 于是正在下的图被打回 24，用户明明还盯着它。
+  // 这个降档是 8b66453（把点开的图提到 32）引入的：在那之前查看器与保存
+  // 同为 24，重发是空操作，问题不存在。
+  private raiseFilePriority(fileId: number, priority: number): void {
+    if (fileId === 0) {
+      return;
+    }
+    const sent: number = this.sentFilePriority.get(fileId) ?? 0;
+    if (priority <= sent) {
+      return;
+    }
+    this.sentFilePriority.set(fileId, priority);
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = fileId;
+    req['priority'] = priority;
+    this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+      logW(`MessageStore raise priority ${fileId}: ${err.message}`);
+    });
+  }
+
+  // On-demand full-resolution photo download (triggered by opening the fullscreen
+  // viewer). The inline bubble only ever downloads photoFileId (a small size).
+  //
+  // 【第三个参数为什么是优先级而不是布尔】原来是 `userInitiated: boolean`，只能
+  // 分出"用户要"与"预取"两档，而调用点实际有三种意图：
+  //   · 查看器里当前这张图 —— 用户正盯着，MEDIA_VIEWING_PRIORITY(32)
+  //   · 保存到相册 / 气泡上点重试 —— 用户主动要但没在盯着，MEDIA_USER_PRIORITY(24)
+  //   · 查看器左右邻图预取 —— MEDIA_PREFETCH_PRIORITY(8)
+  // 布尔挤不下第三种，硬挤的结果就是 downloadPriority.ets 文件头记的那次事故：
+  // 判据挑错了从代码上完全看不出来。默认值保持 24，与改动前的 userInitiated
+  // 默认真值等价，所以没有显式传参的调用点行为不变。
+  requestFullPhoto(messageId: number, forceRetry: boolean = false,
+    priority: number = MEDIA_USER_PRIORITY): void {
+    const idx = this.indexOf(messageId);
+    if (idx < 0) {
+      return;
+    }
+    let e = this.messages[idx];
+    const cachedThumb: string | undefined = e.photoFileId !== 0 && e.photoPath === ''
+      ? this.completedFilePaths.get(e.photoFileId) : undefined;
+    const cachedFull: string | undefined = e.photoFullFileId !== 0 && e.photoFullPath === ''
+      ? this.completedFilePaths.get(e.photoFullFileId) : undefined;
+    if ((cachedThumb !== undefined && cachedThumb !== '') ||
+      (cachedFull !== undefined && cachedFull !== '')) {
+      this.patch(messageId, (c: MessageEntry): void => {
+        if (cachedThumb !== undefined && cachedThumb !== '') {
+          c.photoPath = cachedThumb;
+          c.photoFailed = false;
+          c.photoProgress = 100;
+          publishThumbPath(c.photoFileId, cachedThumb);
+        }
+        if (cachedFull !== undefined && cachedFull !== '') {
+          c.photoFullPath = cachedFull;
+          c.photoFullFailed = false;
+          c.photoFullProgress = 100;
+          publishThumbPath(c.photoFullFileId, cachedFull);
+        }
+      });
+      const refreshedIdx = this.indexOf(messageId);
+      if (refreshedIdx < 0) {
+        return;
+      }
+      e = this.messages[refreshedIdx];
+    }
+    if (forceRetry || priority >= MEDIA_VIEWING_PRIORITY) {
+      const clearThumbFail: boolean = e.photoPath === '' && e.photoFileId !== 0 &&
+        (forceRetry || e.photoFailed);
+      const clearFullFail: boolean = e.photoFullPath === '' && e.photoFullFileId !== 0 &&
+        (forceRetry || e.photoFullFailed);
+      if (clearThumbFail) {
+        this.fileToMsg.delete(e.photoFileId);
+        this.thumbLastKick.delete(e.photoFileId);
+        this.thumbAttempts.delete(e.photoFileId);
+      } else if (e.photoPath === '' && e.photoFileId !== 0) {
+        this.thumbAttempts.delete(e.photoFileId);
+      }
+      if (clearFullFail) {
+        this.fullPhotoFileToMsg.delete(e.photoFullFileId);
+        this.fullPhotoAttempts.delete(e.photoFullFileId);
+        this.fullPhotoPendingRefresh.delete(messageId);
+      }
+      if (clearThumbFail || clearFullFail) {
+        this.patch(messageId, (c: MessageEntry): void => {
+          if (clearThumbFail) {
+            c.photoFailed = false;
+            c.photoProgress = 0;
+          }
+          if (clearFullFail) {
+            c.photoFullFailed = false;
+            c.photoFullProgress = 0;
+          }
+        });
+        const refreshedAfterClear = this.indexOf(messageId);
+        if (refreshedAfterClear < 0) {
+          return;
+        }
+        e = this.messages[refreshedAfterClear];
+      }
+    }
+    if (e.photoFullFileId === 0 || e.photoFullPath !== '') {
+      if (e.photoPath === '' && e.photoFileId !== 0) {
+        this.fileToMsg.set(e.photoFileId, messageId);
+        this.thumbLastKick.set(e.photoFileId, Date.now());
+        if (priority >= MEDIA_VIEWING_PRIORITY) {
+          this.sentFilePriority.set(e.photoFileId, priority);
+          const thumbReq: TdRequest = { '@type': 'downloadFile' };
+          thumbReq['file_id'] = e.photoFileId;
+          thumbReq['priority'] = priority;
+          this.client.send(thumbReq).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+            logW(`MessageStore viewer thumb ${e.photoFileId}: ${err.message}`);
+            this.downloadThumb(e.photoFileId);
+          });
+        } else if (!this.thumbQueued.has(e.photoFileId)) {
+          this.downloadThumb(e.photoFileId);
+          if (priority > MEDIA_PREFETCH_PRIORITY) {
+            this.raiseFilePriority(e.photoFileId, priority);
+          }
+        } else if (priority > MEDIA_PREFETCH_PRIORITY) {
+          this.raiseFilePriority(e.photoFileId, priority);
+        }
+      }
+      return;
+    }
+    if (this.fullPhotoFileToMsg.has(e.photoFullFileId) ||
+      this.fullPhotoPendingRefresh.has(messageId)) {
+      // 已经在下了。这里过去直接 return，于是「邻图预取以优先级 8 抢先注册、
+      // 用户随后划到这张」时，用户正盯着的大图永远留在预取档上——比后台缩略图
+      // (16) 还低。TDLib 重新定优先级的唯一手段就是对同一个 file_id 再发一次
+      // downloadFile，所以这里补发一次。
+      //
+      // 这条路径正是"划到这张"的入口，也是 32 那一档最主要的受益点：邻图当初
+      // 以 8 注册，划过来之后必须真的抢到带宽，否则用户盯着一张转圈的图。
+      const pendingPrio: number | undefined = this.fullPhotoPendingRefresh.get(messageId);
+      if (pendingPrio !== undefined && priority > pendingPrio) {
+        this.fullPhotoPendingRefresh.set(messageId, priority);
+      }
+      if (priority >= MEDIA_VIEWING_PRIORITY && this.fullPhotoFileToMsg.has(e.photoFullFileId)) {
+        this.sentFilePriority.set(e.photoFullFileId, priority);
+        const boostReq: TdRequest = { '@type': 'downloadFile' };
+        boostReq['file_id'] = e.photoFullFileId;
+        boostReq['priority'] = priority;
+        this.client.send(boostReq).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+          logW(`MessageStore boost full photo ${e.photoFullFileId}: ${err.message}`);
+        });
+      } else if (priority > MEDIA_PREFETCH_PRIORITY && this.fullPhotoFileToMsg.has(e.photoFullFileId)) {
+        this.raiseFilePriority(e.photoFullFileId, priority);
+      }
+      return;
+    }
+    if (e.photoFullFailed || e.photoFullProgress !== 0) {
+      this.patch(messageId, (c: MessageEntry): void => {
+        c.photoFullFailed = false;
+        c.photoFullProgress = 0;
+      });
+    }
+    const fullFileId: number = e.photoFullFileId;
+    const attempt: number = (this.fullPhotoAttempts.get(fullFileId) ?? 0) + 1;
+    this.fullPhotoAttempts.set(fullFileId, attempt);
+    this.fullPhotoFileToMsg.set(fullFileId, messageId);
+    // 记账：首次下载也要进 sentFilePriority，否则后续 raiseFilePriority 会
+    // 拿 sent=0 去比，任何档位都能放行，"只升不降"就形同虚设。
+    this.sentFilePriority.set(fullFileId, priority);
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = fullFileId;
+    req['priority'] = priority;
+    this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+      this.fullPhotoFileToMsg.delete(fullFileId);
+      // 邻图后台预取（MEDIA_PREFETCH_PRIORITY）失败时不提前把 entry 标成 photoFullFailed：
+      // 否则用户还没划过去，划过去第一帧就跳过 loading 直接显示"图片加载失败"。
+      // 只静默尝试刷新一次过期的 file_id，等用户真正划到该图时再按前景下载与报错流程走。
+      if (priority <= MEDIA_PREFETCH_PRIORITY) {
+        this.fullPhotoAttempts.delete(fullFileId);
+        this.refreshMessageForFile(fullFileId, messageId);
+        logE(`MessageStore prefetch full photo ${fullFileId}: ${err.message}`);
+        return;
+      }
+      if (!this.refreshedFiles.has(fullFileId) && messageId > 0) {
+        this.fullPhotoPendingRefresh.set(messageId, priority);
+        this.refreshMessageForFile(fullFileId, messageId);
+        logE(`MessageStore full photo ${fullFileId} failed, refreshing message ${messageId}: ${err.message}`);
+        return;
+      }
+      if (attempt <= 2 && messageId > 0) {
+        this.fullPhotoPendingRefresh.set(messageId, priority);
+        setTimeout((): void => {
+          this.fullPhotoPendingRefresh.delete(messageId);
+          this.requestFullPhoto(messageId, false, priority);
+        }, 700 * attempt);
+        logW(`MessageStore full photo ${fullFileId} retry ${attempt}: ${err.message}`);
+        return;
+      }
+      this.fullPhotoAttempts.delete(fullFileId);
+      this.patch(messageId, (c: MessageEntry): void => {
+        c.photoFullFailed = true;
+        c.photoFullProgress = 0;
+      });
+      logE(`MessageStore full photo ${fullFileId}: ${err.message}`);
+    });
+    if (e.photoPath === '' && e.photoFileId !== 0) {
+      this.fileToMsg.set(e.photoFileId, messageId);
+      this.thumbLastKick.set(e.photoFileId, Date.now());
+      this.downloadThumb(e.photoFileId);
+    }
+  }
+
+  retryPhoto(messageId: number): void {
+    const idx = this.indexOf(messageId);
+    if (idx < 0) {
+      return;
+    }
+    const e: MessageEntry = this.messages[idx];
+    if (e.photoPath === '' && e.photoFileId !== 0) {
+      this.fileToMsg.delete(e.photoFileId);
+      this.thumbLastKick.delete(e.photoFileId);
+      this.thumbAttempts.delete(e.photoFileId);
+      this.patch(messageId, (c: MessageEntry): void => {
+        c.photoFailed = false;
+        c.photoProgress = 0;
+      });
+      this.fileToMsg.set(e.photoFileId, messageId);
+      this.downloadThumb(e.photoFileId);
+    }
+    if (e.photoFullPath === '' && e.photoFullFileId !== 0) {
+      this.requestFullPhoto(messageId, true);
+    }
+  }
+
+  // 【只有非进度字段变了才发快照】每次 notifySoon 都让 ChatPage 把**整个已加载
+  // 窗口**重新 collapseAlbums 一遍（mediaProgressChannel 文件头的真机实测：
+  // 421 条时 8–20ms 主线程 JS，滑动中每秒 10 次），而 messages 只增不减，
+  // 这条开销随停留时长线性增长。
+  //
+  // 进度根本不在行 key 里——它走 mediaProgressChannel 旁路直达进度环——所以
+  // 「进度从 40 跳到 41」触发的那次全窗重建，产生的可见变化恰好是零。
+  // 行内缩略图那一支早就用 inlineThumbEntryChanged 守着（并注明"这一支因此
+  // 一律不再发 notifySoon()"），这里是同一件事漏掉的地方。
+  //
+  // 判据保守：**路径落地/失败翻转/活跃态翻转一律照发**，只跳过"仅进度变化"。
+  // 漏发路径会让内容永远不显示，那个后果比多发几次严重得多。
+  private patchStickerEntries(fileId: number, fn: (c: MessageEntry) => void): void {
+    let changed = false;
+    this.messages = this.messages.map((m: MessageEntry): MessageEntry => {
+      if (m.stickerFileId !== fileId) {
+        return m;
+      }
+      const c = cloneMessage(m);
+      const before: PatchSignature = {
+        path: m.stickerPath, failed: m.stickerFailed, active: m.stickerDownloadActive
+      };
+      fn(c);
+      publishProgress(c.stickerFileId, c.stickerProgress);
+      const after: PatchSignature = {
+        path: c.stickerPath, failed: c.stickerFailed, active: c.stickerDownloadActive
+      };
+      if (patchNeedsNotify(before, after)) {
+        changed = true;
+      }
+      return c;
+    });
+    if (changed) {
+      this.notifySoon();
+    }
+  }
+
+  private requestStickerSource(messageId: number, forceRetry: boolean = false): void {
+    const idx = this.indexOf(messageId);
+    if (idx < 0) {
+      return;
+    }
+    const entry = this.messages[idx];
+    const fileId = entry.stickerFileId;
+    if (fileId === 0 || entry.stickerPath !== '') {
+      return;
+    }
+    // webm 贴纸的帧缓存（按唯一 ID）已经在磁盘上：气泡直接从缓存播，不必下载源文件。
+    // 会话气泡按最大尺寸桶解码（160vp 在任何密度下都落在最大桶），所以按最大桶查。
+    if (entry.stickerFormat === 'webm' && !forceRetry &&
+      stickerFramesCached(entry.stickerUniqueId, ALPHA_MAX_BUCKET, entry.isEmojiSticker)) {
+      return;
+    }
+    const cachedPath = this.completedFilePaths.get(fileId) ?? '';
+    if (cachedPath !== '') {
+      this.patchStickerEntries(fileId, (c: MessageEntry): void => {
+        c.stickerPath = cachedPath;
+        c.stickerProgress = 100;
+        c.stickerFailed = false;
+        c.stickerDownloadActive = false;
+      });
+      return;
+    }
+    if (forceRetry) {
+      this.stickerFileToMsg.delete(fileId);
+      this.stickerLastKick.delete(fileId);
+    } else if (entry.stickerFailed) {
+      // 明确失败过的要用户主动点重试，不自动重发。
+      return;
+    } else if (this.stickerFileToMsg.has(fileId)) {
+      // 已经请求过、本地文件却仍然没有。下载可能把重试次数烧光了（加载时的
+      // 瞬时网络故障）——它既不完成也不报错，于是 stickerFileToMsg 里这一条
+      // 永远清不掉，贴纸卡在 0%。用户看到的就是"贴纸加载不出来，退出会话
+      // 再进去就好"：退出销毁了 store，连带清掉了这张表（issue #68）。
+      //
+      // 缩略图那条路一直有这个限速重发（requestPhotos 里的 thumbLastKick），
+      // 贴纸这条漏了。同一档 8s，downloadFile 幂等，重发没有副作用。
+      const now: number = Date.now();
+      if (now - (this.stickerLastKick.get(fileId) ?? 0) <= THUMB_REKICK_MS) {
+        return;
+      }
+    }
+    this.stickerLastKick.set(fileId, Date.now());
+    this.stickerFileToMsg.set(fileId, messageId);
+    this.patchStickerEntries(fileId, (c: MessageEntry): void => {
+      c.stickerFailed = false;
+      c.stickerDownloadActive = true;
+      if (forceRetry) {
+        c.stickerProgress = 0;
+      }
+    });
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = fileId;
+    req['priority'] = THUMBNAIL_PRIORITY;
+    this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+      this.stickerFileToMsg.delete(fileId);
+      this.stickerLastKick.delete(fileId);
+      const attempt: number = (this.stickerAttempts.get(fileId) ?? 0) + 1;
+      this.stickerAttempts.set(fileId, attempt);
+      logE(`MessageStore sticker ${fileId} (attempt ${attempt}): ${err.message}`);
+      if (attempt <= 2) {
+        // 和缩略图同一套退避：失败一次就放弃是 issue #68 的另一半。
+        setTimeout((): void => { this.requestStickerSource(messageId, true); }, 1000 * attempt);
+        return;
+      }
+      this.patchStickerEntries(fileId, (c: MessageEntry): void => {
+        c.stickerFailed = true;
+        c.stickerProgress = 0;
+        c.stickerDownloadActive = false;
+      });
+      this.refreshMessageForFile(fileId, messageId);
+    });
+  }
+
+  retrySticker(messageId: number): void {
+    const idx = this.indexOf(messageId);
+    if (idx < 0) {
+      return;
+    }
+    const entry = this.messages[idx];
+    if (entry.contentType === 'customEmoji' && entry.customEmojiId !== '') {
+      this.patch(messageId, (c: MessageEntry): void => {
+        c.photoFailed = false;
+        c.photoProgress = 0;
+      });
+      this.resolveCustomEmojiId(entry.customEmojiId, messageId, true);
+      return;
+    }
+    if (entry.contentType !== 'sticker') {
+      return;
+    }
+    if (entry.photoPath === '' && entry.photoFileId !== 0) {
+      this.retryPhoto(messageId);
+    }
+    if (entry.stickerPath === '' && entry.stickerFileId !== 0) {
+      // 用户亲手点了 ↻：计数归零，重新给三次机会。
+      this.stickerAttempts.delete(entry.stickerFileId);
+      this.requestStickerSource(messageId, true);
+    }
+  }
+
+  // Full video/file download used by inline autoplay and explicit save/open.
+  // Fullscreen playback can stream independently, while this path provides a
+  // stable local file and progress state for the bubble/download manager.
+  // register=true (user-initiated file/video downloads) goes through TDLib's
+  // download manager (addFileToDownloads) so the search page's 下载 tab can
+  // list it with live progress; auto-downloads (voice prefetch) stay silent.
+  requestVideoDownload(messageId: number, register: boolean = false, forceRetry: boolean = false): void {
+    this.startVideoDownload(messageId, register, register, forceRetry);
+  }
+
+  // 为"现在看"而下载。豁免可见窗口的自动取消（用户正盯着它），但**不**进
+  // TDLib 的下载管理器：addFileToDownloads 是持久注册，按设计跨页面、跨应用
+  // 重启继续跑，进去了就只能靠 removeFileFromDownloads 摘出来。用它来支撑
+  // 播放，等于用户关掉播放器回到列表后视频还在偷偷下 —— 正是实测到的现象。
+  requestVideoForPlayback(messageId: number, forceRetry: boolean = false): void {
+    this.startVideoDownload(messageId, false, true, forceRetry);
+  }
+
+  // 播放结束（关播放器 / 划走）：解除豁免，没下完的就地取消。
+  // 已经下完的不动（本地文件留着有用），进过下载管理器的也不动 —— 那是用户
+  // 文件下载的"暂停"。cancelDownloadFile 不删已下的那部分，重新
+  // requestVideoDownload 会从断点续传——TDLib 语义天然就是暂停/继续。
+  // 只清 active、**保留 progress**：卡片上要显示"停在 43%"，清成 0 就成了
+  // "从没下过"。
+  pauseFileDownload(messageId: number): void {
+    const idx = this.indexOf(messageId);
+    if (idx < 0) {
+      return;
+    }
+    const e = this.messages[idx];
+    const fileId = e.videoFileId;
+    if (fileId === 0 || e.videoPath !== '') {
+      return;
+    }
+    this.userRequestedFiles.delete(fileId);
+    this.videoFileToMsg.delete(fileId);
+    // **进了 TDLib 下载管理器的文件，光 cancelDownloadFile 停不住。**
+    //
+    // 2026-11-03 真机（issue #245）：在气泡上暂停一个 309MB 的文件，
+    // cancelDownloadFile 返回成功，7 秒后它又在下载 —— 因为 addFileToDownloads
+    // 是持久注册，取消只停了当前这一次传输，管理器条目仍然没被标记为暂停，
+    // TDLib 自己又把它捡起来。
+    //
+    // 下载中心的暂停之所以有效，是因为它走 toggleDownloadIsPaused(is_paused=true)，
+    // 那是 TDLib 记住的暂停位。所以这里对管理器文件补上同一个请求：
+    // 先立暂停位（防止自动续传），再取消当前传输（立即停）。
+    if (this.managedFiles.has(fileId)) {
+      const pauseReq: TdRequest = { '@type': 'toggleDownloadIsPaused' };
+      pauseReq['file_id'] = fileId;
+      pauseReq['is_paused'] = true;
+      this.client.send(pauseReq).catch((err: TdError): void => {
+        logW(`MessageStore.pauseFileDownload: toggleDownloadIsPaused failed ${err.message}`);
+      });
+    }
+    const req: TdRequest = { '@type': 'cancelDownloadFile' };
+    req['file_id'] = fileId;
+    req['only_if_pending'] = false;
+    this.client.send(req).catch((): void => { /* 取消失败无副作用 */ });
+    // **不要在这里 publishProgress(e.videoProgress)。**
+    //
+    // 2026-11-03 真机：暂停后进度环画满、文案显示 100%。原因是 videoProgress
+    // 这个字段在下载过程中不跟着走（它是 hydrate/完成时写的），暂停那一刻它
+    // 还是 100；真正准确的是 mediaProgressChannel 里 downloadPercent 写进去的
+    // 值。取消传输之后不会再有人覆盖它，通道里那条就是「停在哪」。
+    // 之前那版用自己的旧值去 publish，反而把正确值盖掉了。
+    this.patchVideoEntries(fileId, (c: MessageEntry): void => {
+      c.mediaDownloadActive = false;
+    });
+  }
+
+  // 明确要留的东西，不该被"看完了"顺手取消掉。
+  releaseVideoPlayback(messageId: number): void {
+    const idx = this.indexOf(messageId);
+    if (idx < 0) {
+      return;
+    }
+    const e = this.messages[idx];
+    const fileId = e.videoFileId;
+    if (fileId === 0 || !this.userRequestedFiles.has(fileId)) {
+      return;
+    }
+    this.userRequestedFiles.delete(fileId);
+    if (e.videoPath !== '' || this.managedFiles.has(fileId) || isBackgroundCaching(fileId)) {
+      return;
+    }
+    this.videoFileToMsg.delete(fileId);
+    const req: TdRequest = { '@type': 'cancelDownloadFile' };
+    req['file_id'] = fileId;
+    req['only_if_pending'] = false;
+    this.client.send(req).catch((): void => { /* 取消失败无副作用 */ });
+    this.patchVideoEntries(fileId, (c: MessageEntry): void => {
+      c.mediaDownloadActive = false;
+      c.videoProgress = 0;
+    });
+  }
+
+  // 这个视频文件是不是已经有人在管：正在为播放/查看下载（videoFileToMsg）、
+  // 用户点过下载（userRequestedFiles）、或进了下载管理器（managedFiles）。
+  //
+  // 供 services/VideoHeadPrefetcher 判"能不能碰"：带 limit 的 downloadFile 会
+  // **覆盖**同一文件在途下载的参数，播放器正在整份下的时候预取一发就把它夹成
+  // 2MB；反过来预取划走时若把被认领的文件取消，就掐断了用户正在看的东西。
+  // 所以被认领的既不能发预取、也不能取消。
+  isVideoFileClaimed(fileId: number): boolean {
+    return this.videoFileToMsg.has(fileId) || this.userRequestedFiles.has(fileId) ||
+      this.managedFiles.has(fileId) || isBackgroundCaching(fileId);
+  }
+
+  // manage：进 TDLib 的下载管理器（用户要"留下"这个文件）。
+  // exempt：豁免可见窗口的自动取消（用户此刻正在用这个文件）。
+  // 两者过去被同一个 register 布尔绑在一起，于是"点开看一眼"也拿到了永久的
+  // 下载注册 + 永久的取消豁免。
+  private startVideoDownload(
+    messageId: number, manage: boolean, exempt: boolean, forceRetry: boolean
+  ): void {
+    const idx = this.indexOf(messageId);
+    if (idx < 0) {
+      return;
+    }
+    const e = this.messages[idx];
+    const cachedPath = e.videoFileId !== 0 ? (this.completedFilePaths.get(e.videoFileId) ?? '') : '';
+    if (e.videoPath === '' && cachedPath !== '') {
+      this.patchVideoEntries(e.videoFileId, (c: MessageEntry): void => {
+        c.videoPath = cachedPath;
+        c.videoProgress = 100;
+        c.videoFailed = false;
+        c.mediaDownloadActive = false;
+      });
+      return;
+    }
+    if (forceRetry && e.videoFileId !== 0) {
+      this.videoFileToMsg.delete(e.videoFileId);
+    }
+    if (e.videoFileId === 0 || e.videoPath !== '') {
+      return;
+    }
+    // 已经在下了（自动预取，或另一处先触发了）。意图仍然要记下来：不记的话
+    // 关播放器时 releaseVideoPlayback 找不到该取消谁，视频就一直下下去。
+    // manage 是例外 —— 光记标记不等于真进了下载管理器，得把请求发出去。
+    if (this.videoFileToMsg.has(e.videoFileId) && !manage) {
+      if (exempt) {
+        this.userRequestedFiles.add(e.videoFileId);
+        // 同 requestFullPhoto：可见窗口的自动预取多半已用优先级 8 抢先注册，
+        // 补发一次把用户此刻要看的这个提上来。
+        this.raiseFilePriority(e.videoFileId, MEDIA_USER_PRIORITY);
+      }
+      return;
+    }
+    this.videoFileToMsg.set(e.videoFileId, messageId);
+    if (exempt) {
+      this.userRequestedFiles.add(e.videoFileId);
+    }
+    if (manage) {
+      this.managedFiles.add(e.videoFileId);
+    }
+    // 之前可能在气泡里暂停过（见 pauseFileDownload 里的 toggleDownloadIsPaused）：
+    // 现在要重新下载，必须先把暂停位清掉，否则 downloadFile 不会被真正执行。
+    if (this.managedFiles.has(e.videoFileId)) {
+      const unpause: TdRequest = { '@type': 'toggleDownloadIsPaused' };
+      unpause['file_id'] = e.videoFileId;
+      unpause['is_paused'] = false;
+      this.client.send(unpause).catch((): void => { /* 清除失败不阻断下载 */ });
+    }
+    this.patchVideoEntries(e.videoFileId, (c: MessageEntry): void => {
+      c.videoFailed = false;
+      c.mediaDownloadActive = true;
+      if (forceRetry) {
+        c.videoProgress = 0;
+      }
+    });
+    const req: TdRequest = { '@type': manage ? 'addFileToDownloads' : 'downloadFile' };
+    req['file_id'] = e.videoFileId;
+    req['priority'] = mediaDownloadPriority(manage, exempt);
+    if (manage) {
+      req['chat_id'] = this.chatId;
+      req['message_id'] = messageId;
+    }
+    this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+      this.videoFileToMsg.delete(e.videoFileId);
+      this.patchVideoEntries(e.videoFileId, (c: MessageEntry): void => {
+        c.videoFailed = true;
+        c.videoProgress = 0;
+        c.mediaDownloadActive = false;
+      });
+      logE(`MessageStore video ${e.videoFileId}: ${err.message}`);
+    });
+  }
+
+  private diceLayerRequested: Set<number> = new Set();
+
+  // 🎰 某一层动画文件就绪：回填所有引用它的骰子消息的对应层路径。
+  private applyDiceLayerPath(fileId: number, path: string): void {
+    let changed = false;
+    const next = this.messages.map((e: MessageEntry): MessageEntry => {
+      const layerIndex: number = e.diceLayerFileIds.indexOf(fileId);
+      if (e.contentType !== 'dice' || layerIndex < 0 ||
+        e.diceLayerPaths[layerIndex] === path) {
+        return e;
+      }
+      const c = cloneMessage(e);
+      c.diceLayerPaths[layerIndex] = path;
+      changed = true;
+      return c;
+    });
+    if (changed) {
+      this.messages = next;
+      this.notifySoon();
+    }
+  }
+
+  private onFile(u: TdObject): void {
+    const f = u['file'] as TdObject | undefined;
+    if (f !== undefined) {
+      this.applyFile(f);
+    }
+  }
+
+  private downloadPercent(file: TdObject, local: TdObject): number {
+    const size = ((file['size'] as number | undefined) ?? 0) || ((file['expected_size'] as number | undefined) ?? 0);
+    const downloaded = (local['downloaded_size'] as number | undefined) ?? 0;
+    return size > 0 ? Math.min(100, Math.floor((downloaded / size) * 100)) : 0;
+  }
+
+  private isSendingFile(id: number): boolean {
+    for (const m of this.messages) {
+      if (m.sendState === 'sending' &&
+        (m.photoFileId === id || m.photoFullFileId === id || m.videoFileId === id || m.stickerFileId === id)) {
+        return true;
+      }
+    }
+    for (const m of this.deferredOutgoing) {
+      if (m.sendState === 'sending' &&
+        (m.photoFileId === id || m.photoFullFileId === id || m.videoFileId === id || m.stickerFileId === id)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private applyFile(file: TdObject): void {
+    const id = file['id'] as number | undefined;
+    if (id === undefined) {
+      return;
+    }
+    // 出站上传进度（issue #201 第 6 条）：只发到 mediaProgressChannel，**不碰
+    // messages**——气泡按 fileId 订阅通道，环自己刷新，时间线不会因为每个上传
+    // tick 被重发一遍。发送中/发完的形态切换由 sendState 决定，不需要这里 patch。
+    // 只在该文件确属正在发送（sendState==='sending'）的出站消息时才作为上传进度发布，
+    // 防止服务端文件（is_uploading_completed=true）在下载缩略图时把进度环冲成 100%。
+    const rawUploadPercent: number = uploadPercentOf(file);
+    const uploadPercent: number = rawUploadPercent >= 0 && this.isSendingFile(id)
+      ? rawUploadPercent : -1;
+    if (uploadPercent >= 0) {
+      publishProgress(id, uploadPercent);
+      // 出站照片上传的往往是最大尺寸（photoFullFileId），而气泡内的 LiveProgressRing
+      // 订阅的是内联尺寸（photoFileId）。两边同步镜像，确保图片上传进度环一定能收到。
+      for (const m of this.messages) {
+        if (m.sendState === 'sending' && (m.photoFileId === id || m.photoFullFileId === id)) {
+          if (m.photoFileId !== 0 && m.photoFileId !== id) {
+            publishProgress(m.photoFileId, uploadPercent);
+          }
+          if (m.photoFullFileId !== 0 && m.photoFullFileId !== id) {
+            publishProgress(m.photoFullFileId, uploadPercent);
+          }
+        }
+      }
+    }
+    const local = file['local'] as TdObject | undefined;
+    if (local === undefined) {
+      return;
+    }
+    const done = (local['is_downloading_completed'] as boolean | undefined) ?? false;
+    const path = (local['path'] as string | undefined) ?? '';
+    if (done && path !== '') {
+      const keepPoster: string = this.localVideoPosters.get(id) ?? '';
+      this.completedFilePaths.set(id, keepPoster !== '' && !isVideoPath(path) ? keepPoster : path);
+      if (keepPoster !== '') {
+        publishThumbPath(id, keepPoster);
+      } else if (!isVideoPath(path)) {
+        publishThumbPath(id, path);
+      }
+      this.applyDiceLayerPath(id, path);
+      const customEmojiId = this.inlineCustomEmojiFileToId.get(id);
+      if (customEmojiId !== undefined) {
+        this.applyInlineCustomEmojiPath(customEmojiId, path);
+      }
+      const contactUserId = this.avatarFileToContact.get(id);
+      if (contactUserId !== undefined) {
+        this.contactAvatarPaths.set(contactUserId, path);
+        this.applyContactAvatarPath(contactUserId, path);
+      }
+    }
+
+    // A sticker source id can belong to many messages. Keep source progress,
+    // completion and paused state in sync for every matching bubble.
+    // 先查反向表、未命中再扫。**谓词结果与只扫描时完全等价**（`||` 短路），
+    // 但常见路径（表命中）不再做一次全窗口线性扫描。
+    // 不直接换成只查表：表由 requestStickerSource 那一条路填，若某条消息进了
+    // 窗口而 fileId 没进表，只查表就会静默丢一次更新（表现为缩略图不刷新）。
+    // 保留扫描当兜底，是这条优化能零风险落地的原因。
+    if (this.stickerFileToMsg.has(id) ||
+      this.messages.some((m: MessageEntry): boolean => m.stickerFileId === id)) {
+      const percent = done && path !== '' ? 100 : this.downloadPercent(file, local);
+      const active = !done &&
+        ((local['is_downloading_active'] as boolean | undefined) ?? false);
+      this.patchStickerEntries(id, (c: MessageEntry): void => {
+        if (done && path !== '') {
+          c.stickerPath = path;
+          c.stickerFailed = false;
+        }
+        c.stickerProgress = percent;
+        c.stickerDownloadActive = active;
+      });
+      if (done && path !== '') {
+        this.stickerFileToMsg.delete(id);
+        this.stickerLastKick.delete(id);
+      }
+      return;
+    }
+
+    // A Telegram preview thumbnail can be reused by several messages. Patch
+    // every matching card rather than the first message that requested it.
+    if (this.linkFileToMsg.has(id) ||
+      this.messages.some((m: MessageEntry): boolean => m.linkPhotoFileId === id)) {
+      const percent: number = done && path !== '' ? 100 : this.downloadPercent(file, local);
+      const active: boolean = !done &&
+        ((local['is_downloading_active'] as boolean | undefined) ?? false);
+      this.patchLinkPreviewEntries(id, (entry: MessageEntry): void => {
+        if (done && path !== '') {
+          entry.linkPhotoPath = path;
+          entry.linkPhotoFailed = false;
+        }
+        entry.linkPhotoProgress = percent;
+        entry.linkPhotoDownloadActive = active;
+      });
+      if (done && path !== '') {
+        this.linkFileToMsg.delete(id);
+        this.linkThumbAttempts.delete(id);
+        this.linkThumbLastKick.delete(id);
+      }
+    }
+
+    // Full-resolution photo / full video: progress while downloading, path on completion.
+    const fullMsgId = this.fullPhotoFileToMsg.get(id);
+    if (fullMsgId !== undefined || (done && path !== '' &&
+      this.messages.some((m: MessageEntry): boolean => m.photoFullFileId === id))) {
+      const targetMsgId: number = fullMsgId !== undefined
+        ? fullMsgId
+        : (this.messages.find((m: MessageEntry): boolean => m.photoFullFileId === id)?.id ?? 0);
+      const landed: boolean = done && path !== '';
+      const percent = landed ? 100 : this.downloadPercent(file, local);
+      if (uploadPercent < 0) {
+        publishProgress(id, percent);
+      }
+      const fullIdx = this.indexOf(targetMsgId);
+      if (fullIdx >= 0) {
+        const cur = this.messages[fullIdx];
+        if (!landed && !cur.photoFullFailed && cur.photoFullProgress === percent) {
+          return;
+        }
+      }
+      this.patch(targetMsgId, (c: MessageEntry) => {
+        if (landed) {
+          c.photoFullPath = path;
+          c.photoFullFailed = false;
+          // Backfill: if the inline thumbnail download failed/stalled, the
+          // full-resolution image serves as the bubble thumbnail too.
+          if (c.photoPath === '') {
+            c.photoPath = path;
+            if (c.photoFileId !== 0) {
+              this.completedFilePaths.set(c.photoFileId, path);
+              publishThumbPath(c.photoFileId, path);
+            }
+          }
+        }
+        c.photoFullProgress = percent;
+      });
+      if (landed) {
+        this.fullPhotoFileToMsg.delete(id);
+        this.fullPhotoAttempts.delete(id);
+      }
+      return;
+    }
+    // hasVideoEntry 原来是**无条件先算**的，于是每一条 updateFile 都要扫一遍
+    // 全窗口——而它只在 videoTracked 为假、且这次是"下载完成"时才会被用到。
+    // 改成惰性：表命中就根本不扫。
+    const videoTracked = this.videoFileToMsg.has(id);
+    if (videoTracked || (done && path !== '' &&
+      this.messages.some((m: MessageEntry): boolean => m.videoFileId === id))) {
+      const percent = done && path !== '' ? 100 : this.downloadPercent(file, local);
+      this.patchVideoEntries(id, (c: MessageEntry): void => {
+        if (done && path !== '') {
+          c.videoPath = path;
+          c.videoFailed = false;
+          c.mediaDownloadActive = false;
+        } else {
+          c.mediaDownloadActive = true;
+        }
+        c.videoProgress = percent;
+      });
+      if (done && path !== '') {
+        this.videoFileToMsg.delete(id);
+      }
+      return;
+    }
+    // Inline thumbnail: progress while downloading, path on completion (drives
+    // the in-bubble loading ring).
+    if (this.fileToMsg.has(id) ||
+      this.messages.some((m: MessageEntry): boolean => m.photoFileId === id)) {
+      const percent = this.downloadPercent(file, local);
+      const landed: boolean = done && path !== '';
+      this.messages = this.messages.map((m: MessageEntry): MessageEntry => {
+        if (m.photoFileId !== id || !inlineThumbEntryChanged(m, percent, landed, path)) {
+          return m;
+        }
+        const c = cloneMessage(m);
+        if (landed) {
+          c.photoPath = path;
+          c.photoFailed = false;
+        }
+        c.photoProgress = percent;
+        return c;
+      });
+      // 进度和路径两条旁路通道都已经铺好，这一支因此一律不再发
+      // notifySoon()：
+      //   · 进度——publishProgress 直达 LiveProgressRing（下一行）；
+      //   · 缩略图路径——applyFile 开头的 publishThumbPath 直达 LiveThumbImage，
+      //     它自己把占位换成 CachedImage，不需要整行重建。
+      // 两个字段都不在 collapseAlbums 的行 key 里，所以 notify 也产生不了
+      // 行重建，只会拉着 ChatPage 重算一遍 groups 并整体 rerender——真机
+      // trace 里那条 CustomNodeUpdate ChatPage → ExecuteRerender 就是它。
+      // map 仍然保留：条目里的 photoPath / photoProgress 还要给缓存落盘、
+      // 给全尺寸分支的回填判定用，只是不再惊动 UI。
+      if (uploadPercent < 0) {
+        publishProgress(id, percent);
+      }
+      if (landed) {
+        this.thumbAttempts.delete(id);
+        this.thumbLastKick.delete(id);
+      }
+      return;
+    }
+
+    if (!done || path === '') {
+      return;
+    }
+    // The chat photo drives the header avatar (may also be a message sender's avatar
+    // when the channel posts as itself — fall through so both get updated).
+    if (id === this.chatPhotoFileId && this.chatPhotoPath !== path) {
+      this.chatPhotoPath = path;
+      this.notifyHeaderAvatar();
+    }
+    const senderKey = this.avatarFileToSender.get(id);
+    if (senderKey !== undefined) {
+      this.senderAvatarPaths.set(senderKey, path);
+      this.applySenderPath(senderKey, path);
+      return;
+    }
+    const replierUid = this.avatarFileToReplier.get(id);
+    if (replierUid !== undefined) {
+      this.replierAvatarPaths.set(replierUid, path);
+      this.applyReplierAvatar(replierUid, path);
+      return;
+    }
+  }
+
+  // Download the chat photo for the header avatar (independent of the chat lists,
+  // so channels opened from a folder still get their header avatar).
+  private downloadChatPhoto(): void {
+    if (this.chatPhotoFileId <= 0) {
+      return;
+    }
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = this.chatPhotoFileId;
+    req['priority'] = THUMBNAIL_PRIORITY;
+    this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+      logE(`MessageStore chatPhoto ${this.chatPhotoFileId}: ${err.message}`);
+    });
+  }
+
+  // --- sender avatars (group/channel per-message avatars) ---
+  private senderKey(senderId: number, isUser: boolean): string {
+    return `${isUser ? 'u' : 'c'}${senderId}`;
+  }
+
+  // Messages sent AS a chat (posting-as-channel / anonymous admins) carry a
+  // messageSenderChat — their display name/avatar come from getChat, not the
+  // user store (senderName() leaves them empty).
+  private chatSenderNames: Map<number, string> = new Map();
+  private chatSenderRequested: Set<number> = new Set();
+
+  private resolveChatSenders(candidates: MessageEntry[]): void {
+    const seen: Set<number> = new Set();
+    for (const e of candidates) {
+      if (e.senderIsUser || e.senderId === 0 || e.senderId === this.chatId) {
+        continue;
+      }
+      if (seen.has(e.senderId)) {
+        continue;
+      }
+      seen.add(e.senderId);
+      const cached = this.chatSenderNames.get(e.senderId);
+      if (cached !== undefined && cached !== '') {
+        this.applyChatSenderName(e.senderId, cached);
+        continue;
+      }
+      if (this.chatSenderRequested.has(e.senderId)) {
+        continue;
+      }
+      this.chatSenderRequested.add(e.senderId);
+      const senderId = e.senderId;
+      const req: TdRequest = { '@type': 'getChat' };
+      req['chat_id'] = senderId;
+      this.client.send(req).then((chat: TdObject) => {
+        const title = (chat['title'] as string | undefined) ?? '';
+        if (title !== '') {
+          this.chatSenderNames.set(senderId, title);
+          this.applyChatSenderName(senderId, title);
+        }
+        const photo = chat['photo'] as TdObject | undefined;
+        const small = photo !== undefined ? (photo['small'] as TdObject | undefined) : undefined;
+        const fileId = small !== undefined ? ((small['id'] as number | undefined) ?? 0) : 0;
+        const key = this.senderKey(senderId, false);
+        if (fileId > 0 && !this.senderRequested.has(key)) {
+          this.senderRequested.add(key);
+          this.avatarFileToSender.set(fileId, key);
+          const dl: TdRequest = { '@type': 'downloadFile' };
+          dl['file_id'] = fileId;
+          dl['priority'] = THUMBNAIL_PRIORITY;
+          this.client.send(dl).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+            logE(`MessageStore chat-sender avatar ${fileId}: ${err.message}`);
+          });
+        }
+      }).catch((err: TdError) => {
+        logE(`MessageStore.resolveChatSenders getChat(${senderId}) failed: ${err.message}`);
+      });
+    }
+  }
+
+  private applyChatSenderName(senderId: number, name: string): void {
+    let changed = false;
+    const next = this.messages.map((e: MessageEntry) => {
+      if (!e.senderIsUser && e.senderId === senderId && e.senderName !== name) {
+        changed = true;
+        const c = cloneMessage(e);
+        c.senderName = name;
+        return c;
+      }
+      return e;
+    });
+    if (changed) {
+      this.messages = next;
+      this.notifySoon();
+    }
+  }
+
+  private requestSenderAvatar(userId: number): void {
+    if (userId <= 0) {
+      return;
+    }
+    const key = this.senderKey(userId, true);
+    const known = this.senderAvatarPaths.get(key);
+    if (known !== undefined && known !== '') {
+      this.applySenderPath(key, known);
+      return;
+    }
+    if (this.senderRequested.has(key)) {
+      return;
+    }
+    this.users.ensure(userId);
+    const fileId: number = this.users.photoFileId(userId);
+    if (fileId <= 0) {
+      return; // retried by the targeted updateUser path below
+    }
+    this.senderRequested.add(key);
+    this.avatarFileToSender.set(fileId, key);
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = fileId;
+    req['priority'] = THUMBNAIL_PRIORITY;
+    this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+      logE(`MessageStore avatar ${fileId}: ${err.message}`);
+    });
+  }
+
+  private resolveSenderAvatars(candidates: MessageEntry[] = this.messages): void {
+    this.resolveChatSenders(candidates);
+    const seen = new Set<string>();
+    const usersToRefresh: Set<number> = new Set();
+    for (const e of candidates) {
+      if (e.isOutgoing || e.senderId === 0) {
+        continue;
+      }
+      const key = this.senderKey(e.senderId, e.senderIsUser);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      if (e.senderIsUser) {
+        usersToRefresh.add(e.senderId);
+        this.requestSenderAvatar(e.senderId);
+        continue;
+      }
+      const known = this.senderAvatarPaths.get(key);
+      if (known !== undefined && known !== '') {
+        this.applySenderPath(key, known);
+        continue;
+      }
+      if (this.senderRequested.has(key)) {
+        continue;
+      }
+      const fileId: number = e.senderId === this.chatId ? this.chatPhotoFileId : 0;
+      if (fileId <= 0) {
+        continue; // messageSenderChat is resolved by getChat above
+      }
+      this.senderRequested.add(key);
+      this.avatarFileToSender.set(fileId, key);
+      const req: TdRequest = { '@type': 'downloadFile' };
+      req['file_id'] = fileId;
+      req['priority'] = THUMBNAIL_PRIORITY;
+      this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+        logE(`MessageStore avatar ${fileId}: ${err.message}`);
+      });
+    }
+    this.refreshUserDependentMessages(usersToRefresh);
+  }
+
+  // One pass handles both sender-name backfill and service-message labels for
+  // the small set of users that changed. updateUser used to run two complete
+  // timeline scans, plus another scan to rediscover avatar candidates.
+  private refreshUserDependentMessages(userIds: Set<number>): void {
+    if (userIds.size === 0) {
+      return;
+    }
+    let changed = false;
+    const next = this.messages.map((entry: MessageEntry): MessageEntry => {
+      let current = entry;
+      if (entry.senderIsUser && userIds.has(entry.senderId)) {
+        const name: string = this.users.displayName(entry.senderId);
+        if (name !== '' && entry.senderName !== name) {
+          const copy = cloneMessage(entry);
+          copy.senderName = name;
+          copy.senderInitials = name.substring(0, 1).toUpperCase();
+          current = copy;
+        }
+      }
+      let labelAffected: boolean = entry.contentType === 'system' &&
+        entry.senderIsUser && userIds.has(entry.senderId);
+      for (const userId of entry.systemUserIds) {
+        if (userIds.has(userId)) {
+          labelAffected = true;
+          break;
+        }
+      }
+      if (labelAffected) {
+        current = refreshSystemUserLabel(current, this.users);
+      }
+      if (current !== entry) {
+        changed = true;
+      }
+      return current;
+    });
+    if (changed) {
+      this.messages = next;
+      this.notifySoon();
+    }
+  }
+
+  private onUserUpdated(update: TdObject): void {
+    const user = update['user'] as TdObject | undefined;
+    const userId: number = user !== undefined ? ((user['id'] as number | undefined) ?? 0) : 0;
+    if (userId <= 0) {
+      return;
+    }
+    if (this.senderUserIds.has(userId)) {
+      this.requestSenderAvatar(userId);
+    }
+    if (this.senderUserIds.has(userId) || this.systemLabelUserIds.has(userId)) {
+      this.refreshUserDependentMessages(new Set<number>([userId]));
+    }
+    if (this.commentUserIds.has(userId)) {
+      this.requestCommentAvatar(userId);
+    }
+    if (this.contactUserIds.has(userId)) {
+      this.requestContactAvatar(userId);
+    }
+  }
+
+  // Through the side channel, NOT by patching entries. Writing the path into
+  // every entry changed every row's content key the moment a group's avatars
+  // resolved — a full-page rebuild (`change × 31`) and a dropped frame ~0.7s
+  // after every first entry. The bubbles' avatar views subscribe to the
+  // channel and swap the image in place instead.
+  private applySenderPath(key: string, path: string): void {
+    publishSenderAvatar(key, path);
+  }
+
+  // --- shared-contact avatars ---
+  private resolveContactAvatars(candidates: MessageEntry[] = this.messages): void {
+    for (const e of candidates) {
+      const userId = e.contactUserId;
+      if (e.contentType !== 'contact' || userId <= 0) {
+        continue;
+      }
+      this.requestContactAvatar(userId);
+    }
+  }
+
+  private requestContactAvatar(userId: number): void {
+    const known = this.contactAvatarPaths.get(userId);
+    if (known !== undefined && known !== '') {
+      this.applyContactAvatarPath(userId, known);
+      return;
+    }
+    this.users.ensure(userId);
+    const fileId: number = this.users.photoFileId(userId);
+    if (fileId <= 0 || this.contactAvatarRequested.has(userId)) {
+      return;
+    }
+    const cachedPath = this.completedFilePaths.get(fileId) ?? '';
+    if (cachedPath !== '') {
+      this.contactAvatarPaths.set(userId, cachedPath);
+      this.applyContactAvatarPath(userId, cachedPath);
+      return;
+    }
+    this.contactAvatarRequested.add(userId);
+    this.avatarFileToContact.set(fileId, userId);
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = fileId;
+    req['priority'] = THUMBNAIL_PRIORITY;
+    this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+      this.contactAvatarRequested.delete(userId);
+      this.avatarFileToContact.delete(fileId);
+      logE(`MessageStore contact avatar ${fileId}: ${err.message}`);
+    });
+  }
+
+  private applyContactAvatarPath(userId: number, path: string): void {
+    let changed = false;
+    this.messages = this.messages.map((e: MessageEntry): MessageEntry => {
+      if (e.contentType !== 'contact' || e.contactUserId !== userId ||
+        e.contactAvatarPath === path) {
+        return e;
+      }
+      const c = cloneMessage(e);
+      c.contactAvatarPath = path;
+      changed = true;
+      return c;
+    });
+    if (changed) {
+      this.notifySoon();
+    }
+  }
+
+  // --- comment-row avatars (recent commenters shown on a channel post) ---
+  private resolveCommentAvatars(candidates: MessageEntry[] = this.messages): void {
+    for (const e of candidates) {
+      for (const uid of e.commentReplierIds) {
+        this.requestCommentAvatar(uid);
+      }
+    }
+  }
+
+  private requestCommentAvatar(userId: number): void {
+    const known = this.replierAvatarPaths.get(userId);
+    if (known !== undefined && known !== '') {
+      this.applyReplierAvatar(userId, known);
+      return;
+    }
+    if (this.replierAvatarRequested.has(userId)) {
+      return;
+    }
+    const fileId: number = this.users.photoFileId(userId);
+    if (fileId <= 0) {
+      return; // retried by the targeted updateUser path
+    }
+    this.replierAvatarRequested.add(userId);
+    this.avatarFileToReplier.set(fileId, userId);
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = fileId;
+    req['priority'] = THUMBNAIL_PRIORITY;
+    this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+      logE(`MessageStore replier avatar ${fileId}: ${err.message}`);
+    });
+  }
+
+  private applyReplierAvatar(userId: number, path: string): void {
+    // 先发通道。评论者头像原来只写进 MessageEntry，而这个字段**不在行 key 里**
+    // （key 精简后只留真正决定行内容的字段），LazyForEach 不会重建这一行，
+    // 头像就永远到不了界面——用户看到的三个「?」正是这个。
+    // 下面仍然写回 entry：新进场的行拿它当初值，省一次闪烁。
+    publishSenderAvatar(senderChannelKey(userId, true), path);
+    let changed = false;
+    const next = this.messages.map((e: MessageEntry) => {
+      const idx = e.commentReplierIds.indexOf(userId);
+      if (idx < 0 || e.commentReplierAvatarPaths[idx] === path) {
+        return e;
+      }
+      changed = true;
+      const c = cloneMessage(e);
+      const arr = c.commentReplierAvatarPaths.slice();
+      while (arr.length <= idx) {
+        arr.push('');
+      }
+      arr[idx] = path;
+      c.commentReplierAvatarPaths = arr;
+      return c;
+    });
+    if (changed) {
+      this.messages = next;
+      this.notifySoon();
+    }
+  }
+
+  // --- subtitle ---
+  // Newest pinned message → one-line preview shown in the banner under the header.
+  private resolvePinned(): void {
+    const seq: number = ++this.pinnedResolveSeq;
+    if (this.threadRootId > 0) {
+      this.pinnedIds = [];
+      this.pinnedEntries = [];
+      this.pinnedLoadState = 'ready';
+      this.setPinned('');
+      return; // comment thread view — the discussion group's pins don't apply
+    }
+    this.pinnedLoadState = 'loading';
+    this.notifyPinned();
+    const filter: TdObject = { '@type': 'searchMessagesFilterPinned' };
+    const req: TdRequest = { '@type': 'searchChatMessages' };
+    // 话题模式：只取本话题内的置顶（全群作用域会把其它话题的置顶带进来，
+    // 点击后在本话题历史中找不到目标）。
+    if (this.forumTopicId > 0 || this.directMessagesTopicId > 0) {
+      req['topic_id'] = this.topicIdObject();
+    }
+    req['chat_id'] = this.chatId;
+    req['query'] = '';
+    req['from_message_id'] = 0;
+    req['offset'] = 0;
+    req['limit'] = PINNED_FETCH_LIMIT;
+    req['filter'] = filter;
+    this.client.send(req).then((res: TdObject) => {
+      if (seq !== this.pinnedResolveSeq) {
+        return;
+      }
+      const arr = (res['messages'] as TdObject[] | undefined) ?? [];
+      const ids: number[] = [];
+      const entries: PinnedEntry[] = [];
+      for (const m of arr) {
+        // id 缺失的条目一律丢掉（pinnedEntryOf 的判据）：没有 id 就跳不过去，
+        // 留在条里只会让人点了没反应。
+        const entry: PinnedEntry | null = pinnedEntryOf(m, formatPreview(m));
+        if (entry !== null) {
+          ids.push(entry.id);
+          entries.push(entry);
+        }
+      }
+      this.pinnedIds = ids; // newest → oldest, as returned
+      this.pinnedEntries = entries;
+      this.pinnedLoadState = 'ready';
+      this.setPinned(entries.length > 0 ? entries[0].preview : '');
+    }).catch((e: TdError) => {
+      if (seq !== this.pinnedResolveSeq) {
+        return;
+      }
+      // TDLib uses 404 for "there is no pinned message" in some chat types.
+      // That is a valid empty result, not a request failure: clear any stale
+      // preview and let ChatPage omit the optional top card entirely.
+      if (e.code === 404) {
+        this.pinnedIds = [];
+        this.pinnedEntries = [];
+        this.pinnedLoadState = 'ready';
+        this.setPinned('');
+        return;
+      }
+      this.pinnedLoadState = 'error';
+      this.notifyPinned();
+      logE(`MessageStore.resolvePinned failed: ${e.message}`);
+    });
+  }
+
+  private onPinnedUpdate(u: TdObject): void {
+    const messageId = (u['message_id'] as number | undefined) ?? 0;
+    const isPinned = (u['is_pinned'] as boolean | undefined) ?? false;
+    if (!isPinned && messageId > 0) {
+      this.removePinnedIds(new Set<number>([messageId]));
+    }
+    this.resolvePinned();
+  }
+
+  private removePinnedIds(removeIds: Set<number>): void {
+    if (!this.pinnedIds.some((id: number): boolean => removeIds.has(id))) {
+      return;
+    }
+    const ids: number[] = [];
+    const entries: PinnedEntry[] = [];
+    for (let i = 0; i < this.pinnedIds.length; i++) {
+      if (!removeIds.has(this.pinnedIds[i]) && i < this.pinnedEntries.length) {
+        ids.push(this.pinnedIds[i]);
+        entries.push(this.pinnedEntries[i]);
+      }
+    }
+    this.pinnedIds = ids;
+    this.pinnedEntries = entries;
+    this.setPinned(entries.length > 0 ? entries[0].preview : '');
+  }
+
+  // Pinned message ids, newest → oldest (for the banner tap-cycle).
+  getPinnedIds(): number[] {
+    return this.pinnedIds;
+  }
+
+  // 「全部置顶」面板的数据源，与 getPinnedIds() 逐位对齐，newest → oldest。
+  getPinnedEntries(): PinnedEntry[] {
+    return this.pinnedEntries;
+  }
+
+  // Load a page centered on a message (for jumping to a pinned/quoted message
+  // that isn't in the currently loaded window). Notifies when it arrives.
+  loadAround(messageId: number, onComplete?: (found: boolean) => void,
+    initialAlignFromStart: boolean = false): void {
+    // Any cached page belongs to the previous window. A jump can change the
+    // oldest id before its request returns, so invalidate both ready/in-flight
+    // prefetches up front.
+    this.clearOlderPrefetch();
+    // Jumping into the middle of history: newer messages beyond this window
+    // may exist — enable downward prefetch to discover/load them.
+    //
+    // 但这**不能无条件为真**。判据和别处一样是 reachedLiveTail（util/liveTail）：
+    // 锚点已经追上会话最后一条，这次开窗就已经在实时尾部，下面没有东西可取。
+    // 无条件置真的后果是一整条链：hasMoreNewer 真 ⇒ atBottomVerdict 恒 NO ⇒
+    // 「新消息不跟随」、「↓ 走重装窗口那条路」、以及（在改判据之前）每次追加
+    // 都复位视口。首屏最常走这条路——unreadCount 陈旧时锚点其实就是最后一条，
+    // 从进会话起 hasMoreNewer 就错着。
+    const hadMoreNewer: boolean = this.hasMoreNewer;
+    const anchorAtTail: boolean = reachedLiveTail(messageId, this.chatLastMessageId);
+    this.hasMoreNewer = !anchorAtTail;
+    this.newerLoadState = anchorAtTail ? 'end' : 'idle';
+    // ⚠️ 临时探针 [InitialPage]：这一处正是"无条件置真"改掉的地方。
+    // 改前这行恒 hasMoreNewer=true；改后 anchorAtTail 为真时是 false。
+    logW(`[InitialPage] around request anchor=${messageId}` +
+      ` chatLast=${this.chatLastMessageId} anchorAtTail=${anchorAtTail}` +
+      ` hasMoreNewer=${this.hasMoreNewer} was=${hadMoreNewer}`);
+    // 首屏同样取小窗：见 loadHistory 里的注释。但两种落点要取不同方向：
+    //
+    //   · 未读锚点要保留上下文，继续用居中窗口；
+    //   · 消息链接/上次浏览位置会把目标行对齐到屏幕顶端，首页应尽量取
+    //     目标之后的行。旧的 -7 只给下方七条，短消息在平板上铺不满一屏，
+    //     于是恢复成功后下面先空着，等 newer 分页回来才长出内容。
+    //
+    // 会话中途的跳转维持整页。
+    const initial: boolean = this.initialHistoryState === 'loading';
+    // 首屏那一发的条数与预取共用同一个常量——两边必须逐字段一致，否则
+    // sameRoute 判不上，预取白发一次（见 util/chatPrefetch）。
+    const wanted: number = initial
+      ? (initialAlignFromStart ? INITIAL_RESUME_LIMIT : INITIAL_AROUND_LIMIT) : 30;
+    const offset: number = initial
+      ? (initialAlignFromStart ? -(wanted - 1) : -7)
+      : -15;
+    const req = this.historyRequest(messageId, offset);
+    req['limit'] = wanted;
+    this.client.send(req).then((res: TdObject): void => {
+      const got: number = ((res['messages'] as TdObject[] | undefined) ?? []).length;
+      this.onHistory(res, 'around');
+      // 窗口落地了才知道它够到哪儿。用的是和 updateChatLastMessage 那条同一个
+      // 判据（syncTailFromChatLast → reachedLiveTail），不另发明一套：窗口最新
+      // 一条追上会话最后一条就是真尾部，把向下分页关掉。
+      // 它只单向关、不反向开，所以在这里补判一次是安全的。
+      this.syncTailFromChatLast();
+      const windowFirst: number = this.messages.length > 0 ? this.messages[0].id : 0;
+      const windowLast: number = this.messages.length > 0
+        ? this.messages[this.messages.length - 1].id : 0;
+      logW(`[InitialPage] around got=${got} rows=${this.messages.length}` +
+        ` windowFirst=${windowFirst} windowLast=${windowLast}` +
+        ` chatLast=${this.chatLastMessageId}` +
+        ` windowAtTail=${reachedLiveTail(windowLast, this.chatLastMessageId)}` +
+        ` hasMoreNewer=${this.hasMoreNewer} hasMoreOlder=${this.hasMoreOlder}`);
+      // 短页补链：和 loadHistory('latest') 那边同样的处理，之前只有 latest 有。
+      //
+      // TDLib 只给本地库里已有的，不够时返回更少并在后台向服务端补，契约是
+      // 「再问一次」，短页**不代表**到头了。首屏取小窗是为了首帧流畅（见上），
+      // 但未读锚点打开的会话如果只回来十来条，用户看到的就是一屏就没了、还得
+      // 自己往上滚才长出来——999+ 未读的群实测就是这样。
+      //
+      // 只在首屏补：会话中途的跳转本来就是整页，且用户已有明确的目标位置。
+      if (initial && got > 0 && got < wanted) {
+        this.initialFillTries = INITIAL_FILL_TRIES;
+        this.loadOlder();
+      }
+      if (onComplete !== undefined) {
+        onComplete(this.indexOf(messageId) >= 0);
+      }
+    }).catch((e: TdError) => {
+      this.hasMoreNewer = hadMoreNewer;
+      logE(`MessageStore.loadAround failed: ${e.message}`);
+      if (this.initialHistoryState === 'loading') {
+        if ((e as TdError).code === 404) {
+          // A stale unread/search anchor should not turn a healthy chat into
+          // an empty/error page. Fall back to its live tail.
+          this.loadHistory(0);
+        } else {
+          this.initialHistoryState = 'error';
+          this.initialHistoryError = this.historyErrorHint(e);
+          this.notify('initialState');
+        }
+      }
+      if (onComplete !== undefined) {
+        onComplete(false);
+      }
+    });
+  }
+
+  private setPinned(s: string): void {
+    this.pinnedPreview = s;
+    this.notifyPinned();
+  }
+
+  private historyErrorHint(error: TdError): string {
+    if (error.code === -1 || error.message.toLowerCase().indexOf('timeout') >= 0) {
+      return str('ms_timeout');
+    }
+    if (error.code === 401) {
+      return str('ms_session_expired');
+    }
+    return str('ms_sync_failed');
+  }
+
+  private notifyPinned(): void {
+    for (const l of this.pinnedSubs) {
+      l(this.pinnedPreview);
+    }
+  }
+
+  private resolveChat(): void {
+    const req: TdRequest = { '@type': 'getChat' };
+    req['chat_id'] = this.chatId;
+    this.client.send(req).then((chat: TdObject) => this.onChat(chat)).catch((e: TdError) => {
+      logE(`MessageStore.getChat failed: ${e.message}`);
+      this.startInitialLoad();
+      this.flushInitial();
+    });
+  }
+
+  private onChat(chat: TdObject): void {
+    const lastMsg = chat['last_message'] as TdObject | undefined;
+    // Thread views exclude it: chat.last_message need not belong to the thread.
+    if (this.threadRootId === 0 && this.directMessagesTopicId === 0) {
+      this.pendingLastMessage = lastMsg ?? null;
+      // 记下初始的"会话最后一条"。updateChatLastMessage 只在它**变化**时才来，
+      // 一个安静的会话可能整场都不发这个回调——只靠回调就永远拿不到基准值，
+      // 追到尾部也认不出来（见 util/liveTail）。
+      const lastId: number = this.pendingLastMessage !== null
+        ? ((this.pendingLastMessage['id'] as number | undefined) ?? 0) : 0;
+      if (lastId > this.chatLastMessageId) {
+        this.chatLastMessageId = lastId;
+      }
+    }
+    // Capture the unread boundary BEFORE loading history / marking read, so the
+    // page can position at the first unread message even after we mark it read.
+    if (this.directMessagesTopicId === 0) {
+      this.lastReadInboxId = (chat['last_read_inbox_message_id'] as number | undefined) ?? 0;
+      this.lastReadOutboxId = (chat['last_read_outbox_message_id'] as number | undefined) ?? 0;
+      this.unreadCount = (chat['unread_count'] as number | undefined) ?? 0;
+    }
+    // Phantom-unread recovery (see ChatStore.effectiveUnread): a stuck counter
+    // whose watermark already covers the newest message must not anchor the
+    // page at a "first unread" that does not exist.
+    const lastMsgId = lastMsg !== undefined ? ((lastMsg['id'] as number | undefined) ?? 0) : 0;
+    if (this.directMessagesTopicId === 0 && this.unreadCount > 0 &&
+      lastMsgId > 0 && this.lastReadInboxId >= lastMsgId) {
+      this.unreadCount = 0;
+    }
+    if (this.directMessagesTopicId === 0) {
+      this.injectSoleUnreadJoinService(lastMsg);
+    }
+    const photo = chat['photo'] as TdObject | undefined;
+    const small = photo !== undefined ? (photo['small'] as TdObject | undefined) : undefined;
+    this.chatPhotoFileId = small !== undefined ? ((small['id'] as number | undefined) ?? 0) : 0;
+    this.downloadChatPhoto();
+    this.chatTitle = (chat['title'] as string | undefined) ?? '';
+    this.notifyHeaderTitle();
+    // Active bot reply keyboard for this chat (0 = none). updateChatReplyMarkup
+    // keeps it current from here on.
+    this.replyMarkupMessageId = (chat['reply_markup_message_id'] as number | undefined) ?? 0;
+    this.resolveReplyKeyboard();
+    const type = chat['type'] as TdObject | undefined;
+    if (type !== undefined) {
+      const t = type['@type'] as string | undefined;
+      if (t === 'chatTypePrivate') {
+        this.peerUserId = (type['user_id'] as number | undefined) ?? 0;
+        this.fetchUserStatus();
+      } else if (t === 'chatTypeBasicGroup') {
+        this.groupId = (type['basic_group_id'] as number | undefined) ?? 0;
+        this.isGroupFlag = true;
+        this.resolveBasicGroup(this.groupId);
+      } else if (t === 'chatTypeSupergroup') {
+        this.groupId = (type['supergroup_id'] as number | undefined) ?? 0;
+        this.isGroupFlag = true;
+        this.resolveSupergroup(this.groupId);
+      }
+    }
+    this.resolveSenderAvatars();
+    if (this.directMessagesTopicId > 0) {
+      this.resolveDirectMessagesTopic();
+    } else if (this.forumTopicId > 0) {
+      // 与私信话题对称：先拿到**本话题**的 last_message / 已读位置 / 未读数，
+      // 再开始加载。代价是首屏多一个网络往返，换来的是尾部与未读判定是准的。
+      this.resolveForumTopic(true);
+    } else {
+      this.startInitialLoad();
+      this.flushInitial();
+    }
+  }
+
+  // 论坛话题 / 评论线程 / 私信话题。这三种作用域下，会话级的 chat.last_message
+  // 都**不是**本窗口的尾巴（见 updateChatLastMessage 订阅处的说明）。
+  private inTopicScope(): boolean {
+    return this.forumTopicId > 0 || this.threadRootId > 0 || this.directMessagesTopicId > 0;
+  }
+
+  // 取本话题自己的尾巴与未读。startAfter=true 时兼做首屏加载的前置。
+  private resolveForumTopic(startAfter: boolean): void {
+    const request: TdRequest = { '@type': 'getForumTopic' };
+    request['chat_id'] = this.chatId;
+    request['forum_topic_id'] = this.forumTopicId;
+    this.client.send(request).then((topic: TdObject): void => {
+      if (this.applyForumTopic(topic)) {
+        this.syncTailFromChatLast();
+        this.notifySoon();
+      }
+      if (startAfter) {
+        this.startInitialLoad();
+        this.flushInitial();
+      }
+    }).catch((error: TdError): void => {
+      // 查不到也必须把首屏放出去：宁可退回会话级的旧行为，也不能让页面空着。
+      logE(`MessageStore.getForumTopic failed: ${error.message}`);
+      if (startAfter) {
+        this.startInitialLoad();
+        this.flushInitial();
+      }
+    });
+  }
+
+  // updateForumTopic 是**扁平推送**（只带 chat_id / forum_topic_id / is_pinned 这类），
+  // 不含完整 topic 对象——与私信话题那条带 u['topic'] 的推送**不对称**，不能照抄
+  // apply，只能重查一次。
+  private onForumTopic(update: TdObject): void {
+    if (this.forumTopicId <= 0 ||
+      ((update['chat_id'] as number | undefined) ?? 0) !== this.chatId ||
+      ((update['forum_topic_id'] as number | undefined) ?? 0) !== this.forumTopicId) {
+      return;
+    }
+    this.resolveForumTopic(false);
+  }
+
+  private applyForumTopic(topic: TdObject): boolean {
+    const info = topic['info'] as TdObject | undefined;
+    if (info === undefined ||
+      ((info['chat_id'] as number | undefined) ?? 0) !== this.chatId ||
+      ((info['forum_topic_id'] as number | undefined) ?? 0) !== this.forumTopicId) {
+      return false;
+    }
+    const last = topic['last_message'] as TdObject | undefined;
+    this.pendingLastMessage = last ?? null;
+    this.chatLastMessageId = last !== undefined
+      ? ((last['id'] as number | undefined) ?? 0) : 0;
+    // 字段缺失时保留原值而不是清零：宁可沿用会话级的旧值，也不要把已读位置抹掉。
+    this.lastReadInboxId =
+      (topic['last_read_inbox_message_id'] as number | undefined) ?? this.lastReadInboxId;
+    this.lastReadOutboxId =
+      (topic['last_read_outbox_message_id'] as number | undefined) ?? this.lastReadOutboxId;
+    this.unreadCount = (topic['unread_count'] as number | undefined) ?? this.unreadCount;
+    if (this.unreadCount > 0 && this.chatLastMessageId > 0 &&
+      this.lastReadInboxId >= this.chatLastMessageId) {
+      this.unreadCount = 0;
+    }
+    return true;
+  }
+
+  private resolveDirectMessagesTopic(): void {
+    const request: TdRequest = { '@type': 'getDirectMessagesChatTopic' };
+    request['chat_id'] = this.chatId;
+    request['topic_id'] = this.directMessagesTopicId;
+    this.client.send(request).then((topic: TdObject): void => {
+      this.applyDirectMessagesTopic(topic);
+      this.startInitialLoad();
+      this.flushInitial();
+    }).catch((error: TdError): void => {
+      logE(`MessageStore.getDirectMessagesChatTopic failed: ${error.message}`);
+      this.startInitialLoad();
+      this.flushInitial();
+    });
+  }
+
+  private onDirectMessagesTopic(update: TdObject): void {
+    if (this.directMessagesTopicId <= 0) {
+      return;
+    }
+    const topic = update['topic'] as TdObject | undefined;
+    if (topic === undefined || !this.applyDirectMessagesTopic(topic)) {
+      return;
+    }
+    this.syncTailFromChatLast();
+    this.notifySoon();
+  }
+
+  private applyDirectMessagesTopic(topic: TdObject): boolean {
+    if (((topic['chat_id'] as number | undefined) ?? 0) !== this.chatId ||
+      ((topic['id'] as number | undefined) ?? 0) !== this.directMessagesTopicId) {
+      return false;
+    }
+    const last = topic['last_message'] as TdObject | undefined;
+    this.pendingLastMessage = last ?? null;
+    this.chatLastMessageId = last !== undefined
+      ? ((last['id'] as number | undefined) ?? 0) : 0;
+    this.lastReadInboxId = (topic['last_read_inbox_message_id'] as number | undefined) ?? 0;
+    this.lastReadOutboxId = (topic['last_read_outbox_message_id'] as number | undefined) ?? 0;
+    this.unreadCount = (topic['unread_count'] as number | undefined) ?? 0;
+    if (this.unreadCount > 0 && this.chatLastMessageId > 0 &&
+      this.lastReadInboxId >= this.chatLastMessageId) {
+      this.unreadCount = 0;
+    }
+    return true;
+  }
+
+  private startInitialLoad(): void {
+    if (this.initialLoadStarted) {
+      return;
+    }
+    this.initialLoadStarted = true;
+    this.requestInitialPage();
+  }
+
+  // 吃掉点击那一刻发出去的那一页。返回 true 表示首屏已经交给它了。
+  //
+  // **路由不一致就不吃**：期间可能来了新消息，未读数/已读水位变了，用旧的
+  // 那一页开窗会把未读分界线放错位置。那时按原路重发，只是白费一次请求。
+  private consumePrefetchedPage(): boolean {
+    if (!canPrefetchChat(this.chatId, this.threadRootId, this.forumTopicId,
+      this.directMessagesTopicId, this.requestedAroundMessageId > 0)) {
+      return false;
+    }
+    const route: InitialPageRoute = initialPageRoute(this.unreadCount, this.lastReadInboxId);
+    const hit: Promise<TdObject> | null = takePrefetchedPage(this.chatId, route);
+    if (hit === null) {
+      return false;
+    }
+    logW(`[InitialPage] route=prefetched kind=${route.kind} anchor=${route.fromMessageId}`);
+    // around 那一支还要把 hasMoreNewer 按锚点是否已在尾部定下来——这一步在
+    // loadAround 里做，绕过去就会退回"无条件为真"的老 bug（新消息不跟随、
+    // ↓ 走重装窗口）。所以这里显式重做一遍同样的判定。
+    if (route.kind === ROUTE_AROUND) {
+      const anchorAtTail: boolean = reachedLiveTail(route.fromMessageId, this.chatLastMessageId);
+      this.hasMoreNewer = !anchorAtTail;
+      this.newerLoadState = anchorAtTail ? 'end' : 'idle';
+    }
+    hit.then((res: TdObject): void => {
+      // **空结果绝不能交给 onHistory。**
+      //
+      // 预取带 only_local:true，本地没缓存的会话合法地返回 0 条；而 onHistory
+      // 把"空结果"读作"这个会话就是没有消息"（那对 only_local:false 是对的，
+      // 对本地查询是错的），于是整个群组显示成空的（用户实报）。
+      // 空了就当没预取过，按原路重来一次。
+      const arr = (res['messages'] as TdObject[] | undefined) ?? [];
+      if (arr.length === 0) {
+        logW('[InitialPage] prefetch empty (local miss), falling back');
+        if (route.kind === ROUTE_AROUND) {
+          this.loadAround(route.fromMessageId);
+        } else {
+          this.loadHistory(0);
+        }
+        return;
+      }
+      this.onHistory(res, route.kind === ROUTE_AROUND ? 'around' : 'latest');
+    }).catch((e: TdError): void => {
+      // 预取失败：按原路重来一次，用户看不出区别，只是没提速。
+      logW(`[InitialPage] prefetch rejected, falling back: ${e.message}`);
+      if (route.kind === ROUTE_AROUND) {
+        this.loadAround(route.fromMessageId);
+      } else {
+        this.loadHistory(0);
+      }
+    });
+    return true;
+  }
+
+  private requestInitialPage(): void {
+    // ⚠️ 临时探针 [InitialPage]（判读完连同 loadAround 里那两条一起删）：
+    // "读到底了再进去还是落在中间"要能只看日志就分因——是 unreadCount 陈了
+    // （route=around-unread 而 readCoversLast=true），还是窗口本身没够到尾部
+    // （route=around-unread 且 readCoversLast=false）。
+    logW(`[InitialPage] decide unread=${this.unreadCount} lastReadInbox=${this.lastReadInboxId}` +
+      ` chatLast=${this.chatLastMessageId}` +
+      ` readCoversLast=${reachedLiveTail(this.lastReadInboxId, this.chatLastMessageId)}` +
+      ` requestedAround=${this.requestedAroundMessageId} threadRoot=${this.threadRootId}`);
+    if (this.requestedAroundMessageId > 0 &&
+      !(this.requestedAroundIsResume && this.unreadCount > 0)) {
+      logW(`[InitialPage] route=around-requested anchor=${this.requestedAroundMessageId}`);
+      this.loadAround(this.requestedAroundMessageId, undefined, true);
+      return;
+    }
+    // getFirstUnreadId() only scans the loaded window, so with a large unread
+    // count the newest-30 page (loadHistory(0)) never actually contains the
+    // true first-unread message — it silently returns the oldest of that page
+    // instead, landing (and read-marking) far past the real boundary. Center
+    // on lastReadInboxId to guarantee the boundary is in the loaded window —
+    // but ONLY when there's actually something unread: last_read_inbox_message_id
+    // only tracks incoming messages, so a fully-read chat whose newest messages
+    // are outgoing (sent by us) can have it sitting well behind the true tail —
+    // loadAround there would miss the real end of the chat. Fully-read chats
+    // always just load the newest page instead.
+    // 预取命中就直接吃在途的那一发，连 getChat 那程带历史那程一起省掉
+    // （见 util/chatPrefetch）。路由必须逐字段一致，否则宁可重发。
+    if (this.consumePrefetchedPage()) {
+      return;
+    }
+    if (this.unreadCount > 0 && this.lastReadInboxId > 0) {
+      logW(`[InitialPage] route=around-unread anchor=${this.lastReadInboxId}`);
+      this.loadAround(this.lastReadInboxId);
+      return;
+    }
+    logW('[InitialPage] route=latest');
+    this.loadHistory(0);
+  }
+
+  private fetchUserStatus(): void {
+    if (this.peerUserId === 0) {
+      return;
+    }
+    const req: TdRequest = { '@type': 'getUser' };
+    req['user_id'] = this.peerUserId;
+    this.client.send(req).then((user: TdObject) => {
+      this.applyPeerUserStatus(user['status'] as TdObject | undefined);
+    }).catch((e: TdError) => {
+      logE(`MessageStore.getUser failed: ${e.message}`);
+    });
+  }
+
+  private onUserStatus(u: TdObject): void {
+    if ((u['user_id'] as number | undefined) !== this.peerUserId || this.peerUserId === 0) {
+      return;
+    }
+    this.applyPeerUserStatus(u['status'] as TdObject | undefined);
+  }
+
+  private applyPeerUserStatus(status: TdObject | undefined): void {
+    this.peerUserStatus = status;
+    this.setSubtitle(formatUserStatus(status, Math.floor(Date.now() / 1000)));
+    const type = status !== undefined ? ((status['@type'] as string | undefined) ?? '') : '';
+    if (type !== 'userStatusOffline') {
+      if (this.statusRefreshTimer !== -1) {
+        clearInterval(this.statusRefreshTimer);
+        this.statusRefreshTimer = -1;
+      }
+      return;
+    }
+    if (this.statusRefreshTimer !== -1) {
+      return;
+    }
+    this.statusRefreshTimer = setInterval((): void => {
+      const next = formatUserStatus(this.peerUserStatus, Math.floor(Date.now() / 1000));
+      if (next !== this.subtitle) {
+        this.setSubtitle(next);
+      }
+    }, 30 * 1000);
+  }
+
+  private onGroup(u: TdObject): void {
+    const g = (u['basic_group'] as TdObject | undefined) ?? (u['supergroup'] as TdObject | undefined);
+    if (g === undefined) {
+      return;
+    }
+    if ((g['id'] as number | undefined) !== this.groupId || this.groupId === 0) {
+      return;
+    }
+    const isCh = (g['is_channel'] as boolean | undefined);
+    if (isCh !== undefined) {
+      this.isChannel = isCh;
+    }
+    const count = (g['member_count'] as number | undefined) ?? 0;
+    if (count > 0) {
+      this.setMemberSubtitle(count);
+    }
+  }
+
+  // Subscriber/member count subtitle, K-abbreviated like Telegram
+  // ("33.1K 位订阅者" / "128 位成员, 12 人在线").
+  private setMemberSubtitle(count: number): void {
+    this.memberCount = count;
+    this.composeMemberSubtitle();
+  }
+
+  private composeMemberSubtitle(): void {
+    if (this.memberCount <= 0) {
+      return;
+    }
+    let s = str('subtitle_member_count', formatMemberCount(this.memberCount), this.isChannel ? str('subscribers_word') : str('members_word'));
+    // Channels don't surface member presence — online counts are a group thing.
+    if (!this.isChannel && this.onlineCount > 0) {
+      s += str('subtitle_online_suffix', this.onlineCount);
+    }
+    this.setSubtitle(s);
+  }
+
+  private onOnlineCount(u: TdObject): void {
+    if ((u['chat_id'] as number | undefined) !== this.chatId) {
+      return;
+    }
+    this.onlineCount = (u['online_member_count'] as number | undefined) ?? 0;
+    this.composeMemberSubtitle();
+  }
+
+  // Supergroup/channel: the pushed supergroup object often carries member_count 0,
+  // so fetch the authoritative count from getSupergroupFullInfo (and is_channel
+  // from getSupergroup) rather than waiting for an updateSupergroup that may not come.
+  private resolveSupergroup(id: number): void {
+    if (id === 0) {
+      return;
+    }
+    const sg: TdRequest = { '@type': 'getSupergroup' };
+    sg['supergroup_id'] = id;
+    this.client.send(sg).then((s: TdObject) => {
+      this.isChannel = (s['is_channel'] as boolean | undefined) ?? this.isChannel;
+      const c = (s['member_count'] as number | undefined) ?? 0;
+      if (c > 0) {
+        this.setMemberSubtitle(c);
+      }
+    }).catch((e: TdError) => {
+      logE(`MessageStore.getSupergroup failed: ${e.message}`);
+    });
+    const full: TdRequest = { '@type': 'getSupergroupFullInfo' };
+    full['supergroup_id'] = id;
+    this.client.send(full).then((f: TdObject) => {
+      const c = (f['member_count'] as number | undefined) ?? 0;
+      if (c > 0) {
+        this.setMemberSubtitle(c);
+      }
+    }).catch((e: TdError) => {
+      logE(`MessageStore.getSupergroupFullInfo failed: ${e.message}`);
+    });
+  }
+
+  private resolveBasicGroup(id: number): void {
+    if (id === 0) {
+      return;
+    }
+    this.isChannel = false;
+    const req: TdRequest = { '@type': 'getBasicGroup' };
+    req['basic_group_id'] = id;
+    this.client.send(req).then((bg: TdObject) => {
+      const c = (bg['member_count'] as number | undefined) ?? 0;
+      if (c > 0) {
+        this.setMemberSubtitle(c);
+      }
+    }).catch((e: TdError) => {
+      logE(`MessageStore.getBasicGroup failed: ${e.message}`);
+    });
+  }
+
+  private setSubtitle(s: string): void {
+    this.subtitle = s;
+    for (const l of this.subSubs) {
+      l(this.subtitle);
+    }
+  }
+
+  // --- read marking (driven by the visible range) ---
+  // Mark messages read up to maxVisibleId. Because TDLib read state is a
+  // high-water mark, we only ever send the highest id the user has actually
+  // seen — so entering a chat without scrolling leaves the rest unread.
+  // 这个 store 服务的是哪一种作用域，决定 viewMessages 的 source。
+  private viewSource(): TdObject {
+    return { '@type': viewMessageSourceType(
+      this.threadRootId, this.forumTopicId, this.directMessagesTopicId) };
+  }
+
+  // Mentions are per-message, independent of the normal inbox high-water mark.
+  // Going back to an older mention must still report it as viewed.
+  markVisibleMentions(messageIds: number[]): void {
+    const ids = messageIds.filter((id: number): boolean => {
+      const index = this.indexOf(id);
+      return index >= 0 && this.messages[index].containsUnreadMention === true &&
+        !this.viewedMentions.has(id);
+    });
+    if (ids.length === 0) { return; }
+    for (const id of ids) { this.viewedMentions.add(id); }
+    const request: TdRequest = { '@type': 'viewMessages' };
+    request['chat_id'] = this.chatId;
+    request['message_ids'] = ids;
+    request['source'] = this.viewSource();
+    request['force_read'] = true;
+    this.client.send(request, 12000).catch((): void => {
+      for (const id of ids) { this.viewedMentions.delete(id); }
+    });
+  }
+
+  markViewed(maxVisibleId: number): void {
+    if (maxVisibleId <= this.viewedUpTo) {
+      return;
+    }
+    this.viewedUpTo = maxVisibleId;
+    this.clearManualUnreadFlag();
+    const req: TdRequest = { '@type': 'viewMessages' };
+    req['chat_id'] = this.chatId;
+    req['message_ids'] = [maxVisibleId];
+    // **source 必须显式给**，四种作用域各自一个值（见 util/viewMessageSource）。
+    // 原来只给私聊话题设，论坛话题和消息话题都留给 TDLib "按会话打开状态去猜"，
+    // 于是话题群组读完退出未读仍在（issue #190）。
+    req['source'] = this.viewSource();
+    req['force_read'] = true;
+    this.client.send(req).catch((e: TdError) => {
+      logE(`MessageStore.viewMessages failed: ${e.message}`);
+    });
+  }
+
+  // Submit or change a poll answer. The request is guarded per message so a
+  // double tap can't race two different selections. TDLib's updatePoll is the
+  // authoritative result; the small optimistic patch only bridges request →
+  // update latency and is rolled back to the prior options on failure.
+  votePoll(messageId: number, optionIds: number[],
+    onFinished: (ok: boolean, error: string) => void): void {
+    const idx = this.indexOf(messageId);
+    if (idx < 0) {
+      onFinished(false, str('ms_poll_message_gone'));
+      return;
+    }
+    const entry = this.messages[idx];
+    const expired = entry.pollCloseDate > 0 &&
+      Math.floor(Date.now() / 1000) >= entry.pollCloseDate;
+    if (entry.contentType !== 'poll' || entry.pollQuestion.trim() === '' ||
+      entry.pollOptions.length < 2) {
+      onFinished(false, str('poll_unavailable'));
+      return;
+    }
+    if (entry.pollVotePending) {
+      return;
+    }
+    if (entry.pollIsClosed || expired) {
+      onFinished(false, str('ms_poll_closed'));
+      return;
+    }
+    if (entry.pollIsQuiz &&
+      entry.pollOptions.some((option): boolean => option.isChosen)) {
+      onFinished(false, str('ms_quiz_once'));
+      return;
+    }
+    const unique: number[] = [];
+    for (const optionId of optionIds) {
+      if (optionId >= 0 && optionId < entry.pollOptions.length &&
+        unique.indexOf(optionId) < 0) {
+        unique.push(optionId);
+      }
+    }
+    if (!entry.pollAllowMultiple && unique.length > 1) {
+      onFinished(false, str('ms_single_choice'));
+      return;
+    }
+    const previousOptions: PollOptionInfo[] =
+      entry.pollOptions.map((option: PollOptionInfo): PollOptionInfo => ({
+      text: option.text,
+      voterCount: option.voterCount,
+      votePercentage: option.votePercentage,
+      isChosen: option.isChosen,
+      isBeingChosen: option.isBeingChosen
+    }));
+    this.patch(messageId, (message: MessageEntry): void => {
+      message.pollVotePending = true;
+      message.pollVoteError = '';
+      message.pollOptions = message.pollOptions.map((
+        option: PollOptionInfo,
+        optionId: number
+      ): PollOptionInfo => ({
+        text: option.text,
+        voterCount: option.voterCount,
+        votePercentage: option.votePercentage,
+        isChosen: option.isChosen,
+        isBeingChosen: unique.indexOf(optionId) >= 0
+      }));
+    });
+    const req: TdRequest = { '@type': 'setPollAnswer' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    req['option_ids'] = unique;
+    this.client.send(req).then((): void => {
+      this.patch(messageId, (message: MessageEntry): void => {
+        message.pollVotePending = false;
+        message.pollVoteError = '';
+        message.pollOptions = message.pollOptions.map((
+          option: PollOptionInfo,
+          optionId: number
+        ): PollOptionInfo => ({
+          text: option.text,
+          voterCount: option.voterCount,
+          votePercentage: option.votePercentage,
+          isChosen: unique.indexOf(optionId) >= 0,
+          isBeingChosen: false
+        }));
+      });
+      onFinished(true, '');
+    }).catch((error: TdError): void => {
+      const message = pollVoteErrorText(error.message);
+      this.patch(messageId, (current: MessageEntry): void => {
+        current.pollVotePending = false;
+        current.pollVoteError = message;
+        current.pollOptions = previousOptions;
+        if (message === str('ms_poll_closed')) { current.pollIsClosed = true; }
+      });
+      onFinished(false, message);
+      logE(`MessageStore.setPollAnswer failed: ${error.message}`);
+    });
+  }
+
+  // Voice notes have a separate listened bit from the chat's ordinary read
+  // high-water mark. Open the content only after playback has actually begun,
+  // then optimistically remove the unread dot while TDLib propagates the
+  // refreshed message content.
+  markVoiceListened(messageId: number): void {
+    const idx: number = this.indexOf(messageId);
+    if (idx < 0) {
+      return;
+    }
+    const entry: MessageEntry = this.messages[idx];
+    if (entry.contentType !== 'voice' || entry.isOutgoing || entry.voiceListened ||
+      this.voiceListenPending.has(messageId)) {
+      return;
+    }
+    this.voiceListenPending.add(messageId);
+    this.patch(messageId, (c: MessageEntry): void => {
+      c.voiceListened = true;
+    });
+    const req: TdRequest = { '@type': 'openMessageContent' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    this.client.send(req).then((): void => {
+      this.voiceListenPending.delete(messageId);
+    }).catch((e: TdError): void => {
+      this.voiceListenPending.delete(messageId);
+      this.patch(messageId, (c: MessageEntry): void => {
+        if (c.contentType === 'voice' && !c.isOutgoing) {
+          c.voiceListened = false;
+        }
+      });
+      logE(`MessageStore.openMessageContent failed: ${e.message}`);
+    });
+  }
+
+  // Forwards from a channel/chat only carry the origin chat id (forwardChatId);
+  // resolve it to a display title via getChat, then patch matching messages.
+  private resolveForwardTitles(): void {
+    for (const e of this.messages) {
+      if (e.forwardChatId === 0 || e.forwardFrom !== '') {
+        continue;
+      }
+      const cached = this.forwardTitleCache.get(e.forwardChatId);
+      if (cached !== undefined) {
+        this.patch(e.id, (c: MessageEntry) => { c.forwardFrom = cached; c.forwardChatId = 0; });
+        continue;
+      }
+      if (this.forwardTitleRequested.has(e.forwardChatId)) {
+        continue;
+      }
+      this.forwardTitleRequested.add(e.forwardChatId);
+      const id = e.forwardChatId;
+      const req: TdRequest = { '@type': 'getChat' };
+      req['chat_id'] = id;
+      this.client.send(req).then((chat: TdObject) => {
+        const title = (chat['title'] as string | undefined) ?? '';
+        this.forwardTitleCache.set(id, title);
+        this.resolveForwardTitles();
+      }).catch((err: TdError) => {
+        logE(`MessageStore forward title ${id}: ${err.message}`);
+      });
+    }
+  }
+
+  private resolveReplies(): void {
+    const missing: number[] = [];
+    this.messages = this.messages.map((e: MessageEntry) => {
+      if (e.replyToMessageId === 0 || e.replyText !== '') {
+        return e;
+      }
+      const target = this.messages.find((x: MessageEntry) => x.id === e.replyToMessageId);
+      if (target === undefined) {
+        // 之前拉过的先用缓存补上。loadAround 会整体替换窗口、条目重建，
+        // replyText 又变空——而 repliedFetched 记着"已经拉过"，于是请求被挡、
+        // 引用块永远空着（点引用跳过去再划回来就必现）。缓存让重建后的条目
+        // 不用重新请求就能恢复。
+        const cached = this.repliedPreview.get(e.replyToMessageId);
+        if (cached !== undefined) {
+          const restored = cloneMessage(e);
+          restored.replySenderName = cached.senderName;
+          restored.replyText = cached.text;
+          restored.replyThumbPath = cached.thumbPath;
+          restored.replyThumbSticker = cached.thumbSticker;
+          restored.replyDiceLayers = cached.diceLayers;
+          return restored;
+        }
+        // 原消息不在已加载窗口里 —— 拉一次，否则引用块永远是空的。
+        if (missing.indexOf(e.replyToMessageId) < 0) {
+          missing.push(e.replyToMessageId);
+        }
+        return e;
+      }
+      const c = cloneMessage(e);
+      c.replySenderName = target.senderName;
+      // 气泡里的引用块和输入栏的回复条必须说同一句话。这里原来自己另写了一套
+      // 「不是纯文本就取 placeholderLabel、再没有就 [图片]」，于是贴纸被说成
+      // 「[图片]」（issue #191）——贴纸的 placeholderLabel 是空的，而那条兜底
+      // 默认「没标签的都是图片」。统一走 replySnippetOf（有单测）。
+      c.replyText = replySnippetOf({
+        text: target.text, placeholderLabel: target.placeholderLabel,
+        contentType: target.contentType, paidMediaLocked: target.paidMediaLocked,
+        fileName: target.videoFileName, audioTitle: target.audioTitle, audioPerformer: target.audioPerformer,
+        isAnimation: target.isAnimation, pollQuestion: target.pollQuestion,
+        contactName: `${target.contactFirstName} ${target.contactLastName}`,
+        venueTitle: target.venueTitle, gameTitle: target.gameTitle
+      });
+      // 缩略图取的是**已经下到本地**的那张（target 就在窗口里，它自己的气泡
+      // 正显示着这张图）。没下完就是空串，引用块退回纯两行字，不占位、不闪。
+      c.replyThumbPath = replyThumbOf({
+        contentType: target.contentType, photoPath: target.photoPath,
+        paidMediaLocked: target.paidMediaLocked
+      });
+      c.replyThumbSticker = replyThumbIsSticker(target.contentType);
+      c.replyDiceLayers = replyDiceLayers(target.contentType, target.stickerPath, target.diceLayerPaths);
+      return c;
+    });
+    for (const id of missing) {
+      this.fetchRepliedMessage(id);
+    }
+  }
+
+  // 按需拉取被回复的原消息。只拉一次：请求过的记在 repliedFetched 里，
+  // 失败（原消息已删除等）同样不再重试，否则每次 notify 都会再发一轮。
+  private fetchRepliedMessage(messageId: number): void {
+    if (this.repliedFetched.indexOf(messageId) >= 0) {
+      return;
+    }
+    this.repliedFetched.push(messageId);
+    const req: TdRequest = { '@type': 'getMessage' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    this.client.send(req).then((res: TdObject): void => {
+      const entry = buildMessageEntry(res, this.users);
+      // 同上：按需拉回来的原消息也走同一套摘要。
+      const preview: string = replySnippetOf({
+        text: entry.text, placeholderLabel: entry.placeholderLabel,
+        contentType: entry.contentType, paidMediaLocked: entry.paidMediaLocked,
+        fileName: entry.videoFileName, audioTitle: entry.audioTitle, audioPerformer: entry.audioPerformer,
+        isAnimation: entry.isAnimation, pollQuestion: entry.pollQuestion,
+        contactName: `${entry.contactFirstName} ${entry.contactLastName}`,
+        venueTitle: entry.venueTitle, gameTitle: entry.gameTitle
+      });
+      // 「原消息不可用」的判据**不能**看 preview —— replySnippetOf 永远不返回
+      // 空串（兜底是"媒体消息"），照旧写 preview === '' 这条就再也不成立了，
+      // 已删除的原消息会显示成「媒体消息」而不是「消息不可用」。
+      //
+      // 改成等价的原始条件：改这行之前，preview 只有在「纯文本且文字为空」
+      // 时才可能是空的（另一支的兜底是 [图片]，同样非空）。
+      const emptyText: boolean = entry.contentType === 'text' && entry.text === '';
+      if (emptyText && entry.senderName === '') {
+        this.markReplyUnavailable(messageId);
+        return;
+      }
+      // Remember it: the window can be replaced (loadAround) any number of
+      // times, and the fetch guard would refuse to ask again.
+      // 窗口外拉回来的这条**多半还没下载**，photoPath 是空的——引用块就只有
+      // 两行字。不为它补一次下载：那是为了一张 30vp 的小图去排一个下载任务，
+      // 而用户正等着看的是别的东西（见 issue「点全屏加载很久」那轮的优先级账）。
+      const thumbPath: string = replyThumbOf({
+        contentType: entry.contentType, photoPath: entry.photoPath,
+        paidMediaLocked: entry.paidMediaLocked
+      });
+      const thumbSticker: boolean = replyThumbIsSticker(entry.contentType);
+      // 窗口外拉回来的骰子多半没下载，那就是空数组、照常用缩略图。
+      const diceLayers: string[] = replyDiceLayers(entry.contentType, entry.stickerPath, entry.diceLayerPaths);
+      this.repliedPreview.set(messageId, {
+        senderName: entry.senderName, text: preview,
+        thumbPath: thumbPath, thumbSticker: thumbSticker, diceLayers: diceLayers
+      });
+      this.messages = this.messages.map((e: MessageEntry): MessageEntry => {
+        if (e.replyToMessageId !== messageId || e.replyText !== '') {
+          return e;
+        }
+        const c = cloneMessage(e);
+        c.replySenderName = entry.senderName;
+        c.replyText = preview;
+        c.replyThumbPath = thumbPath;
+        c.replyThumbSticker = thumbSticker;
+        c.replyDiceLayers = diceLayers;
+        return c;
+      });
+      this.notifySoon();
+    }).catch((e: TdError): void => {
+      logE(`MessageStore.getMessage(reply ${messageId}) failed: ${e.message}`);
+      this.markReplyUnavailable(messageId);
+    });
+  }
+
+  // 拉不到原消息（已删除、无权限）时也得落一个结果。气泡现在只要
+  // replyToMessageId 非 0 就画引用块——不落结果的话那块会永远空着。
+  private markReplyUnavailable(messageId: number): void {
+    const label: string = str('mb_reply_unavailable');
+    this.repliedPreview.set(messageId, {
+      senderName: '', text: label, thumbPath: '', thumbSticker: false, diceLayers: []
+    });
+    this.messages = this.messages.map((e: MessageEntry): MessageEntry => {
+      if (e.replyToMessageId !== messageId || e.replyText !== '') {
+        return e;
+      }
+      const c = cloneMessage(e);
+      c.replyText = label;
+      return c;
+    });
+    this.notifySoon();
+  }
+
+  private indexOf(id: number): number {
+    for (let i = 0; i < this.messages.length; i++) {
+      if (this.messages[i].id === id) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private rememberMessageUsers(entry: MessageEntry): void {
+    if (entry.senderIsUser && entry.senderId > 0) {
+      this.senderUserIds.add(entry.senderId);
+    }
+    for (const userId of entry.systemUserIds) {
+      if (userId > 0) {
+        this.systemLabelUserIds.add(userId);
+      }
+    }
+    if (entry.contentType === 'contact' && entry.contactUserId > 0) {
+      this.contactUserIds.add(entry.contactUserId);
+    }
+    for (const userId of entry.commentReplierIds) {
+      if (userId > 0) {
+        this.commentUserIds.add(userId);
+      }
+    }
+  }
+
+  // History pages arrive ~30 messages at a time; merging them one upsert()
+  // each costs a full array copy + sort per message. One copy and one sort
+  // for the whole page keeps the prepend cheap however long the window grows.
+  private upsertBatch(entries: MessageEntry[]): void {
+    if (entries.length === 0) {
+      return;
+    }
+    const next = this.messages.slice();
+    const indexById = new Map<number, number>();
+    for (let i = 0; i < next.length; i++) {
+      indexById.set(next[i].id, i);
+    }
+    let appended = false;
+    for (const entry of entries) {
+      const hydrated = this.hydrateFromFileCache(entry);
+      this.rememberMessageUsers(hydrated);
+      const idx = indexById.get(hydrated.id);
+      if (idx !== undefined) {
+        next[idx] = hydrated;
+      } else {
+        indexById.set(hydrated.id, next.length);
+        next.push(hydrated);
+        appended = true;
+      }
+    }
+    if (appended) {
+      next.sort((a: MessageEntry, b: MessageEntry) => a.id - b.id);
+    }
+    this.messages = next;
+  }
+
+  private upsert(entry: MessageEntry): void {
+    const hydrated = this.hydrateFromFileCache(entry);
+    this.rememberMessageUsers(hydrated);
+    this.noteCustomEmoji(hydrated);
+    const idx = this.indexOf(hydrated.id);
+    if (idx >= 0) {
+      const next = this.messages.slice();
+      next[idx] = hydrated;
+      this.messages = next;
+      return;
+    }
+    const next = this.messages.slice();
+    next.push(hydrated);
+    next.sort((a: MessageEntry, b: MessageEntry) => a.id - b.id);
+    this.messages = next;
+  }
+
+  private hydrateFromFileCache(entry: MessageEntry): MessageEntry {
+    // The picker commonly downloads the selected sticker before sendMessage
+    // returns. Hydrate a new entry from that completed-file cache instead of
+    // flashing an indefinite loading ring or downloading the same file again.
+    if (entry.videoFileId !== 0 && entry.videoPath !== '') {
+      this.completedFilePaths.set(entry.videoFileId, entry.videoPath);
+      // **有真封面就发布封面，没有才退回视频路径。** 缩略图那条通道的消费者是
+      // Image（LiveThumbImage / ThumbReadyGate），它渲染不了 mp4——原来无条件
+      // 发布 entry.videoPath，自己发的视频在气泡上就是一块灰。
+      const knownPoster: string = this.localVideoPosters.get(entry.videoFileId) ?? '';
+      publishThumbPath(entry.videoFileId, knownPoster !== '' ? knownPoster : entry.videoPath);
+    }
+    if (entry.photoFileId !== 0 && entry.photoPath !== '') {
+      this.completedFilePaths.set(entry.photoFileId, entry.photoPath);
+      publishThumbPath(entry.photoFileId, entry.photoPath);
+    }
+    if (entry.photoFullFileId !== 0 && entry.photoFullPath !== '') {
+      this.completedFilePaths.set(entry.photoFullFileId, entry.photoFullPath);
+      publishThumbPath(entry.photoFullFileId, entry.photoFullPath);
+    }
+    if (entry.stickerFileId !== 0 && entry.stickerPath !== '') {
+      this.completedFilePaths.set(entry.stickerFileId, entry.stickerPath);
+      publishThumbPath(entry.stickerFileId, entry.stickerPath);
+    }
+    const cachedPhotoPath = entry.photoFileId !== 0
+      ? (this.completedFilePaths.get(entry.photoFileId) ?? '') : '';
+    const cachedFullPhotoPath = entry.photoFullFileId !== 0
+      ? (this.completedFilePaths.get(entry.photoFullFileId) ?? '') : '';
+    const cachedVideoPath = entry.videoFileId !== 0
+      ? (this.completedFilePaths.get(entry.videoFileId) ?? '') : '';
+    const cachedStickerPath = entry.stickerFileId !== 0
+      ? (this.completedFilePaths.get(entry.stickerFileId) ?? '') : '';
+    let hydrated = entry;
+    if ((entry.photoPath === '' && cachedPhotoPath !== '') ||
+      (entry.photoFullPath === '' && cachedFullPhotoPath !== '') ||
+      (entry.videoPath === '' && cachedVideoPath !== '') ||
+      (entry.stickerPath === '' && cachedStickerPath !== '')) {
+      hydrated = cloneMessage(entry);
+      if (hydrated.photoPath === '' && cachedPhotoPath !== '') {
+        hydrated.photoPath = cachedPhotoPath;
+        hydrated.photoProgress = 100;
+        hydrated.photoFailed = false;
+      }
+      if (hydrated.photoFullPath === '' && cachedFullPhotoPath !== '') {
+        hydrated.photoFullPath = cachedFullPhotoPath;
+        hydrated.photoFullProgress = 100;
+        if (hydrated.photoPath === '') {
+          hydrated.photoPath = cachedFullPhotoPath;
+          hydrated.photoProgress = 100;
+          hydrated.photoFailed = false;
+          if (hydrated.photoFileId !== 0) {
+            this.completedFilePaths.set(hydrated.photoFileId, cachedFullPhotoPath);
+            publishThumbPath(hydrated.photoFileId, cachedFullPhotoPath);
+          }
+        }
+      }
+      if (hydrated.videoPath === '' && cachedVideoPath !== '') {
+        hydrated.videoPath = cachedVideoPath;
+        hydrated.videoProgress = 100;
+        hydrated.videoFailed = false;
+        hydrated.mediaDownloadActive = false;
+      }
+      if (hydrated.stickerPath === '' && cachedStickerPath !== '') {
+        hydrated.stickerPath = cachedStickerPath;
+        hydrated.stickerProgress = 100;
+        hydrated.stickerFailed = false;
+        hydrated.stickerDownloadActive = false;
+      }
+    }
+    // **自己发的视频：把本地封面补回去。**
+    //
+    // 发送时 rememberLocalMedia 往 entry 上填过 photoPath，但随后的 TDLib 更新
+    // （send-succeeded / updateMessageContent）会整条重建 entry 把它冲掉，于是
+    // 气泡落到「photoFileId === 0 且 photoPath === ''」那一支——灰底加播放键，
+    // 就是用户看到的样子。这里是每次 upsert 都会经过的水合点，补在这儿才活得下来。
+    const localPoster: string = (hydrated.videoFileId !== 0
+      ? (this.localVideoPosters.get(hydrated.videoFileId) ?? '') : '') ||
+      (hydrated.photoFileId !== 0
+        ? (this.localVideoPosters.get(hydrated.photoFileId) ?? '') : '') ||
+      (hydrated.photoFullFileId !== 0
+        ? (this.localVideoPosters.get(hydrated.photoFullFileId) ?? '') : '');
+    if (localPoster !== '' && hydrated.photoPath !== localPoster) {
+      const withPoster: MessageEntry = hydrated === entry ? cloneMessage(hydrated) : hydrated;
+      withPoster.photoPath = localPoster;
+      withPoster.photoProgress = 100;
+      withPoster.photoFailed = false;
+      if (withPoster.photoFileId !== 0) {
+        this.completedFilePaths.set(withPoster.photoFileId, localPoster);
+        publishThumbPath(withPoster.photoFileId, localPoster);
+      }
+      return withPoster;
+    }
+    return hydrated;
+  }
+
+  private patch(id: number, fn: (c: MessageEntry) => void): void {
+    const idx = this.indexOf(id);
+    if (idx < 0) {
+      return;
+    }
+    const c = cloneMessage(this.messages[idx]);
+    fn(c);
+    this.rememberMessageUsers(c);
+    // 反应更新可能首次带来自定义 emoji：记进待办，别等下次全表扫描。
+    this.noteCustomEmoji(c);
+    // 发送状态走旁路直达气泡的状态图标（见 sendStateChannel）：它不在行 key
+    // 里，不这样发布就没人知道它变了。通道在状态未变时早退，所以这里不必
+    // 挑调用点。
+    publishSendState(c.rowId, c.sendState);
+    // 发送中的消息，mediaProgressChannel 承载的是实时**上传**进度；不能用本地文件
+    // 已就绪的 100% 下载进度把它冲掉。
+    if (c.sendState !== 'sending') {
+      publishProgress(c.photoFileId, c.photoProgress);
+      publishProgress(c.photoFullFileId, c.photoFullProgress);
+      publishProgress(c.videoFileId, c.videoProgress);
+    }
+    publishProgress(c.linkPhotoFileId, c.linkPhotoProgress);
+    publishProgress(c.stickerFileId, c.stickerProgress);
+    const next = this.messages.slice();
+    next[idx] = c;
+    this.messages = next;
+    this.notifySoon();
+  }
+
+  // Telegram may reuse one file id for forwards or repeated media. Keep every
+  // visible consumer synchronized instead of updating only the message that
+  // happened to start the download.
+  private patchVideoEntries(fileId: number, fn: (c: MessageEntry) => void): void {
+    if (fileId === 0) {
+      return;
+    }
+    let changed = false;
+    this.messages = this.messages.map((m: MessageEntry): MessageEntry => {
+      if (m.videoFileId !== fileId) {
+        return m;
+      }
+      const c = cloneMessage(m);
+      // 判据同 patchStickerEntries 上方的说明。视频这一支的活跃态字段叫
+      // mediaDownloadActive（不是 videoDownloadActive）。
+      const before: PatchSignature = {
+        path: m.videoPath, failed: m.videoFailed, active: m.mediaDownloadActive
+      };
+      fn(c);
+      if (c.sendState !== 'sending') {
+        publishProgress(c.videoFileId, c.videoProgress);
+      }
+      const after: PatchSignature = {
+        path: c.videoPath, failed: c.videoFailed, active: c.mediaDownloadActive
+      };
+      if (patchNeedsNotify(before, after)) {
+        changed = true;
+      }
+      return c;
+    });
+    if (changed) {
+      this.notifySoon();
+    }
+  }
+
+  // Coalesced publish for download-progress updates.
+  //
+  // TDLib emits updateFile many times a second per downloading file, and every
+  // publish makes ChatPage re-collapse the WHOLE loaded message list to rebuild
+  // its row keys — a ~60-field signature per message, with loops over poll
+  // options, reactions, buttons and text entities. During a fling, thumbnails
+  // for the rows coming into view are downloading, so that ran continuously on
+  // the UI thread and showed up as dropped frames.
+  //
+  // One publish per frame instead. A progress ring that advances at 60Hz rather
+  // than whatever rate the network happens to produce is indistinguishable; the
+  // whole-list rebuild is not. Only file progress goes through here — pagination
+  // and initial-history transitions still publish immediately, because ChatPage
+  // anchors scroll position on them.
+  // The ONLY publication path for plain 'update' notifications. Every bare
+  // this.notify() used to publish immediately, and page entry is exactly when
+  // they cluster: avatars, reply quotes, forward titles and thumbnails all
+  // resolve within the first ~30ms, which used to mean ~10 dataset passes and
+  // every freshly built row rebuilt three or four times — the measured
+  // first-entry jank. One frame of coalescing collapses the storm; kinds with
+  // ordering semantics ('latest'/'around'/...) still go through notify(kind)
+  // directly.
+  // 初始历史落地的时刻；其后 INITIAL_SETTLE_WINDOW_MS 内视为安置期。
+  private initialSettleStart: number = 0;
+
+  private notifySoon(): void {
+    if (this.coalesceTimer !== -1) {
+      return;
+    }
+    // 安置期内所有 'update' 发布被整体压到窗口末尾一次放行：进页后首屏刚
+    // 建完的那一秒完全不做行重建，头像/引用/缩略图在 1 秒末一波补齐。
+    // （150ms 滚动窗的版本仍出现 2 波近整页重建；压到单次是当前形态。）
+    const remaining: number = this.initialSettleStart > 0
+      ? this.initialSettleStart + INITIAL_SETTLE_WINDOW_MS - Date.now() : 0;
+    this.coalesceTimer = setTimeout((): void => {
+      this.coalesceTimer = -1;
+      this.notify();
+    }, remaining > 0 ? remaining : NOTIFY_COALESCE_MS);
+  }
+
+  // 滚动冻结的 update 发布主冲刷路径：ChatPage.onTimelineScrollStop 调用。
+  // 页面在滚动中离开而没等到 stop 时靠下面的安全网定时器兜底。
+  flushScrollDeferredUpdate(): void {
+    if (!this.scrollDeferredUpdate) {
+      return;
+    }
+    this.scrollDeferredUpdate = false;
+    this.notify('update');
+  }
+
+  // 安全网：主路径没来（页面隐藏/回调丢失）时轮询到滚动结束再冲刷。轮询
+  // 间隔取 scrollEffects 看门狗（3s 上限）的零头即可，不追求及时——及时性
+  // 由 onTimelineScrollStop 的主路径负责。
+  private armScrollDeferFlush(): void {
+    if (this.scrollDeferFlushTimer !== -1) {
+      return;
+    }
+    this.scrollDeferFlushTimer = setTimeout((): void => {
+      this.scrollDeferFlushTimer = -1;
+      if (!this.scrollDeferredUpdate) {
+        return;
+      }
+      if (scrollActiveNow()) {
+        this.armScrollDeferFlush();
+        return;
+      }
+      this.flushScrollDeferredUpdate();
+    }, SCROLL_DEFER_FLUSH_MS);
+  }
+
+  // 常驻不变量：**窗口必须严格按 id 升序**。
+  //
+  // 2026-09-10 用户对着官方端截图发现"本该是相册的位置变成了一条更晚的文本"。
+  // 缺口解释不了这个——缺口只会让消息少，不会让 09:37 排到 02:00 前面。所以
+  // 只可能是两种：窗口顺序真乱了（store 的合并/裁剪问题），或者顺序是对的、
+  // 那一行画错了（渲染/复用问题）。两者修法完全不同，靠看图分不出来。
+  //
+  // 这一趟是 O(行数) 的整数比较，几百行的量级可以忽略；报一次就闭嘴，
+  // 免得刷屏。**不是探针，别删**——顺序是时间线的地基，坏了什么都不对。
+  private orderBrokenReported: boolean = false;
+
+  private checkWindowOrder(kind: string): void {
+    if (this.orderBrokenReported) {
+      return;
+    }
+    for (let i = 1; i < this.messages.length; i++) {
+      if (this.messages[i].id <= this.messages[i - 1].id) {
+        this.orderBrokenReported = true;
+        logW(`[OrderGuard] window not ascending at idx=${i} kind=${kind}` +
+          ` rows=${this.messages.length}` +
+          ` prev=${this.messages[i - 1].id}(${this.messages[i - 1].contentType})` +
+          ` cur=${this.messages[i].id}(${this.messages[i].contentType})`);
+        return;
+      }
+    }
+  }
+
+  private notify(kind: string = 'update'): void {
+    this.checkWindowOrder(kind);
+    // openChat may emit updateNewMessage before the first getChatHistory page
+    // returns (commonly just the newest message of a newly visited channel).
+    // Keep those updates in `messages`, but publish the initial timeline only
+    // when history is ready; otherwise ChatPage treats that one-message
+    // snapshot as its completed first page and anchors the viewport to it.
+    // 已读水位是对 messages 的纯状态计算，与"是否发布快照"无关：必须在
+    // 下面的提前返回之前执行，否则初始历史加载期间到达的 updateChatReadOutbox
+    // 会被整个丢弃（要等下一次 notify 才自愈）。
+    this.applyReadOutbox();
+    if (kind === 'update' && this.initialHistoryState === 'loading') {
+      return;
+    }
+    if (this.deferInitialNotify(kind)) {
+      return;
+    }
+    // 调度中枢批 1：滚动中冻结 update 类发布（TDLib 实时更新），停止即冲刷。
+    // 判读依据（批 0 探针，09-02 活跃频道实滚）：pub.scroll.update ~1/s、峰值
+    // 3/s，且同秒常伴 newer/paginationState 发布——update 那份是滚动帧上纯
+    // 多余的一轮全表 collapse/diff。发布是快照不是增量：晚发不丢数据，任何
+    // 后续发布都完整覆盖（所以发布成功时顺手清 pending）。翻页/初始/历史类
+    // 永不冻结——那是滚动自己要的数据。
+    if (kind === 'update' && scrollActiveNow()) {
+      this.scrollDeferredUpdate = true;
+      this.armScrollDeferFlush();
+      return;
+    }
+    this.scrollDeferredUpdate = false;
+    this.currentNotifyKind = kind;
+    try {
+      for (const l of this.msgSubs) {
+        l(this.messages);
+      }
+    } finally {
+      this.currentNotifyKind = 'update';
+    }
+  }
+
+  private deferInitialNotify(kind: string): boolean {
+    if (this.initialPublicationReleaseAt <= 0) {
+      return false;
+    }
+    const remaining: number = this.initialPublicationReleaseAt - Date.now();
+    if (remaining <= 0) {
+      this.initialPublicationReleaseAt = 0;
+      this.initialPublicationKind = '';
+      if (this.initialPublicationTimer !== -1) {
+        clearTimeout(this.initialPublicationTimer);
+        this.initialPublicationTimer = -1;
+      }
+      return false;
+    }
+    // Preserve the first semantic history publication (around/latest/older)
+    // while still allowing a preliminary plain update to be upgraded.
+    if (this.initialPublicationKind === '' ||
+      (this.initialPublicationKind === 'update' && kind !== 'update')) {
+      this.initialPublicationKind = kind;
+    }
+    if (this.initialPublicationTimer === -1) {
+      this.initialPublicationTimer = setTimeout((): void => {
+        this.flushInitialPublication();
+      }, Math.ceil(remaining));
+    }
+    return true;
+  }
+
+  private flushInitialPublication(): void {
+    this.initialPublicationTimer = -1;
+    const remaining: number = this.initialPublicationReleaseAt - Date.now();
+    if (remaining > 0) {
+      this.initialPublicationTimer = setTimeout((): void => {
+        this.flushInitialPublication();
+      }, Math.ceil(remaining));
+      return;
+    }
+    if (this.initialPublicationReleaseAt <= 0) {
+      return;
+    }
+    const kind: string = this.initialPublicationKind !== ''
+      ? this.initialPublicationKind : 'update';
+    this.initialPublicationReleaseAt = 0;
+    this.initialPublicationKind = '';
+    this.notify(kind);
+  }
+}

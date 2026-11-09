@@ -1,0 +1,950 @@
+import { ChatListRowState, ChatRowFlags } from './ChatListRowState';
+import { FOLDER_TAGS_ENABLED, FolderInfo } from '../../store/FolderStore';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { ChatListSubscription } from '../../store/ChatListSubscription';
+import { homeCardMarginVp } from '../../util/pageMargin';
+import {
+  ImmersiveBarsState, KEY_IMMERSIVE_BARS_HIDDEN, nextImmersiveBars
+} from '../../util/immersiveBars';
+import {
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint,
+  isSmallSquare
+} from '../../util/layoutBreakpoint';
+import { curves, router } from '@kit.ArkUI';
+import {
+  archiveCardScale, archiveIconScale, archiveIconSpin, archiveRevealProgress
+} from '../../util/archiveReveal';
+import { getChatStore, getFolderStore } from '../../tdkit/Globals';
+import { ChatEntry, effectiveMuted } from '../../store/ChatEntry';
+import { CHAT_ROW_VERTICAL_GUTTER, ChatRow } from './ChatRow';
+import { ChatRowSpec, chatRowSpec } from '../../util/chatRowMetrics';
+import { KEY_FORCE_SINGLE_COLUMN } from '../../store/AppSettings';
+import { KEY_APP_BG_ON } from '../../store/AppSettings';
+import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import {
+  KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT, surfaceGlassBlurStyle, surfaceGlassFill
+} from '../../util/surfaceGlass';
+import { GLASS_OUTLINE_COLOR } from '../../util/bubbleTail';
+import { materialModifierWhen } from '../../util/materialModifier';
+import { mainCardFill } from '../../util/theme';
+import { formatTime } from '../../util/formatTime';
+import { ChatListDataSource } from './ChatListDataSource';
+import { ChatListRowKeyCache } from './chatListRowKeys';
+import { guardKey } from '../../util/keyGuard';
+import { HOME_CARD_INSET_VP } from '../../util/listCardGeometry';
+import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, chatListInForeground, chatListPublicationMode, ChatListFreeze, chatOrderUnchanged, chatRevisionsUnchanged, contentOnlyUpdate, updateTouchHold } from './ChatListFreeze';
+import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
+import {
+  KEY_POWER_SMOOTH_TRANSITIONS, KEY_ROW_SWIPE_ACTIONS, powerAnimationDuration
+} from '../../store/AppSettings';
+import {
+  COLOR_MUTED_BADGE, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
+  ROW_PAD_H, ROW_PAD_V
+} from '../../util/theme';
+import { SCOPE_MUTE_EPOCH, scopeMutedForKind } from '../../store/ScopeMuteStore';
+import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { navigateToArchive } from '../../util/profileNav';
+import { rememberListPosition, recallListPosition } from '../../util/chatListPosition';
+import { APPEARANCE_EPOCH } from '../../util/appearance';
+import {
+  isPriorityUnread, TAB_RETAP_EPOCH, TAB_RETAP_INDEX, nextUnreadIndex, reTapAction,
+  RETAP_SMOOTH_SPAN, smoothJumpStage
+} from '../../util/tabReTap';
+import { markAsRead, markUnread, setArchived, setMute, MUTE_LONG } from '../../store/ChatActions';
+
+import {
+  CHAT_SWIPE_ACTION_HEIGHT, CHAT_SWIPE_BUTTON_VP, CHAT_SWIPE_COMMIT_DELAY_MS, CHAT_SWIPE_EDGE_EFFECT,
+  CHAT_SWIPE_RADIUS_VP, CHAT_SWIPE_TRIGGER_VP, CHAT_SWIPE_VERTICAL_GUTTER_VP,
+  ChatSwipeActionVisual,
+  archiveSwipeVisual, muteSwipeVisual, readSwipeVisual
+} from '../../util/chatListSwipe';
+
+// 归档入口长得和会话行一个个头，拉出来时才不显得是另一种东西——所以它的高度
+// **不要**写死，跟着当前档位走（见 util/chatRowMetrics）。下拉露出的那段行程也用它。
+// 归档卡片与上方文件夹条之间的空当。
+const ARCHIVE_TOP_GAP: number = 8;
+// 归档行完全展开需要把顶部回弹拉多深（vp）。回弹带阻尼，这 96vp 对应一大段
+// 实打实的手指行程——"不好出现"的力度感全在这。要松就调小。
+const ARCHIVE_OVERPULL: number = 96;
+// 展开后滚多远自动收起。
+//
+// **只要开始滚，就收。** issue #186 的病根不是"谁盖谁"，而是"归档条和已经滚起来
+// 的列表同时在屏上"这件事本身：列表那边是 clip(false) + cachedCount(…, true) 的
+// 一对，滚出视口的行不回收、而且**故意画在列表边界之外**（好让标题栏底下的滚动
+// 模糊有东西可糊）。归档条正落在那条带里，于是两者必然重叠——先是聊天卡片盖住
+// 归档（原报告），把 zIndex 抬上去之后变成归档盖住聊天（用户："归档叠加在聊天
+// 上面了"）。翻个面不解决问题，**不让它们同时出现**才解决。
+//
+// 阈值取 8 而不是 0：从过拉松手后弹回 0 的过程里 yOffset 可能有几个像素的抖动，
+// 留一点余量，免得刚拉出来就自己收回去。滚过 8vp 说明用户确实在往下走了。
+//
+// 原值是「归档行高 × 2」（144vp）——那 144vp 就是重叠暴露的那段窗口。
+const ARCHIVE_COLLAPSE_SCROLL: number = 8;
+const EMPTY_FOLDER_IDS: number[] = [];
+const FLUSH_BYPASS_DEFER_MS: number = 32;
+
+@Preview
+@Component
+export struct MainTabBody {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 归档入口要和会话卡片长一样，就得订阅同样这两个：壁纸开关决定给不给玻璃，
+  // 材质纪元让用户改厚度/光感后这一行跟着重绘（同 ChatRow）。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
+  // 归档卡片跟会话卡片走同一个「界面模糊质感」开关（见 archiveGlassOn）。
+  @StorageProp(KEY_SURFACE_GLASS_ON) private surfaceGlass: boolean = SURFACE_GLASS_ON_DEFAULT;
+  @StorageProp(SURFACE_GLASS_EPOCH) private surfaceGlassEpoch: number = 0;
+  @Prop effectsActive: boolean = true;
+  @Prop imagesActive: boolean = true;
+  @Prop @Watch('onUpdatesActiveChanged') updatesActive: boolean = true;
+  // 归档里最新的那条会话。**只在归档入口真正露出来时才算**——ChatStore.getChats
+  // 会把整桶拼成一个数组（排序结果本身是缓存的，拼数组不是），而这一行原本的
+  // 注释就写着「只需要一个失效信号，避免为了推导一个布尔值就把整个归档桶排一遍」。
+  // 所以这里守住同一条底线：没露出来时不算，露出来之后才跟着变化刷新。
+  @State private archiveTop: ChatEntry | null = null;
+  @StorageProp(KEY_ROW_SWIPE_ACTIONS) rowSwipeEnabled: boolean = false;
+  // 分组标签开关（第二层 B3：行渲染状态随快照下发，不在 build 里查 store）。
+  @StorageProp(FOLDER_TAGS_ENABLED) folderTagsEnabled: boolean = false;
+  // 会话行走紧凑档还是宽松档。喂的必须是**窗口**宽高（AppStorage 里存的正是窗口
+  // 尺寸，分屏/悬浮窗/折叠屏由 EntryAbility 的 windowSizeChange 刷新）。判据整条
+  // 复用 splitMetrics，和 dock 那次「只分手机与平板分栏、强制单栏算手机」同一条线。
+  // 三份订阅挂在列表上而不是每一行上——同屏十来行，逐行订阅是十倍的绑定。
+  @StorageProp('screenWidthVp') private screenW: number = 360;
+  @StorageProp('screenHeightVp') private screenH: number = 780;
+  // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
+  @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
+  @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
+  @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
+  // 小方形屏沉浸式浏览的滚动累计（util/immersiveBars）。不是状态变量：只在
+  // 「隐藏 / 显示」真的翻转时才写一次 AppStorage，滚动过程中不触发任何重绘。
+  private immersive: ImmersiveBarsState = new ImmersiveBarsState();
+  @StorageProp(KEY_FORCE_SINGLE_COLUMN) private forceSingleColumn: boolean = false;
+  // “所有”页使用独立列表组件，也要单独响应底栏重复点击（issue #35）。
+  @StorageProp(TAB_RETAP_EPOCH) @Watch('onTabReTap') tabReTapEpoch: number = 0;
+  private topVisible: boolean = true;
+  private firstVisibleIndex: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
+  // See ChatPage: the row key embeds this, so the data source must be told.
+  @StorageProp(LANGUAGE_EPOCH) @Watch('onLanguageEpochChanged') langEpoch: number = 0;
+  // 见 ChatListView 上的同名字段。
+  @StorageProp(SCOPE_MUTE_EPOCH) @Watch('onLanguageEpochChanged') scopeMuteEpoch: number = 0;
+  @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // Set when the floating folder bar overlays this list (see ChatListView).
+  // 顶部悬浮 chrome（顶栏 + 文件夹条）的总高度。改成数值是因为顶栏也浮起来
+  // 了：列表从它底下穿过去，才有玻璃透隐可看。原来是个布尔，只够表达"有没有
+  // 文件夹条"。
+  @Prop contentTopInset: number = 0;
+  // 由 ChatListPage 传进来，每个文件夹页签一个。HdsNavigation 靠它拿到滚动量
+  // 才能驱动标题栏收缩与渐变模糊；页签里的列表在子组件内部，父层拿不到，
+  // 只能这样把控制器递下来。
+  listScroller: ListScroller = new ListScroller();
+  // 列表实测高度（vp）：linearGradientBlur 的 fractionStops 要按实际高度归一化。
+  @State private listViewH: number = 0;
+  // 每帧滚动量往上抱给 ChatListPage，文件夹条据此收起/展开（util/folderBarCollapse）。
+  // **普通成员，不能用 @Prop**：@Prop 跨组件边界是深拷贝，函数会被丢掉，症状是
+  // 回调永远不触发而编译、单测都看不出来（见 memory arkui-prop-deepcopy-drops-closures）。
+  onScrollForFolderBar?: (delta: number, atTop: boolean) => void;
+  // Rebuilding rows while a row's context menu is open would close it.
+  @StorageProp(CHAT_MENU_OPEN) @Watch('onMenuToggle') menuOpen: boolean = false;
+  // 手指按在列表上时同样缓冲发布（长按跑行的根修，见 ChatListFreeze）。
+  @StorageProp(CHAT_LIST_TOUCH_HOLD) @Watch('onTouchHoldToggle') touchHold: boolean = false;
+  @StorageProp(CHAT_LIST_RENDER_ACTIVE_KEY) @Watch('onRenderGateChanged')
+  private renderActive: boolean = true;
+  @StorageProp(CHAT_LIST_FLUSH_EPOCH) @Watch('onFlushRequested')
+  private flushEpoch: number = 0;
+  // Store publishes immutable snapshots. Keep the full array out of ArkUI's
+  // observed state; LazyForEach receives changes through chatsData.
+  private chats: ChatEntry[] = [];
+  private chatsData: ChatListDataSource = new ChatListDataSource();
+  private rowKeyCache: ChatListRowKeyCache = new ChatListRowKeyCache();
+  @State showArchive: boolean = false;
+  @State archiveLoadFailed: boolean = false;
+  @StorageProp('appIsForeground') @Watch('onForegroundChanged')
+  private appIsForeground: boolean = true;
+  private rowReloadPending: boolean = false;
+  private updateGate: ChatListFreeze = new ChatListFreeze();
+  // 返回转场那扇窗是否开着（issue #159）。由 onFlushRequested 开、闸开时关。
+  private flushBypass: boolean = false;
+  private listSubscription: ChatListSubscription | null = null;
+  private unsubArchive: (() => void) | null = null;
+  // 归档行的展开高度（0..行高），只由顶部回弹深度驱动。
+  @State private archivePullPx: number = 0;
+
+  // 拽到全展开后锁定；再往下滚一段自动收起。
+  @State private archiveRevealed: boolean = false;
+  // 纯发布闸，不参与绘制：滚动期间只缓存最新会话快照，停下后一次性发布。
+  private listMoving: boolean = false;
+  private scrollSettleTimer: number = -1;
+  private flushBypassTimer: number = -1;
+  private archiveRefreshPending: boolean = false;
+
+  private updateScrollActivity(state: ScrollState): void {
+    if (state !== ScrollState.Idle) {
+      if (this.scrollSettleTimer !== -1) {
+        clearTimeout(this.scrollSettleTimer);
+        this.scrollSettleTimer = -1;
+      }
+      this.listMoving = true;
+      this.listSubscription?.refresh();
+      return;
+    }
+    if (!this.listMoving || this.scrollSettleTimer !== -1) {
+      return;
+    }
+    this.scrollSettleTimer = setTimeout((): void => {
+      this.scrollSettleTimer = -1;
+      this.listMoving = false;
+      this.listSubscription?.refresh();
+      if (this.flushBypass && !this.renderActive) {
+        this.drainContentOnly();
+      } else {
+        this.flushBufferedChats();
+      }
+      if (this.archiveRefreshPending) {
+        this.archiveRefreshPending = false;
+        this.refreshArchiveState();
+      }
+    }, 120);
+  }
+
+  private liveEffects(): boolean {
+    // 滚动薄纱降级暂时停用；listMoving 现在只冻结数据发布。
+    return this.effectsActive;
+  }
+
+  private publishingActive(): boolean {
+    return chatListInForeground() && this.renderActive && this.updatesActive && !this.listMoving;
+  }
+
+  private onUpdatesActiveChanged(): void {
+    this.flushBufferedChats();
+    if (this.updatesActive) {
+      if (this.archiveRefreshPending) {
+        this.archiveRefreshPending = false;
+        this.refreshArchiveState();
+      }
+    }
+  }
+
+  private onTabReTap(): void {
+    if ((AppStorage.get<number>(TAB_RETAP_INDEX) ?? 0) !== 0) {
+      return;
+    }
+    const unread: boolean[] = this.chats.map((chat: ChatEntry): boolean =>
+      isPriorityUnread(chat.unreadCount, chat.isMarkedUnread, this.rowMuted(chat)));
+    const action: string = reTapAction(this.topVisible,
+      unread.some((value: boolean): boolean => value));
+    if (action === 'top') {
+      this.jumpToRow(0);
+      return;
+    }
+    if (action === 'none') {
+      return;
+    }
+    const target: number = nextUnreadIndex(unread, this.firstVisibleIndex);
+    this.jumpToRow(target >= 0 ? target : 0);
+  }
+
+  // 见 ChatListView.jumpToRow 同款注释：远距离平滑滚动逐行构建沿途内容
+  //（实测跳 169 行 = 单帧 618ms），先无动画中转再平滑最后一屏。
+  private jumpToRow(index: number): void {
+    const stage = smoothJumpStage(this.firstVisibleIndex, index, RETAP_SMOOTH_SPAN);
+    if (stage >= 0) {
+      this.listScroller.scrollToIndex(stage, false, ScrollAlign.START);
+    }
+    this.listScroller.scrollToIndex(index, true, ScrollAlign.START);
+  }
+
+  private onLanguageEpochChanged(): void {
+    if (!chatListInForeground()) {
+      this.rowReloadPending = true;
+      return;
+    }
+    this.rowReloadPending = false;
+    this.chatsData.reload(this.keysFor(this.chats), this.flagsFor(this.chats));
+  }
+
+  private onForegroundChanged(): void {
+    if (!chatListInForeground()) {
+      this.flushBypass = false;
+      this.listSubscription?.refresh();
+      return;
+    }
+    this.flushBufferedChats();
+  }
+
+  private flushBufferedChats(): void {
+    this.listSubscription?.refresh();
+    if (!chatListInForeground() || this.menuOpen || this.touchHold || this.listMoving || !this.renderActive || !this.updatesActive) {
+      return;
+    }
+    const next = this.updateGate.flush();
+    if (next !== null) {
+      this.applyChats(next);
+    }
+    if (this.rowReloadPending) { this.onLanguageEpochChanged(); }
+    if (this.archiveRefreshPending) { this.refreshArchiveState(); }
+  }
+
+  private onMenuToggle(): void {
+    this.flushBufferedChats();
+  }
+
+  private onTouchHoldToggle(): void {
+    this.flushBufferedChats();
+  }
+
+  private onRenderGateChanged(): void {
+    // 闸开了就关窗：往后走正常路（含重排动画），不再需要旁路。
+    if (this.renderActive) {
+      if (this.flushBypassTimer !== -1) {
+        clearTimeout(this.flushBypassTimer);
+        this.flushBypassTimer = -1;
+      }
+      this.flushBypass = false;
+    }
+    this.flushBufferedChats();
+  }
+
+  // 闸还关着时的旁路（issue #159，见 util/chatListRenderGate）：只发内容变更
+  // （身份顺序没变），顺序变了的放回缓冲等闸开。闸开着时走正常路。
+  //
+  // 【为什么是"一段窗口"而不是"一次刷新"】第一版只在纪元 bump 的那一刻刷一次。
+  // 但返回转场有 ~640ms，而群未读清零真正到账靠的是 TDLib 回来的
+  // updateChatReadInbox——它多半**晚于**那一下 bump。那份快照被 accept 收进
+  // 缓冲，照旧要等闸开才出来，"慢半拍"于是只修掉了运气好的一半。
+  // 所以 bump 改成开一扇窗：窗开着的期间内容变更随到随发，闸开时关窗。
+  private onFlushRequested(): void {
+    if (!chatListInForeground() || this.menuOpen || this.renderActive) {
+      return;
+    }
+    this.flushBypass = true;
+    if (!this.updatesActive) {
+      return;
+    }
+    if (AppStorage.get<boolean>('chatDetailHiding') === true) {
+      if (this.flushBypassTimer !== -1) {
+        clearTimeout(this.flushBypassTimer);
+      }
+      this.flushBypassTimer = setTimeout((): void => {
+        this.flushBypassTimer = -1;
+        if (!chatListInForeground() || this.menuOpen || this.renderActive || !this.flushBypass) {
+          return;
+        }
+        this.listSubscription?.refresh();
+        if (!this.listMoving) {
+          this.drainContentOnly();
+        }
+      }, FLUSH_BYPASS_DEFER_MS);
+      return;
+    }
+    this.listSubscription?.refresh();
+    if (!this.listMoving) {
+      this.drainContentOnly();
+    }
+  }
+
+  // 把缓冲里那份快照发出去，但只发内容变更。
+  //
+  // 顺序变了时**不再整份扣住**：先把新内容贴到当前顺序上发出去（角标就在内容
+  // 里，用户等的就是它），再把原快照放回缓冲，等闸开了做真正的重排——那一下
+  // 要带 180ms 动画，"别在转场里重排"正是这道闸存在的理由。
+  //
+  // 拆开之前，只要退出会话这期间**任何一个别的会话**来了条新消息，列表顺序
+  // 就变了，你刚读完那个群的角标也跟着一起等 640ms。用户报的"有时候快有时候
+  // 要等一会"就是这个分岔。
+  private drainContentOnly(): void {
+    if (!chatListInForeground() || this.menuOpen || this.touchHold ||
+      this.listMoving || !this.updatesActive) { return; }
+    const next = this.updateGate.flush();
+    if (next === null) {
+      return;
+    }
+    if (chatOrderUnchanged(this.chats, next)) {
+      if (!chatRevisionsUnchanged(this.chats, next)) {
+        this.publishChats(next);
+      }
+      return;
+    }
+    const merged: ChatEntry[] | null = contentOnlyUpdate(this.chats, next);
+    if (merged !== null) {
+      this.publishChats(merged);
+    }
+    this.updateGate.accept(next, false);
+  }
+
+  aboutToAppear(): void {
+    const store = getChatStore();
+    this.listSubscription = store.subscribeList((list: ChatEntry[]) => {
+      // “所有”可被服务器配置到非首位，并作为隐藏页首次预载。先允许它发布
+      // 一份非空初始快照，即使此刻横滑的全局触摸闸仍关着；之后再按
+      // updatesActive 保持静态。
+      const forceInitial: boolean = this.chats.length === 0 && list.length > 0;
+      const next = this.updateGate.accept(list,
+        this.publishingActive() || this.chats.length === 0, forceInitial);
+      if (next !== null) {
+        this.applyChats(next);
+      } else if (this.updatesActive && this.flushBypass && !this.menuOpen && !this.touchHold &&
+        !this.listMoving) {
+        // 转场窗口里到货的内容变更：accept 已经把它收进缓冲了，这里立刻取出来发。
+        this.drainContentOnly();
+      }
+    }, 'main', () => chatListPublicationMode(this.updatesActive, this.renderActive,
+      this.listMoving, this.flushBypass, this.chats.length === 0 && store.hasChats('main')));
+    this.refreshArchiveState();
+    // The archive shortcut only needs an invalidation signal. Avoid sorting the
+    // whole archive bucket for every update just to derive one boolean.
+    this.unsubArchive = store.subscribeChanges(() => {
+      if (this.listMoving || !this.updatesActive) {
+        this.archiveRefreshPending = true;
+        return;
+      }
+      this.refreshArchiveState();
+    });
+    store.ensureLoaded('main');
+    store.ensureLoaded('archive').then((success: boolean): void => {
+      this.archiveLoadFailed = !success;
+    });
+  }
+
+  aboutToDisappear(): void {
+    this.rowKeyCache.clear();
+    if (this.scrollSettleTimer !== -1) {
+      clearTimeout(this.scrollSettleTimer);
+      this.scrollSettleTimer = -1;
+    }
+    if (this.flushBypassTimer !== -1) {
+      clearTimeout(this.flushBypassTimer);
+      this.flushBypassTimer = -1;
+    }
+    this.listMoving = false;
+    this.archiveRefreshPending = false;
+    this.listSubscription?.close();
+    this.listSubscription = null;
+    if (this.unsubArchive !== null) { this.unsubArchive(); this.unsubArchive = null; }
+  }
+
+  private applyChats(next: ChatEntry[]): void {
+    if (!chatListInForeground()) {
+      this.updateGate.accept(next, false);
+      return;
+    }
+    const structureChanged: boolean = !chatOrderUnchanged(this.chats, next);
+    if (structureChanged && this.chats.length > 0) {
+      animateTo({
+        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+        curve: Curve.EaseOut
+      }, (): void => { this.publishChats(next); });
+    } else {
+      this.publishChats(next);
+    }
+  }
+
+  private publishChats(next: ChatEntry[]): void {
+    this.chats = next;
+    this.chatsData.update(next, this.keysFor(next), this.flagsFor(next));
+  }
+
+  // 第二层 B3：与 ChatListView.flagsFor 同一份语义（主列表 listKey='main'）。
+  private flagsFor(items: ChatEntry[]): ChatRowFlags[] {
+    const store = getChatStore();
+    const folderIds: number[] = this.folderTagsEnabled
+      ? getFolderStore().getFolders().map((f: FolderInfo): number => f.id) : EMPTY_FOLDER_IDS;
+    const chatIds: number[] = items.map((item: ChatEntry): number => item.id);
+    const memberships: Map<number, number[]> = store.folderIdsForChats(folderIds, chatIds);
+    const archived: Set<number> = store.listMembership('archive', chatIds);
+    const flags: ChatRowFlags[] = [];
+    for (const item of items) {
+      const inFolders: number[] = memberships.get(item.id) ?? EMPTY_FOLDER_IDS;
+      flags.push({
+        pinned: store.isPinned('main', item.id),
+        archived: archived.has(item.id),
+        folderIds: inFolders
+      });
+    }
+    return flags;
+  }
+
+  private keysFor(items: ChatEntry[]): string[] {
+    // Snapshot reactive key context once per publication, not once per row.
+    const languageEpoch: number = this.langEpoch;
+    const muteEpoch: number = this.scopeMuteEpoch;
+    const listKey: string = 'main';
+    const store = getChatStore();
+    return this.rowKeyCache.keys(items, listKey, languageEpoch, muteEpoch, store.pinEpoch(listKey),
+      (id: number): boolean => store.isPinned(listKey, id));
+  }
+
+  private rowUnread(chat: ChatEntry): boolean {
+    return chat.unreadCount > 0 || chat.isMarkedUnread;
+  }
+
+  private rowMuted(chat: ChatEntry): boolean {
+    return effectiveMuted(chat, scopeMutedForKind(chat.kind));
+  }
+
+  private toggleRead(chat: ChatEntry): void {
+    if (this.rowUnread(chat)) {
+      markAsRead(chat.id, chat.lastMessageId);
+    } else {
+      markUnread(chat.id, true);
+    }
+  }
+
+  private toggleArchive(chat: ChatEntry): void {
+    setArchived(chat.id, true);
+  }
+
+  private toggleMute(chat: ChatEntry): void {
+    setMute(chat.id, this.rowMuted(chat) ? 0 : MUTE_LONG);
+  }
+
+  private commitSwipeAction(action: () => void): void {
+    setTimeout((): void => {
+      action();
+      this.listScroller.closeAllSwipeActions();
+    }, CHAT_SWIPE_COMMIT_DELAY_MS);
+  }
+
+  @Builder
+  readSwipe(row: ChatListRowState) {
+    Row() {
+      this.swipeButton(
+        this.rowUnread(row.snapshot.chat) ? $r('app.string.cl_mark_read') : $r('app.string.cl_mark_unread'),
+        readSwipeVisual(this.rowUnread(row.snapshot.chat)),
+        (): void => this.toggleRead(row.snapshot.chat));
+    }
+    .height(CHAT_SWIPE_ACTION_HEIGHT)
+    .margin({
+      left: this.cardGutter(),
+      top: CHAT_SWIPE_VERTICAL_GUTTER_VP,
+      bottom: CHAT_SWIPE_VERTICAL_GUTTER_VP
+    })
+    .backgroundColor(readSwipeVisual(this.rowUnread(row.snapshot.chat)).background)
+    .borderRadius(CHAT_SWIPE_RADIUS_VP)
+    .clip(true);
+  }
+
+  @Builder
+  endSwipe(row: ChatListRowState) {
+    Row() {
+      this.swipeButton(
+        this.rowMuted(row.snapshot.chat) ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'),
+        muteSwipeVisual(this.rowMuted(row.snapshot.chat)),
+        (): void => this.toggleMute(row.snapshot.chat));
+      this.swipeButton(
+        $r('app.string.cl_archive'),
+        archiveSwipeVisual(false),
+        (): void => this.toggleArchive(row.snapshot.chat));
+    }
+    .height(CHAT_SWIPE_ACTION_HEIGHT)
+    .margin({
+      right: this.cardGutter(),
+      top: CHAT_SWIPE_VERTICAL_GUTTER_VP,
+      bottom: CHAT_SWIPE_VERTICAL_GUTTER_VP
+    })
+    .backgroundColor(archiveSwipeVisual(false).background)
+    .borderRadius(CHAT_SWIPE_RADIUS_VP)
+    .clip(true);
+  }
+
+  @Builder
+  swipeButton(label: ResourceStr, visual: ChatSwipeActionVisual, action: () => void) {
+    Column({ space: 4 }) {
+      SymbolGlyph($r(visual.symbol)).fontSize(20).fontColor([Color.White]);
+      Text(label)
+        .width('100%')
+        .fontSize(11).fontColor(Color.White)
+        .textAlign(TextAlign.Center)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+    }
+    .width(CHAT_SWIPE_BUTTON_VP).height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(visual.background)
+    .onClick((): void => {
+      this.listScroller.closeAllSwipeActions();
+      action();
+    });
+  }
+
+  // 当前档位：手机（含平板强制单栏）紧凑 60，平板分栏宽松 72。
+  private spec(): ChatRowSpec {
+    return chatRowSpec(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait));
+  }
+
+  // 归档入口和会话行一样高，跟着档位走。
+  private archiveRowHeight(): number {
+    return this.spec().minHeight;
+  }
+
+  // 归档入口是否作为列表第 0 行存在。
+  // 下拉进度 0..1，驱动卡片与图标的形变（见 util/archiveReveal）。
+  private archiveProgress(): number {
+    return archiveRevealProgress(this.archivePullPx, this.archiveRowHeight(), this.archiveRevealed);
+  }
+
+  private archiveRowShown(): boolean {
+    return this.showArchive || this.archiveLoadFailed;
+  }
+
+  private openArchive(): void {
+    // 曾经是 router.pushUrl('pages/chatlist/ArchivePage')——归档页已迁成
+    // HdsNavDestination 并从 main_pages.json 摘出，整页路由跳不动，走漏斗。
+    navigateToArchive();
+  }
+
+  private retryArchive(): void {
+    this.archiveLoadFailed = false;
+    getChatStore().ensureLoaded('archive').then((success: boolean): void => {
+      this.archiveLoadFailed = !success;
+    });
+  }
+
+  // 归档入口行。默认完全不存在；把顶部回弹拽到底才展开并停留（见 build 里的
+  // 折叠容器与 onDidScroll）。曾经做成 Refresh（松手直接跳转，误触率高）和
+  // 列表第 0 行（普通滚动一拉就 1:1 全露，毫无门槛），都被否了。
+  // ── 归档入口的卡片外观：**和普通会话行逐项一致** ──────────────────────
+  //
+  // 原来它是一条裸 Row，只有横向内边距——没有宽度收进、没有外边距、圆角、描边、
+  // 玻璃、按压态，所以拉出来之后和下面的会话卡片完全不是一路货。
+  //
+  // 这三个取值和 ChatRow 的 rowGlassEnabled / rowFill / rowBackdropBlur 逐字相同：
+  // 只有 APP 壁纸生效时才给玻璃（纯色页面上给玻璃没有视觉收益，还多一层合成），
+  // materialEpoch 不参与计算但必须读到，否则用户改厚度/光感这一行不重绘。
+  // 取归档里排第一的那条。入口没露出来时清空，别白算。
+  private refreshArchiveTop(): void {
+    if (!this.archiveRowShown() || (!this.archiveRevealed && this.archivePullPx <= 0)) {
+      this.archiveTop = null;
+      return;
+    }
+    const list: ChatEntry[] = getChatStore().getChats('archive');
+    this.archiveTop = list.length > 0 ? list[0] : null;
+  }
+
+  private refreshArchiveState(): void {
+    if (!this.publishingActive()) {
+      this.archiveRefreshPending = true;
+      return;
+    }
+    this.archiveRefreshPending = false;
+    this.showArchive = getChatStore().hasArchive();
+    this.refreshArchiveTop();
+  }
+
+  // 归档卡片与会话卡片（ChatRow）**同一套规则**：玻璃不玻璃看「界面模糊质感」
+  // 开关，不看有没有壁纸。原来这里按「壁纸开着就上 overlay 材质 + backdropBlur」
+  // 另起一套，用户关了模糊质感之后会话卡片都是实底，唯独归档这张还是半透明发灰、
+  // 描边颜色也不一样（用户：「已归档聊天和其他的显示不符」）。
+  // 两个纪元都读：档位、材质开关一变就重绘（@StorageProp 要在 build 链路里被读到）。
+  private archiveGlassOn(): boolean {
+    return this.surfaceGlass && this.surfaceGlassEpoch >= 0 && this.materialEpoch >= 0;
+  }
+
+  private archiveFill(pressed: boolean): ResourceColor {
+    if (!this.archiveGlassOn()) {
+      return pressed ? $r('app.color.surface_alt') : $r('app.color.surface');
+    }
+    return surfaceGlassFill(mainCardFill(this.appWallpaperOn, pressed));
+  }
+
+  // 同 ChatRow.rowBlurStyle：背后没有壁纸就不挂模糊（模糊纯色还是那个纯色）。
+  private archiveBlurStyle(): BlurStyle | undefined {
+    if (!this.archiveGlassOn() || !this.liveEffects() || !this.appWallpaperOn) {
+      return undefined;
+    }
+    return surfaceGlassBlurStyle();
+  }
+
+  @Styles
+  archiveNormalStyle() {
+    .backgroundColor(this.archiveFill(false))
+  }
+
+  @Styles
+  archivePressedStyle() {
+    .backgroundColor(this.archiveFill(true))
+  }
+
+  @Builder
+  archiveHeader() {
+    Row({ space: 12 }) {
+      // 照会话行的头像规格画一颗"归档头像"：灰底圆形，白色归档图标。
+      // 出错态换成红一点的底和感叹号，一眼能分出"这行现在是重试"。
+      Row() {
+        SymbolGlyph(this.archiveLoadFailed
+          ? $r('sys.symbol.exclamationmark_circle') : $r('sys.symbol.archivebox'))
+          .fontSize(26).fontColor([Color.White])
+          // 图标的形变比卡片夸张一档（-90°→0、0.6→1），成形感集中在这里。
+          // 出错态也照走：那时它是感叹号，转正同样说得通。
+          .rotate({ angle: archiveIconSpin(this.archiveProgress()) })
+          .scale({
+            x: archiveIconScale(this.archiveProgress()),
+            y: archiveIconScale(this.archiveProgress())
+          });
+      }
+      .width(this.spec().avatar).height(this.spec().avatar)
+      .borderRadius(this.spec().avatar / 2)
+      .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
+      .backgroundColor(this.archiveLoadFailed ? '#E64646' : COLOR_MUTED_BADGE);
+      // 标题 + 最新消息预览，字号/颜色与普通会话行逐项相同（17 中粗 / 14 次级，
+      // 发送者用强调色）。取不到最新一条时只有标题，行高不变。
+      Column({ space: 6 }) {
+        Text(this.archiveLoadFailed ? $r('app.string.cl_archive_failed_tap') : $r('app.string.ap_title'))
+          .fontSize(17).fontWeight(FontWeight.Medium)
+          .fontColor(COLOR_TEXT_PRIMARY)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        if (!this.archiveLoadFailed && this.archiveTop !== null) {
+          Row() {
+            Text(`${this.archiveTop?.title ?? ''}: `)
+              .fontSize(14).fontColor(COLOR_PRIMARY)
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+              .flexShrink(0);
+            Text(this.archiveTop?.lastMessageText ?? '')
+              .fontSize(14).fontColor(COLOR_TEXT_SECONDARY)
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1);
+          }.width('100%');
+        }
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1);
+      if (!this.archiveLoadFailed && this.archiveTop !== null) {
+        // 和普通会话行一样贴着标题那一行——外层 Row 是垂直居中的，只有这一个
+        // 元素时时间会跑到两行的正中间，看着和别的行错位。
+        Text(formatTime(this.archiveTop?.lastMessageDate ?? 0, Math.floor(Date.now() / 1000)))
+          .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).flexShrink(0)
+          .alignSelf(ItemAlign.Start).margin({ top: 3 });
+      }
+    }
+    // 与 ChatRow 的卡片同一套规格：同样的左右收进、外边距、头像内缩（对齐顶部标题）、圆角 16、0.5 描边、
+    // 玻璃与按压态。
+    .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
+    .margin({
+      left: this.cardGutter(), right: this.cardGutter(),
+      top: CHAT_ROW_VERTICAL_GUTTER, bottom: CHAT_ROW_VERTICAL_GUTTER
+    })
+    .height(this.archiveRowHeight())
+    .padding({ left: HOME_CARD_INSET_VP, right: ROW_PAD_H })
+    .borderRadius(16)
+    .border({
+      // 只有玻璃档才描边，理由见 ChatRow 那一处：`appWallpaperOn` 对纯色背景
+      // 也成立，白色背景下这圈灰线会变成整页唯一看得见的卡片轮廓。
+      width: this.archiveGlassOn() ? 0.5 : 0,
+      color: GLASS_OUTLINE_COLOR
+    })
+    .backgroundBlurStyle(this.archiveBlurStyle())
+    .attributeModifier(materialModifierWhen('card', this.archiveGlassOn() &&
+      (!this.appWallpaperOn || this.liveEffects())))
+    .clip(true)
+    .stateStyles({ normal: this.archiveNormalStyle, pressed: this.archivePressedStyle })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      if (this.archiveLoadFailed) { this.retryArchive(); } else { this.openArchive(); }
+    });
+  }
+
+  @Builder
+  chatList() {
+    // initialIndex：「所有」页签也可能被 Tabs.cachedMaxCount 释放（用户滑到
+    // 3 个文件夹以外时），重建时回到原来的行。见 util/chatListPosition。
+    List({ scroller: this.listScroller, initialIndex: recallListPosition('main') }) {
+      // LazyForEach, not ForEach: ForEach builds every row up front, which for
+      // a real account meant hundreds of live ChatRow components for the eight
+      // that are visible.
+      LazyForEach(this.chatsData, (item: ChatListRowState) => {
+        ListItem() {
+          ChatRow({
+          compact: !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
+            row: item,
+            listKey: 'main',
+            liveEffects: this.liveEffects(),
+            loadImages: this.imagesActive
+          });
+        }
+          .swipeAction(this.rowSwipeEnabled ? {
+            start: {
+              builder: (): void => { this.readSwipe(item); },
+              actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
+              onAction: (): void => {
+                this.commitSwipeAction((): void => this.toggleRead(item.snapshot.chat));
+              }
+            },
+            end: {
+              builder: (): void => { this.endSwipe(item); },
+              actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
+              onAction: (): void => {
+                this.commitSwipeAction((): void => this.toggleArchive(item.snapshot.chat));
+              }
+            },
+            edgeEffect: CHAT_SWIPE_EDGE_EFFECT
+          } as SwipeActionOptions : {} as SwipeActionOptions)
+      }, (_item: ChatListRowState, index: number) =>
+        guardKey(this.chatsData.keyTableId, index, this.chatsData.getKey(index)));
+    }
+    .width('100%').height('100%')
+    // Keep only two painted rows beyond the viewport. The title blur still has
+    // enough source content while fast scrolling prepares fewer glass rows.
+    .cachedCount(2, true)
+    // cachedCount 的第二个参数 true 与这里的 clip(false) 是一对：前者让滚出
+    // 视口的行不被回收，后者让它画得出来。官方《设置动态模糊样式》点名过——
+    // 列表穿透到标题栏下方时缺了任一个，标题栏底下就是空的，渐变模糊没有
+    // 东西可糊。
+    .clip(false)
+    // 归档入口依赖顶部回弹位移；即使会话不足一屏，也要允许下拉展开。
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .enableScrollInteraction(!this.menuOpen)
+    .scrollBar(BarState.Off)
+    // 给底部 dock 留 88（手机 HdsTabs 胶囊 / 平板分栏左栏底部的自绘胶囊）。
+    .contentEndOffset(this.bottomSafe + 88)
+    // 容器上顶了 EDGE_OVERLAY_VP（见 build 里的负 margin），列表内容的起点跟着
+    // 一起上移了；这里补回来，首行才不会被屏幕顶边切掉（之前只露出未读数角标）。
+    .contentStartOffset(this.contentTopInset + EDGE_OVERLAY_VP)
+    .onDidScroll((offset: number, state: ScrollState): void => {
+      this.updateScrollActivity(state);
+      this.updateImmersiveBars(offset);
+      const y: number = this.listScroller.currentOffset().yOffset;
+      // 复用同一帧已经取到的 y，不再多调一次 currentOffset()（这个回调每帧都跑）。
+      const report: ((delta: number, atTop: boolean) => void) | undefined = this.onScrollForFolderBar;
+      if (report !== undefined) {
+        report(offset, y <= 0);
+      }
+      if (!this.archiveRevealed && this.archiveRowShown() && y < 0 &&
+        state === ScrollState.Scroll) {
+        // 展开只吃**手指拖动**的回弹深度（惯性冲进回弹区不算）。回弹自带阻尼，
+        // 这一段越拉越沉——"不好出现"就是它。拽到全展开的瞬间锁定。
+        const pull: number = Math.min(this.archiveRowHeight(),
+          -y * this.archiveRowHeight() / ARCHIVE_OVERPULL);
+        this.archivePullPx = pull;
+        if (pull >= this.archiveRowHeight()) {
+          // 拉到底那一下用弹簧收尾：跟手段是线性的，锁定这一下给点回弹，
+          // 手上才有"咔哒一声到位"的反馈。**曲线走省电分组**——关掉平滑过渡
+          // 时 duration 会被压到 0，那时它就是原来的瞬时置位。
+          animateTo({
+            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 260),
+            curve: curves.springMotion(0.34, 0.72)
+          }, (): void => {
+            this.archiveRevealed = true;
+          });
+        }
+      } else if (!this.archiveRevealed && this.archivePullPx > 0) {
+        // 没拽到底就松手/惯性阶段：跟着回弹的衰减一起缩回去。
+        this.archivePullPx = y < 0
+          ? Math.min(this.archiveRowHeight(), -y * this.archiveRowHeight() / ARCHIVE_OVERPULL)
+          : 0;
+      } else if (this.archiveRevealed && y > ARCHIVE_COLLAPSE_SCROLL) {
+        // 已展开后往下滚一段，自动收起；下次要看还得再用力拉一次。
+        animateTo({
+          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200),
+          curve: Curve.EaseOut
+        }, (): void => {
+          this.archiveRevealed = false;
+          this.archivePullPx = 0;
+        });
+      }
+    })
+    .onScrollIndex((start: number): void => {
+      this.firstVisibleIndex = start;
+      this.topVisible = start <= 0;
+      rememberListPosition('main', start);
+    })
+    // 指尖按下就关发布闸（抬手/被抢手势即开），见 ChatListView 同款注释。
+    .onTouch((event: TouchEvent): void => { updateTouchHold(event.type); })
+    .onReachEnd(() => { getChatStore().loadMore('main'); });
+  }
+
+  // 小方形屏（SPEC-04）：上滑隐藏标题栏与底部页签，下滑或回到顶部恢复。
+  // 其他形态一律不隐藏；离开小方形屏时若还藏着，立刻放出来。
+  private updateImmersiveBars(delta: number): void {
+    const prevHidden: boolean = this.immersive.hidden;
+    if (!isSmallSquare(this.widthBp, this.heightBp)) {
+      this.immersive = new ImmersiveBarsState();
+    } else {
+      const atTop: boolean = this.listScroller.currentOffset().yOffset <= 0;
+      this.immersive = nextImmersiveBars(this.immersive, delta, atTop);
+    }
+    if (this.immersive.hidden !== prevHidden) {
+      AppStorage.setOrCreate(KEY_IMMERSIVE_BARS_HIDDEN, this.immersive.hidden);
+    }
+  }
+
+  // 首页会话卡片外沿（util/pageMargin）：手机 6，折叠屏 10，平板 14。
+  private cardGutter(): number {
+    return homeCardMarginVp(this.widthBp);
+  }
+
+  build() {
+    Column() {
+      // No story ring here — stories live on the profile pages. StoryStore and
+      // StoryViewerPage are kept, but nothing on the chat list launches them.
+      //
+      // 归档入口不在列表里，是列表上方的一个折叠容器：展开高度只由顶部回弹
+      // 深度驱动（见 onDidScroll）。不在列表里，就不存在"藏在第 0 行"的一切
+      // 收起时序问题；高度为 0 时它完全不占布局、也画不出来。
+      if (this.archiveRowShown() && (this.archiveRevealed || this.archivePullPx > 0)) {
+        Stack({ alignContent: Alignment.Bottom }) {
+          this.archiveHeader();
+        }
+        .width('100%')
+        .height(this.archiveRevealed ? this.archiveRowHeight() : this.archivePullPx)
+        // 文件夹条浮在内容之上、自身只留 2 的下外边距，归档卡片顶到它底下
+        // 看着像被压住（用户："归档感觉被挡住一点"）。这一档让它离开那条边。
+        .margin({ top: ARCHIVE_TOP_GAP })
+        .clip(true)
+        .opacity(this.archiveRevealed ? 1 : this.archivePullPx / this.archiveRowHeight())
+        // 跟手形变：卡片从 0.86 长到 1。高度是"露出多少"，缩放是"成形多少"，
+        // 两者一起才有被拉出来的手感（只有高度时像从缝里平推出来）。
+        .scale({
+          x: archiveCardScale(this.archiveProgress()),
+          y: archiveCardScale(this.archiveProgress())
+        })
+        // **收起必须靠 transition，不能只靠 animateTo。** 收起时
+        // `archiveRevealed || archivePullPx > 0` 直接变假，节点被 if 摘掉；
+        // 没有出场过渡的话它是瞬间消失的——外面那个 animateTo 包着的其实只有
+        // 状态赋值，画面上一帧都没动过。
+        .transition(TransitionEffect.OPACITY
+          .combine(TransitionEffect.scale({ x: 0.92, y: 0.86 }))
+          .animation({
+            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200),
+            curve: Curve.EaseOut
+          }))
+        // 归档条必须画在上移后的列表之上：列表用 offset 上移了 EDGE_OVERLAY_VP，
+        // 而归档仍按 Column 正常流式占位，两者会重叠 EDGE_OVERLAY_VP 那么高一段。
+        // 那段正好是 contentStartOffset 补出来的空白，没有内容，抬 zIndex 不会
+        // 出现"归档盖住聊天"（历史上那次是列表内容真的画进那条带里）。
+        .zIndex(1);
+      }
+      // 列表容器：List 撑满。边缘虚化由 List 自己的 linearGradientBlur 承担，
+      // 标题栏（NavBar）和底部胶囊（Tabs 的 bar）都在容器外，不会被糊到。
+      //
+      // margin top 负值：linearGradientBlur 的渐变原点在**这个容器自己的上沿**，
+      // 而 HDS 的 NavBar 在布局里占掉 56vp，容器就从标题栏下沿开始，于是顶部的
+      // 渐隐带落在了标题下方、标题那一带还是清晰的——用户看到的就是「标题下面
+      // 另起一条模糊带，需要挪上去」。把容器上提一个 NavBar 高度，渐变原点就回
+      // 到内容区顶端（状态栏下沿），content 也就能穿到标题底下去糊。
+      // **必须是 offset 不是负 margin。** margin 参与布局：负值会把整个 Stack
+      // 的占位往上吃，归档抽屉（Column 里在它上面）的流式位置随之失效、被列表
+      // 盖住；而 offset 只改绘制原点、布局占位一字不动——归档照旧占它那一行，
+      // 列表再在绘制上顶 EDGE_OVERLAY_VP，两套坐标互不干扰。
+      Stack() {
+        this.chatList();
+      }
+      .width('100%')
+      // 高度要比父容器多出 EDGE_OVERLAY_VP，再用 offset 把整块上提同样的量：
+      // 视觉范围 = [内容区顶 - 95, 屏幕底]，顶部渐变的原点仍在屏幕最上沿、
+      // 底部渐变的终点落到屏幕最底沿。若只用 offset 不改高度，下沿会跟着上移，
+      // 底部虚化就停在悬浮胶囊上方；若改用负 margin 上提，又会把布局高度吃掉。
+      .height('calc(100% + ' + EDGE_OVERLAY_VP + 'vp)')
+      .offset({ y: -EDGE_OVERLAY_VP });
+    }
+    .width('100%').layoutWeight(1)
+    // 本组件的根节点。HdsNavigation → Tabs → TabContent → Column → 这里 →
+    // ChatListView 的 List，整条链上任何一层裁剪，穿到标题栏底下的那部分就被
+    // 切掉，滚动模糊没有东西可糊。之前只有这一层漏了，真机上表现为列表在文件夹
+    // 横条下缘被一刀切平。
+    .clip(false);
+  }
+}

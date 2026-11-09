@@ -1,0 +1,509 @@
+import { MessageTextLayout } from '../../util/messageTextInput';
+import { StickerMessageBubble } from './StickerMessageBubble';
+import { TextMessageBubble } from './TextMessageBubble';
+import { AlbumMessageBubble } from './AlbumMessageBubble';
+import { SingleMediaBubble } from './SingleMediaBubble';
+import { AlbumGroup } from '../../util/collapseAlbums';
+import { BubbleFocusChannel } from '../../util/bubbleFocusChannel';
+import { RowLeaveChannel } from '../../util/rowLeaveChannel';
+import { checkRenderedGroup } from '../../util/rowIdentityGuard';
+import {
+  messageRowPresentationFor, subscribeMessageRowPresentation
+} from '../../util/messageRowPresentationChannel';
+import { probeHit } from '../../util/panelProbe';
+import { TranslationPresentation, translationLanded } from '../../util/translationLanding';
+import { takeTranslationInstant } from '../../util/translationAnchor';
+import { pinForTranslationGrowth } from '../../util/translationGrowthPin';
+import {
+  TRANSLATION_FADE_IN_MS, TRANSLATION_FADE_LOW, TRANSLATION_FADE_OUT_MS
+} from '../../util/deferredTranslation';
+import {
+  KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
+} from '../../store/AppSettings';
+import { LightweightPlainTextBubble } from './LightweightPlainTextBubble';
+import { MessageBubble } from './MessageBubble';
+
+// One stable controller belongs to the ChatPage. The wrapper only forwards
+// ids/current arrays, so no callback retains the AlbumGroup that created a row.
+export interface MessageBubbleActions {
+  bubbleFocus: BubbleFocusChannel;
+  // 删除动画：删之前通过旁路通道等待气泡消散。
+  rowLeave: RowLeaveChannel;
+  onStopLiveLocation: () => void;
+  onMediaTap: (messageId: number, x: number, y: number) => void;
+  // askFirst：先弹「打开 / 复制」再开（藏着网址的文字链接、Bot 按钮），见 linkTextHidesUrl。
+  onLinkTap: (url: string, askFirst: boolean) => void;
+  onCommentTap: (messageId: number) => void;
+  onMiniApp: (messageId: number, url: string) => void;
+  onBotCallback: (messageId: number, data: string) => void;
+  onAvatarTap: (userId: number) => void;
+  onAvatarLongPress: (userId: number, name: string) => void;
+  onReplyTap: (messageId: number, fromId: number) => void;
+  onFileTap: (messageId: number) => void;
+  onFileSave: (messageId: number) => void;
+  // 下载中点文件卡片 = 暂停（issue #93）。
+  onFilePause: (messageId: number) => void;
+  onStickerRetry: (messageId: number) => void;
+  onLinkPreviewRetry: (messageId: number) => void;
+  onContactOpen: (userId: number, phone: string, vcard: string) => void;
+  onPhoneOpen: (phone: string) => void;
+  onLocationOpen: (latitude: number, longitude: number, label: string, valid: boolean) => void;
+  onPollVote: (messageId: number, optionIds: number[]) => void;
+  onGameOpen: (messageId: number) => void;
+  onGamePhotoRetry: (messageId: number) => void;
+  onPaidMediaUnlock: (messageId: number) => void;
+  onPaidMediaOpen: (messageId: number) => void;
+  onSpecialPhotoRetry: (messageId: number) => void;
+  onVideoRetry: (messageId: number) => void;
+  onGiftCodeCopy: (code: string) => void;
+  onGiveawayOpen: (chatId: number, messageId: number) => void;
+  onVoiceTap: (messageId: number) => void;
+  onVoicePlaybackStarted: (messageId: number) => void;
+  onAudioTap: (messageId: number) => void;
+  onAudioPrevious: (messageId: number) => void;
+  onAudioNext: (messageId: number) => void;
+  onAudioSeek: (messageId: number, fraction: number) => void;
+  // 音频卡片上那两枚胶囊（2026-09-18 改版）：另存到设备 / 加入收藏夹。
+  onAudioSave: (messageId: number) => void;
+  onAudioFavorite: (messageId: number) => void;
+  onAutoplayVideoNeedDownload: (messageId: number) => void;
+  onMediaRatio: (messageId: number, albumIndex: number, ratio: number, centerY: number) => void;
+  onMediaGone: (messageId: number, albumIndex: number) => void;
+  onPlaySlotPositionChanged: (messageId: number, albumIndex: number, positionMs: number) => void;
+  onPlaySlotEnded: (messageId: number, albumIndex: number) => void;
+  onAnimationTap: (messageId: number, isPlaying: boolean) => void;
+  onAnimationPlaybackFailed: (messageId: number) => void;
+  onSetReaction: (messageId: number, emoji: string, chosen: boolean) => void;
+  onReplyTo: (messageId: number) => void;
+  onEditMsg: (messageId: number) => void;
+  onShowReactors: (messageId: number, emoji: string) => void;
+  // 表情条末尾的「>」：在 anchorId 那颗胶囊旁边弹出按表情分组的回应人名单。
+  onShowReactorsList: (messageId: number, anchorId: string) => void;
+  onTranslateMsg: (messageId: number) => void;
+  onPinMsg: (messageId: number, unpin: boolean) => void;
+  onStopPoll: (messageId: number) => void;
+  onReplaceMedia: (messageId: number) => void;
+  onPollVoters: (messageId: number) => void;
+  onSetDefaultReaction: (emoji: string) => void;
+  onCopyText: (messageId: number) => void;
+  onSelectText: (messageId: number) => void;
+  onCopyCode: (text: string) => void;
+  onCopyLink: (messageId: number) => void;
+  onForwardMessages: (messageIds: number[]) => void;
+  onSaveMessages: (messageIds: number[]) => void;
+  onRepeatMessages: (messageIds: number[]) => void;
+  onSendDice: (emoji: string) => void;
+  onViewSenderHistory: (senderId: number) => void;
+  onReportMsg: (messageId: number) => void;
+  onSelectMessages: (messageIds: number[]) => void;
+  // 相册逐格勾选：只切这一条。整行切换仍走 onSelectMessages / 行点击。
+  onToggleSelectedMessage: (messageId: number) => void;
+  onDeleteMsg: (messageId: number) => void;
+  onForwardTap: (chatId: number, messageId: number, userId: number) => void;
+  onOpenReactions: (messageId: number) => void;
+  onRecognizeSpeech: (messageId: number) => void;
+  onVideoNoteDownload: (messageId: number) => void;
+  onToggleTranslation: (messageId: number, hidden: boolean) => void;
+  onRetryTranslation: (messageId: number) => void;
+  onLiveStreamTap: (groupCallId: number) => void;
+  // 「添加到 GIF」：动图消息专有，把这条的动图文件存进账号的 saved animations。
+  onAddToGifs: (messageId: number) => void;
+  // 贴纸专有：看它属于哪个合集 / 收藏与取消收藏。
+  onViewStickerSet: (messageId: number) => void;
+  onToggleFavoriteSticker: (messageId: number) => void;
+  // 视频专有：后台缓存（services/chatBackgroundCache）。相册传整组成员 id。
+  onBackgroundCache: (messageIds: number[]) => void;
+}
+
+export interface MessageBubbleRenderData extends MessageTextLayout {
+  // 这个会话此刻能不能发言。只读频道、未加入、被封禁、机器人还没「开始」时
+  // 输入框根本不在（membershipLosesComposer），此时左滑回复不该有反应
+  // ——滑了也只是把一条回复挂到一个不存在的输入框上
+  // （用户 2026-09-09：「这个频道应该没有回复消息的能力呀」）。
+  canReply: boolean;
+  // 会话级：密聊和「我的收藏」没有可举报对象。消息级（自己发的）由气泡自己判。
+  canReport: boolean;
+  // 多选态，以及**本行**已选中的成员 id。相册格子各自据此打勾。
+  // 只放本行的成员，不放整个选择集：整个集合会让每次点选都把所有行的
+  // prepare 缓存键打翻。
+  selectionActive: boolean;
+  selectedMemberIds: number[];
+  chatId: number;
+  liveSharingId: number;
+  themeBubbleOut: string;
+  showUnreadDivider: boolean;
+  // Same divider geometry, different label. Optional keeps older tests/callers
+  // source-compatible; only restored-position rows set it.
+  dividerIsResume?: boolean;
+  paidMediaPending: boolean;
+  audioQueuePosition: number;
+  audioQueueLength: number;
+  audioHasPrevious: boolean;
+  audioHasNext: boolean;
+  playSlotKey: string;
+  autoplayMuted: boolean;
+  playSlotStartMs: number;
+  animationPaused: boolean;
+  animationForcePlay: boolean;
+  animationPlaybackFailed: boolean;
+  editingActive: boolean;
+  isPinnedMsg: boolean;
+  liveGroupCallId: number;
+  animateIn: boolean;
+  lightweightPlainText: boolean;
+}
+
+const EMPTY_ACTIONS: MessageBubbleActions = {
+  bubbleFocus: new BubbleFocusChannel(),
+  rowLeave: new RowLeaveChannel(),
+  onStopLiveLocation: (): void => {},
+  onMediaTap: (_id: number, _x: number, _y: number): void => {},
+  onLinkTap: (_url: string, _askFirst: boolean): void => {}, onCommentTap: (_id: number): void => {},
+  onMiniApp: (_id: number, _url: string): void => {},
+  onBotCallback: (_id: number, _data: string): void => {},
+  onAvatarTap: (_id: number): void => {},
+  onAvatarLongPress: (_id: number, _name: string): void => {},
+  onReplyTap: (_id: number, _fromId: number): void => {},
+  onFileTap: (_id: number): void => {}, onFileSave: (_id: number): void => {},
+  onFilePause: (_id: number): void => {},
+  onStickerRetry: (_id: number): void => {}, onLinkPreviewRetry: (_id: number): void => {},
+  onContactOpen: (_id: number, _phone: string, _vcard: string): void => {},
+  onPhoneOpen: (_phone: string): void => {},
+  onLocationOpen: (_lat: number, _lon: number, _label: string, _valid: boolean): void => {},
+  onPollVote: (_id: number, _options: number[]): void => {},
+  onGameOpen: (_id: number): void => {}, onGamePhotoRetry: (_id: number): void => {},
+  onPaidMediaUnlock: (_id: number): void => {}, onPaidMediaOpen: (_id: number): void => {},
+  onSpecialPhotoRetry: (_id: number): void => {}, onVideoRetry: (_id: number): void => {},
+  onGiftCodeCopy: (_code: string): void => {},
+  onGiveawayOpen: (_chatId: number, _id: number): void => {},
+  onVoiceTap: (_id: number): void => {}, onVoicePlaybackStarted: (_id: number): void => {},
+  onAudioTap: (_id: number): void => {}, onAudioPrevious: (_id: number): void => {},
+  onAudioNext: (_id: number): void => {}, onAudioSeek: (_id: number, _fraction: number): void => {},
+  onAudioSave: (_id: number): void => {}, onAudioFavorite: (_id: number): void => {},
+  onAutoplayVideoNeedDownload: (_id: number): void => {},
+  onMediaRatio: (_id: number, _idx: number, _ratio: number, _y: number): void => {},
+  onMediaGone: (_id: number, _idx: number): void => {},
+  onPlaySlotPositionChanged: (_id: number, _idx: number, _ms: number): void => {},
+  onPlaySlotEnded: (_id: number, _idx: number): void => {},
+  onAnimationTap: (_id: number, _playing: boolean): void => {},
+  onAnimationPlaybackFailed: (_id: number): void => {},
+  onSetReaction: (_id: number, _emoji: string, _chosen: boolean): void => {},
+  onReplyTo: (_id: number): void => {}, onEditMsg: (_id: number): void => {},
+  onShowReactors: (_id: number, _emoji: string): void => {},
+  onShowReactorsList: (_id: number, _anchorId: string): void => {},
+  onTranslateMsg: (_id: number): void => {},
+  onPinMsg: (_id: number, _unpin: boolean): void => {},
+  onStopPoll: (_id: number): void => {}, onReplaceMedia: (_id: number): void => {},
+  onPollVoters: (_id: number): void => {}, onSetDefaultReaction: (_emoji: string): void => {},
+  onCopyText: (_id: number): void => {}, onSelectText: (_id: number): void => {},
+  onCopyCode: (_text: string): void => {},
+  onCopyLink: (_id: number): void => {}, onForwardMessages: (_ids: number[]): void => {},
+  onSaveMessages: (_ids: number[]): void => {}, onRepeatMessages: (_ids: number[]): void => {},
+  onSendDice: (_emoji: string): void => {},
+  onViewSenderHistory: (_id: number): void => {}, onReportMsg: (_id: number): void => {},
+  onSelectMessages: (_ids: number[]): void => {},
+  onToggleSelectedMessage: (_id: number): void => {}, onDeleteMsg: (_id: number): void => {},
+  onForwardTap: (_chatId: number, _id: number, _userId: number): void => {},
+  onOpenReactions: (_id: number): void => {}, onRecognizeSpeech: (_id: number): void => {},
+  onVideoNoteDownload: (_id: number): void => {},
+  onToggleTranslation: (_id: number, _hidden: boolean): void => {},
+  onRetryTranslation: (_id: number): void => {}, onLiveStreamTap: (_id: number): void => {},
+  onAddToGifs: (_id: number): void => {},
+  onViewStickerSet: (_id: number): void => {},
+  onToggleFavoriteSticker: (_id: number): void => {},
+  onBackgroundCache: (_ids: number[]): void => {}
+};
+
+// The reuse pool this @ReusableV2 declares lives on the PARENT custom component
+// (ChatPage, via the LazyForEach item builder) — a component that does not
+// itself reuse does not keep its children's pools alive across recycles. This
+// shell is the right place for the annotation precisely because ChatPage
+// never gets destroyed while the list scrolls; MessageBubble/
+// LightweightPlainTextBubble below must not carry @Reusable of their own.
+//
+// 必须和 ChatPage 同批迁 V2：官方混用表「V2 普通组件 -> V1 复用组件：不支持，
+// 编译告警，实际使用子组件不创建」——ChatPage 变 V2 而这里还是 @Reusable
+// @Component，整个消息列表运行时一行都不会创建（而且只是个告警，实测本仓
+// 编译连告警都没报出来）。
+//
+// 子树保持 V1：混用表「V2 复用组件 -> V1 普通组件：支持」。MessageBubble /
+// LightweightPlainTextBubble 里现有的 aboutToRecycle 手工清理**全部保留**——
+// 官方只承诺「所有的 V2 自定义组件」会被自动重置，V1 子组件不在其中。
+@ReusableV2
+@ComponentV2
+export struct ReusableMessageBubble {
+  // @Param 而不是 V1 的 @Prop：官方迁移表「当输入参数为复杂类型时，@Prop 为
+  // 深拷贝，@Param 为引用」。这三个入参每帧每行都要过一遍，深拷贝换成引用是
+  // 这次迁移在滚动路径上唯一的直接收益。
+  //
+  // 不需要 UIUtils.enableV2Compatibility：AlbumGroup / MessageBubbleRenderData
+  // 都是 interface（非 @Observed / @ObservedV2），且上游 collapseAlbums() 每次
+  // 产出全新对象、ChatPage 侧只做整体替换（零原地修改，已逐个 grep 核过），
+  // 所以不存在「同一个可变对象被两套体系各自代理」的双重代理场景，桥接是 no-op。
+  @Require @Param group: AlbumGroup;
+  @Param nowSec: number = 0;
+  @Require @Param data: MessageBubbleRenderData;
+  // **调研 §2.3 说这里「保持无装饰器」，那是错的，被编译器直接推翻**：
+  //   ArkTS Compiler Error 10905324 — The 'regular' property 'actions' in the
+  //   custom component 'ReusableMessageBubble' cannot be initialized here
+  //   (forbidden to specify).
+  // V1 允许父组件一次性初始化无装饰器成员，V2 不允许——无装饰器成员在
+  // @ComponentV2 里是**纯本地常量**，外部构造传参是编译错误。所以必须加
+  // @Param。
+  // 代价可以忽略：messageActions() 惰性建一次、全生命周期同一个引用，
+  // @Param 每帧只多一次 === 比较，比较结果恒为相等，不会触发任何刷新。
+  @Param actions: MessageBubbleActions = EMPTY_ACTIONS;
+  @Local private liveGroup: AlbumGroup | null = null;
+  @Local private jumpFocus: number = 0;
+  @Local private leaving: number = 0;
+  private unsubFocus: (() => void) | null = null;
+  private unsubLeave: (() => void) | null = null;
+  private unsubPresentation: (() => void) | null = null;
+
+  // 旁路快照优先的"当前这一行"。@Computed（2026-09-14 第三刀）：build 里要读 6 次
+  // （纯文本分支的判定 + 5 个入参），原来是 6 次方法调用、每次都读 liveGroup / group
+  // 两个状态并核对一次身份；现在依赖只登记在计算属性上，只在两者之一变了时重算。
+  // 【必须声明在 group / liveGroup 之后】@ReusableV2 复用时按声明顺序重置，计算属性
+  // 用到的变量要先重置完，否则会拿重置前的值算一次（官方《@ReusableV2》重置表）。
+  @Computed
+  get shownGroup(): AlbumGroup {
+    if (this.liveGroup !== null && this.liveGroup.head.rowId === this.group.head.rowId) {
+      // 常驻不变量：旁路快照压过 @Param 时，两者描述的必须是同一条消息。
+      // rowId 相等只保证"同一行"，不保证"同一份内容版本"。见 util/rowIdentityGuard。
+      checkRenderedGroup(this.group.head.id, this.liveGroup.head.id, this.group.head.rowId);
+      return this.liveGroup;
+    }
+    return this.group;
+  }
+
+  // 订阅当前挂在哪条 (chatId, rowId) 上。同 key 短路（审计 P1-1 / 3.4）：复用
+  // 一次会挂两遍——aboutToReuse 一次、@Param group 落地触发 @Monitor 再一次，每次
+  // 都是一整轮「退订 + 读现值 + 重订阅」，是滚动时的每行常数开销。
+  // 记下 key 同时也让「订阅挂在哪」成为可判定的事实，谁先到都不影响正确性。
+  private attachedKey: string = '';
+
+  // 同值不写：复用时框架把 liveGroup 重置为 null，这里会补种一次；但 attach 在
+  // 每次 @Monitor('msg') 落地时也会走，重投同一个对象时不该再产生一次通知
+  // （12.4s 采集里 liveGroup 变了 1171 次）。
+  private applyLiveGroup(next: AlbumGroup): void {
+    if (this.liveGroup !== next) {
+      this.liveGroup = next;
+    }
+  }
+
+  private attachPresentation(group: AlbumGroup): void {
+    const key: string = `${this.data.chatId}:${group.head.rowId}`;
+    if (this.unsubPresentation !== null && this.attachedKey === key) {
+      // 已挂在同一行上：订阅原样保留，只重新取一次现值（复用时框架会把
+      // liveGroup 重置回 null，短路分支不补种会让这一帧退回 @Prop 的快照）。
+      this.applyLiveGroup(messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group);
+      this.jumpFocus = this.actions.bubbleFocus.value(group.head.rowId);
+      this.leaving = this.actions.rowLeave.value(group.head.rowId);
+      return;
+    }
+    this.detachPresentation();
+    this.attachedKey = key;
+    this.unsubFocus = this.actions.bubbleFocus.subscribe(group.head.rowId,
+      (strength: number): void => { this.jumpFocus = strength; });
+    this.unsubLeave = this.actions.rowLeave.subscribe(group.head.rowId,
+      (strength: number): void => { this.leaving = strength; });
+    this.applyLiveGroup(messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group);
+    this.unsubPresentation = subscribeMessageRowPresentation(
+      this.data.chatId,
+      group.head.rowId,
+      (next: AlbumGroup): void => { this.applyPresentation(next); }
+    );
+  }
+
+  // 旁路更新落到界面上。
+  //
+  // 【为什么这里可以做动画，而气泡里不行】译文**不进行签名**（见
+  // util/collapseAlbums 的头注释），是从这条通道直达的——这句赋值就在我们自己
+  // 的闭包里，`animateTo` 包得住它引起的布局变化，气泡拉长因此能补间。
+  // 而气泡内部拿到的已经是变完的值，那时再动画就晚了。
+  //
+  // 【为什么只给译文动画】这条通道是**所有**展示态更新的公共入口：下载完成、
+  // 缩略图路径、发送态都走它。整条包进 animateTo 的话，一次下载进度跳动也会
+  // 让气泡跟着动一下。判据在 util/translationLanding（纯函数、有单测）。
+  //
+  // 【为什么不是给气泡加 .animation()】常驻动画会建立动画上下文，把同一刷新
+  // 周期里的列表脏节点一起拖进动画布局——2026-08-27 真机 trace 量过，最重的
+  // 一帧从 210ms 涨到 463ms（见 MessageBubble 气泡根节点上那段长注释，那里
+  // 点名了「翻译态」）。animateTo 是一次性的，不留上下文。
+  private applyPresentation(next: AlbumGroup): void {
+    const before: TranslationPresentation = this.translationOf(this.liveGroup);
+    const after: TranslationPresentation = this.translationOf(next);
+    if (!translationLanded(before, after)) {
+      this.liveGroup = next;
+      return;
+    }
+    // 被点名"直接落"的不做动画：那是视口**上方**的行，它变高会把用户正在看的
+    // 内容往下推，页面要靠一次滚动补偿吃掉这个位移，而补偿只有布局落定才量得到
+    // ——动画会让内容先漂再被拽回来，比硬切更难看。那些行本来也看不见。
+    // 判据与点名见 util/translationAnchor。
+    if (takeTranslationInstant(next.head.id)) {
+      this.liveGroup = next;
+      pinForTranslationGrowth(this.data.chatId);
+      return;
+    }
+    // 先淡出、换内容、再淡入。
+    //
+    // 【为什么必须有这一层，光靠高度补间不够】**替换模式**（译文顶掉原文）下
+    // 气泡高度往往几乎不变，只有字变了，用户看到的就还是硬切
+    // （2026-09-09：「原文翻译替换好像看不太出来动画呢」）。而正文那一层的
+    // ForEach 键里含内容指纹，节点确实是销毁重建的——但**不能在那里挂
+    // transition**：行复用时键同样会变，那样每滚过一行都会淡入一次。
+    // 所以淡入淡出放在行外壳上，只在译文落地这一刻发生。
+    //
+    // opacity 直接挂在子组件调用上，不额外包一层容器——每行多一个节点在这个
+    // 列表上是要还的。
+    this.getUIContext().animateTo({
+      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, TRANSLATION_FADE_OUT_MS),
+      curve: Curve.EaseOut,
+      onFinish: (): void => {
+        this.getUIContext().animateTo({
+          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, TRANSLATION_FADE_IN_MS),
+          curve: Curve.FastOutSlowIn
+        }, (): void => {
+          this.liveGroup = next;
+          this.translationFade = 1;
+          // 贴底时就在这一次布局里钉住底部：行高补间和列表跳到末尾走同一条
+          // 曲线，气泡向上长（util/translationGrowthPin）。
+          pinForTranslationGrowth(this.data.chatId);
+        });
+      }
+    }, (): void => { this.translationFade = TRANSLATION_FADE_LOW; });
+  }
+
+  private translationOf(group: AlbumGroup | null): TranslationPresentation {
+    if (group === null) {
+      return { text: '', hidden: false };
+    }
+    return { text: group.head.translatedText, hidden: group.head.translationHidden };
+  }
+
+  // 译文换字时的淡入淡出。1 = 常态。
+  @Local private translationFade: number = 1;
+
+  private detachPresentation(): void {
+    if (this.unsubFocus !== null) {
+      this.unsubFocus();
+      this.unsubFocus = null;
+    }
+    if (this.unsubLeave !== null) {
+      this.unsubLeave();
+      this.unsubLeave = null;
+    }
+    this.jumpFocus = 0;
+    this.leaving = 0;
+    if (this.unsubPresentation !== null) {
+      this.unsubPresentation();
+      this.unsubPresentation = null;
+    }
+    this.attachedKey = '';
+  }
+
+  // @Monitor 而不是 V1 的 @Watch。注意它**在复用时不会触发**，见 aboutToReuse。
+  // 非复用路径（同一个实例上 group 真的换了行）仍然走这里。
+  @Monitor('group')
+  private onGroupChanged(): void {
+    this.attachPresentation(this.group);
+  }
+
+  aboutToAppear(): void {
+    probeHit('message.mount');
+    this.attachPresentation(this.group);
+  }
+
+  aboutToDisappear(): void {
+    this.detachPresentation();
+  }
+
+  aboutToRecycle(): void {
+    // detachPresentation() 不能因为「V2 会自动重置」而删掉：重置表最后一行
+    // 「常量：包括 readonly 的常量，不重置」，而 attachedKey / unsubPresentation
+    // 都是无装饰器成员，V2 视作常量——不退订就会漏订阅。
+    //
+    // 【liveGroup 不在这里置 null（2026-09-14）】它是 @Local，框架在 aboutToReuse
+    // 之前统一重置回初值 null（批 0.5 实测 1370/1370），aboutToReuse 里的
+    // attachPresentation 随即重新取现值——这里再赋一次纯属重复。而这一次赋值并不
+    // 便宜：13:52 profile 里 aboutToRecycle 的 117ms 有 110ms 落在 @Local 的 setter
+    // 上（要通知所有读过 liveGroup 的绑定），每次回收约 0.18ms。
+    this.detachPresentation();
+  }
+
+  aboutToReuse(): void {
+    // @ReusableV2 的 aboutToReuse 没有入参（官方《@ReusableV2装饰器》），而
+    // @Monitor('group') 在复用重置期间静默——所以这里是复用路径上**唯一**的
+    // 重挂订阅点，删掉它 = 复用出来的行永远停在 @Param 的静态快照上。
+    // 同步调用的前提是「回调此刻 @Param group 已是新值」：外壳自己是
+    // @ReusableV2 根，官方没写清时序，靠真机探针判定——shell.reuse.fresh
+    // 连续满格、stale 恒零（09-02，数百样本），据此从延帧兜底改为同步，
+    // nextFrameQueue 随最后一个用户退役。
+    this.attachPresentation(this.group);
+  }
+
+  build() {
+    if (this.shownGroup.photoPaths.length > 1) {
+      // 在实例化通用类型内容之前分流，相册只建立公共壳与自身需要的状态。
+      AlbumMessageBubble({ group: this.shownGroup, data: this.data, actions: this.actions,
+        nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
+        .opacity(this.translationFade);
+    } else if (this.shownGroup.head.contentType === 'photo' || this.shownGroup.head.contentType === 'video') {
+      SingleMediaBubble({ msg: this.shownGroup.head, group: this.shownGroup,
+        data: this.data, actions: this.actions,
+        nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
+        .opacity(this.translationFade);
+    } else if (this.shownGroup.head.contentType === 'sticker' ||
+      this.shownGroup.head.contentType === 'emoji' || this.shownGroup.head.contentType === 'customEmoji') {
+      StickerMessageBubble({ msg: this.shownGroup.head, group: this.shownGroup,
+        data: this.data, actions: this.actions,
+        nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
+        .opacity(this.translationFade);
+    } else if (this.data.lightweightPlainText && this.shownGroup.head.translatedText === '') {
+      LightweightPlainTextBubble({
+        jumpFocus: this.jumpFocus,
+        leaving: this.leaving,
+        msg: this.shownGroup.head,
+        nowSec: this.nowSec,
+        chatId: this.data.chatId,
+        contentWidth: this.data.contentWidth,
+        isGroup: this.data.isGroup,
+        themeBubbleOut: this.data.themeBubbleOut,
+        showUnreadDivider: this.data.showUnreadDivider,
+        dividerIsResume: this.data.dividerIsResume === true,
+        dateLabel: this.shownGroup.dateLabel,
+        editingActive: this.data.editingActive,
+        canReply: this.data.canReply,
+        isPinnedMsg: this.data.isPinnedMsg,
+        canReport: this.data.canReport,
+        showAvatar: this.shownGroup.showAvatar,
+        showSenderName: this.shownGroup.showSenderName,
+        animateIn: this.data.animateIn,
+        memberIds: this.shownGroup.memberIds,
+        actions: this.actions
+      })
+        .opacity(this.translationFade);
+    } else if (this.shownGroup.head.contentType === 'text' || this.shownGroup.head.contentType === 'richMessage') {
+      TextMessageBubble({ msg: this.shownGroup.head, group: this.shownGroup,
+        data: this.data, actions: this.actions,
+        nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
+        .opacity(this.translationFade);
+    } else {
+      MessageBubble({
+      jumpFocus: this.jumpFocus,
+      leaving: this.leaving,
+      // 整行一个对象下发，不再拆成十七个 @Param（理由见 MessageBubble.group）。
+      group: this.shownGroup,
+      msg: this.shownGroup.head, nowSec: this.nowSec,
+      // 同理：整份渲染数据一个对象下发（见 MessageBubble.data）。
+      data: this.data,
+      // 回调表也整体下发（见 MessageBubble.actions）。
+      actions: this.actions,
+      // `actions` is page-owned and stable. Passing its functions through directly avoids
+      // allocating a fresh forwarding closure for every callback of every visible row.
+      })
+        .opacity(this.translationFade);
+    }
+  }
+}

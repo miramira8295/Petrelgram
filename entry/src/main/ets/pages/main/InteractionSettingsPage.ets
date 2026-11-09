@@ -1,0 +1,343 @@
+import {
+  KEY_EXTERNAL_LINK_ACTION, KEY_FOLDER_BAR_SCROLL_HIDE, KEY_MSG_GESTURE, KEY_ROW_SWIPE_ACTIONS,
+  KEY_SHOW_CONTACTS_TAB, KEY_VIEWER_CONTINUOUS_HOP, setBoolean, setString
+} from '../../store/AppSettings';
+import {
+  EXT_LINK_ASK, EXT_LINK_COPY, EXT_LINK_DEFAULT, EXT_LINK_OPEN
+} from '../../util/externalLinkPolicy';
+import { GESTURE_CLASSIC, GESTURE_TAP_FIRST } from '../../util/messageGestures';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { str } from '../../util/strings';
+import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { HdsSubDestination } from '../common/HdsSubDestination';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
+
+const CARD_BG: ResourceColor = $r('app.color.surface');
+const CARD_RADIUS: number = 14;
+
+interface GestureOption {
+  value: string;
+  label: ResourceStr;
+  detail: ResourceStr;
+}
+
+// 顺序固定：老交互在上，因为它是默认值，也是绝大多数人现在正在用的那个。
+const GESTURE_OPTIONS: GestureOption[] = [
+  {
+    value: GESTURE_CLASSIC,
+    label: $r('app.string.ix_classic'),
+    detail: $r('app.string.ix_classic_sub')
+  },
+  {
+    value: GESTURE_TAP_FIRST,
+    label: $r('app.string.ix_tap_first'),
+    detail: $r('app.string.ix_tap_first_sub')
+  }
+];
+
+// 外部链接三档（2026-09-18 用户要的）。顺序按"越往下越保守"：直接打开是默认、
+// 也是加这个设置之前的行为；复制最安全；弹窗在两者之间。
+// 只作用于**非 t.me / tg:// 的链接**——应用内能直接落到会话的那些照旧直接走。
+const LINK_OPTIONS: GestureOption[] = [
+  {
+    value: EXT_LINK_OPEN,
+    label: $r('app.string.ix_link_open'),
+    detail: $r('app.string.ix_link_open_sub')
+  },
+  {
+    value: EXT_LINK_COPY,
+    label: $r('app.string.ix_link_copy'),
+    detail: $r('app.string.ix_link_copy_sub')
+  },
+  {
+    value: EXT_LINK_ASK,
+    label: $r('app.string.ix_link_ask'),
+    detail: $r('app.string.ix_link_ask_sub')
+  }
+];
+
+// 交互设置。目前只有聊天详情一组——这个页面存在的意义是"手势的分工可以换"，
+// 以后别的页面有同类可换项时往这里加分组，而不是散到各自的设置页里。
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
+// 并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router 页和
+// NavDestination。形状与试点的 PowerUsagePageBuilder 一致。
+@Builder
+export function InteractionSettingsPageBuilder(): void {
+  InteractionSettingsPage();
+}
+
+@Component
+export struct InteractionSettingsPage {
+  private hdsScroller: Scroller = new Scroller();
+  // 滚动区实测高度（vp）：linearGradientBlur 的 fractionStops 按实际高度归一化。
+  @State private blurViewH: number = 0;
+  @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
+  @StorageProp('topSafeHeight') topSafe: number = 0;
+  @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  @StorageLink(KEY_MSG_GESTURE) gestureScheme: string = GESTURE_CLASSIC;
+  @StorageLink(KEY_SHOW_CONTACTS_TAB) showContactsTab: boolean = true;
+  @StorageLink(KEY_ROW_SWIPE_ACTIONS) rowSwipeActions: boolean = false;
+  @StorageLink(KEY_FOLDER_BAR_SCROLL_HIDE) folderBarScrollHide: boolean = true;
+  @StorageLink(KEY_VIEWER_CONTINUOUS_HOP) viewerContinuousHop: boolean = true;
+  @StorageLink(KEY_EXTERNAL_LINK_ACTION) externalLinkAction: string = EXT_LINK_DEFAULT;
+  // 迁移前这里还有 leavingPage/leaveTimer 两个字段、一个 aboutToDisappear 清理，
+  // 和一个 leavePage()：500ms 防抖 + router.back()，防的是连点两下返回箭头弹掉
+  // 两页。三者随迁移一起失效，理由与试点 PowerUsagePage 逐字相同：
+  //   · router.back() 在 NavDestination 上是**错的**——它弹的是 router 页栈，
+  //     而本页已不在那条栈上，弹掉的会是 Index，现象是直接退到桌面
+  //     （HdsSubDestination 文件头记了同一条实测）。返回改由外壳默认的出栈
+  //     （NavPathStack.pop）承担，不再需要本页自己写，onBack 也随之不用传。
+  //   · 防抖随之无对象：设置栈的推入走 decidePush 的 clearAndPush，栈深恒为 1，
+  //     连点两下的第二次 pop() 落在空栈上是 no-op。
+  //   · leavingPage 全文件没有任何渲染读取（不像 AccountEditPage 那个同名字段
+  //     驱动 .enabled()），删掉不影响任何 UI。
+  // 【将来要注意】哪天设置子页开始互相跳转、栈深可能大于 1 时，防抖要按
+  // NavPathStack 重新加回来。
+
+  @Styles
+  actionNormalStyle() {
+    .backgroundColor(Color.Transparent)
+    .opacity(1)
+    .scale({ x: 1, y: 1 })
+  }
+
+  @Styles
+  actionPressedStyle() {
+    .backgroundColor($r('app.color.surface_alt'))
+    .opacity(0.72)
+    .scale({ x: 0.92, y: 0.92 })
+  }
+
+  @Styles
+  optionNormalStyle() {
+    .backgroundColor(Color.Transparent)
+    .opacity(1)
+    .scale({ x: 1, y: 1 })
+  }
+
+  @Styles
+  optionPressedStyle() {
+    .backgroundColor($r('app.color.surface_alt'))
+    .opacity(0.75)
+    .scale({ x: 0.98, y: 0.98 })
+  }
+
+  @Builder
+  cardTitle(text: ResourceStr) {
+    Text(text).fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
+      .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 4 });
+  }
+
+  @Builder
+  chatCard() {
+    Column() {
+      this.cardTitle($r('app.string.ix_chat_group'));
+      ForEach(GESTURE_OPTIONS, (opt: GestureOption, idx: number) => {
+        if (idx > 0) {
+          Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+        }
+        Row() {
+          Column({ space: 3 }) {
+            Text(opt.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).width('100%');
+            // 说明写全：这两套的差别不是一个词能讲清的，尤其"图片链接按钮
+            // 的点击不受影响"这句，不写的话没人敢开。
+            Text(opt.detail).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+          }.layoutWeight(1);
+          if (this.gestureScheme === opt.value) {
+            SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY])
+              .margin({ left: 12 });
+          }
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+        .alignItems(VerticalAlign.Center)
+        .stateStyles({
+          normal: this.optionNormalStyle,
+          pressed: this.optionPressedStyle
+        })
+        .accessibilityText(str('a11y_option_state', `${opt.label}`,
+          this.gestureScheme === opt.value ? str('a11y_selected') : ''))
+        .onClick((): void => {
+          if (this.gestureScheme !== opt.value) {
+            // @StorageLink 立即翻，界面上的对勾马上动；setString 负责落盘。
+            // 聊天页的气泡用 @StorageProp 读同一个键，退回去就已经是新手势了。
+            this.gestureScheme = opt.value;
+            setString(KEY_MSG_GESTURE, opt.value);
+          }
+        });
+      }, (opt: GestureOption) => opt.value);
+    }
+    .width('100%')
+    .backgroundColor(CARD_BG)
+    .borderRadius(CARD_RADIUS)
+    .padding({ bottom: 4 });
+  }
+
+  // 外部链接的打开方式。形状和上面那张手势卡一样是单选，理由也一样：三档之间
+  // 的差别一句话说不清，每一条都要带说明。
+  @Builder
+  linkCard() {
+    Column() {
+      this.cardTitle($r('app.string.ix_link_group'));
+      ForEach(LINK_OPTIONS, (opt: GestureOption, idx: number) => {
+        if (idx > 0) {
+          Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+        }
+        Row() {
+          Column({ space: 3 }) {
+            Text(opt.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).width('100%');
+            Text(opt.detail).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+          }.layoutWeight(1);
+          if (this.externalLinkAction === opt.value) {
+            SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY])
+              .margin({ left: 12 });
+          }
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+        .alignItems(VerticalAlign.Center)
+        .stateStyles({
+          normal: this.optionNormalStyle,
+          pressed: this.optionPressedStyle
+        })
+        .accessibilityText(str('a11y_option_state', `${opt.label}`,
+          this.externalLinkAction === opt.value ? str('a11y_selected') : ''))
+        .onClick((): void => {
+          if (this.externalLinkAction !== opt.value) {
+            this.externalLinkAction = opt.value;
+            setString(KEY_EXTERNAL_LINK_ACTION, opt.value);
+          }
+        });
+      }, (opt: GestureOption) => opt.value);
+    }
+    .width('100%')
+    .backgroundColor(CARD_BG)
+    .borderRadius(CARD_RADIUS)
+    .padding({ bottom: 4 });
+  }
+
+  // 藏链那一道（显示文字和真实网址对不上）**不受这三档影响**，仍然强制弹窗，
+  // 判据在 util/externalLinkPolicy.externalLinkDecision。这行字要让用户知道。
+  @Builder
+  linkNote() {
+    Text($r('app.string.ix_link_note'))
+      .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+      .width('100%').padding({ left: 16, right: 16, top: 2 });
+  }
+
+  @Builder
+  tabsCard() {
+    Row({ space: 12 }) {
+      Column({ space: 3 }) {
+        Text($r('app.string.ix_show_contacts_tab')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).width('100%');
+        Text($r('app.string.ix_show_contacts_tab_sub')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+      }.layoutWeight(1);
+      Toggle({ type: ToggleType.Switch, isOn: this.showContactsTab })
+        .selectedColor(COLOR_PRIMARY)
+        .onChange((v: boolean): void => {
+          this.showContactsTab = v;
+          setBoolean(KEY_SHOW_CONTACTS_TAB, v);
+        });
+    }
+    .width('100%')
+    .padding({ left: 16, right: 13, top: 12, bottom: 12 })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(CARD_BG)
+    .borderRadius(CARD_RADIUS);
+
+    Row({ space: 12 }) {
+      Column({ space: 3 }) {
+        Text($r('app.string.ix_row_swipe')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).width('100%');
+        Text($r('app.string.ix_row_swipe_sub')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+      }.layoutWeight(1);
+      Toggle({ type: ToggleType.Switch, isOn: this.rowSwipeActions })
+        .selectedColor(COLOR_PRIMARY)
+        .onChange((v: boolean): void => {
+          this.rowSwipeActions = v;
+          setBoolean(KEY_ROW_SWIPE_ACTIONS, v);
+        });
+    }
+    .width('100%')
+    .padding({ left: 16, right: 13, top: 12, bottom: 12 })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(CARD_BG)
+    .borderRadius(CARD_RADIUS);
+
+    // 列表滑动时收起文件夹栏（默认开，和加这个开关之前的行为一致）。
+    // 关掉后横条常驻，收起态的缩略块也就不会再出现。
+    Row({ space: 12 }) {
+      Column({ space: 3 }) {
+        Text($r('app.string.ix_hide_folder_bar')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).width('100%');
+        Text($r('app.string.ix_hide_folder_bar_sub')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+      }.layoutWeight(1);
+      Toggle({ type: ToggleType.Switch, isOn: this.folderBarScrollHide })
+        .selectedColor(COLOR_PRIMARY)
+        .onChange((v: boolean): void => {
+          this.folderBarScrollHide = v;
+          setBoolean(KEY_FOLDER_BAR_SCROLL_HIDE, v);
+        });
+    }
+    .width('100%')
+    .padding({ left: 16, right: 13, top: 12, bottom: 12 })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(CARD_BG)
+    .borderRadius(CARD_RADIUS);
+
+    // 看图连续翻页（issue #167）。查看器打开时读一次，改了下次打开生效。
+    Row({ space: 12 }) {
+      Column({ space: 3 }) {
+        Text($r('app.string.ix_viewer_continuous')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).width('100%');
+        Text($r('app.string.ix_viewer_continuous_sub')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+      }.layoutWeight(1);
+      Toggle({ type: ToggleType.Switch, isOn: this.viewerContinuousHop })
+        .selectedColor(COLOR_PRIMARY)
+        .onChange((v: boolean): void => {
+          this.viewerContinuousHop = v;
+          setBoolean(KEY_VIEWER_CONTINUOUS_HOP, v);
+        });
+    }
+    .width('100%')
+    .padding({ left: 16, right: 13, top: 12, bottom: 12 })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(CARD_BG)
+    .borderRadius(CARD_RADIUS);
+  }
+
+  build() {
+    Column() {
+      HdsSubDestination({ title: $r('app.string.settings_interaction'), scroller: this.hdsScroller }) {
+      Scroll(this.hdsScroller) {
+        Column({ space: 14 }) {
+          this.chatCard();
+          this.linkCard();
+          this.linkNote();
+          this.tabsCard();
+        }
+        .width('100%')
+        .padding({ left: 14, right: 14, top: EDGE_OVERLAY_VP, bottom: this.bottomSafe + 20 });
+      }
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+      .align(Alignment.Top)
+      // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
+      .clip(false)
+      // 边缘渐变虚化：与设置页/首页同一套参数（顶/底 118vp、峰 22px）。
+      .linearGradientBlur(BLUR_MAX_VP, {
+        fractionStops: topEdgeBlurStops(this.blurViewH),
+        direction: GradientDirection.Bottom
+      })
+      .onAreaChange((_old: Area, area: Area): void => {
+        const h: number = Number(area.height);
+        if (h > 0 && Math.abs(h - this.blurViewH) > 0.5) {
+          this.blurViewH = h;
+        }
+      });
+    }
+    }
+    .width('100%').height('100%')
+    // 没有这一行时页面的布局区停在安全区边界，状态栏那一条不归页面画，
+    // 露出的是窗口底色。padding 只负责把内容让开，铺满是另一回事。
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .backgroundColor($r('app.color.page_bg'));
+  }
+}

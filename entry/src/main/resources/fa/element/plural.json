@@ -1,0 +1,979 @@
+{
+  "plural": [
+    {
+      "name": "duration_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d روز"
+        },
+        {
+          "quantity": "other",
+          "value": "%d روز"
+        }
+      ]
+    },
+    {
+      "name": "duration_days_premium",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d روز Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d روز Premium"
+        }
+      ]
+    },
+    {
+      "name": "duration_months",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ماه"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ماه"
+        }
+      ]
+    },
+    {
+      "name": "duration_months_premium",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ماه Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ماه Premium"
+        }
+      ]
+    },
+    {
+      "name": "gift_stars_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ستاره"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ستاره"
+        }
+      ]
+    },
+    {
+      "name": "gift_worth_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "به ارزش %d ستاره"
+        },
+        {
+          "quantity": "other",
+          "value": "به ارزش %d ستاره"
+        }
+      ]
+    },
+    {
+      "name": "live_media_in_room",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d نفر در اتاق پخش"
+        },
+        {
+          "quantity": "other",
+          "value": "%d نفر در اتاق پخش"
+        }
+      ]
+    },
+    {
+      "name": "live_status_watching",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d نفر در حال تماشا"
+        },
+        {
+          "quantity": "other",
+          "value": "%d نفر در حال تماشا"
+        }
+      ]
+    },
+    {
+      "name": "prize_premium_months",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ماه Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ماه Premium"
+        }
+      ]
+    },
+    {
+      "name": "prize_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ستاره"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ستاره"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d روز"
+        },
+        {
+          "quantity": "other",
+          "value": "%d روز"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ساعت"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ساعت"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d دقیقه"
+        },
+        {
+          "quantity": "other",
+          "value": "%d دقیقه"
+        }
+      ]
+    },
+    {
+      "name": "user_status_days_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d روز پیش"
+        },
+        {
+          "quantity": "other",
+          "value": "%d روز پیش"
+        }
+      ]
+    },
+    {
+      "name": "user_status_hours_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ساعت پیش"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ساعت پیش"
+        }
+      ]
+    },
+    {
+      "name": "user_status_minutes_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d دقیقه پیش"
+        },
+        {
+          "quantity": "other",
+          "value": "%d دقیقه پیش"
+        }
+      ]
+    },
+    {
+      "name": "sticker_set_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d استیکر"
+        },
+        {
+          "quantity": "other",
+          "value": "%d استیکر"
+        }
+      ]
+    },
+    {
+      "name": "cw_disconnect_all_confirm",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "ورود در %d وب‌سایت قطع می‌شود."
+        },
+        {
+          "quantity": "other",
+          "value": "ورود در %d وب‌سایت قطع می‌شود."
+        }
+      ]
+    },
+    {
+      "name": "pe_group_exceptions_kept",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d استثنای گروه توسط سرور حفظ شد"
+        },
+        {
+          "quantity": "other",
+          "value": "%d استثنای گروه توسط سرور حفظ شد"
+        }
+      ]
+    },
+    {
+      "name": "storage_file_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d فایل"
+        },
+        {
+          "quantity": "other",
+          "value": "%d فایل"
+        }
+      ]
+    },
+    {
+      "name": "bu_account_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d حساب"
+        },
+        {
+          "quantity": "other",
+          "value": "%d حساب"
+        }
+      ]
+    },
+    {
+      "name": "calls_about_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "حدود %d رکورد"
+        },
+        {
+          "quantity": "other",
+          "value": "حدود %d رکورد"
+        }
+      ]
+    },
+    {
+      "name": "calls_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d رکورد"
+        },
+        {
+          "quantity": "other",
+          "value": "%d رکورد"
+        }
+      ]
+    },
+    {
+      "name": "calls_participants",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d نفر"
+        },
+        {
+          "quantity": "other",
+          "value": "%d نفر"
+        }
+      ]
+    },
+    {
+      "name": "cf_about_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "حدود %d گفتگو"
+        },
+        {
+          "quantity": "other",
+          "value": "حدود %d گفتگو"
+        }
+      ]
+    },
+    {
+      "name": "cf_delete_and_leave",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "حذف و خروج از %d گفتگو"
+        },
+        {
+          "quantity": "other",
+          "value": "حذف و خروج از %d گفتگو"
+        }
+      ]
+    },
+    {
+      "name": "fl_new_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d گفتگوی جدید"
+        },
+        {
+          "quantity": "other",
+          "value": "%d گفتگوی جدید"
+        }
+      ]
+    },
+    {
+      "name": "fl_selected_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d گفتگو انتخاب شد"
+        },
+        {
+          "quantity": "other",
+          "value": "%d گفتگو انتخاب شد"
+        }
+      ]
+    },
+    {
+      "name": "fl_add_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "افزودن %d گفتگو"
+        },
+        {
+          "quantity": "other",
+          "value": "افزودن %d گفتگو"
+        }
+      ]
+    },
+    {
+      "name": "ds_cached_files",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d فایل کش‌شده"
+        },
+        {
+          "quantity": "other",
+          "value": "%d فایل کش‌شده"
+        }
+      ]
+    },
+    {
+      "name": "ct_result_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d نفر"
+        },
+        {
+          "quantity": "other",
+          "value": "%d نفر"
+        }
+      ]
+    },
+    {
+      "name": "ng_max_members",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "در گروه پایه حداکثر %d عضو می‌توانید انتخاب کنید"
+        },
+        {
+          "quantity": "other",
+          "value": "در گروه پایه حداکثر %d عضو می‌توانید انتخاب کنید"
+        }
+      ]
+    },
+    {
+      "name": "ng_member_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d عضو"
+        },
+        {
+          "quantity": "other",
+          "value": "%d عضو"
+        }
+      ]
+    },
+    {
+      "name": "ng_people_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d نفر"
+        },
+        {
+          "quantity": "other",
+          "value": "%d نفر"
+        }
+      ]
+    },
+    {
+      "name": "ps_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d روز"
+        },
+        {
+          "quantity": "other",
+          "value": "%d روز"
+        }
+      ]
+    },
+    {
+      "name": "px_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d مورد"
+        },
+        {
+          "quantity": "other",
+          "value": "%d مورد"
+        }
+      ]
+    },
+    {
+      "name": "fe_chosen_limit",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "گفتگوهای انتخاب‌شده جداگانه نمی‌توانند از %d مورد بیشتر باشند"
+        },
+        {
+          "quantity": "other",
+          "value": "گفتگوهای انتخاب‌شده جداگانه نمی‌توانند از %d مورد بیشتر باشند"
+        }
+      ]
+    },
+    {
+      "name": "fe_removed_invalid",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d گفتگوی خارج از فهرست گفتگو حذف شد"
+        },
+        {
+          "quantity": "other",
+          "value": "%d گفتگوی خارج از فهرست گفتگو حذف شد"
+        }
+      ]
+    },
+    {
+      "name": "fe_pick_limit",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "حداکثر %d گفتگو انتخاب کنید"
+        },
+        {
+          "quantity": "other",
+          "value": "حداکثر %d گفتگو انتخاب کنید"
+        }
+      ]
+    },
+    {
+      "name": "fe_preview_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "حدوداً %d گفتگو"
+        },
+        {
+          "quantity": "other",
+          "value": "حدوداً %d گفتگو"
+        }
+      ]
+    },
+    {
+      "name": "fe_selected_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d مورد انتخاب شد"
+        },
+        {
+          "quantity": "other",
+          "value": "%d مورد انتخاب شد"
+        }
+      ]
+    },
+    {
+      "name": "mp_item_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d مورد"
+        },
+        {
+          "quantity": "other",
+          "value": "%d مورد"
+        }
+      ]
+    },
+    {
+      "name": "fw_forwarded_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d پیام ارسال شد"
+        },
+        {
+          "quantity": "other",
+          "value": "%d پیام ارسال شد"
+        }
+      ]
+    },
+    {
+      "name": "fw_forward_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "ارسال %d پیام"
+        },
+        {
+          "quantity": "other",
+          "value": "ارسال %d پیام"
+        }
+      ]
+    },
+    {
+      "name": "poll_voters",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d نفر شرکت کردند"
+        },
+        {
+          "quantity": "other",
+          "value": "%d نفر شرکت کردند"
+        }
+      ]
+    },
+    {
+      "name": "gw_winners_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d برنده"
+        },
+        {
+          "quantity": "other",
+          "value": "%d برنده"
+        }
+      ]
+    },
+    {
+      "name": "gw_unclaimed_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d مورد دریافت‌نشده"
+        },
+        {
+          "quantity": "other",
+          "value": "%d مورد دریافت‌نشده"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "موقعیت زنده · %d ساعت"
+        },
+        {
+          "quantity": "other",
+          "value": "موقعیت زنده · %d ساعت"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "موقعیت زنده · %d دقیقه"
+        },
+        {
+          "quantity": "other",
+          "value": "موقعیت زنده · %d دقیقه"
+        }
+      ]
+    },
+    {
+      "name": "loc_accuracy",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "دقت تا حدود %d متر"
+        },
+        {
+          "quantity": "other",
+          "value": "دقت تا حدود %d متر"
+        }
+      ]
+    },
+    {
+      "name": "loc_proximity",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "محدوده هشدار %d متر"
+        },
+        {
+          "quantity": "other",
+          "value": "محدوده هشدار %d متر"
+        }
+      ]
+    },
+    {
+      "name": "ft_topic_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d موضوع"
+        },
+        {
+          "quantity": "other",
+          "value": "%d موضوع"
+        }
+      ]
+    },
+    {
+      "name": "mb_comments_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d نظر"
+        },
+        {
+          "quantity": "other",
+          "value": "%d نظر"
+        }
+      ]
+    },
+    {
+      "name": "lv_new_interactions",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d تعامل جدید"
+        },
+        {
+          "quantity": "other",
+          "value": "%d تعامل جدید"
+        }
+      ]
+    },
+    {
+      "name": "lv_more_sources",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d تصویر دیگر"
+        },
+        {
+          "quantity": "other",
+          "value": "%d تصویر دیگر"
+        }
+      ]
+    },
+    {
+      "name": "lv_open_chat_unread",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "باز کردن تعامل لایو، %d پیام جدید"
+        },
+        {
+          "quantity": "other",
+          "value": "باز کردن تعامل لایو، %d پیام جدید"
+        }
+      ]
+    },
+    {
+      "name": "lv_view_members",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "مشاهده %d عضو"
+        },
+        {
+          "quantity": "other",
+          "value": "مشاهده %d عضو"
+        }
+      ]
+    },
+    {
+      "name": "cp_live_online_now",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "در حال حاضر %d نفر آنلاین است."
+        },
+        {
+          "quantity": "other",
+          "value": "در حال حاضر %d نفر آنلاین هستند."
+        }
+      ]
+    },
+    {
+      "name": "cp_n_online",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d نفر آنلاین"
+        },
+        {
+          "quantity": "other",
+          "value": "%d نفر آنلاین"
+        }
+      ]
+    },
+    {
+      "name": "cp_media_skipped",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "خواندن %d رسانه ناموفق بود، بقیه محتوا ارسال شد"
+        },
+        {
+          "quantity": "other",
+          "value": "خواندن %d رسانه ناموفق بود، بقیه محتوا ارسال شد"
+        }
+      ]
+    },
+    {
+      "name": "cp_copied_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d پیام کپی شد"
+        },
+        {
+          "quantity": "other",
+          "value": "%d پیام کپی شد"
+        }
+      ]
+    },
+    {
+      "name": "cp_n_typing",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d نفر در حال تایپ…"
+        },
+        {
+          "quantity": "other",
+          "value": "%d نفر در حال تایپ…"
+        }
+      ]
+    },
+    {
+      "name": "cp_unread_a11y",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d پیام خوانده‌نشده، بازگشت به آخرین پیام"
+        },
+        {
+          "quantity": "other",
+          "value": "%d پیام خوانده‌نشده، بازگشت به آخرین پیام"
+        }
+      ]
+    },
+    {
+      "name": "sm_paid_per_message",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "برای هر پیام باید %d ستاره پرداخت شود"
+        },
+        {
+          "quantity": "other",
+          "value": "برای هر پیام باید %d ستاره پرداخت شود"
+        }
+      ]
+    },
+    {
+      "name": "sm_refunded_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ستاره بازگردانده شد"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ستاره بازگردانده شد"
+        }
+      ]
+    },
+    {
+      "name": "sm_channel_dm_price",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "این کانال به ازای هر پیام مستقیم %d ستاره می‌گیرد"
+        },
+        {
+          "quantity": "other",
+          "value": "این کانال به ازای هر پیام مستقیم %d ستاره می‌گیرد"
+        }
+      ]
+    },
+    {
+      "name": "unit_seconds",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ثانیه"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ثانیه"
+        }
+      ]
+    },
+    {
+      "name": "unit_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d دقیقه"
+        },
+        {
+          "quantity": "other",
+          "value": "%d دقیقه"
+        }
+      ]
+    },
+    {
+      "name": "unit_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d ساعت"
+        },
+        {
+          "quantity": "other",
+          "value": "%d ساعت"
+        }
+      ]
+    },
+    {
+      "name": "unit_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d روز"
+        },
+        {
+          "quantity": "other",
+          "value": "%d روز"
+        }
+      ]
+    },
+    {
+      "name": "sm_proximity_metres",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d متر"
+        },
+        {
+          "quantity": "other",
+          "value": "%d متر"
+        }
+      ]
+    },
+    {
+      "name": "lg_resend_in",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "ارسال مجدد پس از %d ثانیه"
+        },
+        {
+          "quantity": "other",
+          "value": "ارسال مجدد پس از %d ثانیه"
+        }
+      ]
+    },
+    {
+      "name": "cl_unread_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d مورد خوانده‌نشده"
+        },
+        {
+          "quantity": "other",
+          "value": "%d مورد خوانده‌نشده"
+        }
+      ]
+    },
+    {
+      "name": "ap_chats_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d گفتگو"
+        },
+        {
+          "quantity": "other",
+          "value": "%d گفتگو"
+        }
+      ]
+    },
+    {
+      "name": "gs_free_left",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d جستجوی رایگان امروز باقی مانده"
+        },
+        {
+          "quantity": "other",
+          "value": "%d جستجوی رایگان امروز باقی مانده"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,473 @@
+import { image } from '@kit.ImageKit';
+import { sendableImage } from '@kit.ImageKit';
+import { taskpool } from '@kit.ArkTS';
+import { decodeSendable } from './pixelDecodeTask';
+import { logE } from './log';
+import { pixelCacheKey } from './pixelCacheKey';
+import { IMAGE_CAP_BYTES, imagePixelLimitNow } from './nativePixelArbiter';
+import { syncDecodeEligible } from './pixelSyncPolicy';
+import {
+  IMAGE_HOLDER_RELEASE_BATCH
+} from './NativePixelBudget';
+import { PinUpdate, updateBoundedPins } from './boundedPins';
+
+// 有上限地钉住几张。头像是 38vp 见方，一张解码后约 20KB（38×3 ≈ 114px 见方、
+// RGBA），48 张不到 1MB——相对 48MB 的图片预算可以忽略，却足够覆盖一个会话里
+// 反复出现的那些发送者。
+const BOUNDED_PIN_MAX: number = 48;
+
+// Decode local images ourselves instead of handing a file path to Image.
+//
+// Two reasons, both measured on device:
+//
+// 1. desiredSize downsamples DURING the decode rather than scaling a full-size
+//    bitmap afterwards, so an album cell no longer decodes a whole
+//    conversation-sized photo to draw it 90vp wide.
+// 2. The decode runs on a TaskPool worker (pixelDecodeTask). This module used
+//    to decode inline, and a device capture showed every CreatePixelMap on the
+//    process's main tid — `await` yields the stack but stays on the thread — so
+//    two or three photos entering the viewport in one frame burned ~40ms of it.
+//    That was the residual jank while scrolling a media-heavy chat.
+//
+// The LRU below also caps how much decoded memory is held at once, which a bare
+// Image(src) cannot do.
+
+export interface PixelRequest {
+  path: string;      // local file path, no file:// prefix
+  width: number;     // target size in PHYSICAL pixels
+  height: number;
+  // 源图不透明时允许按 RGB_565 解码：每像素 2 字节而不是 RGBA_8888 的 4 字节，
+  // 同一份预算能多装一倍位图。
+  //
+  // 【为什么要它，2026-09-20 真机定位】相册一格 319x490 = 625KB，48MiB 只装得下
+  // 约 80 格；而可视窗口（可视 4 行 + 两侧 cachedCount 行）要 120–180 格——
+  // 窗口本身就超预算，滚一下就把马上要用的图淘汰掉，滚回来必然重解码。用户看到
+  // 的"相册图片闪一下"就是这个空窗：blank=705 / hit=195，淘汰数随滚动单调涨到 264。
+  //
+  // 【只给相册格开】它的代价是平滑渐变上的色阶。相册格小、又被 Cover 裁过，
+  // 看不出来；单张大图和查看器不开。**带 alpha 的源一律不能开**——565 没有透明
+  // 通道，PNG 贴上去会变成实心底。相册成员在 Telegram 侧一律是 JPEG。
+  opaque: boolean;
+}
+
+// Handed straight back to the caller, so retaining never has to look the entry
+// up again.
+//
+// The lookup version had a race that showed up as images simply not appearing:
+// decode() inserted the entry and then ran eviction, which could drop the entry
+// it had just created (nothing referenced it yet) and free its pixels; by the
+// time the awaiting component called retain, the key was gone from the map, so
+// the reference was never taken and the component was left holding a released
+// PixelMap. Passing the entry itself removes the window entirely.
+export class PixelHandle {
+  readonly pixelMap: image.PixelMap;
+  bytes: number = 0;
+  // One reference is held by the cache itself while the entry is in the map,
+  // plus one per component currently showing it. Pixels are freed when the
+  // count reaches zero — so eviction alone never frees something on screen.
+  refs: number = 1;
+  released: boolean = false;
+  // Never evicted. For the chat background: one full-screen bitmap that every
+  // chat shares and that costs ~20ms to decode, so letting a long scroll push
+  // it out of the LRU would just buy that cost back on the next chat open.
+  pinned: boolean = false;
+
+  constructor(pixelMap: image.PixelMap, bytes: number) {
+    this.pixelMap = pixelMap;
+    this.bytes = bytes;
+  }
+}
+
+// 低内存/后台期间会临时收紧的**天花板**。真正生效的上限还要再和
+// imagePixelLimitNow 取小——贴纸缓存空着的部分借给图片用（见 nativePixelArbiter）。
+//
+// 2026-09-20 由 48MiB 抬到 IMAGE_CAP_BYTES（80 − 贴纸地板 12 = 68MiB）：48 这个
+// 数装不下相册会话的可视窗口，是"图片闪一下"的根因之一。抬的是天花板不是实际
+// 占用——贴纸一旦用起来，imagePixelLimitNow 会同步把图片压回去。
+let budgetBytes: number = IMAGE_CAP_BYTES;
+
+// A decode occupies a worker thread and finishes by handing a bitmap to the
+// render pipeline. Letting a fling queue up thirty of them at once means the
+// rows that actually stopped on screen wait behind rows the user already went
+// past. Three at a time keeps the pipe busy without building that backlog.
+const MAX_ACTIVE_DECODES: number = 3;
+
+class PendingDecode {
+  req: PixelRequest;
+  key: string;
+  // How many components are still waiting. A row that scrolls away drops its
+  // interest; at zero, a decode that has not started yet is dropped entirely —
+  // which is the only point where cancelling actually saves work, since
+  // createPixelMap itself cannot be interrupted.
+  waiters: number = 1;
+  started: boolean = false;
+  resolvers: ((handle: PixelHandle | undefined) => void)[] = [];
+
+  constructor(req: PixelRequest, key: string) {
+    this.req = req;
+    this.key = key;
+  }
+}
+
+const cache: Map<string, PixelHandle> = new Map();
+const pending: Map<string, PendingDecode> = new Map();
+const queue: PendingDecode[] = [];
+let activeDecodes: number = 0;
+let usedBytes: number = 0;
+// 钉住（pin / pinBounded）的字节数。evictDownTo 跳过这些条目，所以它们每多一个
+// 字节可淘汰的内容就少一个——单独记账，好让 imagePixelLimitNow 给它们一格豁免
+// （见 util/nativePixelArbiter.PINNED_ALLOWANCE_BYTES）。
+let pinnedBytes: number = 0;
+// Component teardown can drop many image holders in one navigation frame. Calling
+// PixelMap.release synchronously for every holder made those native FreeBufferHandle
+// operations part of the chat-page exit frame. Keep reference accounting exact, but
+// drain holder releases in small event-loop batches so native frees cannot pile up in
+// one frame. Cache eviction still drops its own reference synchronously and therefore
+// keeps the byte budget truthful.
+const pendingHolderReleases: PixelHandle[] = [];
+let holderReleaseTimer: number = -1;
+
+// 规则本身在 util/pixelCacheKey（纯函数 + 回归测试）：像素格式必须进 key，
+// 同一个文件同一个尺寸下 565 与 8888 是两份不同的位图。
+function keyOf(req: PixelRequest): string {
+  return pixelCacheKey(req.path, req.width, req.height, req.opaque);
+}
+
+// Map iterates in insertion order, so the first live entry is the oldest.
+// Re-inserting on every hit is what makes that order an LRU.
+function touch(key: string, entry: PixelHandle): void {
+  cache.delete(key);
+  cache.set(key, entry);
+}
+
+function decRef(entry: PixelHandle): void {
+  entry.refs--;
+  if (entry.refs > 0 || entry.released) {
+    return;
+  }
+  entry.released = true;
+  try {
+    entry.pixelMap.release();
+  } catch (e) {
+    logE(`pixelCache release failed: ${e}`);
+  }
+}
+
+function drainHolderReleases(): void {
+  holderReleaseTimer = -1;
+  const count: number = Math.min(IMAGE_HOLDER_RELEASE_BATCH, pendingHolderReleases.length);
+  for (let i = 0; i < count; i++) {
+    const entry = pendingHolderReleases.shift();
+    if (entry !== undefined) {
+      decRef(entry);
+    }
+  }
+  if (pendingHolderReleases.length > 0) {
+    holderReleaseTimer = setTimeout(drainHolderReleases, 0);
+  }
+}
+
+function evictDownTo(limit: number, maxEntries: number = Number.MAX_SAFE_INTEGER): number {
+  // Most insertions fit the current budget. Avoid copying the entire LRU key
+  // set when no eviction can occur; keep the existing snapshot/order otherwise.
+  if (usedBytes <= limit || maxEntries <= 0) {
+    return 0;
+  }
+  let evicted: number = 0;
+  for (const key of Array.from(cache.keys())) {
+    if (usedBytes <= limit || evicted >= maxEntries) {
+      return evicted;
+    }
+    const entry = cache.get(key);
+    if (entry === undefined || entry.pinned) {
+      continue;
+    }
+    cache.delete(key);
+    usedBytes -= entry.bytes;
+    evicted++;
+    // Drops the cache's own reference. Anything still on screen survives on
+    // the holders' references and is freed when the last one lets go.
+    decRef(entry);
+  }
+  return evicted;
+}
+
+// Synchronous hit, for the first build pass of a row that has been shown
+// before — going through a Promise there would blank the image for a frame.
+export function cachedPixelMap(req: PixelRequest): PixelHandle | undefined {
+  const key = keyOf(req);
+  const entry = cache.get(key);
+  if (entry === undefined) {
+    return undefined;
+  }
+  touch(key, entry);
+  return entry;
+}
+
+export function loadPixelMap(req: PixelRequest): Promise<PixelHandle | undefined> {
+  if (req.path === '' || req.width <= 0 || req.height <= 0) {
+    return Promise.resolve(undefined);
+  }
+  const key = keyOf(req);
+  const hit = cache.get(key);
+  if (hit !== undefined) {
+    touch(key, hit);
+    return Promise.resolve(hit);
+  }
+  // Several rows can ask for the same file in the same frame (an album, or a
+  // row rebuilt mid-decode). One decode, shared.
+  let task = pending.get(key);
+  if (task === undefined) {
+    task = new PendingDecode(req, key);
+    pending.set(key, task);
+    queue.push(task);
+    pump();
+  } else {
+    task.waiters++;
+  }
+  const waiting = task;
+  return new Promise<PixelHandle | undefined>((resolve): void => {
+    waiting.resolvers.push(resolve);
+  });
+}
+
+// Drop this component's interest in a decode. If nobody is left waiting and it
+// never started, it leaves the queue and the work is genuinely skipped.
+export function cancelPixelMap(req: PixelRequest): void {
+  const key = keyOf(req);
+  const task = pending.get(key);
+  if (task === undefined) {
+    return;
+  }
+  task.waiters--;
+  if (task.waiters > 0 || task.started) {
+    return;
+  }
+  const at = queue.indexOf(task);
+  if (at >= 0) {
+    queue.splice(at, 1);
+  }
+  pending.delete(key);
+  for (const resolve of task.resolvers) {
+    resolve(undefined);
+  }
+}
+
+function settle(task: PendingDecode, handle: PixelHandle | undefined): void {
+  pending.delete(task.key);
+  for (const resolve of task.resolvers) {
+    resolve(handle);
+  }
+}
+
+// 这里曾经有一个"滑动中暂停解码"的闸门，实测是反效果：滑快了图片整段不显示，
+// 而同一次抓取里 ProcessJank 一条都没有 —— 掉帧的前提本来就不成立。真正的开销
+// 是解码跑在主线程上，已经由 pixelDecodeTask 挪进 TaskPool 解决。
+function pump(): void {
+  while (activeDecodes < MAX_ACTIVE_DECODES && queue.length > 0) {
+    // First in, first out. Newest-first looked better during a fling — the
+    // latest requests are the rows nearest the viewport — but it can starve an
+    // early request indefinitely while new ones keep arriving, and a starved
+    // request is a bubble that never draws its photo. Stale work is now
+    // removed by cancel() rather than by being outrun, so the queue stays close
+    // to the visible set and ordering does not have to compensate.
+    const task = queue.shift();
+    if (task === undefined) {
+      return;
+    }
+    task.started = true;
+    activeDecodes++;
+    decode(task.req, task.key).then((handle: PixelHandle | undefined): void => {
+      settle(task, handle);
+    }).catch((): void => {
+      settle(task, undefined);
+    }).then((): void => {
+      activeDecodes--;
+      pump();
+    });
+  }
+}
+
+async function decode(req: PixelRequest, key: string): Promise<PixelHandle | undefined> {
+  try {
+    // Decoding runs on a TaskPool worker (see pixelDecodeTask): a device capture
+    // showed every CreatePixelMap landing on the main tid, so two or three
+    // photos entering the viewport in one frame spent ~40ms of that frame
+    // decoding — the dropped frames seen while scrolling a media-heavy chat.
+    // `await` alone does not move work off the thread; TaskPool does.
+    const sendablePixelMap = await taskpool.execute(
+      decodeSendable, req.path, req.width, req.height, req.opaque
+    ) as sendableImage.PixelMap | undefined;
+    if (sendablePixelMap === undefined) {
+      return undefined;
+    }
+    const pixelMap: image.PixelMap = sendableImage.convertToPixelMap(sendablePixelMap);
+    const decoded = await pixelMap.getImageInfo();
+    return insertDecoded(key, pixelMap, decoded);
+  } catch (e) {
+    logE(`pixelCache decode(${req.path}) failed: ${e}`);
+    return undefined;
+  }
+}
+
+// 解码结果入缓存：异步（taskpool）与同步（loadPixelMapSync）两条路共用。
+function insertDecoded(key: string, pixelMap: image.PixelMap, decoded: image.ImageInfo): PixelHandle {
+  // stride, not width: DMA rows are padded to a hardware alignment, and the
+  // padding is real memory this budget has to account for.
+  const bytes = Math.max(1, decoded.stride) * Math.max(1, decoded.size.height);
+  const entry = new PixelHandle(pixelMap, bytes);
+  cache.set(key, entry);
+  usedBytes += bytes;
+  // The extra reference covers the hand-off: eviction below (or any eviction
+  // before the caller retains) would otherwise free the entry that this very
+  // call is about to return. Dropped once the caller has had its chance.
+  entry.refs++;
+  // 每次插入都重新问一次额度，而不是用缓存下来的数：贴纸可能在这期间长了。
+  evictDownTo(imagePixelLimitNow(budgetBytes, pinnedBytes));
+  // 交接引用的释放并进**同一条**排空队列，而不是每次解码各排一个 0ms 定时器。
+  // 2026-09-09 的 Frame 录制里，这一句的 setTimeout NAPI 在 12.3s 内累计
+  // **28.89ms**——单次极便宜，但它是按解码次数走的。releasePixelMap 本来就是
+  // "下一拍把引用还掉"，语义一致，且它只有一个共享定时器。
+  releasePixelMap(entry);
+  return entry;
+}
+
+// 小图同步解码（#137，准入见 util/pixelSyncPolicy）：命中缓存直接给；否则在主线程
+// createPixelMapSync 一次，结果同样入缓存。同一 key 若已有异步任务在排队且还没开跑，
+// 把它从队列摘掉、用同步结果喂它的等待者，免得再解一遍。
+export function loadPixelMapSync(req: PixelRequest): PixelHandle | undefined {
+  if (req.path === '' || !syncDecodeEligible(req.width, req.height)) {
+    return undefined;
+  }
+  const key = keyOf(req);
+  const hit = cache.get(key);
+  if (hit !== undefined) {
+    touch(key, hit);
+    return hit;
+  }
+  let source: image.ImageSource | undefined = undefined;
+  try {
+    // 路径失效（文件被清理）时 createImageSource 返回 undefined 而不是抛错；
+    // 原来 finally 只判 null，于是 undefined.release() 把异常从 finally 里
+    // 抛出去——1.5.2 崩溃榜第一（#228，14 次，都从格子复用进来）。
+    source = image.createImageSource(req.path);
+    const syncOpts: image.DecodingOptions = {
+      desiredSize: { width: req.width, height: req.height }
+    };
+    if (req.opaque) {
+      syncOpts.desiredPixelFormat = image.PixelMapFormat.RGB_565;
+    }
+    const pixelMap: image.PixelMap = source.createPixelMapSync(syncOpts);
+    const decoded: image.ImageInfo = pixelMap.getImageInfoSync();
+    const entry = insertDecoded(key, pixelMap, decoded);
+    const task = pending.get(key);
+    if (task !== undefined && !task.started) {
+      const at = queue.indexOf(task);
+      if (at >= 0) {
+        queue.splice(at, 1);
+      }
+      settle(task, entry);
+    }
+    return entry;
+  } catch (e) {
+    logE(`pixelCache loadPixelMapSync(${req.path}) failed: ${e}`);
+    return undefined;
+  } finally {
+    if (source !== undefined && source !== null) {
+      source.release();
+    }
+  }
+}
+
+// A component that has put a PixelMap on screen retains it, and releases when
+// it swaps it out or goes away. Taken on the handle rather than a key, so it
+// works even for an entry the LRU has already dropped.
+export function retainPixelMap(handle: PixelHandle): void {
+  handle.refs++;
+}
+
+export function releasePixelMap(handle: PixelHandle): void {
+  pendingHolderReleases.push(handle);
+  if (holderReleaseTimer === -1) {
+    holderReleaseTimer = setTimeout(drainHolderReleases, 0);
+  }
+}
+
+// Keep this bitmap for the life of the process. Only worth it for something
+// both expensive and reused everywhere; anything else should just take the
+// normal LRU treatment.
+export function pinPixelMap(handle: PixelHandle): void {
+  if (!handle.pinned) {
+    handle.pinned = true;
+    handle.refs++;
+    pinnedBytes += handle.bytes;
+  }
+}
+
+export function unpinPixelMap(handle: PixelHandle): void {
+  if (!handle.pinned) {
+    return;
+  }
+  handle.pinned = false;
+  pinnedBytes = Math.max(0, pinnedBytes - handle.bytes);
+  // pin 时 refs++ 过一次，松开就还回去。还回去之后它就是普通的 LRU 条目，
+  // 该被挤掉时正常挤掉。
+  releasePixelMap(handle);
+}
+
+// 有上限的钉。给"便宜但到处复用、且数量随内容增长"的那一类用——头像就是
+// 典型：不钉会被大图挤掉，一路钉下去又会随发送者数量涨（issue #137）。
+// 顺序逻辑在 util/boundedPins（纯函数、有单测），这里只负责把 key 换成句柄。
+const boundedPinned: Map<string, PixelHandle> = new Map<string, PixelHandle>();
+let boundedPinOrder: string[] = [];
+
+export function pinPixelMapBounded(req: PixelRequest, handle: PixelHandle,
+  cap: number = BOUNDED_PIN_MAX): void {
+  const key: string = keyOf(req);
+  const update: PinUpdate = updateBoundedPins(boundedPinOrder, key, cap);
+  boundedPinOrder = update.next;
+  if (!boundedPinned.has(key)) {
+    pinPixelMap(handle);
+    boundedPinned.set(key, handle);
+  }
+  for (const stale of update.released) {
+    const victim: PixelHandle | undefined = boundedPinned.get(stale);
+    if (victim !== undefined) {
+      boundedPinned.delete(stale);
+      unpinPixelMap(victim);
+    }
+  }
+}
+
+// 切账号/清缓存时全部松开。
+export function clearBoundedPins(): void {
+  boundedPinned.forEach((handle: PixelHandle): void => { unpinPixelMap(handle); });
+  boundedPinned.clear();
+  boundedPinOrder = [];
+}
+
+// 收紧后，新完成的解码也按新上限入账，防止切后台时在途任务把缓存重新灌满。
+export function setPixelCacheBudget(bytes: number): void {
+  budgetBytes = Math.max(0, Math.min(IMAGE_CAP_BYTES, Math.floor(bytes)));
+}
+
+
+
+// 只回收 LRU 自己持有、且未钉住的引用。maxEntries 让生命周期回调可以分批做，
+// 避免在主线程一次 release 几十张 PixelMap。
+export function trimPixelCache(targetBytes: number = 0,
+  maxEntries: number = Number.MAX_SAFE_INTEGER): number {
+  const target: number = Math.max(0, Math.floor(targetBytes));
+  const batch: number = Math.max(0, Math.floor(maxEntries));
+  return evictDownTo(target, batch);
+}
+
+export function pixelCacheBytes(): number {
+  return usedBytes;
+}
+
+// 钉住部分单独记账，诊断用：真机上用它与 pixelCacheBytes 一起确认
+// 「壁纸光栅确实被松开」。pinnedBytes 只统计 pinned 的条目。
+export function pinnedCacheBytes(): number {
+  return pinnedBytes;
+}

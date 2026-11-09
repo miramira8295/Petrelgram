@@ -1,0 +1,6 @@
+{
+  "layered-image": {
+    "background": "$media:bg_clear",
+    "foreground": "$media:fg_frost"
+  }
+}

@@ -1,0 +1,679 @@
+{
+  "plural": [
+    {
+      "name": "duration_days",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d วัน"
+        }
+      ]
+    },
+    {
+      "name": "duration_days_premium",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d วัน Premium"
+        }
+      ]
+    },
+    {
+      "name": "duration_months",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d เดือน"
+        }
+      ]
+    },
+    {
+      "name": "duration_months_premium",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d เดือน Premium"
+        }
+      ]
+    },
+    {
+      "name": "gift_stars_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d Stars"
+        }
+      ]
+    },
+    {
+      "name": "gift_worth_stars",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "มูลค่า %d Stars"
+        }
+      ]
+    },
+    {
+      "name": "live_media_in_room",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d คนในห้องไลฟ์"
+        }
+      ]
+    },
+    {
+      "name": "live_status_watching",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d คนกำลังรับชม"
+        }
+      ]
+    },
+    {
+      "name": "prize_premium_months",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d เดือน Premium"
+        }
+      ]
+    },
+    {
+      "name": "prize_stars",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d Stars"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_days",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d วัน"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_hours",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d ชั่วโมง"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_minutes",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d นาที"
+        }
+      ]
+    },
+    {
+      "name": "user_status_days_ago",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d วันที่แล้ว"
+        }
+      ]
+    },
+    {
+      "name": "user_status_hours_ago",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d ชั่วโมงที่แล้ว"
+        }
+      ]
+    },
+    {
+      "name": "user_status_minutes_ago",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d นาทีที่แล้ว"
+        }
+      ]
+    },
+    {
+      "name": "sticker_set_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "สติกเกอร์ %d อัน"
+        }
+      ]
+    },
+    {
+      "name": "cw_disconnect_all_confirm",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "จะตัดการเชื่อมต่อการเข้าสู่ระบบบนเว็บไซต์ %d แห่ง"
+        }
+      ]
+    },
+    {
+      "name": "pe_group_exceptions_kept",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ข้อยกเว้นกลุ่ม %d รายการถูกเก็บไว้โดยเซิร์ฟเวอร์"
+        }
+      ]
+    },
+    {
+      "name": "storage_file_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ไฟล์ %d ไฟล์"
+        }
+      ]
+    },
+    {
+      "name": "bu_account_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d บัญชี"
+        }
+      ]
+    },
+    {
+      "name": "calls_about_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ประมาณ %d บันทึก"
+        }
+      ]
+    },
+    {
+      "name": "calls_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d บันทึก"
+        }
+      ]
+    },
+    {
+      "name": "calls_participants",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d คน"
+        }
+      ]
+    },
+    {
+      "name": "cf_about_chats",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ประมาณ %d แชท"
+        }
+      ]
+    },
+    {
+      "name": "cf_delete_and_leave",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ลบและออกจาก %d แชท"
+        }
+      ]
+    },
+    {
+      "name": "fl_new_chats",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "แชทใหม่ %d รายการ"
+        }
+      ]
+    },
+    {
+      "name": "fl_selected_chats",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "เลือกแชทแล้ว %d รายการ"
+        }
+      ]
+    },
+    {
+      "name": "fl_add_chats",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "เพิ่มแชท %d รายการ"
+        }
+      ]
+    },
+    {
+      "name": "ds_cached_files",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ไฟล์แคช %d ไฟล์"
+        }
+      ]
+    },
+    {
+      "name": "ct_result_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d คน"
+        }
+      ]
+    },
+    {
+      "name": "ng_max_members",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "กลุ่มพื้นฐานเลือกสมาชิกได้สูงสุด %d คน"
+        }
+      ]
+    },
+    {
+      "name": "ng_member_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "สมาชิก %d คน"
+        }
+      ]
+    },
+    {
+      "name": "ng_people_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d คน"
+        }
+      ]
+    },
+    {
+      "name": "ps_days",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d วัน"
+        }
+      ]
+    },
+    {
+      "name": "px_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d อัน"
+        }
+      ]
+    },
+    {
+      "name": "fe_chosen_limit",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "แชทที่เลือกทีละรายการต้องไม่เกิน %d อัน"
+        }
+      ]
+    },
+    {
+      "name": "fe_removed_invalid",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "นำแชท %d รายการที่ไม่อยู่ในรายการแชทออกแล้ว"
+        }
+      ]
+    },
+    {
+      "name": "fe_pick_limit",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "เลือกแชทได้สูงสุด %d รายการ"
+        }
+      ]
+    },
+    {
+      "name": "fe_preview_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "คาดว่าประมาณ %d แชท"
+        }
+      ]
+    },
+    {
+      "name": "fe_selected_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "เลือกแล้ว %d รายการ"
+        }
+      ]
+    },
+    {
+      "name": "mp_item_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d รายการ"
+        }
+      ]
+    },
+    {
+      "name": "fw_forwarded_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ส่งต่อข้อความแล้ว %d ข้อความ"
+        }
+      ]
+    },
+    {
+      "name": "fw_forward_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ส่งต่อ %d ข้อความ"
+        }
+      ]
+    },
+    {
+      "name": "poll_voters",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d คนร่วมโหวต"
+        }
+      ]
+    },
+    {
+      "name": "gw_winners_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ผู้ชนะ %d คน"
+        }
+      ]
+    },
+    {
+      "name": "gw_unclaimed_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d รางวัลที่ยังไม่ได้รับ"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_hours",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ตำแหน่งสด · %d ชั่วโมง"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_minutes",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ตำแหน่งสด · %d นาที"
+        }
+      ]
+    },
+    {
+      "name": "loc_accuracy",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "แม่นยำประมาณ %d เมตร"
+        }
+      ]
+    },
+    {
+      "name": "loc_proximity",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ช่วงเตือน %d เมตร"
+        }
+      ]
+    },
+    {
+      "name": "ft_topic_count",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d หัวข้อ"
+        }
+      ]
+    },
+    {
+      "name": "mb_comments_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d ความคิดเห็น"
+        }
+      ]
+    },
+    {
+      "name": "lv_new_interactions",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "โต้ตอบใหม่ %d รายการ"
+        }
+      ]
+    },
+    {
+      "name": "lv_more_sources",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "มีภาพอีก %d ทาง"
+        }
+      ]
+    },
+    {
+      "name": "lv_open_chat_unread",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "เปิดการโต้ตอบไลฟ์ มีข้อความใหม่ %d ข้อความ"
+        }
+      ]
+    },
+    {
+      "name": "lv_view_members",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ดูสมาชิก %d คน"
+        }
+      ]
+    },
+    {
+      "name": "cp_live_online_now",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ขณะนี้มี %d คนออนไลน์"
+        }
+      ]
+    },
+    {
+      "name": "cp_n_online",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d คนออนไลน์"
+        }
+      ]
+    },
+    {
+      "name": "cp_media_skipped",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "อ่านสื่อ %d รายการไม่สำเร็จ ส่งเนื้อหาที่เหลือแล้ว"
+        }
+      ]
+    },
+    {
+      "name": "cp_copied_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "คัดลอกข้อความแล้ว %d ข้อความ"
+        }
+      ]
+    },
+    {
+      "name": "cp_n_typing",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d คนกำลังพิมพ์…"
+        }
+      ]
+    },
+    {
+      "name": "cp_unread_a11y",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d ข้อความที่ยังไม่ได้อ่าน กลับไปข้อความล่าสุด"
+        }
+      ]
+    },
+    {
+      "name": "sm_paid_per_message",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "แต่ละข้อความต้องชำระ %d Stars"
+        }
+      ]
+    },
+    {
+      "name": "sm_refunded_stars",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "คืน %d Stars แล้ว"
+        }
+      ]
+    },
+    {
+      "name": "sm_channel_dm_price",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ช่องนี้อนุญาตข้อความส่วนตัว %d Stars ต่อข้อความ"
+        }
+      ]
+    },
+    {
+      "name": "unit_seconds",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d วินาที"
+        }
+      ]
+    },
+    {
+      "name": "unit_minutes",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d นาที"
+        }
+      ]
+    },
+    {
+      "name": "unit_hours",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d ชั่วโมง"
+        }
+      ]
+    },
+    {
+      "name": "unit_days",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d วัน"
+        }
+      ]
+    },
+    {
+      "name": "sm_proximity_metres",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d เมตร"
+        }
+      ]
+    },
+    {
+      "name": "lg_resend_in",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "ส่งใหม่ได้ใน %d วินาที"
+        }
+      ]
+    },
+    {
+      "name": "cl_unread_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d ยังไม่ได้อ่าน"
+        }
+      ]
+    },
+    {
+      "name": "ap_chats_n",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "%d แชท"
+        }
+      ]
+    },
+    {
+      "name": "gs_free_left",
+      "value": [
+        {
+          "quantity": "other",
+          "value": "เหลือการค้นหาฟรี %d ครั้งวันนี้"
+        }
+      ]
+    }
+  ]
+}

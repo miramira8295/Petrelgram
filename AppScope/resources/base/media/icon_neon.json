@@ -1,0 +1,6 @@
+{
+  "layered-image": {
+    "background": "$media:bg_neon",
+    "foreground": "$media:fg_neon"
+  }
+}

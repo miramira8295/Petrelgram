@@ -1,0 +1,31 @@
+{
+  "src": [
+    "pages/Index",
+    "pages/chat/LiveStreamViewerPage",
+    "pages/chat/RtmpLiveStreamViewerPage",
+    "pages/main/CallsPage",
+    "pages/main/PrivacyRulePage",
+    "pages/main/PrivacyExceptionsPage",
+    "pages/main/TwoStepVerificationPage",
+    "pages/main/ConnectedWebsitesPage",
+    "pages/main/BlockedUsersPage",
+    "pages/main/StorageUsagePage",
+    "pages/main/NetworkUsagePage",
+    "pages/main/FolderEditPage",
+    "pages/main/FolderInviteLinksPage",
+    "pages/main/NewGroupPage",
+    "pages/web/InAppBrowserPage",
+    "pages/web/MiniAppPage",
+    "pages/main/ChatBackgroundPage",
+    "pages/main/ChatThemePage",
+    "pages/main/GroupAdminPage",
+    "pages/main/GroupNotificationsPage",
+    "pages/main/WebPushPage",
+    "pages/call/CallPage",
+    "pages/story/StoryViewerPage",
+    "pages/profile/MemberRestrictPage",
+    "pages/profile/MemberPromotePage",
+    "pages/share/SharePanel",
+    "pages/login/LoginProxyPage"
+  ]
+}

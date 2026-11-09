@@ -1,0 +1,97 @@
+import { describe, expect, it } from '@ohos/hypium';
+import {
+  SLOT_APP_DARK, SLOT_APP_LIGHT, SLOT_CHAT_DARK, SLOT_CHAT_LIGHT, WALLPAPER_SLOTS,
+  slotHasDim, slotIsApp, slotIsDark, wallpaperSlotKeys, WallpaperSlotKeys
+} from '../main/ets/util/wallpaperSlot';
+import {
+  KEY_APP_BG_BLUR, KEY_BG_BLUR, WALLPAPER_NUMBER_SETTINGS, WallpaperNumberSetting
+} from '../main/ets/store/AppSettings';
+
+function sliderKeyInitialised(key: string): boolean {
+  for (const setting of WALLPAPER_NUMBER_SETTINGS) {
+    if ((setting as WallpaperNumberSetting).key === key) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export default function wallpaperSlotTest() {
+  describe('wallpaperSlot', () => {
+    it('four_slots', 0, (): void => {
+      expect(WALLPAPER_SLOTS.length).assertEqual(4);
+    });
+
+    it('app_and_dark_are_orthogonal', 0, (): void => {
+      expect(slotIsApp(SLOT_APP_LIGHT)).assertTrue();
+      expect(slotIsApp(SLOT_CHAT_DARK)).assertFalse();
+      expect(slotIsDark(SLOT_APP_DARK)).assertTrue();
+      expect(slotIsDark(SLOT_CHAT_LIGHT)).assertFalse();
+    });
+
+    // 只有 APP 槽位在本地存壁纸状态；聊天槽位的壁纸由 TDLib 下发，本地再存一份
+    // 两边会打架。
+    it('only_app_slots_store_state_locally', 0, (): void => {
+      expect(wallpaperSlotKeys(SLOT_APP_LIGHT).state !== '').assertTrue();
+      expect(wallpaperSlotKeys(SLOT_APP_DARK).state !== '').assertTrue();
+      expect(wallpaperSlotKeys(SLOT_CHAT_LIGHT).state).assertEqual('');
+      expect(wallpaperSlotKeys(SLOT_CHAT_DARK).state).assertEqual('');
+    });
+
+    // 这是这张表存在的全部理由：四个槽位的每一根滑杆都必须落在**不同**的键上，
+    // 否则会出现"调了浅色、深色跟着变"这种极难查的错。
+    it('no_two_slots_share_a_slider_key', 0, (): void => {
+      const blurKeys: string[] = [];
+      const patternKeys: string[] = [];
+      const dimKeys: string[] = [];
+      for (const slot of WALLPAPER_SLOTS) {
+        const k: WallpaperSlotKeys = wallpaperSlotKeys(slot);
+        expect(blurKeys.indexOf(k.blur) < 0).assertTrue();
+        expect(patternKeys.indexOf(k.pattern) < 0).assertTrue();
+        expect(dimKeys.indexOf(k.dim) < 0).assertTrue();
+        blurKeys.push(k.blur);
+        patternKeys.push(k.pattern);
+        dimKeys.push(k.dim);
+      }
+      expect(blurKeys.length).assertEqual(4);
+      expect(patternKeys.length).assertEqual(4);
+      expect(dimKeys.length).assertEqual(4);
+    });
+
+    // 聊天两侧的模糊必须是两个键——旧版共用一个，四槽位下会串。
+    it('chat_light_and_dark_blur_are_separate', 0, (): void => {
+      expect(wallpaperSlotKeys(SLOT_CHAT_LIGHT).blur === wallpaperSlotKeys(SLOT_CHAT_DARK).blur)
+        .assertFalse();
+    });
+
+    // 兼容旧设置：原来的共用模糊值继续归浅色槽位，深色由启动迁移复制后再独立。
+    it('legacy_blur_keys_remain_on_light_slots', 0, (): void => {
+      expect(wallpaperSlotKeys(SLOT_APP_LIGHT).blur).assertEqual(KEY_APP_BG_BLUR);
+      expect(wallpaperSlotKeys(SLOT_CHAT_LIGHT).blur).assertEqual(KEY_BG_BLUR);
+    });
+
+    it('dim_only_matters_for_dark_slots', 0, (): void => {
+      expect(slotHasDim(SLOT_APP_DARK)).assertTrue();
+      expect(slotHasDim(SLOT_CHAT_DARK)).assertTrue();
+      expect(slotHasDim(SLOT_APP_LIGHT)).assertFalse();
+      expect(slotHasDim(SLOT_CHAT_LIGHT)).assertFalse();
+    });
+
+    // 槽位映射与启动恢复必须是闭环。只给 wallpaperSlotKeys 加新键、忘了在
+    // initSettings 注册时，本次运行能调，冷启动后却会悄悄回默认值。
+    it('every_slider_key_is_restored_on_startup', 0, (): void => {
+      for (const slot of WALLPAPER_SLOTS) {
+        const k: WallpaperSlotKeys = wallpaperSlotKeys(slot);
+        expect(sliderKeyInitialised(k.blur)).assertTrue();
+        expect(sliderKeyInitialised(k.pattern)).assertTrue();
+        expect(sliderKeyInitialised(k.dim)).assertTrue();
+      }
+    });
+
+    // 未知槽位不能返回空键，否则读写会落到 undefined 上。
+    it('unknown_slot_falls_back_to_valid_keys', 0, (): void => {
+      const k: WallpaperSlotKeys = wallpaperSlotKeys('nope');
+      expect(k.pattern !== '' && k.blur !== '' && k.dim !== '').assertTrue();
+    });
+  });
+}

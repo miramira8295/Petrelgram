@@ -1,0 +1,103 @@
+// 本机自选壁纸：用户从相册挑一张图当聊天背景，**只存在这台设备上**。
+//
+// 【为什么不走 TDLib】setChatBackground / setDefaultBackground 的
+// inputBackgroundLocal 会把这张图**上传到 Telegram 服务器**并同步到所有设备和
+// 官方客户端。那是另一件事（也是另一个隐私决定）。这里选的是本地方案：图片
+// 拷进应用沙箱，路径记在设置里，一个字节都不出这台机器。代价是不跨设备同步。
+//
+// 【优先级】会话自己的背景 > 本地壁纸 > 账号默认背景 > 内置底色。
+// 本地壁纸压过账号默认，是因为它是用户**在这台设备上明确挑的**，而账号默认多半
+// 是服务端下发或从别的端同步过来的；但让位于会话自己的背景——更具体的意图应该
+// 压过更笼统的。
+
+// 深浅色各存一张：既有的 ChatBackgroundPage 本来就带 forDark 开关，服务端背景
+// 也是分两套存的，本地这套跟着同一套心智，免得用户在深色下换了图、回到浅色发现
+// 也跟着变了。
+export function localWallpaperFileName(forDark: boolean, stamp: number): string {
+  const safe: number = Number.isFinite(stamp) && stamp > 0 ? Math.floor(stamp) : 0;
+  return `local_bg_${forDark ? 'dark' : 'light'}_${safe}.jpg`;
+}
+
+// 文件名带时间戳，而不是固定一个名字覆盖写。
+//
+// 固定名会撞上图片缓存：ArkUI 的 Image 按路径缓存解码结果，换了图但路径没变，
+// 屏幕上还是旧图，要杀进程才更新。带时间戳等于每次换图都是一个新路径，缓存天然
+// 失效；代价是换图时要**自己把上一张删掉**，否则沙箱里会堆一地废图。
+export function isLocalWallpaperFile(name: string): boolean {
+  return name.startsWith('local_bg_light_') || name.startsWith('local_bg_dark_');
+}
+
+// 本地壁纸该不该盖过账号默认背景。
+//
+// hasChatSpecific：这个会话有没有自己的背景（服务端下发的 chat.background）。
+export function localWallpaperWins(hasChatSpecific: boolean, localPath: string): boolean {
+  return !hasChatSpecific && localPath !== '';
+}
+
+// APP 背景图（主界面壁纸）的文件名。与聊天壁纸分开命名，两者互不覆盖。
+export function appWallpaperFileName(forDark: boolean, stamp: number): string {
+  const safe: number = Number.isFinite(stamp) && stamp > 0 ? Math.floor(stamp) : 0;
+  return `app_bg_${forDark ? 'dark' : 'light'}_${safe}.jpg`;
+}
+
+// APP 壁纸此刻生不生效。
+//
+// stateRaw：APP 槽位里存的**序列化 ChatBackgroundState**（'' = 没设）。存状态而
+// 不是裸路径，是为了让原生壁纸（渐变/图案）也能给 APP 背景用——见
+// pages/common/AppBackdrop。
+// split：是不是分栏（平板/折叠屏展开）。统一背景开启时，APP 壁纸铺满整个窗口。
+export function appWallpaperActive(stateRaw: string, split: boolean): boolean {
+  if (stateRaw === '') {
+    return false;
+  }
+  if (!split) {
+    return true;
+  }
+  // 分栏模式（2026-11-04 用户选定方案 B）：原来这里是 `&& !split`，理由是
+  // 「右栏被聊天壁纸盖住，这张图只能从左栏窄缝里露出来」。
+  // 现在改成**整窗一张壁纸**：分栏下 APP 壁纸照常生效，同时 ChatBackdrop
+  // 在分栏时不再画该会话自己的壁纸（见 ChatBackdrop.suppressedByUnifiedBg），
+  // 于是两栏共用这一张。
+  //
+  // 开关 KEY_SPLIT_UNIFIED_BG 留给以后做「分栏时保持各自的聊天壁纸」那一档，
+  // 默认 true = 统一背景。
+  return AppStorage.get<boolean>(KEY_SPLIT_UNIFIED_BG) ?? true;
+}
+
+// 分栏时是否用「整窗一张壁纸」代替每个会话自己的壁纸。默认开。
+export const KEY_SPLIT_UNIFIED_BG: string = 'splitUnifiedBg';
+
+// 上传过的壁纸是**共用的**：同一张图可以同时给多个槽位用，不必重传一遍
+// （用户："上传的壁纸互相区域之间应该可以显示，不需要重新传"）。
+//
+// 因此换图时**不能再无条件删旧文件**——那张图可能正被别的槽位引用着，删了那边
+// 就变成一个指向空路径的槽位。改成只在"没有任何槽位还引用它"时才删。
+//
+// paths：当前四个槽位 + 两个聊天本机壁纸键里存着的所有路径（空串会被忽略）。
+export function wallpaperFileStillUsed(path: string, paths: string[]): boolean {
+  if (path === '') {
+    return false;
+  }
+  for (const p of paths) {
+    if (p === path) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// 是不是本应用上传的壁纸文件（聊天的或 APP 的）。用来从沙箱里列出"已上传"那一排。
+export function isUploadedWallpaperFile(name: string): boolean {
+  if (name.endsWith(THUMB_SUFFIX)) {
+    return false;   // 另存的小缩略图不是一张独立的上传壁纸
+  }
+  return isLocalWallpaperFile(name) || name.startsWith('app_bg_');
+}
+
+// 上传壁纸旁边那份 ≤512px 缩略图的路径（issue #201 第 7 条）：
+// local_bg_light_123.jpg → local_bg_light_123.thumb.jpg。
+const THUMB_SUFFIX: string = '.thumb.jpg';
+
+export function uploadedThumbPath(path: string): string {
+  return path.endsWith('.jpg') ? `${path.substring(0, path.length - 4)}${THUMB_SUFFIX}` : `${path}${THUMB_SUFFIX}`;
+}

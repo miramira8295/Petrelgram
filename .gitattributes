@@ -1,0 +1,4 @@
+# client_id 是华为 Push Kit 的 AGC 应用标识，必须配在 module.json5 里（官方文档
+# 明确写了"不要使用其他方式设置"），而这个文件又必须被跟踪。用 clean filter 让它
+# 物理上提交不进去——装法见 scripts/install-git-filters.sh。
+entry/src/main/module.json5 filter=clientid

@@ -1,0 +1,17 @@
+diff --git a/build/toolchain/mac/BUILD.gn b/build/toolchain/mac/BUILD.gn
+index ce3a31ad..1aeb380c 100644
+--- a/build/toolchain/mac/BUILD.gn
++++ b/build/toolchain/mac/BUILD.gn
+@@ -22,6 +22,12 @@ template("mac_toolchain") {
+       forward_variables_from(invoker.toolchain_args, "*")
+       current_os = "mac"
+ 
++      # Keep host generators on Xcode clang; the OHOS fork otherwise points
++      # clang_base_path at the target SDK even for the host toolchain.
++      clang_base_path =
++          "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr"
++      use_lld = false
++
+       if (target_os == "ios") {
+         # Use LLD for the host part of a chrome/ios build.
+         use_lld = true

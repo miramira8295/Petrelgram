@@ -1,0 +1,268 @@
+{
+  "module": {
+    "name": "entry",
+    "type": "entry",
+    "description": "$string:module_desc",
+    "mainElement": "EntryAbility",
+    "deviceTypes": [
+      "phone",
+      "tablet"
+    ],
+    "deliveryWithInstall": true,
+    "installationFree": false,
+    "pages": "$profile:main_pages",
+    "routerMap": "$profile:router_map",
+    // 华为 Push Kit 的 AGC 应用标识。
+    //
+    // **这里的值不会进版本库**：.gitattributes 给本文件挂了 clean filter，git
+    // 存下来的永远是空串。本机要填真值才能取到 Push Token，装法见
+    // scripts/install-git-filters.sh。别人 clone 拿到的是空值——他们用的是自签
+    // 的未签名包，签名身份和本 AGC 应用对不上，填了也取不到 token。
+    //
+    // 必须配在 module 级 metadata：app.json5 的 schema 不接受这一项，官方文档也
+    // 写了「请注意不要使用其他方式设置 value 值」。
+    "metadata": [
+      {
+        "name": "client_id",
+        "value": ""
+      },
+      // 深浅色切换走增量流程（API 20 起，#194）：默认是全量重绘、开销随 UI 复杂度线性
+      // 增加。前提是属性里没有"现查系统颜色模式的函数返回值"——我们的深浅色都经
+      // KEY_APP_DARK / APPEARANCE_EPOCH 状态量驱动，满足。HDS 导航三件 API 26 前不吃这条
+      // 快路，EntryAbility 在颜色模式变化时 bump 材质 epoch 兜底。
+      {
+        "name": "configColorModeChangePerformanceInArkUI",
+        "value": "true"
+      }
+    ],
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.FILE_ACCESS_PERSIST",
+        "reason": "$string:FILE_ACCESS_PERSIST_reason",
+        "usedScene": {
+          "when": "inuse",
+          // 只有 EntryAbility 这条线用得到：设置 → 数据与存储里用
+          // DocumentViewPicker 选下载目录（DataStoragePage），以及会话里保存
+          // 文件（ChatPage → util/mediaSaver → services/DownloadSaveNotification）。
+          // 自动签名把模块里四个 ability 全填上了，另外三个
+          // （MessageSyncWorkAbility / EntryBackupAbility / CrashFaultLogAbility）
+          // 对 mediaSaver 零引用，已收窄。
+          "abilities": [
+            "EntryAbility"
+          ]
+        }
+      },
+      {
+        "name": "ohos.permission.INTERNET"
+      },
+      {
+        "name": "ohos.permission.GET_NETWORK_INFO"
+      },
+      {
+        "name": "ohos.permission.KEEP_BACKGROUND_RUNNING",
+        // 上架审核项：后台常驻权限必须说明用途与场景，只写名字会被判「用途不明」。
+        // 实际使用方三处，全部走 EntryAbility 的 context：
+        //   · services/MediaPlaybackKeepAlive     → ['audioPlayback']（语音/音频消息连续播放）
+        //   · services/DownloadSaveNotification   → ['dataTransfer']（保存文件到相册/下载目录）
+        //   · services/LiveStreamBackgroundTask   → 直播与语音通话
+        "reason": "$string:background_running_reason",
+        "usedScene": {
+          "when": "inuse",
+          "abilities": [
+            "EntryAbility"
+          ]
+        }
+      },
+      {
+        "name": "ohos.permission.MICROPHONE",
+        "reason": "$string:mic_permission_reason",
+        "usedScene": {
+          "when": "inuse",
+          "abilities": [
+            "EntryAbility"
+          ]
+        }
+      },
+      {
+        "name": "ohos.permission.CAMERA",
+        "reason": "$string:camera_permission_reason",
+        "usedScene": {
+          "when": "inuse",
+          "abilities": [
+            "EntryAbility"
+          ]
+        }
+      },
+      {
+        "name": "ohos.permission.APPROXIMATELY_LOCATION",
+        "reason": "$string:location_permission_reason",
+        "usedScene": {
+          "when": "inuse",
+          "abilities": [
+            "EntryAbility"
+          ]
+        }
+      },
+      {
+        "name": "ohos.permission.LOCATION",
+        "reason": "$string:location_permission_reason",
+        "usedScene": {
+          "when": "inuse",
+          "abilities": [
+            "EntryAbility"
+          ]
+        }
+      }
+    ],
+    "abilities": [
+      {
+        "name": "EntryAbility",
+        "srcEntry": "./ets/entryability/EntryAbility.ets",
+        "description": "$string:EntryAbility_desc",
+        "icon": "$media:layered_image",
+        "label": "$string:EntryAbility_label",
+        // 新版启动窗配置档：旧字段 startWindowIcon 的显示尺寸被系统钉死，
+        // 给多大的图都渲染成小图标。配置档里现在**只留底色，不配图**：
+        // 启动页要跟着用户选的桌面图标走，而这一帧的任何资源都是打包时定死的、
+        // 没有运行时接口能改，所以图案交给应用内的 StartupSplash 现画（按备用
+        // 图标取 AppScope 里那两层原图）。这一帧保持纯底色，正好能与它接上。
+        // 旧字段保留作为低版本回退（系统不认配置档时用）。
+        "startWindow": "$profile:start_window",
+        // 2026-09-18 换新图标：这里**不能再指 $media:foreground**——那张是老海燕，
+        // 而且 midnight 起的五张换底色备用图标还都指着它，不能动它本身。
+        "startWindowIcon": "$media:bg_petrel2",
+        "startWindowBackground": "$color:start_window_background",
+        // 多设备适配规格 SPEC-15（2026-09-23）：全屏 / 分屏 / 悬浮窗都支持。这就是缺省值，
+        // 显式写出来是为了表明是有意的，别哪天被当成多余删掉。
+        "supportWindowMode": ["fullscreen", "split", "floating"],
+        // 视频类应用的官方建议值：多窗布局方向可以动态变为横向。要配合
+        // enableLandscapeMultiWindow / disableLandscapeMultiWindow 使用（见
+        // util/landscapeMultiWindow），且只在系统识别为横向全屏播放时生效，其余时候等同 default。
+        "preferMultiWindowOrientation": "landscape_auto",
+        "backgroundModes": [
+          "dataTransfer",
+          "audioPlayback",
+          "audioRecording",
+          "voip",
+          "location"
+        ],
+        "exported": true,
+        "skills": [
+          {
+            "entities": [
+              "entity.system.home"
+            ],
+            "actions": [
+              "ohos.want.action.home"
+            ]
+          },
+          {
+            // tg:// deep links (Deep Linking, no domain verification needed).
+            // https://t.me links can't auto-open a third-party client: HarmonyOS
+            // App Linking requires hosting a verification file on t.me, which
+            // only Telegram controls. scheme MUST be lowercase or the match fails.
+            "entities": [
+              "entity.system.browsable"
+            ],
+            "actions": [
+              "ohos.want.action.viewData"
+            ],
+            "uris": [
+              {
+                "scheme": "tg"
+              }
+            ]
+          },
+          {
+            // 系统分享面板里的入口：拉起应用，进应用内的会话选择器。
+            //
+            // 【uris 为什么每一条都带 scheme】schema 把 scheme 列为必填
+            // （modulecheck/module.json 的 required: ["scheme"]），而分享匹配
+            // 实际看的是 utd —— scheme 在这里是占位的保留字段，不参与匹配。
+            //
+            // 【maxFileSupported 必须显式写】它的默认值是 0，意思是"这个类型
+            // 一个都收不了"。漏掉它的效果不是报错，而是应用**根本不出现在
+            // 分享面板里**，最难查的那一种。
+            //
+            // utd 填的是中间类型：general.image 覆盖 jpeg/png/heif/…，
+            // 分享方给的具体叶子类型会按 UTD 的继承关系匹配上来。
+            // general.object 是所有类型的根，兜底收下其它一切（当文件发）。
+            "actions": [
+              "ohos.want.action.sendData"
+            ],
+            "uris": [
+              { "scheme": "file", "utd": "general.image", "maxFileSupported": 20 },
+              { "scheme": "file", "utd": "general.video", "maxFileSupported": 20 },
+              { "scheme": "file", "utd": "general.audio", "maxFileSupported": 20 },
+              { "scheme": "file", "utd": "general.plain-text", "maxFileSupported": 1 },
+              { "scheme": "file", "utd": "general.hyperlink", "maxFileSupported": 1 },
+              { "scheme": "file", "utd": "general.object", "maxFileSupported": 20 }
+            ]
+          }
+        ]
+      }
+    ],
+    "extensionAbilities": [
+      {
+        // 应用起不来时把崩溃信息取出来的救命通道：崩溃 30 分钟后系统单独拉起
+        // 这个进程。API 21 起支持，低于 21 的设备上它只是不会被拉起，主进程
+        // 那条正常路径不受影响。
+        "name": "CrashFaultLogAbility",
+        "srcEntry": "./ets/faultlogextension/CrashFaultLogAbility.ets",
+        "type": "faultLog",
+        "exported": false
+      },
+      {
+        "name": "EntryBackupAbility",
+        "srcEntry": "./ets/entrybackupability/EntryBackupAbility.ets",
+        "type": "backup",
+        "exported": false,
+        "metadata": [
+          {
+            "name": "ohos.extension.backup",
+            "resource": "$profile:backup_config"
+          }
+        ]
+      },
+      {
+        "name": "MessageSyncWorkAbility",
+        "srcEntry": "./ets/workability/MessageSyncWorkAbility.ets",
+        "type": "workScheduler",
+        "exported": false
+      },
+      {
+        // 分享面板里就地选人的那一小块界面（不跳出面板）。
+        //
+        // ⚠️ **这是独立进程**：没有登录态、没有 TDLib、AppStorage 是空的。
+        // 它只做两件事——读主应用落盘的候选名单（services/ShareTargetSnapshot）、
+        // 把用户选中的目标连同分享内容交回主应用去发。别在这里加任何依赖
+        // ChatStore / TDLib 的代码。
+        //
+        // 与上面 EntryAbility 的 sendData 技能**并存**：系统会把两者都显示出来，
+        // 面板内选人走这里，点开应用走那边。
+        "name": "ShareTargetAbility",
+        "srcEntry": "./ets/shareextension/ShareTargetAbility.ets",
+        "type": "share",
+        // 分享面板里这一条的名字。**不能沿用 EntryAbility_label**：那是桌面上
+        // 应用的名字，两条入口都用它，用户在面板里看到的就是两个一模一样的
+        // "Petrelgram"，分不出哪个是就地选人、哪个是打开应用。
+        // EntryAbility 那一条只能保持应用名（改它等于改桌面图标名）。
+        "label": "$string:share_panel_label",
+        // 图标用 foreground 而不是 layered_image：分层图标是给桌面的自适应
+        // 图标遮罩用的，分享面板不套那层遮罩，两条入口就长得不一样。
+        "icon": "$media:foreground",
+        "exported": true
+        // 【skills 已刻意摘掉：面板里这条入口暂不展示】
+        //
+        // 两条入口都必须唤起应用（发送要走 TDLib，TDLib 数据库单进程独占，
+        // 只活在主进程），而面板内那条能选的只有缓存下来的 12 个常用会话，
+        // 想发给别人还是要跳进应用。留一条更清楚——用户定的是留"打开应用"那条。
+        //
+        // ⚠️ **代码一律保留**（shareextension/ShareTargetAbility、
+        // pages/share/SharePanel、services/ShareHandoff、ShareTargetSnapshot、
+        // ShareTargetService）：想把面板放出来，只要把下面这段 skills 加回去。
+        // 别当死代码清掉。
+      }
+    ]
+  }
+}

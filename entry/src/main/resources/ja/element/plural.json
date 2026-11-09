@@ -1,0 +1,679 @@
+{
+ "plural": [
+  {
+   "name": "duration_days",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d日"
+    }
+   ]
+  },
+  {
+   "name": "duration_days_premium",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d日 Premium"
+    }
+   ]
+  },
+  {
+   "name": "duration_months",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%dか月"
+    }
+   ]
+  },
+  {
+   "name": "duration_months_premium",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%dか月 Premium"
+    }
+   ]
+  },
+  {
+   "name": "gift_stars_count",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%dスター"
+    }
+   ]
+  },
+  {
+   "name": "gift_worth_stars",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%dスター相当"
+    }
+   ]
+  },
+  {
+   "name": "live_media_in_room",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "配信ルームに %d 人"
+    }
+   ]
+  },
+  {
+   "name": "live_status_watching",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 人が視聴中"
+    }
+   ]
+  },
+  {
+   "name": "prize_premium_months",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%dか月の Premium"
+    }
+   ]
+  },
+  {
+   "name": "prize_stars",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "スター %d 個"
+    }
+   ]
+  },
+  {
+   "name": "session_unit_days",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d日"
+    }
+   ]
+  },
+  {
+   "name": "session_unit_hours",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d時間"
+    }
+   ]
+  },
+  {
+   "name": "session_unit_minutes",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d分"
+    }
+   ]
+  },
+  {
+   "name": "user_status_days_ago",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d日前"
+    }
+   ]
+  },
+  {
+   "name": "user_status_hours_ago",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d時間前"
+    }
+   ]
+  },
+  {
+   "name": "user_status_minutes_ago",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d分前"
+    }
+   ]
+  },
+  {
+   "name": "sticker_set_count",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "ステッカー %d 枚"
+    }
+   ]
+  },
+  {
+   "name": "cw_disconnect_all_confirm",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d のサイトでのログインが切断されます。"
+    }
+   ]
+  },
+  {
+   "name": "pe_group_exceptions_kept",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 個のグループの例外がサーバーに保持されました"
+    }
+   ]
+  },
+  {
+   "name": "storage_file_count",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "ファイル %d 個"
+    }
+   ]
+  },
+  {
+   "name": "bu_account_count",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "アカウント %d 個"
+    }
+   ]
+  },
+  {
+   "name": "calls_about_count",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "約 %d 件の記録"
+    }
+   ]
+  },
+  {
+   "name": "calls_count",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 件の記録"
+    }
+   ]
+  },
+  {
+   "name": "calls_participants",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 人"
+    }
+   ]
+  },
+  {
+   "name": "cf_about_chats",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "約 %d 個のチャット"
+    }
+   ]
+  },
+  {
+   "name": "cf_delete_and_leave",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 個のチャットを削除して退出"
+    }
+   ]
+  },
+  {
+   "name": "fl_new_chats",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "新しいチャット %d 件"
+    }
+   ]
+  },
+  {
+   "name": "fl_selected_chats",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 個のチャットを選択しました"
+    }
+   ]
+  },
+  {
+   "name": "fl_add_chats",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "チャットを %d 個追加"
+    }
+   ]
+  },
+  {
+   "name": "ds_cached_files",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "キャッシュファイル %d 個"
+    }
+   ]
+  },
+  {
+   "name": "ct_result_count",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 人"
+    }
+   ]
+  },
+  {
+   "name": "ng_max_members",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "基本グループでは最大 %d 人のメンバーを選択できます"
+    }
+   ]
+  },
+  {
+   "name": "ng_member_count",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "メンバー %d 人"
+    }
+   ]
+  },
+  {
+   "name": "ng_people_count",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 人"
+    }
+   ]
+  },
+  {
+   "name": "ps_days",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d日"
+    }
+   ]
+  },
+  {
+   "name": "px_count",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 個"
+    }
+   ]
+  },
+  {
+   "name": "fe_chosen_limit",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "個別に選択するチャットは %d 個までです"
+    }
+   ]
+  },
+  {
+   "name": "fe_removed_invalid",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "セッションリストにないチャット %d 個を削除しました"
+    }
+   ]
+  },
+  {
+   "name": "fe_pick_limit",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "最大 %d 個のチャットを選択"
+    }
+   ]
+  },
+  {
+   "name": "fe_preview_count",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "約 %d 個のチャットが見込まれます"
+    }
+   ]
+  },
+  {
+   "name": "fe_selected_count",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 個を選択しました"
+    }
+   ]
+  },
+  {
+   "name": "mp_item_count",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 件"
+    }
+   ]
+  },
+  {
+   "name": "fw_forwarded_n",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 件のメッセージを転送しました"
+    }
+   ]
+  },
+  {
+   "name": "fw_forward_n",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 件のメッセージを転送"
+    }
+   ]
+  },
+  {
+   "name": "poll_voters",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 人が投票"
+    }
+   ]
+  },
+  {
+   "name": "gw_winners_n",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "当選者 %d 人"
+    }
+   ]
+  },
+  {
+   "name": "gw_unclaimed_n",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "未受け取り %d 件"
+    }
+   ]
+  },
+  {
+   "name": "loc_live_hours",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "ライブ位置情報 · %d時間"
+    }
+   ]
+  },
+  {
+   "name": "loc_live_minutes",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "ライブ位置情報 · %d分"
+    }
+   ]
+  },
+  {
+   "name": "loc_accuracy",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "誤差約 %d メートル"
+    }
+   ]
+  },
+  {
+   "name": "loc_proximity",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "アラート範囲 %d メートル"
+    }
+   ]
+  },
+  {
+   "name": "ft_topic_count",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "トピック %d 件"
+    }
+   ]
+  },
+  {
+   "name": "mb_comments_n",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "コメント %d 件"
+    }
+   ]
+  },
+  {
+   "name": "lv_new_interactions",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "新しいインタラクション %d 件"
+    }
+   ]
+  },
+  {
+   "name": "lv_more_sources",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "他に %d 画面"
+    }
+   ]
+  },
+  {
+   "name": "lv_open_chat_unread",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "ライブ配信のインタラクションを開く、新しいメッセージ %d 件"
+    }
+   ]
+  },
+  {
+   "name": "lv_view_members",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 人のメンバーを表示"
+    }
+   ]
+  },
+  {
+   "name": "cp_live_online_now",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "現在 %d 人がオンラインです。"
+    }
+   ]
+  },
+  {
+   "name": "cp_n_online",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 人オンライン"
+    }
+   ]
+  },
+  {
+   "name": "cp_media_skipped",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 件のメディアの読み込みに失敗しましたが、残りのコンテンツは送信しました"
+    }
+   ]
+  },
+  {
+   "name": "cp_copied_n",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 件のメッセージをコピーしました"
+    }
+   ]
+  },
+  {
+   "name": "cp_n_typing",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d 人が入力中…"
+    }
+   ]
+  },
+  {
+   "name": "cp_unread_a11y",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "未読メッセージ %d 件。最新のメッセージに戻る"
+    }
+   ]
+  },
+  {
+   "name": "sm_paid_per_message",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "各メッセージに %d スターの支払いが必要です"
+    }
+   ]
+  },
+  {
+   "name": "sm_refunded_stars",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d スターを返金しました"
+    }
+   ]
+  },
+  {
+   "name": "sm_channel_dm_price",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "このチャンネルでは各メッセージ %d スターのダイレクトメッセージが許可されています"
+    }
+   ]
+  },
+  {
+   "name": "unit_seconds",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d秒"
+    }
+   ]
+  },
+  {
+   "name": "unit_minutes",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d分"
+    }
+   ]
+  },
+  {
+   "name": "unit_hours",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d時間"
+    }
+   ]
+  },
+  {
+   "name": "unit_days",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d日"
+    }
+   ]
+  },
+  {
+   "name": "sm_proximity_metres",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%dメートル"
+    }
+   ]
+  },
+  {
+   "name": "lg_resend_in",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "%d秒後に再送信できます"
+    }
+   ]
+  },
+  {
+   "name": "cl_unread_n",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "未読 %d 件"
+    }
+   ]
+  },
+  {
+   "name": "ap_chats_n",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "チャット %d 件"
+    }
+   ]
+  },
+  {
+   "name": "gs_free_left",
+   "value": [
+    {
+     "quantity": "other",
+     "value": "今日の無料検索は残り %d 回"
+    }
+   ]
+  }
+ ]
+}

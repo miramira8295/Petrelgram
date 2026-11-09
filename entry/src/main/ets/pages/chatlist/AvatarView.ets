@@ -1,0 +1,191 @@
+import { AVATAR_PALETTE, AVATAR_SIZE, COLOR_PRIMARY } from '../../util/theme';
+import { formatTTL } from '../../util/formatTTL';
+import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { AvLoopVideo } from '../common/AvLoopVideo';
+import { CachedImage } from '../common/CachedImage';
+import { KEY_POWER_ACTIVE, KEY_POWER_ANIMATED_AVATAR } from '../../store/AppSettings';
+
+@Component
+export struct AvatarView {
+  @Prop avatarPath: string;
+  @Prop initials: string;
+  @Prop colorSeed: number;
+  @Prop autoDeleteTime: number = 0;
+  @StorageProp(LANGUAGE_EPOCH) private languageEpoch: number = 0;
+  @Prop isLive: boolean = false;
+  @Prop livePulseExpanded: boolean = false;
+  // Animated profile photo (MPEG4 loop). Only profile pages pass this —
+  // list rows stay static (one looping player per row would be too heavy).
+  @Prop animPath: string = '';
+  @Prop animationPaused: boolean = false;
+  // 「我的收藏」：和自己的私聊。画书签而不是自己的头像——用户在列表里要一眼
+  // 认出它，Telegram 各端都是这么处理的（issue #8）。
+  @Prop savedMessages: boolean = false;
+  // 预载/隐藏页签先画首字母占位，真正成为当前页后再启动图片或视频解码。
+  @Prop loadImage: boolean = true;
+  @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
+  @StorageProp(KEY_POWER_ANIMATED_AVATAR) animatedAvatar: boolean = true;
+  // **必须是 @Prop，不能是普通成员**：会话行的头像在手机/平板分栏之间是两个尺寸
+  // （见 util/chatRowMetrics），而没有装饰器的成员只在构造时取一次值、之后再不同步
+  // ——转屏或进出分栏时已经存在的那些行会停在旧尺寸上（HdsSubDestination 的 menuItems
+  // 栽过同一个坑）。数字过 @Prop 的深拷贝没有任何代价。
+  @Prop avatarSize: number = AVATAR_SIZE;
+
+  // 动态头像播不播。
+  //
+  // 原来挂在"自动播放视频"（KEY_POWER_AUTOPLAY_VIDEO）上，那是把实现细节
+  // 漏到了用户语义上——恰好都用播放器解码，就被绑到了同一个开关。可这两件
+  // 事的用户预期完全不同：「自动播放视频」是"聊天里的视频别自动播"，动机是
+  // 省流量；而动态头像是几十 KB 的循环片段、**而且早就下载完了**，不播它一
+  // 点流量都省不了，只是让界面变呆。用户在设置里看到那一行，也不会想到它管
+  // 的是头像。
+  //
+  // 改成省电设置里自己的一档「播放动图头像」。省电模式仍然是总闸。
+  //
+  // 别处的边界本来就是对的（MessageStore 里 isAnimation ? GIF : VIDEO），
+  // 只有头像这一处错了。
+  private shouldAnimate(): boolean {
+    return this.loadImage && this.animPath !== '' && this.animatedAvatar && !this.powerSaving;
+  }
+
+  @Builder
+  base() {
+    if (this.savedMessages) {
+      Row() {
+        SymbolGlyph($r('sys.symbol.bookmark_fill'))
+          .fontSize(this.avatarSize * 0.5)
+          .fontColor([Color.White]);
+      }
+      .width(this.avatarSize).height(this.avatarSize)
+      .borderRadius(this.avatarSize / 2)
+      .backgroundColor(COLOR_PRIMARY)
+      .justifyContent(FlexAlign.Center);
+    } else if (this.shouldAnimate()) {
+      // Animated avatars are H.264 MP4 — the system AVPlayer loops them with
+      // hardware decode (far lighter than ijkplayer's software path).
+      Column() {
+        AvLoopVideo({
+          videoPath: this.animPath,
+          paused: this.animationPaused,
+          boxWidth: this.avatarSize,
+          boxHeight: this.avatarSize
+        });
+      }
+      .width(this.avatarSize).height(this.avatarSize)
+      .borderRadius(this.avatarSize / 2)
+      .clip(true);
+    } else if (this.avatarPath !== '') {
+      // Through the PixelMap cache, like chat photos. Avatars are small but
+      // there are a lot of them and they repeat: the same file is decoded for
+      // every row showing that chat and again after every recycle. Straight
+      // Image(file://…) redid all of that, which is why chat-list rows WITH an
+      // avatar stuttered more than rows falling back to initials.
+      Stack() {
+        // The initials sit underneath so a pending decode shows the coloured
+        // circle rather than a hole.
+        this.initialsCircle();
+        if (this.loadImage) {
+          CachedImage({ spec: {
+            path: this.avatarPath,
+            boxWidth: this.avatarSize,
+            boxHeight: this.avatarSize,
+            radius: this.avatarSize / 2,
+            fit: ImageFit.Cover,
+            // 【2026-09-21 补上这两个】pinBounded / syncSmall 这套机制就是为头像
+            // （issue #137「翻消息时头像会闪」）建的，而**本组件一个都没传**——
+            // 只有 MessageBubble 和 LightweightPlainTextBubble 在用。会话列表、
+            // 联系人、@ 弹窗的头像全走这里，于是：被大图挤出缓存后重解码、
+            // 首帧只有首字母圆底。
+            //   pinBounded：只保最近 48 张，超出还给 LRU（见 util/boundedPins）。
+            //   syncSmall ：未命中时在主线程同步解一次，首帧就有照片。
+            //               准入见 util/pixelSyncPolicy——那条阈值同日由 160 抬到
+            //               176，否则本机 161px 的头像差一像素够不着。
+            pinBounded: true,
+          } });
+        }
+      }
+      .width(this.avatarSize).height(this.avatarSize);
+    } else {
+      this.initialsCircle();
+    }
+  }
+
+  // 单 Text 画整颗字母头像：圆是 backgroundColor + borderRadius，居中靠
+  // align/textAlign。原来是 Stack{Circle,Text} 三个节点——这颗头像每行一个、
+  // 全 APP 30 处调用，精简节点数从这种无属性容器下手（docs/chatlist-perf-todo
+  // 第 2 条，rs_node 实测 142 节点/行）。
+  @Builder
+  initialsCircle() {
+    Text(this.initials)
+      .fontColor(Color.White).fontSize(this.avatarSize * 0.4).fontWeight(FontWeight.Medium)
+      .width(this.avatarSize).height(this.avatarSize)
+      .align(Alignment.Center).textAlign(TextAlign.Center)
+      .backgroundColor(AVATAR_PALETTE[Math.abs(this.colorSeed) % AVATAR_PALETTE.length])
+      .borderRadius(this.avatarSize / 2);
+  }
+
+  private ttlBadgeSize(): number {
+    return this.avatarSize < 42 ? 18 : 22;
+  }
+
+  private ttlRingSize(): number {
+    return this.avatarSize < 42 ? 15 : 18.5;
+  }
+
+  private ttlFontSize(): number {
+    return this.avatarSize < 42 ? 6.5 : 7.5;
+  }
+
+  build() {
+    Stack({ alignContent: Alignment.BottomEnd }) {
+      this.base();
+      if (this.autoDeleteTime > 0 && !this.isLive) {
+        Stack({ alignContent: Alignment.Center }) {
+          Image($r('app.media.ic_auto_delete_ring'))
+            .width(this.ttlRingSize())
+            .height(this.ttlRingSize())
+            .draggable(false);
+          Text(this.languageEpoch >= 0 ? formatTTL(this.autoDeleteTime) : '')
+            .fontSize(this.ttlFontSize())
+            .fontColor(Color.White)
+            .fontWeight(FontWeight.Bold)
+            .textAlign(TextAlign.Center)
+            .maxLines(1);
+        }
+        .width(this.ttlBadgeSize())
+        .height(this.ttlBadgeSize())
+        .backgroundColor(COLOR_PRIMARY)
+        .borderRadius(this.ttlBadgeSize() / 2)
+        .border({ width: 1.5, color: $r('app.color.surface') })
+        .translate({ x: 1, y: 1 });
+      }
+      if (this.isLive) {
+        Stack({ alignContent: Alignment.Center }) {
+          Circle({ width: 22, height: 22 })
+            .fill('#442AABEE')
+            .opacity(this.livePulseExpanded ? 0.18 : 0.52)
+            .scale({
+              x: this.livePulseExpanded ? 1.12 : 0.92,
+              y: this.livePulseExpanded ? 1.12 : 0.92
+            });
+          Circle({ width: 18, height: 18 })
+            .fill('#F8FCFF')
+            .shadow({ radius: 3, color: '#292A88C9', offsetX: 0, offsetY: 1 })
+            .scale({
+              x: this.livePulseExpanded ? 1.03 : 0.98,
+              y: this.livePulseExpanded ? 1.03 : 0.98
+            });
+          Row({ space: 1.5 }) {
+            Circle({ width: 2.5, height: 2.5 }).fill('#249FE8');
+            Rect({ width: 2.5, height: 8, radius: 1.25 }).fill('#249FE8');
+            Rect({ width: 2.5, height: 8, radius: 1.25 }).fill('#249FE8');
+            Circle({ width: 2.5, height: 2.5 }).fill('#249FE8');
+          }.alignItems(VerticalAlign.Center);
+        }
+        .width(22).height(22)
+        .translate({ x: 1, y: 1 });
+      }
+    }
+    .width(this.avatarSize).height(this.avatarSize);
+  }
+}

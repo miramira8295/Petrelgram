@@ -1,0 +1,979 @@
+{
+  "plural": [
+    {
+      "name": "duration_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d दिन"
+        },
+        {
+          "quantity": "other",
+          "value": "%d दिन"
+        }
+      ]
+    },
+    {
+      "name": "duration_days_premium",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d दिन Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d दिन Premium"
+        }
+      ]
+    },
+    {
+      "name": "duration_months",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d महीना"
+        },
+        {
+          "quantity": "other",
+          "value": "%d महीने"
+        }
+      ]
+    },
+    {
+      "name": "duration_months_premium",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d महीना Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d महीने Premium"
+        }
+      ]
+    },
+    {
+      "name": "gift_stars_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d स्टार"
+        },
+        {
+          "quantity": "other",
+          "value": "%d स्टार"
+        }
+      ]
+    },
+    {
+      "name": "gift_worth_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d स्टार का मूल्य"
+        },
+        {
+          "quantity": "other",
+          "value": "%d स्टार का मूल्य"
+        }
+      ]
+    },
+    {
+      "name": "live_media_in_room",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d व्यक्ति लाइव रूम में"
+        },
+        {
+          "quantity": "other",
+          "value": "%d लोग लाइव रूम में"
+        }
+      ]
+    },
+    {
+      "name": "live_status_watching",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d व्यक्ति देख रहा है"
+        },
+        {
+          "quantity": "other",
+          "value": "%d लोग देख रहे हैं"
+        }
+      ]
+    },
+    {
+      "name": "prize_premium_months",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d महीना Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d महीने Premium"
+        }
+      ]
+    },
+    {
+      "name": "prize_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d स्टार"
+        },
+        {
+          "quantity": "other",
+          "value": "%d स्टार"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d दिन"
+        },
+        {
+          "quantity": "other",
+          "value": "%d दिन"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d घंटा"
+        },
+        {
+          "quantity": "other",
+          "value": "%d घंटे"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d मिनट"
+        },
+        {
+          "quantity": "other",
+          "value": "%d मिनट"
+        }
+      ]
+    },
+    {
+      "name": "user_status_days_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d दिन पहले"
+        },
+        {
+          "quantity": "other",
+          "value": "%d दिन पहले"
+        }
+      ]
+    },
+    {
+      "name": "user_status_hours_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d घंटा पहले"
+        },
+        {
+          "quantity": "other",
+          "value": "%d घंटे पहले"
+        }
+      ]
+    },
+    {
+      "name": "user_status_minutes_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d मिनट पहले"
+        },
+        {
+          "quantity": "other",
+          "value": "%d मिनट पहले"
+        }
+      ]
+    },
+    {
+      "name": "sticker_set_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d स्टिकर"
+        },
+        {
+          "quantity": "other",
+          "value": "%d स्टिकर"
+        }
+      ]
+    },
+    {
+      "name": "cw_disconnect_all_confirm",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d वेबसाइट पर लॉगिन डिस्कनेक्ट होगा।"
+        },
+        {
+          "quantity": "other",
+          "value": "%d वेबसाइटों पर लॉगिन डिस्कनेक्ट होंगे।"
+        }
+      ]
+    },
+    {
+      "name": "pe_group_exceptions_kept",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d समूह अपवाद सर्वर द्वारा सुरक्षित है"
+        },
+        {
+          "quantity": "other",
+          "value": "%d समूह अपवाद सर्वर द्वारा सुरक्षित हैं"
+        }
+      ]
+    },
+    {
+      "name": "storage_file_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d फ़ाइल"
+        },
+        {
+          "quantity": "other",
+          "value": "%d फ़ाइलें"
+        }
+      ]
+    },
+    {
+      "name": "bu_account_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d खाता"
+        },
+        {
+          "quantity": "other",
+          "value": "%d खाते"
+        }
+      ]
+    },
+    {
+      "name": "calls_about_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "लगभग %d रिकॉर्ड"
+        },
+        {
+          "quantity": "other",
+          "value": "लगभग %d रिकॉर्ड"
+        }
+      ]
+    },
+    {
+      "name": "calls_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d रिकॉर्ड"
+        },
+        {
+          "quantity": "other",
+          "value": "%d रिकॉर्ड"
+        }
+      ]
+    },
+    {
+      "name": "calls_participants",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d व्यक्ति"
+        },
+        {
+          "quantity": "other",
+          "value": "%d लोग"
+        }
+      ]
+    },
+    {
+      "name": "cf_about_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "लगभग %d चैट"
+        },
+        {
+          "quantity": "other",
+          "value": "लगभग %d चैट"
+        }
+      ]
+    },
+    {
+      "name": "cf_delete_and_leave",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d चैट हटाएँ और छोड़ें"
+        },
+        {
+          "quantity": "other",
+          "value": "%d चैट हटाएँ और छोड़ें"
+        }
+      ]
+    },
+    {
+      "name": "fl_new_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d नई चैट"
+        },
+        {
+          "quantity": "other",
+          "value": "%d नई चैट"
+        }
+      ]
+    },
+    {
+      "name": "fl_selected_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d चैट चुनी गई"
+        },
+        {
+          "quantity": "other",
+          "value": "%d चैट चुनी गईं"
+        }
+      ]
+    },
+    {
+      "name": "fl_add_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d चैट जोड़ें"
+        },
+        {
+          "quantity": "other",
+          "value": "%d चैट जोड़ें"
+        }
+      ]
+    },
+    {
+      "name": "ds_cached_files",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d कैश फ़ाइल"
+        },
+        {
+          "quantity": "other",
+          "value": "%d कैश फ़ाइलें"
+        }
+      ]
+    },
+    {
+      "name": "ct_result_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d परिणाम"
+        },
+        {
+          "quantity": "other",
+          "value": "%d परिणाम"
+        }
+      ]
+    },
+    {
+      "name": "ng_max_members",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "बेसिक समूह में अधिकतम %d सदस्य चुन सकते हैं"
+        },
+        {
+          "quantity": "other",
+          "value": "बेसिक समूह में अधिकतम %d सदस्य चुन सकते हैं"
+        }
+      ]
+    },
+    {
+      "name": "ng_member_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d सदस्य"
+        },
+        {
+          "quantity": "other",
+          "value": "%d सदस्य"
+        }
+      ]
+    },
+    {
+      "name": "ng_people_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d व्यक्ति"
+        },
+        {
+          "quantity": "other",
+          "value": "%d लोग"
+        }
+      ]
+    },
+    {
+      "name": "ps_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d दिन"
+        },
+        {
+          "quantity": "other",
+          "value": "%d दिन"
+        }
+      ]
+    },
+    {
+      "name": "px_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d"
+        },
+        {
+          "quantity": "other",
+          "value": "%d"
+        }
+      ]
+    },
+    {
+      "name": "fe_chosen_limit",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "अलग से चुनी गई चैट %d से अधिक नहीं हो सकती"
+        },
+        {
+          "quantity": "other",
+          "value": "अलग से चुनी गई चैट %d से अधिक नहीं हो सकतीं"
+        }
+      ]
+    },
+    {
+      "name": "fe_removed_invalid",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d चैट जो चैट सूची में नहीं थी हटाई गई"
+        },
+        {
+          "quantity": "other",
+          "value": "%d चैट जो चैट सूची में नहीं थीं हटाई गईं"
+        }
+      ]
+    },
+    {
+      "name": "fe_pick_limit",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "अधिकतम %d चैट चुनें"
+        },
+        {
+          "quantity": "other",
+          "value": "अधिकतम %d चैट चुनें"
+        }
+      ]
+    },
+    {
+      "name": "fe_preview_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "अनुमानित लगभग %d चैट"
+        },
+        {
+          "quantity": "other",
+          "value": "अनुमानित लगभग %d चैट"
+        }
+      ]
+    },
+    {
+      "name": "fe_selected_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d चुना गया"
+        },
+        {
+          "quantity": "other",
+          "value": "%d चुने गए"
+        }
+      ]
+    },
+    {
+      "name": "mp_item_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d आइटम"
+        },
+        {
+          "quantity": "other",
+          "value": "%d आइटम"
+        }
+      ]
+    },
+    {
+      "name": "fw_forwarded_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d संदेश फ़ॉरवर्ड किया गया"
+        },
+        {
+          "quantity": "other",
+          "value": "%d संदेश फ़ॉरवर्ड किए गए"
+        }
+      ]
+    },
+    {
+      "name": "fw_forward_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d संदेश फ़ॉरवर्ड करें"
+        },
+        {
+          "quantity": "other",
+          "value": "%d संदेश फ़ॉरवर्ड करें"
+        }
+      ]
+    },
+    {
+      "name": "poll_voters",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d व्यक्ति ने भाग लिया"
+        },
+        {
+          "quantity": "other",
+          "value": "%d लोगों ने भाग लिया"
+        }
+      ]
+    },
+    {
+      "name": "gw_winners_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d विजेता"
+        },
+        {
+          "quantity": "other",
+          "value": "%d विजेता"
+        }
+      ]
+    },
+    {
+      "name": "gw_unclaimed_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d बिना दावा वाला पुरस्कार"
+        },
+        {
+          "quantity": "other",
+          "value": "%d बिना दावा वाले पुरस्कार"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "लाइव लोकेशन · %d घंटा"
+        },
+        {
+          "quantity": "other",
+          "value": "लाइव लोकेशन · %d घंटे"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "लाइव लोकेशन · %d मिनट"
+        },
+        {
+          "quantity": "other",
+          "value": "लाइव लोकेशन · %d मिनट"
+        }
+      ]
+    },
+    {
+      "name": "loc_accuracy",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "लगभग %d मीटर तक सटीक"
+        },
+        {
+          "quantity": "other",
+          "value": "लगभग %d मीटर तक सटीक"
+        }
+      ]
+    },
+    {
+      "name": "loc_proximity",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d मीटर सूचना दायरा"
+        },
+        {
+          "quantity": "other",
+          "value": "%d मीटर सूचना दायरा"
+        }
+      ]
+    },
+    {
+      "name": "ft_topic_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d विषय"
+        },
+        {
+          "quantity": "other",
+          "value": "%d विषय"
+        }
+      ]
+    },
+    {
+      "name": "mb_comments_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d टिप्पणी"
+        },
+        {
+          "quantity": "other",
+          "value": "%d टिप्पणियाँ"
+        }
+      ]
+    },
+    {
+      "name": "lv_new_interactions",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d नया इंटरैक्शन"
+        },
+        {
+          "quantity": "other",
+          "value": "%d नए इंटरैक्शन"
+        }
+      ]
+    },
+    {
+      "name": "lv_more_sources",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d अतिरिक्त वीडियो"
+        },
+        {
+          "quantity": "other",
+          "value": "%d अतिरिक्त वीडियो"
+        }
+      ]
+    },
+    {
+      "name": "lv_open_chat_unread",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "लाइव इंटरैक्शन खोलें, %d नया संदेश है"
+        },
+        {
+          "quantity": "other",
+          "value": "लाइव इंटरैक्शन खोलें, %d नए संदेश हैं"
+        }
+      ]
+    },
+    {
+      "name": "lv_view_members",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d सदस्य देखें"
+        },
+        {
+          "quantity": "other",
+          "value": "%d सदस्य देखें"
+        }
+      ]
+    },
+    {
+      "name": "cp_live_online_now",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "वर्तमान में %d व्यक्ति ऑनलाइन है।"
+        },
+        {
+          "quantity": "other",
+          "value": "वर्तमान में %d लोग ऑनलाइन हैं।"
+        }
+      ]
+    },
+    {
+      "name": "cp_n_online",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d व्यक्ति ऑनलाइन"
+        },
+        {
+          "quantity": "other",
+          "value": "%d लोग ऑनलाइन"
+        }
+      ]
+    },
+    {
+      "name": "cp_media_skipped",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d मीडिया नहीं पढ़ा जा सका, बाकी सामग्री भेज दी गई"
+        },
+        {
+          "quantity": "other",
+          "value": "%d मीडिया नहीं पढ़े जा सके, बाकी सामग्री भेज दी गई"
+        }
+      ]
+    },
+    {
+      "name": "cp_copied_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d संदेश कॉपी किया गया"
+        },
+        {
+          "quantity": "other",
+          "value": "%d संदेश कॉपी किए गए"
+        }
+      ]
+    },
+    {
+      "name": "cp_n_typing",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d व्यक्ति लिख रहा है…"
+        },
+        {
+          "quantity": "other",
+          "value": "%d लोग लिख रहे हैं…"
+        }
+      ]
+    },
+    {
+      "name": "cp_unread_a11y",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d अपठित संदेश, नवीनतम पर लौटें"
+        },
+        {
+          "quantity": "other",
+          "value": "%d अपठित संदेश, नवीनतम पर लौटें"
+        }
+      ]
+    },
+    {
+      "name": "sm_paid_per_message",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "प्रत्येक संदेश के लिए %d स्टार का भुगतान करें"
+        },
+        {
+          "quantity": "other",
+          "value": "प्रत्येक संदेश के लिए %d स्टार का भुगतान करें"
+        }
+      ]
+    },
+    {
+      "name": "sm_refunded_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d स्टार वापस किया गया"
+        },
+        {
+          "quantity": "other",
+          "value": "%d स्टार वापस किए गए"
+        }
+      ]
+    },
+    {
+      "name": "sm_channel_dm_price",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "यह चैनल प्रति संदेश %d स्टार की डायरेक्ट मैसेज अनुमति देता है"
+        },
+        {
+          "quantity": "other",
+          "value": "यह चैनल प्रति संदेश %d स्टार की डायरेक्ट मैसेज अनुमति देता है"
+        }
+      ]
+    },
+    {
+      "name": "unit_seconds",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d सेकंड"
+        },
+        {
+          "quantity": "other",
+          "value": "%d सेकंड"
+        }
+      ]
+    },
+    {
+      "name": "unit_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d मिनट"
+        },
+        {
+          "quantity": "other",
+          "value": "%d मिनट"
+        }
+      ]
+    },
+    {
+      "name": "unit_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d घंटा"
+        },
+        {
+          "quantity": "other",
+          "value": "%d घंटे"
+        }
+      ]
+    },
+    {
+      "name": "unit_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d दिन"
+        },
+        {
+          "quantity": "other",
+          "value": "%d दिन"
+        }
+      ]
+    },
+    {
+      "name": "sm_proximity_metres",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d मीटर"
+        },
+        {
+          "quantity": "other",
+          "value": "%d मीटर"
+        }
+      ]
+    },
+    {
+      "name": "lg_resend_in",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d सेकंड में फिर से भेजा जा सकता है"
+        },
+        {
+          "quantity": "other",
+          "value": "%d सेकंड में फिर से भेजा जा सकता है"
+        }
+      ]
+    },
+    {
+      "name": "cl_unread_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d अपठित"
+        },
+        {
+          "quantity": "other",
+          "value": "%d अपठित"
+        }
+      ]
+    },
+    {
+      "name": "ap_chats_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d चैट"
+        },
+        {
+          "quantity": "other",
+          "value": "%d चैट"
+        }
+      ]
+    },
+    {
+      "name": "gs_free_left",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "आज %d मुफ़्त खोज शेष"
+        },
+        {
+          "quantity": "other",
+          "value": "आज %d मुफ़्त खोजें शेष"
+        }
+      ]
+    }
+  ]
+}

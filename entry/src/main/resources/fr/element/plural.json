@@ -1,0 +1,529 @@
+{
+  "plural": [
+    {
+      "name": "duration_days",
+      "value": [
+        { "quantity": "one", "value": "%d jour" },
+        { "quantity": "other", "value": "%d jours" }
+      ]
+    },
+    {
+      "name": "duration_days_premium",
+      "value": [
+        { "quantity": "one", "value": "%d jour Premium" },
+        { "quantity": "other", "value": "%d jours Premium" }
+      ]
+    },
+    {
+      "name": "duration_months",
+      "value": [
+        { "quantity": "one", "value": "%d mois" },
+        { "quantity": "other", "value": "%d mois" }
+      ]
+    },
+    {
+      "name": "duration_months_premium",
+      "value": [
+        { "quantity": "one", "value": "%d mois Premium" },
+        { "quantity": "other", "value": "%d mois Premium" }
+      ]
+    },
+    {
+      "name": "gift_stars_count",
+      "value": [
+        { "quantity": "one", "value": "%d étoile" },
+        { "quantity": "other", "value": "%d étoiles" }
+      ]
+    },
+    {
+      "name": "gift_worth_stars",
+      "value": [
+        { "quantity": "one", "value": "d'une valeur de %d étoile" },
+        { "quantity": "other", "value": "d'une valeur de %d étoiles" }
+      ]
+    },
+    {
+      "name": "live_media_in_room",
+      "value": [
+        { "quantity": "one", "value": "%d personne dans la salle de live" },
+        { "quantity": "other", "value": "%d personnes dans la salle de live" }
+      ]
+    },
+    {
+      "name": "live_status_watching",
+      "value": [
+        { "quantity": "one", "value": "%d personne regarde" },
+        { "quantity": "other", "value": "%d personnes regardent" }
+      ]
+    },
+    {
+      "name": "prize_premium_months",
+      "value": [
+        { "quantity": "one", "value": "%d mois de Premium" },
+        { "quantity": "other", "value": "%d mois de Premium" }
+      ]
+    },
+    {
+      "name": "prize_stars",
+      "value": [
+        { "quantity": "one", "value": "%d étoile" },
+        { "quantity": "other", "value": "%d étoiles" }
+      ]
+    },
+    {
+      "name": "session_unit_days",
+      "value": [
+        { "quantity": "one", "value": "%d jour" },
+        { "quantity": "other", "value": "%d jours" }
+      ]
+    },
+    {
+      "name": "session_unit_hours",
+      "value": [
+        { "quantity": "one", "value": "%d heure" },
+        { "quantity": "other", "value": "%d heures" }
+      ]
+    },
+    {
+      "name": "session_unit_minutes",
+      "value": [
+        { "quantity": "one", "value": "%d minute" },
+        { "quantity": "other", "value": "%d minutes" }
+      ]
+    },
+    {
+      "name": "user_status_days_ago",
+      "value": [
+        { "quantity": "one", "value": "il y a %d jour" },
+        { "quantity": "other", "value": "il y a %d jours" }
+      ]
+    },
+    {
+      "name": "user_status_hours_ago",
+      "value": [
+        { "quantity": "one", "value": "il y a %d heure" },
+        { "quantity": "other", "value": "il y a %d heures" }
+      ]
+    },
+    {
+      "name": "user_status_minutes_ago",
+      "value": [
+        { "quantity": "one", "value": "il y a %d minute" },
+        { "quantity": "other", "value": "il y a %d minutes" }
+      ]
+    },
+    {
+      "name": "sticker_set_count",
+      "value": [
+        { "quantity": "one", "value": "%d sticker" },
+        { "quantity": "other", "value": "%d stickers" }
+      ]
+    },
+    {
+      "name": "cw_disconnect_all_confirm",
+      "value": [
+        { "quantity": "one", "value": "La connexion sera coupée sur %d site." },
+        { "quantity": "other", "value": "La connexion sera coupée sur %d sites." }
+      ]
+    },
+    {
+      "name": "pe_group_exceptions_kept",
+      "value": [
+        { "quantity": "one", "value": "%d exception de groupe conservée par le serveur" },
+        { "quantity": "other", "value": "%d exceptions de groupe conservées par le serveur" }
+      ]
+    },
+    {
+      "name": "storage_file_count",
+      "value": [
+        { "quantity": "one", "value": "%d fichier" },
+        { "quantity": "other", "value": "%d fichiers" }
+      ]
+    },
+    {
+      "name": "bu_account_count",
+      "value": [
+        { "quantity": "one", "value": "%d compte" },
+        { "quantity": "other", "value": "%d comptes" }
+      ]
+    },
+    {
+      "name": "calls_about_count",
+      "value": [
+        { "quantity": "one", "value": "environ %d entrée" },
+        { "quantity": "other", "value": "environ %d entrées" }
+      ]
+    },
+    {
+      "name": "calls_count",
+      "value": [
+        { "quantity": "one", "value": "%d entrée" },
+        { "quantity": "other", "value": "%d entrées" }
+      ]
+    },
+    {
+      "name": "calls_participants",
+      "value": [
+        { "quantity": "one", "value": "%d personne" },
+        { "quantity": "other", "value": "%d personnes" }
+      ]
+    },
+    {
+      "name": "cf_about_chats",
+      "value": [
+        { "quantity": "one", "value": "environ %d discussion" },
+        { "quantity": "other", "value": "environ %d discussions" }
+      ]
+    },
+    {
+      "name": "cf_delete_and_leave",
+      "value": [
+        { "quantity": "one", "value": "Supprimer et quitter %d discussion" },
+        { "quantity": "other", "value": "Supprimer et quitter %d discussions" }
+      ]
+    },
+    {
+      "name": "fl_new_chats",
+      "value": [
+        { "quantity": "one", "value": "%d nouvelle discussion" },
+        { "quantity": "other", "value": "%d nouvelles discussions" }
+      ]
+    },
+    {
+      "name": "fl_selected_chats",
+      "value": [
+        { "quantity": "one", "value": "%d discussion sélectionnée" },
+        { "quantity": "other", "value": "%d discussions sélectionnées" }
+      ]
+    },
+    {
+      "name": "fl_add_chats",
+      "value": [
+        { "quantity": "one", "value": "Ajouter %d discussion" },
+        { "quantity": "other", "value": "Ajouter %d discussions" }
+      ]
+    },
+    {
+      "name": "ds_cached_files",
+      "value": [
+        { "quantity": "one", "value": "%d fichier en cache" },
+        { "quantity": "other", "value": "%d fichiers en cache" }
+      ]
+    },
+    {
+      "name": "ct_result_count",
+      "value": [
+        { "quantity": "one", "value": "%d personne" },
+        { "quantity": "other", "value": "%d personnes" }
+      ]
+    },
+    {
+      "name": "ng_max_members",
+      "value": [
+        { "quantity": "one", "value": "Un groupe de base peut contenir jusqu'à %d membre" },
+        { "quantity": "other", "value": "Un groupe de base peut contenir jusqu'à %d membres" }
+      ]
+    },
+    {
+      "name": "ng_member_count",
+      "value": [
+        { "quantity": "one", "value": "%d membre" },
+        { "quantity": "other", "value": "%d membres" }
+      ]
+    },
+    {
+      "name": "ng_people_count",
+      "value": [
+        { "quantity": "one", "value": "%d personne" },
+        { "quantity": "other", "value": "%d personnes" }
+      ]
+    },
+    {
+      "name": "ps_days",
+      "value": [
+        { "quantity": "one", "value": "%d jour" },
+        { "quantity": "other", "value": "%d jours" }
+      ]
+    },
+    {
+      "name": "px_count",
+      "value": [
+        { "quantity": "one", "value": "%d pixel" },
+        { "quantity": "other", "value": "%d pixels" }
+      ]
+    },
+    {
+      "name": "fe_chosen_limit",
+      "value": [
+        { "quantity": "one", "value": "Les discussions sélectionnées individuellement ne peuvent pas dépasser %d élément" },
+        { "quantity": "other", "value": "Les discussions sélectionnées individuellement ne peuvent pas dépasser %d éléments" }
+      ]
+    },
+    {
+      "name": "fe_removed_invalid",
+      "value": [
+        { "quantity": "one", "value": "%d discussion absente de la liste des discussions retirée" },
+        { "quantity": "other", "value": "%d discussions absentes de la liste des discussions retirées" }
+      ]
+    },
+    {
+      "name": "fe_pick_limit",
+      "value": [
+        { "quantity": "one", "value": "Sélectionnez au maximum %d discussion" },
+        { "quantity": "other", "value": "Sélectionnez au maximum %d discussions" }
+      ]
+    },
+    {
+      "name": "fe_preview_count",
+      "value": [
+        { "quantity": "one", "value": "Environ %d discussion prévue" },
+        { "quantity": "other", "value": "Environ %d discussions prévues" }
+      ]
+    },
+    {
+      "name": "fe_selected_count",
+      "value": [
+        { "quantity": "one", "value": "%d sélectionné" },
+        { "quantity": "other", "value": "%d sélectionnés" }
+      ]
+    },
+    {
+      "name": "mp_item_count",
+      "value": [
+        { "quantity": "one", "value": "%d élément" },
+        { "quantity": "other", "value": "%d éléments" }
+      ]
+    },
+    {
+      "name": "fw_forwarded_n",
+      "value": [
+        { "quantity": "one", "value": "%d message transféré" },
+        { "quantity": "other", "value": "%d messages transférés" }
+      ]
+    },
+    {
+      "name": "fw_forward_n",
+      "value": [
+        { "quantity": "one", "value": "Transférer %d message" },
+        { "quantity": "other", "value": "Transférer %d messages" }
+      ]
+    },
+    {
+      "name": "poll_voters",
+      "value": [
+        { "quantity": "one", "value": "%d personne a voté" },
+        { "quantity": "other", "value": "%d personnes ont voté" }
+      ]
+    },
+    {
+      "name": "gw_winners_n",
+      "value": [
+        { "quantity": "one", "value": "%d gagnant" },
+        { "quantity": "other", "value": "%d gagnants" }
+      ]
+    },
+    {
+      "name": "gw_unclaimed_n",
+      "value": [
+        { "quantity": "one", "value": "%d prix non réclamé" },
+        { "quantity": "other", "value": "%d prix non réclamés" }
+      ]
+    },
+    {
+      "name": "loc_live_hours",
+      "value": [
+        { "quantity": "one", "value": "Position en direct · %d heure" },
+        { "quantity": "other", "value": "Position en direct · %d heures" }
+      ]
+    },
+    {
+      "name": "loc_live_minutes",
+      "value": [
+        { "quantity": "one", "value": "Position en direct · %d minute" },
+        { "quantity": "other", "value": "Position en direct · %d minutes" }
+      ]
+    },
+    {
+      "name": "loc_accuracy",
+      "value": [
+        { "quantity": "one", "value": "Précision d'environ %d mètre" },
+        { "quantity": "other", "value": "Précision d'environ %d mètres" }
+      ]
+    },
+    {
+      "name": "loc_proximity",
+      "value": [
+        { "quantity": "one", "value": "Rayon d'alerte de %d mètre" },
+        { "quantity": "other", "value": "Rayon d'alerte de %d mètres" }
+      ]
+    },
+    {
+      "name": "ft_topic_count",
+      "value": [
+        { "quantity": "one", "value": "%d sujet" },
+        { "quantity": "other", "value": "%d sujets" }
+      ]
+    },
+    {
+      "name": "mb_comments_n",
+      "value": [
+        { "quantity": "one", "value": "%d commentaire" },
+        { "quantity": "other", "value": "%d commentaires" }
+      ]
+    },
+    {
+      "name": "lv_new_interactions",
+      "value": [
+        { "quantity": "one", "value": "%d nouvelle interaction" },
+        { "quantity": "other", "value": "%d nouvelles interactions" }
+      ]
+    },
+    {
+      "name": "lv_more_sources",
+      "value": [
+        { "quantity": "one", "value": "Encore %d flux" },
+        { "quantity": "other", "value": "Encore %d flux" }
+      ]
+    },
+    {
+      "name": "lv_open_chat_unread",
+      "value": [
+        { "quantity": "one", "value": "Ouvrir le chat en direct, %d nouveau message" },
+        { "quantity": "other", "value": "Ouvrir le chat en direct, %d nouveaux messages" }
+      ]
+    },
+    {
+      "name": "lv_view_members",
+      "value": [
+        { "quantity": "one", "value": "Voir %d membre" },
+        { "quantity": "other", "value": "Voir %d membres" }
+      ]
+    },
+    {
+      "name": "cp_live_online_now",
+      "value": [
+        { "quantity": "one", "value": "%d personne est en ligne actuellement." },
+        { "quantity": "other", "value": "%d personnes sont en ligne actuellement." }
+      ]
+    },
+    {
+      "name": "cp_n_online",
+      "value": [
+        { "quantity": "one", "value": "%d personne en ligne" },
+        { "quantity": "other", "value": "%d personnes en ligne" }
+      ]
+    },
+    {
+      "name": "cp_media_skipped",
+      "value": [
+        { "quantity": "one", "value": "%d média illisible, le reste a été envoyé" },
+        { "quantity": "other", "value": "%d médias illisibles, le reste a été envoyé" }
+      ]
+    },
+    {
+      "name": "cp_copied_n",
+      "value": [
+        { "quantity": "one", "value": "%d message copié" },
+        { "quantity": "other", "value": "%d messages copiés" }
+      ]
+    },
+    {
+      "name": "cp_n_typing",
+      "value": [
+        { "quantity": "one", "value": "%d personne est en train d'écrire…" },
+        { "quantity": "other", "value": "%d personnes sont en train d'écrire…" }
+      ]
+    },
+    {
+      "name": "cp_unread_a11y",
+      "value": [
+        { "quantity": "one", "value": "%d message non lu, retour aux derniers messages" },
+        { "quantity": "other", "value": "%d messages non lus, retour aux derniers messages" }
+      ]
+    },
+    {
+      "name": "sm_paid_per_message",
+      "value": [
+        { "quantity": "one", "value": "Chaque message coûte %d étoile" },
+        { "quantity": "other", "value": "Chaque message coûte %d étoiles" }
+      ]
+    },
+    {
+      "name": "sm_refunded_stars",
+      "value": [
+        { "quantity": "one", "value": "%d étoile remboursée" },
+        { "quantity": "other", "value": "%d étoiles remboursées" }
+      ]
+    },
+    {
+      "name": "sm_channel_dm_price",
+      "value": [
+        { "quantity": "one", "value": "Ce canal autorise les messages privés à %d étoile chacun" },
+        { "quantity": "other", "value": "Ce canal autorise les messages privés à %d étoiles chacun" }
+      ]
+    },
+    {
+      "name": "unit_seconds",
+      "value": [
+        { "quantity": "one", "value": "%d seconde" },
+        { "quantity": "other", "value": "%d secondes" }
+      ]
+    },
+    {
+      "name": "unit_minutes",
+      "value": [
+        { "quantity": "one", "value": "%d minute" },
+        { "quantity": "other", "value": "%d minutes" }
+      ]
+    },
+    {
+      "name": "unit_hours",
+      "value": [
+        { "quantity": "one", "value": "%d heure" },
+        { "quantity": "other", "value": "%d heures" }
+      ]
+    },
+    {
+      "name": "unit_days",
+      "value": [
+        { "quantity": "one", "value": "%d jour" },
+        { "quantity": "other", "value": "%d jours" }
+      ]
+    },
+    {
+      "name": "sm_proximity_metres",
+      "value": [
+        { "quantity": "one", "value": "%d mètre" },
+        { "quantity": "other", "value": "%d mètres" }
+      ]
+    },
+    {
+      "name": "lg_resend_in",
+      "value": [
+        { "quantity": "one", "value": "Renvoi possible dans %d seconde" },
+        { "quantity": "other", "value": "Renvoi possible dans %d secondes" }
+      ]
+    },
+    {
+      "name": "cl_unread_n",
+      "value": [
+        { "quantity": "one", "value": "%d non lu" },
+        { "quantity": "other", "value": "%d non lus" }
+      ]
+    },
+    {
+      "name": "ap_chats_n",
+      "value": [
+        { "quantity": "one", "value": "%d discussion" },
+        { "quantity": "other", "value": "%d discussions" }
+      ]
+    },
+    {
+      "name": "gs_free_left",
+      "value": [
+        { "quantity": "one", "value": "%d recherche gratuite restante aujourd'hui" },
+        { "quantity": "other", "value": "%d recherches gratuites restantes aujourd'hui" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 8b6d5a7..56b72e1 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -282,12 +282,12 @@ PRIVATE
+     rtc_base/openssl.h
+     rtc_base/openssl_adapter.cc
+     rtc_base/openssl_adapter.h
+-    rtc_base/openssl_certificate.cc
+-    rtc_base/openssl_certificate.h
++    rtc_base/boringssl_certificate.cc
++    rtc_base/boringssl_certificate.h
+     rtc_base/openssl_digest.cc
+     rtc_base/openssl_digest.h
+-    rtc_base/openssl_identity.cc
+-    rtc_base/openssl_identity.h
++    rtc_base/boringssl_identity.cc
++    rtc_base/boringssl_identity.h
+     rtc_base/openssl_key_pair.cc
+     rtc_base/openssl_key_pair.h
+     rtc_base/openssl_session_cache.cc
+@@ -2698,3 +2698,7 @@ install(
+     FILES ${CMAKE_CURRENT_BINARY_DIR}/tg_owtConfig.cmake
+     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/tg_owt
+ )
++
++if(DEFINED TGCALLS_OHOS_CMAKE)
++    include(${TGCALLS_OHOS_CMAKE})
++endif()
+diff --git a/cmake/libwebrtcbuild.cmake b/cmake/libwebrtcbuild.cmake
+index 35d38af..b4f2240 100644
+--- a/cmake/libwebrtcbuild.cmake
++++ b/cmake/libwebrtcbuild.cmake
+@@ -79,7 +79,13 @@ else()
+         )
+     endif()
+ 
+-    if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
++    if (CMAKE_SYSTEM_NAME STREQUAL "OHOS")
++        target_compile_definitions(libwebrtcbuild
++        INTERFACE
++            WEBRTC_OHOS
++            WEBRTC_LINUX
++        )
++    elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+         target_compile_definitions(libwebrtcbuild
+         INTERFACE
+             WEBRTC_LINUX

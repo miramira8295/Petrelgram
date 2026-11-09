@@ -1,0 +1,149 @@
+import { describe, expect, it } from '@ohos/hypium';
+import { rowMembersContaining,
+  forwardableIds, MESSAGE_SELECTION_GUTTER_VP, messageSelectionContentWidth,
+  memberSelected, pruneSelection, rowSelectable, rowSelected, selectRow, toggleMember, toggleRow
+} from '../main/ets/util/messageSelection';
+
+// 选中的单位是"行"不是消息：相册行整体选中或整体不选。
+export default function messageSelectionTest() {
+  describe('messageSelection', () => {
+    // 搜索翻到相册里的一张时，多选要把整组选上（与长按选择同一个粒度）。
+    it('找某条消息所在那一行的全部成员；不在任何一行就只返回它自己', 0, () => {
+      const rows: number[][] = [[1], [2, 3, 4], [5]];
+      expect(rowMembersContaining(rows, 3).join(',')).assertEqual('2,3,4');
+      expect(rowMembersContaining(rows, 5).join(',')).assertEqual('5');
+      expect(rowMembersContaining(rows, 9).join(',')).assertEqual('9');
+    });
+
+    it('系统消息和隐藏消息不能选', 0, () => {
+      expect(rowSelectable('text')).assertTrue();
+      expect(rowSelectable('photo')).assertTrue();
+      expect(rowSelectable('system')).assertFalse();
+      expect(rowSelectable('hidden')).assertFalse();
+    });
+
+    it('沾上一个 member 就算整行选中', 0, () => {
+      expect(rowSelected([5], [4, 5, 6])).assertTrue();
+      expect(rowSelected([9], [4, 5, 6])).assertFalse();
+      expect(rowSelected([], [4, 5, 6])).assertFalse();
+      // 空行（理论上不该出现）不该被判成选中。
+      expect(rowSelected([5], [])).assertFalse();
+    });
+
+    it('点未选中的行：整行加入', 0, () => {
+      expect(toggleRow([], [4, 5, 6])).assertDeepEquals([4, 5, 6]);
+      expect(toggleRow([1], [4, 5])).assertDeepEquals([1, 4, 5]);
+    });
+
+    it('点已选中的行：整行移除，其它行不受影响', 0, () => {
+      expect(toggleRow([1, 4, 5, 6, 9], [4, 5, 6])).assertDeepEquals([1, 9]);
+    });
+
+    it('半选的行再点一次是整行清空，不是补齐', 0, () => {
+      // 相册在选中之后又收到一个新 member：集合里只有 4、5，行是 4、5、6。
+      expect(toggleRow([4, 5], [4, 5, 6])).assertDeepEquals([]);
+    });
+
+    it('memberIds 自己重复时只加一次', 0, () => {
+      // 相册的 member 列表由多次更新拼出来，出现过同一个 id 进来两次。
+      // 直接展开会让计数虚高、转发带重复。
+      expect(toggleRow([], [7, 7, 8])).assertDeepEquals([7, 8]);
+      expect(toggleRow([1], [7, 8, 7])).assertDeepEquals([1, 7, 8]);
+    });
+
+    it('沾上任意一个 member 就走移除支，不会补齐', 0, () => {
+      // 这一条钉住"半选不存在"：集合里只有 7，行是 7、8 —— 结果是整行清空。
+      expect(toggleRow([7], [7, 8])).assertDeepEquals([]);
+    });
+
+    it('切换是可逆的：连点两次回到原样', 0, () => {
+      const start: number[] = [1, 2];
+      const once: number[] = toggleRow(start, [7, 8]);
+      const twice: number[] = toggleRow(once, [7, 8]);
+      expect(twice).assertDeepEquals(start);
+    });
+
+    it('消息被撤回后，选中集合里的幽灵 id 被摘掉', 0, () => {
+      expect(pruneSelection([1, 2, 3], [1, 3])).assertDeepEquals([1, 3]);
+      // 全部消失时返回空集，调用方据此退出多选。
+      expect(pruneSelection([1, 2], [9]).length).assertEqual(0);
+      expect(pruneSelection([], [1, 2]).length).assertEqual(0);
+    });
+
+    it('转发过滤：去掉不可转发的类型并去重，顺序不变', 0, () => {
+      const types: Map<number, string> = new Map<number, string>();
+      types.set(1, 'text');
+      types.set(2, 'system');
+      types.set(3, 'photo');
+      types.set(4, 'hidden');
+      const typeOf = (id: number): string => types.get(id) ?? 'text';
+      expect(forwardableIds([3, 2, 1, 4], typeOf)).assertDeepEquals([3, 1]);
+      // 重复 id 只留第一次。
+      expect(forwardableIds([1, 1, 3], typeOf)).assertDeepEquals([1, 3]);
+      // 全都不可转发时返回空集，调用方据此提示而不是发一个空请求。
+      expect(forwardableIds([2, 4], typeOf).length).assertEqual(0);
+    });
+
+    it('未知 id 当作可转发，由上层去查真伪', 0, () => {
+      expect(forwardableIds([42], (_id: number): string => 'text')).assertDeepEquals([42]);
+    });
+
+    it('多选消息宽度扣除与复选框相同的槽位', 0, () => {
+      expect(messageSelectionContentWidth(360, true, 'photo'))
+        .assertEqual(360 - MESSAGE_SELECTION_GUTTER_VP);
+      expect(messageSelectionContentWidth(960, true, 'text'))
+        .assertEqual(960 - MESSAGE_SELECTION_GUTTER_VP);
+    });
+
+    it('正常态和不可选行保留完整内容宽度', 0, () => {
+      expect(messageSelectionContentWidth(360, false, 'video')).assertEqual(360);
+      expect(messageSelectionContentWidth(360, true, 'system')).assertEqual(360);
+      expect(messageSelectionContentWidth(360, true, 'hidden')).assertEqual(360);
+      expect(messageSelectionContentWidth(20, true, 'photo')).assertEqual(0);
+    });
+
+    // 相册逐格勾选。集合本来就是逐条 id 的平表，所以只是两个新的读写口，
+    // 不引入新结构；整行切换（toggleRow）照旧并存。
+    it('单条切换：不在就加、在就去，与同行其它成员无关', 0, () => {
+      expect(toggleMember([], 7)).assertDeepEquals([7]);
+      expect(toggleMember([7], 7)).assertDeepEquals([]);
+      expect(toggleMember([5, 7, 9], 7)).assertDeepEquals([5, 9]);
+      expect(toggleMember([5, 9], 7)).assertDeepEquals([5, 9, 7]);
+    });
+
+    it('单条切换不产生重复，也不接受 0（合成行的哨兵 id）', 0, () => {
+      expect(toggleMember([7], 0)).assertDeepEquals([7]);
+      const once: number[] = toggleMember([], 7);
+      expect(toggleMember(toggleMember(once, 7), 7)).assertDeepEquals([7]);
+    });
+
+    it('单条切换保持 toggleRow 的"沾上就算"语义仍然成立', 0, () => {
+      // 相册 [1,2,3] 里只勾了 2：整行按"沾上就算"算作已选中，
+      // 再点整行（toggleRow）应当把这一行清空——既有不变量不能被逐格勾选破坏。
+      const partial: number[] = toggleMember([], 2);
+      expect(rowSelected(partial, [1, 2, 3])).assertTrue();
+      expect(memberSelected(partial, 2)).assertTrue();
+      expect(memberSelected(partial, 1)).assertFalse();
+      expect(toggleRow(partial, [1, 2, 3])).assertDeepEquals([]);
+    });
+
+    // 多选态里再长按 / 右滑一行：只加不减（用户 2026-09-14）。
+    it('选一行：未选的整行补进来，已选的保持不动', 0, () => {
+      expect(selectRow([1], [4, 5])).assertDeepEquals([1, 4, 5]);
+      expect(selectRow([], [4, 5, 6])).assertDeepEquals([4, 5, 6]);
+    });
+
+    it('选一行：半选的相册补齐成整组，而不是像 toggleRow 那样清空', 0, () => {
+      expect(selectRow([4, 5], [4, 5, 6])).assertDeepEquals([4, 5, 6]);
+    });
+
+    it('选一行：整行已选时原样返回同一个数组，不产生多余的状态写入', 0, () => {
+      const ids: number[] = [1, 4, 5, 6];
+      expect(selectRow(ids, [4, 5, 6]) === ids).assertTrue();
+    });
+
+    it('选一行：member 重复只加一次，0 这个哨兵 id 不进集合', 0, () => {
+      expect(selectRow([1], [4, 4, 0, 5])).assertDeepEquals([1, 4, 5]);
+    });
+  });
+}

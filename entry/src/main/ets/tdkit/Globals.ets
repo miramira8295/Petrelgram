@@ -1,0 +1,895 @@
+import { forgetSearchSession } from '../util/searchSession';
+import { attachRecentChatHistory, detachRecentChatHistory } from '../services/RecentChatHistoryService';
+import { attachProxyMigration, ensureProxyMigration, detachProxyMigration } from '../services/ProxyMigration';
+import { closeFloatingVideo } from '../util/floatingVideoRuntime';
+import { SessionSecurityStore } from '../store/SessionSecurityStore';
+import { attachTdLanguage, detachTdLanguage, initTdLanguageContext, syncTdLanguage } from '../services/TdLanguage';
+import testNapi from 'libentry.so';
+import { fileIo as fs } from '@kit.CoreFileKit';
+import { TdClient } from './TdClient';
+import { configureTdLogging } from './TdLogPolicy';
+import { AuthService, AuthStage } from './AuthService';
+import { readTdDeviceParams } from '../util/tdDeviceParamsReader';
+import { UserStore } from '../store/UserStore';
+import { ChatStore } from '../store/ChatStore';
+import { OrderSnapshot } from '../store/chatListOrder';
+import { ChatEntry } from '../store/ChatEntry';
+import { FileService } from '../services/FileService';
+import { FolderStore } from '../store/FolderStore';
+import { UnreadCountStore } from '../store/UnreadCountStore';
+import { ChatThemeStore } from '../store/ChatThemeStore';
+import { AccentColorStore } from '../store/AccentColorStore';
+import { CallSession, setCallLibraryVersions } from '../services/CallSession';
+import { NativeCallMedia, nativeCallVersionsJson } from '../services/NativeCallMedia';
+import { NotificationService } from '../services/NotificationService';
+import { SystemNotificationPublisher } from '../services/SystemNotificationPublisher';
+import { registerMessageSyncWork } from '../services/MessageSyncWork';
+import { WebPushConfig, registerWebPush, resolvePushChannel, startupPushConfig } from '../services/WebPushRegistration';
+import { retryPendingMeowRelayDelete } from '../services/MeowPushRegistration';
+import { applyPreferIpv6, resetPreferIpv6Cache } from '../services/PreferIpv6Option';
+import { ensureHmsPushRegistered } from '../services/HmsRelayRegistration';
+import { resetScopeMute } from '../store/ScopeMuteStore';
+import { resetScopePreview } from '../store/ScopePreviewStore';
+import { CHAT_TAB_INDEX, KEY_MAIN_TAB } from '../util/chatNav';
+import { resetChatPositions } from '../util/chatResume';
+import { resetChatViewportGeometry } from '../util/chatViewportGeometry';
+import {
+  KEY_MEOW_AUTH, KEY_MEOW_ENDPOINT, KEY_MEOW_NICKNAME, KEY_MEOW_P256DH, KEY_WEBPUSH_AUTH, KEY_WEBPUSH_CHANNEL,
+  KEY_WEBPUSH_ENABLED, KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_MODE, KEY_WEBPUSH_P256DH
+} from '../store/AppSettings';
+import { StoryStore } from '../store/StoryStore';
+import { systemCallUi } from '../services/SystemCallUi';
+import { common } from '@kit.AbilityKit';
+import { TdObject, TdRequest } from './TdTypes';
+import { TdWorkerBridge } from './TdWorkerBridge';
+import {
+  accountRegistry, TD_ACCOUNT_SWITCHING, TD_SESSION_EPOCH,
+  TdAccountDirectories, TdAccountSummary
+} from './AccountRegistry';
+import { str } from '../util/strings';
+import { logE, logI, logW } from '../util/log';
+import { proxyAutoSwitchService } from '../services/ProxyAutoSwitchService';
+
+let client: TdClient | undefined = undefined;
+let auth: AuthService | undefined = undefined;
+let users: UserStore | undefined = undefined;
+let chats: ChatStore | undefined = undefined;
+let files: FileService | undefined = undefined;
+let folders: FolderStore | undefined = undefined;
+let unread: UnreadCountStore | undefined = undefined;
+let sessionSecurity: SessionSecurityStore | undefined = undefined;
+let chatThemes: ChatThemeStore | undefined = undefined;
+let accentColors: AccentColorStore | undefined = undefined;
+let callSession: CallSession | undefined = undefined;
+let storyStore: StoryStore | undefined = undefined;
+let notifications: NotificationService | undefined = undefined;
+let appBundleName: string = '';
+let baseFilesDir: string = '';
+let activeTdFilesDirectory: string = '';
+let switchInFlight: Promise<void> | null = null;
+let desiredOnline: boolean = false;
+let runtimeReady: boolean = false;
+
+// 应用沙箱的 files 目录。**不是账号目录**——按账号分的那份在
+// accountRegistry.directories 里。贴纸帧缓存这类"跨账号可共用、丢了也只是
+// 重算"的东西放这里。空串表示 initTdKit 还没跑过。
+export function appFilesDir(): string {
+  return baseFilesDir;
+}
+
+export function initTdKit(context: common.Context): void {
+  if (client !== undefined) {
+    return;
+  }
+  initTdLanguageContext(context.getApplicationContext());
+  baseFilesDir = context.filesDir;
+  appBundleName = context.applicationInfo.name;
+  accountRegistry.init(context);
+  // 上次在登录页被杀掉的「加账号」流程会留下一个空的 active 槽位，重开 app
+  // 就只剩登录页、原账号再也进不去。建运行时之前先把它交还给来源账号。
+  const recovered: string = accountRegistry.abandonStalePending();
+  if (recovered !== '') {
+    logE(`Globals: abandoned a stale pending login, back to slot ${recovered}`);
+  }
+  createRuntime(accountRegistry.activeSlotId());
+}
+
+// TDLib expects <files>/temp to be its download scratch DIRECTORY. On one
+// device a 1.9MB regular file appeared at exactly that path during first
+// login, and from then on every download failed with ENOTDIR ("Not a
+// directory") — images never loaded again for that account. Whatever wrote
+// it, the repair is the same: clear anything that occupies the path as a
+// plain file before TDLib initializes, so it can mkdir its scratch space.
+function repairTdTempDirectory(filesDirectory: string): void {
+  const tempPath = `${filesDirectory}/temp`;
+  try {
+    if (fs.accessSync(tempPath) && !fs.statSync(tempPath).isDirectory()) {
+      fs.unlinkSync(tempPath);
+      logE(`Globals: removed a plain file squatting on ${tempPath}`);
+    }
+  } catch (e) {
+    logE(`Globals.repairTdTempDirectory failed: ${e}`);
+  }
+}
+
+type RuntimeStopMode = 'close' | 'destroy';
+
+// A 批 1 开关（勘探 docs/superpowers/specs/2026-09-02-tdlib-worker-survey.md）：
+// 开 = TDLib 收包 + JSON.parse 进 workers/TdWorker，跨线程投递解析对象。
+//
+// 2026-11-06 真机 spike（Mate 70 Pro+）后开启：libentry 在 worker 线程可加载、
+// tdInit 回调落在 worker，约 100 秒接收 1.5 万条更新，0 条 parse-error /
+// worker error；会话列表、历史加载与上翻分页、群内"正在输入"实时更新均正常。
+// 尚未覆盖：账号切换、语音/视频通话、透明贴纸（见勘探的 spike 清单）。
+//
+// 构造抛错时自动落回直连并记日志，所以开着也不至于起不来。
+// 账号切换（createRuntime 重入）复用同一个 worker，重发 init 即可——tdInit
+// 的回调注册在 NAPI 层是幂等换新；销毁走 worker 队列（见 destroyTdNative）。
+const TD_WORKER_BRIDGE_ENABLED: boolean = true;
+let workerBridge: TdWorkerBridge | undefined = undefined;
+
+function createTdClientWithBridge(): TdClient {
+  // Set the process-wide filter before either bridge starts its receiver/client.
+  const logging = configureTdLogging((json: string): string => testNapi.tdExecute(json));
+  const loggingStatus = `[TDLogPolicy] before=${logging.previousLevel ?? 'unknown'} ` +
+    `after=${logging.effectiveLevel ?? 'unknown'} verified=${logging.verified}`;
+  if (logging.verified) { logI(loggingStatus); } else { logW(loggingStatus); }
+  if (TD_WORKER_BRIDGE_ENABLED) {
+    try {
+      if (workerBridge === undefined) {
+        workerBridge = new TdWorkerBridge();
+        logI('TdBridge: worker receive path active');
+      }
+      const created = new TdClient(workerBridge);
+      workerBridge.onParsed((obj: TdObject): void => { created.deliverParsed(obj); });
+      return created;
+    } catch (e) {
+      logE(`TdWorkerBridge unavailable, falling back to direct bridge: ${e}`);
+      workerBridge = undefined;
+    }
+  }
+  return new TdClient({ init: testNapi.tdInit, send: testNapi.tdSend });
+}
+
+// tdDestroy 的线程归属。
+//
+// worker 路径下 td* 全部串行在 worker 队列里（tdInit/tdSend/tdDestroy 三条命令
+// 同一个队列 FIFO），销毁也必须回到那条队列——UI 线程直接调会 join 接收线程、
+// 清 g_clientId，而 worker 里可能正有一条 tdSend 已越过 g_created 检查。
+// 直连路径没有独占线程，保持原来的同步调用。
+//
+// 【顺序】销毁与下一条 init 的相对次序由队列 FIFO 保证：stopRuntime 先投
+// destroy、createRuntime 后投 init，worker 一定先看到前者。
+function destroyTdNative(): void {
+  if (workerBridge !== undefined) {
+    workerBridge.destroy();
+    return;
+  }
+  testNapi.tdDestroy();
+}
+
+function createRuntime(slotId: string): void {
+  forgetSearchSession();
+  runtimeReady = false;
+  const directories: TdAccountDirectories = accountRegistry.directories(baseFilesDir, slotId);
+  activeTdFilesDirectory = directories.filesDirectory;
+  repairTdTempDirectory(directories.filesDirectory);
+  client = createTdClientWithBridge();
+  attachProxyMigration(client, directories.databaseDirectory);
+  attachRecentChatHistory(client, directories.databaseDirectory);
+  // prefer_ipv6 越早越好：它影响的是**第一次**连接走哪个协议族，等连上了再设
+  // 就晚了。setOption 在 setTdlibParameters 之前就能收（issue #133）。
+  // 缓存记在模块级变量里，而新运行时上这个选项是 TDLib 的默认值，必须先清。
+  resetPreferIpv6Cache();
+  applyPreferIpv6().catch((caught: Error): void => {
+    logE(`Globals.applyPreferIpv6 failed: ${caught.message}`);
+  });
+  trackConnectionState(client);
+  proxyAutoSwitchService.attach(client);
+  auth = new AuthService(client, directories.databaseDirectory, directories.filesDirectory,
+    readTdDeviceParams());
+  sessionSecurity = new SessionSecurityStore(client);
+  users = new UserStore(client);
+  chats = new ChatStore(client, users);
+  // 第二层 B2：worker 侧影子排序对账（没有 worker 桥就什么都不做）。
+  if (workerBridge !== undefined) {
+    const shadowTarget: ChatStore = chats;
+    workerBridge.onOrder((lists: OrderSnapshot[]): void => {
+      // V2 下这份快照就是列表成员与置顶的唯一来源；V1 下只用于对账。
+      shadowTarget.applyWorkerOrder(lists);
+    });
+    // 第二层 B4b：worker 侧影子实体对账（只比字段，不改本地）。
+    workerBridge.onChatEntries((entries: ChatEntry[]): void => {
+      shadowTarget.compareWorkerEntries(entries);
+    });
+  }
+  files = new FileService(client, chats);
+  folders = new FolderStore(client);
+  unread = new UnreadCountStore(client);
+  chatThemes = new ChatThemeStore(client);
+  accentColors = new AccentColorStore(client);
+  try {
+    setCallLibraryVersions(JSON.parse(nativeCallVersionsJson()) as string[]);
+  } catch (e) {
+    logE('call versions parse failed, using fallback list');
+  }
+  callSession = new CallSession(client, users, new NativeCallMedia());
+  // 系统来电界面上的接听/拒接/挂断/静音回传到通话会话。
+  const session = callSession;
+  systemCallUi.bindActions({
+    accept: (): void => session.accept(),
+    decline: (): void => session.decline(),
+    hangup: (): void => session.hangup(),
+    setMuted: (muted: boolean): void => session.setMuted(muted)
+  });
+  storyStore = new StoryStore(client);
+  // 本地通知：应用后台但进程存活时，新消息/来电经系统通知触达。
+  if (notifications !== undefined) {
+    notifications.close();
+  }
+  notifications = new NotificationService(
+    client, chats, new SystemNotificationPublisher(appBundleName, 'EntryAbility'),
+    (): boolean => AppStorage.get<boolean>('appIsForeground') ?? true);
+  notifications.attachSenderSources(users, files);
+  notifications.attachCallSession(callSession);
+  const runtimeClient = client;
+  const runtimeAuth = auth;
+  runtimeAuth.onStageChange((stage: AuthStage): void => {
+    if (client === runtimeClient && stage !== AuthStage.Init && stage !== AuthStage.LoggedOut) {
+      // 一次性迁移：把 1.5.5 及以前留下的 127.0.0.1 假代理还原成真实地址。
+      // 必须在任何连接尝试之前跑完——这些条目指向已经不存在的中继端口。
+      ensureProxyMigration(runtimeClient);
+    }
+    if (stage === AuthStage.Ready && client === runtimeClient && auth === runtimeAuth) {
+      runtimeReady = true;
+      sessionSecurity?.read().catch((): void => {});
+      syncTdLanguage();
+      registerMessageSyncWork(appBundleName);
+      notifications!.enable();
+      reregisterWebPush(runtimeClient);
+      storyStore!.open();
+      applyDesiredOnlineState(runtimeClient);
+      refreshActiveAccountSummary(runtimeClient);
+      proxyAutoSwitchService.runtimeReady(runtimeClient);
+    } else if (client === runtimeClient && auth === runtimeAuth && stage !== AuthStage.Init) {
+      runtimeReady = false;
+    }
+  });
+  try {
+    client.start();
+    attachTdLanguage(client);
+  } catch (caught) {
+    const startError = caught as Error;
+    // A native receiver-thread allocation failure is reported as an ArkTS
+    // exception. Tear down the half-built runtime so account switching can
+    // retry or restore the previous slot instead of retaining unusable stores.
+    detachTdLanguage();
+    notifications?.close();
+    notifications = undefined;
+    callSession?.close();
+    callSession = undefined;
+    sessionSecurity?.close();
+    sessionSecurity = undefined;
+    auth.dispose();
+    proxyAutoSwitchService.detach(client);
+    detachProxyMigration(client);
+    detachRecentChatHistory(client);
+    files?.close();
+    client.dispose();
+    client = undefined;
+    auth = undefined;
+    users = undefined;
+    chats = undefined;
+    files = undefined;
+    folders = undefined;
+    unread = undefined;
+    chatThemes = undefined;
+    accentColors = undefined;
+    storyStore = undefined;
+    try {
+      destroyTdNative();
+    } catch (_cleanupError) {
+      // Preserve the original startup error; it names the failed resource.
+    }
+    throw startError;
+  }
+}
+
+// --- 连接状态 --------------------------------------------------------------
+//
+// updateConnectionState 是一次性推送，订阅晚了就再也收不到当前值。登录页
+// 挂载的时机恰好在这些更新之间，所以这里在建 client 时就订阅并缓存，页面按
+// 需读取即可（AuthService.onStageChange 的回放思路）。
+
+let connectionState: string = '';
+let connectionStateChangedAt: number = 0;
+
+function trackConnectionState(target: TdClient): void {
+  connectionState = '';
+  connectionStateChangedAt = 0;
+  target.onUpdate('updateConnectionState', (u: TdObject): void => {
+    const state = u['state'] as TdObject | undefined;
+    const next: string = (state?.['@type'] as string | undefined) ?? '';
+    if (next === connectionState) { return; }
+    // held= 是"上一个状态撑了多久"，也就是连接中卡住的时间。没有这行，
+    // 回前台后到底等了多久只能靠猜。
+    const now: number = Date.now();
+    const held: number = connectionStateChangedAt === 0 ? 0 : now - connectionStateChangedAt;
+    logI(`[Conn] ${connectionState === '' ? 'start' : connectionState} -> ${next} held=${held}ms`);
+    connectionState = next;
+    connectionStateChangedAt = now;
+  });
+}
+
+export function getConnectionState(): string {
+  return connectionState;
+}
+
+// 连上了才发得出请求。冷启动时 DC 握手要几百毫秒到几秒（走代理更久），这段
+// 时间里发出去的 setAuthenticationPhoneNumber / requestQrCodeAuthentication
+// 只会挂到 TdClient 的 15 秒超时然后报错 —— 用户实测"先去选个区域再点就好"，
+// 选区域真正做的事就是把这段时间等过去。
+//
+// connectionStateUpdating 也算连上了：那是在拉更新，请求照发不误。
+export function waitForConnection(timeoutMs: number = 20000): Promise<boolean> {
+  if (connectionState === 'connectionStateReady' || connectionState === 'connectionStateUpdating') {
+    return Promise.resolve(true);
+  }
+  return new Promise<boolean>((resolve: (ok: boolean) => void): void => {
+    const startedAt: number = Date.now();
+    const tick = (): void => {
+      if (connectionState === 'connectionStateReady' ||
+        connectionState === 'connectionStateUpdating') {
+        resolve(true);
+        return;
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        resolve(false); // 等不到也放行：宁可让 TDLib 自己报错，也别把用户卡死
+        return;
+      }
+      setTimeout(tick, 200);
+    };
+    setTimeout(tick, 200);
+  });
+}
+
+// device token 是按账号注册的：切账号或重启后都要对当前账号重新注册一次，
+// 否则新账号根本没订阅，用户却看到开关是开着的。
+function reregisterWebPush(client: TdClient): void {
+  // **先试华为通道，再回到已保存的配置。**
+  //
+  // 顺序是有意的：能取到设备 token 就说明这台机器装的是我们自己签的包，华为
+  // 通道对它可用，那条路由系统弹通知、应用被杀也能到，体验优于 MeoW。取不到就
+  // 什么都不做（未签名包必然如此），照旧走下面已保存的那份配置。
+  //
+  // 不 await：这里在 AuthStage.Ready 的回调里，登录流程不该等一次网络往返。
+  // ensureHmsPushRegistered 内部全程静默失败，不会把异常漏出来。
+  // 上次注销时中转没删掉的 MeoW 映射顺手再删一次（issue #196），与注册互不相干。
+  retryPendingMeowRelayDelete().catch((e: Object): void => {
+    logE(`MeoW pending relay delete threw: ${JSON.stringify(e)}`);
+  });
+  ensureHmsPushRegistered(client).then((ok: boolean): void => {
+    if (ok) {
+      return;
+    }
+    reregisterStoredWebPush(client);
+  }).catch((e: Object): void => {
+    logE(`HMS push registration threw: ${JSON.stringify(e)}`);
+    reregisterStoredWebPush(client);
+  });
+}
+
+// 用已保存的配置重新向 Telegram 注册。**按实际注册着的通道取那一份**（2026-09-17，
+// issue #196/#198）：原来只读自定义那三项，MeoW 用户下次启动就被换回旧自托管地址。
+function reregisterStoredWebPush(client: TdClient): void {
+  const channel: string = resolvePushChannel({
+    enabled: AppStorage.get<boolean>(KEY_WEBPUSH_ENABLED) ?? false,
+    channel: AppStorage.get<string>(KEY_WEBPUSH_CHANNEL) ?? '',
+    mode: AppStorage.get<string>(KEY_WEBPUSH_MODE) ?? '',
+    meowNickname: AppStorage.get<string>(KEY_MEOW_NICKNAME) ?? ''
+  });
+  const custom: WebPushConfig = {
+    endpoint: AppStorage.get<string>(KEY_WEBPUSH_ENDPOINT) ?? '',
+    p256dh: AppStorage.get<string>(KEY_WEBPUSH_P256DH) ?? '',
+    auth: AppStorage.get<string>(KEY_WEBPUSH_AUTH) ?? ''
+  };
+  const meow: WebPushConfig = {
+    endpoint: AppStorage.get<string>(KEY_MEOW_ENDPOINT) ?? '',
+    p256dh: AppStorage.get<string>(KEY_MEOW_P256DH) ?? '',
+    auth: AppStorage.get<string>(KEY_MEOW_AUTH) ?? ''
+  };
+  const config: WebPushConfig | null = startupPushConfig(channel, custom, meow);
+  if (config === null) {
+    return;
+  }
+  registerWebPush(client, config).then((receiverId: string): void => {
+    logI(`WebPush re-registered, receiver id ${receiverId}`);
+  }).catch((e: Object): void => {
+    logE(`WebPush re-register failed: ${JSON.stringify(e)}`);
+  });
+}
+
+// 停掉当前运行时。
+//
+// mode 决定**本地数据的去留**，这是两者唯一但要命的区别：
+//   'close'   只关库，binlog 原样留着 —— 账号切换要的就是这个，切回来还能用。
+//   'destroy' 删掉本地授权数据 —— 只有卡在扫码授权态、必须从零重来时才用
+//             （见 util/authError.ets 的 needsAuthorizationReset）。
+async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
+  closeFloatingVideo();
+  sessionSecurity?.close();
+  sessionSecurity = undefined;
+  detachTdLanguage();
+  const currentAuth = auth;
+  const currentClient = client;
+  const currentReady = runtimeReady;
+  runtimeReady = false;
+  files?.close();
+  if (currentClient !== undefined) {
+    proxyAutoSwitchService.detach(currentClient);
+    detachProxyMigration(currentClient);
+    detachRecentChatHistory(currentClient);
+  }
+  if (currentClient !== undefined && currentReady) {
+    try {
+      await sendOnlineOption(currentClient, false);
+    } catch (caught) {
+      const error = caught as Error;
+      logE(`Globals.stopRuntime set offline failed: ${error.message}`);
+    }
+  }
+  if (currentAuth !== undefined) {
+    if (mode === 'destroy') {
+      await currentAuth.destroyAuthorization();
+    } else {
+      await currentAuth.closeDatabase();
+    }
+    currentAuth.dispose();
+  }
+  currentClient?.dispose();
+  try {
+    destroyTdNative();
+  } catch (caught) {
+    logE(`Globals.stopRuntime tdDestroy failed: ${caught}`);
+  }
+  client = undefined;
+  auth = undefined;
+  users = undefined;
+  chats = undefined;
+  files = undefined;
+  folders = undefined;
+  unread = undefined;
+  // 分类默认静音是**按账号**的：上一个账号把频道整类静音了，新账号未必。
+  // 它住在模块级的 Map 里，不随运行时一起销毁，必须显式清。
+  resetScopeMute();
+  resetScopePreview();
+  // 页签回到聊天。运行时停掉时整棵主屏会重建，Tabs 从 0 起；而 mainTabIndex
+  // 还留着切换前的下标（多半是「设置」——切账号的入口就在那儿），于是底栏高亮
+  // 在设置、内容却是聊天列表（issue #131）。两边只能有一个真相，取聊天。
+  AppStorage.setOrCreate<number>(KEY_MAIN_TAB, CHAT_TAB_INDEX);
+  // 记住的会话浏览位置是按账号的消息 id，换账号必须清（issue #98）。
+  resetChatPositions();
+  resetChatViewportGeometry();
+}
+
+function sendOnlineOption(runtimeClient: TdClient, online: boolean): Promise<void> {
+  const request: TdRequest = { '@type': 'setOption' };
+  request['name'] = 'online';
+  request['value'] = {
+    '@type': 'optionValueBoolean',
+    'value': online
+  } as TdObject;
+  return runtimeClient.send(request).then((): void => {});
+}
+
+function applyDesiredOnlineState(runtimeClient: TdClient): void {
+  const target = desiredOnline;
+  sendOnlineOption(runtimeClient, target).catch((caught: Error): void => {
+    if (client !== runtimeClient) {
+      return;
+    }
+    logE(`Globals.setOnline(${target}) failed: ${caught.message}`);
+  });
+}
+
+export function setTdOnlineState(online: boolean): void {
+  desiredOnline = online;
+  const runtimeClient = client;
+  if (runtimeClient === undefined || !runtimeReady) {
+    return;
+  }
+  applyDesiredOnlineState(runtimeClient);
+}
+
+function bumpSessionEpoch(): void {
+  const previous = AppStorage.get<number>(TD_SESSION_EPOCH) ?? 0;
+  AppStorage.setOrCreate(TD_SESSION_EPOCH, previous + 1);
+}
+
+async function restartOnSlot(slotId: string, previousSlotId: string): Promise<void> {
+  AppStorage.setOrCreate(TD_ACCOUNT_SWITCHING, true);
+  try {
+    await stopRuntime('close');
+    createRuntime(slotId);
+    bumpSessionEpoch();
+  } catch (caught) {
+    const error = caught as Error;
+    logE(`Globals.restartOnSlot(${slotId}) failed: ${error.message}`);
+    // 回退目标优先是个登录过的槽：重复登录清理那条路上 previousSlotId 是刚
+    // logOut 掉的空槽，退回去等于把用户锁在登录页（issue #101）。一个登录过的
+    // 都没有时才退回原来那个——有运行时总比没有强。
+    const usable: string = accountRegistry.usableFallbackSlot(previousSlotId);
+    const fallback: string = usable !== '' ? usable
+      : (previousSlotId !== '' && accountRegistry.hasSlot(previousSlotId) ? previousSlotId : '');
+    if (fallback !== '') {
+      accountRegistry.setActive(fallback);
+      if (client === undefined) {
+        createRuntime(fallback);
+        bumpSessionEpoch();
+      }
+    }
+    throw error;
+  } finally {
+    AppStorage.setOrCreate(TD_ACCOUNT_SWITCHING, false);
+  }
+}
+
+// 卡在扫码授权态时，把本地授权数据清掉、在**同一个账号槽**上重建运行时。
+//
+// 为什么需要这个：TDLib 把扫码授权态持久化在 binlog 里，冷启动会原样恢复，
+// setAuthenticationPhoneNumber 从此被永久拒绝——用户再也用不了手机号登录，
+// 只能去系统设置里清除应用数据。判定条件与实证见 util/authError.ets 的
+// needsAuthorizationReset，那里说明了为什么必须两个条件同时成立才动手。
+//
+// **复用账号切换那把锁（switchInFlight）**：两者都要拆掉再重建整个运行时，
+// 同时跑会让 client / auth / 各 store 互相踩。切换在途时直接让出——用户此刻
+// 在切账号，登录页的这次重置没有意义。
+//
+// 槽位不变：这不是换账号，是把当前这个还没登录成功的槽从头来过。
+export function resetAuthorizationForPhoneLogin(): Promise<void> {
+  if (switchInFlight !== null) {
+    return switchInFlight;
+  }
+  const slotId = accountRegistry.activeSlotId();
+  switchInFlight = restartWithDestroy(slotId).finally((): void => {
+    switchInFlight = null;
+  });
+  return switchInFlight;
+}
+
+async function restartWithDestroy(slotId: string): Promise<void> {
+  AppStorage.setOrCreate(TD_ACCOUNT_SWITCHING, true);
+  try {
+    await stopRuntime('destroy');
+    createRuntime(slotId);
+    bumpSessionEpoch();
+  } catch (caught) {
+    const error = caught as Error;
+    logE(`Globals.restartWithDestroy(${slotId}) failed: ${error.message}`);
+    // 重建失败时至少把运行时拉起来，否则应用停在一个没有 client 的状态上，
+    // 连登录页都不工作。槽位不变，失败的是这一次重置而不是账号本身。
+    if (client === undefined) {
+      createRuntime(slotId);
+      bumpSessionEpoch();
+    }
+    throw error;
+  } finally {
+    AppStorage.setOrCreate(TD_ACCOUNT_SWITCHING, false);
+  }
+}
+
+export function switchTdAccount(slotId: string): Promise<void> {
+  if (!accountRegistry.hasSlot(slotId) || slotId === accountRegistry.activeSlotId()) {
+    return Promise.resolve();
+  }
+  if (switchInFlight !== null) { return switchInFlight; }
+  const previousSlotId = accountRegistry.activeSlotId();
+  accountRegistry.setActive(slotId);
+  switchInFlight = restartOnSlot(slotId, previousSlotId).finally((): void => {
+    switchInFlight = null;
+  });
+  return switchInFlight;
+}
+
+export function addTdAccount(): Promise<void> {
+  if (switchInFlight !== null) { return switchInFlight; }
+  const previousSlotId = accountRegistry.activeSlotId();
+  const account = accountRegistry.addPendingAccount();
+  // 诊断：登录页的「返回原账号」按钮不显示（用户报）。这里记下新槽和它记住的
+  // 原槽，和 AccountRegistry 那条 [AddAcct] 对照就能定位是没写上还是没存住。
+  logW(`[AddAcct] addTdAccount new=${account.slotId} prevRecorded=${account.previousSlotId}`
+    + ` prevExpected=${previousSlotId} pending=${account.pendingLogin}`);
+  switchInFlight = restartOnSlot(account.slotId, previousSlotId).finally((): void => {
+    switchInFlight = null;
+  });
+  return switchInFlight;
+}
+
+export function returnToPreviousTdAccount(): Promise<void> {
+  if (switchInFlight !== null) {
+    const pendingSwitch = switchInFlight;
+    return pendingSwitch.then((): Promise<void> => returnToPreviousTdAccount());
+  }
+  const pendingSlotId = accountRegistry.activeSlotId();
+  // 先按「来路」回；没有来路（清理重复登录失败那类事故）就回任意一个登录过的槽。
+  const previousSlotId = accountRegistry.previousSlotForActivePending() !== ''
+    ? accountRegistry.previousSlotForActivePending() : accountRegistry.otherUsableSlotId();
+  if (previousSlotId === '') { return Promise.resolve(); }
+  return switchTdAccount(previousSlotId).then((): void => {
+    accountRegistry.discardPending(pendingSlotId);
+  });
+}
+
+// 活跃槽的摘要里有没有用户身份（供界面判断「停在登录页却写着已登录」）。
+export function activeSummaryHasUser(): boolean {
+  return accountRegistry.activeSummaryHasUser();
+}
+
+export function canReturnToPreviousTdAccount(): boolean {
+  return accountRegistry.previousSlotForActivePending() !== ''
+    || accountRegistry.otherUsableSlotId() !== '';
+}
+
+// 活跃槽停在未授权状态、而注册表里还有登录过的槽：两边对不上，自动切回去。
+// 清理重复登录失败会造成这种状态（见 resolveDuplicateAccountLogin），用户自己
+// 没有任何出口。返回 true 表示已经开始自愈。
+export function healActiveSlotIfSignedOut(): boolean {
+  if (switchInFlight !== null) {
+    return false;
+  }
+  const fallback: string = accountRegistry.otherUsableSlotId();
+  if (fallback === '') {
+    return false;
+  }
+  const pendingSlotId: string = accountRegistry.activeSlotId();
+  logW(`[AddAcct] heal active=${pendingSlotId} hasUser=${accountRegistry.activeSummaryHasUser()}`
+    + ` -> fallback=${fallback}`);
+  switchTdAccount(fallback).then((): void => {
+    accountRegistry.discardPending(pendingSlotId);
+  }).catch((caught: Error): void => {
+    logE(`Globals.healActiveSlotIfSignedOut failed: ${caught.message}`);
+  });
+  return true;
+}
+
+export function logoutCurrentTdAccount(): Promise<void> {
+  if (switchInFlight !== null) { return switchInFlight; }
+  const currentSlotId = accountRegistry.activeSlotId();
+  const fallback = accountRegistry.all().find(
+    (account: TdAccountSummary): boolean =>
+      account.slotId !== currentSlotId && !account.pendingLogin && account.userId !== 0
+  );
+  const currentAuth = auth;
+  if (currentAuth === undefined) {
+    return Promise.reject(new Error(str('gl_account_not_ready')));
+  }
+  AppStorage.setOrCreate(TD_ACCOUNT_SWITCHING, true);
+  switchInFlight = currentAuth.logOut().then(async (): Promise<void> => {
+    // Hide the logged-out session immediately. If the app is killed while the
+    // next runtime is starting, it won't reappear as a usable account.
+    accountRegistry.markLoggedOut(currentSlotId);
+    if (fallback !== undefined) {
+      accountRegistry.setActive(fallback.slotId);
+      await restartOnSlot(fallback.slotId, currentSlotId);
+      accountRegistry.removeAccount(currentSlotId);
+    } else {
+      // Recreate TDLib on the same (now logged-out) database so it emits
+      // authorizationStateWaitPhoneNumber and the UI returns to login.
+      await restartOnSlot(currentSlotId, currentSlotId);
+    }
+  }).finally((): void => {
+    switchInFlight = null;
+    AppStorage.setOrCreate(TD_ACCOUNT_SWITCHING, false);
+  });
+  return switchInFlight;
+}
+
+export function getTdAccounts(): TdAccountSummary[] {
+  return accountRegistry.all();
+}
+
+export function removeDuplicateTdAccountsForActive(): number {
+  return accountRegistry.removeDuplicatesForActive();
+}
+
+export function getActiveTdAccountSlot(): string {
+  return accountRegistry.activeSlotId();
+}
+
+export function getTdFilesDirectory(): string {
+  return activeTdFilesDirectory;
+}
+
+export function updateActiveTdAccountProfile(
+  userId: number, name: string, phone: string, username: string, avatarPath: string
+): void {
+  accountRegistry.updateActiveProfile(userId, name, phone, username, avatarPath);
+}
+
+function refreshActiveAccountSummary(runtimeClient: TdClient): void {
+  const slotBeforeRequest = accountRegistry.active();
+  const request: TdRequest = { '@type': 'getMe' };
+  runtimeClient.send(request).then((me: TdObject): void => {
+    if (client !== runtimeClient) { return; }
+    const firstName = (me['first_name'] as string | undefined) ?? '';
+    const lastName = (me['last_name'] as string | undefined) ?? '';
+    const name = `${firstName} ${lastName}`.trim();
+    const phone = (me['phone_number'] as string | undefined) ?? '';
+    const usernames = me['usernames'] as TdObject | undefined;
+    const activeUsernames =
+      (usernames?.['active_usernames'] as string[] | undefined) ?? [];
+    const profilePhoto = me['profile_photo'] as TdObject | undefined;
+    const small = profilePhoto?.['small'] as TdObject | undefined;
+    const local = small?.['local'] as TdObject | undefined;
+    const avatarPath = (local?.['path'] as string | undefined) ?? '';
+    const userId = (me['id'] as number | undefined) ?? 0;
+    const duplicateSlotId = slotBeforeRequest.pendingLogin
+      ? accountRegistry.findOtherLoggedInSlot(userId, slotBeforeRequest.slotId)
+      : '';
+    if (duplicateSlotId !== '' &&
+      accountRegistry.activeSlotId() === slotBeforeRequest.slotId &&
+      auth !== undefined) {
+      resolveDuplicateAccountLogin(
+        slotBeforeRequest.slotId,
+        duplicateSlotId,
+        runtimeClient,
+        auth,
+        userId,
+        name,
+        phone,
+        activeUsernames.length > 0 ? activeUsernames[0] : '',
+        avatarPath
+      );
+      return;
+    }
+    accountRegistry.updateActiveProfile(
+      userId,
+      name,
+      phone,
+      activeUsernames.length > 0 ? activeUsernames[0] : '',
+      avatarPath
+    );
+  }).catch((caught: Error): void => {
+    logE(`Globals.refreshActiveAccountSummary failed: ${caught.message}`);
+  });
+}
+
+function resolveDuplicateAccountLogin(
+  duplicateSlotId: string,
+  existingSlotId: string,
+  runtimeClient: TdClient,
+  runtimeAuth: AuthService,
+  userId: number,
+  name: string,
+  phone: string,
+  username: string,
+  avatarPath: string
+): void {
+  if (switchInFlight !== null) {
+    const pendingSwitch = switchInFlight;
+    pendingSwitch.then((): void => {
+      resolveDuplicateAccountLogin(
+        duplicateSlotId, existingSlotId, runtimeClient, runtimeAuth,
+        userId, name, phone, username, avatarPath
+      );
+    }).catch((caught: Error): void => {
+      logE(`Globals.resolveDuplicateAccountLogin wait failed: ${caught.message}`);
+    });
+    return;
+  }
+  if (client !== runtimeClient || auth !== runtimeAuth ||
+    accountRegistry.activeSlotId() !== duplicateSlotId) {
+    return;
+  }
+  let logoutCompleted: boolean = false;
+  AppStorage.setOrCreate(TD_ACCOUNT_SWITCHING, true);
+  logW(`[AddAcct] duplicate cleanup start dup=${duplicateSlotId} existing=${existingSlotId}`);
+  switchInFlight = runtimeAuth.logOut().then(async (): Promise<void> => {
+    logoutCompleted = true;
+    logW(`[AddAcct] duplicate logout ok dup=${duplicateSlotId}`);
+    accountRegistry.markLoggedOut(duplicateSlotId);
+    accountRegistry.setActive(existingSlotId);
+    await restartOnSlot(existingSlotId, duplicateSlotId);
+    accountRegistry.removeAccount(duplicateSlotId);
+    logW(`[AddAcct] duplicate cleanup done active=${accountRegistry.activeSlotId()}`);
+  }).catch((caught: Error): void => {
+    logE(`Globals.resolveDuplicateAccountLogin failed: ${caught.message}`);
+    // logout 已经成功、后面那几步挂了：活跃槽此刻是个**已登出的空库**，
+    // 而摘要还写着用户身份——用户会被锁在登录页且没有任何出口（真机事故）。
+    // 这里把它标回 pendingLogin 并切回原槽，出口和自愈都能重新够到。
+    if (logoutCompleted) {
+      logW(`[AddAcct] duplicate cleanup failed after logout — falling back to ${existingSlotId}`);
+      accountRegistry.markLoggedOut(duplicateSlotId);
+      // 得等这条链的 finally 把 switchInFlight 清掉再切：此刻它还指着本链，
+      // switchTdAccount 一进门就 `return switchInFlight`，什么都不切——这段
+      // 兜底原来一直是死代码（issue #101）。
+      setTimeout((): void => {
+        switchTdAccount(existingSlotId).then((): void => {
+          accountRegistry.discardPending(duplicateSlotId);
+        }).catch((inner: Error): void => {
+          logE(`Globals.resolveDuplicateAccountLogin fallback failed: ${inner.message}`);
+        });
+      }, 0);
+      return;
+    }
+    if (client === runtimeClient &&
+      accountRegistry.activeSlotId() === duplicateSlotId) {
+      // Keep the freshly authenticated runtime usable if Telegram rejected
+      // the cleanup request; it can be resolved manually from Devices.
+      accountRegistry.updateActiveProfile(userId, name, phone, username, avatarPath);
+    }
+  }).finally((): void => {
+    switchInFlight = null;
+    AppStorage.setOrCreate(TD_ACCOUNT_SWITCHING, false);
+  });
+}
+
+export function isReady(): boolean {
+  return client !== undefined;
+}
+
+export function getSessionSecurityStore(): SessionSecurityStore {
+  return sessionSecurity!;
+}
+
+export function getTdClient(): TdClient {
+  return client!;
+}
+
+export function getAuthService(): AuthService {
+  return auth!;
+}
+
+export function getChatStore(): ChatStore {
+  return chats!;
+}
+
+export function getFileService(): FileService {
+  return files!;
+}
+
+export function getFolderStore(): FolderStore {
+  return folders!;
+}
+
+export function getUnreadCountStore(): UnreadCountStore {
+  return unread!;
+}
+
+export function getUserStore(): UserStore {
+  return users!;
+}
+
+export function getChatThemeStore(): ChatThemeStore {
+  return chatThemes!;
+}
+
+export function getAccentColorStore(): AccentColorStore {
+  return accentColors!;
+}
+
+export function getCallSession(): CallSession {
+  return callSession!;
+}
+
+export function getStoryStore(): StoryStore {
+  return storyStore!;
+}
+
+// 供无 UI 上下文的服务（后台任务申请等）使用；EntryAbility 启动时写入。
+let uiAbilityContext: common.UIAbilityContext | null = null;
+
+export function setUiAbilityContext(context: common.UIAbilityContext): void {
+  uiAbilityContext = context;
+}
+
+export function getUiAbilityContext(): common.UIAbilityContext | null {
+  return uiAbilityContext;
+}
+
+// 当前账号自己的 user id。「保存消息」要往它对应的私聊（Saved Messages）里
+// 转发——Telegram 里"收藏"就是和自己的会话，chat_id 等于自己的 user id。
+// 0 表示还没拿到（getMe 未回），调用方据此退化。
+export function getActiveTdUserId(): number {
+  return accountRegistry.active().userId;
+}

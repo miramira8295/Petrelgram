@@ -1,0 +1,1579 @@
+{
+  "plural": [
+    {
+      "name": "duration_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d день"
+        },
+        {
+          "quantity": "few",
+          "value": "%d дні"
+        },
+        {
+          "quantity": "many",
+          "value": "%d днів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d днів"
+        }
+      ]
+    },
+    {
+      "name": "duration_days_premium",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d день Premium"
+        },
+        {
+          "quantity": "few",
+          "value": "%d дні Premium"
+        },
+        {
+          "quantity": "many",
+          "value": "%d днів Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d днів Premium"
+        }
+      ]
+    },
+    {
+      "name": "duration_months",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d місяць"
+        },
+        {
+          "quantity": "few",
+          "value": "%d місяці"
+        },
+        {
+          "quantity": "many",
+          "value": "%d місяців"
+        },
+        {
+          "quantity": "other",
+          "value": "%d місяців"
+        }
+      ]
+    },
+    {
+      "name": "duration_months_premium",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d місяць Premium"
+        },
+        {
+          "quantity": "few",
+          "value": "%d місяці Premium"
+        },
+        {
+          "quantity": "many",
+          "value": "%d місяців Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d місяців Premium"
+        }
+      ]
+    },
+    {
+      "name": "gift_stars_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d зірка"
+        },
+        {
+          "quantity": "few",
+          "value": "%d зірки"
+        },
+        {
+          "quantity": "many",
+          "value": "%d зірок"
+        },
+        {
+          "quantity": "other",
+          "value": "%d зірок"
+        }
+      ]
+    },
+    {
+      "name": "gift_worth_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Вартістю %d зірка"
+        },
+        {
+          "quantity": "few",
+          "value": "Вартістю %d зірки"
+        },
+        {
+          "quantity": "many",
+          "value": "Вартістю %d зірок"
+        },
+        {
+          "quantity": "other",
+          "value": "Вартістю %d зірок"
+        }
+      ]
+    },
+    {
+      "name": "live_media_in_room",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d людина в кімнаті стріму"
+        },
+        {
+          "quantity": "few",
+          "value": "%d людини в кімнаті стріму"
+        },
+        {
+          "quantity": "many",
+          "value": "%d людей у кімнаті стріму"
+        },
+        {
+          "quantity": "other",
+          "value": "%d людей у кімнаті стріму"
+        }
+      ]
+    },
+    {
+      "name": "live_status_watching",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d людина дивиться"
+        },
+        {
+          "quantity": "few",
+          "value": "%d людини дивляться"
+        },
+        {
+          "quantity": "many",
+          "value": "%d людей дивляться"
+        },
+        {
+          "quantity": "other",
+          "value": "%d людей дивляться"
+        }
+      ]
+    },
+    {
+      "name": "prize_premium_months",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d місяць Premium"
+        },
+        {
+          "quantity": "few",
+          "value": "%d місяці Premium"
+        },
+        {
+          "quantity": "many",
+          "value": "%d місяців Premium"
+        },
+        {
+          "quantity": "other",
+          "value": "%d місяців Premium"
+        }
+      ]
+    },
+    {
+      "name": "prize_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d зірка"
+        },
+        {
+          "quantity": "few",
+          "value": "%d зірки"
+        },
+        {
+          "quantity": "many",
+          "value": "%d зірок"
+        },
+        {
+          "quantity": "other",
+          "value": "%d зірок"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d день"
+        },
+        {
+          "quantity": "few",
+          "value": "%d дні"
+        },
+        {
+          "quantity": "many",
+          "value": "%d днів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d днів"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d година"
+        },
+        {
+          "quantity": "few",
+          "value": "%d години"
+        },
+        {
+          "quantity": "many",
+          "value": "%d годин"
+        },
+        {
+          "quantity": "other",
+          "value": "%d годин"
+        }
+      ]
+    },
+    {
+      "name": "session_unit_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d хвилина"
+        },
+        {
+          "quantity": "few",
+          "value": "%d хвилини"
+        },
+        {
+          "quantity": "many",
+          "value": "%d хвилин"
+        },
+        {
+          "quantity": "other",
+          "value": "%d хвилин"
+        }
+      ]
+    },
+    {
+      "name": "user_status_days_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d день тому"
+        },
+        {
+          "quantity": "few",
+          "value": "%d дні тому"
+        },
+        {
+          "quantity": "many",
+          "value": "%d днів тому"
+        },
+        {
+          "quantity": "other",
+          "value": "%d днів тому"
+        }
+      ]
+    },
+    {
+      "name": "user_status_hours_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d годину тому"
+        },
+        {
+          "quantity": "few",
+          "value": "%d години тому"
+        },
+        {
+          "quantity": "many",
+          "value": "%d годин тому"
+        },
+        {
+          "quantity": "other",
+          "value": "%d годин тому"
+        }
+      ]
+    },
+    {
+      "name": "user_status_minutes_ago",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d хвилину тому"
+        },
+        {
+          "quantity": "few",
+          "value": "%d хвилини тому"
+        },
+        {
+          "quantity": "many",
+          "value": "%d хвилин тому"
+        },
+        {
+          "quantity": "other",
+          "value": "%d хвилин тому"
+        }
+      ]
+    },
+    {
+      "name": "sticker_set_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d набір стікерів"
+        },
+        {
+          "quantity": "few",
+          "value": "%d набори стікерів"
+        },
+        {
+          "quantity": "many",
+          "value": "%d наборів стікерів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d наборів стікерів"
+        }
+      ]
+    },
+    {
+      "name": "cw_disconnect_all_confirm",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Буде відключено вхід на %d сайті."
+        },
+        {
+          "quantity": "few",
+          "value": "Буде відключено вхід на %d сайтах."
+        },
+        {
+          "quantity": "many",
+          "value": "Буде відключено вхід на %d сайтах."
+        },
+        {
+          "quantity": "other",
+          "value": "Буде відключено вхід на %d сайтах."
+        }
+      ]
+    },
+    {
+      "name": "pe_group_exceptions_kept",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Сервер зберіг %d виняток для груп"
+        },
+        {
+          "quantity": "few",
+          "value": "Сервер зберіг %d винятки для груп"
+        },
+        {
+          "quantity": "many",
+          "value": "Сервер зберіг %d винятків для груп"
+        },
+        {
+          "quantity": "other",
+          "value": "Сервер зберіг %d винятків для груп"
+        }
+      ]
+    },
+    {
+      "name": "storage_file_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d файл"
+        },
+        {
+          "quantity": "few",
+          "value": "%d файли"
+        },
+        {
+          "quantity": "many",
+          "value": "%d файлів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d файлів"
+        }
+      ]
+    },
+    {
+      "name": "bu_account_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d акаунт"
+        },
+        {
+          "quantity": "few",
+          "value": "%d акаунти"
+        },
+        {
+          "quantity": "many",
+          "value": "%d акаунтів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d акаунтів"
+        }
+      ]
+    },
+    {
+      "name": "calls_about_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Приблизно %d запис"
+        },
+        {
+          "quantity": "few",
+          "value": "Приблизно %d записи"
+        },
+        {
+          "quantity": "many",
+          "value": "Приблизно %d записів"
+        },
+        {
+          "quantity": "other",
+          "value": "Приблизно %d записів"
+        }
+      ]
+    },
+    {
+      "name": "calls_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d запис"
+        },
+        {
+          "quantity": "few",
+          "value": "%d записи"
+        },
+        {
+          "quantity": "many",
+          "value": "%d записів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d записів"
+        }
+      ]
+    },
+    {
+      "name": "calls_participants",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d особа"
+        },
+        {
+          "quantity": "few",
+          "value": "%d особи"
+        },
+        {
+          "quantity": "many",
+          "value": "%d осіб"
+        },
+        {
+          "quantity": "other",
+          "value": "%d осіб"
+        }
+      ]
+    },
+    {
+      "name": "cf_about_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Приблизно %d чат"
+        },
+        {
+          "quantity": "few",
+          "value": "Приблизно %d чати"
+        },
+        {
+          "quantity": "many",
+          "value": "Приблизно %d чатів"
+        },
+        {
+          "quantity": "other",
+          "value": "Приблизно %d чатів"
+        }
+      ]
+    },
+    {
+      "name": "cf_delete_and_leave",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Видалити та вийти з %d чату"
+        },
+        {
+          "quantity": "few",
+          "value": "Видалити та вийти з %d чатів"
+        },
+        {
+          "quantity": "many",
+          "value": "Видалити та вийти з %d чатів"
+        },
+        {
+          "quantity": "other",
+          "value": "Видалити та вийти з %d чатів"
+        }
+      ]
+    },
+    {
+      "name": "fl_new_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d новий чат"
+        },
+        {
+          "quantity": "few",
+          "value": "%d нові чати"
+        },
+        {
+          "quantity": "many",
+          "value": "%d нових чатів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d нових чатів"
+        }
+      ]
+    },
+    {
+      "name": "fl_selected_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Обрано %d чат"
+        },
+        {
+          "quantity": "few",
+          "value": "Обрано %d чати"
+        },
+        {
+          "quantity": "many",
+          "value": "Обрано %d чатів"
+        },
+        {
+          "quantity": "other",
+          "value": "Обрано %d чатів"
+        }
+      ]
+    },
+    {
+      "name": "fl_add_chats",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Додати %d чат"
+        },
+        {
+          "quantity": "few",
+          "value": "Додати %d чати"
+        },
+        {
+          "quantity": "many",
+          "value": "Додати %d чатів"
+        },
+        {
+          "quantity": "other",
+          "value": "Додати %d чатів"
+        }
+      ]
+    },
+    {
+      "name": "ds_cached_files",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d кеш-файл"
+        },
+        {
+          "quantity": "few",
+          "value": "%d кеш-файли"
+        },
+        {
+          "quantity": "many",
+          "value": "%d кеш-файлів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d кеш-файлів"
+        }
+      ]
+    },
+    {
+      "name": "ct_result_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d людина"
+        },
+        {
+          "quantity": "few",
+          "value": "%d людини"
+        },
+        {
+          "quantity": "many",
+          "value": "%d людей"
+        },
+        {
+          "quantity": "other",
+          "value": "%d людей"
+        }
+      ]
+    },
+    {
+      "name": "ng_max_members",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Звичайна група може містити щонайбільше %d учасника"
+        },
+        {
+          "quantity": "few",
+          "value": "Звичайні групи можуть містити щонайбільше %d учасників"
+        },
+        {
+          "quantity": "many",
+          "value": "Звичайні групи можуть містити щонайбільше %d учасників"
+        },
+        {
+          "quantity": "other",
+          "value": "Звичайні групи можуть містити щонайбільше %d учасників"
+        }
+      ]
+    },
+    {
+      "name": "ng_member_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d учасник"
+        },
+        {
+          "quantity": "few",
+          "value": "%d учасники"
+        },
+        {
+          "quantity": "many",
+          "value": "%d учасників"
+        },
+        {
+          "quantity": "other",
+          "value": "%d учасників"
+        }
+      ]
+    },
+    {
+      "name": "ng_people_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d людина"
+        },
+        {
+          "quantity": "few",
+          "value": "%d людини"
+        },
+        {
+          "quantity": "many",
+          "value": "%d людей"
+        },
+        {
+          "quantity": "other",
+          "value": "%d людей"
+        }
+      ]
+    },
+    {
+      "name": "ps_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d день"
+        },
+        {
+          "quantity": "few",
+          "value": "%d дні"
+        },
+        {
+          "quantity": "many",
+          "value": "%d днів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d днів"
+        }
+      ]
+    },
+    {
+      "name": "px_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d штука"
+        },
+        {
+          "quantity": "few",
+          "value": "%d штуки"
+        },
+        {
+          "quantity": "many",
+          "value": "%d штук"
+        },
+        {
+          "quantity": "other",
+          "value": "%d штук"
+        }
+      ]
+    },
+    {
+      "name": "fe_chosen_limit",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Окремо можна обрати не більше %d чату"
+        },
+        {
+          "quantity": "few",
+          "value": "Окремо можна обрати не більше %d чатів"
+        },
+        {
+          "quantity": "many",
+          "value": "Окремо можна обрати не більше %d чатів"
+        },
+        {
+          "quantity": "other",
+          "value": "Окремо можна обрати не більше %d чатів"
+        }
+      ]
+    },
+    {
+      "name": "fe_removed_invalid",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Видалено %d чат, якого немає в списку розмов"
+        },
+        {
+          "quantity": "few",
+          "value": "Видалено %d чати, яких немає в списку розмов"
+        },
+        {
+          "quantity": "many",
+          "value": "Видалено %d чатів, яких немає в списку розмов"
+        },
+        {
+          "quantity": "other",
+          "value": "Видалено %d чатів, яких немає в списку розмов"
+        }
+      ]
+    },
+    {
+      "name": "fe_pick_limit",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Максимум %d чат"
+        },
+        {
+          "quantity": "few",
+          "value": "Максимум %d чати"
+        },
+        {
+          "quantity": "many",
+          "value": "Максимум %d чатів"
+        },
+        {
+          "quantity": "other",
+          "value": "Максимум %d чатів"
+        }
+      ]
+    },
+    {
+      "name": "fe_preview_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Орієнтовно %d чат"
+        },
+        {
+          "quantity": "few",
+          "value": "Орієнтовно %d чати"
+        },
+        {
+          "quantity": "many",
+          "value": "Орієнтовно %d чатів"
+        },
+        {
+          "quantity": "other",
+          "value": "Орієнтовно %d чатів"
+        }
+      ]
+    },
+    {
+      "name": "fe_selected_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Обрано %d штуку"
+        },
+        {
+          "quantity": "few",
+          "value": "Обрано %d штуки"
+        },
+        {
+          "quantity": "many",
+          "value": "Обрано %d штук"
+        },
+        {
+          "quantity": "other",
+          "value": "Обрано %d штук"
+        }
+      ]
+    },
+    {
+      "name": "mp_item_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d елемент"
+        },
+        {
+          "quantity": "few",
+          "value": "%d елементи"
+        },
+        {
+          "quantity": "many",
+          "value": "%d елементів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d елементів"
+        }
+      ]
+    },
+    {
+      "name": "fw_forwarded_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Переслано %d повідомлення"
+        },
+        {
+          "quantity": "few",
+          "value": "Переслано %d повідомлення"
+        },
+        {
+          "quantity": "many",
+          "value": "Переслано %d повідомлень"
+        },
+        {
+          "quantity": "other",
+          "value": "Переслано %d повідомлень"
+        }
+      ]
+    },
+    {
+      "name": "fw_forward_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Переслати %d повідомлення"
+        },
+        {
+          "quantity": "few",
+          "value": "Переслати %d повідомлення"
+        },
+        {
+          "quantity": "many",
+          "value": "Переслати %d повідомлень"
+        },
+        {
+          "quantity": "other",
+          "value": "Переслати %d повідомлень"
+        }
+      ]
+    },
+    {
+      "name": "poll_voters",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d людина проголосувала"
+        },
+        {
+          "quantity": "few",
+          "value": "%d людини проголосували"
+        },
+        {
+          "quantity": "many",
+          "value": "%d людей проголосували"
+        },
+        {
+          "quantity": "other",
+          "value": "%d людей проголосували"
+        }
+      ]
+    },
+    {
+      "name": "gw_winners_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d переможець"
+        },
+        {
+          "quantity": "few",
+          "value": "%d переможці"
+        },
+        {
+          "quantity": "many",
+          "value": "%d переможців"
+        },
+        {
+          "quantity": "other",
+          "value": "%d переможців"
+        }
+      ]
+    },
+    {
+      "name": "gw_unclaimed_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d незабраний приз"
+        },
+        {
+          "quantity": "few",
+          "value": "%d незабрані призи"
+        },
+        {
+          "quantity": "many",
+          "value": "%d незабраних призів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d незабраних призів"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Геопозиція в реальному часі · %d годину"
+        },
+        {
+          "quantity": "few",
+          "value": "Геопозиція в реальному часі · %d години"
+        },
+        {
+          "quantity": "many",
+          "value": "Геопозиція в реальному часі · %d годин"
+        },
+        {
+          "quantity": "other",
+          "value": "Геопозиція в реальному часі · %d годин"
+        }
+      ]
+    },
+    {
+      "name": "loc_live_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Геопозиція в реальному часі · %d хвилину"
+        },
+        {
+          "quantity": "few",
+          "value": "Геопозиція в реальному часі · %d хвилини"
+        },
+        {
+          "quantity": "many",
+          "value": "Геопозиція в реальному часі · %d хвилин"
+        },
+        {
+          "quantity": "other",
+          "value": "Геопозиція в реальному часі · %d хвилин"
+        }
+      ]
+    },
+    {
+      "name": "loc_accuracy",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Точність до приблизно %d метра"
+        },
+        {
+          "quantity": "few",
+          "value": "Точність до приблизно %d метрів"
+        },
+        {
+          "quantity": "many",
+          "value": "Точність до приблизно %d метрів"
+        },
+        {
+          "quantity": "other",
+          "value": "Точність до приблизно %d метрів"
+        }
+      ]
+    },
+    {
+      "name": "loc_proximity",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Радіус сповіщення: %d метр"
+        },
+        {
+          "quantity": "few",
+          "value": "Радіус сповіщення: %d метри"
+        },
+        {
+          "quantity": "many",
+          "value": "Радіус сповіщення: %d метрів"
+        },
+        {
+          "quantity": "other",
+          "value": "Радіус сповіщення: %d метрів"
+        }
+      ]
+    },
+    {
+      "name": "ft_topic_count",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d тема"
+        },
+        {
+          "quantity": "few",
+          "value": "%d теми"
+        },
+        {
+          "quantity": "many",
+          "value": "%d тем"
+        },
+        {
+          "quantity": "other",
+          "value": "%d тем"
+        }
+      ]
+    },
+    {
+      "name": "mb_comments_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d коментар"
+        },
+        {
+          "quantity": "few",
+          "value": "%d коментарі"
+        },
+        {
+          "quantity": "many",
+          "value": "%d коментарів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d коментарів"
+        }
+      ]
+    },
+    {
+      "name": "lv_new_interactions",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d новий коментар"
+        },
+        {
+          "quantity": "few",
+          "value": "%d нові коментарі"
+        },
+        {
+          "quantity": "many",
+          "value": "%d нових коментарів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d нових коментарів"
+        }
+      ]
+    },
+    {
+      "name": "lv_more_sources",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Ще %d відеопотік"
+        },
+        {
+          "quantity": "few",
+          "value": "Ще %d відеопотоки"
+        },
+        {
+          "quantity": "many",
+          "value": "Ще %d відеопотоків"
+        },
+        {
+          "quantity": "other",
+          "value": "Ще %d відеопотоків"
+        }
+      ]
+    },
+    {
+      "name": "lv_open_chat_unread",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Відкрити коментарі стріму: %d нове повідомлення"
+        },
+        {
+          "quantity": "few",
+          "value": "Відкрити коментарі стріму: %d нові повідомлення"
+        },
+        {
+          "quantity": "many",
+          "value": "Відкрити коментарі стріму: %d нових повідомлень"
+        },
+        {
+          "quantity": "other",
+          "value": "Відкрити коментарі стріму: %d нових повідомлень"
+        }
+      ]
+    },
+    {
+      "name": "lv_view_members",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Переглянути %d учасника"
+        },
+        {
+          "quantity": "few",
+          "value": "Переглянути %d учасників"
+        },
+        {
+          "quantity": "many",
+          "value": "Переглянути %d учасників"
+        },
+        {
+          "quantity": "other",
+          "value": "Переглянути %d учасників"
+        }
+      ]
+    },
+    {
+      "name": "cp_live_online_now",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Зараз у мережі %d людина."
+        },
+        {
+          "quantity": "few",
+          "value": "Зараз у мережі %d людини."
+        },
+        {
+          "quantity": "many",
+          "value": "Зараз у мережі %d людей."
+        },
+        {
+          "quantity": "other",
+          "value": "Зараз у мережі %d людей."
+        }
+      ]
+    },
+    {
+      "name": "cp_n_online",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d людина в мережі"
+        },
+        {
+          "quantity": "few",
+          "value": "%d людини в мережі"
+        },
+        {
+          "quantity": "many",
+          "value": "%d людей у мережі"
+        },
+        {
+          "quantity": "other",
+          "value": "%d людей у мережі"
+        }
+      ]
+    },
+    {
+      "name": "cp_media_skipped",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Не вдалося прочитати %d медіафайл; решту надіслано"
+        },
+        {
+          "quantity": "few",
+          "value": "Не вдалося прочитати %d медіафайли; решту надіслано"
+        },
+        {
+          "quantity": "many",
+          "value": "Не вдалося прочитати %d медіафайлів; решту надіслано"
+        },
+        {
+          "quantity": "other",
+          "value": "Не вдалося прочитати %d медіафайлів; решту надіслано"
+        }
+      ]
+    },
+    {
+      "name": "cp_copied_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Скопійовано %d повідомлення"
+        },
+        {
+          "quantity": "few",
+          "value": "Скопійовано %d повідомлення"
+        },
+        {
+          "quantity": "many",
+          "value": "Скопійовано %d повідомлень"
+        },
+        {
+          "quantity": "other",
+          "value": "Скопійовано %d повідомлень"
+        }
+      ]
+    },
+    {
+      "name": "cp_n_typing",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d людина пише…"
+        },
+        {
+          "quantity": "few",
+          "value": "%d людини пишуть…"
+        },
+        {
+          "quantity": "many",
+          "value": "%d людей пишуть…"
+        },
+        {
+          "quantity": "other",
+          "value": "%d людей пишуть…"
+        }
+      ]
+    },
+    {
+      "name": "cp_unread_a11y",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d непрочитане повідомлення, повернутися до останніх"
+        },
+        {
+          "quantity": "few",
+          "value": "%d непрочитані повідомлення, повернутися до останніх"
+        },
+        {
+          "quantity": "many",
+          "value": "%d непрочитаних повідомлень, повернутися до останніх"
+        },
+        {
+          "quantity": "other",
+          "value": "%d непрочитаних повідомлень, повернутися до останніх"
+        }
+      ]
+    },
+    {
+      "name": "sm_paid_per_message",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Кожне повідомлення коштує %d зірку"
+        },
+        {
+          "quantity": "few",
+          "value": "Кожне повідомлення коштує %d зірки"
+        },
+        {
+          "quantity": "many",
+          "value": "Кожне повідомлення коштує %d зірок"
+        },
+        {
+          "quantity": "other",
+          "value": "Кожне повідомлення коштує %d зірок"
+        }
+      ]
+    },
+    {
+      "name": "sm_refunded_stars",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Повернено %d зірку"
+        },
+        {
+          "quantity": "few",
+          "value": "Повернено %d зірки"
+        },
+        {
+          "quantity": "many",
+          "value": "Повернено %d зірок"
+        },
+        {
+          "quantity": "other",
+          "value": "Повернено %d зірок"
+        }
+      ]
+    },
+    {
+      "name": "sm_channel_dm_price",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Цей канал дозволяє особисті повідомлення за %d зірку"
+        },
+        {
+          "quantity": "few",
+          "value": "Цей канал дозволяє особисті повідомлення за %d зірки"
+        },
+        {
+          "quantity": "many",
+          "value": "Цей канал дозволяє особисті повідомлення за %d зірок"
+        },
+        {
+          "quantity": "other",
+          "value": "Цей канал дозволяє особисті повідомлення за %d зірок"
+        }
+      ]
+    },
+    {
+      "name": "unit_seconds",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d секунда"
+        },
+        {
+          "quantity": "few",
+          "value": "%d секунди"
+        },
+        {
+          "quantity": "many",
+          "value": "%d секунд"
+        },
+        {
+          "quantity": "other",
+          "value": "%d секунд"
+        }
+      ]
+    },
+    {
+      "name": "unit_minutes",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d хвилина"
+        },
+        {
+          "quantity": "few",
+          "value": "%d хвилини"
+        },
+        {
+          "quantity": "many",
+          "value": "%d хвилин"
+        },
+        {
+          "quantity": "other",
+          "value": "%d хвилин"
+        }
+      ]
+    },
+    {
+      "name": "unit_hours",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d година"
+        },
+        {
+          "quantity": "few",
+          "value": "%d години"
+        },
+        {
+          "quantity": "many",
+          "value": "%d годин"
+        },
+        {
+          "quantity": "other",
+          "value": "%d годин"
+        }
+      ]
+    },
+    {
+      "name": "unit_days",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d день"
+        },
+        {
+          "quantity": "few",
+          "value": "%d дні"
+        },
+        {
+          "quantity": "many",
+          "value": "%d днів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d днів"
+        }
+      ]
+    },
+    {
+      "name": "sm_proximity_metres",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d метр"
+        },
+        {
+          "quantity": "few",
+          "value": "%d метри"
+        },
+        {
+          "quantity": "many",
+          "value": "%d метрів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d метрів"
+        }
+      ]
+    },
+    {
+      "name": "lg_resend_in",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Повторне надсилання через %d секунду"
+        },
+        {
+          "quantity": "few",
+          "value": "Повторне надсилання через %d секунди"
+        },
+        {
+          "quantity": "many",
+          "value": "Повторне надсилання через %d секунд"
+        },
+        {
+          "quantity": "other",
+          "value": "Повторне надсилання через %d секунд"
+        }
+      ]
+    },
+    {
+      "name": "cl_unread_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d непрочитане"
+        },
+        {
+          "quantity": "few",
+          "value": "%d непрочитані"
+        },
+        {
+          "quantity": "many",
+          "value": "%d непрочитаних"
+        },
+        {
+          "quantity": "other",
+          "value": "%d непрочитаних"
+        }
+      ]
+    },
+    {
+      "name": "ap_chats_n",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "%d чат"
+        },
+        {
+          "quantity": "few",
+          "value": "%d чати"
+        },
+        {
+          "quantity": "many",
+          "value": "%d чатів"
+        },
+        {
+          "quantity": "other",
+          "value": "%d чатів"
+        }
+      ]
+    },
+    {
+      "name": "gs_free_left",
+      "value": [
+        {
+          "quantity": "one",
+          "value": "Сьогодні залишився %d безкоштовний пошук"
+        },
+        {
+          "quantity": "few",
+          "value": "Сьогодні залишилося %d безкоштовні пошуки"
+        },
+        {
+          "quantity": "many",
+          "value": "Сьогодні залишилося %d безкоштовних пошуків"
+        },
+        {
+          "quantity": "other",
+          "value": "Сьогодні залишилося %d безкоштовних пошуків"
+        }
+      ]
+    }
+  ]
+}
