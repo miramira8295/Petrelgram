@@ -32,6 +32,9 @@ export class ChatEnvMirror {
   @Trace bubbleRadius: number = 0;
   @Trace reduceAnim: boolean = false;
   @Trace powerSaving: boolean = false;
+  // 滚动中：气泡在这段时间关掉模糊/阴影（GPU 实测满 85–91%，模糊单独占 5–6 点）。
+  // 由 scrollEffects.setScrollActive 双写进来。
+  @Trace scrollActive: boolean = false;
   @Trace chatEffects: boolean = true;
   @Trace messageEffects: boolean = true;
   @Trace reactionEffects: boolean = false;

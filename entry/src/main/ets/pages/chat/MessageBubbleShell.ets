@@ -1538,6 +1538,10 @@ export struct MessageBubbleShell {
   }
 
   private containerGlassBlurStyle(): BlurStyle | undefined {
+    // 滚动期不上模糊（理由见 LightweightPlainTextBubble 同名方法）。
+    if (this.env.scrollActive) {
+      return undefined;
+    }
     return this.glassReady() ? bubbleGlassBlurStyle() : undefined;
   }
 

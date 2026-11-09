@@ -7,6 +7,8 @@
 // 自然拿到 0，已经建好的行保持原值（它们本来就不在变）。玻璃材质不再读取这个
 // 状态；滚动期间保持同一档位，避免开始/结束时批量卸载和恢复造成明暗闪变。
 
+import { mirrorChatEnvKey } from './chatEnvMirror';
+
 export const KEY_SCROLL_ACTIVE: string = 'chatScrollActive';
 
 // Placeholder visibility follows the actual start/stop lifecycle, including
@@ -66,10 +68,13 @@ export function setScrollActive(active: boolean): void {
     scrollWatchdog = -1;
   }
   AppStorage.setOrCreate(KEY_SCROLL_ACTIVE, active);
+  // V2 气泡读不到 AppStorage，旁路一份进镜像（与其它全局单值同一套做法）。
+  mirrorChatEnvKey(KEY_SCROLL_ACTIVE, active);
   if (active) {
     scrollWatchdog = setTimeout((): void => {
       scrollWatchdog = -1;
       AppStorage.setOrCreate(KEY_SCROLL_ACTIVE, false);
+      mirrorChatEnvKey(KEY_SCROLL_ACTIVE, false);
     }, SCROLL_ACTIVE_MAX_MS);
   }
 }

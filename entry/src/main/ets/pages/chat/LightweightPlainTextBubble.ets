@@ -433,6 +433,12 @@ export struct LightweightPlainTextBubble {
   }
 
   private containerGlassBlurStyle(): BlurStyle | undefined {
+    // 滚动期不上模糊：真机 GPU 采集里，聊天页滚动 85–91% 满载，
+    // 两个材质开关都关只掉 5–6 点——模糊就是这 5–6 点，滚动时省掉它。
+    // 填充色与轮廓保留，所以只是"模糊晚一点出现"，不是换档。
+    if (this.env.scrollActive) {
+      return undefined;
+    }
     return this.glassReady() ? bubbleGlassBlurStyle() : undefined;
   }
 
@@ -448,7 +454,8 @@ export struct LightweightPlainTextBubble {
   }
 
   private solidBodyShadow(): ShadowOptions | undefined {
-    if (this.bubbleMaterialLive() || this.hasTail()) {
+    // 滚动期不画投影：每条消息一次阴影模糊，逐行叠加就是按行计的填充成本。
+    if (this.env.scrollActive || this.bubbleMaterialLive() || this.hasTail()) {
       return undefined;
     }
     return SOLID_BUBBLE_SHADOW;
