@@ -295,15 +295,14 @@ export struct WebmStickerView {
       this.player = null;
       // Deferred: releasing inline (e.g. a whole grid page unmounting on a
       // tab switch) serializes many native teardowns into one frame.
-      //
-      // 2026-11-09：改走**同步**释放（util/videoRelease enqueueNativeReleaseSync）。
-      // 插件的 releaseAsync 在线程池里回调时才去取实例，实例可能已经销毁，
-      // 于是 IjkMediaPlayer_release() 里对 std::string 的拷贝读到已释放内存
-      // （真机栈：memcpy ← IjkMediaPlayer_release+148 ← AsyncWorkCallback）。
-      // 同步 release 在调用线程立刻执行，实例必然还活着。
+      // The shared native-release queue yields between jobs as well. Keep the
+      // live count until teardown succeeds; failures remain visible in the log.
       enqueueRelease(() => {
         void enqueueNativeReleaseSync((): void => { p.release(); }, [])
-          .then((): void => { livePlayers--; });
+          .then((): void => { livePlayers--; })
+          .catch((error: Error): void => {
+            logE(`WebmStickerView.release failed: ${error}`);
+          });
       });
     }
   }

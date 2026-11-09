@@ -492,9 +492,8 @@ export struct StreamingVideoPlayer {
       if (rangeServer !== null) { closeSources.push((): void => { rangeServer.close(); }); }
       if (tdSource !== null) { closeSources.push((): void => { tdSource.close(); }); }
       if (session !== null) { closeSources.push((): void => { session.close(); }); }
-      // 2026-11-09：改用**同步** release（插件 releaseAsync 的线程池回调会在实例
-      // 销毁之后才执行，IjkMediaPlayer_release() 里对 id_ 的 std::string 拷贝读到
-      // 已释放内存 —— 真机栈：memcpy ← IjkMediaPlayer_release+148 ← AsyncWorkCallback）。
+      // Avoid the plugin's native async-work release path. The shared queue
+      // keeps teardown ordered and closes these detached sources only on success.
       this.pendingRelease = enqueueNativeReleaseSync(
         player === null ? null : (): void => { player.release(); }, closeSources)
         .catch((error: Error): void => {
