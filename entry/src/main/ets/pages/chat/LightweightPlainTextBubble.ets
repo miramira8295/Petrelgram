@@ -465,7 +465,8 @@ export struct LightweightPlainTextBubble {
   // 补不上，自己沿整条轮廓描一圈；画在 .background() 里，不参与命中测试。
   @Builder
   solidShellShadow() {
-    if (this.hasTail() && this.geo.w > TAIL_W - 1 && this.geo.h > 0) {
+    // 滚动期整块不建（同 MessageBubbleShell：clipShape + shadow 都是离屏开销）。
+    if (!this.env.scrollActive && this.hasTail() && this.geo.w > TAIL_W - 1 && this.geo.h > 0) {
       // 有尾角时在尾巴（zIndex 0）与主体（zIndex 1）正下方垫与主体同尺寸的标准圆角矩形投影：
       // 尾角根部投影被上方不透明的尾巴 Path 盖死（无竖向暗缝），同时避开 PathShape 裁剪与 fill:false 离屏遮罩。
       Column() {}
