@@ -61,6 +61,13 @@ export struct ChatTimelineHost {
   @Param materialEpoch: number = 0;
   @Param timelineTopMargin: number = 0;
 
+  // 快速滑动期把 List 的缓存窗收窄：一次跳转会按「可视 + 2×cachedCount」把行
+  // 一起建出来（实测单帧峰值 23~30 行、约 30ms）。滑动中收到 3，停稳再放回
+  // 用户设置值——停稳那一帧会补建缓存行，但那时是静止态、有余量。
+  @Local private fastScroll: boolean = false;
+  // 滑动中保留的缓存行数（可视区上下各 3 行，够接住 120Hz 的连续滚动）。
+  private static readonly FAST_SCROLL_CACHED: number = 3;
+
   @Event onEmptyRetry: () => void = (): void => {};
   // 【第二轮第 12 项】签名从 `() => void` 改成带 mode。
   // 原来页面收到这个事件之后**自己重算一遍** timelinePillMode()，但它读的是
@@ -199,7 +206,9 @@ export struct ChatTimelineHost {
     // 已包含输入框自身上内边距（6vp）及展开时的抽屉高度；按 1:1 让出 bottomChromeH
     // 并留 2vp 余量（算上输入框上内边距 6vp 与消息行下内边距后视觉间距约 10~12vp）。
     .contentEndOffset(this.bottomChromeH + 2)
-    .cachedCount(this.listCachedCount)
+    .cachedCount(this.fastScroll
+      ? Math.min(ChatTimelineHost.FAST_SCROLL_CACHED, this.listCachedCount)
+      : this.listCachedCount)
     // Media-heavy frames can make a short release look like an 8-9k vp/s
     // fling. Cap only the inertial phase; direct finger tracking is unchanged.
     .flingSpeedLimit(CHAT_TIMELINE_FLING_SPEED_LIMIT_VP_S)
@@ -224,9 +233,11 @@ export struct ChatTimelineHost {
       this.session.handleTimelineDidScroll(offset, state);
     })
     .onScrollStart((): void => {
+      this.fastScroll = true;
       this.session.handleTimelineScrollStart();
     })
     .onScrollStop((): void => {
+      this.fastScroll = false;
       this.session.handleTimelineScrollStop();
     })
     // 消息流 List **不挂容器级 linearGradientBlur**：
