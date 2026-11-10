@@ -669,7 +669,7 @@ export struct AccountEditPage {
     // 2000-01-01，存完再点开还是它，用户以为没存上。
     const saved: Date | null =
       birthdayPickerDate(this.birthDay, this.birthMonth, this.birthYear);
-    DatePickerDialog.show({
+    this.getUIContext().showDatePickerDialog({
       start: new Date('1900-01-01'),
       end: new Date(),
       selected: saved !== null ? saved : new Date('2000-01-01'),

@@ -1,3 +1,4 @@
+import { shareStorage } from '../util/shareStorage';
 import { ShareExtensionAbility, UIExtensionContentSession, Want } from '@kit.AbilityKit';
 import { initShareHandoff } from '../services/ShareHandoff';
 import { initShareSnapshot, readShareTargetSnapshot } from '../services/ShareTargetSnapshot';
@@ -36,7 +37,7 @@ export default class ShareTargetAbility extends ShareExtensionAbility {
     // `setOrCreate` 建不出这个 key，后面的 `set` 又只对已存在的 key 生效，
     // 于是**静默失败**，界面里永远是组件自己的默认值。真机现象是整块面板灰着、
     // 按钮点不动（第一版就栽在这里）。所以初值给一个空载荷对象。
-    const storage: LocalStorage = new LocalStorage();
+    const storage: LocalStorage = shareStorage;
     const empty: SharedPayload = { caption: '', media: [] };
     storage.setOrCreate('shareTargets', targets);
     storage.setOrCreate('sharePayload', empty);

@@ -1,3 +1,4 @@
+import { shareStorage } from '../../util/shareStorage';
 import { common, UIExtensionContentSession, Want } from '@kit.AbilityKit';
 import { initShareHandoff, writeShareHandoff } from '../../services/ShareHandoff';
 import { initShareSendMode, readShareSendMode, writeShareSendMode } from '../../services/ShareSendModeStore';
@@ -37,9 +38,7 @@ function avatarTint(chatId: number): string {
   return TINTS[index];
 }
 
-const storage: LocalStorage = LocalStorage.getShared();
-
-@Entry(storage)
+@Entry(shareStorage)
 @Component
 struct SharePanel {
   @LocalStorageProp('shareTargets') targets: ShareTarget[] = [];
@@ -56,8 +55,8 @@ struct SharePanel {
   @State private mode: ShareSendMode = 'send';
 
   aboutToAppear(): void {
-    this.session = storage.get<UIExtensionContentSession>('shareSession') ?? null;
-    this.ctx = storage.get<common.UIExtensionContext>('shareContext') ?? null;
+    this.session = shareStorage.get<UIExtensionContentSession>('shareSession') ?? null;
+    this.ctx = shareStorage.get<common.UIExtensionContext>('shareContext') ?? null;
     const filesDir: string = this.ctx?.getApplicationContext().filesDir ?? '';
     initShareHandoff(filesDir);
     initShareSendMode(filesDir);

@@ -25,12 +25,12 @@ export struct ExpandableText {
     if (this.measuredW <= 0 || this.content === '') {
       return;
     }
-    const full = MeasureText.measureTextSize({
+    const full = this.getUIContext().getMeasureUtils().measureTextSize({
       textContent: this.content,
       fontSize: `${FONT_SIZE}vp`,
       constraintWidth: `${this.measuredW}vp`
     });
-    const oneLine = MeasureText.measureTextSize({
+    const oneLine = this.getUIContext().getMeasureUtils().measureTextSize({
       textContent: '简', // i18n-exempt: measurement sample glyph, not shown
       fontSize: `${FONT_SIZE}vp`
     });

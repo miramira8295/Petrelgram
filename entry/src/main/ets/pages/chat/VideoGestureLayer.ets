@@ -64,7 +64,7 @@ export struct VideoGestureLayer {
   private volumeMin: number = 0;
   private volumeMax: number = 15;
   // 硬件按键改了音量也要跟着走，否则下一次起手用的是过期的起点。
-  private volumeWatch: ((event: audio.VolumeEvent) => void) | null = null;
+  private volumeWatch: ((event: audio.StreamVolumeEvent) => void) | null = null;
 
   private volumeManager(): audio.AudioVolumeManager | null {
     try {
@@ -97,13 +97,15 @@ export struct VideoGestureLayer {
     if (mgr === null) {
       return;
     }
-    this.volumeWatch = (event: audio.VolumeEvent): void => {
-      if (event.volumeType === audio.AudioVolumeType.MEDIA && this.hudKind === HUD_KIND_VOLUME) {
+    // 旧事件 'volumeChange' + VolumeEvent 自 API 20 废弃，换成按 streamUsage
+    // 过滤的 'streamVolumeChange'；语义等价（只关心媒体流音量）。
+    this.volumeWatch = (event: audio.StreamVolumeEvent): void => {
+      if (event.streamUsage === audio.StreamUsage.STREAM_USAGE_MUSIC && this.hudKind === HUD_KIND_VOLUME) {
         this.hudLevel = fractionOf(event.volume, this.volumeMin, this.volumeMax);
       }
     };
     try {
-      mgr.on('volumeChange', this.volumeWatch);
+      mgr.on('streamVolumeChange', audio.StreamUsage.STREAM_USAGE_MUSIC, this.volumeWatch);
     } catch (e) {
       logE(`VideoGestureLayer.on(volumeChange) failed: ${(e as BusinessError).message}`);
     }
@@ -113,7 +115,7 @@ export struct VideoGestureLayer {
     const mgr = this.volumeManager();
     if (mgr !== null && this.volumeWatch !== null) {
       try {
-        mgr.off('volumeChange', this.volumeWatch);
+        mgr.off('streamVolumeChange', this.volumeWatch);
       } catch (e) {
         logE(`VideoGestureLayer.off(volumeChange) failed: ${(e as BusinessError).message}`);
       }

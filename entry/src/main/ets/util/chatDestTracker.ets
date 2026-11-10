@@ -1,3 +1,4 @@
+import { currentUIContext } from './uiContext';
 import { router } from '@kit.ArkUI';
 
 // 聊天页签栈（chatStack）当前是否有目的地真正在屏上显示。
@@ -27,7 +28,7 @@ export function allocChatDestToken(): number {
 
 function isCoveredByRouterEntryPage(): boolean {
   try {
-    const state = router.getState();
+    const state = currentUIContext()?.getRouter().getState();
     if (state !== undefined && state.name !== undefined && state.name !== '' && state.name !== 'Index') {
       return true;
     }

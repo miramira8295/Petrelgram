@@ -563,7 +563,7 @@ export struct MyProfilePage {
         desiredSize: { width: Math.round(w * scale), height: Math.round(h * scale) }
       });
       const packer = image.createImagePacker();
-      const buf = await packer.packing(pm, { format: 'image/jpeg', quality: 92 });
+      const buf = await packer.packToData(pm, { format: 'image/jpeg', quality: 92 });
       packer.release();
       pm.release();
       src.release();
@@ -1077,7 +1077,7 @@ export struct MyProfilePage {
         desiredSize: { width: 1080, height: 1920 }
       });
       const packer = image.createImagePacker();
-      const buffer = await packer.packing(pixelMap, { format: 'image/jpeg', quality: 92 });
+      const buffer = await packer.packToData(pixelMap, { format: 'image/jpeg', quality: 92 });
       const destination =
         `${(this.getUIContext().getHostContext() as common.UIAbilityContext).cacheDir}/story_${Date.now()}.jpg`;
       const file = fs.openSync(destination, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE);
