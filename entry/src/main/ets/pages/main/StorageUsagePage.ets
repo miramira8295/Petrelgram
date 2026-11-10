@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import {
   DetailedStorageUsage, StorageCategory, ChatStorageUsage, formatBytes,
@@ -152,7 +153,7 @@ struct StorageUsagePage {
   private confirmClear(key: string, title: string, message: string,
     category: string, chatId: number): void {
     if (this.actionKey !== '') { return; }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title, message,
       buttons: [
         { text: $r('app.string.cancel'), color: COLOR_TEXT_SECONDARY as string },
@@ -163,12 +164,12 @@ struct StorageUsagePage {
       this.actionKey = key;
       clearCacheSelection(category, chatId).then((): void => {
         this.actionKey = '';
-        promptAction.showToast({ message: $r('app.string.storage_clear_done'), duration: 1500 });
+        showToast($r('app.string.storage_clear_done'), 1500);
         this.load(false);
       }).catch((error: TdError): void => {
         this.actionKey = '';
         logE(`StorageUsagePage.clear failed: ${error.message}`);
-        promptAction.showToast({ message: $r('app.string.clear_failed_retry'), duration: 1700 });
+        showToast($r('app.string.clear_failed_retry'), 1700);
       });
     });
   }
@@ -180,7 +181,7 @@ struct StorageUsagePage {
         SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(25).fontColor([COLOR_TEXT_PRIMARY]);
       }.width(44).height(44).borderRadius(22).justifyContent(FlexAlign.Center)
       .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
-      .onClick((): void => router.back());
+      .onClick((): void => this.getUIContext().getRouter().back());
       Text($r('app.string.storage_title')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
         .layoutWeight(1);
       Row() {

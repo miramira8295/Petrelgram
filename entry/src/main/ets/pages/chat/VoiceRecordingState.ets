@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { TdError } from '../../tdkit/TdTypes';
 // 麦克风录音状态机：start/stopTimer/finish/cancel/secondsLabel 五个方法 +
 // isRecording/recordingStarting/recordSeconds 三个显示态。从 ChatPage 整体
@@ -178,7 +179,7 @@ export class VoiceRecordingState {
       this.recordingStarting = false;
       if (!ok) {
         this.voiceRec = null;
-        promptAction.showToast({ message: $r('app.string.cp_record_failed_permission'), duration: 2500 });
+        showToast($r('app.string.cp_record_failed_permission'), 2500);
         return;
       }
       if (this.host.canSend?.() === false) { rec.cancel(); this.voiceRec = null; return; }
@@ -192,7 +193,7 @@ export class VoiceRecordingState {
       this.recordingStarting = false;
       this.voiceRec = null;
       logE(`VoiceRecordingState.start failed: ${JSON.stringify(e)}`);
-      promptAction.showToast({ message: $r('app.string.cp_record_failed'), duration: 1800 });
+      showToast($r('app.string.cp_record_failed'), 1800);
     });
   }
 
@@ -246,7 +247,7 @@ export class VoiceRecordingState {
         this.stoppedStore = null;
         this.readyToSend = false;
         this.isRecording = false;
-        promptAction.showToast({ message: $r('app.string.share_result_unknown'), duration: 3000 });
+        showToast($r('app.string.share_result_unknown'), 3000);
       }
     }).finally((): void => {
       if (seq === this.recordingSeq) { this.sendingStopped = false; }

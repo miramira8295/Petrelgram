@@ -1,3 +1,4 @@
+import { animateToUI } from '../../util/uiContext';
 import { PreparedMessageKeyCache } from '../../util/preparedMessageKeyCache';
 import { OneShotFrameCallback as ChatPageFrameCallback } from '../../util/oneShotFrameCallback';
 import { setStickerDecodePaused } from '../../services/AlphaStickerStore';
@@ -587,7 +588,7 @@ export class ChatTimelineSession {
         isInteriorRowRemoval(
           this.groups.map((g: AlbumGroup): number => g.head.id),
           next.map((g: AlbumGroup): number => g.head.id))) {
-        animateTo({
+        animateToUI({
           duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200),
           curve: Curve.EaseOut
         }, (): void => {

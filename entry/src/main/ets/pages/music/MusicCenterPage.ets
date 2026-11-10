@@ -192,7 +192,7 @@ export struct MusicCenterPage {
   }
 
   private ctx(): common.UIAbilityContext {
-    return getContext(this) as common.UIAbilityContext;
+    return this.getUIContext().getHostContext() as common.UIAbilityContext;
   }
 
   // —— 数据 ——

@@ -334,7 +334,7 @@ export struct PhoneNumberPage {
         .onClick((): void => {
           // ProxyPage 已经是 NavDestination，登录阶段没有任何 Navigation 能
           // 承载它——走 LoginProxyPage 这个外壳（见那个文件的说明）。
-          router.pushUrl({ url: 'pages/login/LoginProxyPage' }).catch((e: Error): void => {
+          this.getUIContext().getRouter().pushUrl({ url: 'pages/login/LoginProxyPage' }).catch((e: Error): void => {
             logE(`PhoneNumberPage.openProxy failed: ${e.message}`);
           });
         });

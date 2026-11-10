@@ -44,7 +44,7 @@ export struct SearchResultsSheet {
     this.entered = true;
     const duration = powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 240);
     if (duration <= 0) { this.shown = true; return; }
-    animateTo({ duration, curve: Curve.Friction }, (): void => { this.shown = true; });
+    this.getUIContext().animateTo({ duration, curve: Curve.Friction }, (): void => { this.shown = true; });
   }
 
   private close(messageId: number = 0): void {
@@ -57,7 +57,7 @@ export struct SearchResultsSheet {
     };
     const duration = powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180);
     if (duration <= 0) { finish(); return; }
-    animateTo({ duration, curve: Curve.Friction, onFinish: finish }, (): void => { this.shown = false; });
+    this.getUIContext().animateTo({ duration, curve: Curve.Friction, onFinish: finish }, (): void => { this.shown = false; });
   }
 
   private updateDrag(offsetY: number): void {
@@ -69,7 +69,7 @@ export struct SearchResultsSheet {
     if (this.closing) { return; }
     const duration = powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 240);
     if (duration <= 0) { this.dragY = 0; return; }
-    animateTo({ duration, curve: curves.springMotion(0.32, 0.82) }, (): void => { this.dragY = 0; });
+    this.getUIContext().animateTo({ duration, curve: curves.springMotion(0.32, 0.82) }, (): void => { this.dragY = 0; });
   }
 
   private finishDrag(velocityY: number): void {

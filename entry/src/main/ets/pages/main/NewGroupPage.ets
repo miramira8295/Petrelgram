@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { ContactsStore, ContactItem } from '../../store/ContactsStore';
 import { TD_SESSION_EPOCH, TD_ACCOUNT_SWITCHING } from '../../tdkit/AccountRegistry';
@@ -130,9 +131,9 @@ struct NewGroupPage {
         this.createError = str('mi_partial', result.addedUserIds.length, result.failedUserIds.length);
       } else {
         if (result.addedUserIds.length > 0) {
-          promptAction.showToast({ message: str('mi_added', result.addedUserIds.length) });
+          showToast(str('mi_added', result.addedUserIds.length));
         }
-        router.back();
+        this.getUIContext().getRouter().back();
       }
     } catch (error) {
       if (!this.inviteCurrent()) { return; }
@@ -183,7 +184,7 @@ struct NewGroupPage {
 
   aboutToAppear(): void {
     this.active = true;
-    const params = router.getParams() as Record<string, Object> | undefined;
+    const params = this.getUIContext().getRouter().getParams() as Record<string, Object> | undefined;
     this.addToChatId = (params?.['addToChatId'] as number | undefined) ?? 0;
     if (this.addToChatId !== 0) {
       this.inviteClient = getTdClient();
@@ -378,14 +379,12 @@ struct NewGroupPage {
       next = this.selectedIds.filter((id: number): boolean => id !== userId);
     } else {
       if (this.selectedIds.length >= this.maxSelectableMembers) {
-        promptAction.showToast({
-          message: plural('ng_max_members', this.maxSelectableMembers, this.maxSelectableMembers), duration: 1800
-        });
+        showToast(plural('ng_max_members', this.maxSelectableMembers, this.maxSelectableMembers), 1800);
         return;
       }
       next = [...this.selectedIds, userId];
     }
-    animateTo({ duration: this.animationDuration(170), curve: Curve.EaseOut }, (): void => {
+    this.getUIContext().animateTo({ duration: this.animationDuration(170), curve: Curve.EaseOut }, (): void => {
       this.selectedIds = next;
     });
   }
@@ -404,7 +403,7 @@ struct NewGroupPage {
     if (this.selectedIds.length === 0) { return; }
     this.titleError = '';
     this.createError = '';
-    animateTo({ duration: this.animationDuration(220), curve: Curve.EaseOut }, (): void => {
+    this.getUIContext().animateTo({ duration: this.animationDuration(220), curve: Curve.EaseOut }, (): void => {
       this.naming = true;
     });
     setTimeout((): void => {
@@ -481,9 +480,7 @@ struct NewGroupPage {
         ).join('、');
         const suffix = parsed.failedUserIds.length > 2
           ? str('ng_and_others', names, parsed.failedUserIds.length) : names;
-        promptAction.showToast({
-          message: str('ng_created_partial', suffix), duration: 2600
-        });
+        showToast(str('ng_created_partial', suffix), 2600);
       }
       this.openCreatedGroup();
     }).catch((error: TdError): void => {
@@ -528,9 +525,7 @@ struct NewGroupPage {
         invite['user_ids'] = selectedSnapshot;
         getTdClient().send(invite).catch((error: TdError): void => {
           logE(`NewGroupPage.addChatMembers failed: ${error.message}`);
-          promptAction.showToast({
-            message: $r('app.string.ng_channel_created_partial'), duration: 2600
-          });
+          showToast($r('app.string.ng_channel_created_partial'), 2600);
         });
       }
       this.openCreatedGroup();
@@ -558,11 +553,11 @@ struct NewGroupPage {
     // replaceUrl 的语义（用会话页顶掉本页）拆成两步：漏斗把会话推进聊天栈
     // 并把聊天页签选中，成功之后再把本页弹掉，露出下面的会话。
     //
-    // 两步必须串起来而不是并排写：router.back() 是同步 void，正常失败不抛，
+    // 两步必须串起来而不是并排写：this.getUIContext().getRouter().back() 是同步 void，正常失败不抛，
     // 把它包进 try/catch 只会让下面这段错误处理永远不可达（spinner 一直转）。
     // 真正会失败的是 navigateToChat，所以错误处理挂在它的 Promise 上。
     navigateToChat(params).then((): void => {
-      router.back();
+      this.getUIContext().getRouter().back();
     }).catch((e: Error): void => {
       if (!this.active) { return; }
       this.openingCreatedChat = false;
@@ -574,14 +569,14 @@ struct NewGroupPage {
   private back(): void {
     if (this.creating || this.openingCreatedChat) { return; }
     if (this.naming) {
-      animateTo({ duration: this.animationDuration(210), curve: Curve.EaseOut }, (): void => {
+      this.getUIContext().animateTo({ duration: this.animationDuration(210), curve: Curve.EaseOut }, (): void => {
         this.naming = false;
         this.titleError = '';
         this.createError = '';
       });
       return;
     }
-    router.back();
+    this.getUIContext().getRouter().back();
   }
 
   @Builder

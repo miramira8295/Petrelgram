@@ -31,7 +31,7 @@ export struct StickerGridCell {
   @Prop emojiFontSize: number = 30;
 
   private framesCached(): boolean {
-    return stickerFramesCached(this.srcUid, vp2px(this.cellPx), alphaStickerHighBudget(this.category));
+    return stickerFramesCached(this.srcUid, this.getUIContext().vp2px(this.cellPx), alphaStickerHighBudget(this.category));
   }
 
   private shouldAnimate(): boolean {

@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
@@ -212,7 +213,7 @@ struct BlockedUsersPage {
 
   private unblock(row: BlockedRow): void {
     if (this.actionKey !== '') { return; }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.bu_unblock_title'), message: str('bu_unblock_confirm', row.title !== '' ? row.title : str('bu_this_user')),
       buttons: [
         { text: $r('app.string.cancel'), color: COLOR_TEXT_SECONDARY as string },
@@ -237,7 +238,7 @@ struct BlockedUsersPage {
         this.rows = before;
         this.totalCount = beforeTotal;
         this.actionKey = '';
-        promptAction.showToast({ message: $r('app.string.bu_unblock_failed'), duration: 1800 });
+        showToast($r('app.string.bu_unblock_failed'), 1800);
       });
     }).catch((): void => {});
   }
@@ -330,12 +331,12 @@ struct BlockedUsersPage {
       this.actionKey = '';
       this.pickerOpen = false;
       this.load(true);
-      promptAction.showToast({ message: str('bu_blocked_toast', user.name), duration: 1500 });
+      showToast(str('bu_blocked_toast', user.name), 1500);
     }).catch((error: TdError): void => {
       logE(`BlockedUsersPage.block failed: ${error.message}`);
       if (!this.active) { return; }
       this.actionKey = '';
-      promptAction.showToast({ message: $r('app.string.bu_block_failed'), duration: 1800 });
+      showToast($r('app.string.bu_block_failed'), 1800);
     });
   }
 
@@ -345,7 +346,7 @@ struct BlockedUsersPage {
       Button() {
         SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
       }.width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-      .onClick((): void => { router.back(); });
+      .onClick((): void => { this.getUIContext().getRouter().back(); });
       Column({ space: 1 }) {
         Text($r('app.string.bu_title')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
         if (this.loadState === 'ready') {

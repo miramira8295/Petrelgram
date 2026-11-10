@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { TdError, TdObject } from '../../tdkit/TdTypes';
@@ -112,7 +113,7 @@ export struct ProxyPage {
   @State formOutcomeUnknown: boolean = false;
 
   private active: boolean = false;
-  // 路由参数。router 时代是 aboutToAppear 里 router.getParams() 现取，现在由
+  // 路由参数。router 时代是 aboutToAppear 里 this.getUIContext().getRouter().getParams() 现取，现在由
   // 外壳（HdsSubDestination）的 onRouteParams 从 NavDestinationContext.pathInfo
   // 里交过来——**onReady 实测晚于 aboutToAppear**（平板 API 26，ChatPage 里记了
   // 同一条实测），照原位置读会拿到 undefined。
@@ -350,11 +351,8 @@ export struct ProxyPage {
     const next: string[] = toggledSyncOff(entry, this.syncOff());
     setString(KEY_PROXY_SYNC_OFF, serializeSyncOff(next));
     setString(KEY_PROXY_MIRROR, serializeProxyMirror(syncableOf(this.proxies, next)));
-    promptAction.showToast({
-      message: syncEnabledFor(entry, next)
-        ? $r('app.string.px_sync_accounts') : $r('app.string.px_sync_accounts_off'),
-      duration: 1400
-    });
+    showToast(syncEnabledFor(entry, next)
+        ? $r('app.string.px_sync_accounts') : $r('app.string.px_sync_accounts_off'), 1400);
   }
 
   private async restoreMirrored(list: ProxyEntry[]): Promise<ProxyEntry[]> {
@@ -669,9 +667,7 @@ export struct ProxyPage {
       if (!this.active || sequence !== this.operationSequence) { return; }
       this.actionKey = '';
       if (entry !== null) { this.preferredProxyId = entry.id; }
-      promptAction.showToast({
-        message: entry !== null ? str('px_enabled_server', entry.server) : $r('app.string.px_switched_direct'), duration: 1400
-      });
+      showToast(entry !== null ? str('px_enabled_server', entry.server) : $r('app.string.px_switched_direct'), 1400);
       this.subscribeConnectionState();
       this.load(false);
     } catch (caught) {
@@ -681,10 +677,7 @@ export struct ProxyPage {
       this.proxies = snapshot;
       this.publishProxyList();
       this.syncWarning = str('px_state_resyncing');
-      promptAction.showToast({
-        message: proxyActionErrorText(error.message, entry !== null ? str('px_enable') : str('px_use_direct')),
-        duration: 1900
-      });
+      showToast(proxyActionErrorText(error.message, entry !== null ? str('px_enable') : str('px_use_direct')), 1900);
       logE(`ProxyPage.setEnabledProxy failed: ${error.message}`);
       this.load(false);
     }
@@ -692,7 +685,7 @@ export struct ProxyPage {
 
   private confirmRemove(entry: ProxyEntry): void {
     if (this.actionKey !== '' || this.saving) { return; }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.px_delete'),
       message: entry.isEnabled
         ? str('px_delete_active_confirm', entry.server, entry.port)
@@ -713,7 +706,7 @@ export struct ProxyPage {
     const before = this.proxies.slice();
     const sequence = ++this.operationSequence;
     this.actionKey = `remove_${entry.id}`;
-    animateTo({ duration: this.animationDuration(170), curve: Curve.EaseOut }, (): void => {
+    this.getUIContext().animateTo({ duration: this.animationDuration(170), curve: Curve.EaseOut }, (): void => {
       this.proxies = this.proxies.filter((item: ProxyEntry): boolean => item.id !== entry.id);
     });
     this.publishProxyList();
@@ -736,7 +729,7 @@ export struct ProxyPage {
       const remaining: ProxyEntry[] =
         before.filter((item: ProxyEntry): boolean => item.id !== entry.id);
       setString(KEY_PROXY_MIRROR, serializeProxyMirror(syncableOf(remaining, this.syncOff())));
-      promptAction.showToast({ message: $r('app.string.px_deleted'), duration: 1300 });
+      showToast($r('app.string.px_deleted'), 1300);
       this.load(false);
     } catch (caught) {
       if (!this.active || sequence !== this.operationSequence) { return; }
@@ -744,9 +737,7 @@ export struct ProxyPage {
       this.actionKey = '';
       this.proxies = before;
       this.publishProxyList();
-      promptAction.showToast({
-        message: proxyActionErrorText(error.message, str('px_delete')), duration: 1800
-      });
+      showToast(proxyActionErrorText(error.message, str('px_delete')), 1800);
       this.load(false);
     }
   }
@@ -761,18 +752,18 @@ export struct ProxyPage {
       pasteboard.getSystemPasteboard().setData(data).then((): void => {
         if (!this.active) { return; }
         this.actionKey = '';
-        promptAction.showToast({ message: $r('app.string.px_link_copied'), duration: 1400 });
+        showToast($r('app.string.px_link_copied'), 1400);
       }).catch((error: Error): void => {
         if (!this.active) { return; }
         this.actionKey = '';
         logE(`ProxyPage.copyProxyLink failed: ${error.message}`);
-        promptAction.showToast({ message: $r('app.string.px_copy_failed'), duration: 1600 });
+        showToast($r('app.string.px_copy_failed'), 1600);
       });
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.actionKey = '';
       logE(`ProxyPage.getProxyLink failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.px_link_failed'), duration: 1600 });
+      showToast($r('app.string.px_link_failed'), 1600);
     });
   }
 
@@ -914,7 +905,7 @@ export struct ProxyPage {
         }
         this.sheetOpen = false;
         this.resetForm();
-        promptAction.showToast({ message: $r('app.string.px_saved'), duration: 1400 });
+        showToast($r('app.string.px_saved'), 1400);
         this.load(false);
       }).catch((error: TdError): void => {
         this.finishFormFailure(error, sequence, str('px_save'));
@@ -942,11 +933,8 @@ export struct ProxyPage {
         this.saving = false;
         this.sheetOpen = false;
         this.resetForm();
-        promptAction.showToast({
-          message: error.message.toLowerCase().indexOf('timeout') >= 0
-            ? $r('app.string.px_saved_pending') : $r('app.string.px_saved_not_enabled'),
-          duration: 2100
-        });
+        showToast(error.message.toLowerCase().indexOf('timeout') >= 0
+            ? $r('app.string.px_saved_pending') : $r('app.string.px_saved_not_enabled'), 2100);
         this.load(false);
       });
     }).catch((error: TdError): void => {
@@ -958,7 +946,7 @@ export struct ProxyPage {
     this.saving = false;
     this.sheetOpen = false;
     this.resetForm();
-    promptAction.showToast({ message: message, duration: 1500 });
+    showToast(message, 1500);
     this.load(false);
   }
 

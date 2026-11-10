@@ -1,3 +1,4 @@
+import { pushUrl } from '../../util/uiContext';
 import { common } from '@kit.AbilityKit';
 import {
   ComponentContent, OverlayManager, router, UIContext
@@ -453,7 +454,7 @@ export class LiveFloatingWindowController {
       'initialParticipantCount': this.state.participantCount
     };
     try {
-      await router.pushUrl({
+      await pushUrl({
         url: descriptor.isRtmp
           ? 'pages/chat/RtmpLiveStreamViewerPage' : 'pages/chat/LiveStreamViewerPage',
         params

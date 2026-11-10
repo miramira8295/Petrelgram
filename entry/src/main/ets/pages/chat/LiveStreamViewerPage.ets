@@ -488,13 +488,13 @@ struct LiveStreamViewerPage {
 
   aboutToAppear(): void {
     this.pageActive = true;
-    setLiveStreamKeepScreenOn(getContext(this) as common.UIAbilityContext, true);
+    setLiveStreamKeepScreenOn(this.getUIContext().getHostContext() as common.UIAbilityContext, true);
     this.interactionDrawerOpen = false;
     this.interactionUnreadCount = 0;
     this.interactionAtBottom = true;
     this.interactionTouchActive = false;
     this.interactionSnapshotReady = false;
-    const params = router.getParams() as Record<string, Object> | undefined;
+    const params = this.getUIContext().getRouter().getParams() as Record<string, Object> | undefined;
     this.groupCallId = params !== undefined ? ((params['groupCallId'] as number | undefined) ?? 0) : 0;
     this.chatId = params !== undefined ? ((params['chatId'] as number | undefined) ?? 0) : 0;
     this.initialTitle = params !== undefined
@@ -523,7 +523,7 @@ struct LiveStreamViewerPage {
     });
     this.interactionStore.open();
 
-    const context = getContext(this) as common.UIAbilityContext;
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     const handoff = floatingLiveWindow.takeSeamlessSession(this.groupCallId, false);
     if (handoff !== null) {
       this.adoptSeamlessSession(handoff, client);
@@ -605,7 +605,7 @@ struct LiveStreamViewerPage {
     if (this.pageActive && this.groupCallId > 0) {
       if (this.isFullscreen) {
         setLiveStreamFullscreen(
-          getContext(this) as common.UIAbilityContext, true, this.primaryVideoAspectRatio
+          this.getUIContext().getHostContext() as common.UIAbilityContext, true, this.primaryVideoAspectRatio
         );
       }
       this.resumeAfterForeground();
@@ -626,7 +626,7 @@ struct LiveStreamViewerPage {
       this.clearRecoveryTimer();
       this.clearRecoveryUi();
       this.setMediaStatus(str('lfw_ended'));
-      setLiveStreamKeepScreenOn(getContext(this) as common.UIAbilityContext, false);
+      setLiveStreamKeepScreenOn(this.getUIContext().getHostContext() as common.UIAbilityContext, false);
       return;
     }
     if (value.needRejoin) {
@@ -677,14 +677,14 @@ struct LiveStreamViewerPage {
   private openInteractionDrawer(): void {
     this.interactionAtBottom = true;
     this.interactionUnreadCount = 0;
-    animateTo({
+    this.getUIContext().animateTo({
       duration: powerAnimationDuration(KEY_POWER_CALL_ANIMATIONS, 220), curve: Curve.EaseOut
     }, (): void => { this.interactionDrawerOpen = true; });
     setTimeout((): void => this.interactionScroller.scrollEdge(Edge.Bottom), 60);
   }
 
   private closeInteractionDrawer(): void {
-    animateTo({
+    this.getUIContext().animateTo({
       duration: powerAnimationDuration(KEY_POWER_CALL_ANIMATIONS, 180), curve: Curve.EaseOut
     }, (): void => { this.interactionDrawerOpen = false; });
   }
@@ -1015,7 +1015,7 @@ struct LiveStreamViewerPage {
     );
     if (this.isFullscreen) {
       setLiveStreamFullscreen(
-        getContext(this) as common.UIAbilityContext, true, this.primaryVideoAspectRatio
+        this.getUIContext().getHostContext() as common.UIAbilityContext, true, this.primaryVideoAspectRatio
       );
     }
   }
@@ -1031,7 +1031,7 @@ struct LiveStreamViewerPage {
     this.primaryVideoAspectRatio = aspectRatio;
     if (this.isFullscreen) {
       setLiveStreamFullscreen(
-        getContext(this) as common.UIAbilityContext, true, this.primaryVideoAspectRatio
+        this.getUIContext().getHostContext() as common.UIAbilityContext, true, this.primaryVideoAspectRatio
       );
     }
   }
@@ -1192,7 +1192,7 @@ struct LiveStreamViewerPage {
 
   private resumeAfterForeground(): void {
     liveStreamBackgroundTask.start(
-      getContext(this) as common.UIAbilityContext, !this.isMuted
+      this.getUIContext().getHostContext() as common.UIAbilityContext, !this.isMuted
     );
     const session = this.tgcallsSession;
     if (session !== null) {
@@ -1338,7 +1338,7 @@ struct LiveStreamViewerPage {
       return;
     }
     try {
-      const context = getContext(this) as common.UIAbilityContext;
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       const manager = abilityAccessCtrl.createAtManager();
       const result = await manager.requestPermissionsFromUser(context, [MICROPHONE_PERMISSION]);
       const granted = result.authResults.length > 0 && result.authResults[0] === 0;
@@ -1429,7 +1429,7 @@ struct LiveStreamViewerPage {
       return;
     }
     try {
-      const context = getContext(this) as common.UIAbilityContext;
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       const manager = abilityAccessCtrl.createAtManager();
       const result = await manager.requestPermissionsFromUser(
         context, [CAMERA_PERMISSION]
@@ -1612,7 +1612,7 @@ struct LiveStreamViewerPage {
 
   private leave(): void {
     if (this.groupCallId <= 0) {
-      router.back();
+      this.getUIContext().getRouter().back();
       return;
     }
     if (this.leaveDialogOpen || this.minimizeInProgress || this.endingLive) { return; }
@@ -1648,9 +1648,9 @@ struct LiveStreamViewerPage {
     if (this.isFullscreen) {
       this.isFullscreen = false;
       this.fullscreenPanelOpen = false;
-      setLiveStreamFullscreen(getContext(this) as common.UIAbilityContext, false);
+      setLiveStreamFullscreen(this.getUIContext().getHostContext() as common.UIAbilityContext, false);
     }
-    router.back();
+    this.getUIContext().getRouter().back();
   }
 
   private minimizeToFloating(): void {
@@ -1685,7 +1685,7 @@ struct LiveStreamViewerPage {
       screenShareActive: this.screenShareActive,
       screenShareDesired: this.screenShareDesired
     };
-    const abilityContext = getContext(this) as common.UIAbilityContext;
+    const abilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
     const shown = floatingLiveWindow.showSeamless(
       this.getUIContext(), abilityContext, handoff
     );
@@ -1711,7 +1711,7 @@ struct LiveStreamViewerPage {
     this.fullscreenTransitioning = false;
     this.interactionDrawerOpen = false;
     this.leavingForFloating = true;
-    router.back();
+    this.getUIContext().getRouter().back();
   }
 
   private toggleFullscreen(): void {
@@ -1723,7 +1723,7 @@ struct LiveStreamViewerPage {
     this.fullscreenTransitionLabel = next ? str('lv_entering_fullscreen') : str('lv_exiting_fullscreen');
     this.isFullscreen = next;
     setLiveStreamFullscreen(
-      getContext(this) as common.UIAbilityContext, next,
+      this.getUIContext().getHostContext() as common.UIAbilityContext, next,
       next ? this.primaryVideoAspectRatio : 0
     );
     if (this.fullscreenTransitionTimer !== -1) {
@@ -1886,7 +1886,7 @@ struct LiveStreamViewerPage {
     );
     if (selected === undefined || this.videoSources[0]?.endpointId === endpointId) { return; }
     const sequence = ++this.videoSwitchSequence;
-    animateTo({
+    this.getUIContext().animateTo({
       duration: powerAnimationDuration(KEY_POWER_CALL_ANIMATIONS, 110), curve: Curve.EaseOut
     }, (): void => {
       this.videoAreaOpacity = 0.64;
@@ -1899,7 +1899,7 @@ struct LiveStreamViewerPage {
         (source: GroupCallVideoSource): boolean => source.endpointId !== endpointId
       )];
       this.refreshPrimaryVideoAspect();
-      animateTo({
+      this.getUIContext().animateTo({
         duration: powerAnimationDuration(KEY_POWER_CALL_ANIMATIONS, 210), curve: Curve.FastOutSlowIn
       }, (): void => {
         this.videoAreaOpacity = 1;
@@ -1920,7 +1920,7 @@ struct LiveStreamViewerPage {
       );
       if (this.isMuted && !hasSpeaker) {
         if (this.pulseExpanded) {
-          animateTo({
+          this.getUIContext().animateTo({
             duration: powerAnimationDuration(KEY_POWER_CALL_ANIMATIONS, 260), curve: Curve.EaseOut
           }, (): void => {
             this.pulseExpanded = false;
@@ -1928,7 +1928,7 @@ struct LiveStreamViewerPage {
         }
         return;
       }
-      animateTo({
+      this.getUIContext().animateTo({
         duration: powerAnimationDuration(KEY_POWER_CALL_ANIMATIONS, 680), curve: Curve.EaseInOut
       }, (): void => {
         this.pulseExpanded = !this.pulseExpanded;
@@ -1937,13 +1937,13 @@ struct LiveStreamViewerPage {
   }
 
   private animateMicrophoneTap(): void {
-    animateTo({
+    this.getUIContext().animateTo({
       duration: powerAnimationDuration(KEY_POWER_CALL_ANIMATIONS, 85), curve: Curve.EaseOut
     }, (): void => {
       this.microphoneScale = 0.91;
     });
     setTimeout((): void => {
-      animateTo({
+      this.getUIContext().animateTo({
         duration: powerAnimationDuration(KEY_POWER_CALL_ANIMATIONS, 240), curve: Curve.Friction
       }, (): void => {
         this.microphoneScale = 1;
@@ -1955,12 +1955,12 @@ struct LiveStreamViewerPage {
     this.interactionDrawerOpen = false;
     this.interactionSnapshotReady = false;
     if (!this.leavingForFloating) {
-      setLiveStreamKeepScreenOn(getContext(this) as common.UIAbilityContext, false);
+      setLiveStreamKeepScreenOn(this.getUIContext().getHostContext() as common.UIAbilityContext, false);
     }
     if (this.isFullscreen) {
       this.isFullscreen = false;
       this.fullscreenPanelOpen = false;
-      setLiveStreamFullscreen(getContext(this) as common.UIAbilityContext, false);
+      setLiveStreamFullscreen(this.getUIContext().getHostContext() as common.UIAbilityContext, false);
     }
     if (this.fullscreenTransitionTimer !== -1) {
       clearTimeout(this.fullscreenTransitionTimer);
@@ -2398,7 +2398,7 @@ struct LiveStreamViewerPage {
   }
 
   private openInteractionLink(url: string): void {
-    openWebUrl(getContext(this) as common.UIAbilityContext, url);
+    openWebUrl(this.getUIContext().getHostContext() as common.UIAbilityContext, url);
   }
 
   @Builder

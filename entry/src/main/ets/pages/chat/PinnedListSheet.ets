@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { curves, promptAction } from '@kit.ArkUI';
 import { getChatStore, getTdClient, getUserStore } from '../../tdkit/Globals';
 import { MessageStore } from '../../store/MessageStore';
@@ -80,7 +81,7 @@ export struct PinnedListSheet {
       this.shown = true;
       return;
     }
-    animateTo({ duration, curve: Curve.Friction }, (): void => { this.shown = true; });
+    this.getUIContext().animateTo({ duration, curve: Curve.Friction }, (): void => { this.shown = true; });
   }
 
   aboutToAppear(): void {
@@ -122,7 +123,7 @@ export struct PinnedListSheet {
       this.onShowChange(false);
       return;
     }
-    animateTo({
+    this.getUIContext().animateTo({
       duration, curve: Curve.Friction,
       onFinish: (): void => {
         this.show = false;
@@ -141,7 +142,7 @@ export struct PinnedListSheet {
     if (this.closing) { return; }
     const duration = powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 240);
     if (duration <= 0) { this.dragY = 0; return; }
-    animateTo({ duration, curve: curves.springMotion(0.32, 0.82) }, (): void => { this.dragY = 0; });
+    this.getUIContext().animateTo({ duration, curve: curves.springMotion(0.32, 0.82) }, (): void => { this.dragY = 0; });
   }
 
   private finishDrag(velocityY: number): void {
@@ -246,10 +247,10 @@ export struct PinnedListSheet {
       return;
     }
     store.unpinAsync(messageId).then((): void => {
-      promptAction.showToast({ message: $r('app.string.cp_unpinned'), duration: 1400 });
+      showToast($r('app.string.cp_unpinned'), 1400);
     }).catch((e: TdError): void => {
       logE(`PinnedListSheet.unpinOne failed: ${e.message}`);
-      promptAction.showToast({ message: this.rightsMessage(e, $r('app.string.cp_unpin_failed')), duration: 1700 });
+      showToast(this.rightsMessage(e, $r('app.string.cp_unpin_failed')), 1700);
     });
   }
 
@@ -258,7 +259,7 @@ export struct PinnedListSheet {
     if (store === null) {
       return;
     }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.cp_unpin_all'),
       message: $r('app.string.cp_unpin_all_confirm'),
       buttons: [
@@ -270,13 +271,11 @@ export struct PinnedListSheet {
         return;
       }
       store.unpinAllAsync().then((): void => {
-        promptAction.showToast({ message: $r('app.string.cp_unpin_all_done'), duration: 1400 });
+        showToast($r('app.string.cp_unpin_all_done'), 1400);
         this.close();
       }).catch((e: TdError): void => {
         logE(`PinnedListSheet.unpinAll failed: ${e.message}`);
-        promptAction.showToast({
-          message: this.rightsMessage(e, $r('app.string.cp_unpin_all_failed')), duration: 1700
-        });
+        showToast(this.rightsMessage(e, $r('app.string.cp_unpin_all_failed')), 1700);
       });
     }).catch((e: Object): void => {
       logE(`PinnedListSheet.unpinAll dialog failed: ${JSON.stringify(e)}`);

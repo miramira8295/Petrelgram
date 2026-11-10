@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { SplitPanePlaceholder } from '../common/SplitPanePlaceholder';
 import { ContactAlphabetIndex } from '../../services/ContactAlphabetIndex';
 import { homeCardMarginVp } from '../../util/pageMargin';
@@ -478,7 +479,7 @@ export struct ContactsPage {
     }
     this.addContactSaving = false;
     this.addContactSheetOpen = false;
-    promptAction.showToast({ message: str('ct_added', name), duration: 1800 });
+    showToast(str('ct_added', name), 1800);
     if (this.store !== null) {
       this.store.reload();
     }
@@ -613,7 +614,7 @@ export struct ContactsPage {
       this.actionUnlockTimer = -1;
       this.actionNavigationLocked = false;
     }, 500);
-    router.pushUrl({ url: 'pages/main/CallsPage' }).catch((error: Error): void => {
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/main/CallsPage' }).catch((error: Error): void => {
       logE(`ContactsPage.openRecentCalls failed: ${error.message}`);
       this.releaseActionLock();
     });
@@ -711,7 +712,7 @@ export struct ContactsPage {
       }
       this.openingContactId = 0;
       logE(`ContactsPage.createPrivateChat failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.open_chat_failed'), duration: 1800 });
+      showToast($r('app.string.open_chat_failed'), 1800);
     });
   }
 
@@ -874,10 +875,7 @@ export struct ContactsPage {
     this.deletingContactId = 0;
     // 失败时通道已经把 leaving 撤掉（行复原），这里只需断开订阅。
     this.detachContactLeaving();
-    promptAction.showToast({
-      message: success ? str('ct_deleted', name) : $r('app.string.ct_delete_failed'),
-      duration: success ? 1600 : 1800
-    });
+    showToast(success ? str('ct_deleted', name) : $r('app.string.ct_delete_failed'), success ? 1600 : 1800);
   }
 
   // 订阅这一行的消散强度。必须在 perform 之前挂上：通道只等「有订阅者」的行，

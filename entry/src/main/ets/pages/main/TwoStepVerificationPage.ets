@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { TdError, TdObject } from '../../tdkit/TdTypes';
 import {
@@ -128,7 +129,7 @@ struct TwoStepVerificationPage {
       this.passwordState = state;
       this.saving = false;
       this.clearSensitive();
-      promptAction.showToast({ message: wasEnabled ? $r('app.string.tsv_updated') : $r('app.string.tsv_enabled'), duration: 1600 });
+      showToast(wasEnabled ? $r('app.string.tsv_updated') : $r('app.string.tsv_enabled'), 1600);
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.saving = false;
@@ -175,7 +176,7 @@ struct TwoStepVerificationPage {
       this.recoveryPattern = '';
       this.saving = false;
       this.clearSensitive();
-      promptAction.showToast({ message: $r('app.string.tsv_reset_done'), duration: 1700 });
+      showToast($r('app.string.tsv_reset_done'), 1700);
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.saving = false;
@@ -211,7 +212,7 @@ struct TwoStepVerificationPage {
       this.passwordState = state;
       this.saving = false;
       this.code = '';
-      promptAction.showToast({ message: $r('app.string.tsv_email_confirmed'), duration: 1500 });
+      showToast($r('app.string.tsv_email_confirmed'), 1500);
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.saving = false;
@@ -226,7 +227,7 @@ struct TwoStepVerificationPage {
       if (!this.active) { return; }
       this.passwordState = state;
       this.saving = false;
-      promptAction.showToast({ message: $r('app.string.tsv_code_resent'), duration: 1500 });
+      showToast($r('app.string.tsv_code_resent'), 1500);
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.saving = false;
@@ -252,7 +253,7 @@ struct TwoStepVerificationPage {
   private confirmDisable(): void {
     if (this.saving) { return; }
     if (this.oldPassword === '') { this.errorText = str('tsv_password_before_disable'); return; }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.tsv_disable'),
       message: $r('app.string.tsv_disable_confirm'),
       buttons: [
@@ -268,7 +269,7 @@ struct TwoStepVerificationPage {
         this.saving = false;
         this.clearSensitive();
         this.mode = 'password';
-        promptAction.showToast({ message: $r('app.string.tsv_disabled'), duration: 1600 });
+        showToast($r('app.string.tsv_disabled'), 1600);
       }).catch((error: TdError): void => {
         if (!this.active) { return; }
         this.saving = false;
@@ -283,7 +284,7 @@ struct TwoStepVerificationPage {
       Button() {
         SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
       }.width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-      .onClick((): void => { router.back(); });
+      .onClick((): void => { this.getUIContext().getRouter().back(); });
       Text($r('app.string.ps_two_step')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
         .layoutWeight(1);
       if (this.saving) { LoadingProgress().width(21).height(21).color(COLOR_PRIMARY); }

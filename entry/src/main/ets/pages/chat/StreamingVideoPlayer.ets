@@ -1107,7 +1107,7 @@ export struct StreamingVideoPlayer {
     }
     this.seekFeedbackSide = side;
     this.seekFeedbackVisible = false;
-    animateTo({ duration: 120, curve: Curve.EaseOut }, () => {
+    this.getUIContext().animateTo({ duration: 120, curve: Curve.EaseOut }, () => {
       this.seekFeedbackVisible = true;
     });
     if (!this.holdRewind.active) {
@@ -1121,7 +1121,7 @@ export struct StreamingVideoPlayer {
     }
     this.seekFeedbackTimer = setTimeout((): void => {
       this.seekFeedbackTimer = -1;
-      animateTo({ duration: 180, curve: Curve.EaseOut }, () => {
+      this.getUIContext().animateTo({ duration: 180, curve: Curve.EaseOut }, () => {
         this.seekFeedbackVisible = false;
       });
     }, 520);
@@ -1307,7 +1307,7 @@ export struct StreamingVideoPlayer {
       this.speedFeedbackTimer = -1;
     }
     this.speedFeedbackText = str('player_speed', `${speed}x`);
-    animateTo({ duration: 120, curve: Curve.EaseOut }, () => {
+    this.getUIContext().animateTo({ duration: 120, curve: Curve.EaseOut }, () => {
       this.speedFeedbackVisible = true;
     });
   }
@@ -1336,7 +1336,7 @@ export struct StreamingVideoPlayer {
         logW(`StreamingVideoPlayer.seek after key-only failed: ${e}`);
       }
     }
-    animateTo({ duration: 180, curve: Curve.EaseOut }, () => {
+    this.getUIContext().animateTo({ duration: 180, curve: Curve.EaseOut }, () => {
       this.speedFeedbackVisible = false;
     });
   }
@@ -1359,12 +1359,12 @@ export struct StreamingVideoPlayer {
     }
     this.speedFeedbackText = text;
     this.speedFeedbackVisible = false;
-    animateTo({ duration: 120, curve: Curve.EaseOut }, () => {
+    this.getUIContext().animateTo({ duration: 120, curve: Curve.EaseOut }, () => {
       this.speedFeedbackVisible = true;
     });
     this.speedFeedbackTimer = setTimeout((): void => {
       this.speedFeedbackTimer = -1;
-      animateTo({ duration: 180, curve: Curve.EaseOut }, () => {
+      this.getUIContext().animateTo({ duration: 180, curve: Curve.EaseOut }, () => {
         this.speedFeedbackVisible = false;
       });
     }, 850);

@@ -398,7 +398,7 @@ export struct LightweightPlainTextBubble {
       // strokeWidth(0)：Path 不显式关描边就会沿轮廓画一圈黑线，尾巴看着像被
       // 勾了边（真机实拍确认）。填充色由 fill 给，描边一律不要。
       Path({ width: TAIL_W + this.tailCornerRadius(), height: Math.max(TAIL_H, this.tailCornerRadius()) })
-        .commands(tailShapeCommands(outgoing, TAIL_W, TAIL_H, vp2px(1), this.tailCornerRadius(), 2))
+        .commands(tailShapeCommands(outgoing, TAIL_W, TAIL_H, this.getUIContext().vp2px(1), this.tailCornerRadius(), 2))
         .fill(this.bubbleFillColor())
         .stroke(Color.Transparent)
         .strokeWidth(0)
@@ -823,7 +823,7 @@ export struct LightweightPlainTextBubble {
       !(this.canDragMessage() && this.dragGesture.prefersDrag(Date.now()));
     const reply: boolean = usable && this.swipeX <= SWIPE_REPLY_TRIGGER;
     const select: boolean = usable && this.swipeX >= SWIPE_SELECT_TRIGGER;
-    animateTo({
+    this.getUIContext().animateTo({
       duration: this.env.powerSaving || this.env.reduceAnim ? 0 : 180,
       curve: Curve.EaseOut
     }, (): void => { this.swipeX = 0; });

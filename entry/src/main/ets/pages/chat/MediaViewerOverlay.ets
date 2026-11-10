@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { floatingVideoWindow, FloatingVideoSource } from './VideoFloatingWindow';
 import { closeFloatingVideo, VideoPlaybackControls } from '../../util/floatingVideoRuntime';
 import { common } from '@kit.AbilityKit';
@@ -394,7 +395,7 @@ export struct MediaViewerOverlay {
       return;
     }
     // 竖屏下控制栏展开时保留手机系统状态栏；横屏下全程隐藏系统状态栏，由顶栏内直接展示时间与电量。
-    setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner,
+    setSystemBarsHidden(this.getUIContext().getHostContext() as common.UIAbilityContext, this.barsOwner,
       this.videoLandscape || !this.chromeVisible);
   }
 
@@ -404,7 +405,7 @@ export struct MediaViewerOverlay {
     this.cancelLoadingHoldTimer();
     this.clearThumbUnsubs();
     this.clearProgressUnsubs();
-    setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner, false);
+    setSystemBarsHidden(this.getUIContext().getHostContext() as common.UIAbilityContext, this.barsOwner, false);
     this.onRequestClose();
   }
 
@@ -451,9 +452,9 @@ export struct MediaViewerOverlay {
     this.clearThumbUnsubs();
     this.clearProgressUnsubs();
     this.underlay?.unmount(this.underlaySession);
-    setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner, false);
+    setSystemBarsHidden(this.getUIContext().getHostContext() as common.UIAbilityContext, this.barsOwner, false);
     if (this.videoLandscape) {
-      setMediaViewerOrientation(getContext(this) as common.UIAbilityContext, false);
+      setMediaViewerOrientation(this.getUIContext().getHostContext() as common.UIAbilityContext, false);
     }
   }
 
@@ -541,7 +542,7 @@ export struct MediaViewerOverlay {
     this.onChromeVisibleChange(true);
     this.cancelInitialBarsTimer();
     this.syncSystemBars();
-    setMediaViewerOrientation(getContext(this) as common.UIAbilityContext, landscape);
+    setMediaViewerOrientation(this.getUIContext().getHostContext() as common.UIAbilityContext, landscape);
   }
 
   private toggleChrome(): void {
@@ -586,7 +587,7 @@ export struct MediaViewerOverlay {
   private resetPhotoZoom(animated: boolean): void {
     this.pinchStartScale = VIEWER_MIN_SCALE;
     if (animated) {
-      animateTo({
+      this.getUIContext().animateTo({
         duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 180), curve: Curve.EaseOut
       }, () => {
         this.photoScale = VIEWER_MIN_SCALE;
@@ -646,7 +647,7 @@ export struct MediaViewerOverlay {
     const nextY: number = Math.max(0, event.offsetY);
     if (nextY > 0 && this.dismissY <= 0) {
       this.cancelInitialBarsTimer();
-      setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner, false);
+      setSystemBarsHidden(this.getUIContext().getHostContext() as common.UIAbilityContext, this.barsOwner, false);
     }
     this.dismissY = nextY;
   }
@@ -675,7 +676,7 @@ export struct MediaViewerOverlay {
       }
       return;
     }
-    animateTo({
+    this.getUIContext().animateTo({
       duration, curve: Curve.Friction,
       onFinish: (): void => {
         this.underlay?.settled(session, motion);
@@ -767,7 +768,7 @@ export struct MediaViewerOverlay {
       py = finger.localY - this.areaH / 2;
     }
     this.pinchStartScale = VIEWER_DOUBLE_TAP_SCALE;
-    animateTo({
+    this.getUIContext().animateTo({
       duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 200), curve: Curve.EaseOut
     }, () => {
       this.photoScale = VIEWER_DOUBLE_TAP_SCALE;
@@ -854,7 +855,7 @@ export struct MediaViewerOverlay {
     const progress: number = this.gestureHopProgress;
     if (dir === 0 || target < 0 || progress < 1) {
       if (!this.continuousHop && (this.hopDir !== 0 || this.hopProgress !== 0)) {
-        animateTo({
+        this.getUIContext().animateTo({
           duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 180), curve: Curve.Friction
         }, () => { this.clearHop(); });
       } else {
@@ -906,7 +907,7 @@ export struct MediaViewerOverlay {
       return;
     }
     this.hopSlideX = dir * this.areaW * HOP_SLIDE_IN_RATIO;
-    animateTo({ duration, curve: Curve.Friction }, () => { this.hopSlideX = 0; });
+    this.getUIContext().animateTo({ duration, curve: Curve.Friction }, () => { this.hopSlideX = 0; });
   }
 
   // 气泡里那张缩略图。目标组的封面：往后切给第一张，往前切给最后一张，
@@ -1352,19 +1353,19 @@ export struct MediaViewerOverlay {
   // 进度在「设置 › 下载中心」看。关掉查看器、滑出可见窗口都不会把它取消（见 MessageStore 里的 isBackgroundCaching）。
   private cacheCurrentInBackground(): void {
     if (this.currentAlreadyCached()) {
-      promptAction.showToast({ message: str('dc_background_cache_done'), duration: 1600 });
+      showToast(str('dc_background_cache_done'), 1600);
       return;
     }
     const rec: CacheRecord | null = this.cacheRecordForCurrent(true);
     if (rec === null) {
-      promptAction.showToast({ message: str('dc_background_cache_failed'), duration: 1600 });
+      showToast(str('dc_background_cache_failed'), 1600);
       return;
     }
-    startBackgroundCache(getContext(this) as common.UIAbilityContext, rec).then((): void => {
-      promptAction.showToast({ message: str('dc_background_cache_started'), duration: 2000 });
+    startBackgroundCache(this.getUIContext().getHostContext() as common.UIAbilityContext, rec).then((): void => {
+      showToast(str('dc_background_cache_started'), 2000);
     }).catch((e: Object): void => {
       logE(`MediaViewer.cacheCurrentInBackground failed: ${JSON.stringify(e)}`);
-      promptAction.showToast({ message: str('dc_background_cache_failed'), duration: 1800 });
+      showToast(str('dc_background_cache_failed'), 1800);
     });
   }
 
@@ -1377,7 +1378,7 @@ export struct MediaViewerOverlay {
     if (rec === null) {
       return;
     }
-    ensureCacheRegistry(getContext(this) as common.UIAbilityContext).then((): void => { noteCachedMedia(rec); });
+    ensureCacheRegistry(this.getUIContext().getHostContext() as common.UIAbilityContext).then((): void => { noteCachedMedia(rec); });
   }
 
   private isVideo(): boolean {
@@ -1700,12 +1701,10 @@ export struct MediaViewerOverlay {
       // 不能"先下载完再自动保存"：这个方法必须跑在 SaveButton 的 onClick 里，
       // 那份临时写权限只在这一次回调内有效，异步等下载回来就没有了。
       logE('MediaViewer.saveLiveToGallery: video not downloaded yet');
-      promptAction.showToast({
-        message: str('transfer_downloading', 0), duration: 1800
-      });
+      showToast(str('transfer_downloading', 0), 1800);
       return;
     }
-    const ctx = getContext(this) as common.UIAbilityContext;
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     const still: string = `${ctx.filesDir}/live_save_${Date.now()}.jpg`;
     try {
       // 静图那一半从视频里抽首帧，而不是拿 TDLib 的缩略图——缩略图只有几百像素
@@ -1725,14 +1724,14 @@ export struct MediaViewerOverlay {
         ok = await extractFirstFrame(video, still);
       }
       if (!ok) {
-        promptAction.showToast({ message: str('media_save_failed'), duration: 1800 });
+        showToast(str('media_save_failed'), 1800);
         return;
       }
       await saveMovingPhoto(ctx, still, video, `live_${Date.now()}`);
-      promptAction.showToast({ message: str('media_saved_gallery'), duration: 2000 });
+      showToast(str('media_saved_gallery'), 2000);
     } catch (error) {
       logE(`MediaViewer.saveLiveToGallery failed: ${error}`);
-      promptAction.showToast({ message: str('media_save_failed'), duration: 1800 });
+      showToast(str('media_save_failed'), 1800);
     } finally {
       // 抽出来的首帧只是中转，落库之后就没用了。删不掉不该打断流程。
       try {

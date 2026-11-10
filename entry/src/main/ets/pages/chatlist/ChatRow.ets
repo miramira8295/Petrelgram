@@ -1,6 +1,7 @@
 import {
   KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM
 } from '../../util/layoutBreakpoint';
+import { showToast } from '../../util/toast';
 import { unreadBadgeText } from '../../util/unreadBadge';
 import { homeCardMarginVp } from '../../util/pageMargin';
 import { CHATLIST_PREVIEW_THUMB_ENABLED, stripPreviewIcon } from '../../util/formatPreview';
@@ -550,7 +551,7 @@ export struct ChatRow {
             powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 550) > 0, active,
           (): Promise<boolean> => blockAndDeleteChat(chatId)).then((success: boolean): void => {
           if (success && active()) {
-            promptAction.showToast({ message: str('cl_deleted_blocked', title), duration: 1800 });
+            showToast(str('cl_deleted_blocked', title), 1800);
           }
         }).catch((e: Object): void => { logI(`ChatRow.blockAndDelete failed: ${e}`); });
       }

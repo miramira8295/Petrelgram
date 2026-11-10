@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { TargetSendFilter } from '../../services/TargetSendFilter';
 import { TargetFolderTabs } from '../common/TargetFolderTabs';
 import { sendWithChatPermissions, requireForwardPermissions, readForwardPermissionKeys } from '../../store/SendPermissionApi';
@@ -318,7 +319,7 @@ export struct ForwardSheet {
         this.close();
         this.onSent();
       }
-      promptAction.showToast({ message: task.hasUncertain() ? str('share_result_unknown') : this.resultMessage(result, targets), duration: 1800 });
+      showToast(task.hasUncertain() ? str('share_result_unknown') : this.resultMessage(result, targets), 1800);
     });
   }
 

@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { common } from '@kit.AbilityKit';
@@ -55,7 +56,7 @@ struct MiniAppPage {
   aboutToAppear(): void {
     // 代理可能在后台被自动切换换掉，开页面前让桥跟一次（内部失败只记日志）。
     refreshWebBridge();
-    this.launch = router.getParams() as MiniAppLaunch;
+    this.launch = this.getUIContext().getRouter().getParams() as MiniAppLaunch;
     this.title = this.launch?.title ?? '';
     this.start();
   }
@@ -174,14 +175,14 @@ struct MiniAppPage {
     this.closing = true;
     if (this.needsCloseConfirmation) {
       try {
-        const result = await promptAction.showDialog({ title: str('miniapp_close_title'),
+        const result = await this.getUIContext().getPromptAction().showDialog({ title: str('miniapp_close_title'),
           message: str('miniapp_close_message'), buttons: [
             { text: str('cancel'), color: '#707579' }, { text: str('tglink_close'), color: '#3390ec' }
           ] });
         if (result.index !== 1) { this.closing = false; return; }
       } catch (_) { this.closing = false; return; }
     }
-    if (!this.disposed) { this.session.close(); router.back(); }
+    if (!this.disposed) { this.session.close(); this.getUIContext().getRouter().back(); }
   }
 
   onBackPress(): boolean {
@@ -198,7 +199,7 @@ struct MiniAppPage {
   }
 
   private openLink(url: string, telegram: boolean): void {
-    const context = getContext(this) as common.UIAbilityContext;
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     if (telegram) {
       if (url.startsWith('/') && !url.startsWith('//')) {
         openTelegramLink(context, `https://t.me${url}`, false);
@@ -214,9 +215,9 @@ struct MiniAppPage {
     // Keep the bridge on the launch origin. Never hand an authorization URL
     // to another application, nor forward arbitrary custom schemes.
     if (url.startsWith('tg://') || normalizeTelegramLink(url) !== '') {
-      openTelegramLink(getContext(this) as common.UIAbilityContext, url, false);
+      openTelegramLink(this.getUIContext().getHostContext() as common.UIAbilityContext, url, false);
     } else if (/^https?:\/\//i.test(url)) {
-      openWebUrl(getContext(this) as common.UIAbilityContext, url, (): void => {}, true);
+      openWebUrl(this.getUIContext().getHostContext() as common.UIAbilityContext, url, (): void => {}, true);
     }
     return true;
   }
@@ -242,7 +243,7 @@ struct MiniAppPage {
     if (labels.length === 0) { labels.push({ text: str('color_picker_confirm'), color: '#3390ec' }); ids.push(''); }
     this.dialogOpen = true;
     try {
-      const result = await promptAction.showDialog({
+      const result = await this.getUIContext().getPromptAction().showDialog({
         title: miniAppString(data, 'title').substring(0, 64), message, buttons: labels });
       this.emit('popup_closed', { 'button_id': ids[result.index] ?? '' });
     } catch (_) { this.emit('popup_closed'); }
@@ -250,7 +251,7 @@ struct MiniAppPage {
   }
 
   private unsupported(): void {
-    promptAction.showToast({ message: $r('app.string.miniapp_feature_unsupported') });
+    showToast($r('app.string.miniapp_feature_unsupported'));
   }
 
   private onEvent(event: MiniAppEvent): void {

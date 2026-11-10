@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { WallpaperEditorSession, WallpaperEditorSource } from '../../services/WallpaperEditorSession';
 import { getTdClient, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
 import { TdClient } from '../../tdkit/TdClient';
@@ -215,7 +216,7 @@ struct ChatBackgroundPage {
     this.previewSession.close();
     this.currentBackground = emptyChatBackground();
     this.rows = []; this.uploaded = []; this.applyingRow = null;
-    router.back();
+    this.getUIContext().getRouter().back();
   }
 
   private observeCurrentBackground(known?: TdObject | null): void {
@@ -252,7 +253,7 @@ struct ChatBackgroundPage {
   aboutToAppear(): void {
     this.active = true;
     this.pageClient = getTdClient();
-    const params = router.getParams() as BackgroundPageParams | undefined;
+    const params = this.getUIContext().getRouter().getParams() as BackgroundPageParams | undefined;
     this.chatId = params?.chatId ?? 0;
     this.slotId = params?.slot ?? '';
     if (this.slotId !== '') {
@@ -288,11 +289,11 @@ struct ChatBackgroundPage {
   // 2026-11-05 真机复现：进入壁纸页 → 返回键 → 页面原地不动，pid 不变。
   onBackPress(): boolean {
     logI('[ChatBackgroundPage] onBackPress fired');
-    // router.back() 直接写在返回事件回调里，某些情况下会被当成"同一帧内再次触发
+    // this.getUIContext().getRouter().back() 直接写在返回事件回调里，某些情况下会被当成"同一帧内再次触发
     // 返回"而无效果；挪到下一个宏任务再出栈（真机验证用）。
     setTimeout((): void => {
-      logI('[ChatBackgroundPage] onBackPress -> router.back()');
-      router.back();
+      logI('[ChatBackgroundPage] onBackPress -> this.getUIContext().getRouter().back()');
+      this.getUIContext().getRouter().back();
     }, 0);
     return true;
   }
@@ -451,12 +452,9 @@ struct ChatBackgroundPage {
       }
       this.endApply();
       this.observeCurrentBackground(row.raw);
-      promptAction.showToast({
-        message: this.chatId !== 0
+      showToast(this.chatId !== 0
           ? $r('app.string.cb_chat_set')
-          : (this.forDark ? $r('app.string.cb_dark_set') : $r('app.string.cb_light_set')),
-        duration: 1600
-      });
+          : (this.forDark ? $r('app.string.cb_dark_set') : $r('app.string.cb_light_set')), 1600);
     }).catch((error: TdError): void => {
       if (!this.editIsCurrent(edit)) { return; }
       this.endApply();
@@ -467,7 +465,7 @@ struct ChatBackgroundPage {
         : (error.message.indexOf('ADMIN') >= 0 || error.message.indexOf('rights') >= 0
           ? $r('app.string.cb_admin_required')
           : $r('app.string.cb_set_failed'));
-      promptAction.showToast({ message: text, duration: 2000 });
+      showToast(text, 2000);
     });
   }
 
@@ -521,7 +519,7 @@ struct ChatBackgroundPage {
   // util/localWallpaper.isUploadedWallpaperFile），不去读文件内容。
   private loadUploaded(): void {
     try {
-      const dir: string = (getContext(this) as common.UIAbilityContext).filesDir;
+      const dir: string = (this.getUIContext().getHostContext() as common.UIAbilityContext).filesDir;
       const names: string[] = fs.listFileSync(dir);
       const out: string[] = [];
       const thumbs: Map<string, string> = new Map();
@@ -560,7 +558,7 @@ struct ChatBackgroundPage {
     this.currentBackground = state;
     this.removeQuietly(previous);
     this.afterLocalChange();
-    promptAction.showToast({ message: $r('app.string.cb_local_applied'), duration: 1500 });
+    showToast($r('app.string.cb_local_applied'), 1500);
   }
 
   @Builder
@@ -639,7 +637,7 @@ struct ChatBackgroundPage {
   private installLocal(uri: string): void {
     this.beginEdit();
     try {
-      const ctx = getContext(this) as common.UIAbilityContext;
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
       // 文件名带时间戳：固定名会被 Image 的解码缓存卡住，换了图屏幕上还是旧的。
       // 代价是必须自己删旧图，见 removeQuietly。判据见 util/localWallpaper。
       const dest: string = `${ctx.filesDir}/${localWallpaperFileName(this.forDark, Date.now())}`;
@@ -668,11 +666,11 @@ struct ChatBackgroundPage {
       this.localPath = dest;
       this.removeQuietly(previous);
       this.afterLocalChange();
-      promptAction.showToast({ message: $r('app.string.cb_local_applied'), duration: 1500 });
+      showToast($r('app.string.cb_local_applied'), 1500);
     } catch (error) {
       this.observeCurrentBackground();
       logE(`ChatBackgroundPage.installLocal failed: ${error}`);
-      promptAction.showToast({ message: $r('app.string.cb_local_failed'), duration: 1800 });
+      showToast($r('app.string.cb_local_failed'), 1800);
     }
   }
 
@@ -744,14 +742,14 @@ struct ChatBackgroundPage {
         return;
       }
       this.endApply();
-      promptAction.showToast({ message: $r('app.string.cb_local_applied'), duration: 1500 });
+      showToast($r('app.string.cb_local_applied'), 1500);
     } catch (error) {
       if (!this.editIsCurrent(edit)) {
         return;
       }
       this.endApply();
       logE(`ChatBackgroundPage.applyToAppSlot failed: ${error}`);
-      promptAction.showToast({ message: $r('app.string.cb_set_failed'), duration: 1800 });
+      showToast($r('app.string.cb_set_failed'), 1800);
     }
   }
 
@@ -781,7 +779,7 @@ struct ChatBackgroundPage {
       this.currentBackground = state;
       this.localPath = '';
       this.removeQuietly(previous);
-      promptAction.showToast({ message: $r('app.string.cb_local_applied'), duration: 1500 });
+      showToast($r('app.string.cb_local_applied'), 1500);
       return;
     }
     this.applyingId = `solid_${color}`;
@@ -797,18 +795,15 @@ struct ChatBackgroundPage {
       const fill: TdObject = { '@type': 'backgroundFillSolid', 'color': value };
       const type: TdObject = { '@type': 'backgroundTypeFill', 'fill': fill };
       this.observeCurrentBackground({ '@type': 'background', 'type': type });
-      promptAction.showToast({
-        message: this.chatId !== 0
+      showToast(this.chatId !== 0
           ? $r('app.string.cb_chat_set')
-          : (this.forDark ? $r('app.string.cb_dark_set') : $r('app.string.cb_light_set')),
-        duration: 1600
-      });
+          : (this.forDark ? $r('app.string.cb_dark_set') : $r('app.string.cb_light_set')), 1600);
     }).catch((error: TdError): void => {
       if (!this.editIsCurrent(edit)) { return; }
       this.endApply();
       this.observeCurrentBackground();
       logE(`ChatBackgroundPage.applySolid failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.cb_set_failed'), duration: 2000 });
+      showToast($r('app.string.cb_set_failed'), 2000);
     });
   }
 
@@ -831,7 +826,7 @@ struct ChatBackgroundPage {
       this.removeQuietly(previous);
       this.endApply();
       this.observeCurrentBackground();
-      promptAction.showToast({ message: $r('app.string.cb_reset_done'), duration: 1500 });
+      showToast($r('app.string.cb_reset_done'), 1500);
       return;
     }
     this.invalidateSnapshotIfDefault();
@@ -845,15 +840,13 @@ struct ChatBackgroundPage {
         : emptyChatBackground();
       this.endApply();
       this.observeCurrentBackground();
-      promptAction.showToast({
-        message: this.chatId !== 0 ? $r('app.string.cb_reset_to_global') : $r('app.string.cb_reset_done'), duration: 1500
-      });
+      showToast(this.chatId !== 0 ? $r('app.string.cb_reset_to_global') : $r('app.string.cb_reset_done'), 1500);
     }).catch((error: TdError): void => {
       if (!this.editIsCurrent(edit)) { return; }
       this.endApply();
       this.observeCurrentBackground();
       logE(`ChatBackgroundPage.reset failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.cb_reset_failed'), duration: 1800 });
+      showToast($r('app.string.cb_reset_failed'), 1800);
     });
   }
 
@@ -863,7 +856,7 @@ struct ChatBackgroundPage {
       Button() {
         SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
       }.width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-      .onClick((): void => { router.back(); });
+      .onClick((): void => { this.getUIContext().getRouter().back(); });
       Text(this.chatId !== 0 ? $r('app.string.cb_chat_title') : $r('app.string.chat_settings_background'))
         .fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
         .layoutWeight(1);

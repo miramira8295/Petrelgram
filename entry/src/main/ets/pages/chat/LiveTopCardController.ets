@@ -1,3 +1,5 @@
+import { pushUrl, showDialog } from '../../util/uiContext';
+import { showToast } from '../../util/toast';
 import { pinnedVisibilityFor } from '../../services/PinnedVisibility';
 import { PinnedVisibility } from '../../util/pinnedVisibilityState';
 import { NowPlaying, subscribeNowPlaying, clearNowPlaying } from '../../util/nowPlayingChannel';
@@ -545,7 +547,7 @@ export class LiveTopCardController {
     }
     if (groupCallId <= 0 || groupCallId !== this.liveGroupCallId ||
       !this.liveCallIsActive || this.liveLoadState === 'error') {
-      promptAction.showToast({ message: $r('app.string.cp_live_ended'), duration: 1500 });
+      showToast($r('app.string.cp_live_ended'), 1500);
       return;
     }
     const isRtmp: boolean = this.liveCallIsRtmp;
@@ -568,10 +570,10 @@ export class LiveTopCardController {
     floatingLiveWindow.prepareForOpeningFullPage().finally((): void => {
       if (groupCallId !== this.liveGroupCallId || !this.liveCallIsActive) {
         this.liveNavigationBusy = false;
-        promptAction.showToast({ message: $r('app.string.cp_live_ended'), duration: 1500 });
+        showToast($r('app.string.cp_live_ended'), 1500);
         return;
       }
-      router.pushUrl({
+      pushUrl({
         url: isRtmp
           ? 'pages/chat/RtmpLiveStreamViewerPage' : 'pages/chat/LiveStreamViewerPage',
         params: params
@@ -582,7 +584,7 @@ export class LiveTopCardController {
       }).catch((error: Error): void => {
         this.liveNavigationBusy = false;
         logE(`ChatPage.enterLiveStream failed: ${error.message}`);
-        promptAction.showToast({ message: $r('app.string.cp_live_join_failed'), duration: 1600 });
+        showToast($r('app.string.cp_live_join_failed'), 1600);
       });
     });
   }
@@ -594,16 +596,16 @@ export class LiveTopCardController {
       return;
     }
     if (this.liveLoadState === 'loading') {
-      promptAction.showToast({ message: $r('app.string.cp_live_syncing'), duration: 1200 });
+      showToast($r('app.string.cp_live_syncing'), 1200);
       return;
     }
     if (this.liveLoadState === 'error') {
       this.refreshVideoChat(true);
-      promptAction.showToast({ message: $r('app.string.cp_live_refetching'), duration: 1200 });
+      showToast($r('app.string.cp_live_refetching'), 1200);
       return;
     }
     if (this.liveGroupCallId <= 0 || !this.liveCallIsActive) {
-      promptAction.showToast({ message: $r('app.string.cp_live_ended'), duration: 1500 });
+      showToast($r('app.string.cp_live_ended'), 1500);
       return;
     }
     const groupCallId = this.liveGroupCallId;
@@ -614,7 +616,7 @@ export class LiveTopCardController {
       ? str('cp_live_one_way_body')
       : str('cp_live_two_way_body');
     this.liveDialogOpening = true;
-    promptAction.showDialog({
+    showDialog({
       title: $r('app.string.cp_live_join_title'),
       message: `${onlineText}${privacyText}`,
       buttons: [
@@ -690,7 +692,7 @@ export class LiveTopCardController {
     }
     if (action.kind === PINNED_RETRY) {
       store.refreshPinned();
-      promptAction.showToast({ message: $r('app.string.cp_resyncing_pinned'), duration: 1200 });
+      showToast($r('app.string.cp_resyncing_pinned'), 1200);
       return;
     }
     if (action.kind === PINNED_EMPTY) {

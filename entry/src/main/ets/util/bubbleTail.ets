@@ -1,6 +1,7 @@
 // 气泡尾巴的三角裁剪。开着气泡材质时尾巴不能再是实色 Polygon（材质挂不到形状
 // 上），改成一个 8×12 的小容器挂同一套材质，再按三角形裁掉——看上去就是气泡
 // 延伸出来的一角。PathShape 的坐标是 px。
+import { vp2pxUI } from './uiContext';
 import { PathShape } from '@kit.ArkUI';
 import { immersiveMaterialAvailable, overlayMaterial } from './overlayMaterial';
 import { glassBubbleCommands } from './bubbleGlassPath';
@@ -9,8 +10,8 @@ export const TAIL_W: number = 8;
 export const TAIL_H: number = 12;
 
 export function tailClip(outgoing: boolean): PathShape {
-  const w = vp2px(TAIL_W);
-  const h = vp2px(TAIL_H);
+  const w = vp2pxUI(TAIL_W);
+  const h = vp2pxUI(TAIL_H);
   const commands = outgoing ? `M0 0 L${w} ${h} L0 ${h} Z` : `M${w} 0 L0 ${h} L${w} ${h} Z`;
   return new PathShape({ commands: commands });
 }
@@ -118,7 +119,7 @@ function outlineCommands(w: number, h: number, outgoing: boolean,
     return hit;
   }
   const commands: string = glassBubbleCommands(w, h, outgoing, hasTail,
-    tl, tr, br, bl, TAIL_W, TAIL_H, vp2px(1), inset, gutter);
+    tl, tr, br, bl, TAIL_W, TAIL_H, vp2pxUI(1), inset, gutter);
   if (outlineCache.size >= OUTLINE_CACHE_MAX) {
     outlineCache.clear();
   }

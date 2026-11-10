@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { TdError } from '../../tdkit/TdTypes';
 import {
@@ -96,12 +97,12 @@ export struct NotificationSettingsPage {
     setScopeSettings(scope, next).catch((error: TdError): void => {
       logE(`NotificationSettingsPage.update failed: ${error.message}`);
       this.applyLocal(scope, current);
-      promptAction.showToast({ message: $r('app.string.ns_update_failed'), duration: 1600 });
+      showToast($r('app.string.ns_update_failed'), 1600);
     });
   }
 
   private resetAll(): void {
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.ns_reset'),
       message: $r('app.string.ns_reset_confirm'),
       buttons: [
@@ -111,10 +112,10 @@ export struct NotificationSettingsPage {
     }).then((result): void => {
       if (result.index !== 1) { return; }
       resetAllNotificationSettings().then((): void => {
-        promptAction.showToast({ message: $r('app.string.ns_reset_done'), duration: 1500 });
+        showToast($r('app.string.ns_reset_done'), 1500);
         this.load();
       }).catch((): void => {
-        promptAction.showToast({ message: $r('app.string.restore_failed_retry'), duration: 1600 });
+        showToast($r('app.string.restore_failed_retry'), 1600);
       });
     }).catch((): void => {});
   }
@@ -236,7 +237,7 @@ export struct NotificationSettingsPage {
             .width('100%').height(58).padding({ left: 14, right: 14 })
             .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
             .onClick((): void => {
-              router.pushUrl({ url: 'pages/main/GroupNotificationsPage' }).catch((e: Error): void => {
+              this.getUIContext().getRouter().pushUrl({ url: 'pages/main/GroupNotificationsPage' }).catch((e: Error): void => {
                 logE(`NotificationSettingsPage.openGroupNotifications failed: ${e.message}`);
               });
             });
@@ -252,7 +253,7 @@ export struct NotificationSettingsPage {
             .width('100%').height(58).padding({ left: 14, right: 14 })
             .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
             .onClick((): void => {
-              router.pushUrl({ url: 'pages/main/WebPushPage' }).catch((e: Error): void => {
+              this.getUIContext().getRouter().pushUrl({ url: 'pages/main/WebPushPage' }).catch((e: Error): void => {
                 logE(`NotificationSettingsPage.openWebPush failed: ${e.message}`);
               });
             });

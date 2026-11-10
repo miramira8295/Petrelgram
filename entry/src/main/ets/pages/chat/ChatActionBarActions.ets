@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { promptAction, UIContext } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
@@ -48,10 +49,10 @@ function sharePhone(ctx: ActionBarContext): void {
       const req: TdRequest = { '@type': 'sharePhoneNumber' };
       req['user_id'] = ctx.peerUserId;
       send(req).then((): void => {
-        promptAction.showToast({ message: str('ab_shared'), duration: 1500 });
+        showToast(str('ab_shared'), 1500);
       }).catch((e: TdError): void => {
         logE(`sharePhoneNumber failed: ${e.message}`);
-        promptAction.showToast({ message: str('cpp_report_failed'), duration: 1500 });
+        showToast(str('cpp_report_failed'), 1500);
       });
     });
 }
@@ -74,13 +75,13 @@ function block(ctx: ActionBarContext): void {
         req['revoke'] = false;
         return send(req);
       }).then((): void => {
-        promptAction.showToast({ message: str('ab_blocked'), duration: 1500 });
+        showToast(str('ab_blocked'), 1500);
         if (alsoDelete) {
           ctx.onChatRemoved();
         }
       }).catch((e: TdError): void => {
         logE(`action bar block failed: ${e.message}`);
-        promptAction.showToast({ message: str('cpp_report_failed'), duration: 1500 });
+        showToast(str('cpp_report_failed'), 1500);
       });
     });
 }

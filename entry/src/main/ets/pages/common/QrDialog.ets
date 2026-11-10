@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
@@ -102,9 +103,9 @@ export struct QrDialog {
     try {
       await pasteboard.getSystemPasteboard().setData(
         pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, this.displayedLink));
-      if (this.alive) { promptAction.showToast({ message: str('copied'), duration: 1200 }); }
+      if (this.alive) { showToast(str('copied'), 1200); }
     } catch (_) {
-      if (this.alive) { promptAction.showToast({ message: str('copy_failed'), duration: 2000 }); }
+      if (this.alive) { showToast(str('copy_failed'), 2000); }
     }
   }
 
@@ -128,10 +129,10 @@ export struct QrDialog {
     const current = (): boolean => this.alive && this.revision === revision && getTdClient() === client;
     const ui = this.getUIContext();
     try {
-      await exportQrImage(getContext(this) as common.UIAbilityContext, this.displayedLink,
+      await exportQrImage(this.getUIContext().getHostContext() as common.UIAbilityContext, this.displayedLink,
         this.title, share, { windowOffset: { x: ui.vp2px(event.windowX), y: ui.vp2px(event.windowY) } }, current);
     } catch (_) {
-      if (current()) { promptAction.showToast({ message: str(share ? 'share_failed' : 'media_save_failed'), duration: 2000 }); }
+      if (current()) { showToast(str(share ? 'share_failed' : 'media_save_failed'), 2000); }
     } finally {
       if (this.alive) { this.exporting = false; }
     }

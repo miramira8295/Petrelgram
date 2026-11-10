@@ -47,8 +47,8 @@ export struct HdsSubPage {
   // 空串表示不显示副标题。
   @Prop subTitle: ResourceStr = '';
   @Prop pageBackground: ResourceColor = $r('app.color.page_bg');
-  // 返回键的动作。默认 router.back()；有离场动画/需要拦截的页面自己传。
-  onBack: () => void = (): void => { router.back(); };
+  // 返回键的动作。默认 this.getUIContext().getRouter().back()；有离场动画/需要拦截的页面自己传。
+  onBack: () => void = (): void => { this.getUIContext().getRouter().back(); };
   // 右上角的图标按钮，最多三个（HDS 自己会把多的收进"更多"）。
   //
   // 必须是 @Prop：调用页会按自己的状态重新算这组菜单项（AccountEditPage 的保存

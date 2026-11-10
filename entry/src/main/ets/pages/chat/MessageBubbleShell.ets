@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { ReactionTransitions } from '../../util/reactionTransitions';
 import { TextMeasureCache, textMeasureEnvironment, sharedTextMeasurements } from '../../util/textMeasureCache';
 import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
@@ -686,7 +687,7 @@ export struct MessageBubbleShell {
     // 判据是 swipeGestureEligible 而不是 swipeReplyAllowed：多选与发言权无关。
     const select: boolean = this.swipeGestureEligible() &&
       this.swipeReplyX >= SWIPE_SELECT_TRIGGER;
-    animateTo({ duration: this.swipeReplyDuration(180), curve: Curve.EaseOut }, (): void => {
+    this.getUIContext().animateTo({ duration: this.swipeReplyDuration(180), curve: Curve.EaseOut }, (): void => {
       this.swipeReplyX = 0;
     });
     if (reply) {
@@ -905,7 +906,7 @@ export struct MessageBubbleShell {
                   } else if (btn.isGame) {
                     this.actions.onGameOpen(this.msg.id);
                   } else {
-                    promptAction.showToast({ message: $r('app.string.miniapp_button_unsupported') });
+                    showToast($r('app.string.miniapp_button_unsupported'));
                   }
                 });
             // 点击目标、游戏分支和样式都属于组件身份，不能只看显示文字。
@@ -1141,7 +1142,7 @@ export struct MessageBubbleShell {
           } catch (e) { scope = -1; }
         }
         const environment: string = `${textMeasureEnvironment.epoch}:${this.env.langEpoch}:${this.env.appearanceEpoch}:${units}`;
-        return px2vp(sharedTextMeasurements.width(scope, environment, content, size, measure));
+        return this.getUIContext().px2vp(sharedTextMeasurements.width(scope, environment, content, size, measure));
       });
     } catch (e) {
       this.textMeasureFailed = true;
@@ -1173,9 +1174,9 @@ export struct MessageBubbleShell {
   private copyUrlToPasteboard(url: string): void {
     const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, url);
     pasteboard.getSystemPasteboard().setData(data).then((): void => {
-      promptAction.showToast({ message: $r('app.string.link_copied'), duration: 1300 });
+      showToast($r('app.string.link_copied'), 1300);
     }).catch((): void => {
-      promptAction.showToast({ message: $r('app.string.copy_failed'), duration: 1300 });
+      showToast($r('app.string.copy_failed'), 1300);
     });
   }
 
@@ -1191,7 +1192,7 @@ export struct MessageBubbleShell {
     // 多条链接：弹菜单挑一条。showActionMenu 最多 6 个按钮，超出的截断——
     // 一条消息塞六条以上链接的场景，逐条挑本来也没有意义。
     const shown: string[] = urls.slice(0, 6);
-    promptAction.showActionMenu({
+    this.getUIContext().getPromptAction().showActionMenu({
       title: str('mb_copy_url'),
       buttons: shown.map((u: string): promptAction.Button => ({
         text: u.length > 40 ? u.substring(0, 37) + '…' : u,
@@ -1492,7 +1493,7 @@ export struct MessageBubbleShell {
       // strokeWidth(0)：Path 不显式关描边就会沿轮廓画一圈黑线，尾巴看着像被
       // 勾了边（真机实拍确认）。填充色由 fill 给，描边一律不要。
       Path({ width: TAIL_W + this.tailCornerRadius(), height: Math.max(TAIL_H, this.tailCornerRadius()) })
-        .commands(tailShapeCommands(outgoing, TAIL_W, TAIL_H, vp2px(1), this.tailCornerRadius(), 2))
+        .commands(tailShapeCommands(outgoing, TAIL_W, TAIL_H, this.getUIContext().vp2px(1), this.tailCornerRadius(), 2))
         .fill(this.bubbleFillColor())
         .stroke(Color.Transparent)
         .strokeWidth(0)

@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 
@@ -118,13 +119,13 @@ const PROFILE_GIFT_COLS: number = 3;
 @Component
 export struct ProfilePage {
   // 本页所在的 Navigation 栈，onReady 时拿到。返回按钮靠它出栈——本页已不是
-  // router 页，router.back() 弹不到自己。
+  // router 页，this.getUIContext().getRouter().back() 弹不到自己。
   private navStack: NavPathStack | undefined = undefined;
   private readonly chatDestToken: number = allocChatDestToken();
   private inChatStack: boolean = false;
   private willShowSeen: boolean = false;
 
-  // 路由参数。router 时代靠 router.getParams() 现取，NavDestination 要在
+  // 路由参数。router 时代靠 this.getUIContext().getRouter().getParams() 现取，NavDestination 要在
   // onReady 里从 NavDestinationContext 拿，而 onReady 实测晚于 aboutToAppear
   // （平板 API 26，见 ChatPage 的同名注释），所以吃参数的那一段整体挪进了
   // applyRouteParams()。
@@ -337,8 +338,8 @@ export struct ProfilePage {
     }
   }
 
-  // 返回上一层。**不能用 router.back()**：本页是 HdsNavDestination，router 页栈里
-  // 只剩 Index 一层，router.back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
+  // 返回上一层。**不能用 this.getUIContext().getRouter().back()**：本页是 HdsNavDestination，router 页栈里
+  // 只剩 Index 一层，this.getUIContext().getRouter().back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
   // 的现象是「点返回箭头直接退到桌面」。要出的是 Navigation 栈。
   private moreMenuItems(): string[] {
     const self: number = getChatStore().selfUserId();
@@ -358,7 +359,7 @@ export struct ProfilePage {
     const stack = this.navStack;
     if (stack === undefined) {
       // navStack 由 onReady(ctx.pathStack) 填，而 onReady 必先于本页可见，所以
-      // 这一支不该发生。这里**故意不回退到 router.back()**：那正是会退出应用的
+      // 这一支不该发生。这里**故意不回退到 this.getUIContext().getRouter().back()**：那正是会退出应用的
       // 那条路，把返回键做成"什么都不做 + 一条日志"远比把应用关掉好。
       logE('ProfilePage.goBack: navStack missing, back ignored');
       return;
@@ -392,7 +393,7 @@ export struct ProfilePage {
   @State qrLink: string = '';
   private qrCtrl: CustomDialogController = new CustomDialogController({
     builder: QrDialog({ link: this.qrLink, title: this.name,
-      onScan: (): void => { this.qrScanner.start(getContext(this) as common.UIAbilityContext); } }),
+      onScan: (): void => { this.qrScanner.start(this.getUIContext().getHostContext() as common.UIAbilityContext); } }),
     customStyle: true,
     alignment: DialogAlignment.Center,
     autoCancel: true
@@ -539,11 +540,11 @@ export struct ProfilePage {
     this.store.sendGift(g.id, (error: string) => {
       if (error === '') {
         this.showGiftPicker = false;
-        promptAction.showToast({ message: $r('app.string.pp_gift_sent') });
+        showToast($r('app.string.pp_gift_sent'));
       } else if (error.indexOf('BALANCE') >= 0) {
-        promptAction.showToast({ message: $r('app.string.pp_not_enough_stars') });
+        showToast($r('app.string.pp_not_enough_stars'));
       } else {
-        promptAction.showToast({ message: str('pp_send_failed_msg', error) });
+        showToast(str('pp_send_failed_msg', error));
       }
     });
   }
@@ -564,7 +565,7 @@ export struct ProfilePage {
       return;
     }
     getCallSession().startCall(this.userId, isVideo);
-    router.pushUrl({ url: 'pages/call/CallPage' }).catch((error: Error): void => {
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/call/CallPage' }).catch((error: Error): void => {
       logE(`ProfilePage.startCall navigation failed: ${error.message}`);
     });
   }
@@ -588,7 +589,7 @@ export struct ProfilePage {
         openMiniAppPage({ kind: 'main', chatId, botUserId: botId, title: this.name });
       }).catch((e: TdError): void => {
         logE(`ProfilePage.openMainApp failed: ${e.code} ${e.message}`);
-        promptAction.showToast({ message: str('tglink_cannot_open_miniapp'), duration: 1700 });
+        showToast(str('tglink_cannot_open_miniapp'), 1700);
       });
   }
 
@@ -609,7 +610,7 @@ export struct ProfilePage {
           this.pendingStartParam = '';
           getTdClient().send(start).catch((e: TdError): void => {
             logE(`ProfilePage.sendBotStartMessage failed: ${e.message}`);
-            promptAction.showToast({ message: $r('app.string.pp_start_failed'), duration: 1500 });
+            showToast($r('app.string.pp_start_failed'), 1500);
           });
         }
       }
@@ -621,7 +622,7 @@ export struct ProfilePage {
   private addContact(): void {
     this.sendAddContact().then(() => {
       this.isContact = true;
-      promptAction.showToast({ message: $r('app.string.pp_added_contact'), duration: 1500 });
+      showToast($r('app.string.pp_added_contact'), 1500);
     }).catch((e: TdError) => {
       // min user：本地没有对方的 access hash（只在群消息里见过对方时的常态），
       // addContact 按 id 直发会报 400 User not found。电话可见时按 TDLib 推荐
@@ -631,7 +632,7 @@ export struct ProfilePage {
           .then(() => this.sendAddContact())
           .then(() => {
             this.isContact = true;
-            promptAction.showToast({ message: $r('app.string.pp_added_contact'), duration: 1500 });
+            showToast($r('app.string.pp_added_contact'), 1500);
           })
           .catch((retryError: TdError) => {
             logE(`ProfilePage.addContact retry failed(code=${retryError.code}): ` +
@@ -644,10 +645,7 @@ export struct ProfilePage {
       // 失败对上号了。
       logE(`ProfilePage.addContact failed(code=${e.code}): ${e.message} ` +
         `userId=${this.userId} hasPhone=${this.phone !== ''}`);
-      promptAction.showToast({
-        message: e.code === 400 ? $r('app.string.pp_add_incomplete') : $r('app.string.pp_add_failed'),
-        duration: 1700
-      });
+      showToast(e.code === 400 ? $r('app.string.pp_add_incomplete') : $r('app.string.pp_add_failed'), 1700);
     });
   }
 
@@ -660,15 +658,13 @@ export struct ProfilePage {
       const userIds: number[] = (res['user_ids'] as number[] | undefined) ?? [];
       if (userIds.length > 0 && userIds[0] > 0) {
         this.isContact = true;
-        promptAction.showToast({ message: $r('app.string.pp_added_contact'), duration: 1500 });
+        showToast($r('app.string.pp_added_contact'), 1500);
         return;
       }
-      promptAction.showToast({
-        message: $r('app.string.pp_privacy_blocks_add'), duration: 2000
-      });
+      showToast($r('app.string.pp_privacy_blocks_add'), 2000);
     }).catch((e: TdError) => {
       logE(`ProfilePage.importContacts failed(code=${e.code}): ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.pp_add_failed'), duration: 1700 });
+      showToast($r('app.string.pp_add_failed'), 1700);
     });
   }
 
@@ -693,7 +689,7 @@ export struct ProfilePage {
     const hasCoords = this.bizLat !== 0 || this.bizLng !== 0;
     const q = encodeURIComponent(this.bizAddress);
     const uri = hasCoords ? `geo:${this.bizLat},${this.bizLng}?q=${q}` : `geo:0,0?q=${q}`;
-    openUrl(getContext(this) as common.UIAbilityContext, uri);
+    openUrl(this.getUIContext().getHostContext() as common.UIAbilityContext, uri);
   }
 
   private moveProfileTabIndicator(index: number): void {
@@ -737,7 +733,7 @@ export struct ProfilePage {
       return;
     }
     const key = tabs[index].key;
-    animateTo({ duration: 220, curve: Curve.EaseOut }, (): void => {
+    this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseOut }, (): void => {
       this.profTab = index;
       this.moveProfileTabIndicator(index);
     });
@@ -760,7 +756,7 @@ export struct ProfilePage {
 
   private openSharedMessage(messageId: number): void {
     if (this.privateChatId > 0 && messageId > 0) {
-      // 曾经是 router.pushUrl('pages/chat/ChatPage')——ChatPage 迁成
+      // 曾经是 this.getUIContext().getRouter().pushUrl('pages/chat/ChatPage')——ChatPage 迁成
       // HdsNavDestination 后已从 main_pages.json 摘掉，直连 router 会跳不动。
       // 走 navigateToChat 这个唯一漏斗，由它决定推栈还是回退整页路由。
       const params: Record<string, Object> = {
@@ -1119,7 +1115,7 @@ export struct ProfilePage {
       this.creatingSecretChat = false;
       const chatId: number = (chat['id'] as number | undefined) ?? 0;
       if (chatId === 0) {
-        promptAction.showToast({ message: $r('app.string.pp_secret_failed'), duration: 1700 });
+        showToast($r('app.string.pp_secret_failed'), 1700);
         return;
       }
       const params: Record<string, Object> = { 'chatId': chatId };
@@ -1127,7 +1123,7 @@ export struct ProfilePage {
     }).catch((e: TdError): void => {
       this.creatingSecretChat = false;
       logE(`ProfilePage.createNewSecretChat failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.pp_secret_failed_retry'), duration: 1700 });
+      showToast($r('app.string.pp_secret_failed_retry'), 1700);
     });
   }
 

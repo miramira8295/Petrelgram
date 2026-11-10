@@ -1,3 +1,4 @@
+import { showToast } from '../util/toast';
 import { executeChatListDelete } from '../services/ChatListDeletion';
 import { promptAction, UIContext } from '@kit.ArkUI';
 import { getActiveTdUserId, getChatStore, getFolderStore, getTdClient } from '../tdkit/Globals';
@@ -39,7 +40,7 @@ export const MUTE_OPTIONS: MuteOption[] = [
 
 function fail(what: string, e: TdError): void {
   logE(`ChatActions.${what} failed: ${e.message}`);
-  promptAction.showToast({ message: str('ca_action_failed_msg', e.message), duration: 2000 });
+  showToast(str('ca_action_failed_msg', e.message), 2000);
 }
 
 // TDLib 的 chat 级方法都要求该会话在当前运行期"已加载"，否则一律拒为
@@ -177,7 +178,7 @@ export async function setInFolder(folderId: number, chatId: number, include: boo
       const info = await client.send(edit);
       getFolderStore().applyServerFolderInfo(info);
     });
-    promptAction.showToast({ message: include ? str('ca_added_to_folder') : str('ca_removed_from_folder'), duration: 1500 });
+    showToast(include ? str('ca_added_to_folder') : str('ca_removed_from_folder'), 1500);
   } catch (e) {
     fail('setInFolder', e as TdError);
   }

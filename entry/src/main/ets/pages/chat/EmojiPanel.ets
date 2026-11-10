@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { sendPermissionMessage } from '../../store/SendPermissionApi';
 import { promptAction } from '@kit.ArkUI';
 import {
@@ -141,7 +142,7 @@ export struct EmojiPanel {
 
   private switchTab(idx: number): void {
     if (idx > 0 && !this.mediaAllowed) {
-      promptAction.showToast({ message: sendPermissionMessage('sendOtherMessages'), duration: 2500 });
+      showToast(sendPermissionMessage('sendOtherMessages'), 2500);
       return;
     }
     // 越界就什么也不做——滑到第一页再往右滑不该跳到 GIF。
@@ -153,7 +154,7 @@ export struct EmojiPanel {
     } else if (idx === 2) {
       this.gifMounted = true;
     }
-    animateTo({ duration: this.panelDuration(150), curve: Curve.EaseOut }, (): void => {
+    this.getUIContext().animateTo({ duration: this.panelDuration(150), curve: Curve.EaseOut }, (): void => {
       this.tab = idx;
       this.onTabChange(idx);
     });

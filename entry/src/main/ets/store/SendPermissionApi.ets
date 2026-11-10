@@ -1,3 +1,4 @@
+import { showToast } from '../util/toast';
 import { promptAction } from '@kit.ArkUI';
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
@@ -26,7 +27,7 @@ export function sendPermissionMessage(key: string): string {
 
 export function showSendPermissionError(error: Error): void {
   if (error instanceof SendPermissionError) {
-    promptAction.showToast({ message: error.message, duration: 2500 });
+    showToast(error.message, 2500);
   }
 }
 

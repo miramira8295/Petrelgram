@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { promptAction } from '@kit.ArkUI';
 import { formatPreview } from '../../util/formatPreview';
 import { getTdClient } from '../../tdkit/Globals';
@@ -94,7 +95,7 @@ export struct ScheduledSheet {
       this.load();
     }).catch((e: TdError): void => {
       logE(`ScheduledSheet.sendNow failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.send_failed_retry'), duration: 1700 });
+      showToast($r('app.string.send_failed_retry'), 1700);
     });
   }
 
@@ -107,7 +108,7 @@ export struct ScheduledSheet {
       this.load();
     }).catch((e: TdError): void => {
       logE(`ScheduledSheet.remove failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.delete_failed_retry_soon'), duration: 1700 });
+      showToast($r('app.string.delete_failed_retry_soon'), 1700);
     });
   }
 

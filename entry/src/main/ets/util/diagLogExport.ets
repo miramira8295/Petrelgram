@@ -1,3 +1,4 @@
+import { showToast } from '../util/toast';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
@@ -57,7 +58,7 @@ function currentEnvironment(): DiagEnvironment {
 export function exportDiagLog(context: common.UIAbilityContext, stamp: string): void {
   const body: string = diagLogText();
   if (body === '') {
-    promptAction.showToast({ message: str('diag_export_empty'), duration: 1800 });
+    showToast(str('diag_export_empty'), 1800);
     return;
   }
   // 抬头在最前面：用户把日志贴到 issue 里时往往只贴开头几屏。
@@ -73,7 +74,7 @@ export function exportDiagLog(context: common.UIAbilityContext, stamp: string): 
     fs.closeSync(file);
   } catch (e) {
     logE(`exportDiagLog write temp failed: ${e}`);
-    promptAction.showToast({ message: str('diag_export_failed'), duration: 2000 });
+    showToast(str('diag_export_failed'), 2000);
     return;
   }
   const docPicker = new picker.DocumentViewPicker(context);
@@ -90,15 +91,15 @@ export function exportDiagLog(context: common.UIAbilityContext, stamp: string): 
       fs.copyFileSync(src.fd, dst.fd);
       fs.closeSync(src);
       fs.closeSync(dst);
-      promptAction.showToast({ message: str('diag_export_done'), duration: 2000 });
+      showToast(str('diag_export_done'), 2000);
     } catch (e) {
       logE(`exportDiagLog copy failed: ${e}`);
-      promptAction.showToast({ message: str('diag_export_failed'), duration: 2000 });
+      showToast(str('diag_export_failed'), 2000);
     }
     cleanupTemp(tmpPath);
   }).catch((e: Object): void => {
     logE(`exportDiagLog picker failed: ${JSON.stringify(e)}`);
-    promptAction.showToast({ message: str('diag_export_failed'), duration: 2000 });
+    showToast(str('diag_export_failed'), 2000);
     cleanupTemp(tmpPath);
   });
 }

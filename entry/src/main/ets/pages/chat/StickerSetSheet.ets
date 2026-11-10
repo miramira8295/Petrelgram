@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { StickerPreviewHold } from './StickerPreviewHold';
 import { StickerPreviewDialog } from './StickerPreviewDialog';
 // 「这张贴纸是哪一包的」——点消息里的贴纸弹出来的合集面板。
@@ -132,14 +133,12 @@ export struct StickerSetSheet {
         id: this.info.id, title: this.info.title, name: this.info.name,
         installed: next, count: this.info.count
       };
-      promptAction.showToast({
-        message: next ? $r('app.string.ss_added') : $r('app.string.ss_removed'), duration: 1500
-      });
+      showToast(next ? $r('app.string.ss_added') : $r('app.string.ss_removed'), 1500);
     }).catch((e: TdError): void => {
       if (this.disposed) { return; }
       this.busy = false;
       logE(`StickerSetSheet.changeStickerSet failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.ss_action_failed'), duration: 1800 });
+      showToast($r('app.string.ss_action_failed'), 1800);
     });
   }
 

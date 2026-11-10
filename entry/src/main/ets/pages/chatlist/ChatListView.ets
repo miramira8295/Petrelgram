@@ -403,7 +403,7 @@ export struct ChatListView {
     }
     const structureChanged: boolean = !chatOrderUnchanged(this.chats, next);
     if (structureChanged && this.chats.length > 0) {
-      animateTo({
+      this.getUIContext().animateTo({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
         curve: Curve.EaseOut
       }, (): void => { this.publishChats(next); });

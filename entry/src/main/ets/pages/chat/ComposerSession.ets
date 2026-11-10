@@ -59,6 +59,8 @@
 // 官方规则：类中 @Monitor 的解注册依赖 GC，销毁时机不可靠。本簇的所有联动都
 // 用显式方法调用表达。
 
+import { closeContextMenu } from '../../util/uiContext';
+import { showToast } from '../../util/toast';
 import { promptAction } from '@kit.ArkUI';
 import { MessageEntry } from '../../store/MessageEntry';
 import { MessageStore } from '../../store/MessageStore';
@@ -207,7 +209,7 @@ export class ComposerSession {
     if (m === null) {
       return;
     }
-    ContextMenu.close();
+    closeContextMenu();
     this.host.closeReactionSheet();
     this.apply(enterReply(this.mode, messageId,
       m.senderName !== '' ? m.senderName : this.host.headerTitle(), this.replySnippet(m),
@@ -232,9 +234,7 @@ export class ComposerSession {
     // 也不静默丢掉用户刚挑好的九张图（对照 enterEdit 会清掉待回复——那里
     // 丢的只是一个引用）。
     if (hasPendingMedia(this.host.pendingMedia())) {
-      promptAction.showToast({
-        message: $r('app.string.cp_pending_media_blocks_edit'), duration: 2000
-      });
+      showToast($r('app.string.cp_pending_media_blocks_edit'), 2000);
       return;
     }
     const store = this.host.store();

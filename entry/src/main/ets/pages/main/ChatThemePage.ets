@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { getChatThemeStore } from '../../tdkit/Globals';
@@ -37,9 +38,9 @@ struct ChatThemePage {
 
   aboutToAppear(): void {
     this.active = true;
-    const params = router.getParams() as ThemePageParams | undefined;
+    const params = this.getUIContext().getRouter().getParams() as ThemePageParams | undefined;
     this.chatId = params?.chatId ?? 0;
-    const dark = darkResourceMode(getContext(this) as common.UIAbilityContext);
+    const dark = darkResourceMode(this.getUIContext().getHostContext() as common.UIAbilityContext);
     getChatThemeStore().ensureLoaded();
     this.off = getChatThemeStore().subscribe((themes: TdObject[]): void => {
       const rows: ChatThemePreview[] = [];
@@ -65,15 +66,12 @@ struct ChatThemePage {
     getChatThemeStore().setChatTheme(this.chatId, themeName).then((): void => {
       if (!this.active) { return; }
       this.applyingName = '';
-      promptAction.showToast({
-        message: themeName === '' ? $r('app.string.chat_theme_reset_done') : $r('app.string.chat_theme_set_done'),
-        duration: 1700
-      });
+      showToast(themeName === '' ? $r('app.string.chat_theme_reset_done') : $r('app.string.chat_theme_set_done'), 1700);
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.applyingName = '';
       logE(`ChatThemePage.apply failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.chat_theme_failed'), duration: 1800 });
+      showToast($r('app.string.chat_theme_failed'), 1800);
     });
   }
 
@@ -83,7 +81,7 @@ struct ChatThemePage {
       Button() {
         SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
       }.width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-      .onClick((): void => { router.back(); });
+      .onClick((): void => { this.getUIContext().getRouter().back(); });
       Text($r('app.string.chat_theme_title')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
         .layoutWeight(1);
       if (this.applyingName !== '') {

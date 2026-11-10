@@ -1,3 +1,4 @@
+import { showActionMenu, showDialog } from '../util/uiContext';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { TdClient } from '../tdkit/TdClient';
@@ -32,7 +33,7 @@ export async function showProfileStoryActions(context: common.UIAbilityContext, 
   }
   let index: number;
   try {
-    index = (await promptAction.showActionMenu({ buttons: buttons as [promptAction.Button,
+    index = (await showActionMenu({ buttons: buttons as [promptAction.Button,
       promptAction.Button?, promptAction.Button?, promptAction.Button?] })).index;
   } catch (_) { return; } // Dismissing the menu is not a request failure.
   if (!isCurrent()) { return; }
@@ -73,7 +74,7 @@ export async function showProfileStoryActions(context: common.UIAbilityContext, 
   if (action === 'delete') {
     let confirmed = false;
     try {
-      const confirmation = await promptAction.showDialog({
+      const confirmation = await showDialog({
         title: str('mm_story_delete'), message: str('mp_story_delete_confirm'),
         buttons: [{ text: str('cancel'), color: '#3390EC' }, { text: str('delete'), color: '#E64545' }]
       });

@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { SplitPanePlaceholder } from '../common/SplitPanePlaceholder';
 import { pageMarginVp } from '../../util/pageMargin';
 import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
@@ -527,7 +528,7 @@ export struct SettingsPage {
       return;
     }
     logE('SettingsPage.openAccountEditor failed: settings stack missing');
-    promptAction.showToast({ message: $r('app.string.settings_open_profile_failed'), duration: 1800 });
+    showToast($r('app.string.settings_open_profile_failed'), 1800);
     this.releaseAccountNavigation();
   }
 
@@ -568,7 +569,7 @@ export struct SettingsPage {
       return;
     }
     if (item.page === '') {
-      promptAction.showToast({ message: str('settings_not_supported', item.title), duration: 1500 });
+      showToast(str('settings_not_supported', item.title), 1500);
       return;
     }
     this.openingSettingPage = item.title;
@@ -584,9 +585,9 @@ export struct SettingsPage {
       this.pushSettingDestination(item, dest);
       return;
     }
-    router.pushUrl({ url: item.page }).catch((error: Error): void => {
+    this.getUIContext().getRouter().pushUrl({ url: item.page }).catch((error: Error): void => {
       logE(`SettingsPage.openSetting(${item.title}) failed: ${error.message}`);
-      promptAction.showToast({ message: str('settings_open_failed', item.title), duration: 1800 });
+      showToast(str('settings_open_failed', item.title), 1800);
       this.releaseSettingNavigation();
     });
   }
@@ -613,7 +614,7 @@ export struct SettingsPage {
       return;
     }
     logE(`SettingsPage.openSetting(${item.title}) failed: settings stack missing`);
-    promptAction.showToast({ message: str('settings_open_failed', item.title), duration: 1800 });
+    showToast(str('settings_open_failed', item.title), 1800);
     this.releaseSettingNavigation();
   }
 
@@ -703,7 +704,7 @@ export struct SettingsPage {
     switchAccountWithLiveWindow(slotId)
       .catch((caught: Error): void => {
         logE(`SettingsPage.switchAccount failed: ${caught.message}`);
-        promptAction.showToast({ message: str('settings_switch_failed'), duration: 1800 });
+        showToast(str('settings_switch_failed'), 1800);
         this.switchingSlotId = '';
         this.accountActionError = str('settings_switch_failed_network');
         this.accountActionRetry = 'switch';
@@ -720,7 +721,7 @@ export struct SettingsPage {
       .then((): Promise<void> => addTdAccount())
       .catch((caught: Error): void => {
         logE(`SettingsPage.addAccount failed: ${caught.message}`);
-        promptAction.showToast({ message: str('settings_add_account_failed'), duration: 1800 });
+        showToast(str('settings_add_account_failed'), 1800);
         this.switchingSlotId = '';
         this.accountActionError = str('settings_start_login_failed');
         this.accountActionRetry = 'add';
@@ -1106,7 +1107,7 @@ export struct SettingsPage {
   // 下次启动的自愈扫描会按磁盘把它捡回来。
   private confirmRemoveAccount(account: TdAccountSummary): void {
     const name: string = account.name !== '' ? account.name : str('settings_telegram_account');
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: str('ar_remove_account'),
       message: `${name}\n\n${str('ar_remove_account_sub')}`,
       buttons: [

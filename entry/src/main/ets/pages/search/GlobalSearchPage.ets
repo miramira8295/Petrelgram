@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { ShatterDeleteOverlay } from '../common/ShatterDeleteOverlay';
 import { SearchChannelPicker } from './SearchChannelPicker';
 import { messageScopeRequest, channelSearchCursor, messageMatch, MessageMatch, SEARCH_TAB_RECENT, searchTabForQuery } from '../../util/searchPresentation';
@@ -1062,7 +1063,7 @@ export struct GlobalSearchPage {
   // 还是 null**：官方生命周期写明「aboutToAppear 在 build() 执行之前调用」，
   // 而 navStack 是 build 里 NavDestination.onReady() 才交过来的。
   // 78026c9 把搜索页从 router.pushUrl 改成 tab 栈的 pushPath 之后，这里就只剩
-  // router.getParams() 那条兜底——它读的是 router 的参数，pushPath 根本不往那儿
+  // this.getUIContext().getRouter().getParams() 那条兜底——它读的是 router 的参数，pushPath 根本不往那儿
   // 放，于是 `#话题标签` 跳进来关键词丢了、进页面不自动搜（1.4.3 起，用户报
   // 「点击搜索标签，跳转到搜索页面不会自动搜索了」）。
   // 中间这条从全局注册表取同一个栈：它在 pushPath 之前就注册好了，拿得到。
@@ -1081,17 +1082,17 @@ export struct GlobalSearchPage {
       }
     }
     // 整页路由那条路（stackOf('chat') 还没注册时 searchNav 会退回 pushUrl）。
-    return router.getParams() as Record<string, Object> | undefined;
+    return this.getUIContext().getRouter().getParams() as Record<string, Object> | undefined;
   }
 
-  // 关闭自己：栈里就弹一层，退回整页路由的那种情况才用 router.back()。
+  // 关闭自己：栈里就弹一层，退回整页路由的那种情况才用 this.getUIContext().getRouter().back()。
   private closeSelf(): void {
     const stack: NavPathStack | null = this.navStack;
     if (stack !== null) {
       stack.pop(true);
       return;
     }
-    router.back();
+    this.getUIContext().getRouter().back();
   }
 
   private resetResultOpening(): void {
@@ -1221,7 +1222,7 @@ export struct GlobalSearchPage {
       return;
     }
     this.clearRecentDialogOpen = true;
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.gs_clear_recent'),
       message: $r('app.string.gs_clear_recent_confirm'),
       buttons: [
@@ -1242,7 +1243,7 @@ export struct GlobalSearchPage {
     const store = this.store;
     if (store === null || this.clearOpenedDialogOpen || this.resolvedRecentlyOpened().length === 0) { return; }
     this.clearOpenedDialogOpen = true;
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.gs_clear_opened'),
       message: $r('app.string.gs_clear_opened_confirm'),
       buttons: [
@@ -1254,7 +1255,7 @@ export struct GlobalSearchPage {
       this.clearOpenedDialogOpen = false;
       if (result.index === 1) {
         try { store.clearOpened(); }
-        catch (_error) { promptAction.showToast({ message: $r('app.string.gs_clear_failed'), duration: 1800 }); }
+        catch (_error) { showToast($r('app.string.gs_clear_failed'), 1800); }
       }
     }).catch((): void => {
       if (this.store === store) { this.clearOpenedDialogOpen = false; }
@@ -1287,7 +1288,7 @@ export struct GlobalSearchPage {
       }).catch((): void => {
         if (this.store === store) {
           this.deletingRecentKey = '';
-          promptAction.showToast({ message: $r('app.string.gs_clear_failed'), duration: 1800 });
+          showToast($r('app.string.gs_clear_failed'), 1800);
         }
       });
     });
@@ -1300,7 +1301,7 @@ export struct GlobalSearchPage {
       try { store.removeOpened(chatId); }
       catch (_error) {
         if (this.store === store) {
-          promptAction.showToast({ message: $r('app.string.gs_clear_failed'), duration: 1800 });
+          showToast($r('app.string.gs_clear_failed'), 1800);
         }
       } finally {
         if (this.store === store) { this.deletingRecentKey = ''; }
@@ -1317,7 +1318,7 @@ export struct GlobalSearchPage {
       this.clearingRecent = false;
     }).catch((): void => {
       this.clearingRecent = false;
-      promptAction.showToast({ message: $r('app.string.gs_clear_failed'), duration: 1800 });
+      showToast($r('app.string.gs_clear_failed'), 1800);
     });
   }
 

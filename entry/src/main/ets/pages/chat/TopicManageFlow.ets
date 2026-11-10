@@ -1,3 +1,5 @@
+import { showDialog } from '../../util/uiContext';
+import { showToast } from '../../util/toast';
 import { ComponentContent, promptAction, UIContext } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
@@ -132,7 +134,7 @@ export function createTopicFlow(ui: UIContext, chatId: number): Promise<CreatedT
       return threadId > 0 ? { threadId: threadId, name: trimmed } : null;
     }).catch((e: TdError): CreatedTopic | null => {
       logE(`TopicManageFlow.createForumTopic failed: ${e.message}`);
-      promptAction.showToast({ message: str('ga_failed'), duration: 2000 });
+      showToast(str('ga_failed'), 2000);
       return null;
     });
   });
@@ -144,7 +146,7 @@ export function deleteTopicFlow(chatId: number, row: ForumTopicRow): Promise<boo
   if (row.isGeneral || req === null) {
     return Promise.resolve(false);
   }
-  return promptAction.showDialog({
+  return showDialog({
     title: str('ft_delete_topic'),
     message: str('ft_delete_confirm', row.name),
     buttons: [
@@ -157,7 +159,7 @@ export function deleteTopicFlow(chatId: number, row: ForumTopicRow): Promise<boo
     }
     return getTdClient().send(req).then((): boolean => true).catch((e: TdError): boolean => {
       logE(`TopicManageFlow.deleteForumTopic failed: ${e.message}`);
-      promptAction.showToast({ message: str('delete_failed'), duration: 2000 });
+      showToast(str('delete_failed'), 2000);
       return false;
     });
   }).catch((): boolean => false);

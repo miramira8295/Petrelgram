@@ -37,7 +37,7 @@ struct StoryViewerPage {
 
   aboutToAppear(): void {
     this.active = true;
-    const params = router.getParams() as Record<string, Object> | undefined;
+    const params = this.getUIContext().getRouter().getParams() as Record<string, Object> | undefined;
     const chatId: number = params !== undefined
       ? ((params['chatId'] as number | undefined) ?? 0) : 0;
     const ids = params !== undefined ? params['storyIds'] as number[] | undefined : undefined;
@@ -75,7 +75,7 @@ struct StoryViewerPage {
       if (initial) {
         this.loadFailed = true;
       } else {
-        router.back();
+        this.getUIContext().getRouter().back();
       }
       return;
     }
@@ -95,7 +95,7 @@ struct StoryViewerPage {
   private loadCurrent(): void {
     const storyId: number = this.currentStoryId();
     if (storyId === 0) {
-      router.back();
+      this.getUIContext().getRouter().back();
       return;
     }
     const seq: number = ++this.loadSeq;
@@ -262,7 +262,7 @@ struct StoryViewerPage {
       return;
     }
     if (this.profileSequence) {
-      router.back();
+      this.getUIContext().getRouter().back();
       return;
     }
     const ring: StoryRingEntry[] = getStoryStore().entries();
@@ -273,7 +273,7 @@ struct StoryViewerPage {
       this.enterChat(ring[neighbor].chatId, false);
       return;
     }
-    router.back();
+    this.getUIContext().getRouter().back();
   }
 
   @Builder
@@ -320,7 +320,7 @@ struct StoryViewerPage {
       if (this.loadFailed) {
         Column({ space: 10 }) {
           Text($r('app.string.story_unavailable')).fontSize(14).fontColor('#B8C4CF');
-          Button($r('app.string.close')).onClick((): void => router.back());
+          Button($r('app.string.close')).onClick((): void => this.getUIContext().getRouter().back());
         }
         .width('100%').height('100%').justifyContent(FlexAlign.Center);
       }
@@ -353,7 +353,7 @@ struct StoryViewerPage {
           .width(38).height(38).borderRadius(19)
           .justifyContent(FlexAlign.Center)
           .backgroundColor('#33000000')
-          .onClick((): void => router.back());
+          .onClick((): void => this.getUIContext().getRouter().back());
         }
         .width('100%');
       }

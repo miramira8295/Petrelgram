@@ -21,7 +21,7 @@ export function ArchivePageBuilder(): void {
 @Component
 export struct ArchivePage {
   // 本页所在的 Navigation 栈，onReady 时拿到。返回按钮要靠它出栈——迁成
-  // NavDestination 之后 router.back() 弹的是 router 页栈，而本页已经不是
+  // NavDestination 之后 this.getUIContext().getRouter().back() 弹的是 router 页栈，而本页已经不是
   // router 页了，弹不到自己。
   private navStack: NavPathStack | undefined = undefined;
   private readonly chatDestToken: number = allocChatDestToken();
@@ -79,14 +79,14 @@ export struct ArchivePage {
     }
   }
 
-  // 返回上一层。**不能用 router.back()**：本页是 HdsNavDestination，router 页栈里
-  // 只剩 Index 一层，router.back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
+  // 返回上一层。**不能用 this.getUIContext().getRouter().back()**：本页是 HdsNavDestination，router 页栈里
+  // 只剩 Index 一层，this.getUIContext().getRouter().back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
   // 的现象是「点返回箭头直接退到桌面」。要出的是 Navigation 栈。
   private goBack(): void {
     const stack = this.navStack;
     if (stack === undefined) {
       // navStack 由 onReady(ctx.pathStack) 填，而 onReady 必先于本页可见，所以
-      // 这一支不该发生。这里**故意不回退到 router.back()**：那正是会退出应用的
+      // 这一支不该发生。这里**故意不回退到 this.getUIContext().getRouter().back()**：那正是会退出应用的
       // 那条路，把返回键做成"什么都不做 + 一条日志"远比把应用关掉好。
       logE('ArchivePage.goBack: navStack missing, back ignored');
       return;

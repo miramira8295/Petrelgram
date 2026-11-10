@@ -52,7 +52,7 @@ export struct ExpandableText {
             .fontWeight(r.bold ? FontWeight.Bold : FontWeight.Normal)
             .onClick((): void => {
               if (r.link && r.url !== '') {
-                openTelegramLink(getContext(this) as common.UIAbilityContext, r.url);
+                openTelegramLink(this.getUIContext().getHostContext() as common.UIAbilityContext, r.url);
               }
             });
         }, (r: RichRun, i: number) => `${i}_${r.text}`);
@@ -74,7 +74,7 @@ export struct ExpandableText {
           .backgroundColor($r('app.color.surface'))
           .padding({ left: 8, top: 2 })
           .onClick(() => {
-            animateTo({
+            this.getUIContext().animateTo({
               duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 250), curve: Curve.EaseInOut
             }, () => {
               this.expanded = !this.expanded;

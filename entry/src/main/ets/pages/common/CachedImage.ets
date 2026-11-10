@@ -79,7 +79,7 @@ export struct CachedImage {
         // （Saved Messages、动态头像）本来就是 borderRadius + clip(true) 成对写的，
         // 只有走 PixelMap 缓存这一支漏了，而绝大多数头像恰恰走这一支。
         .clip(true)
-        // 解码目标尺寸按 vp2px(box) 给，正常是 1:1 不缩放；但 DPR 取整、以及
+        // 解码目标尺寸按 this.getUIContext().vp2px(box) 给，正常是 1:1 不缩放；但 DPR 取整、以及
         // 复用缓存里尺寸相近的那张时仍会有轻微缩放，此时默认的插值会更糙。
         .interpolation(ImageInterpolation.High)
         .objectFit(this.fit);

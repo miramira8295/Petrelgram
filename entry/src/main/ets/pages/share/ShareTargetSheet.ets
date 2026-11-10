@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { sharedSendPermissions } from '../../util/sendPermissions';
 import { TargetSendFilter } from '../../services/TargetSendFilter';
@@ -369,21 +370,16 @@ export struct ShareTargetSheet {
       this.sending = false;
       if (result.failed === 0) {
         clearPendingShareIf(payload);
-        promptAction.showToast({
-          message: str('fw_sent_to_n', result.ok), duration: 1800
-        });
+        showToast(str('fw_sent_to_n', result.ok), 1800);
         this.onCancel();
         return;
       }
       logE(`ShareTargetSheet.fanout failed for ${result.failedIds.join(',')}`);
       let uncertain: boolean = false;
       this.progress.forEach((progress: SendProgress): void => { uncertain = uncertain || progress.hasUncertain(); });
-      promptAction.showToast({
-        message: uncertain ? str('share_result_unknown') : result.ok === 0
+      showToast(uncertain ? str('share_result_unknown') : result.ok === 0
           ? str('fw_sent_none')
-          : str('fw_sent_partial', result.ok, result.failed),
-        duration: 2400
-      });
+          : str('fw_sent_partial', result.ok, result.failed), 2400);
     });
   }
 

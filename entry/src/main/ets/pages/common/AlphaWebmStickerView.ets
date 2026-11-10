@@ -492,7 +492,7 @@ export struct AlphaWebmStickerView {
     const path: string = this.webmPath;
     // 显示尺寸决定解码尺寸：聊天气泡里的贴纸和面板里的小格差着一个数量级，
     // 一律按原生 512 解码就是白烧内存。
-    const boxPx = Math.max(vp2px(this.boxWidth), vp2px(this.boxHeight));
+    const boxPx = Math.max(this.getUIContext().vp2px(this.boxWidth), this.getUIContext().vp2px(this.boxHeight));
     const result: AlphaAcquireResult =
       await acquireAlphaSticker(path, boxPx, alphaStickerHighBudget(this.powerCategory), this.stickerUid);
     const clip: AlphaClip | null = result.clip;

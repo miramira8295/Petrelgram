@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { syncTdLanguage, tdLanguageGeneration } from '../../services/TdLanguage';
 import { reportDisplayText } from '../../util/reportLabels';
@@ -219,7 +220,7 @@ class ReportPromptsUi implements ReportFlowUi {
     return this.current() ? askReportText(this.ui) : Promise.resolve(null);
   }
   toast(key: string): void {
-    promptAction.showToast({ message: str(key), duration: 1800 });
+    showToast(str(key), 1800);
   }
 }
 

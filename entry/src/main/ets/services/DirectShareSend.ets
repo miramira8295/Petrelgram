@@ -1,3 +1,4 @@
+import { showToast } from '../util/toast';
 import { SendPermissionError } from '../store/SendPermissionApi';
 import { promptAction } from '@kit.ArkUI';
 import { ShareArrivalHost, sendShareDirectly, remainingDirectShare, applyShareArrival } from '../util/shareArrival';
@@ -18,10 +19,10 @@ export async function sendDirectShareWithRecovery(upgraded: UpgradedShare, host:
     logE(`Direct share failed: ${error}`);
     if (!current()) { return false; }
     if (progress.hasUncertain()) {
-      promptAction.showToast({ message: $r('app.string.share_result_unknown'), duration: 3000 });
+      showToast($r('app.string.share_result_unknown'), 3000);
       return false;
     }
-    promptAction.showToast({ message: error instanceof SendPermissionError ? error.message : $r('app.string.fw_failed'), duration: 2000 });
+    showToast(error instanceof SendPermissionError ? error.message : $r('app.string.fw_failed'), 2000);
     // 另一份分享已经到达时，旧失败任务不能覆盖它。
     if (peekPendingShare() === null) {
       stashPendingShare(remainingDirectShare(upgraded.payload, progress));
@@ -43,8 +44,7 @@ export async function stageShareWithPermissions(upgraded: UpgradedShare, host: S
     applyShareArrival(upgraded.payload, host, alreadyStaged, upgraded.geometry);
   } catch (error) {
     if (!active() || pendingShareGeneration() !== generation) { return; }
-    promptAction.showToast({ message: error instanceof SendPermissionError ? error.message : $r('app.string.fw_failed'),
-      duration: 2500 });
+    showToast(error instanceof SendPermissionError ? error.message : $r('app.string.fw_failed'), 2500);
     if (peekPendingShare() === null) { stashPendingShare(upgraded.payload); }
   }
 }

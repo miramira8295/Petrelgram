@@ -1,3 +1,4 @@
+import { showToast } from '../util/toast';
 import { directShareSteps } from './directSharePlan';
 import { SendProgress } from './sendProgress';
 import { SharedItem } from './sharedContent';
@@ -89,9 +90,9 @@ export function applyShareArrival(payload: SharedPayload, host: ShareArrivalHost
   }
 
   if (plan.dropped > 0) {
-    promptAction.showToast({ message: $r('app.string.cp_pending_media_full'), duration: 2000 });
+    showToast($r('app.string.cp_pending_media_full'), 2000);
   } else if (plan.staged.length > 0) {
-    promptAction.showToast({ message: $r('app.string.share_staged'), duration: 2000 });
+    showToast($r('app.string.share_staged'), 2000);
   }
   return plan.staged.length > 0 || hasDirectSend(plan) || plan.draft !== '';
 }
@@ -146,7 +147,7 @@ export async function sendShareDirectly(payload: SharedPayload, host: ShareArriv
 
 function reportShareError(error: Object): void {
   logE(`Share arrival failed: ${error}`);
-  promptAction.showToast({ message: $r('app.string.fw_failed'), duration: 2000 });
+  showToast($r('app.string.fw_failed'), 2000);
 }
 
 // 已确认成功的步骤不再交给用户重试；说明文字也不能再跟第二批重复发送。

@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import {
   NetworkUsage, NetworkBreakdown, formatBytes, formatDuration,
@@ -80,7 +81,7 @@ struct NetworkUsagePage {
 
   private reset(): void {
     if (this.resetting) { return; }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.network_reset'), message: $r('app.string.network_reset_confirm'),
       buttons: [
         { text: $r('app.string.cancel'), color: COLOR_TEXT_SECONDARY as string },
@@ -91,12 +92,12 @@ struct NetworkUsagePage {
       this.resetting = true;
       resetNetworkUsage().then((): void => {
         this.resetting = false;
-        promptAction.showToast({ message: $r('app.string.network_reset_done'), duration: 1500 });
+        showToast($r('app.string.network_reset_done'), 1500);
         this.load(false);
       }).catch((error: TdError): void => {
         this.resetting = false;
         logE(`NetworkUsagePage.reset failed: ${error.message}`);
-        promptAction.showToast({ message: $r('app.string.reset_failed_retry'), duration: 1700 });
+        showToast($r('app.string.reset_failed_retry'), 1700);
         this.load(false);
       });
     });
@@ -114,7 +115,7 @@ struct NetworkUsagePage {
       Row() { SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(25).fontColor([COLOR_TEXT_PRIMARY]); }
       .width(44).height(44).borderRadius(22).justifyContent(FlexAlign.Center)
       .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
-      .onClick((): void => router.back());
+      .onClick((): void => this.getUIContext().getRouter().back());
       Text($r('app.string.network_title')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
         .layoutWeight(1);
       Row() {

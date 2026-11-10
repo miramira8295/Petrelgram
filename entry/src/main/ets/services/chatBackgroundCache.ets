@@ -1,3 +1,4 @@
+import { showToast } from '../util/toast';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { MessageEntry } from '../store/MessageEntry';
@@ -12,10 +13,7 @@ import { logW } from '../util/log';
 export function cacheMessagesInBackground(context: common.UIAbilityContext, messages: MessageEntry[], ids: number[],
   chatId: number): void {
   startAll(context, messages, ids, chatId).then((started: number): void => {
-    promptAction.showToast({
-      message: started > 0 ? str('cp_background_cache_started', started) : str('cp_nothing_to_cache'),
-      duration: 1800
-    });
+    showToast(started > 0 ? str('cp_background_cache_started', started) : str('cp_nothing_to_cache'), 1800);
   });
 }
 

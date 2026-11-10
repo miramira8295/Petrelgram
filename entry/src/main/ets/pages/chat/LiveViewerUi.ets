@@ -1,3 +1,4 @@
+import { showDialog } from '../../util/uiContext';
 import { AWAKE_OWNER_LIVE, requestScreenAwake, screenAwakeApplyFailed } from '../../util/screenAwake';
 import { SYSTEM_BARS_OWNER_LIVE } from '../../util/systemBarsHidden';
 import { applySystemBarsHiddenOn } from '../../util/systemBarsWindow';
@@ -52,7 +53,7 @@ function applyLandscapeMultiWindow(mainWindow: window.Window, owner: string, on:
 export function confirmLeaveLiveStream(
   onConfirm: () => void, onDismiss: () => void = (): void => {}
 ): void {
-  promptAction.showDialog({
+  showDialog({
     title: $r('app.string.lv_leave_title'),
     message: $r('app.string.lv_leave_body'),
     buttons: [
@@ -68,7 +69,7 @@ export function confirmLeaveLiveStream(
 export function confirmAdminLeaveLiveStream(
   onLeave: () => void, onEnd: () => void, onDismiss: () => void = (): void => {}
 ): void {
-  promptAction.showDialog({
+  showDialog({
     title: $r('app.string.lv_manage'),
     message: $r('app.string.lv_manage_body'),
     buttons: [

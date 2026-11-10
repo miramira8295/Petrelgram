@@ -47,7 +47,7 @@ export struct AvatarViewer {
     this.saving = true;
     try {
       // 资料页传入的是已下载头像的本地路径，沿用媒体查看器的系统相册确认流程。
-      await saveMediaToGallery(getContext(this) as common.UIAbilityContext, this.imagePath, false);
+      await saveMediaToGallery(this.getUIContext().getHostContext() as common.UIAbilityContext, this.imagePath, false);
     } finally {
       this.saving = false;
     }

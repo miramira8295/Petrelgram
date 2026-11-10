@@ -1,3 +1,5 @@
+import { showDialog } from '../util/uiContext';
+import { showToast } from '../util/toast';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { scanBarcode, scanCore } from '@kit.ScanKit';
@@ -33,7 +35,7 @@ export class TelegramQrScanner {
         current,
         send: (request: TdRequest): Promise<TdObject> => client.send(request, 15000),
         confirmLogin: async (): Promise<boolean> => {
-          const answer = await promptAction.showDialog({
+          const answer = await showDialog({
             title: str('qr_login_title'), message: str('qr_login_body'),
             buttons: [{ text: str('cancel'), color: '#808080' },
               { text: str('qr_login_confirm'), color: '#2481CC' }]
@@ -60,6 +62,6 @@ export class TelegramQrScanner {
   }
 
   private toast(message: string): void {
-    promptAction.showToast({ message, duration: 2200 });
+    showToast(message, 2200);
   }
 }

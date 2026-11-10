@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { QrDialog } from '../common/QrDialog';
 import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
@@ -119,13 +120,13 @@ export function ChatProfilePageBuilder(): void {
 @Component
 export struct ChatProfilePage {
   // 本页所在的 Navigation 栈，onReady 时拿到。返回按钮靠它出栈——本页已不是
-  // router 页，router.back() 弹不到自己。
+  // router 页，this.getUIContext().getRouter().back() 弹不到自己。
   private navStack: NavPathStack | undefined = undefined;
   private readonly chatDestToken: number = allocChatDestToken();
   // 顶/底虚化四件套：半径随滚动量渐入，静止时 0（头图在列表里，常开会糊头像）。
   @State private listViewH: number = 0;
   @State private blurRadius: number = 0;
-  // 路由参数。router 时代靠 router.getParams() 现取，NavDestination 要在
+  // 路由参数。router 时代靠 this.getUIContext().getRouter().getParams() 现取，NavDestination 要在
   // onReady 里从 NavDestinationContext 拿，而 onReady 实测晚于 aboutToAppear
   // （平板 API 26，见 ChatPage 的同名注释），所以吃参数的那一段整体挪进了
   // applyRouteParams()。
@@ -290,14 +291,14 @@ export struct ChatProfilePage {
     }
   }
 
-  // 返回上一层。**不能用 router.back()**：本页是 HdsNavDestination，router 页栈里
-  // 只剩 Index 一层，router.back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
+  // 返回上一层。**不能用 this.getUIContext().getRouter().back()**：本页是 HdsNavDestination，router 页栈里
+  // 只剩 Index 一层，this.getUIContext().getRouter().back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
   // 的现象是「点返回箭头直接退到桌面」。要出的是 Navigation 栈。
   private goBack(): void {
     const stack = this.navStack;
     if (stack === undefined) {
       // navStack 由 onReady(ctx.pathStack) 填，而 onReady 必先于本页可见，所以
-      // 这一支不该发生。这里**故意不回退到 router.back()**：那正是会退出应用的
+      // 这一支不该发生。这里**故意不回退到 this.getUIContext().getRouter().back()**：那正是会退出应用的
       // 那条路，把返回键做成"什么都不做 + 一条日志"远比把应用关掉好。
       logE('ChatProfilePage.goBack: navStack missing, back ignored');
       return;
@@ -339,7 +340,7 @@ export struct ChatProfilePage {
   private qrOpen: boolean = false;
   private qrCtrl: CustomDialogController = new CustomDialogController({
     builder: QrDialog({ chatId: this.chatId, title: this.title,
-      onScan: (): void => { this.qrScanner.start(getContext(this) as common.UIAbilityContext); },
+      onScan: (): void => { this.qrScanner.start(this.getUIContext().getHostContext() as common.UIAbilityContext); },
       onClosed: (): void => { this.qrOpen = false; } }),
     customStyle: true,
     alignment: DialogAlignment.Center, autoCancel: true
@@ -479,7 +480,7 @@ export struct ChatProfilePage {
 
 
   private leaveCurrentChat(): void {
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: this.isChannel ? $r('app.string.cp_leave_channel') : $r('app.string.cp_leave_group'),
       message: str('cp_leave_confirm', this.title),
       buttons: [
@@ -489,11 +490,11 @@ export struct ChatProfilePage {
     }).then((result): void => {
       if (result.index !== 1) { return; }
       leaveChatFully(this.chatId).then((): void => {
-        promptAction.showToast({ message: $r('app.string.cpp_left'), duration: 1500 });
+        showToast($r('app.string.cpp_left'), 1500);
         this.goBack();
       }).catch((error: TdError): void => {
         logE(`ChatProfilePage.leave failed: ${error.message}`);
-        promptAction.showToast({ message: $r('app.string.cpp_leave_failed'), duration: 1800 });
+        showToast($r('app.string.cpp_leave_failed'), 1800);
       });
     }).catch((): void => {});
   }
@@ -505,7 +506,7 @@ export struct ChatProfilePage {
       const level = (status['level'] as number | undefined) ?? 0;
       const count = (status['boost_count'] as number | undefined) ?? 0;
       const next = (status['next_level_boost_count'] as number | undefined) ?? 0;
-      promptAction.showDialog({
+      this.getUIContext().getPromptAction().showDialog({
         title: $r('app.string.cpp_boost_channel'),
         message: str('cpp_boost_level', level, count) +
           (next > 0 ? str('cpp_boost_needed', Math.max(0, next - count)) : ''),
@@ -519,7 +520,7 @@ export struct ChatProfilePage {
       }).catch((): void => {});
     }).catch((error: TdError): void => {
       logE(`ChatProfilePage.boostStatus failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.cpp_boost_info_failed'), duration: 1700 });
+      showToast($r('app.string.cpp_boost_info_failed'), 1700);
     });
   }
 
@@ -530,23 +531,21 @@ export struct ChatProfilePage {
         const usable = list.find((slot: TdObject): boolean =>
           ((slot['currently_boosted_chat_id'] as number | undefined) ?? 0) !== this.chatId);
         if (usable === undefined) {
-          promptAction.showToast({
-            message: $r('app.string.cpp_no_boost_slots'), duration: 2200
-          });
+          showToast($r('app.string.cpp_no_boost_slots'), 2200);
           return;
         }
         const req: TdRequest = { '@type': 'boostChat' };
         req['chat_id'] = this.chatId;
         req['slot_ids'] = [(usable['slot_id'] as number | undefined) ?? 0];
         getTdClient().send(req).then((): void => {
-          promptAction.showToast({ message: $r('app.string.cpp_boosted'), duration: 1600 });
+          showToast($r('app.string.cpp_boosted'), 1600);
         }).catch((error: TdError): void => {
           logE(`ChatProfilePage.boost failed: ${error.message}`);
-          promptAction.showToast({ message: $r('app.string.cpp_boost_failed'), duration: 1800 });
+          showToast($r('app.string.cpp_boost_failed'), 1800);
         });
       }).catch((error: TdError): void => {
         logE(`ChatProfilePage.boostSlots failed: ${error.message}`);
-        promptAction.showToast({ message: $r('app.string.cpp_boost_slots_failed'), duration: 1700 });
+        showToast($r('app.string.cpp_boost_slots_failed'), 1700);
       });
   }
 
@@ -624,7 +623,7 @@ export struct ChatProfilePage {
               (chatId: number): void => { this.chatId = chatId; this.startStore(); });
             this.inviteJoinResolver.start();
           }
-          promptAction.showToast({ message: $r('app.string.cpp_join_requested'), duration: 1800 });
+          showToast($r('app.string.cpp_join_requested'), 1800);
         }
         return;
       }
@@ -632,10 +631,7 @@ export struct ChatProfilePage {
       this.joinRequestSent = false;
       this.membershipState = 'writable';
       this.justJoined = true;
-      promptAction.showToast({
-        message: this.isChannel ? $r('app.string.cpp_joined_channel') : $r('app.string.cpp_joined_group'),
-        duration: 1500
-      });
+      showToast(this.isChannel ? $r('app.string.cpp_joined_channel') : $r('app.string.cpp_joined_group'), 1500);
       if (this.chatId !== 0 && this.store === null) {
         this.startStore();
       }
@@ -643,7 +639,7 @@ export struct ChatProfilePage {
       if (seq !== this.joinSeq) { return; }
       this.joining = false;
       logE(`ChatProfilePage.join failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.cpp_join_failed'), duration: 1800 });
+      showToast($r('app.string.cpp_join_failed'), 1800);
     });
   }
 
@@ -678,7 +674,7 @@ export struct ChatProfilePage {
     this.isMuted = willMute;
     pending.then((success: boolean): void => {
       if (success) {
-        promptAction.showToast({ message: willMute ? $r('app.string.cl_muted') : $r('app.string.cpp_unmuted'), duration: 1500 });
+        showToast(willMute ? $r('app.string.cl_muted') : $r('app.string.cpp_unmuted'), 1500);
       } else {
         this.isMuted = !willMute;
       }
@@ -688,7 +684,7 @@ export struct ChatProfilePage {
   private openMemberProfile(userId: number): void {
     // fromChatId：机器人的主小程序要在「当前这个群」里打开（#201 第 2 条，util/botMainApp）。
     const params: Record<string, Object> = { 'userId': userId, 'fromChatId': this.chatId };
-    // 曾经是 router.pushUrl('pages/profile/ProfilePage')——ProfilePage 迁成
+    // 曾经是 this.getUIContext().getRouter().pushUrl('pages/profile/ProfilePage')——ProfilePage 迁成
     // HdsNavDestination 并从 main_pages.json 摘出后，整页路由已经跳不动，统一
     // 走 navigateToProfile 这个唯一漏斗。
     navigateToProfile(params);
@@ -753,7 +749,7 @@ export struct ChatProfilePage {
     if (index < 0 || index >= tabs.length || index === this.selectedTab) {
       return;
     }
-    animateTo({
+    this.getUIContext().animateTo({
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
       curve: Curve.EaseOut
     }, (): void => {
@@ -797,11 +793,11 @@ export struct ChatProfilePage {
   // 列表里直接下载 / 打开，不用先跳回聊天记录（issue #102）。
   private onContentFileAction(item: ProfileContentItem): void {
     if (item.filePath !== '') {
-      openLocalFile(getContext(this) as common.UIAbilityContext, item.filePath,
+      openLocalFile(this.getUIContext().getHostContext() as common.UIAbilityContext, item.filePath,
         fileOpenMimeType(item.title, item.mimeType))
         .then((ok: boolean): void => {
           if (!ok) {
-            promptAction.showToast({ message: $r('app.string.cp_file_open_failed'), duration: 1800 });
+            showToast($r('app.string.cp_file_open_failed'), 1800);
           }
         })
         .catch((e: Object): void => { logE(`ChatProfilePage.openLocalFile failed: ${e}`); });
@@ -859,7 +855,7 @@ export struct ChatProfilePage {
       'groupCallId': groupCallId,
       'chatId': this.chatId
     };
-    router.pushUrl({
+    this.getUIContext().getRouter().pushUrl({
       url: isRtmpStream
         ? 'pages/chat/RtmpLiveStreamViewerPage'
         : 'pages/chat/LiveStreamViewerPage',
@@ -882,14 +878,14 @@ export struct ChatProfilePage {
         active = (groupCall['is_active'] as boolean | undefined) ?? false;
       }
       if (!active) {
-        promptAction.showToast({ message: $r('app.string.cpp_live_not_active'), duration: 1600 });
+        showToast($r('app.string.cpp_live_not_active'), 1600);
         return;
       }
       const isRtmp = (groupCall['is_rtmp_stream'] as boolean | undefined) ?? false;
       this.openLiveViewer(groupCallId, isRtmp);
     } catch (caught) {
       const error = caught as TdError;
-      promptAction.showToast({ message: str('cpp_join_live_failed', error.message), duration: 1800 });
+      showToast(str('cpp_join_live_failed', error.message), 1800);
     } finally {
       this.creatingLive = false;
     }
@@ -900,7 +896,7 @@ export struct ChatProfilePage {
     // A live call already exists: admins can either join it or end it for
     // everyone (endGroupCall), which plain "leave" never does.
     if (this.liveGroupCallId > 0) {
-      promptAction.showActionMenu({
+      this.getUIContext().getPromptAction().showActionMenu({
         title: $r('app.string.cp_live_in_progress'),
         buttons: [
           { text: $r('app.string.cp_live_join'), color: '#3390EC' },
@@ -915,7 +911,7 @@ export struct ChatProfilePage {
       }).catch((): void => {});
       return;
     }
-    promptAction.showActionMenu({
+    this.getUIContext().getPromptAction().showActionMenu({
       title: $r('app.string.cpp_start_live'),
       buttons: [
         { text: $r('app.string.cpp_group_live'), color: '#3390EC' },
@@ -933,7 +929,7 @@ export struct ChatProfilePage {
   private confirmEndLive(): void {
     const groupCallId = this.liveGroupCallId;
     if (groupCallId <= 0) { return; }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.lv_end'),
       message: $r('app.string.cpp_end_live_body'),
       buttons: [
@@ -944,10 +940,10 @@ export struct ChatProfilePage {
       if (result.index !== 1) { return; }
       endGroupCall(getTdClient(), groupCallId).then((): void => {
         this.liveGroupCallId = 0;
-        promptAction.showToast({ message: $r('app.string.lfw_ended'), duration: 1500 });
+        showToast($r('app.string.lfw_ended'), 1500);
       }).catch((error: TdError): void => {
         logE(`ChatProfilePage.endLive failed: ${error.message}`);
-        promptAction.showToast({ message: $r('app.string.cpp_end_live_failed'), duration: 1700 });
+        showToast($r('app.string.cpp_end_live_failed'), 1700);
       });
     }).catch((): void => {});
   }
@@ -964,7 +960,7 @@ export struct ChatProfilePage {
       this.openLiveViewer(groupCallId, isRtmpStream);
     } catch (caught) {
       const error = caught as Error;
-      promptAction.showToast({ message: str('cpp_start_live_failed', error.message), duration: 2000 });
+      showToast(str('cpp_start_live_failed', error.message), 2000);
     } finally {
       this.creatingLive = false;
     }
@@ -1190,7 +1186,7 @@ export struct ChatProfilePage {
           if (!this.isChannel) {
             this.actionButton('sys.symbol.paintpalette', str('chat_theme_title'), () => {
               const params: Record<string, Object> = { 'chatId': this.chatId };
-              router.pushUrl({ url: 'pages/main/ChatThemePage', params })
+              this.getUIContext().getRouter().pushUrl({ url: 'pages/main/ChatThemePage', params })
                 .catch((error: Error): void => {
                   logE(`ChatProfilePage.openTheme failed: ${error.message}`);
                 });
@@ -1200,7 +1196,7 @@ export struct ChatProfilePage {
           if (this.canManageChat) {
             this.actionButton('sys.symbol.gearshape', str('lv_manage_short'), () => {
               const params: Record<string, Object> = { 'chatId': this.chatId };
-              router.pushUrl({ url: 'pages/main/GroupAdminPage', params })
+              this.getUIContext().getRouter().pushUrl({ url: 'pages/main/GroupAdminPage', params })
                 .catch((error: Error): void => {
                   logE(`ChatProfilePage.openAdmin failed: ${error.message}`);
                 });
@@ -1448,11 +1444,11 @@ export struct ChatProfilePage {
       return;
     }
     setMemberTag(this.chatId, target.userId, next).then((): void => {
-      promptAction.showToast({ message: $r('app.string.ga_done'), duration: 1400 });
+      showToast($r('app.string.ga_done'), 1400);
       this.store?.reloadMembers();
     }).catch((error: TdError): void => {
       logE(`ChatProfilePage.setMemberTag failed: ${error.message}`);
-      promptAction.showToast({ message: str('ga_failed'), duration: 1600 });
+      showToast(str('ga_failed'), 1600);
     });
   }
 
@@ -1519,7 +1515,7 @@ export struct ChatProfilePage {
     };
     // 面板改完权限后成员的身份标签会变，回来必须重拉一次。
     this.pendingMemberReload = true;
-    router.pushUrl({ url, params }).catch((error: Error): void => {
+    this.getUIContext().getRouter().pushUrl({ url, params }).catch((error: Error): void => {
       this.pendingMemberReload = false;
       logE(`ChatProfilePage.openMemberPanel failed: ${error.message}`);
     });
@@ -1537,10 +1533,10 @@ export struct ChatProfilePage {
     const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN,
       `https://${this.publicChatLink()}`);
     pasteboard.getSystemPasteboard().setData(data).then((): void => {
-      promptAction.showToast({ message: $r('app.string.link_copied'), duration: 1200 });
+      showToast($r('app.string.link_copied'), 1200);
     }).catch((e: Object): void => {
       logE(`ChatProfilePage.copyPublicLink failed: ${JSON.stringify(e)}`);
-      promptAction.showToast({ message: $r('app.string.copy_failed'), duration: 1500 });
+      showToast($r('app.string.copy_failed'), 1500);
     });
   }
 
@@ -1630,7 +1626,7 @@ export struct ChatProfilePage {
     this.pendingMemberReload = true;
     const params: Record<string, Object> = { 'addToChatId': this.chatId,
       'existingUserIds': this.members.map((member: MemberItem): number => member.userId) };
-    router.pushUrl({ url: 'pages/main/NewGroupPage', params }).catch((error: Error): void => {
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/main/NewGroupPage', params }).catch((error: Error): void => {
       this.pendingMemberReload = false;
       logE(`ChatProfilePage.openAddMembers failed: ${error.message}`);
     });

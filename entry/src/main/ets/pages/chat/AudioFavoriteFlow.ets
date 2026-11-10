@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import {
@@ -35,7 +36,7 @@ export struct AudioFavoriteFlow {
   private unsub: (() => void) | null = null;
 
   aboutToAppear(): void {
-    ensureMusicCollections(getContext(this) as common.UIAbilityContext);
+    ensureMusicCollections(this.getUIContext().getHostContext() as common.UIAbilityContext);
     this.unsub = subscribeMusicCollections((): void => {
       this.collections = musicCollections().slice();
     });
@@ -62,7 +63,7 @@ export struct AudioFavoriteFlow {
     const created: MusicCollection | null = createCollection(this.newName);
     if (created === null) {
       // 空名或重名，判据在 musicCollectionModel。提示一下再让他改，别静默吞掉。
-      promptAction.showToast({ message: str('mc_create_rejected'), duration: 1600 });
+      showToast(str('mc_create_rejected'), 1600);
       return;
     }
     toggleTrackInCollectionById(created.id, this.trackKey());

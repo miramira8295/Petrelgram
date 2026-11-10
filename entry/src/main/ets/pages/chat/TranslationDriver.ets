@@ -83,6 +83,7 @@
 // 同上：官方规则，类中 @Monitor 的解注册依赖 GC，本簇的联动全部用显式方法
 // 调用表达。
 
+import { showToast } from '../../util/toast';
 import { promptAction } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdError, TdRequest } from '../../tdkit/TdTypes';
@@ -503,7 +504,7 @@ export class TranslationDriver {
     getTdClient().send(req).catch((e: TdError): void => {
       this.host.setIsTranslatable(previous);
       logE(`TranslationDriver.toggleTranslatable failed: ${e.message}`);
-      promptAction.showToast({ message: str('cp_setting_failed_msg', e.message), duration: 1800 });
+      showToast(str('cp_setting_failed_msg', e.message), 1800);
     });
   }
 
@@ -517,11 +518,8 @@ export class TranslationDriver {
       // 关掉时立刻把已渲染的译文收走；服务的缓存保留，再开秒回。
       this.host.store()?.clearTranslations();
     }
-    promptAction.showToast({
-      message: active
-        ? $r('app.string.cp_auto_translate_enabled') : $r('app.string.cp_auto_translate_disabled'),
-      duration: 1500
-    });
+    showToast(active
+        ? $r('app.string.cp_auto_translate_enabled') : $r('app.string.cp_auto_translate_disabled'), 1500);
   }
 
   // ChatPage.aboutToDisappear 调用，放在原来（本来就不存在的）translate*

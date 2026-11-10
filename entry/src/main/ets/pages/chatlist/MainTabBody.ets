@@ -435,7 +435,7 @@ export struct MainTabBody {
     }
     const structureChanged: boolean = !chatOrderUnchanged(this.chats, next);
     if (structureChanged && this.chats.length > 0) {
-      animateTo({
+      this.getUIContext().animateTo({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
         curve: Curve.EaseOut
       }, (): void => { this.publishChats(next); });
@@ -592,7 +592,7 @@ export struct MainTabBody {
   }
 
   private openArchive(): void {
-    // 曾经是 router.pushUrl('pages/chatlist/ArchivePage')——归档页已迁成
+    // 曾经是 this.getUIContext().getRouter().pushUrl('pages/chatlist/ArchivePage')——归档页已迁成
     // HdsNavDestination 并从 main_pages.json 摘出，整页路由跳不动，走漏斗。
     navigateToArchive();
   }
@@ -823,7 +823,7 @@ export struct MainTabBody {
           // 拉到底那一下用弹簧收尾：跟手段是线性的，锁定这一下给点回弹，
           // 手上才有"咔哒一声到位"的反馈。**曲线走省电分组**——关掉平滑过渡
           // 时 duration 会被压到 0，那时它就是原来的瞬时置位。
-          animateTo({
+          this.getUIContext().animateTo({
             duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 260),
             curve: curves.springMotion(0.34, 0.72)
           }, (): void => {
@@ -837,7 +837,7 @@ export struct MainTabBody {
           : 0;
       } else if (this.archiveRevealed && y > ARCHIVE_COLLAPSE_SCROLL) {
         // 已展开后往下滚一段，自动收起；下次要看还得再用力拉一次。
-        animateTo({
+        this.getUIContext().animateTo({
           duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200),
           curve: Curve.EaseOut
         }, (): void => {

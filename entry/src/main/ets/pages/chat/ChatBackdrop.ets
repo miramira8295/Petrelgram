@@ -220,7 +220,7 @@ export struct ChatBackdrop {
   }
 
   private cacheDir(): string {
-    return (getContext(this) as common.UIAbilityContext).cacheDir;
+    return (this.getUIContext().getHostContext() as common.UIAbilityContext).cacheDir;
   }
 
   private syncRaster(): void {
@@ -281,8 +281,8 @@ export struct ChatBackdrop {
     // 请求尺寸必须和 CachedImage.request() 逐位一致（同一个 layerW/layerH、同一个 vp2px），否则 key 对不上。
     this.rasterShown = next !== '' && cachedPixelMap({
       path: next,
-      width: vp2px(this.layerW()),
-      height: vp2px(this.layerH()),
+      width: this.getUIContext().vp2px(this.layerW()),
+      height: this.getUIContext().vp2px(this.layerH()),
       // 壁纸保留完整色深；预查格式必须与下面 CachedImage 一致。
       opaque: false
     }) !== undefined;
@@ -317,8 +317,8 @@ export struct ChatBackdrop {
     }
     const req: PixelRequest = {
       path: path,
-      width: vp2px(this.layerW()),
-      height: vp2px(this.layerH()),
+      width: this.getUIContext().vp2px(this.layerW()),
+      height: this.getUIContext().vp2px(this.layerH()),
       opaque: false
     };
     const hit: PixelHandle | undefined = cachedPixelMap(req);
@@ -375,7 +375,7 @@ export struct ChatBackdrop {
     if (this.rasterPath === '' || !this.pinAlive) {
       return;
     }
-    const want: string = `${this.rasterPath}@${Math.round(vp2px(this.layerW()))}x${Math.round(vp2px(this.layerH()))}`;
+    const want: string = `${this.rasterPath}@${Math.round(this.getUIContext().vp2px(this.layerW()))}x${Math.round(this.getUIContext().vp2px(this.layerH()))}`;
     if (want === this.pinKey) {
       return;
     }
@@ -566,7 +566,7 @@ export struct ChatBackdrop {
         if (this.isChatSlot) { publishChatContentWidth(w); }
         // Choose a source large enough for the widest media bubble in this
         // column; the pixel cache still decodes to each row's exact box size.
-        if (this.isChatSlot && w > 0) { setInlinePhotoTargetPx(vp2px(mediaThumbWidth(w, 0))); }
+        if (this.isChatSlot && w > 0) { setInlinePhotoTargetPx(this.getUIContext().vp2px(mediaThumbWidth(w, 0))); }
         // 尺寸变了 pixelCache key 也变：把 pin 跟到新尺寸上（同尺寸则不动作）。
         this.syncPin();
       })

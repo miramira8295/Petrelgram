@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { router, promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
@@ -375,10 +376,7 @@ export struct ActiveSessionsPage {
   }
 
   private showFreshRestriction(): void {
-    promptAction.showToast({
-      message: str('as_fresh_limit', this.freshWaitText()),
-      duration: 3000
-    });
+    showToast(str('as_fresh_limit', this.freshWaitText()), 3000);
   }
 
   private guardSessionTermination(): boolean {
@@ -390,7 +388,7 @@ export struct ActiveSessionsPage {
   private showMutationError(caught: TdError, fallback: string): void {
     const presentation = activeSessionError(caught.message, fallback);
     if (presentation.kind === 'fresh') { this.serverFreshRestricted = true; }
-    promptAction.showToast({ message: presentation.text, duration: 2800 });
+    showToast(presentation.text, 2800);
     if (presentation.shouldRefresh) { this.load(false); }
   }
 
@@ -443,7 +441,7 @@ export struct ActiveSessionsPage {
     if (this.linking || this.actionKey !== '') { return; }
     this.linking = true;
     try {
-      const outcome = await this.qrScanner.start(getContext(this) as common.UIAbilityContext);
+      const outcome = await this.qrScanner.start(this.getUIContext().getHostContext() as common.UIAbilityContext);
       if (this.active && outcome === 'loggedIn') { await this.load(false); }
     } finally {
       if (this.active) { this.linking = false; }
@@ -455,7 +453,7 @@ export struct ActiveSessionsPage {
     const epoch = this.sessionEpoch;
     if (this.others.length === 0 || this.actionKey !== '') { return; }
     if (this.guardSessionTermination()) { return; }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.as_terminate_others'),
       message: $r('app.string.as_terminate_others_confirm'),
       buttons: [
@@ -479,7 +477,7 @@ export struct ActiveSessionsPage {
       if (!current()) { return; }
       this.others = [];
       this.detailOpen = false;
-      promptAction.showToast({ message: $r('app.string.as_others_terminated'), duration: 1800 });
+      showToast($r('app.string.as_others_terminated'), 1800);
       await this.load(false);
     } catch (caught) {
       if (!current()) { return; }
@@ -496,7 +494,7 @@ export struct ActiveSessionsPage {
     const epoch = this.sessionEpoch;
     if (row.isCurrent || this.actionKey !== '') { return; }
     if (this.guardSessionTermination()) { return; }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.as_terminate'),
       message: str('as_terminate_confirm', this.titleFor(row)),
       buttons: [
@@ -524,7 +522,7 @@ export struct ActiveSessionsPage {
         (current: SessionRow): boolean => current.id !== row.id
       );
       this.detailOpen = false;
-      promptAction.showToast({ message: $r('app.string.as_terminated'), duration: 1800 });
+      showToast($r('app.string.as_terminated'), 1800);
     } catch (caught) {
       if (!current()) { return; }
       const error = caught as TdError;
@@ -604,7 +602,7 @@ export struct ActiveSessionsPage {
       await store.mutate(request, current);
       if (!current()) { return; }
       this.detailOpen = false;
-      promptAction.showToast({ message: $r('app.string.as_device_confirmed'), duration: 1800 });
+      showToast($r('app.string.as_device_confirmed'), 1800);
     } catch (caught) {
       if (!current()) { return; }
       const error = caught as TdError;
@@ -619,7 +617,7 @@ export struct ActiveSessionsPage {
     const store = this.sessionStore;
     const epoch = this.sessionEpoch;
     if (this.actionKey !== '') { return; }
-    promptAction.showActionMenu({
+    this.getUIContext().getPromptAction().showActionMenu({
       title: $r('app.string.as_inactive_ttl'),
       buttons: [
         {
@@ -665,9 +663,7 @@ export struct ActiveSessionsPage {
       request['inactive_session_ttl_days'] = days;
       await store.mutate(request, current);
       if (!current()) { return; }
-      promptAction.showToast({
-        message: str('as_ttl_set', inactiveSessionTtlLabel(days)), duration: 1600
-      });
+      showToast(str('as_ttl_set', inactiveSessionTtlLabel(days)), 1600);
     } catch (caught) {
       if (!current()) { return; }
       const error = caught as TdError;

@@ -53,6 +53,7 @@
 // 官方规则：类中 @Monitor 的解注册依赖 GC，销毁时机不可靠。本簇的所有联动都用
 // 显式方法调用表达。
 
+import { showToast } from '../../util/toast';
 import { promptAction } from '@kit.ArkUI';
 import { getTdClient, getChatStore } from '../../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
@@ -610,7 +611,7 @@ export class HeaderIdentitySession {
       openUserProfile = false;
       params = { 'chatId': this.host.chatId() };
     } else {
-      promptAction.showToast({ message: $r('app.string.cp_profile_loading'), duration: 1200 });
+      showToast($r('app.string.cp_profile_loading'), 1200);
       this.resolveIdentity();
       return;
     }

@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
@@ -126,13 +127,13 @@ export struct StickerSetsPage {
     setStickerSetInstalled(row.id, !archived, archived).then((): void => {
       if (!this.active) { return; }
       this.busyId = '';
-      promptAction.showToast({ message: archived ? $r('app.string.sticker_archived') : $r('app.string.sticker_restored'), duration: 1400 });
+      showToast(archived ? $r('app.string.sticker_archived') : $r('app.string.sticker_restored'), 1400);
       this.load();
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.busyId = '';
       logE(`StickerSetsPage.archive failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.action_failed_retry'), duration: 1600 });
+      showToast($r('app.string.action_failed_retry'), 1600);
     });
   }
 
@@ -142,12 +143,12 @@ export struct StickerSetsPage {
     setStickerSetInstalled(row.id, false, false).then((): void => {
       if (!this.active) { return; }
       this.busyId = '';
-      promptAction.showToast({ message: $r('app.string.sticker_set_removed'), duration: 1400 });
+      showToast($r('app.string.sticker_set_removed'), 1400);
       this.load();
     }).catch((): void => {
       if (!this.active) { return; }
       this.busyId = '';
-      promptAction.showToast({ message: $r('app.string.remove_failed'), duration: 1500 });
+      showToast($r('app.string.remove_failed'), 1500);
     });
   }
 
@@ -163,7 +164,7 @@ export struct StickerSetsPage {
     reorderInstalledStickerSets(next.map((r: StickerSetRow): string => r.id))
       .catch((error: TdError): void => {
         logE(`StickerSetsPage.reorder failed: ${error.message}`);
-        promptAction.showToast({ message: $r('app.string.sticker_reorder_failed'), duration: 1500 });
+        showToast($r('app.string.sticker_reorder_failed'), 1500);
       });
   }
 

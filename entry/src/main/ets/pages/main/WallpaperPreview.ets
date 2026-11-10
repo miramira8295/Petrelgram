@@ -58,7 +58,7 @@ export struct WallpaperPreview {
   }
 
   private cacheDir(): string {
-    return (getContext(this) as common.UIAbilityContext).cacheDir;
+    return (this.getUIContext().getHostContext() as common.UIAbilityContext).cacheDir;
   }
 
   // 背景或预览尺寸变了：换图/换尺寸就作废旧结果，绝不把上一张图案贴回去。

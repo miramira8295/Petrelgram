@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { navigateToChatProfile } from '../../util/profileNav';
 import { router, promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
@@ -59,11 +60,8 @@ export struct AboutPage {
       this.checking = false;
       this.apply(info);
       if (!info.hasUpdate) {
-        promptAction.showToast({
-          message: info.latestVersion === ''
-            ? $r('app.string.about_update_unreachable') : $r('app.string.about_up_to_date'),
-          duration: 1600
-        });
+        showToast(info.latestVersion === ''
+            ? $r('app.string.about_update_unreachable') : $r('app.string.about_up_to_date'), 1600);
       }
     }).catch((): void => {
       this.checking = false;
@@ -78,7 +76,7 @@ export struct AboutPage {
       uri: updateChecker.getReleaseUrl()
     }).catch((e: Object): void => {
       logE(`AboutPage.openReleasePage failed: ${JSON.stringify(e)}`);
-      promptAction.showToast({ message: $r('app.string.about_browser_failed'), duration: 1600 });
+      showToast($r('app.string.about_browser_failed'), 1600);
     });
   }
 

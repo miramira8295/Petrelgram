@@ -1,3 +1,4 @@
+import { showToast } from '../util/toast';
 import { str } from './strings';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo as fs, fileShare, fileUri, picker } from '@kit.CoreFileKit';
@@ -112,11 +113,11 @@ export async function saveMediaToGallery(
     await copyToUri(srcPath, uris[0], progress);
     noteSavedLocal(context, srcPath);
     progress?.onSaved(str('transfer_gallery'));
-    promptAction.showToast({ message: str('media_saved_gallery'), duration: 2000 });
+    showToast(str('media_saved_gallery'), 2000);
   } catch (e) {
     logE(`saveMediaToGallery(${srcPath}) failed: ${e}`);
     progress?.onFailed();
-    promptAction.showToast({ message: str('media_save_failed'), duration: 2000 });
+    showToast(str('media_save_failed'), 2000);
   }
 }
 
@@ -128,7 +129,7 @@ export function saveFileToLocal(
 ): void {
   if (srcPath === '' || context === undefined) {
     progress?.onFailed();
-    promptAction.showToast({ message: str('media_file_unavailable'), duration: 1800 });
+    showToast(str('media_file_unavailable'), 1800);
     return;
   }
   const saveName: string = safeFileName(srcPath, fileName);
@@ -144,11 +145,11 @@ export function saveFileToLocal(
       await copyToUri(srcPath, uris[0], progress);
       noteSavedLocal(context, srcPath);
       progress?.onSaved(str('transfer_selected_location'));
-      promptAction.showToast({ message: str('media_saved'), duration: 2000 });
+      showToast(str('media_saved'), 2000);
     } catch (e) {
       logE(`saveFileToLocal copy failed: ${e}`);
       progress?.onFailed();
-      promptAction.showToast({ message: str('media_save_failed'), duration: 2000 });
+      showToast(str('media_save_failed'), 2000);
     }
   }).catch((e: Object) => {
     if (isPickerCancellation(e)) {
@@ -157,7 +158,7 @@ export function saveFileToLocal(
     }
     logE(`saveFileToLocal picker failed: ${JSON.stringify(e)}`);
     progress?.onFailed();
-    promptAction.showToast({ message: str('media_cannot_open_location'), duration: 1800 });
+    showToast(str('media_cannot_open_location'), 1800);
   });
 }
 
@@ -209,7 +210,7 @@ async function selectDownloadDirectoryUri(context: common.UIAbilityContext): Pro
   if (folderAuthorizationAvailable()) {
     await fileShare.persistPermission([downloadPolicy(directoryUri)]);
   } else {
-    promptAction.showToast({ message: str('ds_download_persist_unavailable'), duration: 2600 });
+    showToast(str('ds_download_persist_unavailable'), 2600);
   }
   const store = preferences.getPreferencesSync(context, { name: DOWNLOAD_PREFS });
   store.putSync(DOWNLOAD_DIRECTORY_URI, directoryUri);
@@ -291,7 +292,7 @@ export async function prepareDownloadDirectory(context: common.UIAbilityContext)
     return await resolveDownloadDirectoryUri(context) !== '';
   } catch (e) {
     logE(`prepareDownloadDirectory failed: ${JSON.stringify(e)}`);
-    promptAction.showToast({ message: str('media_cannot_open_location'), duration: 1800 });
+    showToast(str('media_cannot_open_location'), 1800);
     return false;
   }
 }
@@ -307,7 +308,7 @@ async function copyToDownloadDirectory(
   const destination: string = availableDownloadPath(directory, safeFileName(srcPath, fileName));
   await copyToUri(srcPath, destination, progress);
   progress?.onSaved(DOWNLOAD_APP_FOLDER);
-  promptAction.showToast({ message: str('media_saved'), duration: 2000 });
+  showToast(str('media_saved'), 2000);
 }
 
 // The document-card save action asks for a destination directory once, then
@@ -319,7 +320,7 @@ export function saveFileToDownloads(
 ): void {
   if (srcPath === '' || context === undefined) {
     progress?.onFailed();
-    promptAction.showToast({ message: str('media_file_unavailable'), duration: 1800 });
+    showToast(str('media_file_unavailable'), 1800);
     return;
   }
   if (!folderAuthorizationAvailable()) {
@@ -338,6 +339,6 @@ export function saveFileToDownloads(
   operation.catch((e: Object): void => {
     logE(`saveFileToDownloads failed: ${JSON.stringify(e)}`);
     progress?.onFailed();
-    promptAction.showToast({ message: str('media_cannot_open_location'), duration: 1800 });
+    showToast(str('media_cannot_open_location'), 1800);
   });
 }

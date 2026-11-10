@@ -53,6 +53,8 @@
 // per-ChatPage 字段初始化器 new，绝非模块级单例；宿主接口全是箭头函数取值器，
 // 现取不缓存；类中不声明 @Monitor（解注册依赖 GC，销毁时机不可靠）。
 
+import { closeContextMenu, showDialog } from '../../util/uiContext';
+import { showToast } from '../../util/toast';
 import { promptAction } from '@kit.ArkUI';
 import { KEY_POWER_EFFECT_MENU } from '../../store/AppSettings';
 import { MessageEntry } from '../../store/MessageEntry';
@@ -197,7 +199,7 @@ export class ChatOverlayState {
   }
 
   openReactionSheet(messageId: number): void {
-    ContextMenu.close();
+    closeContextMenu();
     if (this.host.findMsg(messageId) === null) {
       return;
     }
@@ -246,7 +248,7 @@ export class ChatOverlayState {
     if (store === null || this.reactionPendingKey !== '') {
       return;
     }
-    ContextMenu.close();
+    closeContextMenu();
     this.reactionPendingKey = key;
     // 自定义表情（'ce:' 前缀）不做映射：它按 id 走，不涉及变体选择符。
     const custom: boolean = reactionKey.startsWith('ce:');
@@ -266,9 +268,7 @@ export class ChatOverlayState {
       }
       logE(`ChatOverlayState.toggleReaction(${sendKey}) failed: ${e.message}`);
       // 带上服务端的原因：光说「失败」用户没法反馈，我们也查不动。
-      promptAction.showToast({
-        message: `${str('cp_reaction_failed')} · ${e.message}`, duration: 2200
-      });
+      showToast(`${str('cp_reaction_failed')} · ${e.message}`, 2200);
     });
   }
 
@@ -298,14 +298,14 @@ export class ChatOverlayState {
           names.push(entry !== undefined ? entry.title : str('cp_anonymous'));
         }
       }
-      promptAction.showDialog({
+      showDialog({
         title: str('cp_reaction_total', reactionDisplayLabel(reactionKey), total),
         message: names.length > 0 ? names.join('\n') : $r('app.string.cp_no_details'),
         buttons: [{ text: $r('app.string.close'), color: '#3390EC' }]
       }).catch((): void => {});
     }).catch((e: TdError): void => {
       logE(`ChatOverlayState.showReactors failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.cp_no_reaction_details'), duration: 1600 });
+      showToast($r('app.string.cp_no_reaction_details'), 1600);
     });
   }
 

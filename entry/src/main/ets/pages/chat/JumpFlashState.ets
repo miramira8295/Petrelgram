@@ -1,3 +1,4 @@
+import { animateToUI } from '../../util/uiContext';
 import { AlbumGroup, groupIndexOf } from '../../util/collapseAlbums';
 import { BubbleFocusChannel } from '../../util/bubbleFocusChannel';
 import { KEY_POWER_EFFECT_REPLY } from '../../store/AppSettings';
@@ -124,7 +125,7 @@ export class JumpFlashState {
       this.cancelFlash();
       return;
     }
-    animateTo({ duration: rise, curve: Curve.EaseOut }, (): void => {
+    animateToUI({ duration: rise, curve: Curve.EaseOut }, (): void => {
       this.setStrength(1);
     });
     setTimeout((): void => {
@@ -135,7 +136,7 @@ export class JumpFlashState {
       if (seq !== this.flashSeq) {
         return;
       }
-      animateTo({ duration: settle, curve: Curve.EaseInOut }, (): void => {
+      animateToUI({ duration: settle, curve: Curve.EaseInOut }, (): void => {
         this.setStrength(0);
       });
       setTimeout((): void => {

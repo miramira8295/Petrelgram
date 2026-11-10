@@ -1,3 +1,5 @@
+import { animateToUI } from '../../util/uiContext';
+import { showToast } from '../../util/toast';
 import { MessageEntry } from '../../store/MessageEntry';
 import { AlbumGroup, albumIndexOfMember, albumSiblingIds } from '../../util/collapseAlbums';
 import { mediaEntryIsPhoto, mediaEntryIsVideo } from '../../util/mediaEntryKind';
@@ -140,17 +142,17 @@ export class ChatViewerSession {
     }
     if (mediaEntryIsPhoto(entry) && entry.photoPath === '' && entry.photoFailed) {
       this.host.store()?.retryPhoto(messageId);
-      promptAction.showToast({ message: $r('app.string.cp_reloading_thumb'), duration: 1200 });
+      showToast($r('app.string.cp_reloading_thumb'), 1200);
       return;
     }
     if (mediaEntryIsPhoto(entry) && entry.photoPath === '' &&
       entry.photoFullPath === '' && entry.photoFileId === 0 && entry.photoFullFileId === 0) {
-      promptAction.showToast({ message: $r('app.string.cp_photo_unavailable'), duration: 1500 });
+      showToast($r('app.string.cp_photo_unavailable'), 1500);
       return;
     }
     if (mediaEntryIsVideo(entry)) {
       if (entry.videoFileId === 0 && entry.videoPath === '') {
-        promptAction.showToast({ message: $r('app.string.cp_video_unavailable'), duration: 1500 });
+        showToast($r('app.string.cp_video_unavailable'), 1500);
         return;
       }
       // A cover failure must not block a playable video. Retry it quietly so
@@ -166,7 +168,7 @@ export class ChatViewerSession {
         // releaseVideoPlayback 才能真的把它停下来。
         this.host.store()?.requestVideoForPlayback(messageId, entry.videoFailed);
         this.notePlaybackRequest(messageId);
-        promptAction.showToast({ message: $r('app.string.cp_fetching_video'), duration: 1800 });
+        showToast($r('app.string.cp_fetching_video'), 1800);
         return;
       }
       if (entry.videoFailed) {
@@ -189,7 +191,7 @@ export class ChatViewerSession {
     //
     // 查看器**内部**那 9 处动画（chrome 淡入、缩放复位等）仍留在 EFFECT_BLUR 下
     // ——它们确实属于"模糊与缩放效果"。
-    animateTo({ duration: this.host.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300), curve: Curve.Friction }, () => {
+    animateToUI({ duration: this.host.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300), curve: Curve.Friction }, () => {
       this.onMediaTap(messageId);
     });
   }
@@ -232,7 +234,7 @@ export class ChatViewerSession {
     // 与打开同一把闸，理由见 openViewer 里那段说明。
     const duration: number = this.host.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 260);
     this.viewerClosing = true;
-    animateTo({ duration, curve: Curve.Friction }, () => {
+    animateToUI({ duration, curve: Curve.Friction }, () => {
       this.setTarget(0);
       this.viewerInitIdx = 0;
       // 复位到下一次打开的初值。openViewer 里也会写一次，这里写同一个常量只是

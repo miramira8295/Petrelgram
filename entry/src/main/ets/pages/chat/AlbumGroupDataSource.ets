@@ -1,3 +1,4 @@
+import { vp2pxUI } from '../../util/uiContext';
 import { IDataSourcePrefetching } from '@kit.ArkUI';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { BUBBLE_AVATAR_GUTTER_VP, mediaBoxFor } from '../../util/mediaBox';
@@ -363,7 +364,7 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
       head.contentType === 'video', this.isGroup && !head.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0);
     // 单张大图不开 565：面积大、渐变明显，色阶看得出来。
     return {
-      path: head.photoPath, width: vp2px(box.width), height: vp2px(box.height), opaque: false
+      path: head.photoPath, width: vp2pxUI(box.width), height: vp2pxUI(box.height), opaque: false
     };
   }
 

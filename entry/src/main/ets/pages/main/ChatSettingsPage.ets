@@ -1,6 +1,7 @@
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
+import { showToast } from '../../util/toast';
 import { wallpaperTakesBlur, wallpaperTakesUserDim } from '../../util/chatBackgroundRaster';
 import { router, promptAction } from '@kit.ArkUI';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
@@ -16,7 +17,7 @@ import {
   ChatBackgroundState, defaultChatBackgroundSnapshot, emptyChatBackground,
   localWallpaperState, parseSnapshot, serialiseSnapshot, referencedWallpaperPaths
 } from '../../store/ChatBackgroundStore';
-import { appWallpaperFileName, wallpaperFileStillUsed } from '../../util/localWallpaper';
+import { appWallpaperFileName, wallpaperFileStillUsed, KEY_SPLIT_UNIFIED_BG } from '../../util/localWallpaper';
 import { systemSlotColor } from '../../util/solidBackground';
 import {
   SLOT_APP_DARK, SLOT_APP_LIGHT, SLOT_CHAT_DARK, SLOT_CHAT_LIGHT, WALLPAPER_SLOTS,
@@ -195,9 +196,9 @@ export struct ChatSettingsPage {
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
   @StorageLink(KEY_MATERIAL_LIGHT_DARK) materialLightDark: string = LIGHT_DEFAULT;
   // 迁移前这里还有 leavingPage/leaveTimer 两个字段、一个 aboutToDisappear 清理，
-  // 和一个 leavePage()：500ms 防抖 + router.back()，防的是连点两下返回箭头弹掉
+  // 和一个 leavePage()：500ms 防抖 + this.getUIContext().getRouter().back()，防的是连点两下返回箭头弹掉
   // 两页。三者随迁移一起失效，理由与试点 PowerUsagePage 逐字相同：
-  //   · router.back() 在 NavDestination 上是**错的**——它弹的是 router 页栈，
+  //   · this.getUIContext().getRouter().back() 在 NavDestination 上是**错的**——它弹的是 router 页栈，
   //     而本页已不在那条栈上，弹掉的会是 Index，现象是直接退到桌面
   //     （HdsSubDestination 文件头记了同一条实测）。返回改由外壳默认的出栈
   //     （NavPathStack.pop）承担，不再需要本页自己写，onBack 也随之不用传。
@@ -483,7 +484,7 @@ export struct ChatSettingsPage {
   // AppStorage 推出来的下标，没写入时下一次 build 会把 Select 拨回原值，
   // 不需要我们手动回滚。
   private confirmGlassLevel(onKey: string, levelKey: string, level: number): void {
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: str('glass_warn_title'),
       message: str('glass_warn_body'),
       // color 是**必填**，且只吃 string | Resource —— 主题里的 COLOR_* 是
@@ -666,6 +667,7 @@ export struct ChatSettingsPage {
   @StorageProp('screenWidthVp') private appBgScreenW: number = 360;
   // 「强制单栏」开关：本页自己也用它（壁纸预览的版式），行的显隐用几何判据。
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) private forceSingleColumn: boolean = false;
+  @StorageProp(KEY_SPLIT_UNIFIED_BG) private unifiedBg: boolean = true;
   @StorageProp('screenHeightVp') private appBgScreenH: number = 780;
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
@@ -725,7 +727,7 @@ export struct ChatSettingsPage {
 
   private installAppBg(uri: string): void {
     try {
-      const ctx = getContext(this) as common.UIAbilityContext;
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
       // 文件名带时间戳，理由同聊天壁纸：固定名会被 Image 的解码缓存卡住。
       const dest: string = `${ctx.filesDir}/${appWallpaperFileName(this.appDark, Date.now())}`;
       const src = fs.openSync(uri, fs.OpenMode.READ_ONLY);
@@ -742,10 +744,10 @@ export struct ChatSettingsPage {
       state.blurred = true;
       setString(this.appBgKey(), serialiseSnapshot(state));
       this.removeAppBgFile(previous);
-      promptAction.showToast({ message: $r('app.string.cb_local_applied'), duration: 1500 });
+      showToast($r('app.string.cb_local_applied'), 1500);
     } catch (error) {
       logE(`ChatSettings installAppBg failed: ${error}`);
-      promptAction.showToast({ message: $r('app.string.cb_local_failed'), duration: 1800 });
+      showToast($r('app.string.cb_local_failed'), 1800);
     }
   }
 
@@ -879,7 +881,7 @@ export struct ChatSettingsPage {
   }
 
   private openWallpaperSlot(slot: string): void {
-    router.pushUrl({ url: 'pages/main/ChatBackgroundPage', params: { slot: slot } })
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/main/ChatBackgroundPage', params: { slot: slot } })
       .catch((error: Error): void => {
         logE(`ChatSettings open wallpaper slot failed: ${error.message}`);
       });
@@ -1041,18 +1043,18 @@ export struct ChatSettingsPage {
           // 气泡颜色紧贴预览——上面那两个气泡就是它的效果。
           BubbleColorsCard();
 
-          // ── 壁纸设置：四个独立槽位 ──────────────────────────────────────
-          // APP 浅色 / APP 深色 / 聊天浅色 / 聊天深色，各有自己的壁纸和三根滑杆。
-          // 右侧是该槽位当前壁纸的缩略图，点它放大看，点整行进去改。
-          // 分栏下也显示 APP 那两行：2026-11-06 起 APP 壁纸与聊天壁纸**分栏下各画各的**
-          // （ChatBackdrop 不再把聊天层藏掉，见 suppressedByUnifiedBg），两套互不覆盖，
-          // 于是平板没有理由再藏掉入口。原来这里写的是「分栏下不显示 APP 那两行」。
+          // 分栏统一背景时，与 ChatBackdrop.suppressedByUnifiedBg 使用同一判据：
+          // 整窗只画 APP 壁纸，因此不展示当前不会生效的聊天背景入口。
+          // 单栏（含强制单栏）恢复四个槽位；这里只控制入口，不修改已保存的背景。
           Column() {
             this.cardTitle(str('cs_wallpaper_settings'));
             this.wallpaperSlotRow(SLOT_APP_LIGHT, str('cs_slot_app_light'));
             this.wallpaperSlotRow(SLOT_APP_DARK, str('cs_slot_app_dark'));
-            this.wallpaperSlotRow(SLOT_CHAT_LIGHT, str('cs_slot_chat_light'));
-            this.wallpaperSlotRow(SLOT_CHAT_DARK, str('cs_slot_chat_dark'));
+            if (!this.unifiedBg || !isSplitByBreakpoint(
+              this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait)) {
+              this.wallpaperSlotRow(SLOT_CHAT_LIGHT, str('cs_slot_chat_light'));
+              this.wallpaperSlotRow(SLOT_CHAT_DARK, str('cs_slot_chat_dark'));
+            }
           }
           .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
 

@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import {
@@ -69,7 +70,7 @@ export struct VideoNoteRecorderView {
     this.opening = true;
     const recorder: VideoNoteRecorder = new VideoNoteRecorder();
     this.recorder = recorder;
-    recorder.open(getContext(this) as common.UIAbilityContext, surfaceId, this.useFront)
+    recorder.open(this.getUIContext().getHostContext() as common.UIAbilityContext, surfaceId, this.useFront)
       .then((result: VideoNoteOpenResult): void => {
         this.opening = false;
         if (this.recorder !== recorder) {
@@ -168,7 +169,7 @@ export struct VideoNoteRecorderView {
     }
     if (this.elapsedMs < MIN_RECORD_MS) {
       // 按太短只是这一条不算，不该把整个录制界面关掉——用户多半是想重录。
-      promptAction.showToast({ message: $r('app.string.vn_hold_to_record'), duration: 1600 });
+      showToast($r('app.string.vn_hold_to_record'), 1600);
       this.discardTake();
       return;
     }

@@ -8,6 +8,7 @@
 //
 // 预热不改变"不闪首字母"这个结论，只是把解码挪到首屏挂树之前的空档：
 // 行真正挂上来时 cachedPixelMap 直接命中，同步那一支根本不会被走到。
+import { vp2pxUI } from './uiContext';
 import { AlbumGroup } from './collapseAlbums';
 import { cachedPixelMap, loadPixelMap, PixelRequest } from './pixelCache';
 
@@ -43,7 +44,7 @@ function requestFor(path: string, sidePx: number): PixelRequest {
 
 // 即发即忘：解出来的那份留在 pixelCache 里（不 retain，所以照样可被淘汰）。
 export function warmSenderAvatars(paths: string[], sidePx: number = 0): void {
-  const side: number = sidePx > 0 ? sidePx : vp2px(AVATAR_BOX_VP);
+  const side: number = sidePx > 0 ? sidePx : vp2pxUI(AVATAR_BOX_VP);
   const wanted: string[] = planAvatarWarm(paths,
     (path: string): boolean => cachedPixelMap(requestFor(path, side)) !== undefined);
   for (const path of wanted) {

@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { promptAction, router } from '@kit.ArkUI';
 import { TdError } from '../../tdkit/TdTypes';
 import { getFolderStore } from '../../tdkit/Globals';
@@ -198,7 +199,7 @@ export struct ChatFoldersPage {
   private openEditor(id: number): void {
     if (this.operationKey !== '') { return; }
     const params: FolderEditParams = { folderId: id };
-    router.pushUrl({ url: 'pages/main/FolderEditPage', params });
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/main/FolderEditPage', params });
   }
 
   // 混合列表：各文件夹 id，「所有」以 MAIN_LIST_ROW 插在 mainPos。拖动、菜单的
@@ -265,7 +266,7 @@ export struct ChatFoldersPage {
       this.mainPos = previousMain;
       getFolderStore().applyLocalOrder(previous.map((folder: FolderInfo): number => folder.id),
         previousMain);
-      promptAction.showToast({ message: $r('app.string.cf_reorder_failed'), duration: 1800 });
+      showToast($r('app.string.cf_reorder_failed'), 1800);
       logE(`ChatFoldersPage.reorder failed: ${error.message}`);
     });
   }
@@ -281,7 +282,7 @@ export struct ChatFoldersPage {
       if (!this.active) { return; }
       this.tagsEnabled = previous;
       this.operationKey = '';
-      promptAction.showToast({ message: $r('app.string.cf_tags_failed'), duration: 1800 });
+      showToast($r('app.string.cf_tags_failed'), 1800);
       logE(`ChatFoldersPage.tags failed: ${error.message}`);
     });
   }
@@ -315,7 +316,7 @@ export struct ChatFoldersPage {
   }
 
   private confirmSimpleDelete(folder: FolderInfo): void {
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.cf_delete'),
       message: str('cf_delete_confirm', folder.title),
       buttons: [
@@ -340,11 +341,11 @@ export struct ChatFoldersPage {
       if (!this.active) { return; }
       this.operationKey = '';
       this.deleteSheetOpen = false;
-      promptAction.showToast({ message: $r('app.string.cf_deleted'), duration: 1500 });
+      showToast($r('app.string.cf_deleted'), 1500);
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.operationKey = '';
-      promptAction.showToast({ message: $r('app.string.delete_failed_retry'), duration: 1800 });
+      showToast($r('app.string.delete_failed_retry'), 1800);
       logE(`ChatFoldersPage.delete failed: ${error.message}`);
     });
   }
@@ -368,11 +369,11 @@ export struct ChatFoldersPage {
     saveFolder(next).then((): void => {
       if (!this.active) { return; }
       this.operationKey = '';
-      promptAction.showToast({ message: str('cf_created', next.name), duration: 1600 });
+      showToast(str('cf_created', next.name), 1600);
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.operationKey = '';
-      promptAction.showToast({ message: $r('app.string.create_failed_retry'), duration: 1800 });
+      showToast($r('app.string.create_failed_retry'), 1800);
       logE(`ChatFoldersPage.addRecommendation failed: ${error.message}`);
     });
   }

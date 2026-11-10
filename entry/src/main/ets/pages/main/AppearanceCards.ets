@@ -4,6 +4,7 @@
 //
 // 前三张是本机设置（util/appearance.ets），改完只有自己看见；第四张发到服务端，
 // 是别人看到的名字色 / 资料页色——所以单独成组、标题里写明。
+import { showToast } from '../../util/toast';
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { getAccentColorStore, getTdClient } from '../../tdkit/Globals';
@@ -312,7 +313,7 @@ export struct AccountColorsCard {
 
   aboutToAppear(): void {
     this.active = true;
-    const dark = darkResourceMode(getContext(this) as common.UIAbilityContext);
+    const dark = darkResourceMode(this.getUIContext().getHostContext() as common.UIAbilityContext);
     this.off = getAccentColorStore().subscribe((palettes: AccentPalettes): void => {
       this.namePreviews = this.orderPreviews(
         palettes.nameColors.map((c: TdObject): AccentPreview | null => accentPreviewOf(c, dark)),
@@ -382,7 +383,7 @@ export struct AccountColorsCard {
   // 你自己的名字色是**别人**在群里看到的——自己的发出气泡从不带名字，所以放这儿预览。
   private previewNameColor(): string {
     const hex = getAccentColorStore().nameColorHex(
-      this.currentNameId, darkResourceMode(getContext(this) as common.UIAbilityContext));
+      this.currentNameId, darkResourceMode(this.getUIContext().getHostContext() as common.UIAbilityContext));
     return hex !== '' ? hex : '#3390EC';
   }
 
@@ -402,13 +403,13 @@ export struct AccountColorsCard {
       }
       this.busy = false;
       this.currentNameId = id;
-      promptAction.showToast({ message: $r('app.string.accent_name_updated'), duration: 1500 });
+      showToast($r('app.string.accent_name_updated'), 1500);
     }).catch((error: TdError): void => {
       if (!this.active) {
         return;
       }
       this.busy = false;
-      promptAction.showToast({ message: this.errorText(error), duration: 1800 });
+      showToast(this.errorText(error), 1800);
     });
   }
 
@@ -423,13 +424,13 @@ export struct AccountColorsCard {
       }
       this.busy = false;
       this.currentProfileId = id;
-      promptAction.showToast({ message: $r('app.string.accent_profile_updated'), duration: 2200 });
+      showToast($r('app.string.accent_profile_updated'), 2200);
     }).catch((error: TdError): void => {
       if (!this.active) {
         return;
       }
       this.busy = false;
-      promptAction.showToast({ message: this.errorText(error), duration: 1800 });
+      showToast(this.errorText(error), 1800);
     });
   }
 

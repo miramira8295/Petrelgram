@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { probeMusicSequence, probeRemoteSequence } from '../../services/InlineMusicProbe';
 import { promptAction } from '@kit.ArkUI';
 import { HdsSubDestination } from '../common/HdsSubDestination';
@@ -78,7 +79,7 @@ export struct DiagnosticsPage {
       return;
     }
     if (!diagUploadConfigured()) {
-      promptAction.showToast({ message: $r('app.string.diag_not_configured'), duration: 2000 });
+      showToast($r('app.string.diag_not_configured'), 2000);
       return;
     }
     this.sending = true;
@@ -86,11 +87,9 @@ export struct DiagnosticsPage {
       this.sending = false;
       if (result.ok) {
         this.note = '';
-        promptAction.showToast({ message: $r('app.string.diag_sent'), duration: 1800 });
+        showToast($r('app.string.diag_sent'), 1800);
       } else {
-        promptAction.showToast({
-          message: str('diag_send_failed', result.reason), duration: 2400
-        });
+        showToast(str('diag_send_failed', result.reason), 2400);
       }
     });
   }
@@ -164,7 +163,7 @@ export struct DiagnosticsPage {
       .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
       .alignItems(VerticalAlign.Center)
       .onClick((): void => {
-        exportDiagLog(getContext(this) as common.UIAbilityContext, diagLogStamp(new Date()));
+        exportDiagLog(this.getUIContext().getHostContext() as common.UIAbilityContext, diagLogStamp(new Date()));
       });
 
       Divider().color($r('app.color.divider')).strokeWidth(0.5)
@@ -190,7 +189,7 @@ export struct DiagnosticsPage {
         clearDiagLog();
         // 页面上那个"日志大小"要立刻跟着归零，否则看起来像没生效。
         this.logBytes = diagLogSize();
-        promptAction.showToast({ message: $r('app.string.diag_cleared'), duration: 1500 });
+        showToast($r('app.string.diag_cleared'), 1500);
       });
     }
     .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS).clip(true);

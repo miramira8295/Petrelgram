@@ -1,3 +1,4 @@
+import { showToast } from '../util/toast';
 import { str } from './strings';
 import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
 import { promptAction } from '@kit.ArkUI';
@@ -105,10 +106,10 @@ export function setDefaultReaction(emoji: string): void {
   const req: TdRequest = { '@type': 'setDefaultReactionType' };
   req['reaction_type'] = rt;
   getTdClient().send(req).then((): void => {
-    promptAction.showToast({ message: str('cp_default_reaction_set', emoji), duration: 1600 });
+    showToast(str('cp_default_reaction_set', emoji), 1600);
   }).catch((e: TdError): void => {
     logE(`setDefaultReaction failed: ${e.message}`);
-    promptAction.showToast({ message: $r('app.string.cp_default_reaction_failed'), duration: 1600 });
+    showToast($r('app.string.cp_default_reaction_failed'), 1600);
   });
 }
 

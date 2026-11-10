@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { TdError, TdObject } from '../../tdkit/TdTypes';
 import {
@@ -72,9 +73,9 @@ struct PrivacyRulePage {
 
   aboutToAppear(): void {
     this.active = true;
-    const params = router.getParams() as PrivacyRuleParams | undefined;
+    const params = this.getUIContext().getRouter().getParams() as PrivacyRuleParams | undefined;
     if (params === undefined || params.setting === undefined || params.setting === '') {
-      router.back();
+      this.getUIContext().getRouter().back();
       return;
     }
     this.setting = params.setting;
@@ -125,15 +126,15 @@ struct PrivacyRulePage {
       if (!this.active) { return; }
       this.base = previous;
       this.saving = false;
-      promptAction.showToast({ message: $r('app.string.privacy_save_failed'), duration: 1800 });
+      showToast($r('app.string.privacy_save_failed'), 1800);
     });
   }
 
   private openExceptions(): void {
     if (this.loadState !== 'ready' || this.saving) { return; }
     const params: PrivacyExceptionsParams = { setting: this.setting, title: this.title };
-    router.pushUrl({ url: 'pages/main/PrivacyExceptionsPage', params }).catch((): void => {
-      promptAction.showToast({ message: $r('app.string.privacy_exceptions_open_failed'), duration: 1600 });
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/main/PrivacyExceptionsPage', params }).catch((): void => {
+      showToast($r('app.string.privacy_exceptions_open_failed'), 1600);
     });
   }
 
@@ -144,7 +145,7 @@ struct PrivacyRulePage {
         SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
       }
       .width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-      .onClick((): void => { router.back(); });
+      .onClick((): void => { this.getUIContext().getRouter().back(); });
       Text(this.title).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
         .layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
       if (this.saving) { LoadingProgress().width(21).height(21).color(COLOR_PRIMARY); }

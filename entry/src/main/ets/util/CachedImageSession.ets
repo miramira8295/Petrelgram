@@ -1,3 +1,4 @@
+import { vp2pxUI } from './uiContext';
 import { image } from '@kit.ImageKit';
 import {
   cachedPixelMap, cancelPixelMap, loadPixelMap, loadPixelMapSync, PixelHandle, PixelRequest,
@@ -109,8 +110,8 @@ export class CachedImageSession {
     }
     // Reuse must still re-evaluate density and synchronously seed @Local, but
     // an already owned matching bitmap needs no temporary decode request.
-    const width: number = vp2px(spec.boxWidth);
-    const height: number = vp2px(spec.boxHeight);
+    const width: number = vp2pxUI(spec.boxWidth);
+    const height: number = vp2pxUI(spec.boxHeight);
     const opaque: boolean = spec.opaque === true;
     if (shouldBlankBeforeDecode(this.heldReq !== null ? this.heldReq.path : '', spec.path,
       this.heldKey, spec.sourceKey ?? '')) {

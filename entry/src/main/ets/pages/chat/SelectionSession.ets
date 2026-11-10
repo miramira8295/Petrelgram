@@ -38,6 +38,7 @@
 // 若观察到跳变而不是过渡，把 animateTo 挪回页面、包住对
 // `this.selection.enter()/exit()` 的调用。
 
+import { animateToUI, closeContextMenu } from '../../util/uiContext';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { MessageEntry } from '../../store/MessageEntry';
 import { TdObject } from '../../tdkit/TdTypes';
@@ -108,7 +109,7 @@ export class SelectionSession {
   // 参数按原实现叫 memberIds（长按那一行全部成员的 id），不是单个 id：调用方
   // （长按菜单的 onSelectMessages）传的就是整行的 id 数组。
   enter(memberIds: number[]): void {
-    ContextMenu.close();
+    closeContextMenu();
     this.host.closeReactionSheet();
     this.host.setEmojiPanel(false);
     this.animateSelection((): void => {
@@ -126,7 +127,7 @@ export class SelectionSession {
       this.enter(memberIds);
       return;
     }
-    ContextMenu.close();
+    closeContextMenu();
     const next: number[] = selectRow(this.ids, memberIds);
     if (next === this.ids) {
       return;
@@ -140,7 +141,7 @@ export class SelectionSession {
   // 行底色的 150ms 淡入淡出。原来是消息行上一条常驻的 .animation()，现在在
   // 改动发生的那一刻显式驱动一次——时长与曲线照搬，包括滑动中给 0 那一支。
   private animateSelection(apply: () => void): void {
-    animateTo({
+    animateToUI({
       duration: this.host.chatTgsScrollActive() ? 0 :
         powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
       curve: Curve.EaseOut

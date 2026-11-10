@@ -124,7 +124,7 @@ export struct VideoGestureLayer {
       this.hudTimer = -1;
     }
     // **必须还原**，否则整个应用会一直被压在用户划到的那个亮度上。
-    restoreWindowBrightness(getContext(this) as common.UIAbilityContext);
+    restoreWindowBrightness(this.getUIContext().getHostContext() as common.UIAbilityContext);
   }
 
   // 名字不能叫 onDragStart/onDragEnd：那几个是 CustomComponent 自带的成员，
@@ -152,7 +152,7 @@ export struct VideoGestureLayer {
     const next: number = levelAfterDrag(this.startLevel, event.offsetY, this.viewportH);
     this.hudLevel = next;
     if (this.zone === GESTURE_ZONE_LEFT) {
-      applyWindowBrightness(getContext(this) as common.UIAbilityContext, next);
+      applyWindowBrightness(this.getUIContext().getHostContext() as common.UIAbilityContext, next);
     } else {
       this.volumePanelLevel = volumeLevelFor(next, this.volumeMin, this.volumeMax);
     }

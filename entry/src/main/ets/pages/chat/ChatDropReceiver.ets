@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { getActiveTdAccountSlot } from '../../tdkit/Globals';
 import { isSameChatMessageDrag, isSameChatMessageDragExtra } from '../../util/messageDragOrigin';
 import { BusinessError } from '@kit.BasicServicesKit';
@@ -129,7 +130,7 @@ export class ChatDropReceiver {
     }).catch((error: Object): void => {
       logE(`[Drop] receive failed code=${(error as BusinessError).code ?? 0} current=${current()}`);
       if (current()) {
-        promptAction.showToast({ message: error instanceof SendPermissionError ? error.message : $r('app.string.share_failed'), duration: 2500 });
+        showToast(error instanceof SendPermissionError ? error.message : $r('app.string.share_failed'), 2500);
       }
     }).finally((): void => {
       if (!retained) { cleanup(); }

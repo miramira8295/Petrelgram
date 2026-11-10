@@ -1,3 +1,4 @@
+import { showToast } from '../util/toast';
 import { promptAction } from '@kit.ArkUI';
 import { getTdClient } from '../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
@@ -37,6 +38,6 @@ export function openForwardOrigin(
     }
   }).catch((e: TdError): void => {
     logE(`openForwardOrigin createPrivateChat failed: ${e.message}`);
-    promptAction.showToast({ message: $r('app.string.cp_cannot_open_source'), duration: 1500 });
+    showToast($r('app.string.cp_cannot_open_source'), 1500);
   });
 }

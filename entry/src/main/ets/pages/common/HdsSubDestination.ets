@@ -52,8 +52,8 @@ export struct HdsSubDestination {
   // 返回键的动作。默认**出 Navigation 栈**；有离场动画/需要拦截的页面自己传。
   //
   // 【和 HdsSubPage 唯一的行为差别，也是这个文件最容易写错的地方】
-  // HdsSubPage 的默认值是 router.back()。放到 NavDestination 上那是错的：
-  // router.back() 弹的是 router 页栈，而本页已经不是 router 页——router 栈里
+  // HdsSubPage 的默认值是 this.getUIContext().getRouter().back()。放到 NavDestination 上那是错的：
+  // this.getUIContext().getRouter().back() 弹的是 router 页栈，而本页已经不是 router 页——router 栈里
   // 只剩 Index 一层，弹掉的就是 Index，现象是**点返回箭头直接退到桌面**
   // （Task 7 修复轮 1 在设备上实测过）。所以这里必须出 Navigation 栈。
   onBack: () => void = (): void => { this.popSelf(); };
@@ -88,7 +88,7 @@ export struct HdsSubDestination {
   //   onPageShow      → onShown
   //   onPageHide      → onHidden
   //   onBackPress     → onBackPressed
-  //   router.getParams() → onReady(ctx.pathInfo.param) → onRouteParams
+  //   this.getUIContext().getRouter().getParams() → onReady(ctx.pathInfo.param) → onRouteParams
   //
   // 【默认值为什么保证已经迁过来的页面零变化】它们一个都没传这四个 Prop：
   //   · onShown / onHidden 注册一个空 lambda，与不注册该属性无区别；
@@ -139,7 +139,7 @@ export struct HdsSubDestination {
   }
 
   // 出栈。形状和 ProfilePage / ChatProfilePage / ArchivePage 里 Task 7 建立的
-  // goBack() 一致：navStack 缺失时只记一条日志，**故意不回退到 router.back()**
+  // goBack() 一致：navStack 缺失时只记一条日志，**故意不回退到 this.getUIContext().getRouter().back()**
   // ——那正是会把应用关掉的那条路，返回键"什么都不做 + 一条日志"远比退到桌面好。
   private popSelf(): void {
     const stack: NavPathStack | undefined = this.navStack;

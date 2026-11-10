@@ -41,7 +41,7 @@ struct CallPage {
       this.snap = s;
       if (s.phase === 'ended' && this.closeTimer === -1) {
         this.closeTimer = setTimeout((): void => {
-          router.back();
+          this.getUIContext().getRouter().back();
         }, 1500);
       }
     });
@@ -59,7 +59,7 @@ struct CallPage {
       permissions.push('ohos.permission.CAMERA');
     }
     try {
-      const context = getContext(this) as common.UIAbilityContext;
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       abilityAccessCtrl.createAtManager()
         .requestPermissionsFromUser(context, permissions)
         .catch((error: Error): void => {

@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import { getChatStore, getTdClient } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
@@ -406,7 +407,7 @@ export struct ForumSplitView {
     if (dur > 0 && wasAlreadyOpen) {
       this.topicsSwitchOpacity = 0.35;
       this.topicsSwitchOffsetY = 6;
-      animateTo({
+      this.getUIContext().animateTo({
         duration: dur,
         curve: Curve.FastOutSlowIn
       }, (): void => {
@@ -510,10 +511,7 @@ export struct ForumSplitView {
 
   private manageFailed(action: string, e: TdError): void {
     logE(`ForumSplitView.${action} failed: ${e.message}`);
-    promptAction.showToast({
-      message: str('ft_action_failed', action === 'delete' ? str('delete') : str('ft_action_word')),
-      duration: 2000
-    });
+    showToast(str('ft_action_failed', action === 'delete' ? str('delete') : str('ft_action_word')), 2000);
   }
 
   private togglePinned(row: ForumTopicRow): void {
@@ -616,7 +614,7 @@ export struct ForumSplitView {
     }).catch((e: TdError): void => {
       this.creating = false;
       logE(`ForumSplitView.createForumTopic failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.ft_create_failed'), duration: 2000 });
+      showToast($r('app.string.ft_create_failed'), 2000);
     });
   }
 

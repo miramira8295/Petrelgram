@@ -182,7 +182,7 @@ export struct StickerMessageBubble {
 
   private webmFramesCached(): boolean {
     return stickerFramesCached(this.msg.stickerUniqueId,
-      Math.max(vp2px(this.stickerW()), vp2px(this.stickerH())), this.msg.isEmojiSticker);
+      Math.max(this.getUIContext().vp2px(this.stickerW()), this.getUIContext().vp2px(this.stickerH())), this.msg.isEmojiSticker);
   }
 
   private stickerAnimationSuspended(): boolean {

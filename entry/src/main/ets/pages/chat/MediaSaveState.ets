@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { SaveableEntry } from '../../util/selectionSave';
 // 媒体保存/下载簇：查看器"保存到相册"单槽等待 + 新消息自动保存队列 + 文档
 // 下载后自动打开/另存。saveMediaTo/saveViewerMedia/processAutomaticGallerySave
@@ -204,9 +205,7 @@ export class MediaSaveState {
         if (toFiles) {
           downloadSaveService.saveRemoteFile(
             ctx, e.videoFileId, this.host.chatId(), e.id, displayName);
-          promptAction.showToast({
-            message: $r('app.string.cp_video_downloading_save'), duration: 2500
-          });
+          showToast($r('app.string.cp_video_downloading_save'), 2500);
           return;
         }
         this.pendingGallerySaveProgress?.dispose();
@@ -217,7 +216,7 @@ export class MediaSaveState {
         if (store !== null) {
           store.requestVideoDownload(e.id, true, e.videoFailed);
         }
-        promptAction.showToast({ message: $r('app.string.cp_video_downloading_save'), duration: 2500 });
+        showToast($r('app.string.cp_video_downloading_save'), 2500);
       }
       return;
     }
@@ -230,9 +229,7 @@ export class MediaSaveState {
       if (toFiles) {
         downloadSaveService.saveRemoteFile(
           ctx, e.photoFullFileId, this.host.chatId(), e.id, str('storage_photo'));
-        promptAction.showToast({
-          message: $r('app.string.cp_photo_downloading_save'), duration: 2200
-        });
+        showToast($r('app.string.cp_photo_downloading_save'), 2200);
         return;
       }
       this.pendingGallerySaveProgress?.dispose();
@@ -243,14 +240,14 @@ export class MediaSaveState {
       if (store !== null) {
         store.requestFullPhoto(e.id, e.photoFullFailed);
       }
-      promptAction.showToast({ message: $r('app.string.cp_photo_downloading_save'), duration: 2200 });
+      showToast($r('app.string.cp_photo_downloading_save'), 2200);
       return;
     }
     if (e.photoPath !== '') {
       this.saveMediaTo(ctx, e.photoPath, false, '', toFiles,
         toFiles ? undefined : new DownloadSaveNotification(str('storage_photo')));
     } else {
-      promptAction.showToast({ message: $r('app.string.cp_photo_not_available'), duration: 1800 });
+      showToast($r('app.string.cp_photo_not_available'), 1800);
     }
   }
 
@@ -313,17 +310,14 @@ export class MediaSaveState {
         this.fileOpenInFlightId = 0;
       }
       if (!opened) {
-        promptAction.showToast({
-          message: $r('app.string.cp_no_app_for_file'),
-          duration: 2200
-        });
+        showToast($r('app.string.cp_no_app_for_file'), 2200);
       }
     }).catch((caught: Object): void => {
       if (this.fileOpenInFlightId === messageId) {
         this.fileOpenInFlightId = 0;
       }
       logE(`MediaSaveState.openDownloadedFile failed: ${JSON.stringify(caught)}`);
-      promptAction.showToast({ message: $r('app.string.cp_file_open_failed'), duration: 1800 });
+      showToast($r('app.string.cp_file_open_failed'), 1800);
     });
   }
 
@@ -344,7 +338,7 @@ export class MediaSaveState {
     }
     if (m.videoFileId === 0) {
       this.pendingFileOpenId = 0;
-      promptAction.showToast({ message: $r('app.string.cp_file_unavailable'), duration: 1600 });
+      showToast($r('app.string.cp_file_unavailable'), 1600);
       return;
     }
     if (m.mediaDownloadActive) {
@@ -352,16 +346,13 @@ export class MediaSaveState {
       // 已下的部分留着，下次点从断点继续。
       this.pendingFileOpenId = 0;
       store.pauseFileDownload(messageId);
-      promptAction.showToast({ message: $r('app.string.cp_file_paused'), duration: 1500 });
+      showToast($r('app.string.cp_file_paused'), 1500);
       return;
     }
     this.pendingFileOpenId = messageId;
     store.requestVideoDownload(messageId, true, m.videoFailed);
-    promptAction.showToast({
-      message: m.videoFailed ? $r('app.string.cp_redownloading_file')
-        : $r('app.string.cp_file_download_started'),
-      duration: 1700
-    });
+    showToast(m.videoFailed ? $r('app.string.cp_redownloading_file')
+        : $r('app.string.cp_file_download_started'), 1700);
   }
 
   // Document card save arrow: first asks for a public directory grant, then
@@ -412,7 +403,7 @@ export class MediaSaveState {
       return;
     }
     if (m.videoFileId === 0) {
-      promptAction.showToast({ message: $r('app.string.cp_file_unavailable'), duration: 1600 });
+      showToast($r('app.string.cp_file_unavailable'), 1600);
       return;
     }
     downloadSaveService.saveRemoteFile(
@@ -421,11 +412,8 @@ export class MediaSaveState {
     if (quiet) {
       return;
     }
-    promptAction.showToast({
-      message: m.videoFailed ? $r('app.string.cp_redownload_then_save')
-        : $r('app.string.cp_downloading_then_save'),
-      duration: 2200
-    });
+    showToast(m.videoFailed ? $r('app.string.cp_redownload_then_save')
+        : $r('app.string.cp_downloading_then_save'), 2200);
   }
 
   // B4「原地分相」拆出的 landPendingGallerySave(list) + landPendingFileOpen
@@ -463,7 +451,7 @@ export class MediaSaveState {
           this.pendingGallerySaveId = 0;
           this.pendingGallerySaveProgress?.downloadFailed();
           this.pendingGallerySaveProgress = null;
-          promptAction.showToast({ message: $r('app.string.cp_video_download_failed'), duration: 1800 });
+          showToast($r('app.string.cp_video_download_failed'), 1800);
         } else if (mediaEntryIsPhoto(pe) && pe.photoFullPath !== '') {
           this.pendingGallerySaveId = 0;
           const progress: DownloadSaveNotification | undefined =
@@ -475,7 +463,7 @@ export class MediaSaveState {
           this.pendingGallerySaveId = 0;
           this.pendingGallerySaveProgress?.downloadFailed();
           this.pendingGallerySaveProgress = null;
-          promptAction.showToast({ message: $r('app.string.cp_photo_download_failed'), duration: 1800 });
+          showToast($r('app.string.cp_photo_download_failed'), 1800);
         }
       }
     }
@@ -489,7 +477,7 @@ export class MediaSaveState {
         this.pendingFileOpenId = 0;
       } else if (openEntry.videoFailed) {
         this.pendingFileOpenId = 0;
-        promptAction.showToast({ message: $r('app.string.cp_file_download_failed'), duration: 1800 });
+        showToast($r('app.string.cp_file_download_failed'), 1800);
       } else if (openEntry.videoPath !== '') {
         this.pendingFileOpenId = 0;
         this.openDownloadedFile(openEntry);

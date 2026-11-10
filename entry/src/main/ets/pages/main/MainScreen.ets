@@ -282,7 +282,7 @@ export struct MainScreen {
     // inflatedPatterns，之后每个会话都是命中。
     preloadDefaultChatBackground(
       getTdClient(), getChatStore(), getChatThemeStore(),
-      (): boolean => darkResourceMode(getContext(this) as common.UIAbilityContext),
+      (): boolean => darkResourceMode(this.getUIContext().getHostContext() as common.UIAbilityContext),
       // 顺带把合成也做掉：第一次进会话时这张 jpg 已经在缓存里，不用再等
       // 离屏渲染 + 编码。
       (state: ChatBackgroundState): void => {
@@ -291,17 +291,17 @@ export struct MainScreen {
           isPattern: state.isPattern,
           imageOpacity: patternOpacity(state.isPattern, state.imageOpacity,
             AppStorage.get<number>(patternStrengthKey(
-              darkResourceMode(getContext(this) as common.UIAbilityContext)
+              darkResourceMode(this.getUIContext().getHostContext() as common.UIAbilityContext)
             )) ?? BG_PATTERN_DEFAULT),
           dimming: state.dimming, blurred: state.blurred, userBlur: this.bgBlur,
           width: this.screenW, height: this.screenH
-        }, (getContext(this) as common.UIAbilityContext).cacheDir);
+        }, (this.getUIContext().getHostContext() as common.UIAbilityContext).cacheDir);
       });
     // 来电（应用存活时）：常驻订阅通话状态，响铃即弹入通话页。
     this.unsubCall = getCallSession().subscribe((s: CallSnapshot): void => {
       // 通话期保活：接通流程开始挂 voip 长时任务，结束即释放。
       if (s.phase === 'connecting' || s.phase === 'active') {
-        callKeepAliveTask.start(getContext(this) as common.UIAbilityContext);
+        callKeepAliveTask.start(this.getUIContext().getHostContext() as common.UIAbilityContext);
       } else if (s.phase === 'ended' || s.phase === 'idle') {
         callKeepAliveTask.stop();
       }
@@ -310,7 +310,7 @@ export struct MainScreen {
           return;
         }
         this.callPagePushed = true;
-        router.pushUrl({ url: 'pages/call/CallPage' }).catch((error: Error): void => {
+        this.getUIContext().getRouter().pushUrl({ url: 'pages/call/CallPage' }).catch((error: Error): void => {
           logE(`MainScreen incoming call navigation failed: ${error.message}`);
         });
       } else if (s.phase === 'idle' || s.phase === 'ended') {
@@ -359,7 +359,7 @@ export struct MainScreen {
     const s = getCallSession().current();
     if (s.phase === 'ringing' && !s.isOutgoing && !this.callPagePushed) {
       this.callPagePushed = true;
-      router.pushUrl({ url: 'pages/call/CallPage' }).catch((error: Error): void => {
+      this.getUIContext().getRouter().pushUrl({ url: 'pages/call/CallPage' }).catch((error: Error): void => {
         this.callPagePushed = false;
         logE(`MainScreen foreground call check failed: ${error.message}`);
       });
@@ -374,7 +374,7 @@ export struct MainScreen {
       return;
     }
     this.appliedTab = index;
-    animateTo({
+    this.getUIContext().animateTo({
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, DOCK_SWITCH_DURATION),
       curve: Curve.EaseOut
     }, (): void => { this.tab = index; });
@@ -724,7 +724,7 @@ export struct MainScreen {
   }
 
   private toggleMiniPlayer(): void {
-    animateTo({
+    this.getUIContext().animateTo({
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220),
       curve: Curve.EaseOut
     }, (): void => { this.playerExpanded = !this.playerExpanded; });
@@ -1098,7 +1098,7 @@ export struct MainScreen {
       .onAnimationStart((_currentIndex: number, targetIndex: number) => {
         const target: number = logicalTabIndex(targetIndex, this.showContactsTab);
         if (this.tab !== target) {
-          animateTo({
+          this.getUIContext().animateTo({
             duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, DOCK_SWITCH_DURATION),
             curve: Curve.EaseOut
           }, (): void => { this.tab = target; });

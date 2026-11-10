@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { TdError } from '../../tdkit/TdTypes';
 import {
@@ -69,7 +70,7 @@ struct ConnectedWebsitesPage {
 
   private remove(row: ConnectedWebsite): void {
     if (this.actionKey !== '') { return; }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.cw_disconnect_title'),
       message: str('cw_disconnect_confirm', row.domain !== '' ? row.domain : str('cw_this_site')),
       buttons: [
@@ -89,14 +90,14 @@ struct ConnectedWebsitesPage {
         if (!this.active) { return; }
         this.websites = before;
         this.actionKey = '';
-        promptAction.showToast({ message: $r('app.string.cw_disconnect_failed'), duration: 1800 });
+        showToast($r('app.string.cw_disconnect_failed'), 1800);
       });
     }).catch((): void => {});
   }
 
   private removeAll(): void {
     if (this.actionKey !== '' || this.websites.length === 0) { return; }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.cw_disconnect_all'),
       message: plural('cw_disconnect_all_confirm', this.websites.length, this.websites.length),
       buttons: [
@@ -116,7 +117,7 @@ struct ConnectedWebsitesPage {
         if (!this.active) { return; }
         this.websites = before;
         this.actionKey = '';
-        promptAction.showToast({ message: $r('app.string.cw_disconnect_failed'), duration: 1800 });
+        showToast($r('app.string.cw_disconnect_failed'), 1800);
       });
     }).catch((): void => {});
   }
@@ -127,7 +128,7 @@ struct ConnectedWebsitesPage {
       Button() {
         SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
       }.width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-      .onClick((): void => { router.back(); });
+      .onClick((): void => { this.getUIContext().getRouter().back(); });
       Text($r('app.string.cw_title')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
         .layoutWeight(1);
       if (this.actionKey !== '') { LoadingProgress().width(20).height(20).color(COLOR_PRIMARY); }

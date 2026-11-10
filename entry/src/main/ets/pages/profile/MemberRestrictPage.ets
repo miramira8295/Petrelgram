@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { promptAction, router } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
 import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
@@ -93,7 +94,7 @@ struct MemberRestrictPage {
 
   aboutToAppear(): void {
     this.active = true;
-    const params = router.getParams() as RestrictParams | undefined;
+    const params = this.getUIContext().getRouter().getParams() as RestrictParams | undefined;
     this.chatId = params?.chatId ?? 0;
     this.userId = params?.userId ?? 0;
     this.memberName = params?.memberName ?? '';
@@ -165,7 +166,7 @@ struct MemberRestrictPage {
 
   private chooseDuration(): void {
     const labels = durationLabels();
-    promptAction.showActionMenu({
+    this.getUIContext().getPromptAction().showActionMenu({
       title: str('mm_duration'),
       buttons: labels.map((text: string): promptAction.Button =>
         ({ text, color: '#3390EC' } as promptAction.Button)) as
@@ -188,16 +189,13 @@ struct MemberRestrictPage {
     // isMember 恒为 true：限制的语义是"留在群里但受限"，传 false 会把人踢走。
     restrictMember(this.chatId, this.userId, this.perms, until, true).then((): void => {
       this.busy = false;
-      promptAction.showToast({ message: str('ga_done'), duration: 1400 });
-      router.back();
+      showToast(str('ga_done'), 1400);
+      this.getUIContext().getRouter().back();
     }).catch((error: TdError): void => {
       this.busy = false;
       logE(`MemberRestrictPage.apply failed: ${error.message}`);
-      promptAction.showToast({
-        message: error.message.indexOf('rights') >= 0 || error.message.indexOf('ADMIN') >= 0
-          ? str('ga_no_permission') : str('ga_failed'),
-        duration: 1700
-      });
+      showToast(error.message.indexOf('rights') >= 0 || error.message.indexOf('ADMIN') >= 0
+          ? str('ga_no_permission') : str('ga_failed'), 1700);
     });
   }
 
@@ -207,7 +205,7 @@ struct MemberRestrictPage {
       Button() {
         SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
       }.width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-      .onClick((): void => { router.back(); });
+      .onClick((): void => { this.getUIContext().getRouter().back(); });
       Text($r('app.string.mm_restrict')).fontSize(22).fontWeight(FontWeight.Bold)
         .fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
       if (this.busy) {

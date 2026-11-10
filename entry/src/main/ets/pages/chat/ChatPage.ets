@@ -1,3 +1,5 @@
+import { closeContextMenu } from '../../util/uiContext';
+import { showToast, showToastOptions } from '../../util/toast';
 import { shareableMessageLink, ShareableMessageLink } from '../../util/deepLink';
 import { ChatTimelineBindings, ChatTimelineSession } from './ChatTimelineSession';
 import { subscribeVideoPreload } from '../../util/videoPreloadSetting';
@@ -524,7 +526,7 @@ export struct ChatPage {
         onFileSave: (messageId: number): void => { this.mediaSave.onFileSave(messageId); },
         onFilePause: (messageId: number): void => { this.store?.pauseFileDownload(messageId); },
         onBackgroundCache: (messageIds: number[]): void => {
-          cacheMessagesInBackground(getContext(this) as common.UIAbilityContext, this.timeline.messages, messageIds, this.chatId);
+          cacheMessagesInBackground(this.getUIContext().getHostContext() as common.UIAbilityContext, this.timeline.messages, messageIds, this.chatId);
         },
         onStickerRetry: (messageId: number): void => { this.store?.retrySticker(messageId); },
         onContactOpen: (userId: number, phone: string, vcard: string): void => {
@@ -1071,7 +1073,7 @@ export struct ChatPage {
       this.store?.requestVideoDownload(id, false, failed);
     },
     toast: (message: string, durationMs: number): void => {
-      promptAction.showToast({ message, duration: durationMs });
+      showToast(message, durationMs);
     }
   });
   // Messages with id above this slide in from the bottom (live arrivals only —
@@ -1456,7 +1458,7 @@ export struct ChatPage {
     this.resumeScrollPending = true;
   }
 
-  // 路由参数。router 时代靠 router.getParams() 现取，NavDestination 要在
+  // 路由参数。router 时代靠 this.getUIContext().getRouter().getParams() 现取，NavDestination 要在
   // onReady 里从 NavDestinationContext 拿。
   //
   // 实测（平板 API 26，commit 8046f73 上机）：**onReady 晚于 aboutToAppear**。
@@ -1474,11 +1476,11 @@ export struct ChatPage {
   private navigationCoordinator: ChatPageNavigationCoordinator =
     new ChatPageNavigationCoordinator();
 
-  // 返回上一层。**不能用 router.back()**：本页是 NavDestination（导航页，不是 router 页），router 页栈里
-  // 只剩 Index 一层，router.back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
+  // 返回上一层。**不能用 this.getUIContext().getRouter().back()**：本页是 NavDestination（导航页，不是 router 页），router 页栈里
+  // 只剩 Index 一层，this.getUIContext().getRouter().back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
   // 的现象是「点返回箭头直接退到桌面」。要出的是 Navigation 栈。
   //
-  // Task 6 迁移本页时 leaveChat 成功回调原样留了 router.back()，是漏改，
+  // Task 6 迁移本页时 leaveChat 成功回调原样留了 this.getUIContext().getRouter().back()，是漏改，
   // 不是有意为之。标题栏返回键现在由 HDS 自己弹出同一条 Navigation 栈。
   // 会话操作条：从 ChatEntry 镜像两个标量；同值不写，免得惊动 TopBanners。
   // 收藏面板的副标题用。找不到就给空串——面板照样能开，只是标题少一行。
@@ -1515,7 +1517,7 @@ export struct ChatPage {
   private goBack(): void {
     if (!this.navigationCoordinator.pop()) {
       // navStack 由 onReady(ctx.pathStack) 填，而 onReady 必先于本页可见，所以
-      // 这一支不该发生。这里**故意不回退到 router.back()**：那正是会退出应用的
+      // 这一支不该发生。这里**故意不回退到 this.getUIContext().getRouter().back()**：那正是会退出应用的
       // 那条路，把返回键做成"什么都不做 + 一条日志"远比把应用关掉好。
       logE('ChatPage.goBack: navStack missing, back ignored');
       return;
@@ -1541,17 +1543,17 @@ export struct ChatPage {
       threadRootId: (): number => this.threadRootId,
       forwardIds: (ids: number[]): number[] => this.selection.forwardIds(ids),
       openForwardPicker: (ids: number[]): void => { this.overlayState.openForwardPicker(ids); },
-      closeContextMenu: (): void => { ContextMenu.close(); },
+      closeContextMenu: (): void => { closeContextMenu(); },
       translateInline: (id: number): void => { this.translation.translateInline(id); },
-      context: (): common.UIAbilityContext => getContext(this) as common.UIAbilityContext,
+      context: (): common.UIAbilityContext => this.getUIContext().getHostContext() as common.UIAbilityContext,
       sendBotCommand: (command: string): void => { this.sendBotCommand(command); },
       searchForQuery: (query: string): void => { this.search.enterForQuery(query); },
       jumpToLinkedMessage: (id: number): void => { this.jumpToLinkedMessageInThisChat(id); },
       actionMenu: (options: promptAction.ActionMenuOptions): Promise<promptAction.ActionMenuSuccessResponse> =>
-        promptAction.showActionMenu(options),
-      toast: (options: promptAction.ShowToastOptions): void => { promptAction.showToast(options); },
+        this.getUIContext().getPromptAction().showActionMenu(options),
+      toast: (options: promptAction.ShowToastOptions): void => { showToastOptions(options); },
       dialog: (options: promptAction.ShowDialogOptions): Promise<promptAction.ShowDialogSuccessResponse> =>
-        promptAction.showDialog(options),
+        this.getUIContext().getPromptAction().showDialog(options),
       confirmMenu: (options: promptAction.ShowDialogOptions, what: string) => new Promise((resolve, reject) => {
         const prompt = this.getUIContext().getPromptAction();
         setTimeout((): void => {
@@ -1562,8 +1564,8 @@ export struct ChatPage {
         }, MENU_DISMISS_MS);
       }),
       openPaymentUrl: (url: string): void => {
-        openWebUrl(getContext(this) as common.UIAbilityContext, url, (): void => {
-          promptAction.showToast({ message: $r('app.string.cp_cannot_open_payment'), duration: 1800 });
+        openWebUrl(this.getUIContext().getHostContext() as common.UIAbilityContext, url, (): void => {
+          showToast($r('app.string.cp_cannot_open_payment'), 1800);
         });
       },
       logError: (message: string): void => { logE(message); }
@@ -1587,8 +1589,8 @@ export struct ChatPage {
       },
       resumePrefetch: (): void => { this.videoPrefetch.resume(); },
       armPlaySlotSettle: (): void => { this.playSlot.armSettle(); },
-      exitLandscape: (): void => { setMediaViewerOrientation(getContext(this) as common.UIAbilityContext, false); },
-      restoreSystemBars: (): Promise<void> => restoreViewerSystemBars(getContext(this) as common.UIAbilityContext),
+      exitLandscape: (): void => { setMediaViewerOrientation(this.getUIContext().getHostContext() as common.UIAbilityContext, false); },
+      restoreSystemBars: (): Promise<void> => restoreViewerSystemBars(this.getUIContext().getHostContext() as common.UIAbilityContext),
       isSystemTopBarReady: (): boolean => isSystemTopBarReady()
     });
     this.sessionLifecycle.bind({
@@ -1857,7 +1859,7 @@ export struct ChatPage {
       currentKind: (): string => this.header.currentKind()
     });
     // 附件面板分发簇接上宿主（B12）。context 是"控制器不缓存页面值"这条铁律
-    // 的唯一例外：这里把 getContext(this) 求值一次、闭包成常量传进去——
+    // 的唯一例外：这里把 this.getUIContext().getHostContext() 求值一次、闭包成常量传进去——
     // UIAbilityContext 在同一个 Ability 生命周期内本来就是稳定值，且任何会
     // 触发 picker 的用户操作都严格晚于这里（组件树先要 build 完，用户还要先
     // 手动点开附件抽屉）。uiContext 不具备这条"同生命周期内稳定"的依据，
@@ -1865,7 +1867,7 @@ export struct ChatPage {
     // draft/composerSending 等留页面的字段只经这里的取值器/回调读写，本类不
     // 存影子拷贝；overlayState 的四个 sheet 开关经 setSheet 转发，控制器之间
     // 不互相持有引用（B8 起立的规矩）。
-    const attachContext = getContext(this) as common.UIAbilityContext;
+    const attachContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
     this.attach.bind({
       sendAccess: this.sendAccess,
       context: (): common.UIAbilityContext => attachContext,
@@ -1961,7 +1963,7 @@ export struct ChatPage {
     });
     // 麦克风录音状态机接上宿主（B15）。context 是"控制器不缓存页面值"这条
     // 铁律的既有例外，用法与 attach.bind 那条一致：这里把
-    // getContext(this) 求值一次、闭包成常量传进去。beforeStart 打包
+    // this.getUIContext().getHostContext() 求值一次、闭包成常量传进去。beforeStart 打包
     // start()（原 startRecording）开头五条真连续的跨簇语句——
     // setEmojiPanel(false)/applyBottomSlot(closeSlot(...))/mention.clear()/
     // command.closePanel()/composerController.stopEditing()（原
@@ -1970,7 +1972,7 @@ export struct ChatPage {
     // 节裁决不进任何控制器）单独经 setComposerFocused 转发，不并入
     // beforeStart；afterSent 对应 finish()（原 finishRecording）发送成功后
     // 的 `this.timeline.atBottom = true;`（页面自留字段，跨簇写）。
-    const recordingContext = getContext(this) as common.UIAbilityContext;
+    const recordingContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
     this.recording.bind({
       canSend: (): boolean => this.sendAccess.check('sendVoiceNotes'),
       store: (): MessageStore | null => this.store,
@@ -1999,7 +2001,7 @@ export struct ChatPage {
     // S2 删掉了：它是整簇唯一一条跨域读，改由调用方把 entry 传进
     // saveMediaEntry()。**这是删掉三种之一，不是把三种合并**，上面那条纪律
     // 仍然成立。
-    const mediaSaveContext = getContext(this) as common.UIAbilityContext;
+    const mediaSaveContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
     this.mediaSave.bind({
       context: (): common.UIAbilityContext => mediaSaveContext,
       store: (): MessageStore | null => this.store,
@@ -2031,10 +2033,10 @@ export struct ChatPage {
         if (folderId !== undefined) { setInFolder(folderId, this.chatId, true); }
       },
       onJoinRequested: (): void => {
-        promptAction.showToast({ message: $r('app.string.cpp_join_requested'), duration: 2000 });
+        showToast($r('app.string.cpp_join_requested'), 2000);
       },
       onJoinFailed: (): void => {
-        promptAction.showToast({ message: $r('app.string.cp_join_failed'), duration: 2000 });
+        showToast($r('app.string.cp_join_failed'), 2000);
       },
       closeComposerSurfaces: (): void => {
         this.setEmojiPanel(false);
@@ -2113,11 +2115,11 @@ export struct ChatPage {
       }
     });
     this.subscriptions.set('playSlot', this.playSlot.subscribe());
-    initVideoPosterStore((getContext(this) as common.UIAbilityContext).cacheDir);
+    initVideoPosterStore((this.getUIContext().getHostContext() as common.UIAbilityContext).cacheDir);
     this.nowSec = Math.floor(Date.now() / 1000);
     // 首帧 build 前即同步填入账号默认壁纸快照，避免 aboutToAppear → onReady 之间发生二次壁纸切换。
     this.chatBg = defaultChatBackgroundSnapshot(
-      darkResourceMode(getContext(this) as common.UIAbilityContext)
+      darkResourceMode(this.getUIContext().getHostContext() as common.UIAbilityContext)
     );
     // 日期条隐藏的那一刻 listUserScrollActive 必须跟着翻假——原来它和显隐写在
     // 同一个定时器体里，定时器下沉之后靠这个回调保住同一时刻。
@@ -2249,7 +2251,7 @@ export struct ChatPage {
       `${payload.media.length} media, caption ${payload.caption.length}ch`);
     // 实况照片的动态部分要现去媒体库取（秒级），所以整条落地是异步的。
     // 取不到就原样按静图发，见 util/shareLivePhoto。
-    upgradeLivePhotos(getContext(this) as common.Context, payload)
+    upgradeLivePhotos(this.getUIContext().getHostContext() as common.Context, payload)
       .then((upgraded: UpgradedShare): void => {
         this.stageSharedPayload(upgraded, store);
       }).catch((e: Object): void => {
@@ -2297,11 +2299,9 @@ export struct ChatPage {
     const host: ShareArrivalHost = this.shareHost(store);
     sendDirectShareWithRecovery(upgraded, host, (): boolean => this.store === store).then((sent: boolean): void => {
       if (!sent) { return; }
-      promptAction.showToast({
-        message: str('share_sent_to', this.header.titleTextOf()), duration: 1600
-      });
+      showToast(str('share_sent_to', this.header.titleTextOf()), 1600);
       // 请求已被 TDLib 收下，上传在后台继续（dataTransfer 长时任务）。
-      const ctx = getContext(this) as common.UIAbilityContext;
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
       ctx.moveAbilityToBackground().catch((e: Object): void => {
         // 退不回去不算失败，消息已经发出去了，用户留在会话里也说得通。
         logW(`[Share] moveAbilityToBackground failed: ${e}`);
@@ -2363,7 +2363,7 @@ export struct ChatPage {
       active: (): boolean => this.timeline.pageVisible && this.appIsForeground && !this.viewerOpen() &&
         this.pendingJumpId === 0 && !this.scrollToBottomBusy && !this.search.mode && !this.showEmojiPanel,
       jump: (messageId: number): void => this.onReplyTap(messageId),
-      failed: (): void => { promptAction.showToast({ message: $r('app.string.cp_cannot_jump'), duration: 1500 }); }
+      failed: (): void => { showToast($r('app.string.cp_cannot_jump'), 1500); }
     });
     this.header.refresh();
     this.subscriptions.set('chatAction', getTdClient().onUpdate('updateChatAction',
@@ -2415,7 +2415,7 @@ export struct ChatPage {
     // store; the page only mirrors its snapshot into state.
     this.bgStore = new ChatBackgroundStore(
       getTdClient(), getChatStore(), getChatThemeStore(),
-      (): boolean => darkResourceMode(getContext(this) as common.UIAbilityContext)
+      (): boolean => darkResourceMode(this.getUIContext().getHostContext() as common.UIAbilityContext)
     );
     // Seeds the store's state with the last known account-default background
     // (captured process-wide by ChatBackgroundStore, warmed at app start by
@@ -3995,13 +3995,13 @@ export struct ChatPage {
   private onAddToGifs(messageId: number): void {
     const entry = this.entryById(messageId);
     if (entry === null || !entry.isAnimation || entry.videoFileId === 0 || this.store === null) {
-      promptAction.showToast({ message: $r('app.string.cp_gif_unavailable'), duration: 1500 });
+      showToast($r('app.string.cp_gif_unavailable'), 1500);
       return;
     }
     this.store.addSavedAnimation(entry.videoFileId).then((): void => {
-      promptAction.showToast({ message: $r('app.string.mb_added_to_gifs'), duration: 1500 });
+      showToast($r('app.string.mb_added_to_gifs'), 1500);
     }).catch((): void => {
-      promptAction.showToast({ message: $r('app.string.cp_gif_unavailable'), duration: 1500 });
+      showToast($r('app.string.cp_gif_unavailable'), 1500);
     });
   }
 
@@ -4026,13 +4026,10 @@ export struct ChatPage {
   // ② 收藏/取消收藏这张贴纸。
   private toggleFavoriteSticker(messageId: number): void {
     toggleFavoriteForMessage(this.entryById(messageId)).then((favorite: boolean): void => {
-      promptAction.showToast({
-        message: favorite ? $r('app.string.mb_favorite_added') : $r('app.string.mb_favorite_removed'),
-        duration: 1500
-      });
+      showToast(favorite ? $r('app.string.mb_favorite_added') : $r('app.string.mb_favorite_removed'), 1500);
     }).catch((e: Error): void => {
       logW(`toggleFavoriteSticker failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.mb_favorite_failed'), duration: 1800 });
+      showToast($r('app.string.mb_favorite_failed'), 1800);
     });
   }
 
@@ -4059,7 +4056,7 @@ export struct ChatPage {
       return;
     }
     if (entry.videoFileId === 0 && entry.videoPath === '') {
-      promptAction.showToast({ message: $r('app.string.cp_gif_unavailable'), duration: 1500 });
+      showToast($r('app.string.cp_gif_unavailable'), 1500);
       return;
     }
     if (isPlaying) {
@@ -4319,7 +4316,7 @@ export struct ChatPage {
         this.pendingJumpId = 0;
         this.topCard.finishPinnedJump();
         this.store?.refreshPinned();
-        promptAction.showToast({ message: $r('app.string.cp_pinned_unavailable'), duration: 1500 });
+        showToast($r('app.string.cp_pinned_unavailable'), 1500);
       }
     });
   }
@@ -4501,7 +4498,7 @@ export struct ChatPage {
       }
     }).catch((e: TdError): void => {
       logE(`ChatPage.botCommand failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.cp_command_failed'), duration: 1600 });
+      showToast($r('app.string.cp_command_failed'), 1600);
     }));
   }
 
@@ -4519,7 +4516,7 @@ export struct ChatPage {
         this.store.loadAround(targetId, (found: boolean): void => {
           if (!found && this.pendingJumpId === targetId) {
             this.pendingJumpId = 0;
-            promptAction.showToast({ message: $r('app.string.cp_cannot_locate'), duration: 1500 });
+            showToast($r('app.string.cp_cannot_locate'), 1500);
           }
         });
       }
@@ -4555,7 +4552,7 @@ export struct ChatPage {
       this.store.loadAround(messageId, (found: boolean): void => {
         if (!found && this.pendingJumpId === messageId) {
           this.pendingJumpId = 0;
-          promptAction.showToast({ message: $r('app.string.cp_original_unavailable'), duration: 1500 });
+          showToast($r('app.string.cp_original_unavailable'), 1500);
         }
       });
     }
@@ -4663,7 +4660,7 @@ export struct ChatPage {
 
   private onGiftCodeCopy(code: string): void {
     if (code.trim() === '') {
-      promptAction.showToast({ message: $r('app.string.cp_code_unavailable'), duration: 1500 });
+      showToast($r('app.string.cp_code_unavailable'), 1500);
       return;
     }
     copyPlainText(code, str('cp_code_copied'));
@@ -4759,7 +4756,7 @@ export struct ChatPage {
       this.timeline.atBottom = true;
     }).catch((e: TdError): void => {
       logE(`ChatPage.sendInlineResult failed: ${e.message}`);
-      promptAction.showToast({ message: e instanceof SendPermissionError ? e.message : $r('app.string.cp_inline_send_failed'), duration: 1600 });
+      showToast(e instanceof SendPermissionError ? e.message : $r('app.string.cp_inline_send_failed'), 1600);
     });
   }
 
@@ -4849,13 +4846,13 @@ export struct ChatPage {
     }
     if (userId > 0) {
       const params: Record<string, Object> = { 'userId': userId };
-      // 迁移前是 router.pushUrl(...).catch(弹「打不开联系人」)。漏斗是同步 void，
+      // 迁移前是 this.getUIContext().getRouter().pushUrl(...).catch(弹「打不开联系人」)。漏斗是同步 void，
       // 推进已注册的栈不会失败，那个 toast 分支不再可达；成功路径完全一致。
       navigateToProfile(params);
       return;
     }
     if (vcard.trim() !== '') {
-      const context = getContext(this) as common.UIAbilityContext;
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       const path = `${context.cacheDir}/shared_contact_${Date.now()}.vcf`;
       try {
         const file = fs.openSync(path, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE);
@@ -4884,11 +4881,11 @@ export struct ChatPage {
     }
     const normalized: string = normalizePhoneForDial(phone);
     if (normalized === '') {
-      promptAction.showToast({ message: $r('app.string.cp_contact_no_phone'), duration: 1500 });
+      showToast($r('app.string.cp_contact_no_phone'), 1500);
       return;
     }
-    openUrl(getContext(this) as common.UIAbilityContext, `tel:${normalized}`, (): void => {
-      promptAction.showToast({ message: $r('app.string.cp_no_dialer'), duration: 1600 });
+    openUrl(this.getUIContext().getHostContext() as common.UIAbilityContext, `tel:${normalized}`, (): void => {
+      showToast($r('app.string.cp_no_dialer'), 1600);
     });
   }
 
@@ -4906,12 +4903,12 @@ export struct ChatPage {
     // （防连点闸 → 空判 → 拉起）不变。
     const uris: SharedLocationUris = sharedLocationUris(latitude, longitude, label, valid);
     if (uris.geoUri === '') {
-      promptAction.showToast({ message: $r('app.string.cp_no_location'), duration: 1500 });
+      showToast($r('app.string.cp_no_location'), 1500);
       return;
     }
-    openUrl(getContext(this) as common.UIAbilityContext, uris.geoUri, (): void => {
-      openUrl(getContext(this) as common.UIAbilityContext, uris.webFallback, (): void => {
-        promptAction.showToast({ message: $r('app.string.cp_no_map_app'), duration: 1700 });
+    openUrl(this.getUIContext().getHostContext() as common.UIAbilityContext, uris.geoUri, (): void => {
+      openUrl(this.getUIContext().getHostContext() as common.UIAbilityContext, uris.webFallback, (): void => {
+        showToast($r('app.string.cp_no_map_app'), 1700);
       });
     });
   }
@@ -4943,7 +4940,7 @@ export struct ChatPage {
       return;
     }
     const revoke: boolean = choice.revoke;
-    AlertDialog.show({
+    this.getUIContext().showAlertDialog({
       message: $r('app.string.cp_clear_history_confirm'),
       autoCancel: true,
       primaryButton: {
@@ -4959,10 +4956,10 @@ export struct ChatPage {
           req['remove_from_chat_list'] = false;
           req['revoke'] = revoke;
           getTdClient().send(req).then(() => {
-            promptAction.showToast({ message: $r('app.string.cp_history_cleared'), duration: 2000 });
+            showToast($r('app.string.cp_history_cleared'), 2000);
           }).catch((e: TdError) => {
             logE(`ChatPage.deleteChatHistory failed: ${e.message}`);
-            promptAction.showToast({ message: $r('app.string.cp_clear_failed'), duration: 2000 });
+            showToast($r('app.string.cp_clear_failed'), 2000);
           });
         }
       }
@@ -4970,7 +4967,7 @@ export struct ChatPage {
   }
 
   private confirmLeaveChat(): void {
-    AlertDialog.show({
+    this.getUIContext().showAlertDialog({
       message: str('cp_leave_confirm', this.header.title),
       autoCancel: true,
       primaryButton: {
@@ -4985,7 +4982,7 @@ export struct ChatPage {
             this.goBack();
           }).catch((e: TdError) => {
             logE(`ChatPage.leaveChat failed: ${e.message}`);
-            promptAction.showToast({ message: $r('app.string.cp_leave_failed'), duration: 2000 });
+            showToast($r('app.string.cp_leave_failed'), 2000);
           });
         }
       }
@@ -5438,16 +5435,13 @@ export struct ChatPage {
       return;
     }
     if (entry.videoFileId === 0) {
-      promptAction.showToast({ message: $r('app.string.cp_voice_unavailable'), duration: 1600 });
+      showToast($r('app.string.cp_voice_unavailable'), 1600);
       return;
     }
     if (this.store !== null) {
       this.store.requestVideoDownload(messageId, false, entry.videoFailed);
     }
-    promptAction.showToast({
-      message: entry.videoFailed ? $r('app.string.cp_redownloading_voice') : $r('app.string.cp_voice_loading'),
-      duration: 1400
-    });
+    showToast(entry.videoFailed ? $r('app.string.cp_redownloading_voice') : $r('app.string.cp_voice_loading'), 1400);
   }
 
   private onVoicePlaybackStarted(messageId: number): void {
@@ -5508,7 +5502,7 @@ export struct ChatPage {
     if (this.composerSending) {
       // 静默 return 是"点了没反应"的来源。文本发送已经不走这个闸门了，
       // 剩下三条（媒体、命令、编辑）本来就该一次一件，但至少要说一声。
-      promptAction.showToast({ message: $r('app.string.sending'), duration: 1200 });
+      showToast($r('app.string.sending'), 1200);
       return;
     }
     this.composerSending = true;
@@ -5562,7 +5556,7 @@ export struct ChatPage {
       }
     }).catch((e: TdError): void => {
       logE(`ChatPage.sendMedia failed: ${e.message}`);
-      promptAction.showToast({ message: e instanceof SendPermissionError ? e.message : $r('app.string.cp_photo_send_failed'), duration: 2000 });
+      showToast(e instanceof SendPermissionError ? e.message : $r('app.string.cp_photo_send_failed'), 2000);
     }));
   }
 
@@ -5630,7 +5624,7 @@ export struct ChatPage {
         this.draft = draftSnapshot;
         this.mention.restorePendingNameMentions(mentionsSnapshot);
       }
-      promptAction.showToast({ message: $r('app.string.cp_send_failed_kept'), duration: 1800 });
+      showToast($r('app.string.cp_send_failed_kept'), 1800);
     });
   }
 
@@ -5642,7 +5636,7 @@ export struct ChatPage {
     // Older TDLib payloads can omit keyboardButtonTypeText entirely; an empty
     // type is still the ordinary text-button behavior.
     if (btn.type !== '' && btn.type !== KB_TEXT) {
-      promptAction.showToast({ message: $r('app.string.cp_button_unsupported'), duration: 1500 });
+      showToast($r('app.string.cp_button_unsupported'), 1500);
       return;
     }
     if (this.store === null || this.replyKeyboardSendingKey !== '') {
@@ -5669,7 +5663,7 @@ export struct ChatPage {
     }).catch((e: TdError): void => {
       this.replyKeyboardSendingKey = '';
       logE(`ChatPage.replyKeyboard send failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.send_failed_retry_short'), duration: 1600 });
+      showToast($r('app.string.send_failed_retry_short'), 1600);
     });
   }
 
@@ -5705,13 +5699,11 @@ export struct ChatPage {
   private saveSelected(): void {
     const plan: SaveablePlan = saveableEntries(this.selection.entries(), this.selection.ids);
     if (plan.entries.length === 0) {
-      promptAction.showToast({ message: $r('app.string.cp_nothing_to_save'), duration: 1600 });
+      showToast($r('app.string.cp_nothing_to_save'), 1600);
       return;
     }
     this.mediaSave.saveEntries(plan.entries);
-    promptAction.showToast({
-      message: str('cp_save_selected_started', plan.entries.length), duration: 1800
-    });
+    showToast(str('cp_save_selected_started', plan.entries.length), 1800);
     this.selection.exit();
   }
 
@@ -5726,12 +5718,12 @@ export struct ChatPage {
       }
     }
     if (parts.length === 0) {
-      promptAction.showToast({ message: $r('app.string.cp_nothing_to_copy'), duration: 1500 });
+      showToast($r('app.string.cp_nothing_to_copy'), 1500);
       return;
     }
     const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, parts.join('\n\n'));
     pasteboard.getSystemPasteboard().setData(data).then(() => {
-      promptAction.showToast({ message: plural('cp_copied_n', parts.length, parts.length), duration: 1200 });
+      showToast(plural('cp_copied_n', parts.length, parts.length), 1200);
       this.selection.exit();
     }).catch((e: Object) => { logE(`ChatPage.copySelected failed: ${JSON.stringify(e)}`); });
   }
@@ -5769,7 +5761,7 @@ export struct ChatPage {
   private copyMessageText(messageId: number): void {
     const m = this.findMsg(messageId);
     if (m === null || m.text === '') {
-      promptAction.showToast({ message: $r('app.string.cp_nothing_to_copy'), duration: 1500 });
+      showToast($r('app.string.cp_nothing_to_copy'), 1500);
       return;
     }
     copyPlainText(m.text, str('copied'));
@@ -5800,7 +5792,7 @@ export struct ChatPage {
   private openSelectText(messageId: number): void {
     const m = this.findMsg(messageId);
     if (m === null || (m.text === '' && m.translatedText === '')) {
-      promptAction.showToast({ message: $r('app.string.cp_nothing_to_copy'), duration: 1500 });
+      showToast($r('app.string.cp_nothing_to_copy'), 1500);
       return;
     }
     openSelectTextOverlay(this.getUIContext(), selectTextPayload(m), this.topSafe);
@@ -5815,16 +5807,13 @@ export struct ChatPage {
       // 并在提示里说明适用范围（公开频道/群仍复制 https 链接）。
       const share: ShareableMessageLink = shareableMessageLink(this.chatId, messageId, url);
       if (share.link === '') {
-        promptAction.showToast({ message: $r('app.string.cp_no_link'), duration: 1800 });
+        showToast($r('app.string.cp_no_link'), 1800);
         return;
       }
       const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, share.link);
       pasteboard.getSystemPasteboard().setData(data).then(() => {
-        promptAction.showToast({
-          message: share.internal
-            ? $r('app.string.link_copied_internal') : $r('app.string.link_copied'),
-          duration: share.internal ? 1800 : 1200
-        });
+        showToast(share.internal
+            ? $r('app.string.link_copied_internal') : $r('app.string.link_copied'), share.internal ? 1800 : 1200);
       }).catch((e: Object) => { logE(`ChatPage.copyMessageLink failed: ${JSON.stringify(e)}`); });
     });
   }
@@ -5865,17 +5854,14 @@ export struct ChatPage {
     getTdClient().send(req, 15000).then((message: TdObject): void => {
       const id: number = (message['id'] as number | undefined) ?? 0;
       if (id === 0) {
-        promptAction.showToast({ message: $r('app.string.cp_no_messages_that_day'), duration: 1600 });
+        showToast($r('app.string.cp_no_messages_that_day'), 1600);
         return;
       }
       this.jumpToMessageId(id);
     }).catch((e: TdError): void => {
       // 404 是合法结果：该日期之前没有任何消息。
       const code: number = e.code !== undefined ? e.code : 0;
-      promptAction.showToast({
-        message: code === 404 ? $r('app.string.cp_no_messages_before') : str('cp_jump_failed_msg', e.message),
-        duration: 1600
-      });
+      showToast(code === 404 ? $r('app.string.cp_no_messages_before') : str('cp_jump_failed_msg', e.message), 1600);
     });
   }
 
@@ -5895,7 +5881,7 @@ export struct ChatPage {
     this.store?.loadAround(targetId, (found: boolean): void => {
       if (!found && this.pendingJumpId === targetId) {
         this.pendingJumpId = 0;
-        promptAction.showToast({ message: $r('app.string.cp_cannot_jump'), duration: 1500 });
+        showToast($r('app.string.cp_cannot_jump'), 1500);
       }
     });
   }
@@ -5914,11 +5900,8 @@ export struct ChatPage {
   private recognizeSpeech(messageId: number): void {
     this.store?.recognizeSpeech(messageId).catch((e: TdError): void => {
       const message: string = e.message !== undefined ? e.message : '';
-      promptAction.showToast({
-        message: message.indexOf('PREMIUM') >= 0 || message.indexOf('premium') >= 0
-          ? $r('app.string.cp_transcribe_premium') : str('cp_transcribe_failed_msg', message),
-        duration: 2200
-      });
+      showToast(message.indexOf('PREMIUM') >= 0 || message.indexOf('premium') >= 0
+          ? $r('app.string.cp_transcribe_premium') : str('cp_transcribe_failed_msg', message), 2200);
     });
   }
 
@@ -5929,7 +5912,7 @@ export struct ChatPage {
   private chooseAutoDelete(): void {
     const labels: string[] = [str('close'), str('ps_1_day'), str('ps_1_week'), str('ps_1_month')];
     const seconds: number[] = [0, 86400, 604800, 2678400];
-    promptAction.showActionMenu({
+    this.getUIContext().getPromptAction().showActionMenu({
       title: $r('app.string.cp_auto_delete_title'),
       buttons: labels.map((text: string): promptAction.Button =>
         ({ text, color: '#3390EC' } as promptAction.Button)) as
@@ -5940,13 +5923,10 @@ export struct ChatPage {
       if (value === undefined) { return; }
       this.store?.setAutoDeleteAsync(value).then((): void => {
         this.header.autoDeleteTime = value;
-        promptAction.showToast({
-          message: value === 0 ? $r('app.string.cp_auto_delete_off') : str('cp_auto_delete_after', labels[chosen.index]),
-          duration: 1800
-        });
+        showToast(value === 0 ? $r('app.string.cp_auto_delete_off') : str('cp_auto_delete_after', labels[chosen.index]), 1800);
       }).catch((e: TdError): void => {
         logE(`ChatPage.autoDelete failed: ${e.message}`);
-        promptAction.showToast({ message: $r('app.string.cp_setting_failed_permission'), duration: 1700 });
+        showToast($r('app.string.cp_setting_failed_permission'), 1700);
       });
     }).catch((): void => {});
   }
@@ -5955,7 +5935,7 @@ export struct ChatPage {
   private showSendOptions(): void {
     if (this.draft.trim() === '' || this.composer.editingId !== 0) { return; }
     const labels: string[] = [str('cp_send_silently'), str('cp_send_in_1h'), str('cp_send_tomorrow_9')];
-    promptAction.showActionMenu({
+    this.getUIContext().getPromptAction().showActionMenu({
       title: $r('app.string.cp_send_options'),
       buttons: labels.map((text: string): promptAction.Button =>
         ({ text, color: '#3390EC' } as promptAction.Button)) as
@@ -5982,12 +5962,10 @@ export struct ChatPage {
       this.store?.sendScheduledAsync(text, replyId, sendDate, silent).then((): void => {
         this.draft = '';
         this.composer.clearReply();
-        promptAction.showToast({
-          message: sendDate > 0 ? $r('app.string.cp_scheduled') : $r('app.string.cp_sent_silently'), duration: 1600
-        });
+        showToast(sendDate > 0 ? $r('app.string.cp_scheduled') : $r('app.string.cp_sent_silently'), 1600);
       }).catch((e: TdError): void => {
         logE(`ChatPage.sendScheduled failed: ${e.message}`);
-        promptAction.showToast({ message: $r('app.string.send_failed'), duration: 1600 });
+        showToast($r('app.string.send_failed'), 1600);
       });
     }).catch((): void => {});
   }
@@ -6078,11 +6056,8 @@ export struct ChatPage {
       }
     }).catch((e: TdError): void => {
       logE(`ChatPage.commitEdit failed: ${e.message}`);
-      promptAction.showToast({
-        message: e.message.indexOf('MESSAGE_NOT_MODIFIED') >= 0
-          ? $r('app.string.cp_no_change') : $r('app.string.cp_edit_failed'),
-        duration: 1800
-      });
+      showToast(e.message.indexOf('MESSAGE_NOT_MODIFIED') >= 0
+          ? $r('app.string.cp_no_change') : $r('app.string.cp_edit_failed'), 1800);
     }));
   }
 
@@ -6517,7 +6492,7 @@ export struct ChatPage {
         if (!success) {
           this.clearPendingScrollBottom('reloadFailed');
           this.timeline.atBottom = false;
-          promptAction.showToast({ message: $r('app.string.cp_latest_failed'), duration: 1600 });
+          showToast($r('app.string.cp_latest_failed'), 1600);
         } else if (this.timeline.groups.length === 0) {
           this.clearPendingScrollBottom('emptyGroups');
           this.timeline.atBottom = true;
@@ -6581,7 +6556,7 @@ export struct ChatPage {
       onSave: (): void => { this.saveSelected(); },
       canBackgroundCache: selectionHasCacheableVideo(this.selection.entries(), this.selection.ids),
       onBackgroundCache: (): void => {
-        cacheMessagesInBackground(getContext(this) as common.UIAbilityContext, this.selection.entries(), this.selection.ids,
+        cacheMessagesInBackground(this.getUIContext().getHostContext() as common.UIAbilityContext, this.selection.entries(), this.selection.ids,
           this.chatId);
         this.selection.exit();
       },
@@ -6966,7 +6941,7 @@ export struct ChatPage {
       const client = getTdClient();
       const chatId = this.chatId;
       const threadId = this.threadRootId;
-      this.dropReceiver.receive(event, getContext(this) as common.Context, this.getUIContext(), this.shareHost(store),
+      this.dropReceiver.receive(event, this.getUIContext().getHostContext() as common.Context, this.getUIContext(), this.shareHost(store),
         (): boolean => this.store === store && getTdClient() === client && this.chatId === chatId && this.threadRootId === threadId &&
           this.timeline.pageVisible && this.appIsForeground && !this.viewerOpen() && !this.search.mode && !this.selection.active &&
           this.composer.editingId === 0 && !this.recording.isRecording && this.membershipState === 'writable',
@@ -7018,7 +6993,7 @@ export struct ChatPage {
     .bindToScrollable([])
     // 查看器**不走 bindContentCover**：全模态里视频画面显示不出来（#201，平板分栏黑屏）。
     // 分栏下盖满窗口改由收左栏 + 侧边页签实现，见 util/viewerWindowCover。
-    // 入参：router 时代是 aboutToAppear 里 router.getParams() 现取，现在从
+    // 入参：router 时代是 aboutToAppear 里 this.getUIContext().getRouter().getParams() 现取，现在从
     // NavDestinationContext 的 pathInfo 里取——而 onReady 实测晚于 aboutToAppear，
     // 所以吃参数的初始化也在这里触发，不能留在 aboutToAppear。
     .onReady((ctx: NavDestinationContext): void => {

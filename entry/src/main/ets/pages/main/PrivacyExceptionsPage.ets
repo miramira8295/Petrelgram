@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
@@ -102,9 +103,9 @@ struct PrivacyExceptionsPage {
 
   aboutToAppear(): void {
     this.active = true;
-    const params = router.getParams() as PrivacyExceptionsParams | undefined;
+    const params = this.getUIContext().getRouter().getParams() as PrivacyExceptionsParams | undefined;
     if (params === undefined || params.setting === undefined || params.setting === '') {
-      router.back();
+      this.getUIContext().getRouter().back();
       return;
     }
     this.setting = params.setting;
@@ -260,7 +261,7 @@ struct PrivacyExceptionsPage {
       logE(`PrivacyExceptionsPage.save failed: ${error.message}`);
       if (!this.active) { return; }
       this.saving = false;
-      promptAction.showToast({ message: $r('app.string.pe_save_failed'), duration: 1800 });
+      showToast($r('app.string.pe_save_failed'), 1800);
     });
   }
 
@@ -270,7 +271,7 @@ struct PrivacyExceptionsPage {
       Button() {
         SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
       }.width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-      .onClick((): void => { router.back(); });
+      .onClick((): void => { this.getUIContext().getRouter().back(); });
       Text(str('pe_title', this.title)).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
         .layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
     }

@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { common } from '@kit.AbilityKit';
@@ -48,7 +49,7 @@ struct InAppBrowserPage {
   aboutToAppear(): void {
     // 代理可能在后台被自动切换换掉，开页面前让桥跟一次（内部失败只记日志）。
     refreshWebBridge();
-    const params = router.getParams() as BrowserParams | undefined;
+    const params = this.getUIContext().getRouter().getParams() as BrowserParams | undefined;
     this.initialUrl = webBrowserTarget(params?.url ?? '');
     this.currentUrl = this.initialUrl;
   }
@@ -70,7 +71,7 @@ struct InAppBrowserPage {
   // real web navigation stays inside this WebView.
   private interceptTelegram(url: string): boolean {
     if (url.startsWith('tg://') || normalizeTelegramLink(url) !== '') {
-      openTelegramLink(getContext(this) as common.UIAbilityContext, url, false);
+      openTelegramLink(this.getUIContext().getHostContext() as common.UIAbilityContext, url, false);
       return true;
     }
     // 非 http(s) 的私有 scheme（baiduboxapp:// 一类的拉起自家 App 跳转）不能
@@ -78,7 +79,7 @@ struct InAppBrowserPage {
     // 百度网盘正是这么挂的）。转交系统试着拉起对应应用，拉不起来就地忽略，
     // 网页本身留在原地。
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      openUrl(getContext(this) as common.UIAbilityContext, url, (): void => {});
+      openUrl(this.getUIContext().getHostContext() as common.UIAbilityContext, url, (): void => {});
       return true;
     }
     return false;
@@ -86,8 +87,8 @@ struct InAppBrowserPage {
 
   private openExternally(): void {
     const target = this.currentUrl !== '' ? this.currentUrl : this.initialUrl;
-    openUrl(getContext(this) as common.UIAbilityContext, target, (): void => {
-      promptAction.showToast({ message: $r('app.string.web_no_browser'), duration: 1800 });
+    openUrl(this.getUIContext().getHostContext() as common.UIAbilityContext, target, (): void => {
+      showToast($r('app.string.web_no_browser'), 1800);
     });
   }
 
@@ -95,10 +96,10 @@ struct InAppBrowserPage {
     const target = this.currentUrl !== '' ? this.currentUrl : this.initialUrl;
     const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, target);
     pasteboard.getSystemPasteboard().setData(data).then((): void => {
-      promptAction.showToast({ message: $r('app.string.link_copied'), duration: 1400 });
+      showToast($r('app.string.link_copied'), 1400);
     }).catch((error: BusinessError): void => {
       logE(`InAppBrowser copy failed: ${error.code} ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.copy_failed'), duration: 1400 });
+      showToast($r('app.string.copy_failed'), 1400);
     });
   }
 
@@ -130,7 +131,7 @@ struct InAppBrowserPage {
       Button() {
         SymbolGlyph($r('sys.symbol.xmark')).fontSize(20).fontColor([COLOR_TEXT_PRIMARY]);
       }.width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-      .onClick((): void => { router.back(); });
+      .onClick((): void => { this.getUIContext().getRouter().back(); });
       Column({ space: 1 }) {
         Text(this.pageTitle !== '' ? this.pageTitle : $r('app.string.web_page'))
           .fontSize(16).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)

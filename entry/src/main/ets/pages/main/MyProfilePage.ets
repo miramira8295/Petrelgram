@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { showProfileStoryActions } from '../../services/ProfileStoryActions';
 import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { TelegramQrScanner } from '../../services/TelegramQrScanner';
@@ -329,7 +330,7 @@ export struct MyProfilePage {
   private qrOpen: boolean = false;
   private qrCtrl: CustomDialogController = new CustomDialogController({
     builder: QrDialog({ ownUser: true, title: this.name,
-      onScan: (): void => { this.qrScanner.start(getContext(this) as common.UIAbilityContext); },
+      onScan: (): void => { this.qrScanner.start(this.getUIContext().getHostContext() as common.UIAbilityContext); },
       onClosed: (): void => { this.qrOpen = false; } }),
     customStyle: true,
     alignment: DialogAlignment.Center,
@@ -409,7 +410,7 @@ export struct MyProfilePage {
     // decidePush 给 clearAndPush，这条栈的深度恒为 1。
     if (!this.pushEditor()) {
       logE('MyProfilePage.openEditor failed: profile stack missing');
-      promptAction.showToast({ message: $r('app.string.settings_open_profile_failed'), duration: 1800 });
+      showToast($r('app.string.settings_open_profile_failed'), 1800);
       if (this.editorNavigationTimer !== -1) {
         clearTimeout(this.editorNavigationTimer);
         this.editorNavigationTimer = -1;
@@ -447,7 +448,7 @@ export struct MyProfilePage {
       return;
     }
     this.photoMenuOpen = true;
-    promptAction.showActionMenu({
+    this.getUIContext().getPromptAction().showActionMenu({
       title: $r('app.string.mp_set_photo_title'),
       buttons: [
         { text: $r('app.string.mp_take_photo'), color: '#3390EC' },
@@ -474,7 +475,7 @@ export struct MyProfilePage {
       const profile: cameraPicker.PickerProfile = {
         cameraPosition: camera.CameraPosition.CAMERA_POSITION_FRONT
       };
-      const res = await cameraPicker.pick(getContext(this) as common.Context,
+      const res = await cameraPicker.pick(this.getUIContext().getHostContext() as common.Context,
         [cameraPicker.PickerMediaType.PHOTO], profile);
       if (res.resultCode === 0 && res.resultUri !== '') {
         const path = this.copyUriToCache(res.resultUri);
@@ -541,7 +542,7 @@ export struct MyProfilePage {
         logE(`MyProfilePage thumb download failed: ${e.message}`);
       });
     } else {
-      promptAction.showToast({ message: $r('app.string.mp_emoji_unsupported'), duration: 2000 });
+      showToast($r('app.string.mp_emoji_unsupported'), 2000);
     }
   }
 
@@ -566,7 +567,7 @@ export struct MyProfilePage {
       packer.release();
       pm.release();
       src.release();
-      const dest = `${(getContext(this) as common.UIAbilityContext).cacheDir}/avatar_up_${Date.now()}.jpg`;
+      const dest = `${(this.getUIContext().getHostContext() as common.UIAbilityContext).cacheDir}/avatar_up_${Date.now()}.jpg`;
       const f = fs.openSync(dest, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE);
       fs.writeSync(f.fd, buf);
       fs.closeSync(f);
@@ -599,7 +600,7 @@ export struct MyProfilePage {
         return;
       }
       this.photoUploading = false;
-      promptAction.showToast({ message: $r('app.string.mp_photo_updated'), duration: 1500 });
+      showToast($r('app.string.mp_photo_updated'), 1500);
       if (this.store !== null) {
         this.store.reload();
       }
@@ -609,14 +610,14 @@ export struct MyProfilePage {
       }
       this.photoUploading = false;
       logE(`MyProfilePage.setProfilePhoto failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.mp_photo_failed'), duration: 2000 });
+      showToast($r('app.string.mp_photo_failed'), 2000);
     });
   }
 
   private copyUriToCache(uri: string): string {
     try {
       const name = decodeURIComponent(uri.substring(uri.lastIndexOf('/') + 1));
-      const dest = `${(getContext(this) as common.UIAbilityContext).cacheDir}/avatar_${Date.now()}_${name}`;
+      const dest = `${(this.getUIContext().getHostContext() as common.UIAbilityContext).cacheDir}/avatar_${Date.now()}_${name}`;
       const src = fs.openSync(uri, fs.OpenMode.READ_ONLY);
       fs.copyFileSync(src.fd, dest);
       fs.closeSync(src);
@@ -651,7 +652,7 @@ export struct MyProfilePage {
       this.archivedStoriesLoaded !== s.archivedStoriesLoaded ||
       this.archivedStoriesError !== s.archivedStoriesError;
     if (postStateChanged && this.active) {
-      animateTo({
+      this.getUIContext().animateTo({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
         curve: Curve.EaseOut
       }, (): void => {
@@ -807,10 +808,7 @@ export struct MyProfilePage {
     pasteboard.getSystemPasteboard().setData(data).then((): void => {
       this.copyingInfoKey = '';
       this.copiedInfoKey = key;
-      promptAction.showToast({
-        message: str('mp_copied', this.infoTitle(key)),
-        duration: 1200
-      });
+      showToast(str('mp_copied', this.infoTitle(key)), 1200);
       if (this.copiedInfoTimer !== -1) {
         clearTimeout(this.copiedInfoTimer);
       }
@@ -823,7 +821,7 @@ export struct MyProfilePage {
     }).catch((caught: Object): void => {
       this.copyingInfoKey = '';
       logE(`MyProfilePage.copyInfo(${key}) failed: ${JSON.stringify(caught)}`);
-      promptAction.showToast({ message: $r('app.string.copy_failed_retry'), duration: 1500 });
+      showToast($r('app.string.copy_failed_retry'), 1500);
     });
   }
 
@@ -836,7 +834,7 @@ export struct MyProfilePage {
       !this.archivedStoriesLoaded && !this.archivedStoriesLoading) {
       this.store.loadArchivedStories();
     }
-    animateTo({
+    this.getUIContext().animateTo({
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220),
       curve: Curve.EaseOut
     }, (): void => {
@@ -868,13 +866,13 @@ export struct MyProfilePage {
   private openProfileStory(item: StoryItem, snapshotIds?: number[]): void {
     if (this.myId <= 0) { return; }
     const items = this.postTab === 0 ? this.stories : this.archivedStories;
-    router.pushUrl({ url: 'pages/story/StoryViewerPage', params: {
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/story/StoryViewerPage', params: {
       chatId: this.myId, storyIds: snapshotIds ?? items.map((entry: StoryItem): number => entry.id),
       storyId: item.id, chatTitle: this.name, chatAvatar: this.avatarPath,
       chatInitials: this.initials
     } }).catch((error: Error): void => {
       logE(`MyProfilePage.openProfileStory failed: ${error.message}`);
-      promptAction.showToast({ message: str('apply_failed_retry') });
+      showToast(str('apply_failed_retry'));
     });
   }
 
@@ -887,7 +885,7 @@ export struct MyProfilePage {
       .map((entry: StoryItem): number => entry.id);
     this.storyActionBusy = true;
     try {
-      await showProfileStoryActions(getContext(this) as common.UIAbilityContext, getTdClient(),
+      await showProfileStoryActions(this.getUIContext().getHostContext() as common.UIAbilityContext, getTdClient(),
         chatId, item.id, (): boolean => this.store === store && this.profileLoadSequence === sequence,
         (): void => this.openProfileStory(item, ids), (): void => {
           store.reloadStories(true);
@@ -896,7 +894,7 @@ export struct MyProfilePage {
     } catch (error) {
       logE(`MyProfilePage.manageProfileStory failed: ${error}`);
       if (this.store === store) {
-        promptAction.showToast({ message: str('apply_failed_retry') });
+        showToast(str('apply_failed_retry'));
       }
     } finally {
       this.storyActionBusy = false;
@@ -939,13 +937,10 @@ export struct MyProfilePage {
         }
         if (result['@type'] !== 'canPostStoryResultOk') {
           this.storyPickerOpen = false;
-          promptAction.showToast({
-            message: this.storyPostUnavailableText(result),
-            duration: 2200
-          });
+          showToast(this.storyPostUnavailableText(result), 2200);
           return;
         }
-        promptAction.showActionMenu({
+        this.getUIContext().getPromptAction().showActionMenu({
           title: $r('app.string.mp_add_story'),
           buttons: [
             { text: $r('app.string.mp_capture_photo'), color: '#3390EC' },
@@ -964,7 +959,7 @@ export struct MyProfilePage {
       }).catch((error: TdError): void => {
         this.storyPickerOpen = false;
         logE(`MyProfilePage.canPostStory failed: ${error.message}`);
-        promptAction.showToast({ message: $r('app.string.mp_add_story_failed'), duration: 1800 });
+        showToast($r('app.string.mp_add_story_failed'), 1800);
       });
     };
     if (this.storyChatId > 0) {
@@ -983,7 +978,7 @@ export struct MyProfilePage {
     }).catch((error: TdError): void => {
       this.storyPickerOpen = false;
       logE(`MyProfilePage.createStoryChat failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.mp_add_story_failed'), duration: 1800 });
+      showToast($r('app.string.mp_add_story_failed'), 1800);
     });
   }
 
@@ -992,7 +987,7 @@ export struct MyProfilePage {
       const profile: cameraPicker.PickerProfile = {
         cameraPosition: camera.CameraPosition.CAMERA_POSITION_BACK
       };
-      const result = await cameraPicker.pick(getContext(this) as common.Context,
+      const result = await cameraPicker.pick(this.getUIContext().getHostContext() as common.Context,
         [cameraPicker.PickerMediaType.PHOTO], profile);
       if (result.resultCode === 0 && result.resultUri !== '') {
         const path = this.copyUriToCache(result.resultUri);
@@ -1002,7 +997,7 @@ export struct MyProfilePage {
       }
     } catch (error) {
       logE(`MyProfilePage.storyFromCamera failed: ${error}`);
-      promptAction.showToast({ message: $r('app.string.mp_camera_failed'), duration: 1800 });
+      showToast($r('app.string.mp_camera_failed'), 1800);
     }
   }
 
@@ -1021,7 +1016,7 @@ export struct MyProfilePage {
       }
     }).catch((error: Object): void => {
       logE(`MyProfilePage.storyFromGallery failed: ${JSON.stringify(error)}`);
-      promptAction.showToast({ message: $r('app.string.mp_gallery_failed'), duration: 1800 });
+      showToast($r('app.string.mp_gallery_failed'), 1800);
     });
   }
 
@@ -1030,7 +1025,7 @@ export struct MyProfilePage {
       return;
     }
     this.storyPickerOpen = true;
-    promptAction.showActionMenu({
+    this.getUIContext().getPromptAction().showActionMenu({
       title: $r('app.string.mp_story_privacy'),
       buttons: [
         { text: $r('app.string.privacy_everybody'), color: '#3390EC' },
@@ -1084,7 +1079,7 @@ export struct MyProfilePage {
       const packer = image.createImagePacker();
       const buffer = await packer.packing(pixelMap, { format: 'image/jpeg', quality: 92 });
       const destination =
-        `${(getContext(this) as common.UIAbilityContext).cacheDir}/story_${Date.now()}.jpg`;
+        `${(this.getUIContext().getHostContext() as common.UIAbilityContext).cacheDir}/story_${Date.now()}.jpg`;
       const file = fs.openSync(destination, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE);
       fs.writeSync(file.fd, buffer);
       fs.closeSync(file);
@@ -1110,7 +1105,7 @@ export struct MyProfilePage {
     }
     if (path === '') {
       this.storyPosting = false;
-      promptAction.showToast({ message: $r('app.string.mp_photo_process_failed'), duration: 1800 });
+      showToast($r('app.string.mp_photo_process_failed'), 1800);
       return;
     }
     const inputFile: TdObject = { '@type': 'inputFileLocal' };
@@ -1140,7 +1135,7 @@ export struct MyProfilePage {
         return;
       }
       this.storyPosting = false;
-      promptAction.showToast({ message: $r('app.string.mp_story_posted'), duration: 1500 });
+      showToast($r('app.string.mp_story_posted'), 1500);
       this.store?.reloadStories();
     }).catch((error: TdError): void => {
       if (sequence !== this.storyUploadSequence) {
@@ -1148,7 +1143,7 @@ export struct MyProfilePage {
       }
       this.storyPosting = false;
       logE(`MyProfilePage.postStory failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.mp_story_post_failed'), duration: 2000 });
+      showToast($r('app.string.mp_story_post_failed'), 2000);
     });
   }
 
@@ -2090,7 +2085,7 @@ export struct MyProfilePage {
     const scanIcon: HdsNavigationIconOptions = {
       icon: $r('sys.symbol.line_viewfinder'),
       label: str('qr_scan'),
-      action: (): void => { this.qrScanner.start(getContext(this) as common.UIAbilityContext); }
+      action: (): void => { this.qrScanner.start(this.getUIContext().getHostContext() as common.UIAbilityContext); }
     };
     return {
       title: { mainTitle: $r('app.string.tab_profile') },

@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { promptAction, router } from '@kit.ArkUI';
 import { TdError } from '../../tdkit/TdTypes';
@@ -75,7 +76,7 @@ struct FolderInviteLinksPage {
 
   aboutToAppear(): void {
     this.active = true;
-    const params = router.getParams() as FolderInviteParams | undefined;
+    const params = this.getUIContext().getRouter().getParams() as FolderInviteParams | undefined;
     this.folderId = params?.folderId ?? 0;
     this.title = params?.title ?? '';
     this.load();
@@ -118,9 +119,9 @@ struct FolderInviteLinksPage {
   private copy(link: string): void {
     const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, link);
     pasteboard.getSystemPasteboard().setData(data).then((): void => {
-      promptAction.showToast({ message: $r('app.string.link_copied'), duration: 1400 });
+      showToast($r('app.string.link_copied'), 1400);
     }).catch((): void => {
-      promptAction.showToast({ message: $r('app.string.copy_failed'), duration: 1500 });
+      showToast($r('app.string.copy_failed'), 1500);
     });
   }
 
@@ -181,19 +182,19 @@ struct FolderInviteLinksPage {
       this.operationKey = '';
       this.editorOpen = false;
       this.warning = '';
-      promptAction.showToast({ message: key === 'create' ? $r('app.string.fl_created') : $r('app.string.fl_updated'), duration: 1500 });
+      showToast(key === 'create' ? $r('app.string.fl_created') : $r('app.string.fl_updated'), 1500);
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.operationKey = '';
       this.warning = error.message.indexOf('PREMIUM') >= 0
         ? str('fl_limit_reached') : str('fl_save_failed');
-      promptAction.showToast({ message: this.warning, duration: 1900 });
+      showToast(this.warning, 1900);
       logE(`FolderInviteLinksPage.saveLink failed: ${error.message}`);
     });
   }
 
   private confirmDelete(link: FolderInviteLinkData): void {
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.fl_delete'), message: $r('app.string.fl_delete_confirm'),
       buttons: [
         { text: $r('app.string.cancel'), color: COLOR_TEXT_SECONDARY as string },
@@ -206,7 +207,7 @@ struct FolderInviteLinksPage {
         if (!this.active) { return; }
         this.links = this.links.filter((item: FolderInviteLinkData): boolean => item.inviteLink !== link.inviteLink);
         this.operationKey = '';
-        promptAction.showToast({ message: $r('app.string.fl_deleted'), duration: 1500 });
+        showToast($r('app.string.fl_deleted'), 1500);
       }).catch((error: TdError): void => {
         if (!this.active) { return; }
         this.operationKey = '';
@@ -232,7 +233,7 @@ struct FolderInviteLinksPage {
       this.selectedNewChatIds = [];
       this.newChatsOpen = false;
       this.operationKey = '';
-      promptAction.showToast({ message: $r('app.string.fl_new_chats_added'), duration: 1700 });
+      showToast($r('app.string.fl_new_chats_added'), 1700);
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.operationKey = '';
@@ -246,7 +247,7 @@ struct FolderInviteLinksPage {
     Row({ space: 6 }) {
       Row() { SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(25).fontColor([COLOR_TEXT_PRIMARY]); }
         .width(44).height(44).borderRadius(22).justifyContent(FlexAlign.Center)
-        .stateStyles({ normal: this.pressNormal, pressed: this.pressDown }).onClick((): void => router.back());
+        .stateStyles({ normal: this.pressNormal, pressed: this.pressDown }).onClick((): void => this.getUIContext().getRouter().back());
       Column({ space: 1 }) {
         Text($r('app.string.fl_title')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
         Text(this.title).fontSize(11).fontColor(COLOR_TEXT_SECONDARY).maxLines(1)

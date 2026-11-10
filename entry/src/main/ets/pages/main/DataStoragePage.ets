@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { TdError } from '../../tdkit/TdTypes';
 import {
@@ -119,14 +120,14 @@ export struct DataStoragePage {
   }
 
   private refreshDownloadPath(): void {
-    this.downloadPath = getDownloadDirectoryPath(getContext(this) as common.UIAbilityContext);
+    this.downloadPath = getDownloadDirectoryPath(this.getUIContext().getHostContext() as common.UIAbilityContext);
   }
 
   private changeDownloadPath(): void {
     if (this.changingDownloadPath) { return; }
     this.changingDownloadPath = true;
     this.armDownloadPathWatchdog();
-    changeDownloadDirectory(getContext(this) as common.UIAbilityContext).then((status: string): void => {
+    changeDownloadDirectory(this.getUIContext().getHostContext() as common.UIAbilityContext).then((status: string): void => {
       this.finishDownloadPathChange();
       if (status === DOWNLOAD_DIR_CHANGED) {
         this.refreshDownloadPath();
@@ -134,12 +135,12 @@ export struct DataStoragePage {
       // 每一种结局都有下文，只有用户主动取消才静默（见 util/downloadDirOutcome）。
       const toast: string = downloadDirToast(status);
       if (toast !== '') {
-        promptAction.showToast({ message: str(toast), duration: 2000 });
+        showToast(str(toast), 2000);
       }
     }).catch((error: Error): void => {
       this.finishDownloadPathChange();
       logE(`DataStoragePage.changeDownloadPath failed: ${error.message}`);
-      promptAction.showToast({ message: str('media_cannot_open_location'), duration: 2000 });
+      showToast(str('media_cannot_open_location'), 2000);
     });
   }
 
@@ -153,7 +154,7 @@ export struct DataStoragePage {
       }
       this.changingDownloadPath = false;
       logE('[DownloadDir] picker did not return in time');
-      promptAction.showToast({ message: str('ds_download_picker_unsupported'), duration: 2000 });
+      showToast(str('ds_download_picker_unsupported'), 2000);
     }, DOWNLOAD_PICKER_TIMEOUT_MS);
   }
 
@@ -281,7 +282,7 @@ export struct DataStoragePage {
   private confirmAction(key: string, title: ResourceStr, message: ResourceStr, button: ResourceStr,
     color: string, operation: () => Promise<void>, success: ResourceStr): void {
     if (this.actionKey !== '') { return; }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title, message,
       buttons: [
         { text: $r('app.string.cancel'), color: COLOR_TEXT_SECONDARY as string },
@@ -292,12 +293,12 @@ export struct DataStoragePage {
       this.actionKey = key;
       operation().then((): void => {
         this.actionKey = '';
-        promptAction.showToast({ message: success, duration: 1800 });
+        showToast(success, 1800);
         this.load(false);
       }).catch((error: TdError): void => {
         this.actionKey = '';
         logE(`DataStoragePage.${key} failed: ${error.message}`);
-        promptAction.showToast({ message: $r('app.string.action_failed_retry'), duration: 1800 });
+        showToast($r('app.string.action_failed_retry'), 1800);
         this.load(false);
       });
     });
@@ -377,7 +378,7 @@ export struct DataStoragePage {
     }
     .width('100%').height(64).padding({ left: 12, right: 12 })
     .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
-    .onClick((): void => { router.pushUrl({ url: page }); });
+    .onClick((): void => { this.getUIContext().getRouter().pushUrl({ url: page }); });
   }
 
   @Builder

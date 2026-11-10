@@ -1,3 +1,5 @@
+import { showActionMenu } from '../../util/uiContext';
+import { showToast } from '../../util/toast';
 import { ChatSendAccess } from './ChatSendAccess';
 // 附件面板分发表 runAttachAction，以及它背后挂的媒体/文件/音频/位置/骰子/
 // 联系人/投票/录像笔记等动作方法，连同长按气泡「替换媒体」replaceMedia，
@@ -35,7 +37,7 @@ import { ChatSendAccess } from './ChatSendAccess';
 // `getUIContext().getPromptAction().showActionMenu(...)` 拿到的是
 // `UIContext`（ArkUI 侧、绑定当前窗口/分栏的弹窗入口），`getContext(this)`
 // 拿到的是 `UIAbilityContext`（Ability 侧），两者不能互换、也不能简单改成
-// 模块级静态 `promptAction.showActionMenu(...)`——那样在分栏场景下弹窗可能
+// 模块级静态 `showActionMenu(...)`——那样在分栏场景下弹窗可能
 // 弹到错误的窗口上，是会改变行为的替换，不是逐字搬迁。因此本类单独开了
 // `host.uiContext()` 这个取值器，和 `host.context()` 并列、互不影响。
 //
@@ -327,15 +329,15 @@ export class AttachActions {
       if (res.photoUris.length === 0) { return; }
       const path = this.copyUriToCache(res.photoUris[0]);
       if (path === '') {
-        promptAction.showToast({ message: $r('app.string.cp_cannot_read_file'), duration: 1600 });
+        showToast($r('app.string.cp_cannot_read_file'), 1600);
         return;
       }
       if (this.host.sendAccess?.checkMedia([{ path: path, isVideo: isVideoPath(path) }]) === false) { return; }
       store.editMediaAsync(messageId, path, isVideoPath(path), msg.text).then((): void => {
-        promptAction.showToast({ message: $r('app.string.cp_media_replaced'), duration: 1500 });
+        showToast($r('app.string.cp_media_replaced'), 1500);
       }).catch((e: TdError): void => {
         logE(`AttachActions.replaceMedia failed: ${e.message}`);
-        promptAction.showToast({ message: $r('app.string.cp_replace_failed'), duration: 1700 });
+        showToast($r('app.string.cp_replace_failed'), 1700);
       });
     }).catch((): void => { this.mediaPickerOpen = false; });
   }
@@ -348,9 +350,7 @@ export class AttachActions {
     // 选择器自己就按"还能再放几张"限制，好过让用户挑满九张再被截断。
     const room: number = PENDING_MEDIA_MAX - this.host.pendingMediaCount();
     if (room <= 0) {
-      promptAction.showToast({
-        message: str('cp_pending_media_full', PENDING_MEDIA_MAX, 0), duration: 2000
-      });
+      showToast(str('cp_pending_media_full', PENDING_MEDIA_MAX, 0), 2000);
       return;
     }
     this.mediaPickerOpen = true;
@@ -377,7 +377,7 @@ export class AttachActions {
     }).catch((e: Object) => {
       this.mediaPickerOpen = false;
       logE(`AttachActions.pickMedia failed: ${JSON.stringify(e)}`);
-      promptAction.showToast({ message: $r('app.string.cp_cannot_open_picker'), duration: 1800 });
+      showToast($r('app.string.cp_cannot_open_picker'), 1800);
     });
   }
 
@@ -445,21 +445,18 @@ export class AttachActions {
   private applyPickedMedia(items: MediaSendItem[], skipped: number): void {
     if (this.host.sendAccess?.checkMedia(items) === false) { return; }
     if (items.length === 0) {
-      promptAction.showToast({ message: $r('app.string.cp_media_read_failed'), duration: 1800 });
+      showToast($r('app.string.cp_media_read_failed'), 1800);
       return;
     }
     if (skipped > 0) {
-      promptAction.showToast({ message: plural('cp_media_skipped', skipped, skipped), duration: 1800 });
+      showToast(plural('cp_media_skipped', skipped, skipped), 1800);
     }
     // 不直接发：先攒到输入框上方那一条，等用户配完文字再一起发。
     // 追加而不是替换——用户分几次从不同相册挑图是常见操作。超出九张
     // （Telegram 相册上限）时截断并**明确告知截了几张**，不静默丢弃。
     const dropped: number = this.host.appendPendingMedia(items);
     if (dropped > 0) {
-      promptAction.showToast({
-        message: str('cp_pending_media_full', PENDING_MEDIA_MAX, dropped),
-        duration: 2200
-      });
+      showToast(str('cp_pending_media_full', PENDING_MEDIA_MAX, dropped), 2200);
     }
   }
 
@@ -513,7 +510,7 @@ export class AttachActions {
       }
       const dest = this.copyUriToCache(uris[0]);
       if (dest === '') {
-        promptAction.showToast({ message: $r('app.string.cp_audio_read_failed'), duration: 2000 });
+        showToast($r('app.string.cp_audio_read_failed'), 2000);
         return;
       }
       const store = this.host.store();
@@ -563,15 +560,15 @@ export class AttachActions {
         store.sendLiveLocation(loc.latitude, loc.longitude, periodSec)
           .then((messageId: number): void => {
             if (messageId === 0) {
-              promptAction.showToast({ message: $r('app.string.cp_live_location_failed'), duration: 1800 });
+              showToast($r('app.string.cp_live_location_failed'), 1800);
               return;
             }
             // 交给独立服务：退出会话、切后台都要继续共享。
             liveLocation.start(this.host.chatId(), messageId, periodSec);
-            promptAction.showToast({ message: $r('app.string.cp_live_location_started'), duration: 1600 });
+            showToast($r('app.string.cp_live_location_started'), 1600);
           });
       }).catch((): void => {
-        promptAction.showToast({ message: $r('app.string.cp_location_failed'), duration: 2000 });
+        showToast($r('app.string.cp_location_failed'), 2000);
       });
     });
   }
@@ -593,10 +590,10 @@ export class AttachActions {
       .then((result): void => {
         const granted: boolean = result.authResults.length > 0 && result.authResults[0] === 0;
         if (!granted) {
-          promptAction.showToast({ message: $r('app.string.cp_needs_location'), duration: 1800 });
+          showToast($r('app.string.cp_needs_location'), 1800);
           return;
         }
-        promptAction.showToast({ message: $r('app.string.cp_getting_location'), duration: 1200 });
+        showToast($r('app.string.cp_getting_location'), 1200);
         const request: geoLocationManager.SingleLocationRequest = {
           locatingPriority: geoLocationManager.LocatingPriority.PRIORITY_LOCATING_SPEED,
           locatingTimeoutMs: 10000
@@ -611,7 +608,7 @@ export class AttachActions {
           })
           .catch((e: BusinessError): void => {
             logE(`AttachActions.sendCurrentLocation failed: ${e.message}`);
-            promptAction.showToast({ message: $r('app.string.cp_location_failed'), duration: 2000 });
+            showToast($r('app.string.cp_location_failed'), 2000);
           });
       })
       .catch((e: BusinessError): void => {
@@ -658,7 +655,7 @@ export class AttachActions {
       }
       const dest = this.copyUriToCache(uris[0]);
       if (dest === '') {
-        promptAction.showToast({ message: $r('app.string.cp_file_read_failed'), duration: 2000 });
+        showToast($r('app.string.cp_file_read_failed'), 2000);
         return;
       }
       const store = this.host.store();

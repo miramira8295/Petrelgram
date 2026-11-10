@@ -8,6 +8,7 @@
 //
 // 原来只有「长按某个表情胶囊 → 系统对话框里一列纯文字名字」，入口藏得深、也没头像。
 // 外观与文件夹选单（JoinFolderMenu）同一套菜单材质和行尺寸，名单多了自己滚。
+import { showToast } from '../../util/toast';
 import { ComponentContent, UIContext, promptAction } from '@kit.ArkUI';
 import { getChatStore, getTdClient, getUserStore } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
@@ -243,7 +244,7 @@ export function openReactorsMenu(uiContext: UIContext, chatId: number, messageId
     const groups: ReactorGroup[] = groupReactors(added.map((a: TdObject): ReactorRow => rowOf(a)));
     if (groups.length === 0) {
       menu?.close();
-      promptAction.showToast({ message: $r('app.string.cp_no_reaction_details'), duration: 1600 });
+      showToast($r('app.string.cp_no_reaction_details'), 1600);
       return;
     }
     const views: ReactorsGroupView[] = resolvedGroups(groups, reactions);
@@ -253,7 +254,7 @@ export function openReactorsMenu(uiContext: UIContext, chatId: number, messageId
   }).catch((e: TdError): void => {
     logE(`ReactorsMenu fetch failed: ${e.message}`);
     menu?.close();
-    promptAction.showToast({ message: $r('app.string.cp_no_reaction_details'), duration: 1600 });
+    showToast($r('app.string.cp_no_reaction_details'), 1600);
   });
 }
 

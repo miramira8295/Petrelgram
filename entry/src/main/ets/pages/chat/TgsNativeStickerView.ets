@@ -354,8 +354,8 @@ export struct TgsNativeStickerView {
       (this.chatTimeline && this.pageParked)) {
       return;
     }
-    // vp2px(1) 就是当前屏幕密度；chatEnv 里没有这一项，也不必为它加一项。
-    const size: number = tgsRenderSize(Math.max(this.boxWidth, this.boxHeight), vp2px(1));
+    // this.getUIContext().vp2px(1) 就是当前屏幕密度；chatEnv 里没有这一项，也不必为它加一项。
+    const size: number = tgsRenderSize(Math.max(this.boxWidth, this.boxHeight), this.getUIContext().vp2px(1));
     const token: number = this.seq;
     const ticket: TgsRenderTicket = new TgsRenderTicket();
     this.openTicket = ticket;
@@ -411,11 +411,11 @@ export struct TgsNativeStickerView {
     try {
       const rect: componentUtils.ComponentInfo =
         this.getUIContext().getComponentUtils().getRectangleById(this.nodeId);
-      const h: number = px2vp(rect.size.height);
+      const h: number = this.getUIContext().px2vp(rect.size.height);
       if (!(h > 0)) {
         return true;
       }
-      const topVp: number = px2vp(rect.windowOffset.y);
+      const topVp: number = this.getUIContext().px2vp(rect.windowOffset.y);
       const bottomVp: number = topVp + h;
       const bottomLimit: number = this.env.screenHeightVp - this.env.keyboardHeightVp - 76;
       return topVp >= 104 && bottomVp <= bottomLimit;

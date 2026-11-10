@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { HdsSubDestination } from '../common/HdsSubDestination';
@@ -113,7 +114,7 @@ export struct DownloadCenterPage {
   }
 
   private ctx(): common.UIAbilityContext {
-    return getContext(this) as common.UIAbilityContext;
+    return this.getUIContext().getHostContext() as common.UIAbilityContext;
   }
 
   // —— 数据 ——
@@ -349,7 +350,7 @@ export struct DownloadCenterPage {
   private batchSave(): void {
     this.store.saveBatchToLocal(this.ctx(), this.selectedItems()).then((n: number): void => {
       if (n > 0) {
-        promptAction.showToast({ message: str('dc_saved_n', n), duration: 1800 });
+        showToast(str('dc_saved_n', n), 1800);
       }
       this.setSelection(new Set<string>());
     }).catch((e: Object): void => { this.reportFailure('batchSave', e); });
@@ -465,7 +466,7 @@ export struct DownloadCenterPage {
 
   private reportFailure(action: string, e: Object): void {
     logE(`DownloadCenter.${action} failed: ${JSON.stringify(e)}`);
-    promptAction.showToast({ message: str('dc_action_failed'), duration: 1800 });
+    showToast(str('dc_action_failed'), 1800);
   }
 
   private itemTitle(it: DownloadCenterItem): string {
@@ -478,7 +479,7 @@ export struct DownloadCenterPage {
   }
 
   private askClearCache(): void {
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: str('dc_clear_cache'),
       message: str('dc_clear_cache_confirm'),
       buttons: [
@@ -495,7 +496,7 @@ export struct DownloadCenterPage {
   private clearCache(): void {
     this.clearing = true;
     this.store.clearAllCache(this.ctx()).then((freed: number): void => {
-      promptAction.showToast({ message: str('dc_cache_cleared', formatBytes(freed)), duration: 1800 });
+      showToast(str('dc_cache_cleared', formatBytes(freed)), 1800);
     }).catch((e: Object): void => {
       this.reportFailure('clearCache', e);
     }).finally((): void => { this.clearing = false; });
@@ -513,7 +514,7 @@ export struct DownloadCenterPage {
       }
       openLocalFile(this.ctx(), it.path, it.mimeType).then((ok: boolean): void => {
         if (!ok) {
-          promptAction.showToast({ message: str('media_file_unavailable'), duration: 1800 });
+          showToast(str('media_file_unavailable'), 1800);
         }
       });
       return;

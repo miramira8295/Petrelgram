@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { ChatEntry, effectiveMuted } from '../../store/ChatEntry';
 import { getChatStore } from '../../tdkit/Globals';
@@ -174,20 +175,18 @@ struct GroupNotificationsPage {
       if (entry === undefined || this.isMuted(entry) === expectMuted) {
         return;
       }
-      promptAction.showToast({
-        message: $r('app.string.gn_rate_limited'), duration: 2600
-      });
+      showToast($r('app.string.gn_rate_limited'), 2600);
     }, MUTE_VERIFY_MS);
   }
 
   private showUndo(target: UndoTarget): void {
     this.clearUndoTimer();
-    animateTo({ duration: 180, curve: Curve.EaseOut }, (): void => {
+    this.getUIContext().animateTo({ duration: 180, curve: Curve.EaseOut }, (): void => {
       this.undoTarget = target;
     });
     this.undoTimer = setTimeout((): void => {
       this.undoTimer = -1;
-      animateTo({ duration: 180, curve: Curve.EaseIn }, (): void => {
+      this.getUIContext().animateTo({ duration: 180, curve: Curve.EaseIn }, (): void => {
         this.undoTarget = null;
       });
     }, UNDO_VISIBLE_MS);
@@ -204,7 +203,7 @@ struct GroupNotificationsPage {
     } else {
       setMute(target.chatId, target.wasMuted ? MUTE_LONG : 0);
     }
-    animateTo({ duration: 180, curve: Curve.EaseIn }, (): void => {
+    this.getUIContext().animateTo({ duration: 180, curve: Curve.EaseIn }, (): void => {
       this.undoTarget = null;
     });
   }
@@ -314,7 +313,7 @@ struct GroupNotificationsPage {
           Button() {
             SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
           }.width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-          .onClick((): void => { router.back(); });
+          .onClick((): void => { this.getUIContext().getRouter().back(); });
           Text($r('app.string.gn_title')).fontSize(22).fontWeight(FontWeight.Bold)
             .fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
         }.width('100%').height(52).padding({ left: 8, right: 16 })

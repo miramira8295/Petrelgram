@@ -27,7 +27,7 @@ struct LoginProxyPage {
       willShow: (_from: NavDestinationContext | NavBar, to: NavDestinationContext | NavBar,
         _operation: NavigationOperation, _animated: boolean): void => {
         if (typeof to === 'string' && to === 'navBar') {
-          router.back();
+          this.getUIContext().getRouter().back();
         }
       }
     });
@@ -61,7 +61,7 @@ struct LoginProxyPage {
     if (this.stack.size() > 0) {
       return false;   // 还有目的地在，交给它自己处理
     }
-    router.back();
+    this.getUIContext().getRouter().back();
     return true;
   }
 }

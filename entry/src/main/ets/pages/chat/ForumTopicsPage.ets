@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { promptAction } from '@kit.ArkUI';
 import { getChatStore, getTdClient } from '../../tdkit/Globals';
@@ -37,10 +38,10 @@ export function ForumTopicsPageBuilder(): void {
 @Component
 export struct ForumTopicsPage {
   // 本页所在的 Navigation 栈，onReady 时拿到。返回按钮靠它出栈——本页已不是
-  // router 页，router.back() 弹不到自己。
+  // router 页，this.getUIContext().getRouter().back() 弹不到自己。
   private navStack: NavPathStack | undefined = undefined;
   private readonly chatDestToken: number = allocChatDestToken();
-  // 路由参数。router 时代靠 router.getParams() 现取，NavDestination 要在
+  // 路由参数。router 时代靠 this.getUIContext().getRouter().getParams() 现取，NavDestination 要在
   // onReady 里从 NavDestinationContext 拿，而 onReady 实测晚于 aboutToAppear
   // （平板 API 26，见 ChatPage 的同名注释），所以吃参数的那一段整体挪进了
   // applyRouteParams()。
@@ -93,14 +94,14 @@ export struct ForumTopicsPage {
     this.load();
   }
 
-  // 返回上一层。**不能用 router.back()**：本页是 HdsNavDestination，router 页栈里
-  // 只剩 Index 一层，router.back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
+  // 返回上一层。**不能用 this.getUIContext().getRouter().back()**：本页是 HdsNavDestination，router 页栈里
+  // 只剩 Index 一层，this.getUIContext().getRouter().back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
   // 的现象是「点返回箭头直接退到桌面」。要出的是 Navigation 栈。
   private goBack(): void {
     const stack = this.navStack;
     if (stack === undefined) {
       // navStack 由 onReady(ctx.pathStack) 填，而 onReady 必先于本页可见，所以
-      // 这一支不该发生。这里**故意不回退到 router.back()**：那正是会退出应用的
+      // 这一支不该发生。这里**故意不回退到 this.getUIContext().getRouter().back()**：那正是会退出应用的
       // 那条路，把返回键做成"什么都不做 + 一条日志"远比把应用关掉好。
       logE('ForumTopicsPage.goBack: navStack missing, back ignored');
       return;
@@ -201,7 +202,7 @@ export struct ForumTopicsPage {
 
   private manageFailed(action: string, e: TdError): void {
     logE(`ForumTopicsPage.${action} failed: ${e.message}`);
-    promptAction.showToast({ message: str('ft_action_failed', action === 'delete' ? str('delete') : str('ft_action_word')), duration: 2000 });
+    showToast(str('ft_action_failed', action === 'delete' ? str('delete') : str('ft_action_word')), 2000);
   }
 
   private togglePinned(row: TopicRow): void {
@@ -227,7 +228,7 @@ export struct ForumTopicsPage {
   }
 
   private confirmDelete(row: TopicRow): void {
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.ft_delete_topic'),
       message: str('ft_delete_confirm', row.name),
       buttons: [
@@ -250,7 +251,7 @@ export struct ForumTopicsPage {
   private showTopicMenu(row: TopicRow): void {
     if (row.isGeneral) {
       // General 话题不可删除/重命名，只支持置顶与隐藏（隐藏暂不做）。
-      promptAction.showActionMenu({
+      this.getUIContext().getPromptAction().showActionMenu({
         title: row.name,
         buttons: [{ text: row.isPinned ? $r('app.string.ft_unpin') : $r('app.string.ft_pin'), color: '#007AFF' }]
       }).then((result): void => {
@@ -260,7 +261,7 @@ export struct ForumTopicsPage {
       }).catch((): void => {});
       return;
     }
-    promptAction.showActionMenu({
+    this.getUIContext().getPromptAction().showActionMenu({
       title: row.name,
       buttons: [
         { text: row.isPinned ? $r('app.string.ft_unpin') : $r('app.string.ft_pin'), color: '#007AFF' },
@@ -323,7 +324,7 @@ export struct ForumTopicsPage {
     }).catch((e: TdError): void => {
       this.creating = false;
       logE(`ForumTopicsPage.createForumTopic failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.ft_create_failed'), duration: 2000 });
+      showToast($r('app.string.ft_create_failed'), 2000);
     });
   }
 

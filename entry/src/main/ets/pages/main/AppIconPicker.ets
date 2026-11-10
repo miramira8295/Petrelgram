@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { bundleManager } from '@kit.AbilityKit';
 import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import { promptAction } from '@kit.ArkUI';
@@ -64,7 +65,7 @@ export struct AppIconPicker {
       return;
     }
     if (!appIconAvailable(deviceInfo.sdkApiVersion)) {
-      promptAction.showToast({ message: str('app_icon_failed'), duration: 1800 });
+      showToast(str('app_icon_failed'), 1800);
       return;
     }
     this.applying = true;
@@ -73,12 +74,12 @@ export struct AppIconPicker {
     bundleManager.setAlternateIcon(option.name).then((): void => {
       this.selected = option.name;
       this.applying = false;
-      promptAction.showToast({ message: str('app_icon_applied'), duration: 1600 });
+      showToast(str('app_icon_applied'), 1600);
     }).catch((e: BusinessError): void => {
       this.applying = false;
       // 高亮不动——切换失败时桌面上还是原来那张，界面必须跟桌面一致。
       logE(`setAlternateIcon(${option.name}) failed: ${e.code} ${e.message}`);
-      promptAction.showToast({ message: str('app_icon_failed'), duration: 2000 });
+      showToast(str('app_icon_failed'), 2000);
     });
   }
 

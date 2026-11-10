@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
@@ -130,18 +131,13 @@ export struct EmojiStatusPage {
     setEmojiStatus(customEmojiId).then((): void => {
       if (!this.active) { return; }
       this.busy = false;
-      promptAction.showToast({
-        message: customEmojiId === '' ? $r('app.string.emoji_status_cleared') : $r('app.string.emoji_status_updated'), duration: 1500
-      });
+      showToast(customEmojiId === '' ? $r('app.string.emoji_status_cleared') : $r('app.string.emoji_status_updated'), 1500);
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.busy = false;
       logE(`EmojiStatusPage.apply failed: ${error.message}`);
-      promptAction.showToast({
-        message: error.message.indexOf('PREMIUM') >= 0 || error.message.indexOf('premium') >= 0
-          ? $r('app.string.emoji_status_needs_premium') : $r('app.string.apply_failed_retry'),
-        duration: 1900
-      });
+      showToast(error.message.indexOf('PREMIUM') >= 0 || error.message.indexOf('premium') >= 0
+          ? $r('app.string.emoji_status_needs_premium') : $r('app.string.apply_failed_retry'), 1900);
     });
   }
 
@@ -213,7 +209,7 @@ export struct EmojiStatusPage {
                 .onClick((): void => {
                   clearRecentEmojiStatuses().then((): void => {
                     this.recent = [];
-                    promptAction.showToast({ message: $r('app.string.cleared'), duration: 1300 });
+                    showToast($r('app.string.cleared'), 1300);
                   }).catch((): void => {});
                 });
             }

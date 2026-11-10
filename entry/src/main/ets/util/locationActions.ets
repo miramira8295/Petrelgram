@@ -1,3 +1,5 @@
+import { showDialog } from '../util/uiContext';
+import { showToast } from '../util/toast';
 import { abilityAccessCtrl, common, Permissions } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { promptAction } from '@kit.ArkUI';
@@ -18,7 +20,7 @@ export function withLocationPermission(
         run();
         return;
       }
-      promptAction.showToast({ message: $r('app.string.cp_needs_location'), duration: 1800 });
+      showToast($r('app.string.cp_needs_location'), 1800);
     })
     .catch((e: BusinessError): void => {
       logE(`location permission failed: ${e.message}`);
@@ -28,7 +30,7 @@ export function withLocationPermission(
 // 停止共享是不可撤销的：一旦结束，那条消息就再也编辑不回来了（服务端直接
 // 判定为不可编辑），只能重新发一条。所以先确认。
 export function confirmStopLiveLocation(): void {
-  promptAction.showDialog({
+  showDialog({
     title: $r('app.string.cp_stop_live_location'),
     message: $r('app.string.cp_stop_live_location_body'),
     buttons: [
@@ -40,7 +42,7 @@ export function confirmStopLiveLocation(): void {
       return;
     }
     liveLocation.stopSharing();
-    promptAction.showToast({ message: $r('app.string.cp_live_location_stopped'), duration: 1500 });
+    showToast($r('app.string.cp_live_location_stopped'), 1500);
   }).catch((e: Object): void => {
     logE(`confirmStopLiveLocation failed: ${JSON.stringify(e)}`);
   });

@@ -1,5 +1,6 @@
 // 切换账号的共同两步：先收掉直播悬浮窗（它挂在旧账号的会话上），再切 TDLib 槽位。
 // 设置页和页签栏的长按菜单都走这里；页面自己的忙碌态/错误态仍由页面管。
+import { showToast } from '../util/toast';
 import { promptAction } from '@kit.ArkUI';
 import { floatingLiveWindow } from '../pages/chat/LiveFloatingWindow';
 import { clearPendingNavs } from './pendingNav';
@@ -22,6 +23,6 @@ export function switchAccountWithLiveWindow(slotId: string): Promise<void> {
 export function switchAccountOrToast(slotId: string): void {
   switchAccountWithLiveWindow(slotId).catch((caught: Error): void => {
     logE(`accountSwitch failed: ${caught.message}`);
-    promptAction.showToast({ message: str('settings_switch_failed'), duration: 1800 });
+    showToast(str('settings_switch_failed'), 1800);
   });
 }

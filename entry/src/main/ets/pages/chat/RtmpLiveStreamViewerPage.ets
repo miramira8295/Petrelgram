@@ -427,10 +427,10 @@ struct RtmpLiveStreamViewerPage {
 
   aboutToAppear(): void {
     this.pageActive = true;
-    setLiveStreamKeepScreenOn(getContext(this) as common.UIAbilityContext, true);
+    setLiveStreamKeepScreenOn(this.getUIContext().getHostContext() as common.UIAbilityContext, true);
     this.interactionUnreadCount = 0;
     this.interactionSnapshotReady = false;
-    const params = router.getParams() as Record<string, Object> | undefined;
+    const params = this.getUIContext().getRouter().getParams() as Record<string, Object> | undefined;
     this.groupCallId = params !== undefined
       ? ((params['groupCallId'] as number | undefined) ?? 0) : 0;
     this.chatId = params !== undefined ? ((params['chatId'] as number | undefined) ?? 0) : 0;
@@ -470,7 +470,7 @@ struct RtmpLiveStreamViewerPage {
     this.startHealthMonitor();
     const handoff = floatingLiveWindow.takeSeamlessSession(this.groupCallId, true);
     if (handoff !== null) { this.adoptSeamlessSession(handoff); }
-    liveStreamBackgroundTask.start(getContext(this) as common.UIAbilityContext, false);
+    liveStreamBackgroundTask.start(this.getUIContext().getHostContext() as common.UIAbilityContext, false);
     if (handoff === null) { this.replaceSession('首次加入'); } // i18n-exempt: diagnostic trace tag, console only
     this.refreshGroupCall('首次查询'); // i18n-exempt: diagnostic trace tag, console only
   }
@@ -529,7 +529,7 @@ struct RtmpLiveStreamViewerPage {
     if (this.pageActive && this.groupCallId > 0) {
       if (this.isFullscreen) {
         setLiveStreamFullscreen(
-          getContext(this) as common.UIAbilityContext, true, this.videoAspectRatio
+          this.getUIContext().getHostContext() as common.UIAbilityContext, true, this.videoAspectRatio
         );
       }
       this.resumeAfterForeground();
@@ -558,7 +558,7 @@ struct RtmpLiveStreamViewerPage {
       this.recovering = false;
       this.clearRecoveryTimer();
       this.clearRecoveryUi();
-      setLiveStreamKeepScreenOn(getContext(this) as common.UIAbilityContext, false);
+      setLiveStreamKeepScreenOn(this.getUIContext().getHostContext() as common.UIAbilityContext, false);
     }
   }
 
@@ -981,7 +981,7 @@ struct RtmpLiveStreamViewerPage {
     this.videoAspectRatio = aspectRatio;
     if (this.isFullscreen) {
       setLiveStreamFullscreen(
-        getContext(this) as common.UIAbilityContext, true, this.videoAspectRatio
+        this.getUIContext().getHostContext() as common.UIAbilityContext, true, this.videoAspectRatio
       );
     }
   }
@@ -1128,7 +1128,7 @@ struct RtmpLiveStreamViewerPage {
   }
 
   private resumeAfterForeground(): void {
-    liveStreamBackgroundTask.start(getContext(this) as common.UIAbilityContext, false);
+    liveStreamBackgroundTask.start(this.getUIContext().getHostContext() as common.UIAbilityContext, false);
     this.session?.resumeMedia();
     this.restoreSurface();
     this.applyCurrentVideoChannel(true);
@@ -1193,7 +1193,7 @@ struct RtmpLiveStreamViewerPage {
 
   private leave(): void {
     if (this.groupCallId <= 0) {
-      router.back();
+      this.getUIContext().getRouter().back();
       return;
     }
     if (this.leaveDialogOpen || this.minimizeInProgress || this.endingLive) { return; }
@@ -1229,9 +1229,9 @@ struct RtmpLiveStreamViewerPage {
     if (this.isFullscreen) {
       this.isFullscreen = false;
       this.fullscreenPanelOpen = false;
-      setLiveStreamFullscreen(getContext(this) as common.UIAbilityContext, false);
+      setLiveStreamFullscreen(this.getUIContext().getHostContext() as common.UIAbilityContext, false);
     }
-    router.back();
+    this.getUIContext().getRouter().back();
   }
 
   private minimizeToFloating(): void {
@@ -1266,7 +1266,7 @@ struct RtmpLiveStreamViewerPage {
       screenShareActive: false,
       screenShareDesired: false
     };
-    const abilityContext = getContext(this) as common.UIAbilityContext;
+    const abilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
     const shown = floatingLiveWindow.showSeamless(
       this.getUIContext(), abilityContext, handoff
     );
@@ -1290,7 +1290,7 @@ struct RtmpLiveStreamViewerPage {
     }
     this.fullscreenTransitioning = false;
     this.leavingForFloating = true;
-    router.back();
+    this.getUIContext().getRouter().back();
   }
 
   private toggleFullscreen(): void {
@@ -1303,7 +1303,7 @@ struct RtmpLiveStreamViewerPage {
     this.fullscreenTransitionLabel = next ? str('lv_entering_fullscreen') : str('lv_exiting_fullscreen');
     this.isFullscreen = next;
     setLiveStreamFullscreen(
-      getContext(this) as common.UIAbilityContext, next,
+      this.getUIContext().getHostContext() as common.UIAbilityContext, next,
       next ? this.videoAspectRatio : 0
     );
     if (this.fullscreenTransitionTimer !== -1) {
@@ -1481,12 +1481,12 @@ struct RtmpLiveStreamViewerPage {
   aboutToDisappear(): void {
     this.interactionSnapshotReady = false;
     if (!this.leavingForFloating) {
-      setLiveStreamKeepScreenOn(getContext(this) as common.UIAbilityContext, false);
+      setLiveStreamKeepScreenOn(this.getUIContext().getHostContext() as common.UIAbilityContext, false);
     }
     if (this.isFullscreen) {
       this.isFullscreen = false;
       this.fullscreenPanelOpen = false;
-      setLiveStreamFullscreen(getContext(this) as common.UIAbilityContext, false);
+      setLiveStreamFullscreen(this.getUIContext().getHostContext() as common.UIAbilityContext, false);
     }
     if (this.fullscreenTransitionTimer !== -1) {
       clearTimeout(this.fullscreenTransitionTimer);
@@ -1622,7 +1622,7 @@ struct RtmpLiveStreamViewerPage {
   }
 
   private openInteractionLink(url: string): void {
-    openWebUrl(getContext(this) as common.UIAbilityContext, url);
+    openWebUrl(this.getUIContext().getHostContext() as common.UIAbilityContext, url);
   }
 
   @Builder

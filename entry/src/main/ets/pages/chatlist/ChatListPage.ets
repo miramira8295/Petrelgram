@@ -1056,12 +1056,12 @@ export struct ChatListPage {
   moreMenu() {
     Menu() {
       MenuItem({ content: $r('app.string.qr_scan') })
-        .onClick((): void => { this.qrScanner.start(getContext(this) as common.UIAbilityContext); });
+        .onClick((): void => { this.qrScanner.start(this.getUIContext().getHostContext() as common.UIAbilityContext); });
       MenuItem({ content: $r('app.string.settings_proxy') })
         .onClick((): void => { navigateToSetting('ProxyPage'); });
       MenuItem({ content: $r('app.string.ct_new_group') })
         .onClick((): void => {
-          router.pushUrl({ url: 'pages/main/NewGroupPage' });
+          this.getUIContext().getRouter().pushUrl({ url: 'pages/main/NewGroupPage' });
         });
       MenuItem({ content: $r('app.string.cl_saved_messages') })
         .onClick((): void => {
@@ -1351,15 +1351,15 @@ export struct ChatListPage {
     try {
       const rect: componentUtils.ComponentInfo =
         this.getUIContext().getComponentUtils().getRectangleById(TITLE_MAIN_ID);
-      const w: number = px2vp(rect.size.width);
-      const h: number = px2vp(rect.size.height);
+      const w: number = this.getUIContext().px2vp(rect.size.width);
+      const h: number = this.getUIContext().px2vp(rect.size.height);
       if (!(w > 0) || !(h > 0)) {
         return;
       }
-      this.folderChipX = px2vp(rect.windowOffset.x) + w + FOLDER_CHIP_GAP_X;
+      this.folderChipX = this.getUIContext().px2vp(rect.windowOffset.x) + w + FOLDER_CHIP_GAP_X;
       // 纵向按底边对齐：胶囊底边 = 字形底边，于是它整个骑在标题那一行上，
       // 而不是吊在标题下面。
-      this.folderChipY = px2vp(rect.windowOffset.y) + h - FOLDER_CHIP_TEXT_DESCENT -
+      this.folderChipY = this.getUIContext().px2vp(rect.windowOffset.y) + h - FOLDER_CHIP_TEXT_DESCENT -
         FOLDER_COLLAPSED_CHIP_HEIGHT + FOLDER_CHIP_DROP_Y;
       this.folderChipAnchored = true;
     } catch (_error) {
@@ -1453,7 +1453,7 @@ export struct ChatListPage {
       this.folderBarCollapsed = collapsed;
       return;
     }
-    animateTo({
+    this.getUIContext().animateTo({
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, FOLDER_BAR_COLLAPSE_DURATION),
       curve: Curve.EaseOut
     }, (): void => { this.folderBarCollapsed = collapsed; });

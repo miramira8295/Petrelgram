@@ -4,6 +4,7 @@
 // 调一遍剪贴板 API 是不现实的，所以本来就收在一个私有方法里；它不碰任何页面
 // 状态，放在页面里只是历史原因。
 
+import { showToast } from '../util/toast';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { promptAction } from '@kit.ArkUI';
 import { logE } from './log';
@@ -15,7 +16,7 @@ export function copyPlainText(text: string, successMessage: ResourceStr): void {
   }
   const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
   pasteboard.getSystemPasteboard().setData(data).then((): void => {
-    promptAction.showToast({ message: successMessage, duration: 1200 });
+    showToast(successMessage, 1200);
   }).catch((e: Object): void => {
     logE(`copyPlainText failed: ${JSON.stringify(e)}`);
   });

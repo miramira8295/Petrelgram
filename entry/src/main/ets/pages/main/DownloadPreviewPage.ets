@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
@@ -47,7 +48,7 @@ export struct DownloadPreviewPage {
   }
 
   private ctx(): common.UIAbilityContext {
-    return getContext(this) as common.UIAbilityContext;
+    return this.getUIContext().getHostContext() as common.UIAbilityContext;
   }
 
   private close(): void {
@@ -90,7 +91,7 @@ export struct DownloadPreviewPage {
   private saveCurrent(toFiles: boolean): void {
     const it: DownloadCenterItem | null = this.current();
     if (it === null || it.state !== DC_STATE_COMPLETE || it.path === '') {
-      promptAction.showToast({ message: str('media_file_unavailable'), duration: 1800 });
+      showToast(str('media_file_unavailable'), 1800);
       return;
     }
     if (toFiles) {

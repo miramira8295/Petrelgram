@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { promptAction, router } from '@kit.ArkUI';
 import { BLUR_MAX_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 import { getTdClient, getCallSession } from '../../tdkit/Globals';
@@ -169,11 +170,11 @@ struct CallsPage {
     // 会话被推进的是**聊天页签的栈**，而本页是 router 页、整个盖在那条栈上面：
     // 只推不关，用户看到的是"什么都没发生"。形状取自 NewGroupPage.openCreatedGroup
     // ——漏斗成功之后再把本页弹掉，露出下面已经切到聊天页签的会话。
-    // router.back() 是同步 void、正常失败不抛，所以它不需要自己的 try/catch；
+    // this.getUIContext().getRouter().back() 是同步 void、正常失败不抛，所以它不需要自己的 try/catch；
     // 真正会失败的是 navigateToChat（栈未注册时回退整页路由），由 catch 收尾。
     // 失败时本页留在原地，navigationLocked 由下面那个 800ms 定时器解锁。
     navigateToChat(params).then((): void => {
-      router.back();
+      this.getUIContext().getRouter().back();
     }).catch(logChatNavFailure);
     this.navigationTimer = setTimeout((): void => {
       this.navigationLocked = false;
@@ -189,7 +190,7 @@ struct CallsPage {
 
   private confirmClear(): void {
     if (this.calls.length === 0 || this.actionKey !== '' || this.store === null) { return; }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.calls_clear_title'),
       message: $r('app.string.calls_clear_confirm'),
       buttons: [
@@ -202,12 +203,12 @@ struct CallsPage {
       this.store.clearAll().then((): void => {
         if (!this.active) { return; }
         this.actionKey = '';
-        promptAction.showToast({ message: $r('app.string.calls_cleared'), duration: 1500 });
+        showToast($r('app.string.calls_cleared'), 1500);
       }).catch((error: Error): void => {
         if (!this.active) { return; }
         this.actionKey = '';
         logE(`CallsPage.clearAll failed: ${error.message}`);
-        promptAction.showToast({ message: $r('app.string.calls_clear_failed'), duration: 1900 });
+        showToast($r('app.string.calls_clear_failed'), 1900);
       });
     }).catch((): void => {});
   }
@@ -230,12 +231,12 @@ struct CallsPage {
       this.store.deleteCall(call).then((): void => {
         if (!this.active) { return; }
         this.actionKey = '';
-        promptAction.showToast({ message: $r('app.string.calls_deleted'), duration: 1400 });
+        showToast($r('app.string.calls_deleted'), 1400);
       }).catch((error: Error): void => {
         if (!this.active) { return; }
         this.actionKey = '';
         logE(`CallsPage.deleteCall failed: ${error.message}`);
-        promptAction.showToast({ message: $r('app.string.calls_delete_failed'), duration: 1800 });
+        showToast($r('app.string.calls_delete_failed'), 1800);
       });
     });
   }
@@ -357,7 +358,7 @@ struct CallsPage {
       return;
     }
     getCallSession().startCall(call.chatId, call.isVideo);
-    router.pushUrl({ url: 'pages/call/CallPage' }).catch((error: Error): void => {
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/call/CallPage' }).catch((error: Error): void => {
       logE(`CallsPage.redial failed: ${error.message}`);
     });
   }
@@ -388,7 +389,7 @@ struct CallsPage {
       Row() { SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(25).fontColor([COLOR_TEXT_PRIMARY]); }
         .width(44).height(44).borderRadius(22).justifyContent(FlexAlign.Center)
         .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
-        .onClick((): void => router.back());
+        .onClick((): void => this.getUIContext().getRouter().back());
       Column({ space: 1 }) {
         Text($r('app.string.calls_title')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
         Text(this.countLabel()).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);

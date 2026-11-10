@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { promptAction } from '@kit.ArkUI';
 import { GroupPermissions, allPermissions, permissionValue } from '../../util/chatPermissions';
 import { canAttach, attachPermission, firstDeniedPermission, SEND_PERMISSION_KEYS } from '../../util/sendPermissions';
@@ -27,7 +28,7 @@ export class ChatSendAccess {
 
   check(key: string): boolean {
     if (this.allows(key)) { return true; }
-    promptAction.showToast({ message: sendPermissionMessage(key), duration: 2500 });
+    showToast(sendPermissionMessage(key), 2500);
     return false;
   }
 

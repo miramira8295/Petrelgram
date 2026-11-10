@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdError, TdObject } from '../../tdkit/TdTypes';
@@ -203,7 +204,7 @@ export struct PrivacySecurityPage {
     if (!navigateToSetting('ActiveSessionsPage', undefined, 'content')) {
       this.navigationLocked = false;
       logE('PrivacySecurityPage.openActiveSessions: settings stack not registered');
-      promptAction.showToast({ message: $r('app.string.page_open_failed'), duration: 1700 });
+      showToast($r('app.string.page_open_failed'), 1700);
       return;
     }
     setTimeout((): void => { this.navigationLocked = false; }, 700);
@@ -213,12 +214,12 @@ export struct PrivacySecurityPage {
     if (this.navigationLocked || this.actionKey !== '') { return; }
     this.navigationLocked = true;
     const work = params !== undefined
-      ? router.pushUrl({ url, params })
-      : router.pushUrl({ url });
+      ? this.getUIContext().getRouter().pushUrl({ url, params })
+      : this.getUIContext().getRouter().pushUrl({ url });
     work.catch((error: Error): void => {
       this.navigationLocked = false;
       logE(`PrivacySecurityPage.route failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.page_open_failed'), duration: 1700 });
+      showToast($r('app.string.page_open_failed'), 1700);
     });
     setTimeout((): void => { this.navigationLocked = false; }, 700);
   }
@@ -234,7 +235,7 @@ export struct PrivacySecurityPage {
       if (!this.active) { return; }
       rollback();
       this.actionKey = '';
-      promptAction.showToast({ message: $r('app.string.ps_save_failed'), duration: 1800 });
+      showToast($r('app.string.ps_save_failed'), 1800);
     });
   }
 
@@ -247,7 +248,7 @@ export struct PrivacySecurityPage {
 
   private confirmAccountTtl(days: number): void {
     if (this.actionKey !== '' || days === this.accountTtl) { return; }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.ps_change_ttl'),
       message: str('ps_ttl_confirm', this.choiceLabel(accountTtlChoices(), days)),
       buttons: [
@@ -324,11 +325,11 @@ export struct PrivacySecurityPage {
 
   private openRule(row: RuleRow): void {
     if (row.premiumOnly && !this.isPremium) {
-      promptAction.showToast({ message: $r('app.string.ps_needs_premium'), duration: 1800 });
+      showToast($r('app.string.ps_needs_premium'), 1800);
       return;
     }
     if (!this.rules.has(row.setting)) {
-      promptAction.showToast({ message: $r('app.string.ps_not_loaded_refresh'), duration: 1600 });
+      showToast($r('app.string.ps_not_loaded_refresh'), 1600);
       return;
     }
     const params: PrivacyRuleParams = {

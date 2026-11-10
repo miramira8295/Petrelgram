@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { TdError } from '../../tdkit/TdTypes';
 import { getTdClient } from '../../tdkit/Globals';
@@ -180,7 +181,7 @@ struct WebPushPage {
     if (!check.valid) {
       this.statusOk = false;
       this.statusText = check.error;
-      promptAction.showToast({ message: check.error, duration: 2000 });
+      showToast(check.error, 2000);
       return;
     }
     this.busy = true;
@@ -265,7 +266,7 @@ struct WebPushPage {
     if (parsed.error !== '') {
       this.statusOk = false;
       this.statusText = parsed.error;
-      promptAction.showToast({ message: parsed.error, duration: 2000 });
+      showToast(parsed.error, 2000);
       return;
     }
     this.jsonExpanded = false;
@@ -715,7 +716,7 @@ struct WebPushPage {
       Column() {
           Row({ space: 6 }) {
         SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
-          .onClick((): void => { router.back(); });
+          .onClick((): void => { this.getUIContext().getRouter().back(); });
         Text($r('app.string.ns_custom_push')).fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
       }
       .width('100%').height(52).padding({ left: 12, right: 12 })

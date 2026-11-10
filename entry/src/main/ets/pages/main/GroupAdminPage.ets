@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { router, promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { getTdClient, getUserStore } from '../../tdkit/Globals';
@@ -95,7 +96,7 @@ struct GroupAdminPage {
 
   aboutToAppear(): void {
     this.active = true;
-    const params = router.getParams() as AdminPageParams | undefined;
+    const params = this.getUIContext().getRouter().getParams() as AdminPageParams | undefined;
     this.chatId = params?.chatId ?? 0;
     this.load();
   }
@@ -176,13 +177,13 @@ struct GroupAdminPage {
   private copyLink(link: string): void {
     const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, link);
     pasteboard.getSystemPasteboard().setData(data).then((): void => {
-      promptAction.showToast({ message: $r('app.string.copied'), duration: 1300 });
+      showToast($r('app.string.copied'), 1300);
     }).catch((): void => {});
   }
 
   private revokeLink(link: string): void {
     revokeInviteLink(this.chatId, link).then((): void => {
-      promptAction.showToast({ message: $r('app.string.ga_link_revoked'), duration: 1400 });
+      showToast($r('app.string.ga_link_revoked'), 1400);
       this.load();
     }).catch((e: TdError): void => this.fail(e, str('ga_revoke_failed')));
   }
@@ -190,11 +191,8 @@ struct GroupAdminPage {
   private fail(error: TdError, fallback: string): void {
     this.busy = false;
     logE(`GroupAdminPage: ${error.message}`);
-    promptAction.showToast({
-      message: error.message.indexOf('rights') >= 0 || error.message.indexOf('ADMIN') >= 0
-        ? $r('app.string.ga_no_permission') : fallback,
-      duration: 1700
-    });
+    showToast(error.message.indexOf('rights') >= 0 || error.message.indexOf('ADMIN') >= 0
+        ? $r('app.string.ga_no_permission') : fallback, 1700);
   }
 
   private saveTitle(): void {
@@ -203,7 +201,7 @@ struct GroupAdminPage {
     this.busy = true;
     setChatTitle(this.chatId, value).then((): void => {
       this.busy = false;
-      promptAction.showToast({ message: $r('app.string.ga_name_updated'), duration: 1400 });
+      showToast($r('app.string.ga_name_updated'), 1400);
     }).catch((e: TdError): void => this.fail(e, str('ga_name_failed')));
   }
 
@@ -212,7 +210,7 @@ struct GroupAdminPage {
     this.busy = true;
     setChatDescription(this.chatId, this.description.trim()).then((): void => {
       this.busy = false;
-      promptAction.showToast({ message: $r('app.string.ga_bio_updated'), duration: 1400 });
+      showToast($r('app.string.ga_bio_updated'), 1400);
     }).catch((e: TdError): void => this.fail(e, str('ga_bio_failed')));
   }
 
@@ -233,7 +231,7 @@ struct GroupAdminPage {
   }
 
   private chooseSlowMode(): void {
-    promptAction.showActionMenu({
+    this.getUIContext().getPromptAction().showActionMenu({
       title: $r('app.string.ga_slow_mode'),
       buttons: slowModeLabels().slice(0, 6).map((text: string): promptAction.Button =>
         ({ text, color: '#3390EC' } as promptAction.Button)) as
@@ -244,17 +242,14 @@ struct GroupAdminPage {
       if (seconds === undefined) { return; }
       setSlowMode(this.chatId, seconds).then((): void => {
         this.slowModeIndex = chosen.index;
-        promptAction.showToast({
-          message: seconds === 0 ? $r('app.string.ga_slow_off') : str('ga_slow_interval', slowModeLabels()[chosen.index]),
-          duration: 1600
-        });
+        showToast(seconds === 0 ? $r('app.string.ga_slow_off') : str('ga_slow_interval', slowModeLabels()[chosen.index]), 1600);
       }).catch((e: TdError): void => this.fail(e, str('ga_slow_failed')));
     }).catch((): void => {});
   }
 
   private memberActions(userId: number, isAdmin: boolean): void {
     const labels: string[] = isAdmin ? [str('ga_demote')] : [str('ga_promote'), str('ga_ban'), str('ga_delete_all')];
-    promptAction.showActionMenu({
+    this.getUIContext().getPromptAction().showActionMenu({
       title: this.nameOf(userId),
       buttons: labels.map((text: string): promptAction.Button =>
         ({ text, color: text.indexOf(str('ga_ban_short')) >= 0 || text.indexOf(str('delete')) >= 0
@@ -272,7 +267,7 @@ struct GroupAdminPage {
       else if (label === str('ga_ban')) { task = banMember(this.chatId, userId, false); }
       else { task = deleteMessagesFromSender(this.chatId, userId); }
       task.then((): void => {
-        promptAction.showToast({ message: $r('app.string.ga_done'), duration: 1400 });
+        showToast($r('app.string.ga_done'), 1400);
         this.load();
       }).catch((e: TdError): void => this.fail(e, str('ga_failed')));
     }).catch((): void => {});
@@ -294,17 +289,15 @@ struct GroupAdminPage {
       return setPublicUsername(this.supergroupId, value);
     }).then((): void => {
       this.busy = false;
-      promptAction.showToast({
-        message: value === '' ? $r('app.string.ga_now_private') : str('ga_public_link_set', value), duration: 1900
-      });
+      showToast(value === '' ? $r('app.string.ga_now_private') : str('ga_public_link_set', value), 1900);
     }).catch((e: TdError): void => {
       this.busy = false;
-      promptAction.showToast({ message: e.message, duration: 1900 });
+      showToast(e.message, 1900);
     });
   }
 
   private deleteTodayMessages(): void {
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.ga_delete_today'),
       message: $r('app.string.ga_delete_today_confirm'),
       buttons: [
@@ -317,7 +310,7 @@ struct GroupAdminPage {
       const start = new Date();
       start.setHours(0, 0, 0, 0);
       deleteMessagesByDate(this.chatId, Math.floor(start.getTime() / 1000), now).then((): void => {
-        promptAction.showToast({ message: $r('app.string.deleted'), duration: 1500 });
+        showToast($r('app.string.deleted'), 1500);
       }).catch((e: TdError): void => this.fail(e, str('delete_failed')));
     }).catch((): void => {});
   }
@@ -330,7 +323,7 @@ struct GroupAdminPage {
       if (link !== '') {
         const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, link);
         pasteboard.getSystemPasteboard().setData(data).catch((): void => {});
-        promptAction.showToast({ message: $r('app.string.ga_link_created'), duration: 1700 });
+        showToast($r('app.string.ga_link_created'), 1700);
       }
       this.load();
     }).catch((e: TdError): void => this.fail(e, str('ga_link_failed')));
@@ -339,7 +332,7 @@ struct GroupAdminPage {
   private handleRequest(userId: number, approve: boolean): void {
     processJoinRequest(this.chatId, userId, approve).then((): void => {
       this.requests = this.requests.filter((r: JoinRequestRow): boolean => r.userId !== userId);
-      promptAction.showToast({ message: approve ? $r('app.string.ga_approved') : $r('app.string.ga_declined'), duration: 1400 });
+      showToast(approve ? $r('app.string.ga_approved') : $r('app.string.ga_declined'), 1400);
     }).catch((e: TdError): void => this.fail(e, str('ga_handle_failed')));
   }
 
@@ -349,7 +342,7 @@ struct GroupAdminPage {
       Button() {
         SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
       }.width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-      .onClick((): void => { router.back(); });
+      .onClick((): void => { this.getUIContext().getRouter().back(); });
       Text($r('app.string.ga_title')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
         .layoutWeight(1);
       if (this.busy) { LoadingProgress().width(20).height(20).color(COLOR_PRIMARY); }

@@ -1,3 +1,4 @@
+import { showToast } from '../util/toast';
 import { collapseFloatingVideo } from '../util/floatingVideoRuntime';
 import { accountRegistry, TdAccountSummary } from '../tdkit/AccountRegistry';
 import { notifySlotAction, NOTIFY_DROP, NOTIFY_SWITCH } from '../util/notifySlot';
@@ -141,7 +142,7 @@ struct Index {
       if (s === AuthStage.Ready) {
         this.hadReadySession = true;
         // 续上上次没缓存完的后台缓存（services/BackgroundCache，每个进程只跑一次）。
-        resumeBackgroundCachesOnce(getContext(this) as common.UIAbilityContext);
+        resumeBackgroundCachesOnce(this.getUIContext().getHostContext() as common.UIAbilityContext);
       } else if (s === AuthStage.LoggedOut) {
         // 真退登：无条件抹掉磁盘上的名单。这里不能只靠"本进程写过"——
         // 退登后杀进程再开机分享，读到的会是上一个账号的联系人。
@@ -316,7 +317,7 @@ struct Index {
     }
     const uri = this.pendingDeepLink;
     this.pendingDeepLink = '';
-    handleIncomingLink(getContext(this) as common.UIAbilityContext, uri);
+    handleIncomingLink(this.getUIContext().getHostContext() as common.UIAbilityContext, uri);
   }
 
   // 登录/加账号阶段，只要注册表里还有别的登录过的槽，就给一个回去的出口。
@@ -342,7 +343,7 @@ struct Index {
     }
     this.healedSignedOutSlot = true;
     if (healActiveSlotIfSignedOut()) {
-      promptAction.showToast({ message: str('ar_recovered_account'), duration: 1800 });
+      showToast(str('ar_recovered_account'), 1800);
     }
   }
 
@@ -350,7 +351,7 @@ struct Index {
     if (this.tdAccountSwitching || !this.isAddingAccount()) { return; }
     returnToPreviousTdAccount().catch((caught: Error): void => {
       logE(`Index.returnToOriginalAccount failed: ${caught.message}`);
-      promptAction.showToast({ message: str('ar_back_to_account_failed'), duration: 1800 });
+      showToast(str('ar_back_to_account_failed'), 1800);
     });
   }
 

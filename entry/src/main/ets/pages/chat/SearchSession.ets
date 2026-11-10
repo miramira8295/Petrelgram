@@ -48,6 +48,7 @@
 // 官方规则：类中 @Monitor 的解注册依赖 GC，销毁时机不可靠。本簇的所有联动都用
 // 显式方法调用表达。
 
+import { showToast } from '../../util/toast';
 import { promptAction } from '@kit.ArkUI';
 import { TdClient } from '../../tdkit/TdClient';
 import { MentionItem, searchMentions } from '../../store/InputSuggestions';
@@ -324,7 +325,7 @@ export class SearchSession {
       }
       this.resultMessages = messages;
       if (this.results.length === 0) {
-        promptAction.showToast({ message: $r('app.string.cp_no_messages_found'), duration: 1500 });
+        showToast($r('app.string.cp_no_messages_found'), 1500);
         return;
       }
       // 从全局搜索点某条消息进来：那一条就是跳转目标，已经落到位了，这次

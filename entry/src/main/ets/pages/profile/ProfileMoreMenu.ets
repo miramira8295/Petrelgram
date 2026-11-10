@@ -1,3 +1,5 @@
+import { showActionMenu, showDialog } from '../../util/uiContext';
+import { showToast } from '../../util/toast';
 import { promptAction, UIContext } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
@@ -28,7 +30,7 @@ function send(req: TdRequest): Promise<TdObject> {
 }
 
 function toast(message: string): void {
-  promptAction.showToast({ message, duration: 1600 });
+  showToast(message, 1600);
 }
 
 export function profileMenuLabel(id: string): string {
@@ -75,7 +77,7 @@ function confirmBlock(ctx: ProfileMenuContext): void {
 
 // 不带 block_list = 从所有屏蔽名单里移出（与 BlockedUsersPage 同一个请求）。
 function confirmUnblock(ctx: ProfileMenuContext): void {
-  promptAction.showDialog({
+  showDialog({
     title: str('bu_unblock_title'),
     message: str('bu_unblock_confirm', ctx.name),
     buttons: [
@@ -116,7 +118,7 @@ function report(ctx: ProfileMenuContext): void {
 
 // 与联系人页长按删除同一套文案；聊天记录不删（确认框里写明了）。
 function confirmDeleteContact(ctx: ProfileMenuContext): void {
-  promptAction.showDialog({
+  showDialog({
     title: str('ct_delete'),
     message: str('ct_delete_confirm', ctx.name),
     buttons: [
@@ -148,7 +150,7 @@ export function showProfileMoreMenu(items: string[], ctx: ProfileMenuContext): v
     color: id === PM_BLOCK || id === PM_DELETE_CONTACT ? DESTRUCTIVE_RED : '#007AFF'
   } as promptAction.Button));
   // 菜单最多三项（profileMenuItems），在 showActionMenu 的 1–6 个上限之内。
-  promptAction.showActionMenu({
+  showActionMenu({
     title: ctx.name,
     buttons: buttons as [promptAction.Button, promptAction.Button?, promptAction.Button?,
       promptAction.Button?, promptAction.Button?, promptAction.Button?]

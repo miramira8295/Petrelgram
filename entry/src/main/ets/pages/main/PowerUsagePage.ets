@@ -90,9 +90,9 @@ export struct PowerUsagePage {
     this.expandedKey = '';
   }
 
-  // 迁移前这里还有一个 leavePage()：500ms 防抖 + router.back()，防的是连点两下
+  // 迁移前这里还有一个 leavePage()：500ms 防抖 + this.getUIContext().getRouter().back()，防的是连点两下
   // 返回箭头弹掉两页。两半都随迁移失效：
-  //   · router.back() 在 NavDestination 上是**错的**——它弹的是 router 页栈，
+  //   · this.getUIContext().getRouter().back() 在 NavDestination 上是**错的**——它弹的是 router 页栈，
   //     而本页已不在那条栈上，弹掉的会是 Index，现象是直接退到桌面
   //     （HdsSubDestination 文件头记了同一条实测）。返回改由外壳默认的
   //     出栈（NavPathStack.pop）承担，不再需要本页自己写。

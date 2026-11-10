@@ -174,11 +174,11 @@ export struct SenderAnimatedLayer {
     try {
       const rect: componentUtils.ComponentInfo =
         this.getUIContext().getComponentUtils().getRectangleById(this.nodeId);
-      const h: number = px2vp(rect.size.height);
+      const h: number = this.getUIContext().px2vp(rect.size.height);
       if (!(h > 0)) {
         return true;
       }
-      const topVp: number = px2vp(rect.windowOffset.y);
+      const topVp: number = this.getUIContext().px2vp(rect.windowOffset.y);
       const bottomVp: number = topVp + h;
       const bottomLimit: number =
         this.env.screenHeightVp - this.env.keyboardHeightVp - BOTTOM_BLUR_GUARD_VP;

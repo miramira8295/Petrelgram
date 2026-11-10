@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { promptAction, router } from '@kit.ArkUI';
 import { TdError } from '../../tdkit/TdTypes';
 import { getFolderStore } from '../../tdkit/Globals';
@@ -99,7 +100,7 @@ struct FolderEditPage {
 
   aboutToAppear(): void {
     this.active = true;
-    const params = router.getParams() as FolderEditParams | undefined;
+    const params = this.getUIContext().getRouter().getParams() as FolderEditParams | undefined;
     this.folderId = params?.folderId ?? 0;
     getFolderLimits().then((limits: FolderLimits): void => {
       if (this.active) { this.limits = limits; }
@@ -247,7 +248,7 @@ struct FolderEditPage {
   private save(): void {
     if (this.saving || this.loadState !== 'ready') { return; }
     const issue = this.validate();
-    if (issue !== '') { this.warning = issue; promptAction.showToast({ message: issue, duration: 2200 }); return; }
+    if (issue !== '') { this.warning = issue; showToast(issue, 2200); return; }
     this.saving = true;
     this.warning = '';
     const folder = this.draft();
@@ -265,9 +266,7 @@ struct FolderEditPage {
         folder.excludedChatIds = folder.excludedChatIds.filter(keep);
         this.included = this.included.filter(keep);
         this.excluded = this.excluded.filter(keep);
-        promptAction.showToast({
-          message: plural('fe_removed_invalid', invalid.length, invalid.length), duration: 2200
-        });
+        showToast(plural('fe_removed_invalid', invalid.length, invalid.length), 2200);
         if (folder.pinnedChatIds.length === 0 && folder.includedChatIds.length === 0 &&
           !folder.includeContacts && !folder.includeNonContacts && !folder.includeBots &&
           !folder.includeGroups && !folder.includeChannels) {
@@ -291,8 +290,8 @@ struct FolderEditPage {
         includeChannels: folder.includeChannels
       };
       this.originalSignature = this.signature();
-      promptAction.showToast({ message: folder.id === 0 ? $r('app.string.fe_created') : $r('app.string.saved'), duration: 1500 });
-      router.back();
+      showToast(folder.id === 0 ? $r('app.string.fe_created') : $r('app.string.saved'), 1500);
+      this.getUIContext().getRouter().back();
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.saving = false;
@@ -316,20 +315,20 @@ struct FolderEditPage {
   }
 
   private confirmDiscard(): void {
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.ae_discard_title'), message: $r('app.string.fe_discard_body'),
       buttons: [
         { text: $r('app.string.ae_keep_editing'), color: COLOR_TEXT_SECONDARY as string },
         { text: $r('app.string.discard'), color: '#E64646' }
       ]
     }).then((result: promptAction.ShowDialogSuccessResponse): void => {
-      if (result.index === 1) { this.originalSignature = this.signature(); router.back(); }
+      if (result.index === 1) { this.originalSignature = this.signature(); this.getUIContext().getRouter().back(); }
     }).catch((): void => {});
   }
 
   private requestBack(): void {
     if (this.saving) { return; }
-    if (this.isDirty()) { this.confirmDiscard(); } else { router.back(); }
+    if (this.isDirty()) { this.confirmDiscard(); } else { this.getUIContext().getRouter().back(); }
   }
 
   private schedulePreview(): void {
@@ -444,14 +443,14 @@ struct FolderEditPage {
       }
     } else if (this.pickerMode === PICK_INCLUDE) {
       if (this.excluded.indexOf(id) < 0 && this.chosenChatCount() >= this.limits.chosenChatCount) {
-        promptAction.showToast({ message: plural('fe_pick_limit', this.limits.chosenChatCount, this.limits.chosenChatCount), duration: 1800 });
+        showToast(plural('fe_pick_limit', this.limits.chosenChatCount, this.limits.chosenChatCount), 1800);
         return;
       }
       this.included = [...this.included, id];
       this.excluded = this.excluded.filter((value: number): boolean => value !== id);
     } else {
       if (this.included.indexOf(id) < 0 && this.chosenChatCount() >= this.limits.chosenChatCount) {
-        promptAction.showToast({ message: plural('fe_pick_limit', this.limits.chosenChatCount, this.limits.chosenChatCount), duration: 1800 });
+        showToast(plural('fe_pick_limit', this.limits.chosenChatCount, this.limits.chosenChatCount), 1800);
         return;
       }
       this.excluded = [...this.excluded, id];
@@ -476,11 +475,11 @@ struct FolderEditPage {
   private openShareLinks(): void {
     if (this.saving) { return; }
     if (this.isDirty()) {
-      promptAction.showToast({ message: $r('app.string.fe_save_before_links'), duration: 1900 });
+      showToast($r('app.string.fe_save_before_links'), 1900);
       return;
     }
     const params: Record<string, Object> = { 'folderId': this.folderId, 'title': this.name.trim() };
-    router.pushUrl({ url: 'pages/main/FolderInviteLinksPage', params });
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/main/FolderInviteLinksPage', params });
   }
 
   @Builder

@@ -1387,7 +1387,7 @@ export struct StickerPicker {
 
   // 这一格的帧缓存已在磁盘上：不必下载源文件（判断与 StickerGridCell 同源）。
   private webmFramesCached(s: StickerItem): boolean {
-    return stickerFramesCached(this.srcUidOf(s), vp2px(this.cellPx()),
+    return stickerFramesCached(this.srcUidOf(s), this.getUIContext().vp2px(this.cellPx()),
       alphaStickerHighBudget(this.playbackCategory()));
   }
 

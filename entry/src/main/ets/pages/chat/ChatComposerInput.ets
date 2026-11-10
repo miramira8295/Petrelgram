@@ -1,6 +1,7 @@
 import {
   caretAfterExternalEdit, pasteFitsLimit
 } from '../../util/composerText';
+import { showToast } from '../../util/toast';
 import { ComposerFullscreenSheet } from './ComposerFullscreenSheet';
 import { composerLineProbe } from '../../util/composerLineProbe';
 import { ComposerLayoutMeasurement, composerMeasuredHeight } from '../../util/composerLayout';
@@ -233,7 +234,7 @@ export struct ChatComposerInput {
         textContent: 'A',
         fontSize: 15
       });
-      const measured: number = px2vp(size.height as number);
+      const measured: number = this.getUIContext().px2vp(size.height as number);
       if (measured > 0) {
         baseVp = measured;
       }
@@ -254,7 +255,7 @@ export struct ChatComposerInput {
         textContent: probe,
         fontSize: 15
       });
-      probeVp = px2vp(size.height as number);
+      probeVp = this.getUIContext().px2vp(size.height as number);
     } catch (e) {
       probeVp = 0;
     }
@@ -318,7 +319,7 @@ export struct ChatComposerInput {
       });
       // measureTextSize 返回的是 px。
       // 除的是量出来的真实行高，不是那个 fp 常量。
-      estimatedLines = Math.ceil(px2vp(size.height as number) / lineVp);
+      estimatedLines = Math.ceil(this.getUIContext().px2vp(size.height as number) / lineVp);
     } catch (e) {
       // 量不出来就退回一行，宁可矮也不要抖：TextArea 超出部分自己能滚。
       logE(`editorHeight measure failed: ${(e as Error).message}`);
@@ -420,9 +421,7 @@ export struct ChatComposerInput {
     const merged: string = this.draft.substring(0, head) + content.substring(0, room) +
       this.draft.substring(head);
     this.onDraftChange(merged.substring(0, COMPOSER_MAX_LENGTH));
-    promptAction.showToast({
-      message: str('cp_paste_trimmed', COMPOSER_MAX_LENGTH), duration: 2600
-    });
+    showToast(str('cp_paste_trimmed', COMPOSER_MAX_LENGTH), 2600);
   }
 
   private scheduleLinesRefresh(): void {
@@ -463,7 +462,7 @@ export struct ChatComposerInput {
       if (rect === undefined || lines <= 0 || this.editorW <= 0) {
         return;
       }
-      const height: number = px2vp(rect.height);
+      const height: number = this.getUIContext().px2vp(rect.height);
       if (!Number.isFinite(height) || height < 0) {
         return;
       }

@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { promptAction, router } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
 import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
@@ -85,7 +86,7 @@ struct MemberPromotePage {
 
   aboutToAppear(): void {
     this.active = true;
-    const params = router.getParams() as PromoteParams | undefined;
+    const params = this.getUIContext().getRouter().getParams() as PromoteParams | undefined;
     this.chatId = params?.chatId ?? 0;
     this.userId = params?.userId ?? 0;
     this.memberName = params?.memberName ?? '';
@@ -144,11 +145,8 @@ struct MemberPromotePage {
   private fail(error: TdError): void {
     this.busy = false;
     logE(`MemberPromotePage: ${error.message}`);
-    promptAction.showToast({
-      message: error.message.indexOf('rights') >= 0 || error.message.indexOf('ADMIN') >= 0
-        ? str('ga_no_permission') : str('ga_failed'),
-      duration: 1700
-    });
+    showToast(error.message.indexOf('rights') >= 0 || error.message.indexOf('ADMIN') >= 0
+        ? str('ga_no_permission') : str('ga_failed'), 1700);
   }
 
   private save(): void {
@@ -160,8 +158,8 @@ struct MemberPromotePage {
     const granted = limitAdminRights(this.rights, this.ownRights);
     promoteMember(this.chatId, this.userId, this.customTitle.trim(), granted).then((): void => {
       this.busy = false;
-      promptAction.showToast({ message: str('ga_done'), duration: 1400 });
-      router.back();
+      showToast(str('ga_done'), 1400);
+      this.getUIContext().getRouter().back();
     }).catch((error: TdError): void => { this.fail(error); });
   }
 
@@ -169,7 +167,7 @@ struct MemberPromotePage {
     if (this.busy) {
       return;
     }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: str('ga_demote'),
       message: this.memberName,
       buttons: [
@@ -183,8 +181,8 @@ struct MemberPromotePage {
       this.busy = true;
       demoteMember(this.chatId, this.userId).then((): void => {
         this.busy = false;
-        promptAction.showToast({ message: str('ga_done'), duration: 1400 });
-        router.back();
+        showToast(str('ga_done'), 1400);
+        this.getUIContext().getRouter().back();
       }).catch((error: TdError): void => { this.fail(error); });
     }).catch((): void => {});
   }
@@ -195,7 +193,7 @@ struct MemberPromotePage {
       Button() {
         SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
       }.width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-      .onClick((): void => { router.back(); });
+      .onClick((): void => { this.getUIContext().getRouter().back(); });
       Text(this.isAdmin ? str('mm_edit_admin') : str('mm_promote'))
         .fontSize(22).fontWeight(FontWeight.Bold)
         .fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1)

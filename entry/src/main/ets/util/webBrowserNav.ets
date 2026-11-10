@@ -1,3 +1,4 @@
+import { pushUrl, showActionMenu } from './uiContext';
 import { promptAction, router } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { normalizeExternalUrl, openUrl } from './openUrl';
@@ -31,7 +32,7 @@ export function webBrowserTarget(url: string): string {
 // 标题截断到 60 是给长网址留的：ActionMenu 的标题不换行，太长会把按钮挤没。
 function askBeforeOpen(context: common.UIAbilityContext, url: string,
   onFailed: () => void): void {
-  promptAction.showActionMenu({
+  showActionMenu({
     title: url.length > 60 ? url.substring(0, 57) + '…' : url,
     buttons: [
       { text: $r('app.string.lk_open'), color: '#3390EC' },
@@ -101,7 +102,7 @@ function openResolvedWebUrl(
     return;
   }
   const params: Record<string, Object> = { 'url': target };
-  router.pushUrl({ url: 'pages/web/InAppBrowserPage', params }).catch((e: Object): void => {
+  pushUrl({ url: 'pages/web/InAppBrowserPage', params }).catch((e: Object): void => {
     logE(`openWebUrl push failed for ${target}: ${JSON.stringify(e)}`);
     // The in-app page failing must never eat the tap — degrade to the browser.
     openUrl(context, target, onFailed);

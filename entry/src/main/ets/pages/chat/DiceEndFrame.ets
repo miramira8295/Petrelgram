@@ -61,7 +61,7 @@ export struct DiceEndFrame {
     if (this.layers.length === 0) {
       return;
     }
-    const size: number = tgsRenderSize(this.boxSize, vp2px(1));
+    const size: number = tgsRenderSize(this.boxSize, this.getUIContext().vp2px(1));
     const source: string | string[] = this.layers.length > 1 ? this.layers.slice() : this.layers[0];
     queueTgsOpen(source, size, size).then(async (info: TgsOpenResult | null): Promise<void> => {
       if (info === null) {

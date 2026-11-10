@@ -1,3 +1,4 @@
+import { showToast } from '../../util/toast';
 import { promptAction } from '@kit.ArkUI';
 import { getTdClient, logoutCurrentTdAccount } from '../../tdkit/Globals';
 import { floatingLiveWindow } from '../chat/LiveFloatingWindow';
@@ -190,7 +191,7 @@ export struct AccountEditPage {
   // 语义是「这一次离场已经发起了，别再让用户按东西」，和栈深没关系，所以迁移
   // 不影响它——字段、500ms 定时器、aboutToDisappear 的清理全部原样保留。
   //
-  // 真正要改的只有最后一句离场动作：迁移前是 router.back()，那在 NavDestination
+  // 真正要改的只有最后一句离场动作：迁移前是 this.getUIContext().getRouter().back()，那在 NavDestination
   // 上是**错的**——它弹的是 router 页栈，而本页已不在那条栈上，弹掉的会是 Index，
   // 现象是直接退到桌面（HdsSubDestination 文件头记了同一条实测）。改成出
   // Navigation 栈。
@@ -224,7 +225,7 @@ export struct AccountEditPage {
   // 外壳新加的 onNavStack 把 ctx.pathStack 转发过来，那才是「本实例所在的栈」
   // 的唯一可靠来源，与栈叫什么名字无关。
   //
-  // 栈缺失时**故意不回退到 router.back()**：那正是会把应用退到桌面的那条路，
+  // 栈缺失时**故意不回退到 this.getUIContext().getRouter().back()**：那正是会把应用退到桌面的那条路，
   // 返回键"什么都不做 + 一条日志"远比退到桌面好。形状与 HdsSubDestination.popSelf
   // 一致。
   private popSelf(): void {
@@ -247,7 +248,7 @@ export struct AccountEditPage {
       return;
     }
     this.discardDialogOpen = true;
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.ae_discard_title'),
       message: $r('app.string.ae_discard_body'),
       buttons: [
@@ -298,7 +299,7 @@ export struct AccountEditPage {
       return;
     }
     if (this.firstName.trim() === '') {
-      promptAction.showToast({ message: $r('app.string.ae_name_required'), duration: 1500 });
+      showToast($r('app.string.ae_name_required'), 1500);
       return;
     }
     this.saveError = '';
@@ -322,7 +323,7 @@ export struct AccountEditPage {
     }
     Promise.all(jobs).then(() => {
       this.saving = false;
-      promptAction.showToast({ message: $r('app.string.saved'), duration: 1200 });
+      showToast($r('app.string.saved'), 1200);
       this.origFirst = this.firstName;
       this.origLast = this.lastName;
       this.origBio = this.bio;
@@ -331,7 +332,7 @@ export struct AccountEditPage {
       this.saving = false;
       this.saveError = str('ae_save_partial');
       logE(`AccountEditPage.save failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.ae_save_failed'), duration: 2000 });
+      showToast($r('app.string.ae_save_failed'), 2000);
     });
   }
 
@@ -339,7 +340,7 @@ export struct AccountEditPage {
   // 后面、再进一层弹窗，用户根本找不到 —— 低频但关键的操作不该靠探索发现。
   private confirmLogout(): void {
     if (this.loggingOut) { return; }
-    promptAction.showDialog({
+    this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.ae_log_out'),
       message: $r('app.string.ae_log_out_confirm'),
       buttons: [
@@ -362,7 +363,7 @@ export struct AccountEditPage {
       .catch((caught: Error): void => {
         this.loggingOut = false;
         logE(`AccountEditPage.logout failed: ${caught.message}`);
-        promptAction.showToast({ message: $r('app.string.ae_log_out_failed'), duration: 1800 });
+        showToast($r('app.string.ae_log_out_failed'), 1800);
       });
   }
 
@@ -579,7 +580,7 @@ export struct AccountEditPage {
     .width('100%').padding({ left: 16, right: 16, top: 9, bottom: 9 })
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
-      promptAction.showToast({ message: $r('app.string.ae_phone_change_unsupported'), duration: 2000 });
+      showToast($r('app.string.ae_phone_change_unsupported'), 2000);
     });
   }
 
@@ -642,11 +643,11 @@ export struct AccountEditPage {
     req['username'] = name;
     getTdClient().send(req).then(() => {
       this.username = name;
-      promptAction.showToast({ message: $r('app.string.ae_username_updated'), duration: 1500 });
+      showToast($r('app.string.ae_username_updated'), 1500);
     }).catch((e: TdError) => {
       const msg = e.message.includes('OCCUPIED') ? $r('app.string.ae_username_taken')
         : (e.message.includes('INVALID') ? $r('app.string.ae_username_invalid') : str('ae_change_failed', e.message));
-      promptAction.showToast({ message: msg, duration: 2200 });
+      showToast(msg, 2200);
     });
   }
 
@@ -683,9 +684,9 @@ export struct AccountEditPage {
           this.birthday = monthDay(d);
           // 不等下次进页面重新拉——本次会话里再点开就该是新值。
           this.rememberBirthday(d.getDate(), d.getMonth() + 1, d.getFullYear());
-          promptAction.showToast({ message: $r('app.string.ae_birthday_updated'), duration: 1500 });
+          showToast($r('app.string.ae_birthday_updated'), 1500);
         }).catch((e: TdError) => {
-          promptAction.showToast({ message: str('ae_change_failed', e.message), duration: 2000 });
+          showToast(str('ae_change_failed', e.message), 2000);
         });
       }
     });
