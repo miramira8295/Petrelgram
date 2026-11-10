@@ -21,6 +21,14 @@ import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_SURFACE,
   COLOR_PAGE_BG, KEY_APP_DARK } from '../../util/theme';
 
+// 首次打开小程序给足时间：冷启动时上游连接/代理可能还在建，30s 会把
+// 「慢」误判成「打不开」。
+const MINI_APP_LOAD_TIMEOUT_MS: number = 60000;
+// 自动重试前留一点余量，等上游就绪。
+const MINI_APP_AUTO_RETRY_DELAY_MS: number = 2000;
+// 连续自动重试的上限。成功加载一次就归零，所以「开一次页面」最多刷 3 次。
+const MINI_APP_AUTO_RETRY_LIMIT: number = 3;
+
 @Entry
 @Component
 struct MiniAppPage {
@@ -50,6 +58,9 @@ struct MiniAppPage {
   private needsCloseConfirmation: boolean = false;
   private dialogOpen: boolean = false;
   private loadTimer: number = -1;
+  // 冷启动时上游网络/代理可能还没就绪，首帧请求会失败。给一次静默自动重试：
+  // 失败页面上点「重新加载」其实也是这样救回来的，只是让用户少点一下。
+  private autoRetryCount: number = 0;
   private viewportHeight: number = 0;
   private pageVisible: boolean = true;
 
@@ -125,14 +136,28 @@ struct MiniAppPage {
     this.clearLoadTimer();
     this.loadTimer = setTimeout((): void => {
       this.loadTimer = -1;
+      if (this.retryOnce('load-timeout')) { return; }
       this.failed = true;
       this.loading = false;
-    }, 30000);
+    }, MINI_APP_LOAD_TIMEOUT_MS);
   }
 
   private loaded(): void {
     this.clearLoadTimer();
     this.loading = false;
+    // 这一页真的加载出来了：把自动重试额度还回去，下一段导航还能再自愈。
+    this.autoRetryCount = 0;
+  }
+
+  // 最多自动重试 MINI_APP_AUTO_RETRY_LIMIT 次；每次成功加载（onPageEnd）归零。
+  // 到上限后把决定权交回用户（失败页上的「重新加载」），避免网络真断时无限刷新。
+  private retryOnce(reason: string): boolean {
+    if (this.autoRetryCount >= MINI_APP_AUTO_RETRY_LIMIT || this.appUrl === '' || this.disposed) {
+      return false;
+    }
+    this.autoRetryCount++;
+    setTimeout((): void => { if (!this.disposed) { this.reload(); } }, MINI_APP_AUTO_RETRY_DELAY_MS);
+    return true;
   }
 
   private reload(): void {
@@ -369,7 +394,11 @@ struct MiniAppPage {
             })
             .onProgressChange((event): void => { if (event) { this.progress = event.newProgress; } })
             .onErrorReceive((event): void => {
-              if (event && event.request.isMainFrame()) { this.failed = true; this.loaded(); }
+              if (event && event.request.isMainFrame()) {
+                if (this.retryOnce('main-frame-error')) { return; }
+                this.failed = true;
+                this.loaded();
+              }
             })
             .onHttpErrorReceive((event): void => {
               if (event && event.request.isMainFrame() && event.response.getResponseCode() >= 400) {

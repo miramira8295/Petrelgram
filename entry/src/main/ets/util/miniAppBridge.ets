@@ -33,8 +33,12 @@ export function miniAppBridgePermission(url: string): string {
   const match = /^https:\/\/(\[[^\]]+\]|[^:]+)(?::([0-9]+))?$/.exec(origin);
   const rule: Record<string, string> = {
     'scheme': 'https', 'host': match === null ? 'invalid.invalid' : match[1],
-    'port': match === null ? '443' : (match[2] ?? '443'), 'path': ''
-  };
+    // 官方示例里默认端口写的是空串（不是 '443'）。写 '443' 匹配不上不带端口的
+    // URL，整条规则失效 → 页面对 PetrelMiniApp.postEvent 的调用被拒成
+    // "Jsb Permission Denied"，Mini App 的握手（ready/expand/theme/登录态）全断。
+    'port': match === null ? '' : (match[2] ?? ''),
+    'path': ''
+  };;
   const permission: Record<string, Object> = { 'urlPermissionList': [rule] };
   const root: Record<string, Object> = { 'javascriptProxyPermission': permission };
   return JSON.stringify(root);
