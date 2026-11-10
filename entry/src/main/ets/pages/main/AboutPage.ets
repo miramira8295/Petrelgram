@@ -222,6 +222,10 @@ export struct AboutPage {
             this.creditRow($r('app.media.credit_bailin'), 'Bailin'); // i18n-exempt: 用户昵称
             Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 60 });
             this.creditRow($r('app.media.credit_haibianbao'), '海绵宝'); // i18n-exempt: 用户昵称
+            Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 60 });
+            this.creditRow($r('app.media.credit_lightnovel'), 'Light Novel'); // i18n-exempt: 用户昵称
+            Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 60 });
+            this.creditRow($r('app.media.credit_kuaixing'), '快醒 醒'); // i18n-exempt: 用户昵称
           }
           .width('100%').padding({ bottom: 6 })
           .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
