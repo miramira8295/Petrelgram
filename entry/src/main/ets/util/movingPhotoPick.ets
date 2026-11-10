@@ -7,7 +7,6 @@ import { appendLiveStill } from './livePhotoEmbed';
 import { NO_SEND_THUMB, SendThumb, makeSendThumb } from './sendThumb';
 import { seedVideoPoster } from './videoPosterStore';
 import { logE, logW } from './log';
-import { ensureMediaRead } from './mediaPermission';
 
 // 从相册选中的这一项，如果是**实况照片**（鸿蒙「动态照片」，PhotoSubtype.MOVING_PHOTO），
 // 就把它的动态部分——带音轨的 mp4——导出到应用沙箱并返回路径；不是实况、或导出
@@ -60,11 +59,6 @@ export const NO_LIVE_PHOTO: LivePhotoExport = {
 
 export async function exportLivePhotoMotion(context: Context, uri: string,
   filesDir: string, unique: string): Promise<LivePhotoExport> {
-  // 直连媒体库要先有读权限；被拒时按"不是实况"降级，调用方发普通图。
-  if (!(await ensureMediaRead(context))) {
-    logW('exportLivePhotoMotion: READ_IMAGEVIDEO denied, fall back to plain photo');
-    return NO_LIVE_PHOTO;
-  }
   try {
     const helper: photoAccessHelper.PhotoAccessHelper =
       photoAccessHelper.getPhotoAccessHelper(context);

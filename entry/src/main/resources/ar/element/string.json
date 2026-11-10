@@ -13367,14 +13367,6 @@
     {
       "name": "link_copied_internal",
       "value": "تم نسخ الرابط الداخلي (يفتح في هذا التطبيق فقط)"
-    },
-    {
-      "name": "media_read_permission_reason",
-      "value": "To read photos and videos in your gallery so a Live Photo's motion is sent with it"
-    },
-    {
-      "name": "media_write_permission_reason",
-      "value": "To save Live Photos to your gallery"
     }
   ]
 }

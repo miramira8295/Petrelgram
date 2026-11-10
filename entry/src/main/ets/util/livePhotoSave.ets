@@ -1,4 +1,3 @@
-import { ensureMediaWrite } from './mediaPermission';
 import { media } from '@kit.MediaKit';
 import { image } from '@kit.ImageKit';
 import { fileIo } from '@kit.CoreFileKit';
@@ -92,10 +91,6 @@ export async function extractFirstFrame(videoPath: string, destJpg: string): Pro
 // **必须在 SaveButton 的 onClick 里调**，否则没有写入权限。
 export async function saveMovingPhoto(context: common.UIAbilityContext,
   imagePath: string, videoPath: string, title: string): Promise<void> {
-  // 写相册要 WRITE_IMAGEVIDEO；没有就抛出去让调用方提示，而不是静默失败。
-  if (!(await ensureMediaWrite(context))) {
-    throw new Error('WRITE_IMAGEVIDEO denied');
-  }
   const helper: photoAccessHelper.PhotoAccessHelper =
     photoAccessHelper.getPhotoAccessHelper(context);
   const request: photoAccessHelper.MediaAssetChangeRequest =
