@@ -10,6 +10,7 @@ import {
 } from '../../store/AppSettings';
 import { KEY_APP_DARK } from '../../util/theme';
 import { navigateToSetting } from '../../util/settingsNav';
+import { KEY_CHAT_VIEWER_COVERS_WINDOW } from '../../util/viewerWindowCover';
 import { appWallpaperActive, KEY_SPLIT_UNIFIED_BG } from '../../util/localWallpaper';
 import { DOCK_MODE_LEFT_FLOATING } from '../../util/splitMetrics';
 
@@ -130,6 +131,8 @@ export struct MainScreen {
   // 此时 ChatPage 仍在做 ~600ms 的退场滑出动画（onWillHide -> onHidden）。
   // 在此期间保持底栏隐藏，等 ChatPage 真正退场消失（onHidden / aboutToDisappear）后再放行底栏。
   @StorageProp('chatDetailHiding') @Watch('syncDock') private chatDetailHiding: boolean = false;
+  // 分栏媒体查看器留在 ChatPage 内，通过覆盖标志同步收起根 Stack 上的 Dock。
+  @StorageProp(KEY_CHAT_VIEWER_COVERS_WINDOW) @Watch('syncDock') private chatViewerCoversWindow: boolean = false;
   // 设置页签分栏时左栏的实际宽度（vp，0 = 还没量到）。与聊天页签分开存：两个
   // 页签各自 enableDragBar(true)，拖过之后两边不再相等。见
   // SETTINGS_NAV_BAR_WIDTH_KEY。
@@ -688,6 +691,9 @@ export struct MainScreen {
   }
 
   private dockVisible(): boolean {
+    if (this.chatViewerCoversWindow && this.wallpaperSplit()) {
+      return false;
+    }
     return this.dockActive && this.appIsForeground && !(this.tab === 0 && this.chatDetailHiding) && this.storedNavBarFlag(this.tab);
   }
 
@@ -1157,7 +1163,8 @@ export struct MainScreen {
           adaptToHandedness: true,
           floating: true,
           gradientMaskColor: Color.Transparent,
-          epoch: this.materialEpoch
+          epoch: this.materialEpoch,
+          barVisible: this.dockVisible()
         }))
         .scrollable(false)
         .onChange((index: number) => {
@@ -1168,7 +1175,10 @@ export struct MainScreen {
           }
         })
         .width(this.dockWidth())
-        .height(DOCK_H + 24);
+        .height(DOCK_H + 24)
+        // 保留 HDS 页签与音乐胶囊状态；全屏媒体期间整条隐藏并禁用交互。
+        .visibility(this.dockVisible() ? Visibility.Visible : Visibility.Hidden)
+        .enabled(this.dockVisible());
       }
 
       // 分栏下不再调用 dock()：普通页签走上面的系统胶囊，音乐中心/迷你播放条走同一颗
