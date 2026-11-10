@@ -53,6 +53,30 @@
         }
       },
       {
+        // 实况照片直连媒体库：读那份资产、导出它的动态部分
+        // （util/movingPhotoPick → getAssets/requestMovingPhoto/requestContent）。
+        // 系统选择器那条路不需要权限，这里管的是回查 subtype 的自己这条路。
+        "name": "ohos.permission.READ_IMAGEVIDEO",
+        "reason": "$string:media_read_permission_reason",
+        "usedScene": {
+          "when": "inuse",
+          "abilities": [
+            "EntryAbility"
+          ]
+        }
+      },
+      {
+        // 保存实况照片到相册（util/livePhotoSave → applyChanges）。
+        "name": "ohos.permission.WRITE_IMAGEVIDEO",
+        "reason": "$string:media_write_permission_reason",
+        "usedScene": {
+          "when": "inuse",
+          "abilities": [
+            "EntryAbility"
+          ]
+        }
+      },
+      {
         "name": "ohos.permission.INTERNET"
       },
       {

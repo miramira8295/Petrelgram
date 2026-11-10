@@ -13367,6 +13367,14 @@
     {
       "name": "link_copied_internal",
       "value": "已复制内部链接（仅本应用可打开）"
+    },
+    {
+      "name": "media_read_permission_reason",
+      "value": "用于读取相册中的照片与视频，把实况照片的动态部分一起发送"
+    },
+    {
+      "name": "media_write_permission_reason",
+      "value": "用于把实况照片保存到相册"
     }
   ]
 }
