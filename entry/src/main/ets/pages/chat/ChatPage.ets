@@ -3171,17 +3171,18 @@ export struct ChatPage {
     const touches: TouchObject[] = event.changedTouches.length > 0 ? event.changedTouches : event.touches;
     if (area === undefined || touches.length === 0) { return HitTestMode.Default; }
     // Area.globalPosition 与 windowX/windowY 都是窗口内 vp 坐标，适用于分栏与自由窗口。
-    const left: number = Number(area.globalPosition.x);
     const top: number = Number(area.globalPosition.y);
-    const width: number = Number(area.width);
     const height: number = Number(area.height);
-    if (!Number.isFinite(left) || !Number.isFinite(top) ||
-      !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    if (!Number.isFinite(top) || !Number.isFinite(height) || height <= 0) {
       return HitTestMode.Default;
     }
     const touch: TouchObject = touches[0];
-    if (touch.windowX >= left && touch.windowX < left + width &&
-      touch.windowY >= top && touch.windowY < top + height) {
+    // 【判据按 y 轴，不再按编辑框矩形】底栏上除了输入框还有附件、表情、发送这些
+    // 按钮：它们的中心和编辑框同一条水平带，可横向就在编辑框之外。原来只认编辑框
+    // 矩形，于是键盘立着时点发送是"第一下收键盘、第二下才发"，点表情/附件同理。
+    // 现在：编辑行上沿往上留一条容差，容差以下整条底栏都放行；容差以上（消息
+    // 列表、顶栏）才收键盘并拦截。容差 16vp 盖住比编辑框更高的圆钮（46vp）。
+    if (touch.windowY >= top - COMPOSER_TAP_BAND_TOLERANCE) {
       return HitTestMode.Default;
     }
     this.composerController.stopEditing();
@@ -7013,4 +7014,6 @@ export struct ChatPage {
     .onBackPressed((): boolean => { return collapseFloatingVideo() || this.handleBackPressed(); })
     .width('100%').height('100%');
   }
-}
+}// 底栏放行带：编辑行上沿往上留这么多 vp，仍算「点在底栏上」（不拦、不收起键盘）。
+const COMPOSER_TAP_BAND_TOLERANCE: number = 16;
+
