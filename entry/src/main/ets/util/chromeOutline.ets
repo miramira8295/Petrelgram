@@ -10,8 +10,8 @@
 // 边界，换成 outline 会多出一圈描边在裁剪之外；1px 内缩在暗色下已经跑了很久，
 // 亮色沿用同一条，不会带来新的位移。
 export const CHROME_OUTLINE_WIDTH: number = 1;
-const OUTLINE_DARK: string = '#33FFFFFF';
-const OUTLINE_LIGHT: string = '#3D000000';
+const OUTLINE_DARK: string = '#3D000000';
+const OUTLINE_LIGHT: string = '#33FFFFFF';
 
 export interface ChromeOutline {
   width: number;
