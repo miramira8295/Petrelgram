@@ -1,3 +1,4 @@
+import { chromeOutline } from '../../util/chromeOutline';
 import { ChatActionBarView } from './ChatActionBarView';
 // 【自绘玻璃，不走组件级系统材质】系统已经把**组件级**的 systemMaterial 收回，
 // 只有 HDS 导航级的栏（HdsNavigation 的 titleBar、HdsTabs 的 barFloatingStyle）
@@ -397,7 +398,7 @@ export struct TopBanners {
     .shadow({ radius: this.appDark ? 0 : 5, color: this.appDark ? '#00000000' : '#12000000', offsetX: 0, offsetY: this.appDark ? 0 : 1 })
     .clip(true)
     .visualEffect(hdsVisualEffect('bar', !this.appDark))
-    .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
+    .border(chromeOutline(this.appDark))
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: -6 }))
       .animation({

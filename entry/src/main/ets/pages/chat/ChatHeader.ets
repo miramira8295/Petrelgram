@@ -6,6 +6,7 @@
 // 「会话详情底下的几个控制条实现样式和输入框不太一样」）。
 // 输入框（ChatComposerInput）早已迁到 plainGlassFill + plainBackdropBlur +
 // hdsVisualEffect 这一套，这里跟上，三者的档位保持各自原有的 surface 不变。
+import { chromeOutline } from '../../util/chromeOutline';
 import { AvatarView } from '../chatlist/AvatarView';
 import { TgsStickerView } from './TgsStickerView';
 import { WebmStickerView } from './WebmStickerView';
@@ -317,7 +318,7 @@ export struct ChatHeader {
     .scale({ x: this.backPressed ? 0.9 : 1, y: this.backPressed ? 0.9 : 1 })
     .backdropBlur(plainBackdropBlur('bar'))
     .visualEffect(hdsVisualEffect('bar', !this.appDark))
-    .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
+    .border(chromeOutline(this.appDark))
     .clip(this.appDark)
     .accessibilityText($r('app.string.cp_back_to_chat'))
     .onTouch((event: TouchEvent): void => {
@@ -367,7 +368,7 @@ export struct ChatHeader {
     // 和身份胶囊同一档：半透明底 + backdropBlur 自绘玻璃，API 26 上让位给材质。
     .backdropBlur(plainBackdropBlur('bar'))
     .visualEffect(hdsVisualEffect('bar', !this.appDark))
-    .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
+    .border(chromeOutline(this.appDark))
     .clip(this.appDark)
     // 菜单浮层按这个 id 定位（ChatHeaderMenuController.open 的 targetId）。
     .id(this.menuAnchorId)
@@ -481,7 +482,7 @@ export struct ChatHeader {
       // 暗色模式与输入栏统一：关闭光晕和阴影，使用标准描边及圆角裁剪。
       .backdropBlur(plainBackdropBlur('bar'))
       .visualEffect(hdsVisualEffect('bar', !this.appDark))
-      .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
+      .border(chromeOutline(this.appDark))
       .clip(this.appDark)
       .accessibilityText(str('cp_header_a11y', this.header.titleTextOf(), this.activeSubtitleText()))
       .onClick((): void => {

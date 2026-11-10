@@ -1,6 +1,7 @@
 import {
   caretAfterExternalEdit, pasteFitsLimit
 } from '../../util/composerText';
+import { chromeOutline } from '../../util/chromeOutline';
 import { showToast } from '../../util/toast';
 import { ComposerFullscreenSheet } from './ComposerFullscreenSheet';
 import { composerLineProbe } from '../../util/composerLineProbe';
@@ -517,7 +518,7 @@ export struct ChatComposerInput {
         .backgroundColor(plainGlassFill($r('app.color.surface')))
         .backdropBlur(plainBackdropBlur('control'))
         .visualEffect(hdsVisualEffect('control', !this.appDark))
-        .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
+        .border(chromeOutline(this.appDark))
         .clip(this.appDark)
         .onClick((): void => { this.onToggleAttach(); });
       }
@@ -722,7 +723,7 @@ export struct ChatComposerInput {
       // 'card' 档：给点光源、不给按压阴影——整块面板跟着手指变形很怪，
       // 这条判据在 overlayMaterial.interactionBase 里，和材质那条路共用。
       .visualEffect(hdsVisualEffect('card', !this.appDark))
-      .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
+      .border(chromeOutline(this.appDark))
       .clip(this.appDark);
     }
     .width('100%')
