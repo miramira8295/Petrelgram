@@ -884,7 +884,7 @@ export struct ChatRow {
                   Text(this.draftPreview() !== '' ? this.draftPreview()
                     : (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== ''
                       ? stripPreviewIcon(this.row.snapshot.chat.lastMessageText) : this.row.snapshot.chat.lastMessageText))
-                    .fontSize(this.spec().previewFont).fontColor(COLOR_TEXT_SECONDARY)
+                    .fontSize(this.spec().previewFont).fontColor($r('app.color.list_preview_text'))
                     .maxLines(this.threeLines ? 2 : 1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
                 }

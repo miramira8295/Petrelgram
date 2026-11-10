@@ -859,7 +859,7 @@ export struct LightweightPlainTextBubble {
         .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
         .constraintSize({ maxWidth: this.replyMaxW() })
         .textOverflow({ overflow: TextOverflow.Ellipsis });
-      Text(this.msg.replyText).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).maxLines(1)
+      Text(this.msg.replyText).fontSize(12).fontColor($r('app.color.quote_text')).maxLines(1)
         .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
         .constraintSize({ maxWidth: this.replyMaxW() })
         .textOverflow({ overflow: TextOverflow.Ellipsis });

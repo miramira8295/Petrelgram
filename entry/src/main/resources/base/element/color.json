@@ -151,6 +151,14 @@
     {
       "name": "dc_err_soft",
       "value": "#21D9534F"
+    },
+    {
+      "name": "quote_text",
+      "value": "#8E8E93"
+    },
+    {
+      "name": "list_preview_text",
+      "value": "#8E8E93"
     }
   ]
 }

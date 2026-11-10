@@ -1405,7 +1405,7 @@ export struct MessageBubbleShell {
         Text(this.msg.replySenderName).fontSize(12).fontColor(this.accent()).maxLines(1)
           .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
           .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
-        Text(this.msg.replyText).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).maxLines(1)
+        Text(this.msg.replyText).fontSize(12).fontColor($r('app.color.quote_text')).maxLines(1)
           .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
           .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
       }
