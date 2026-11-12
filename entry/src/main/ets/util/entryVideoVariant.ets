@@ -1,6 +1,6 @@
 import { MessageEntry } from '../store/MessageEntry';
 import {
-  QUALITY_AUTO, VideoVariant, networkIsMetered, pickInlineVariant, pickVideoVariant, playableVariants, variantsOwnFile
+  QUALITY_AUTO, VideoVariant, networkIsMetered, pickInlineSource, pickVideoVariant, playableVariants, variantsOwnFile
 } from './videoVariants';
 
 // 消息条目上的多清晰度（2026-10-10）。查看器、列表的头部预取共用这几个入口——
@@ -54,11 +54,9 @@ export function entryOwnsVideoFile(e: MessageEntry, fileId: number): boolean {
 // 会话里自动播放小窗（VideoBubbleSurface，气泡与相册格）播哪一档；自动播放大小上限（#226）
 // 也按这一档的大小判。
 export function entryInlineFile(e: MessageEntry): EntryVideoFileRef | null {
-  const list: VideoVariant[] = entryVideoVariants(e);
-  if (list.length === 0) {
-    return null;
-  }
-  const v: VideoVariant = pickInlineVariant(list, e.videoPath !== '');
+  if (e.videoFileId === 0) { return null; }
+  const v = pickInlineSource({ fileId: e.videoFileId, width: e.photoWidth, height: e.photoHeight,
+    size: e.videoFileSize, codec: '' }, e.videoVariants, e.videoPath !== '');
   const isOriginal: boolean = v.fileId === e.videoFileId;
   return {
     fileId: v.fileId,

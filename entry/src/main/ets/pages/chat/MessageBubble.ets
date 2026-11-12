@@ -1,3 +1,4 @@
+import { DrawnContentRow } from './DrawnContentRow';
 import { MessageTextPresentationCache, TRANSLATION_TEXT_INPUT } from '../../util/messageTextInput';
 import { MessageEntry } from '../../store/MessageEntry';
 import { TdObject } from '../../tdkit/TdTypes';
@@ -23,7 +24,7 @@ import { viewsReserve } from '../../util/viewCountChannel';
 import { translationReplacesOriginal } from '../../util/translationMode';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { MessageBubbleActions, MessageBubbleRenderData } from './ReusableMessageBubble';
-import { MessageBubbleContext, MessageBubbleShell } from './MessageBubbleShell';
+import { MessageBubbleContext } from './MessageBubbleShell';
 import { MessageBubbleText } from './MessageBubbleText';
 
 const VIDEO_NOTE_SIDE: number = 180;
@@ -550,7 +551,7 @@ export struct MessageBubble {
   }
 
   build() {
-    MessageBubbleShell({ msg: this.msg, group: this.group, data: this.data, actions: this.actions,
+    DrawnContentRow({ msg: this.msg, group: this.group, data: this.data, actions: this.actions,
       nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving, context: this.context }) {
       this.content();
     }

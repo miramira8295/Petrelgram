@@ -5,64 +5,53 @@
 //
 // 起初只给 WebM 帧序列用（名额满了不退回 ijkplayer，见 AlphaWebmStickerView 文件头那段
 // 「不再退回 ijkplayer」的注释）；同日起 TGS 与 WebM 共用，按区域分池，见 util/stickerAnimationBudget。
+class AnimationSlotWaiter {
+  previous: AnimationSlotWaiter | null = null;
+  next: AnimationSlotWaiter | null = null;
+  callback: (() => void) | null;
+  queued: boolean = true;
+  constructor(callback: () => void) { this.callback = callback; }
+}
+
 export class AnimationSlotPool {
   private readonly capacity: number;
   private live: number = 0;
-  private readonly waiters: Array<() => void> = [];
+  private tail: AnimationSlotWaiter | null = null;
+  private waiting: number = 0;
 
-  constructor(capacity: number) {
-    this.capacity = Math.max(0, Math.floor(capacity));
-  }
-
-  liveCount(): number {
-    return this.live;
-  }
-
-  waitingCount(): number {
-    return this.waiters.length;
-  }
-
+  constructor(capacity: number) { this.capacity = Math.max(0, Math.floor(capacity)); }
+  liveCount(): number { return this.live; }
+  waitingCount(): number { return this.waiting; }
   tryAcquire(): boolean {
-    if (this.live >= this.capacity) {
-      return false;
-    }
-    this.live++;
-    return true;
+    if (this.live >= this.capacity) { return false; }
+    this.live++; return true;
   }
 
-  // 只在 tryAcquire 失败之后调用。onGranted 被叫到时名额已经记在调用方名下，
-  // 里面不要再 tryAcquire。返回的函数撤销排队；已经被叫到之后再调是空操作。
+  // Intrusive LIFO list: add, cancel and grant each unlink in O(1). Cancellation
+  // drops the closure immediately, not a tombstone retained until a future pop.
   wait(onGranted: () => void): () => void {
-    const entry: () => void = (): void => {
-      onGranted();
-    };
-    this.waiters.push(entry);
-    return (): void => {
-      const at: number = this.waiters.indexOf(entry);
-      if (at >= 0) {
-        this.waiters.splice(at, 1);
-      }
-    };
+    const entry = new AnimationSlotWaiter(onGranted);
+    entry.previous = this.tail;
+    if (this.tail !== null) { this.tail.next = entry; }
+    this.tail = entry; this.waiting++;
+    return (): void => { this.unlink(entry); };
   }
-
-  // 让出一格但**不转给排队的人**：自己是因为别的资源（内存）不够才让的，排队的人
-  // 此刻同样拿不到，转过去只会让它们互相转手、在微任务里空转。
-  releaseQuietly(): void {
-    if (this.live > 0) {
-      this.live--;
-    }
+  private unlink(entry: AnimationSlotWaiter): void {
+    if (!entry.queued) { return; }
+    if (entry.previous !== null) { entry.previous.next = entry.next; }
+    if (entry.next !== null) { entry.next.previous = entry.previous; }
+    else { this.tail = entry.previous; }
+    entry.previous = null; entry.next = null; entry.callback = null; entry.queued = false; this.waiting--;
   }
-
-  // 让出一格：有人排队就原样转过去（占用数不变），没人才真的空出来。
+  releaseQuietly(): void { if (this.live > 0) { this.live--; } }
   release(): void {
-    if (this.live <= 0) {
-      return;
-    }
-    const next: (() => void) | undefined = this.waiters.pop();
-    if (next === undefined) {
-      this.live--;
-      return;
-    }
-    next();
+    if (this.live <= 0) { return; }
+    const entry = this.tail;
+    if (entry === null) { this.live--; return; }
+    const callback = entry.callback;
+    this.unlink(entry);
+    // Ownership is transferred before user code; reentrant cancellation/release
+    // sees the final queue state, preserving the original grant order/counts.
+    if (callback !== null) { callback(); }
   }
 }

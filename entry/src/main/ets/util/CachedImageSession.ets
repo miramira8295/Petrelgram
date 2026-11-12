@@ -6,6 +6,11 @@ import {
 } from './pixelCache';
 import { isDecodableTarget, sameDecodeTarget, shouldBlankBeforeDecode } from './imageSwap';
 import { CachedImageSpec, sameCachedImageDecode } from './cachedImageSpec';
+import { logW } from './log';
+
+// Only failed, completed decodes retry. Never duplicate an in-flight task or
+// poll every visible image. At most three attempts per source activation.
+const DECODE_RETRY_DELAYS: number[] = [150, 600];
 
 // One owner of each displayed bitmap and pending decode. This is deliberately
 // not observed: only the component's pixelMap is reactive. Both CachedImage and
@@ -18,9 +23,11 @@ export class CachedImageSession {
   private heldKey: string = '';
   private awaiting: PixelRequest | null = null;
   private seq: number = 0;
-  private publish: (pixels: image.PixelMap | undefined, ready: boolean) => void;
+  private retryTimer: number = -1;
+  private retryCount: number = 0;
+  private publish: (pixels: image.PixelMap | undefined, ready: boolean, width?: number, height?: number) => void;
 
-  constructor(publish: (pixels: image.PixelMap | undefined, ready: boolean) => void) {
+  constructor(publish: (pixels: image.PixelMap | undefined, ready: boolean, width?: number, height?: number) => void) {
     this.publish = publish;
   }
 
@@ -28,6 +35,7 @@ export class CachedImageSession {
   // must seed it synchronously even when the input object has not changed.
   activate(spec: CachedImageSpec): void {
     this.active = true;
+    this.retryCount = 0;
     this.apply(spec, true);
   }
 
@@ -50,6 +58,10 @@ export class CachedImageSession {
 
   private cancelPending(): void {
     this.seq++;
+    if (this.retryTimer !== -1) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = -1;
+    }
     if (this.awaiting !== null) {
       cancelPixelMap(this.awaiting);
       this.awaiting = null;
@@ -87,7 +99,7 @@ export class CachedImageSession {
     } else if (spec.pinBounded === true) {
       pinPixelMapBounded(req, handle);
     }
-    this.publish(handle.pixelMap, true);
+    this.publish(handle.pixelMap, true, handle.width, handle.height);
     // Retain/publish the replacement before returning the old reference.
     if (previous !== null) {
       releasePixelMap(previous);
@@ -102,6 +114,7 @@ export class CachedImageSession {
     if (!this.active || (unchanged && !reseed)) {
       return;
     }
+    if (!unchanged) { this.retryCount = 0; }
     this.cancelPending();
     if (!isDecodableTarget(spec.path, spec.boxWidth, spec.boxHeight)) {
       this.releaseHeld();
@@ -118,7 +131,7 @@ export class CachedImageSession {
       this.releaseHeld();
     }
     if (this.sameAsHeld(spec.path, width, height, opaque) && this.held !== null) {
-      this.publish(this.held.pixelMap, true);
+      this.publish(this.held.pixelMap, true, this.held.width, this.held.height);
       return;
     }
     const req: PixelRequest = { path: spec.path, width: width, height: height, opaque: opaque };
@@ -142,7 +155,7 @@ export class CachedImageSession {
     if (this.held === null) {
       this.publish(undefined, false);
     } else if (reseed) {
-      this.publish(this.held.pixelMap, false);
+      this.publish(this.held.pixelMap, false, this.held.width, this.held.height);
     }
     const token = this.seq;
     this.awaiting = req;
@@ -153,7 +166,28 @@ export class CachedImageSession {
       this.awaiting = null;
       if (handle !== undefined) {
         this.swapTo(req, handle);
+      } else {
+        this.retryFailedDecode(token, req);
       }
     });
+  }
+
+  private retryFailedDecode(token: number, req: PixelRequest): void {
+    if (!this.active || token !== this.seq) { return; }
+    if (this.retryCount >= DECODE_RETRY_DELAYS.length) {
+      // No file path/message content in diagnostics. One warning per exhausted
+      // activation, rather than repeated warnings on every render.
+      logW(`ImageDecode: retries exhausted, target=${req.width}x${req.height}`);
+      return;
+    }
+    const delay: number = DECODE_RETRY_DELAYS[this.retryCount++];
+    this.retryTimer = setTimeout((): void => {
+      if (!this.active || token !== this.seq) { return; }
+      this.retryTimer = -1;
+      const current = this.spec;
+      if (this.active && token === this.seq && current !== undefined) {
+        this.apply(current, true);
+      }
+    }, delay);
   }
 }

@@ -1,3 +1,7 @@
+import { DrawnRichTextBlock } from './DrawnRichTextBlock';
+import { InlineCustomEmojiPaint } from '../../util/inlineCustomEmojiPaint';
+import { InlineEmojiColorFilters } from './InlineEmojiColorFilter';
+import { drawing } from '@kit.ArkGraphics2D';
 import { InlineCaptionCache, InlineCaptionRun } from '../../util/inlineCaptionData';
 import { MessageTextInput, MessageTextMode, MessageTextPresentation, MessageTextLayout } from '../../util/messageTextInput';
 import { MessageEntry } from '../../store/MessageEntry';
@@ -16,9 +20,18 @@ import { timeLayerMinWidth } from '../../util/timeLayerWidth';
 import { MessageBubbleActions } from './ReusableMessageBubble';
 import { linkTextHidesUrl } from '../../util/messageLinkAction';
 import { MessageBubbleContext } from './MessageBubbleShell';
+import { DrawnRichLink, DrawnRichSourceCache, drawnRichSegmentSource } from '../../util/drawnRichTextPolicy';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
+import { drawnTextUsesRtlLayout } from './DrawnPlainTextLayout';
+import { DrawnRichTextLayout, DrawnRichTextLayouts } from './DrawnRichTextLayout';
+import { DrawnRichTextView } from './DrawnRichTextView';
+import { logW } from '../../util/log';
 
 // 单媒体气泡里说明文字/昵称/时间的左右内边距（vp）。图片贴边，文字往里收。
 const CAPTION_SIDE_PADDING: number = 8;
+// Never mutate this shared empty array. User interactions replace their local
+// arrays; ordinary captions can reset to the same reference without allocating.
+const EMPTY_TEXT_INTERACTION_KEYS: ReadonlyArray<string> = [];
 
 interface RichRunsBuilderParams {
   runs: RichRun[];
@@ -56,11 +69,47 @@ export struct MessageBubbleText {
 
   @Require @Param actions: MessageBubbleActions;
 
-  @Local revealedSpoilerKeys: string[] = [];
+  @Local revealedSpoilerKeys: ReadonlyArray<string> = EMPTY_TEXT_INTERACTION_KEYS;
 
-  @Local expandedQuoteKeys: string[] = [];
+  @Local expandedQuoteKeys: ReadonlyArray<string> = EMPTY_TEXT_INTERACTION_KEYS;
   private textRowId: number = 0;
   private previousText: string = '';
+  private drawnSource: DrawnRichSourceCache = new DrawnRichSourceCache();
+  private drawnLayouts: DrawnRichTextLayouts | null = null;
+  private drawnFailureLogged: boolean = false;
+
+  @Computed
+  private get drawnTextLayout(): DrawnRichTextLayout | null {
+    if (this.env.drawnEnabled === false || this.env.drawnRich === false || (this.mode !== 'body' && this.mode !== 'caption') || this.env.bubbleMaterialOn ||
+      this.msg.translatedText !== '' || this.context.translationStatus !== null) { return null; }
+    const textEnvironment: string = `${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
+    if (drawnTextUsesRtlLayout(textEnvironment)) { return null; }
+    try {
+      const source = this.drawnSource.prepare(this.text, this.entities);
+      if (source === null) { return null; }
+      // Preserve the existing animated busy-link rendering. Source membership
+      // is O(1), and leaving busy state reuses the cached paragraph/geometry.
+      if (this.drawnLayouts === null) { this.drawnLayouts = new DrawnRichTextLayouts(); }
+      return this.drawnLayouts.prepare(this.getUIContext(), {
+        source, maxWidthVp: this.mode === 'caption' ? this.captionMaxW() : this.maxWidth,
+        minWidthVp: this.measuredTimeLayerWidth(),
+        fontSize: this.env.msgTextSize, reserve: this.timeReserveInText() ? this.timeReserve() : '',
+        foreground: bubbleTextFor(this.msg.isOutgoing), accent: this.accent(),
+        environment: `${this.env.appearanceEpoch}:${textEnvironment}`
+      });
+    } catch (_error) {
+      if (!this.drawnFailureLogged) {
+        this.drawnFailureLogged = true;
+        logW(`DrawnRichText: layout unavailable, using native text: ${(_error as Error)?.message ?? String(_error)}`);
+      }
+      return null;
+    }
+  }
+
+  private tapDrawnLink(link: DrawnRichLink): void {
+    if (this.context.gestureClaimed) { return; }
+    this.actions.onLinkTap(link.url, link.hidesUrl);
+  }
 
   aboutToAppear(): void { this.rememberTextSource(); }
 
@@ -169,17 +218,21 @@ export struct MessageBubbleText {
     }
   }
 
-  private inlineCustomEmojiPath(customEmojiId: string): string {
-    const idx = this.msg.inlineCustomEmojiIds.indexOf(customEmojiId);
-    if (idx < 0 || idx >= this.msg.inlineCustomEmojiPaths.length) {
-      return '';
-    }
-    return this.msg.inlineCustomEmojiPaths[idx];
+  private emojiPaint: InlineCustomEmojiPaint = new InlineCustomEmojiPaint();
+  private emojiFilters: InlineEmojiColorFilters = new InlineEmojiColorFilters();
+
+  private inlineEmojiPaint(): InlineCustomEmojiPaint {
+    return this.emojiPaint.prepare(this.msg.inlineCustomEmojiIds,
+      this.msg.inlineCustomEmojiPaths, this.msg.inlineCustomEmojiRepaint);
   }
 
   private inlineCustomEmojiSource(customEmojiId: string): string {
-    const path = this.inlineCustomEmojiPath(customEmojiId);
-    return path.startsWith('/') ? `file://${path}` : path;
+    return this.inlineEmojiPaint().source(customEmojiId);
+  }
+
+  private inlineCustomEmojiFilter(run: RichRun): ColorFilter | drawing.ColorFilter {
+    return this.emojiFilters.get(this.inlineEmojiPaint().needsRepainting(run.customEmojiId),
+      run.link || run.url !== '' ? this.accent() : bubbleTextFor(this.msg.isOutgoing), this.env.appearanceEpoch);
   }
 
   private codeTextSize(): number {
@@ -202,8 +255,9 @@ export struct MessageBubbleText {
         .onClick((): void => {
           if (this.context.gestureClaimed) { return; }
           this.revealSpoiler(run); });
-    } else if (run.customEmojiId !== '' && this.inlineCustomEmojiPath(run.customEmojiId) !== '') {
+    } else if (run.customEmojiId !== '' && this.inlineCustomEmojiSource(run.customEmojiId) !== '') {
       ImageSpan(this.inlineCustomEmojiSource(run.customEmojiId))
+        .colorFilter(this.inlineCustomEmojiFilter(run))
         .width(this.env.msgTextSize + 3)
         .height(this.env.msgTextSize + 3)
         .verticalAlign(ImageSpanAlignment.CENTER)
@@ -517,6 +571,15 @@ export struct MessageBubbleText {
           .border({ width: { left: 3 }, color: this.accent() })
           .padding({ left: 9, right: 8, top: 7, bottom: 7 }).margin({ top: 4, bottom: 2 })
           .animation({ duration: this.effectDuration(180), curve: Curve.EaseOut });
+        } else if (this.env.drawnEnabled !== false && this.env.drawnRich !== false && drawnRichSegmentSource(seg) !== null) {
+          DrawnRichTextBlock({ segment: seg, msg: this.msg, maxWidthVp: params.maxWidth,
+            outgoing: this.msg.isOutgoing,
+            reserve: this.timeReserveInText() && seg.isLast ? this.timeReserve() : '',
+            onLinkTap: (link: DrawnRichLink): void => { this.tapDrawnLink(link); },
+            fallback: (): void => {
+              this.richRuns({ runs: seg.runs, maxWidth: params.maxWidth, isLastSegment: seg.isLast });
+            }
+          });
         } else {
           this.richRuns({
             runs: seg.runs,
@@ -685,7 +748,10 @@ export struct MessageBubbleText {
     } else if (this.mode === 'caption') {
       if (this.displayedMessageText(this.text) !== '') {
         Column() {
-          if (this.plainCaptionShown()) {
+          if (this.drawnTextLayout !== null) {
+            DrawnRichTextView({ plan: this.drawnTextLayout, msg: this.msg,
+              onLinkTap: (link: DrawnRichLink): void => { this.tapDrawnLink(link); } });
+          } else if (this.plainCaptionShown()) {
             this.plainCaption();
           } else if (this.inlineCaptionSegment() !== null) {
             this.inlineCaptionContent();
@@ -701,6 +767,9 @@ export struct MessageBubbleText {
         .padding({ left: CAPTION_SIDE_PADDING, right: CAPTION_SIDE_PADDING })
         .margin({ top: 6 });
       }
+    } else if (this.drawnTextLayout !== null) {
+      DrawnRichTextView({ plan: this.drawnTextLayout, msg: this.msg,
+        onLinkTap: (link: DrawnRichLink): void => { this.tapDrawnLink(link); } });
     } else {
       this.richContent({ text: this.text, entities: this.entities, maxWidth: this.maxWidth });
     }
@@ -711,8 +780,8 @@ export struct MessageBubbleText {
     // 展示快照合并了消息与文本输入；监听根对象，再按消息身份/正文判断。
     // 同一行的发送态/下载态更新不能收起用户已经展开的引用。
     if (this.textRowId !== this.msg.rowId || this.previousText !== this.text) {
-      this.revealedSpoilerKeys = [];
-      this.expandedQuoteKeys = [];
+      if (this.revealedSpoilerKeys.length > 0) { this.revealedSpoilerKeys = EMPTY_TEXT_INTERACTION_KEYS; }
+      if (this.expandedQuoteKeys.length > 0) { this.expandedQuoteKeys = EMPTY_TEXT_INTERACTION_KEYS; }
       this.rememberTextSource();
     }
   }

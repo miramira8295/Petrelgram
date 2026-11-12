@@ -1,3 +1,4 @@
+import { DrawnRendererDiagnostics } from './DrawnRendererDiagnostics';
 import { showToast } from '../../util/toast';
 import { probeMusicSequence, probeRemoteSequence } from '../../services/InlineMusicProbe';
 import { promptAction } from '@kit.ArkUI';
@@ -279,6 +280,7 @@ export struct DiagnosticsPage {
             // ⚠️ 临时调试项 —— 标定完删除。同一个调试角落。
             this.musicBotProbeCard();
             this.listCachedCard();
+            DrawnRendererDiagnostics();
           }
           .width('100%')
           .padding({ left: 12, right: 12, top: EDGE_OVERLAY_VP, bottom: this.bottomSafe + 24 });

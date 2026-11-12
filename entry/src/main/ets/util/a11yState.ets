@@ -17,6 +17,14 @@ import { logE } from './log';
 
 export const A11Y_EPOCH: string = 'a11yEpoch';
 
+@ObservedV2
+class A11yRuntimeState {
+  @Trace active: boolean = false;
+}
+
+// Share the startup subscription with V2 consumers; no per-bubble listeners.
+export const a11yRuntimeState: A11yRuntimeState = new A11yRuntimeState();
+
 let cached: boolean = false;
 let initialized: boolean = false;
 
@@ -38,10 +46,12 @@ export function initA11yState(): void {
     logE(`initA11yState query failed: ${e}`);
     cached = false;
   }
+  a11yRuntimeState.active = cached;
   try {
     accessibility.on('accessibilityStateChange', (open: boolean): void => {
       if (cached !== open) {
         cached = open;
+        a11yRuntimeState.active = open;
         bumpEpoch();
       }
     });

@@ -16,6 +16,13 @@ import { scaledMsgTextSize } from './textScale';
 
 @ObservedV2
 export class ChatEnvMirror {
+  @Trace drawnEnabled: boolean = true;
+  @Trace drawnText: boolean = true;
+  @Trace drawnSingle: boolean = true;
+  @Trace drawnAlbum: boolean = true;
+  @Trace drawnPlain: boolean = true;
+  @Trace drawnRich: boolean = true;
+
   @Trace appearanceEpoch: number = 0;
   @Trace materialEpoch: number = 0;
   @Trace langEpoch: number = 0;
@@ -59,6 +66,13 @@ export const chatEnv: ChatEnvMirror = new ChatEnvMirror();
 
 // 镜像列管的键。数值型与布尔/字符串分开写是为了免去逐字段的类型断言噪音。
 const MIRRORED_KEYS: string[] = [
+  'debugDrawnEnabled',
+  'debugDrawnText',
+  'debugDrawnSingle',
+  'debugDrawnAlbum',
+  'debugDrawnPlain',
+  'debugDrawnRich',
+
   'appearanceEpoch', 'materialEpoch', 'languageEpoch', 'bubbleGlassOn',
   'chatContentWidthVp', 'keyboardHeightVp', 'screenWidthVp', 'screenHeightVp',
   'msgTextSize', 'bubbleRadius', 'reduceAnimations', 'powerSavingActive',
@@ -100,6 +114,25 @@ export function mirroredChatEnvKeys(): string[] {
 // ——设置漏斗（setNumber/setBoolean/setString）会把所有设置键都送过来。
 export function mirrorChatEnvKey(key: string, value: number | boolean | string): void {
   switch (key) {
+    case 'debugDrawnEnabled':
+      if (chatEnv.drawnEnabled !== (value as boolean)) { chatEnv.drawnEnabled = value as boolean; }
+      break;
+    case 'debugDrawnText':
+      if (chatEnv.drawnText !== (value as boolean)) { chatEnv.drawnText = value as boolean; }
+      break;
+    case 'debugDrawnSingle':
+      if (chatEnv.drawnSingle !== (value as boolean)) { chatEnv.drawnSingle = value as boolean; }
+      break;
+    case 'debugDrawnAlbum':
+      if (chatEnv.drawnAlbum !== (value as boolean)) { chatEnv.drawnAlbum = value as boolean; }
+      break;
+    case 'debugDrawnPlain':
+      if (chatEnv.drawnPlain !== (value as boolean)) { chatEnv.drawnPlain = value as boolean; }
+      break;
+    case 'debugDrawnRich':
+      if (chatEnv.drawnRich !== (value as boolean)) { chatEnv.drawnRich = value as boolean; }
+      break;
+
     case 'appearanceEpoch':
       if (chatEnv.appearanceEpoch !== (value as number)) { chatEnv.appearanceEpoch = value as number; }
       break;

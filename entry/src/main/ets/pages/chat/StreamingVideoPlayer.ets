@@ -25,6 +25,7 @@ import {
   formatMs, formatSpeed, nextSeekFeedbackMs
 } from '../../util/playerChrome';
 import { HoldRewindState } from '../../util/holdRewind';
+import { chatAnimationSuspended, subscribeChatAnimationGate } from '../../util/chatAnimationGate';
 import { VideoProgressClock } from '../../util/videoProgressClock';
 import { materialModifier } from '../../util/materialModifier';
 import {
@@ -92,6 +93,12 @@ export struct StreamingVideoPlayer {
   // 是**被系统打断**才暂停的。打断结束时只恢复这一种暂停——用户自己按的
   // 暂停不能因为别人打完电话就自己动起来。
   private pausedByFocusLoss: boolean = false;
+  // 滚动闸（util/chatAnimationGate）：内嵌播放位在滑动期间暂停，停稳再接着放。
+  // 和贴纸/GIF 同一道闸，所以"滚动就停、稳定就恢复"的时机天然一致。
+  private gateSuspended: boolean = false;
+  // 是「因为闸关着才没在播」——开闸后只恢复这一类，用户自己按的暂停不动。
+  private resumeAfterGate: boolean = false;
+  private unsubGate: (() => void) | null = null;
   @Watch('onMutedChanged') @Prop muted: boolean = false;
   @Prop startPositionMs: number = 0;
   @Prop startSpeedIndex: number = DEFAULT_SPEED_IDX;
@@ -232,6 +239,12 @@ export struct StreamingVideoPlayer {
       toggle: (): void => { this.togglePlay(); }
     });
     this.armStatusDelay();
+    if (this.embedded) {
+      // 订阅时立刻回调一次当前值：滑动中途挂载的行不能默认"门是开的"。
+      this.unsubGate = subscribeChatAnimationGate((suspended: boolean): void => {
+        this.onGateChanged(suspended);
+      }, (): boolean => this.active);
+    }
     if (this.surfaceContext !== null && this.player === null) {
       this.retryTimer = setTimeout((): void => {
         this.retryTimer = -1;
@@ -287,6 +300,10 @@ export struct StreamingVideoPlayer {
 
   private deactivate(): void {
     if (!this.active) { return; }
+    if (this.unsubGate !== null) {
+      this.unsubGate();
+      this.unsubGate = null;
+    }
     this.onPlaybackControls(null);
     this.stopHold(false);
     this.active = false;
@@ -658,6 +675,11 @@ export struct StreamingVideoPlayer {
             return;
           }
           this.pendingPlayRequest = false;
+          if (this.embedded && (this.gateSuspended || chatAnimationSuspended())) {
+            // 滑动中：停在首帧，等闸开再放（见 onGateChanged）。
+            this.resumeAfterGate = true;
+            return;
+          }
           player.start();
           this.isPlaying = true;
           this.syncProgressPolling();
@@ -1000,6 +1022,30 @@ export struct StreamingVideoPlayer {
         this.player.start();
         this.isPlaying = true;
       }
+    }
+  }
+
+  // 滚动闸变化。只管内嵌播放位（全屏查看器不受列表滚动影响）。
+  private onGateChanged(suspended: boolean): void {
+    this.gateSuspended = suspended;
+    if (!this.embedded || this.player === null) { return; }
+    if (this.isPlaying || suspended) {
+      logI(`[VideoGate] suspended=${suspended} playing=${this.isPlaying} prepared=${this.isPrepared}`);
+    }
+    if (suspended) {
+      if (this.isPlaying) {
+        this.resumeAfterGate = true;
+        this.player.pause();
+        this.isPlaying = false;
+      }
+      return;
+    }
+    if (!this.resumeAfterGate) { return; }
+    this.resumeAfterGate = false;
+    if (!this.isPlaying && this.isPrepared && !this.hasError && !this.isCompleted && this.active) {
+      this.player.start();
+      this.isPlaying = true;
+      this.syncProgressPolling();
     }
   }
 

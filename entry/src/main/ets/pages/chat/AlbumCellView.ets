@@ -4,7 +4,6 @@ import { AlbumCellRenderData } from '../../util/albumCellRenderData';
 import { MessageBubbleActions } from './ReusableMessageBubble';
 import { LiveThumbImage, LiveThumbSpec } from './LiveThumbImage';
 import { LiveProgressRing } from './LiveProgressRing';
-import { ThumbReadyGate } from './ThumbReadyGate';
 import { VideoBubbleSurface } from './VideoBubbleSurface';
 import { PLAY_SLOT_ENTER_RATIO, PLAY_SLOT_KEEP_RATIO } from './playSlot';
 import { formatFileSize } from '../../util/formatFileSize';
@@ -66,14 +65,16 @@ export struct AlbumCellView {
     const previous: LiveThumbSpec | null = this.cachedThumbSpec;
     if (previous !== null && previous.fileId === cell.thumbFileId &&
       previous.initialPath === cell.thumbPath && previous.boxWidth === cell.width &&
-      previous.boxHeight === cell.height && previous.backdrop === backdrop && previous.mini === mini) {
+      previous.boxHeight === cell.height && previous.backdrop === backdrop && previous.mini === mini &&
+      previous.readyWithoutPath === (cell.isVideo && (cell.thumbFileId === 0 || cell.failed))) {
       return previous;
     }
     const next: LiveThumbSpec = {
-      syncDisplay: true, fileId: cell.thumbFileId, initialPath: cell.thumbPath,
+      syncDisplay: true, drawOnCanvas: true, fileId: cell.thumbFileId, initialPath: cell.thumbPath,
       boxWidth: cell.width, boxHeight: cell.height, radius: 6, fit: ImageFit.Cover,
       // 一行 6–9 格保留 RGB_565；底色与下载占位同源，mini 仍在滚动时停用。
-      opaque: true, backdrop, mini, deferMiniOnScroll: true
+      opaque: true, backdrop, mini, deferMiniOnScroll: true,
+      readyWithoutPath: cell.isVideo && (cell.thumbFileId === 0 || cell.failed)
     };
     this.cachedThumbSpec = next;
     return next;
@@ -240,6 +241,64 @@ export struct AlbumCellView {
   }
 
   @Builder
+  cellPlaceholder() {
+    if (this.fileId() !== 0 || this.pathAt() !== '') {
+      this.placeholderWithFile();
+    } else {
+      this.placeholderNoFile();
+    }
+  }
+
+  @Builder
+  readyOverlay() {
+    if (this.isVideo() && !this.isLive() && !this.uploading() &&
+      !(this.isPlaySlot() && this.videoFileId() !== 0)) {
+      this.playBadge(Math.min(40, Math.min(this.cell.width, this.cell.height) * 0.46));
+    }
+  }
+
+  private acceptsVideoObservation(cell: AlbumCellRenderData): boolean {
+    const current: AlbumCellRenderData = this.cell;
+    return current.isVideo && !this.isSentinel() && current.messageId === cell.messageId &&
+      current.chatId === cell.chatId && current.idx === cell.idx &&
+      current.width === cell.width && current.height === cell.height;
+  }
+
+  private videoRatioCallback(cell: AlbumCellRenderData): (visible: boolean, ratio: number) => void {
+    return (_visible: boolean, ratio: number): void => {
+      if (!this.acceptsVideoObservation(cell)) { return; }
+      if (ratio <= 0) {
+        this.actions.onMediaGone(cell.messageId, cell.idx);
+      } else {
+        this.actions.onMediaRatio(cell.messageId, cell.idx, ratio, this.hooks.centerYOf(cell.idx));
+      }
+    };
+  }
+
+  private videoAreaCallback(cell: AlbumCellRenderData): (oldArea: Area, area: Area) => void {
+    return (_old: Area, area: Area): void => {
+      if (!this.acceptsVideoObservation(cell)) { return; }
+      this.hooks.onCenterY(cell.idx, (area.globalPosition.y as number) + (area.height as number) / 2);
+    };
+  }
+
+  // Video-only observation lives beside the stable image subtree. Photo cells
+  // never register even an empty visibility callback. Explicit positioning
+  // keeps this observer out of intrinsic size measurement and hit testing.
+  @Builder
+  videoObserver() {
+    Row()
+      .width(this.cell.width).height(this.cell.height)
+      .position({ x: 0, y: 0 })
+      .hitTestBehavior(HitTestMode.None)
+      .accessibilityLevel('no')
+      .onVisibleAreaApproximateChange(
+        { ratios: [0.0, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, 0.9], expectedUpdateInterval: 200 },
+        this.videoRatioCallback(this.cell))
+      .onAreaChange(this.videoAreaCallback(this.cell));
+  }
+
+  @Builder
   cellBody() {
     if (this.isPlaySlot() && this.videoFileId() !== 0) {
       // 播放位选中这一格：挂播放器而不是静态封面。
@@ -263,39 +322,21 @@ export struct AlbumCellView {
         .borderRadius(6)
         // 同理：交给格子自己的 onClick 打开全屏查看器。
         .hitTestBehavior(HitTestMode.None);
-    } else if (this.fileId() !== 0 || this.pathAt() !== '') {
-      // 不加入场动画：行重建会重新创建这个节点，每次都会重放一遍淡入。
-      // desiredSize 在这里最要紧：一格只有几十 vp 宽，而它背后的文件是整个
-      // 会话宽度的尺寸。
-      // 自订阅：行 key 里不带路径，缩略图到货要靠这个节点自己反应。
-      // 条件不能只看 fileId：MessageStore 会用原图下载回填 photoPath，而那一条
-      // 的 fileId 可能仍是 0，丢了路径就把一张已下载的图退化成死的"重试"块。
+    } else {
+      // A stable thumbnail owner across photo/video, file arrival and retry.
+      // Its existing path subscription also gates the video badge; no second
+      // ThumbReadyGate or parent state publication is needed.
       LiveThumbImage({
         spec: this.thumbSpec(),
-        placeholder: (): void => { this.placeholderWithFile(); }
+        placeholder: (): void => { this.cellPlaceholder(); },
+        readyContent: (): void => { this.readyOverlay(); }
       });
-    } else {
-      // 没有可下载缩略图的视频照样能播；别在那上面留一个永远 0% 的转圈。
-      this.placeholderNoFile();
     }
     // 出站发送中：每格叠一个上传环（同 MessageBubble 的单媒体分支）。
     if (this.uploading()) {
       this.mediaLoadState(
         Math.min(34, Math.min(this.cell.width, this.cell.height) * 0.4),
         this.isVideo() ? this.videoFileId() : this.fileId(), 0, false);
-    }
-    // 相册格同理：实况格已经有 liveChip，不画播放钮。
-    if (this.isVideo() && !this.isLive() && !this.uploading() &&
-      !(this.isPlaySlot() && this.videoFileId() !== 0)) {
-      // 同单图那处：缩略图到没到要问通道，pathAt 在旁路化之后不再回填。
-      ThumbReadyGate({
-        fileId: this.fileId(),
-        initialPath: this.pathAt(),
-        ready: this.fileId() === 0 || this.failed(),
-        content: (): void => {
-          this.playBadge(Math.min(40, Math.min(this.cell.width, this.cell.height) * 0.46));
-        }
-      })
     }
     if (this.isLive()) {
       this.liveChip();
@@ -376,52 +417,20 @@ export struct AlbumCellView {
   }
 
   build() {
-    // 哨兵格子（越界时 albumCellAt 返回的 0×0）整段不画：画成 0×0 看着也
-    // "没有"，但它仍然占父 Row 的一档 space，相册的宽高会因此抖一下。
     if (!this.isSentinel()) {
-      if (this.isVideo()) {
-        // 只有视频格参与播放位的中心 y 竞选，所以 onAreaChange 只挂在这一支上——
-        // 无条件挂的时候实测每秒 2100-2300 次上报，而图片格从来不消费这个数据。
-        Stack() {
-          this.cellBody();
-          this.selectionOverlay();
+      Stack() {
+        this.cellBody();
+        this.selectionOverlay();
+        if (this.isVideo()) {
+          this.videoObserver();
         }
-        .width(this.cell.width).height(this.cell.height)
-        .accessibilityText(str('mb_album_item_video', this.idx() + 1))
-        .onVisibleAreaApproximateChange(
-          { ratios: [0.0, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, 0.9],
-            expectedUpdateInterval: 200 },
-          (_visible: boolean, ratio: number): void => {
-            if (ratio <= 0) {
-              this.actions.onMediaGone(this.memberId(), this.idx());
-            } else {
-              this.actions.onMediaRatio(this.memberId(), this.idx(), ratio,
-                this.hooks.centerYOf(this.idx()));
-            }
-          })
-        .onAreaChange((_old: Area, area: Area): void => {
-          this.hooks.onCenterY(this.idx(),
-            (area.globalPosition.y as number) + (area.height as number) / 2);
-        })
-        .onClick((e: ClickEvent): void => { this.onCellTap(e); });
-      } else {
-        Stack() {
-          this.cellBody();
-          this.selectionOverlay();
-        }
-        .width(this.cell.width).height(this.cell.height)
-        // 见单图分支：按被点的那一格的消息 id 绑定，相册里每格各自成对。
-        .geometryTransition(`media_${this.cell.chatId}_${this.memberId()}`)
-        .accessibilityText(this.failed() ? str('mb_photo_failed')
-          : str('mb_album_item', this.idx() + 1))
-        // **图片格不挂 onVisibleAreaApproximateChange。**
-        // 这里原来挂着一个空回调——注释自己写着"图片格不上报"，可空回调照样把这个
-        // 节点注册进全局可见区派发表，成本在注册不在回调。一行 6–9 格、窗口里几十
-        // 行，全相册会话里就是两三百个白注册：09-03 的真机 trace 里
-        // HandleVisibleAreaChangeEvent 的 nodeCount 峰值 134、稳态还在以 3.49
-        // 节点/秒增长，而同一份录制里 379 行全是图片行。
-        .onClick((e: ClickEvent): void => { this.onCellTap(e); });
       }
+      .width(this.cell.width).height(this.cell.height)
+      // Empty id explicitly clears a photo's transition when reused as video.
+      .geometryTransition(this.isVideo() ? '' : `media_${this.cell.chatId}_${this.memberId()}`)
+      .accessibilityText(this.isVideo() ? str('mb_album_item_video', this.idx() + 1)
+        : (this.failed() ? str('mb_photo_failed') : str('mb_album_item', this.idx() + 1)))
+      .onClick((e: ClickEvent): void => { this.onCellTap(e); });
     }
   }
 }

@@ -16,6 +16,7 @@
 // **上报必须由用户主动触发。** 这份缓冲含 [StoreDiag] 的消息 id 这类东西，属于
 // 聊天痕迹，和崩溃记录不是一回事。
 
+import { drawnTextMetrics } from './drawnTextMetrics';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 
@@ -196,15 +197,16 @@ export function logE(...args: Object[]): void {
 
 // 大致有多少字节可发，给设置页显示"将发送 xx KB"。
 export function diagLogSize(): number {
-  return collectAll().length;
+  return drawnTextMetrics.summary().length + collectAll().length;
 }
 
 // 供设置页在上报前展示给用户看：发出去的就是这些。
 export function diagLogText(): string {
-  return collectAll();
+  return drawnTextMetrics.summary() + collectAll();
 }
 
 export function clearDiagLog(): void {
+  drawnTextMetrics.reset();
   lines.splice(0, lines.length);
   try {
     if (logDir !== '' && fs.accessSync(currentPath())) {

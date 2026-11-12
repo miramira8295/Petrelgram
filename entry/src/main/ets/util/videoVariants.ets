@@ -133,3 +133,25 @@ export function pickInlineVariant(list: VideoVariant[], originalLocal: boolean):
   }
   return atLeast !== null ? atLeast : (below !== null ? below : list[0]);
 }
+
+// Equivalent to pickInlineVariant(playableVariants(...)), without allocating
+// or sorting every quality. A list bubble only needs the selected file: O(V)
+// time and O(1) auxiliary space; the viewer still uses the ordered full list.
+export function pickInlineSource(original: VideoVariant, alternatives: VideoVariant[], local: boolean): VideoVariant {
+  if (local) { return original; }
+  const originalHeight = variantLabelHeight(original);
+  let chosen = original;
+  let height = originalHeight;
+  for (const alt of alternatives) {
+    if (!playable(alt) || alt.fileId === original.fileId) { continue; }
+    const h = variantLabelHeight(alt);
+    if (h <= 0 || h === originalHeight) { continue; }
+    const betterHeight = h >= INLINE_TARGET_HEIGHT
+      ? height < INLINE_TARGET_HEIGHT || h < height
+      : height < INLINE_TARGET_HEIGHT && h > height;
+    if (betterHeight || (h === height && alt.size > 0 && (chosen.size <= 0 || alt.size < chosen.size))) {
+      chosen = alt; height = h;
+    }
+  }
+  return chosen;
+}

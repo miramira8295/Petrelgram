@@ -68,7 +68,10 @@ export struct SenderAnimatedLayer {
   private readonly nodeId: string = `sender_anim_${++nextSenderAnimNodeSeq}`;
   private env: ChatEnvMirror = chatEnv;
   private visible: boolean = false;
-  private disposed: boolean = false;
+  private disposed: boolean = true;
+  @Local private attachmentEpoch: number = 0;
+  private playbackEpoch: number = 0;
+  private playbackKey: string = '';
   private attachedKey: string = '';
   private holdingKey: string = '';
   private unsubPath: (() => void) | null = null;
@@ -90,10 +93,12 @@ export struct SenderAnimatedLayer {
 
   // visible 不动：回收与复用常在同一帧，中间没有可见性结算（同 TgsNativeStickerView）。
   aboutToRecycle(): void {
+    this.disposed = true;
     this.detach();
   }
 
   aboutToReuse(): void {
+    this.disposed = false;
     this.attach();
   }
 
@@ -103,28 +108,42 @@ export struct SenderAnimatedLayer {
     this.attach();
   }
 
-  @Monitor('env.animatedAvatar', 'env.powerSaving')
+  // @Monitor needs a decorated root; the singleton itself remains private.
+  // Read every input so changing one policy flag cannot hide another dependency.
+  @Computed
+  private get playbackEnvironmentKey(): number {
+    return (this.env.animatedAvatar ? 1 : 0) +
+      (this.env.powerSaving ? 2 : 0);
+  }
+
+  @Monitor('playbackEnvironmentKey')
   onPowerChanged(): void {
     this.evaluate();
   }
 
   private attach(): void {
+    if (this.disposed) { return; }
     if (this.attachedKey !== '' || this.holding || this.unsubPath !== null) {
       this.detach();
     }
     const key: string = senderChannelKey(this.senderId, this.senderIsUser);
     this.attachedKey = key;
+    const epoch = ++this.attachmentEpoch;
     this.videoPath = senderAnimationFor(key);
     this.unsubPath = subscribeSenderAnimation(key, (path: string): void => {
+      if (!this.acceptsAttachment(epoch, key)) { return; }
+      if (path !== this.videoPath) { this.playbackEpoch++; this.shown = false; }
       this.videoPath = path;
       this.evaluate();
     });
     // 订阅时立刻回调一次当前值；第二个参数让开闸时屏幕上的先放。
     this.unsubGate = subscribeChatAnimationGate((suspended: boolean): void => {
+      if (!this.acceptsAttachment(epoch, key)) { return; }
       this.gateSuspended = suspended;
       this.evaluate();
-    }, (): boolean => this.visible);
+    }, (): boolean => this.acceptsAttachment(epoch, key) && this.visible);
     this.unsubPark = subscribeSenderAnimationPark((next: boolean): void => {
+      if (!this.acceptsAttachment(epoch, key)) { return; }
       if (this.parkTimer !== -1) {
         clearTimeout(this.parkTimer);
         this.parkTimer = -1;
@@ -132,6 +151,7 @@ export struct SenderAnimatedLayer {
       if (next && this.holding) {
         // 避开退场起跳第 0 帧（第 0 帧已由 gateSuspended 暂停播放），在转场第 24ms 卸载 AVPlayer。
         this.parkTimer = setTimeout((): void => {
+          if (!this.acceptsAttachment(epoch, key)) { return; }
           this.parkTimer = -1;
           this.parked = true;
           this.evaluate();
@@ -145,6 +165,7 @@ export struct SenderAnimatedLayer {
   }
 
   private detach(): void {
+    this.attachmentEpoch++; this.playbackEpoch++; this.playbackKey = '';
     if (this.unsubPath !== null) {
       this.unsubPath();
       this.unsubPath = null;
@@ -229,7 +250,9 @@ export struct SenderAnimatedLayer {
       activeSenderKeys.add(this.holdingKey);
       return;
     }
+    const epoch = this.attachmentEpoch, key = this.attachedKey;
     this.cancelWait = senderAvatarSlots.wait((): void => {
+      if (!this.acceptsAttachment(epoch, key)) { senderAvatarSlots.release(); return; }
       this.cancelWait = null;
       if (this.disposed || !this.visible || this.videoPath === '' || !this.allowed() ||
         this.gateSuspended || !this.inSafeViewport()) {
@@ -252,7 +275,9 @@ export struct SenderAnimatedLayer {
       return;
     }
     const key: string = this.attachedKey;
+    const epoch = this.attachmentEpoch;
     const cb = (): void => {
+      if (!this.acceptsAttachment(epoch, key)) { return; }
       this.unregisterSameSenderWaiter();
       this.evaluate();
     };
@@ -281,6 +306,7 @@ export struct SenderAnimatedLayer {
   }
 
   private releaseSlot(): void {
+    this.playbackEpoch++; this.playbackKey = '';
     this.unregisterSameSenderWaiter();
     if (this.cancelWait !== null) {
       this.cancelWait();
@@ -310,6 +336,36 @@ export struct SenderAnimatedLayer {
     this.releaseSlot();
   }
 
+  private acceptsAttachment(epoch: number, key: string): boolean {
+    return !this.disposed && this.attachmentEpoch === epoch && this.attachedKey === key &&
+      senderChannelKey(this.senderId, this.senderIsUser) === key;
+  }
+  private playbackGeneration(): number {
+    const key = `${this.attachmentEpoch}:${this.holding}:${this.videoPath}`;
+    if (key !== this.playbackKey) { this.playbackKey = key; this.playbackEpoch++; }
+    return this.playbackEpoch;
+  }
+  private workingCallback(): () => void {
+    const epoch = this.attachmentEpoch, key = this.attachedKey, playback = this.playbackGeneration();
+    return (): void => {
+      if (this.acceptsAttachment(epoch, key) && this.holding && playback === this.playbackGeneration()) { this.shown = true; }
+    };
+  }
+  private failedCallback(): () => void {
+    const epoch = this.attachmentEpoch, key = this.attachedKey, playback = this.playbackGeneration();
+    return (): void => {
+      if (this.acceptsAttachment(epoch, key) && this.holding && playback === this.playbackGeneration()) { this.onPlaybackFailed(); }
+    };
+  }
+  private visibleCallback(): (visible: boolean, ratio: number) => void {
+    const epoch = this.attachmentEpoch, key = this.attachedKey;
+    return (visible: boolean, ratio: number): void => {
+      if (!this.acceptsAttachment(epoch, key)) { return; }
+      const next = visible && ratio > 0;
+      if (this.visible !== next) { this.visible = next; this.evaluate(); }
+    };
+  }
+
   build() {
     Stack() {
       if (this.holding && this.videoPath !== '') {
@@ -317,12 +373,8 @@ export struct SenderAnimatedLayer {
           videoPath: this.videoPath,
           avatarSize: this.avatarSize,
           paused: this.gateSuspended,
-          onWorking: (): void => {
-            this.shown = true;
-          },
-          onFailed: (): void => {
-            this.onPlaybackFailed();
-          }
+          onWorking: this.workingCallback(),
+          onFailed: this.failedCallback()
         })
           // 透明度只加在播放器上，不加在根节点：根节点要参与可见区判定。
           .opacity(this.shown ? 1 : 0);
@@ -334,13 +386,6 @@ export struct SenderAnimatedLayer {
     .clip(true)
     // 点头像看资料、长按提及都挂在外层头像上，这一层不接触摸。
     .hitTestBehavior(HitTestMode.None)
-    .onVisibleAreaChange([0.01], (isVisible: boolean, ratio: number): void => {
-      const next: boolean = isVisible && ratio > 0;
-      if (this.visible === next) {
-        return;
-      }
-      this.visible = next;
-      this.evaluate();
-    });
+    .onVisibleAreaChange([0.01], this.visibleCallback());
   }
 }

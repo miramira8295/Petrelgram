@@ -1405,9 +1405,13 @@ export struct ChatListPage {
     if (spec === undefined) {
       return;
     }
-    // 没建过的页签这里会拿到一个新建的控制器，currentOffset() 为 0——那本来也是
-    // 顶上的位置。所以不需要先判存在。
-    this.noteFolderBarScroll(spec.key, 0, this.scrollerFor(spec.key).currentOffset().yOffset <= 0);
+    // 切页动画可能早于新列表绑定；未绑定的控制器返回 undefined，不能视为已到顶。
+    // 保留当前状态，绑定后由列表的滚动回调同步实际位置。
+    const offset: OffsetResult | undefined = this.scrollerFor(spec.key).currentOffset();
+    if (offset === undefined) {
+      return;
+    }
+    this.noteFolderBarScroll(spec.key, 0, offset.yOffset <= 0);
   }
 
   // 收起态横拖切换文件夹：拖过阈值就把整条展开——用户得看见自己在切哪一项。

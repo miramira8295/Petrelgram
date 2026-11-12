@@ -61,6 +61,8 @@ export interface PixelRequest {
 // PixelMap. Passing the entry itself removes the window entirely.
 export class PixelHandle {
   readonly pixelMap: image.PixelMap;
+  readonly width: number;
+  readonly height: number;
   bytes: number = 0;
   // One reference is held by the cache itself while the entry is in the map,
   // plus one per component currently showing it. Pixels are freed when the
@@ -72,9 +74,11 @@ export class PixelHandle {
   // it out of the LRU would just buy that cost back on the next chat open.
   pinned: boolean = false;
 
-  constructor(pixelMap: image.PixelMap, bytes: number) {
+  constructor(pixelMap: image.PixelMap, bytes: number, width: number = 0, height: number = 0) {
     this.pixelMap = pixelMap;
     this.bytes = bytes;
+    this.width = width;
+    this.height = height;
   }
 }
 
@@ -101,6 +105,9 @@ class PendingDecode {
   // createPixelMap itself cannot be interrupted.
   waiters: number = 1;
   started: boolean = false;
+  queued: boolean = false;
+  previous: PendingDecode | undefined = undefined;
+  next: PendingDecode | undefined = undefined;
   resolvers: ((handle: PixelHandle | undefined) => void)[] = [];
 
   constructor(req: PixelRequest, key: string) {
@@ -111,7 +118,28 @@ class PendingDecode {
 
 const cache: Map<string, PixelHandle> = new Map();
 const pending: Map<string, PendingDecode> = new Map();
-const queue: PendingDecode[] = [];
+// pending is the key index; the task itself is an intrusive queue node. A
+// fresh Map iterator for each dequeue may repeatedly walk deleted entries in
+// some engines. These links give bounded pointer work for enqueue/dequeue and
+// cancellation, with no additional wrapper allocation per task.
+let queueHead: PendingDecode | undefined = undefined;
+let queueTail: PendingDecode | undefined = undefined;
+
+function enqueue(task: PendingDecode): void {
+  task.previous = queueTail; task.next = undefined; task.queued = true;
+  if (queueTail === undefined) { queueHead = task; }
+  else { queueTail.next = task; }
+  queueTail = task;
+}
+
+function removeQueued(task: PendingDecode): void {
+  if (!task.queued) { return; }
+  if (task.previous === undefined) { queueHead = task.next; }
+  else { task.previous.next = task.next; }
+  if (task.next === undefined) { queueTail = task.previous; }
+  else { task.next.previous = task.previous; }
+  task.previous = undefined; task.next = undefined; task.queued = false;
+}
 let activeDecodes: number = 0;
 let usedBytes: number = 0;
 // 钉住（pin / pinBounded）的字节数。evictDownTo 跳过这些条目，所以它们每多一个
@@ -124,7 +152,8 @@ let pinnedBytes: number = 0;
 // drain holder releases in small event-loop batches so native frees cannot pile up in
 // one frame. Cache eviction still drops its own reference synchronously and therefore
 // keeps the byte budget truthful.
-const pendingHolderReleases: PixelHandle[] = [];
+const pendingHolderReleases: (PixelHandle | undefined)[] = [];
+let holderReleaseHead: number = 0;
 let holderReleaseTimer: number = -1;
 
 // 规则本身在 util/pixelCacheKey（纯函数 + 回归测试）：像素格式必须进 key，
@@ -155,26 +184,36 @@ function decRef(entry: PixelHandle): void {
 
 function drainHolderReleases(): void {
   holderReleaseTimer = -1;
-  const count: number = Math.min(IMAGE_HOLDER_RELEASE_BATCH, pendingHolderReleases.length);
+  const count: number = Math.min(IMAGE_HOLDER_RELEASE_BATCH, pendingHolderReleases.length - holderReleaseHead);
   for (let i = 0; i < count; i++) {
-    const entry = pendingHolderReleases.shift();
+    const entry = pendingHolderReleases[holderReleaseHead];
+    pendingHolderReleases[holderReleaseHead++] = undefined;
     if (entry !== undefined) {
       decRef(entry);
     }
   }
-  if (pendingHolderReleases.length > 0) {
+  if (holderReleaseHead === pendingHolderReleases.length) {
+    pendingHolderReleases.length = 0;
+    holderReleaseHead = 0;
+  } else if (holderReleaseHead >= 1024 && holderReleaseHead * 2 >= pendingHolderReleases.length) {
+    // Geometric compaction: total copied entries are amortized O(releases).
+    pendingHolderReleases.splice(0, holderReleaseHead);
+    holderReleaseHead = 0;
+  }
+  if (pendingHolderReleases.length > holderReleaseHead) {
     holderReleaseTimer = setTimeout(drainHolderReleases, 0);
   }
 }
 
 function evictDownTo(limit: number, maxEntries: number = Number.MAX_SAFE_INTEGER): number {
   // Most insertions fit the current budget. Avoid copying the entire LRU key
-  // set when no eviction can occur; keep the existing snapshot/order otherwise.
+  // set when no eviction can occur. Live iteration preserves LRU order and
+  // deletes only the current entry; it never inserts/reorders entries.
   if (usedBytes <= limit || maxEntries <= 0) {
     return 0;
   }
   let evicted: number = 0;
-  for (const key of Array.from(cache.keys())) {
+  for (const key of cache.keys()) {
     if (usedBytes <= limit || evicted >= maxEntries) {
       return evicted;
     }
@@ -220,7 +259,7 @@ export function loadPixelMap(req: PixelRequest): Promise<PixelHandle | undefined
   if (task === undefined) {
     task = new PendingDecode(req, key);
     pending.set(key, task);
-    queue.push(task);
+    enqueue(task);
     pump();
   } else {
     task.waiters++;
@@ -243,10 +282,7 @@ export function cancelPixelMap(req: PixelRequest): void {
   if (task.waiters > 0 || task.started) {
     return;
   }
-  const at = queue.indexOf(task);
-  if (at >= 0) {
-    queue.splice(at, 1);
-  }
+  removeQueued(task);
   pending.delete(key);
   for (const resolve of task.resolvers) {
     resolve(undefined);
@@ -264,17 +300,15 @@ function settle(task: PendingDecode, handle: PixelHandle | undefined): void {
 // 而同一次抓取里 ProcessJank 一条都没有 —— 掉帧的前提本来就不成立。真正的开销
 // 是解码跑在主线程上，已经由 pixelDecodeTask 挪进 TaskPool 解决。
 function pump(): void {
-  while (activeDecodes < MAX_ACTIVE_DECODES && queue.length > 0) {
+  while (activeDecodes < MAX_ACTIVE_DECODES && queueHead !== undefined) {
     // First in, first out. Newest-first looked better during a fling — the
     // latest requests are the rows nearest the viewport — but it can starve an
     // early request indefinitely while new ones keep arriving, and a starved
     // request is a bubble that never draws its photo. Stale work is now
     // removed by cancel() rather than by being outrun, so the queue stays close
     // to the visible set and ordering does not have to compensate.
-    const task = queue.shift();
-    if (task === undefined) {
-      return;
-    }
+    const task = queueHead;
+    removeQueued(task);
     task.started = true;
     activeDecodes++;
     decode(task.req, task.key).then((handle: PixelHandle | undefined): void => {
@@ -315,7 +349,7 @@ function insertDecoded(key: string, pixelMap: image.PixelMap, decoded: image.Ima
   // stride, not width: DMA rows are padded to a hardware alignment, and the
   // padding is real memory this budget has to account for.
   const bytes = Math.max(1, decoded.stride) * Math.max(1, decoded.size.height);
-  const entry = new PixelHandle(pixelMap, bytes);
+  const entry = new PixelHandle(pixelMap, bytes, decoded.size.width, decoded.size.height);
   cache.set(key, entry);
   usedBytes += bytes;
   // The extra reference covers the hand-off: eviction below (or any eviction
@@ -362,10 +396,7 @@ export function loadPixelMapSync(req: PixelRequest): PixelHandle | undefined {
     const entry = insertDecoded(key, pixelMap, decoded);
     const task = pending.get(key);
     if (task !== undefined && !task.started) {
-      const at = queue.indexOf(task);
-      if (at >= 0) {
-        queue.splice(at, 1);
-      }
+      removeQueued(task);
       settle(task, entry);
     }
     return entry;

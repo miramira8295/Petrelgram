@@ -1,3 +1,12 @@
+import { DrawnSenderHeaderCache } from './DrawnSenderHeader';
+import { DrawnReplyQuoteCache } from './DrawnReplyQuote';
+import { DrawnSenderRoleBinding } from '../../util/drawnSenderRoleBinding';
+import {
+  DrawnPlainTextLayout, DrawnPlainTextLayouts, drawnTextUsesRtlLayout
+} from './DrawnPlainTextLayout';
+import { DrawnPlainTextPainter } from './DrawnPlainTextPainter';
+import { drawnPlainTextEligible, drawnChromeTextSupported, drawnReplyHit } from '../../util/drawnPlainTextPolicy';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
 import { senderLabelWidths } from '../../util/senderLabelWidths';
 import { BubbleGlassGeometry } from './BubbleGlassGeometry';
 import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
@@ -69,7 +78,7 @@ import { menuPreviewCompact } from '../../util/menuPreview';
 // 和输入栏同一对函数，受「界面模糊质感」开关与档位控制。
 import { bubbleGlassBlurStyle, bubbleGlassFill } from '../../util/surfaceGlass';
 import { firstFinger } from '../../util/firstFinger';
-import { linkifyRuns } from '../../util/linkify';
+import { linkifyRuns, PlainTextLinkPresenceCache } from '../../util/linkify';
 import { RichRun } from '../../util/richText';
 import { linkTextHidesUrl } from '../../util/messageLinkAction';
 
@@ -239,13 +248,13 @@ struct LightweightSenderAvatar {
     this.attach();
   }
 
-  // 头像被大图挤出 LRU 后重解码会闪（issue #137），pinBounded/syncDisplay 两处
-  // 要一起开；字段没变时返回同一个对象，CachedImage 的 @Param 就不会变化。
+  // 头像保持有界驻留（issue #137），缓存像素直接自绘；syncDisplay 留给原生回退。
+  // 字段没变时返回同一个对象，CachedImage 的 @Param 就不会变化。
   private imageSpec(): CachedImageSpec {
     const size: number = this.spec.avatarSize;
     return this.imageSpecCache.prepare({
       path: this.path, boxWidth: size, boxHeight: size, radius: size / 2,
-      fit: ImageFit.Cover, pinBounded: true, syncDisplay: true
+      fit: ImageFit.Cover, pinBounded: true, syncDisplay: true, drawOnCanvas: true
     });
   }
 
@@ -355,6 +364,158 @@ export struct LightweightPlainTextBubble {
   // build 里写死了 4 个标量 → 现在收成一个 spec），没有这一层，子组件的
   // @Param 每次都换引用。
   private avatarSpecCache: SenderAvatarSpecCache = new SenderAvatarSpecCache();
+  private drawnLayouts: DrawnPlainTextLayouts | null = null;
+  private drawnPainter: DrawnPlainTextPainter | null = null;
+  private drawnHeader: DrawnSenderHeaderCache | null = null;
+  private drawnQuote: DrawnReplyQuoteCache | null = null;
+  private drawnRoleBinding: DrawnSenderRoleBinding = new DrawnSenderRoleBinding();
+  @Local private drawnRoleLabel: string = '';
+  private drawnFailureLogged: boolean = false;
+  private drawnLinkPresence: PlainTextLinkPresenceCache = new PlainTextLinkPresenceCache();
+
+  // A cached drawing plan, not another observed message copy. Status icons and
+  // scroll shadows are paint-only inputs and never invalidate text layout.
+  @Computed
+  private get drawnLayout(): DrawnPlainTextLayout | null {
+    if (this.env.drawnEnabled === false || this.env.drawnPlain === false) { return null; }
+    // Observe language/config even when the current row uses the fallback.
+    const environment: string = `${this.env.appearanceEpoch}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
+    if (!this.drawnCandidate()) { return null; }
+    const sender: string = this.senderLabelShown() ? this.msg.senderName : '';
+    const role: string = sender !== '' ? this.drawnEffectiveRole() : '';
+    if (!drawnChromeTextSupported(sender) || !drawnChromeTextSupported(role) ||
+      (this.msg.replyToMessageId !== 0 && (!drawnChromeTextSupported(this.msg.replySenderName) ||
+        !drawnChromeTextSupported(this.msg.replyText)))) { return null; }
+    const corners = this.bubbleCorners();
+    try {
+      if (this.drawnLayouts === null) { this.drawnLayouts = new DrawnPlainTextLayouts(); }
+      const ui = this.getUIContext();
+      const maxPx: number = Math.floor(this.inlineMaxW() * ui.vp2px(1));
+      const textEnvironment: string = `${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
+      if (sender !== '' && this.drawnHeader === null) { this.drawnHeader = new DrawnSenderHeaderCache(); }
+      if (this.msg.replyToMessageId !== 0 && this.drawnQuote === null) { this.drawnQuote = new DrawnReplyQuoteCache(); }
+      const header = sender !== '' && this.drawnHeader !== null ? this.drawnHeader.prepare(ui, sender, role,
+        maxPx, this.senderColor(), $r('app.color.tag_text'), $r('app.color.selected_pill'),
+        textEnvironment, environment) : null;
+      const quote = this.msg.replyToMessageId !== 0 && this.drawnQuote !== null ? this.drawnQuote.prepare(ui,
+        this.msg.replySenderName, this.msg.replyText, maxPx, this.accent(), $r('app.color.quote_text'),
+        accentSoft(), textEnvironment, environment) : null;
+      return this.drawnLayouts.prepare(ui, {
+        content: this.msg.text, time: this.messageTime(),
+        edited: this.msg.editDate > 0 ? str('mb_edited') : '',
+        maxWidthVp: this.bubbleMaxW(), fontSize: this.env.msgTextSize,
+        outgoing: this.msg.isOutgoing, tail: this.hasTail(),
+        topLeft: cornerPx(corners.topLeft), topRight: cornerPx(corners.topRight),
+        bottomRight: cornerPx(corners.bottomRight), bottomLeft: cornerPx(corners.bottomLeft),
+        fill: this.bubbleFillColor(), foreground: bubbleTextFor(this.msg.isOutgoing),
+        secondary: COLOR_TEXT_SECONDARY, accent: this.accent(),
+        environment: environment,
+        textEnvironment: textEnvironment
+      }, header, quote);
+    } catch (_error) {
+      // Never lose the message if resource resolution/native text layout fails.
+      if (!this.drawnFailureLogged) {
+        this.drawnFailureLogged = true;
+        logW(`DrawnPlainText: layout unavailable, using native text: ${(_error as Error)?.message ?? String(_error)}`);
+      }
+      return null;
+    }
+  }
+
+  private drawnCandidate(): boolean {
+    return this.env.drawnEnabled !== false && this.env.drawnPlain !== false && drawnPlainTextEligible(this.msg.text, this.env.bubbleMaterialOn,
+      this.senderLabelShown(), this.msg.replyToMessageId, this.translationStatus !== null, this.liveViews, false,
+      drawnTextUsesRtlLayout(`${this.env.langEpoch}:${textMeasureEnvironment.epoch}`)) &&
+      !this.drawnLinkPresence.hasLink(this.msg.text);
+  }
+
+  private drawnEffectiveRole(): string {
+    return this.msg.senderTag !== '' ? this.msg.senderTag : this.drawnRoleLabel;
+  }
+
+  private syncDrawnRole(): void {
+    if (this.attachedKey !== '' && this.senderLabelShown() && this.msg.senderTag === '' && this.drawnCandidate()) {
+      this.drawnRoleLabel = this.drawnRoleBinding.attach(this.chatId, this.msg.senderId,
+        (label: string): void => { this.drawnRoleLabel = label; });
+    } else {
+      this.drawnRoleBinding.detach();
+      this.drawnRoleLabel = '';
+    }
+  }
+
+  // @Monitor needs a decorated root; the singleton itself remains private.
+  // Read every input so changing one policy flag cannot hide another dependency.
+  @Computed
+  private get drawnEnvironmentKey(): string {
+    return `${this.env.bubbleMaterialOn}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
+  }
+
+  @Monitor('chatId', 'isGroup', 'showSenderName', 'translationStatus', 'liveViews', 'drawnEnvironmentKey')
+  onDrawnRoleEligibilityChanged(): void { this.syncDrawnRole(); }
+
+  private currentDrawnPainter(): DrawnPlainTextPainter {
+    if (this.drawnPainter === null) { this.drawnPainter = new DrawnPlainTextPainter(); }
+    return this.drawnPainter.bind(this.drawnLayout, this.liveSendState, !this.env.scrollActive);
+  }
+
+  private drawnAccessibilityText(): string {
+    const edited: string = this.msg.editDate > 0 ? str('mb_edited') + ' ' : '';
+    const status: string = this.liveSendState === 'sending' ? str('sending') :
+      (this.liveSendState === 'failed' ? str('send_failed') : '');
+    const sender: string = this.senderLabelShown() ? `${this.msg.senderName} ${this.drawnEffectiveRole()} ` : '';
+    return `${sender}${this.msg.text} ${edited}${this.messageTime()} ${status}`;
+  }
+
+  @Builder
+  drawnBubble() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      if (this.drawnLayout !== null && this.drawnLayout.quote !== null && this.msg.replyToMessageId !== 0) {
+        // A real interaction/accessibility node over the drawn quote. Its click
+        // wins native click arbitration; long press/swipe still use the outer row.
+        Row() {}
+          .width((this.drawnLayout?.contentWidthPx ?? 0) / (this.drawnLayout?.density ?? 1))
+          .height((this.drawnLayout?.quote?.heightPx ?? 0) / (this.drawnLayout?.density ?? 1))
+          .position({ x: (this.drawnLayout?.bodyX ?? 0) / (this.drawnLayout?.density ?? 1),
+            y: (this.drawnLayout?.replyY ?? 0) / (this.drawnLayout?.density ?? 1) })
+          .accessibilityLevel('yes')
+          .accessibilityText(`${this.msg.replySenderName} ${this.msg.replyText}`)
+          .onClick((): void => {
+            if (!this.gestureClaimed && this.msg.replyToMessageId !== 0) {
+              this.actions.onReplyTap(this.msg.replyToMessageId, this.msg.id);
+            }
+          });
+      }
+    }
+      .width(this.drawnLayout?.widthVp ?? 0)
+      .height(this.drawnLayout?.heightVp ?? 0)
+      .drawModifier(this.currentDrawnPainter())
+      .accessibilityGroup(this.msg.replyToMessageId === 0)
+      .accessibilityLevel('yes')
+      .accessibilityText(this.drawnAccessibilityText())
+      .parallelGesture(this.canDragMessage() ? undefined : LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+        .onAction((event: GestureEvent): void => { this.onLongPress(event); }))
+      .onTouch((event: TouchEvent): void => { this.onDragSourceTouch(event); })
+      .onClick((event: ClickEvent): void => {
+        const layout = this.drawnLayout;
+        if (layout !== null && layout.quote !== null && drawnReplyHit(event.x, event.y,
+          layout.bodyX, layout.replyY, layout.contentWidthPx, layout.quote.heightPx, layout.density)) { return; }
+        if (!this.gestureClaimed && messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
+          this.recordMenuOffset(event.x, Number(event.target.area.width));
+          this.askDeletable();
+          this.menuShown = true;
+        }
+      })
+      .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+        if (typeof size.width === 'number' && typeof size.height === 'number') {
+          this.measuredGlassW = size.width;
+          this.measuredGlassH = size.height;
+          this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
+        }
+      })
+      .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
+        y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
+        centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' });
+  }
 
   private senderAvatarSpec(): SenderAvatarSpec {
     return this.avatarSpecCache.prepare(this.msg.senderId, this.msg.senderIsUser,
@@ -565,11 +726,13 @@ export struct LightweightPlainTextBubble {
       // 同 key 短路：退订+重订阅整轮省掉，只重新播种数值——清理是无条件的，
       // 不补种会空一帧。
       this.seedChannelValues(message);
+      this.syncDrawnRole();
       return;
     }
     this.detachChannels();
     this.attachedKey = key;
     this.seedChannelValues(message);
+    this.syncDrawnRole();
     this.unsubSend = subscribeSendState(message.rowId,
       (state: string): void => { this.liveSendState = state; });
     this.unsubTranslation = subscribeTranslationStatus(message.id,
@@ -591,6 +754,8 @@ export struct LightweightPlainTextBubble {
   }
 
   private detachChannels(): void {
+    this.drawnRoleBinding.detach();
+    this.drawnRoleLabel = '';
     if (this.unsubSend !== null) { this.unsubSend(); this.unsubSend = null; }
     if (this.unsubTranslation !== null) {
       this.unsubTranslation();
@@ -1282,6 +1447,8 @@ export struct LightweightPlainTextBubble {
                   // 同值不写：只有几何真的变了才通知背景。
                   this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
                 })
+              } else if (this.env.drawnEnabled !== false && this.env.drawnPlain !== false && this.drawnLayout !== null) {
+                this.drawnBubble();
               } else {
                 Row() {
                   // Absolute live decoration cannot grow the flow layout.

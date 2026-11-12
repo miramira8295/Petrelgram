@@ -37,6 +37,7 @@ export default function selectTextTest() {
       expect(p.text).assertEqual('hello');
       expect(p.entities === e.textEntities).assertTrue();
       expect(p.emojiIds === e.inlineCustomEmojiIds).assertTrue();
+      expect(p.emojiRepaint === e.inlineCustomEmojiRepaint).assertTrue();
     });
 
     // 界面上看不见的东西不该出现在选择层里——用户点「隐藏译文」之后再点

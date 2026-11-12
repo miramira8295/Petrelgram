@@ -15,9 +15,10 @@ function compile(text) {
   { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
 }
 const shellSource = source('../entry/src/main/ets/pages/chat/MessageBubbleShell.ets');
-const avatarStart = shellSource.indexOf('interface SenderAvatarState {');
-const avatarEnd = shellSource.indexOf('  build() {', avatarStart);
-const avatarJs = compile(shellSource.slice(avatarStart, avatarEnd) + '}\nglobalThis.Avatar = LiveSenderAvatar;');
+const avatarSource = source('../entry/src/main/ets/pages/chat/MessageSenderAvatar.ets');
+const avatarStart = avatarSource.indexOf('@ComponentV2');
+const avatarEnd = avatarSource.indexOf('  build() {', avatarStart);
+const avatarJs = compile(avatarSource.slice(avatarStart, avatarEnd) + '}\nglobalThis.Avatar = MessageSenderAvatar;');
 const helpersJs = compile(source('../entry/src/main/ets/util/messageBubblePresentation.ets') + '\n' +
   source('../entry/src/main/ets/util/cachedImageSpec.ets'));
 const channelJs = compile(source('../entry/src/main/ets/util/senderAvatarChannel.ets'));
@@ -98,9 +99,9 @@ check('late animated-photo metadata is picked up on channel publish', () => {
   const s = setup(); s.avatar.aboutToAppear(); assert.equal(s.avatar.animated, false);
   s.animated.add('u1'); s.publish('u1', '/animated-poster'); assert.equal(s.avatar.animated, true);
 });
-check('avatar image policy retains bounded pinning and both sync flags', () => {
+check('avatar image policy retains bounded pinning, cached display and Canvas drawing', () => {
   const s = setup(); s.avatar.aboutToAppear(); const first = s.avatar.imageSpec();
-  assert.equal(first.pinBounded, true); assert.equal(first.syncSmall, true); assert.equal(first.syncDisplay, true);
+  assert.equal(first.pinBounded, true); assert.equal(first.syncSmall, undefined); assert.equal(first.drawOnCanvas, true); assert.equal(first.syncDisplay, true);
   s.update({ avatarSize: 22 }); const smaller = s.avatar.imageSpec();
   assert.equal(smaller.boxWidth, 22); assert.equal(smaller.boxHeight, 22); assert.equal(smaller.radius, 11);
   assert.equal(first.boxWidth, 38); assert.equal(smaller.fit, 0);
@@ -139,6 +140,7 @@ const newMethods = ['bubbleCornerRadius', 'isBareEmoji', 'senderAvatarSpec', 'co
   .map(name => method(shellSource, name)).join('\n');
 const ctx = vm.createContext({});
 vm.runInContext(helpersJs + compile(`class After {
+  isPureMediaBubble() { return false; }
   cornerCache = new BubbleCornerCache(); avatarSpecCache = new SenderAvatarSpecCache();
   commentAvatarSpecCaches = []; ${newMethods} }
 globalThis.after = new After();`), ctx);
@@ -147,13 +149,13 @@ check('corner geometry matches golden grouping shapes across live setting change
   // shapes also matched the previous component in the initial parity run.
   const shapes = [
     [false, false, false, [7, null, 7, null]],
-    [false, false, true, [7, null, 2, null]],
+    [false, false, true, [7, null, null, null]],
     [false, true, false, [null, null, 7, null]],
-    [false, true, true, [null, null, 2, null]],
+    [false, true, true, [null, null, null, null]],
     [true, false, false, [null, 7, null, 7]],
-    [true, false, true, [null, 7, null, 2]],
+    [true, false, true, [null, 7, null, null]],
     [true, true, false, [null, null, null, 7]],
-    [true, true, true, [null, null, null, 2]]
+    [true, true, true, [null, null, null, null]]
   ];
   ctx.after.env = { bubbleRadius: 0 }; ctx.after.msg = { isOutgoing: false };
   ctx.after.group = { showSenderName: false, showAvatar: false };

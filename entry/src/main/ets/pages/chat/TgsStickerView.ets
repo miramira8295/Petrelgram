@@ -90,8 +90,22 @@ export struct TgsStickerView {
     }
   }
 
-  @Monitor('env.powerSaving', 'env.stickers', 'env.animatedEmoji', 'env.stickerAutoplay',
-    'env.stickerLoop', 'env.emojiChat', 'env.emojiReactions', 'env.emojiStatus', 'env.reduceAnim')
+  // @Monitor needs a decorated root; the singleton itself remains private.
+  // Read every input so changing one policy flag cannot hide another dependency.
+  @Computed
+  private get playbackEnvironmentKey(): number {
+    return (this.env.powerSaving ? 1 : 0) +
+      (this.env.stickers ? 2 : 0) +
+      (this.env.animatedEmoji ? 4 : 0) +
+      (this.env.stickerAutoplay ? 8 : 0) +
+      (this.env.stickerLoop ? 16 : 0) +
+      (this.env.emojiChat ? 32 : 0) +
+      (this.env.emojiReactions ? 64 : 0) +
+      (this.env.emojiStatus ? 128 : 0) +
+      (this.env.reduceAnim ? 256 : 0);
+  }
+
+  @Monitor('playbackEnvironmentKey')
   onPowerChanged(): void {
     if (this.powerSuspended()) {
       this.loadSeq++;

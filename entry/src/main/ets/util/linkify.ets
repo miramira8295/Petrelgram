@@ -32,6 +32,29 @@ export function linkifyRuns(text: string, entities: TdObject[]): RichRun[] {
 const LINK_RE: RegExp =
   /(https?:\/\/[^\s]+|(?:t\.me|telegram\.me|telegram\.dog)\/@?[A-Za-z0-9_+/-]+|@[A-Za-z0-9_]{3,32})/g;
 
+// Share the exact recognizer with full rendering, but no global cursor and no
+// RichRun allocation. This only answers whether the native link renderer is needed.
+const LINK_PRESENT_RE: RegExp = new RegExp(LINK_RE.source);
+
+export function hasPlainTextLink(content: string): boolean {
+  return LINK_PRESENT_RE.test(content);
+}
+
+// Per consumer: metadata/theme updates do not rescan unchanged text. The full
+// renderer still parses every link; this cache is only for branch selection.
+export class PlainTextLinkPresenceCache {
+  private lastText: string = '';
+  private lastResult: boolean = false;
+
+  hasLink(content: string): boolean {
+    if (content !== this.lastText) {
+      this.lastResult = hasPlainTextLink(content);
+      this.lastText = content;
+    }
+    return this.lastResult;
+  }
+}
+
 function regexLinkify(text: string): RichRun[] {
   const runs: RichRun[] = [];
   let last = 0;

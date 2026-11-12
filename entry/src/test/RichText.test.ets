@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  isUnformattedPlainText, parseFormattedText, richSegmentKey, RichSegment
+  isUnformattedPlainText, parseFormattedText, richSegmentKey, RichSegment, messageUrls
 } from '../main/ets/util/richText';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 
@@ -15,6 +15,43 @@ function entity(offset: number, length: number, typeName: string): TdObject {
 
 export default function richTextTest() {
   describe('RichText', () => {
+    it('many_entity_split_blank_runs_trim_before_a_quote', 0, () => {
+      const prefix: string = '\n'.repeat(1024);
+      const text: string = prefix + 'body\nquote';
+      const entities: TdObject[] = [];
+      for (let i: number = 0; i < prefix.length; i++) {
+        entities.push(entity(i, 1, 'textEntityTypeUnknown'));
+      }
+      entities.push(entity(text.indexOf('quote'), 5, 'textEntityTypeBlockQuote'));
+      const segments = parseFormattedText(text, entities);
+      expect(segments.length).assertEqual(2);
+      expect(segments[0].runs.length).assertEqual(1);
+      expect(segments[0].runs[0].text).assertEqual('body');
+      expect(segments[1].runs[0].text).assertEqual('quote');
+    });
+    it('copy_urls_deduplicates_without_changing_first_seen_order', 0, () => {
+      const entities: TdObject[] = [];
+      for (let i: number = 0; i < 2000; i++) {
+        const e = entity(0, 1, 'textEntityTypeTextUrl');
+        (e['type'] as TdObject)['url'] = `https://example.org/${i % 500}`;
+        entities.push(e);
+      }
+      const urls = messageUrls('x', entities);
+      expect(urls.length).assertEqual(500);
+      for (let i: number = 0; i < urls.length; i++) {
+        expect(urls[i]).assertEqual(`https://example.org/${i}`);
+      }
+    });
+    it('many_adjacent_unknown_boundaries_compact_once_without_losing_text', 0, () => {
+      const text: string = 'x'.repeat(4096);
+      const entities: TdObject[] = [];
+      for (let i: number = 0; i < text.length; i++) {
+        entities.push(entity(i, 1, 'textEntityTypeUnknown'));
+      }
+      const runs = parseFormattedText(text, entities)[0].runs;
+      expect(runs.length).assertEqual(1);
+      expect(runs[0].text).assertEqual(text);
+    });
     it('sweep_keeps_original_link_order_instead_of_start_offset_order', 0, () => {
       const first = entity(2, 4, 'textEntityTypeTextUrl');
       const covering = entity(0, 8, 'textEntityTypeTextUrl');

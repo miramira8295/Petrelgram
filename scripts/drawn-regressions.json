@@ -1,0 +1,23 @@
+[
+  "test-drawn-chrome.mjs",
+  "test-drawn-album-grid.mjs",
+  "test-drawn-content-row.mjs",
+  "test-bubble-presentation-lifecycle.mjs",
+  "test-drawn-album-row.mjs",
+  "test-drawn-text-row.mjs",
+  "test-drawn-album-media.mjs",
+  "test-drawn-rich-reuse.mjs",
+  "test-drawn-rich-block.mjs",
+  "test-drawn-media-caption.mjs",
+  "test-chat-monitor-anchors.mjs",
+  "test-inline-emoji-paint.mjs",
+  "test-chat-image-receiver.mjs",
+  "test-image-decode-retry.mjs",
+  "test-album-corners.mjs",
+  "test-pixel-cache-queues.mjs",
+  "test-drawn-single-media.mjs",
+  "test-drawn-completion.mjs",
+  "test-drawn-inline-emoji.mjs",
+  "test-chatlist-scroll-lifecycle.mjs",
+  "test-drawn-creation-trim.mjs"
+]

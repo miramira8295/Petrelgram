@@ -30,7 +30,14 @@ export struct AvatarFrameView {
   @Monitor('videoPath', 'avatarSize')
   onSourceChanged(): void { if (this.active) { this.reset(); } }
 
-  @Monitor('paused', 'env.appIsForeground')
+  // @Monitor needs a decorated root; the singleton itself remains private.
+  // Read every input so changing one policy flag cannot hide another dependency.
+  @Computed
+  private get playbackEnvironmentKey(): number {
+    return (this.env.appIsForeground ? 1 : 0);
+  }
+
+  @Monitor('paused', 'playbackEnvironmentKey')
   onPlaybackChanged(): void {
     if (!this.env.appIsForeground) { trimAvatarFrames(); }
     if (this.active && !this.paused && this.env.appIsForeground) { this.load(); }

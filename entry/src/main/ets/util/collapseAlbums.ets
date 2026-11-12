@@ -38,6 +38,7 @@ export interface AlbumGroup {
   // 与 videoFileIds 并列；0 = 不是视频。
   inlineFileIds: number[];
   inlineFileSizes: number[];
+  captionMessage?: MessageEntry; // Owner of caption emoji assets, possibly a non-head member.
   caption: string;         // album caption (from whichever member carries text)
   captionEntities: TdObject[]; // the caption's TDLib entities (links/mentions/hashtags)
   dateLabel: string;       // date pill shown above this row when the day changes ('' = none)
@@ -167,7 +168,7 @@ function computeMutableSig(m: MessageEntry): string {
     `_${m.linkPhotoFileId}_${m.linkPhotoWidth}_${m.linkPhotoHeight}` +
     `_${m.photoFileId}_${m.videoFileId}_${m.videoDuration}_${m.isEmojiSticker}` +
     `_${m.editDate}` +
-    `_${m.inlineCustomEmojiPaths.join('|')}_${m.voiceListened}_${m.voiceWaveform}` +
+    `_${m.inlineCustomEmojiPaths.join('|')}_${m.inlineCustomEmojiRepaint.join(',')}_${m.voiceListened}_${m.voiceWaveform}` +
     `_${m.audioTitle}_${m.audioPerformer}_${m.audioCoverMini !== '' ? 'cm' : ''}` +
     `_${m.contactPhone}_${m.contactFirstName}_${m.contactLastName}_${m.contactUserId}` +
     `_${m.contactAvatarPath !== '' ? 'ca' : ''}_${m.locationLatitude}_${m.locationLongitude}` +
@@ -276,6 +277,7 @@ export function collapseAlbums(list: MessageEntry[], hints?: RunHeadHints): Albu
       const inlineFileSizes: number[] = [];
       const albumMembers: MessageEntry[] = [];
       let caption = '';
+      let captionMessage: MessageEntry | undefined = undefined;
       let captionEntities: TdObject[] = [];
       let j = i;
       while (j < list.length && list[j].albumId === m.albumId && (list[j].contentType === 'photo' || list[j].contentType === 'video')) {
@@ -306,6 +308,7 @@ export function collapseAlbums(list: MessageEntry[], hints?: RunHeadHints): Albu
         // 在相册分支上的挂载）。原来取最后一条，一旦哪天真出现多条带文字的
         // 相册，配文来自 A、译文取自 B，页面上就是"翻译了却不显示"。
         if (caption === '' && list[j].text !== '') {
+          captionMessage = list[j];
           caption = list[j].text;
           captionEntities = list[j].textEntities;
         }
@@ -333,7 +336,9 @@ export function collapseAlbums(list: MessageEntry[], hints?: RunHeadHints): Albu
           `_${videoFileIds.join(',')}_${videoFileSizes.join(',')}_${videoDurations.join(',')}` +
           `_${inlineFileIds.join(',')}_${caption}` +
           `_${captionEntities.map((entity: TdObject): string => JSON.stringify(entity)).join('|')}` +
-          `_${dateLabel}_${mutableSig(displayHead)}`,
+          `_${dateLabel}_${mutableSig(displayHead)}` +
+          (captionMessage !== undefined && captionMessage.id !== displayHead.id
+            ? `_${captionMessage.inlineCustomEmojiPaths.join('|')}_${captionMessage.inlineCustomEmojiRepaint.join(',')}` : ''),
         head: displayHead,
         memberIds,
         rowMemberIds,
@@ -352,6 +357,7 @@ export function collapseAlbums(list: MessageEntry[], hints?: RunHeadHints): Albu
         inlineFileIds,
         inlineFileSizes,
         caption,
+        captionMessage,
         captionEntities,
         dateLabel,
         showAvatar: true,

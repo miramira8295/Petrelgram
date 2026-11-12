@@ -10,6 +10,8 @@ export interface CachedImageSpec {
   pinBounded?: boolean;
   syncSmall?: boolean;
   syncDisplay?: boolean;
+  // Rendering only: never changes the decode key or session ownership.
+  drawOnCanvas?: boolean;
   sourceKey?: string;
   opaque?: boolean;
   backdrop?: string;
@@ -33,7 +35,8 @@ export class CachedImageSpecCache {
     if (previous !== undefined && sameCachedImageDecode(previous, next) &&
       previous.radius === next.radius && previous.fit === next.fit &&
       previous.pin === next.pin && previous.pinBounded === next.pinBounded &&
-      previous.syncDisplay === next.syncDisplay && previous.backdrop === next.backdrop &&
+      previous.syncDisplay === next.syncDisplay && previous.drawOnCanvas === next.drawOnCanvas &&
+      previous.backdrop === next.backdrop &&
       previous.backdropImage === next.backdropImage &&
       previous.deferBackdropOnScroll === next.deferBackdropOnScroll) {
       return previous;

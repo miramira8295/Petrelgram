@@ -259,6 +259,42 @@ export default function customEmojiReactionsTest() {
         .assertEqual('5555');
     });
 
+    it('inline template metadata reaches the message with its cached thumbnail', 0, async () => {
+      const arr = setup(5);
+      const b = arr[0] as FakeBridge;
+      const store = arr[1] as MessageStore;
+      store.open(); feedChat(b, 5); await tick();
+      const message = textMessage(10, 5, '🎬 clip');
+      const content = message['content'] as TdObject;
+      const ft = content['text'] as TdObject;
+      const type: TdObject = { '@type': 'textEntityTypeCustomEmoji' };
+      type['custom_emoji_id'] = '5555';
+      const entity: TdObject = { '@type': 'textEntity' };
+      entity['offset'] = 0; entity['length'] = 2; entity['type'] = type;
+      ft['entities'] = [entity];
+      feedHistory(b, [message]); await tick();
+      const request = sentOfType(b, 'getCustomEmojiStickers')[0];
+      expect(request !== undefined).assertTrue();
+      const local: TdObject = { '@type': 'localFile' };
+      local['path'] = '/template.webp'; local['is_downloading_completed'] = true;
+      const file: TdObject = { '@type': 'file' };
+      file['id'] = 91; file['local'] = local;
+      const fullType: TdObject = { '@type': 'stickerFullTypeCustomEmoji' };
+      fullType['custom_emoji_id'] = '5555'; fullType['needs_repainting'] = true;
+      const format: TdObject = { '@type': 'stickerFormatWebp' };
+      const sticker: TdObject = { '@type': 'sticker' };
+      sticker['format'] = format; sticker['full_type'] = fullType; sticker['sticker'] = file;
+      const response: TdObject = { '@type': 'stickers' };
+      response['stickers'] = [sticker]; response['@extra'] = request['@extra'];
+      b.onReceive(JSON.stringify(response));
+      await new Promise<void>((resolve: () => void): void => { setTimeout(resolve, 100); });
+      const entry = store.getMessages()[0];
+      expect(entry.inlineCustomEmojiIds[0]).assertEqual('5555');
+      expect(entry.inlineCustomEmojiPaths[0]).assertEqual('/template.webp');
+      expect(entry.inlineCustomEmojiRepaint[0]).assertTrue();
+      store.close();
+    });
+
     it('thumb_file_id_prefers_thumbnail_then_static_webp', 0, () => {
       const thumbFile: TdObject = { '@type': 'file' };
       thumbFile['id'] = 91;

@@ -1,3 +1,4 @@
+import { customEmojiNeedsRepainting, inlineEmojiUpdate, InlineEmojiUpdate } from '../util/inlineCustomEmojiPaint';
 import { rememberOpenedChat } from '../services/RecentChatHistoryService';
 import { SharedPayload } from '../util/sharedContent';
 import { sharedSendPermissions } from '../util/sendPermissions';
@@ -224,6 +225,7 @@ export class MessageStore {
   private liveIncomingMediaIds: number[] = [];
   private inlineCustomEmojiFileToId: Map<number, string> = new Map();
   private inlineCustomEmojiPathById: Map<string, string> = new Map();
+  private inlineCustomEmojiRepaintIds: Set<string> = new Set<string>();
   // Telegram reuses the same thumbnail/source file ids whenever the same
   // sticker is sent again. Keep completed paths independently from a message
   // id so a newly-created outgoing bubble can render immediately.
@@ -3424,6 +3426,7 @@ export class MessageStore {
       c.textEntities = rebuilt.textEntities;
       c.inlineCustomEmojiIds = rebuilt.inlineCustomEmojiIds;
       c.inlineCustomEmojiPaths = rebuilt.inlineCustomEmojiPaths;
+      c.inlineCustomEmojiRepaint = rebuilt.inlineCustomEmojiRepaint;
       c.photoFileId = rebuilt.photoFileId;
       c.photoWidth = rebuilt.photoWidth > 0 ? rebuilt.photoWidth : c.photoWidth;
       c.photoHeight = rebuilt.photoHeight > 0 ? rebuilt.photoHeight : c.photoHeight;
@@ -4126,17 +4129,19 @@ export class MessageStore {
     let next: MessageEntry[] | null = null;
     for (let i = 0; i < this.messages.length; i++) {
       const m: MessageEntry = this.messages[i];
-      const inlinePaths: string[] | null = this.updatedInlineCustomEmojiPaths(m);
+      const inline: InlineEmojiUpdate | null = inlineEmojiUpdate(m.inlineCustomEmojiIds,
+        m.inlineCustomEmojiPaths, m.inlineCustomEmojiRepaint, this.inlineCustomEmojiPathById, this.inlineCustomEmojiRepaintIds);
       const reactions: ReactionInfo[] | null = this.updatedReactionCustomEmojiPaths(m);
-      if (inlinePaths === null && reactions === null) {
+      if (inline === null && reactions === null) {
         continue;
       }
       if (next === null) {
         next = this.messages.slice();
       }
       const c = cloneMessage(m);
-      if (inlinePaths !== null) {
-        c.inlineCustomEmojiPaths = inlinePaths;
+      if (inline !== null) {
+        c.inlineCustomEmojiPaths = inline.paths;
+        c.inlineCustomEmojiRepaint = inline.repaint;
       }
       if (reactions !== null) {
         c.reactions = reactions;
@@ -4147,23 +4152,6 @@ export class MessageStore {
       this.messages = next;
       this.notifySoon();
     }
-  }
-
-  // 返回 null 表示无变化（调用方据此跳过克隆）。
-  private updatedInlineCustomEmojiPaths(m: MessageEntry): string[] | null {
-    if (m.inlineCustomEmojiIds.length === 0) {
-      return null;
-    }
-    const paths: string[] = [];
-    let differs = m.inlineCustomEmojiPaths.length !== m.inlineCustomEmojiIds.length;
-    for (let i = 0; i < m.inlineCustomEmojiIds.length; i++) {
-      const path = this.inlineCustomEmojiPathById.get(m.inlineCustomEmojiIds[i]) ?? '';
-      paths.push(path);
-      if (!differs && path !== m.inlineCustomEmojiPaths[i]) {
-        differs = true;
-      }
-    }
-    return differs ? paths : null;
   }
 
   private updatedReactionCustomEmojiPaths(m: MessageEntry): ReactionInfo[] | null {
@@ -4280,6 +4268,12 @@ export class MessageStore {
         return; // Unicode alternative remains visible with a retry affordance.
       }
       const st = stickers[0];
+      const repaint: boolean = customEmojiNeedsRepainting(st);
+      if (repaint !== this.inlineCustomEmojiRepaintIds.has(ceId)) {
+        if (repaint) { this.inlineCustomEmojiRepaintIds.add(ceId); }
+        else { this.inlineCustomEmojiRepaintIds.delete(ceId); }
+        this.scheduleCustomEmojiHydrate();
+      }
       const fmt = st['format'] as TdObject | undefined;
       const fmtName = fmt !== undefined ? ((fmt['@type'] as string | undefined) ?? '') : '';
       const format = fmtName === 'stickerFormatWebp' ? 'webp'

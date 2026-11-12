@@ -1,3 +1,4 @@
+import { DEBUG_DRAWN_KEYS } from '../main/ets/util/debugDrawnRenderer';
 import { describe, expect, it } from '@ohos/hypium';
 import {
   chatEnv, mirrorChatEnvKey, mirroredChatEnvKeys, seedChatEnvFromStorage
@@ -34,11 +35,23 @@ export default function chatEnvMirrorTest() {
         KEY_POWER_EMOJI_CHAT, KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY,
         KEY_POWER_AUTOPLAY_GIF, KEY_POWER_AUTOPLAY_VIDEO, KEY_POWER_STICKER_LOOP, KEY_POWER_EMOJI_STATUS,
         KEY_TRANSLATE_REPLACE_ORIGINAL, 'appIsForeground', LINK_NAV_BUSY_KEY, KEY_POWER_ANIMATED_AVATAR,
-        KEY_WIDTH_BREAKPOINT
+        KEY_WIDTH_BREAKPOINT, ...DEBUG_DRAWN_KEYS
       ];
       expect(keys.length).assertEqual(constants.length);
       for (const constant of constants) {
         expect(keys.indexOf(constant) >= 0).assertTrue();
+      }
+    });
+    it('自绘开关独立镜像并从持久设置恢复', 0, (): void => {
+      for (const key of DEBUG_DRAWN_KEYS) { mirrorChatEnvKey(key, true); }
+      for (let i = 0; i < DEBUG_DRAWN_KEYS.length; i++) {
+        const key = DEBUG_DRAWN_KEYS[i];
+        AppStorage.setOrCreate(key, false);
+        seedChatEnvFromStorage();
+        const states: boolean[] = [chatEnv.drawnEnabled, chatEnv.drawnText, chatEnv.drawnSingle,
+          chatEnv.drawnAlbum, chatEnv.drawnPlain, chatEnv.drawnRich];
+        for (let j = 0; j < states.length; j++) { expect(states[j]).assertEqual(j !== i); }
+        AppStorage.setOrCreate(key, true); mirrorChatEnvKey(key, true);
       }
     });
     it('按键写入落到对应字段', 0, (): void => {

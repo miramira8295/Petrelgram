@@ -10,7 +10,9 @@ const root = new URL('../', import.meta.url);
 const read = name => fs.readFileSync(new URL(name, root), 'utf8');
 const beforeRoot = process.env.BEFORE_ALBUM_PREPARATION;
 const cacheFile = 'entry/src/main/ets/util/albumCellRenderData.ets';
-const componentFile = 'entry/src/main/ets/pages/chat/AlbumMessageBubble.ets';
+// The preserved fallback owns the original candidate lifecycle now.
+const componentFile = 'entry/src/main/ets/pages/chat/LegacyAlbumMessageBubble.ets';
+const beforeComponentFile = 'entry/src/main/ets/pages/chat/AlbumMessageBubble.ets';
 const oldRead = name => fs.readFileSync(path.join(beforeRoot, name), 'utf8');
 function compile(source) {
   const instrument = context => {
@@ -158,7 +160,7 @@ check('video update, video-to-photo and late removal preserve callbacks exactly 
   assert.equal(s.component.competing.size, 0);
 });
 if (beforeRoot) check('candidate events and maps match old methods across 1000 lifecycle transitions', () => {
-  const old = candidatesSetup(oldRead(componentFile)), next = candidatesSetup();
+  const old = candidatesSetup(oldRead(beforeComponentFile)), next = candidatesSetup();
   for (let i = 0; i < 1000; i++) {
     const g = group(i % 11); g.head.rowId = Math.floor(i / 3);
     g.photoIsVideo = g.memberIds.map((_,j) => (i+j) % 5 === 0);

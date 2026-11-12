@@ -72,7 +72,12 @@ set -u
 #   · ChatListV2.test.ets —— 测的是 V1/V2 一行开关，开关本身也随 V1 一起删了。
 #   · ChatStoreV2.test.ets —— 同上，它靠 setChatListSourceForTest 切换。
 # 4154 是删完后实跑的结果，不是推算值。与「为了让脚本变绿而降」是两档。
-MIN_TESTS="${MIN_TESTS:-4154}"
+# 2026-11-10：自绘普通文本的功能回退、几何及缓存回归补12项，含现有4155项。
+# 同日：自绘入口早停链接检测与无全文JSON缓存补9项，基线升至4176。
+# 同日：自绘排版/装饰分离与汇总统计补11项，基线升至4187。
+# 同日：群聊自绘入口/引用命中与身份复用补10项，基线升至4197。
+# 同日：正文先排/时间独立落位补12项，基线升至4209。
+MIN_TESTS="${MIN_TESTS:-4245}"
 # ---------------------------------------------------------------------------
 
 # Defaults are the macOS install. On Windows (git-bash) DevEco lives elsewhere,
@@ -199,3 +204,12 @@ fi
 
 echo ""
 echo "LOCAL TESTS: PASS (build succeeded, 0 assertion failures, Tests run: $TESTS_RUN, Pass: ${TESTS_PASS:-?}, ratchet MIN_TESTS: $MIN_TESTS)"
+
+
+# These suites replay the real ArkUI compiler output. The runner first builds
+# current main/ets; local Hypium alone does not refresh that output.
+if ! "$NODE_BIN" scripts/run-drawn-tests.mjs; then
+  echo "LOCAL TESTS: FAIL (drawn host regressions — see above)"
+  exit 1
+fi
+echo "ALL LOCAL TESTS: PASS (Hypium + fresh HAP + drawn host suites)"

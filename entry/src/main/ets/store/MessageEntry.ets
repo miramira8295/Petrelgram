@@ -79,6 +79,7 @@ export interface MessageEntry {
   // for ArkUI ImageSpan; the Unicode alternative remains the loading fallback.
   inlineCustomEmojiIds: string[];
   inlineCustomEmojiPaths: string[];
+  inlineCustomEmojiRepaint: boolean[]; // parallel TDLib needs_repainting flags
   forwardFrom: string;   // display name of the forward origin ('' = not forwarded)
   forwardChatId: number; // origin channel/chat id to resolve a title for (0 = none/resolved)
   // Tappable origin of a forward: the original post (channel/chat) or its
@@ -291,6 +292,7 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     albumId: m.albumId, textEntities: m.textEntities,
     inlineCustomEmojiIds: m.inlineCustomEmojiIds.slice(),
     inlineCustomEmojiPaths: m.inlineCustomEmojiPaths.slice(),
+    inlineCustomEmojiRepaint: m.inlineCustomEmojiRepaint.slice(),
     forwardFrom: m.forwardFrom, forwardChatId: m.forwardChatId,
     forwardOriginChatId: m.forwardOriginChatId, forwardOriginMsgId: m.forwardOriginMsgId,
     forwardOriginUserId: m.forwardOriginUserId,
@@ -1106,6 +1108,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     textEntities: c.entities,
     inlineCustomEmojiIds: inlineCustomEmojiIds(c.entities),
     inlineCustomEmojiPaths: [],
+    inlineCustomEmojiRepaint: [],
     forwardFrom: fwd.name,
     forwardChatId: fwd.chatId,
     forwardOriginChatId: fwd.originChatId,

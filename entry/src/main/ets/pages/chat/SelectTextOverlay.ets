@@ -1,3 +1,6 @@
+import { InlineCustomEmojiPaint } from '../../util/inlineCustomEmojiPaint';
+import { InlineEmojiColorFilters } from './InlineEmojiColorFilter';
+import { drawing } from '@kit.ArkGraphics2D';
 // 「选择文本」浮层（issue #94）。
 //
 // **为什么不是就地选中。** 给气泡里的 Text 挂 `copyOption` 会让它自己接管长按，
@@ -52,12 +55,13 @@ export interface SelectTextPayload {
   replyText: string;
   emojiIds: string[];
   emojiPaths: string[];
+  emojiRepaint: boolean[];
 }
 
 export const EMPTY_SELECT_TEXT: SelectTextPayload = {
   text: '', entities: [], translatedText: '', translatedEntities: [], isOutgoing: false,
   hasReply: false, replySenderName: '', replyText: '',
-  emojiIds: [], emojiPaths: []
+  emojiIds: [], emojiPaths: [], emojiRepaint: []
 };
 
 // 译文隐藏时不带进来：界面上看不见的东西不该出现在选择层里。
@@ -72,7 +76,8 @@ export function selectTextPayload(entry: MessageEntry): SelectTextPayload {
     replySenderName: entry.replySenderName,
     replyText: entry.replyText,
     emojiIds: entry.inlineCustomEmojiIds,
-    emojiPaths: entry.inlineCustomEmojiPaths
+    emojiPaths: entry.inlineCustomEmojiPaths,
+    emojiRepaint: entry.inlineCustomEmojiRepaint
   };
 }
 
@@ -120,13 +125,20 @@ export struct SelectTextOverlay {
     return this.replacementTranslationShown() ? this.data.translatedEntities : this.data.entities;
   }
 
+  private emojiPaint: InlineCustomEmojiPaint = new InlineCustomEmojiPaint();
+  private emojiFilters: InlineEmojiColorFilters = new InlineEmojiColorFilters();
+
+  private inlineEmojiPaint(): InlineCustomEmojiPaint {
+    return this.emojiPaint.prepare(this.data.emojiIds, this.data.emojiPaths, this.data.emojiRepaint);
+  }
+
   private inlineCustomEmojiSource(customEmojiId: string): string {
-    const idx: number = this.data.emojiIds.indexOf(customEmojiId);
-    if (idx < 0 || idx >= this.data.emojiPaths.length) {
-      return '';
-    }
-    const path: string = this.data.emojiPaths[idx];
-    return path.startsWith('/') ? `file://${path}` : path;
+    return this.inlineEmojiPaint().source(customEmojiId);
+  }
+
+  private inlineCustomEmojiFilter(run: RichRun): ColorFilter | drawing.ColorFilter {
+    return this.emojiFilters.get(this.inlineEmojiPaint().needsRepainting(run.customEmojiId),
+      run.link || run.url !== '' ? this.accent() : this.textColor(), this.env.appearanceEpoch);
   }
 
   private decorationOf(run: RichRun): TextDecorationType {
@@ -142,6 +154,7 @@ export struct SelectTextOverlay {
   inlineRun(run: RichRun) {
     if (run.customEmojiId !== '' && this.inlineCustomEmojiSource(run.customEmojiId) !== '') {
       ImageSpan(this.inlineCustomEmojiSource(run.customEmojiId))
+        .colorFilter(this.inlineCustomEmojiFilter(run))
         .width(this.textSize() + 3)
         .height(this.textSize() + 3)
         .verticalAlign(ImageSpanAlignment.CENTER)

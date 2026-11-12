@@ -47,7 +47,7 @@ export function albumRenderRowAt(rows: AlbumCellRenderData[][], index: number): 
 }
 
 function prepareCell(previous: AlbumCellRenderData | undefined, cell: AlbumCell,
-  group: AlbumGroup, data: AlbumCellRenderContext): AlbumCellRenderData {
+  group: AlbumGroup, data: AlbumCellRenderContext, selectedIds: Set<number> | null): AlbumCellRenderData {
   const i = cell.idx;
   const messageId = group.memberIds[i] ?? 0;
   const thumbPath = group.photoPaths[i] ?? '';
@@ -70,7 +70,8 @@ function prepareCell(previous: AlbumCellRenderData | undefined, cell: AlbumCell,
   const autoplayMuted = isPlaySlot ? data.autoplayMuted : false;
   const playSlotStartMs = isPlaySlot ? data.playSlotStartMs : 0;
   const selectionActive = data.selectionActive;
-  const selected = data.selectedMemberIds.indexOf(messageId) >= 0;
+  // Match indexOf's strict equality even for malformed NaN ids.
+  const selected = messageId === messageId && selectedIds !== null && selectedIds.has(messageId);
   if (previous !== undefined && previous.idx === i && previous.width === cell.width &&
     previous.height === cell.height && previous.chatId === data.chatId && previous.messageId === messageId &&
     previous.thumbPath === thumbPath && previous.thumbFileId === thumbFileId && previous.mini === mini &&
@@ -103,11 +104,11 @@ export class AlbumCellRenderCache {
   private rows: AlbumCellRenderData[][] = [];
 
   private prepareRow(geometry: AlbumCell[], previous: AlbumCellRenderData[] | undefined,
-    group: AlbumGroup, data: AlbumCellRenderContext): AlbumCellRenderData[] {
+    group: AlbumGroup, data: AlbumCellRenderContext, selectedIds: Set<number> | null): AlbumCellRenderData[] {
     let next = previous;
     for (let i = 0; i < geometry.length; i++) {
       const cell = geometry[i];
-      const prepared = prepareCell(this.cells[cell.idx], cell, group, data);
+      const prepared = prepareCell(this.cells[cell.idx], cell, group, data, selectedIds);
       this.cells[cell.idx] = prepared;
       if (next === undefined) { next = []; }
       if (next[i] !== prepared) {
@@ -130,9 +131,13 @@ export class AlbumCellRenderCache {
       this.ratios = group.photoRatios.slice();
       this.geometry = packAlbumRows(this.ratios, width);
     }
+    // One index per preparation: O(S + N), instead of scanning S selected ids
+    // for each tile. Normal browsing has an empty selection and allocates none.
+    const selectedIds: Set<number> | null = data.selectedMemberIds.length > 0
+      ? new Set<number>(data.selectedMemberIds) : null;
     let rows = this.rows;
     for (let i = 0; i < this.geometry.length; i++) {
-      const next = this.prepareRow(this.geometry[i], this.rows[i], group, data);
+      const next = this.prepareRow(this.geometry[i], this.rows[i], group, data, selectedIds);
       if (rows[i] !== next) {
         if (rows === this.rows) { rows = rows.slice(); }
         rows[i] = next;

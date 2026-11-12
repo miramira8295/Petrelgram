@@ -193,21 +193,30 @@ function compactStyledRuns(runs: RichRun[]): void {
     return;
   }
   let count = 1;
+  let end: number = runs[0].offset + runs[0].text.length;
+  let parts: string[] | null = null;
   for (let i = 1; i < runs.length; i++) {
     const previous = runs[count - 1];
     const next = runs[i];
     if (!previous.spoiler && !next.spoiler && !previous.link && !next.link &&
       previous.customEmojiId === '' && next.customEmojiId === '' &&
       previous.url === '' && next.url === '' &&
-      previous.offset + previous.text.length === next.offset &&
+      end === next.offset &&
       previous.bold === next.bold && previous.italic === next.italic &&
       previous.underline === next.underline && previous.strike === next.strike &&
       previous.code === next.code) {
-      previous.text += next.text;
+      // Join each group once. Do not rely on the JS engine keeping an
+      // ever-growing concatenation as a rope instead of copying its prefix.
+      if (parts === null) { parts = [previous.text]; }
+      parts.push(next.text);
+      end += next.text.length;
     } else {
+      if (parts !== null) { previous.text = parts.join(''); parts = null; }
       runs[count++] = next;
+      end = next.offset + next.text.length;
     }
   }
+  if (parts !== null) { runs[count - 1].text = parts.join(''); }
   runs.length = count;
 }
 
@@ -368,6 +377,36 @@ class InlineRunCursor {
   }
 }
 
+function horizontalSpaceAt(text: string, index: number): boolean {
+  const code: number = text.charCodeAt(index);
+  return code === 32 || code === 9;
+}
+
+function lineBreakAt(text: string, index: number): boolean {
+  const code: number = text.charCodeAt(index);
+  return code === 10 || code === 13;
+}
+
+function trimLeadingBlockBreaks(text: string): string {
+  let end: number = 0;
+  while (end < text.length && horizontalSpaceAt(text, end)) { end++; }
+  if (end === text.length || !lineBreakAt(text, end)) { return text; }
+  while (end < text.length && lineBreakAt(text, end)) { end++; }
+  while (end < text.length && horizontalSpaceAt(text, end)) { end++; }
+  return text.substring(end);
+}
+
+function trimTrailingBlockBreaks(text: string): string {
+  let start: number = text.length;
+  while (start > 0 && horizontalSpaceAt(text, start - 1)) { start--; }
+  if (start === 0 || !lineBreakAt(text, start - 1)) { return text; }
+  while (start > 0 && lineBreakAt(text, start - 1)) { start--; }
+  while (start > 0 && horizontalSpaceAt(text, start - 1)) { start--; }
+  // An unanchored /[ \t]*[\r\n]+[ \t]*$/ can retry a long space suffix
+  // from every position. A reverse cursor visits each character at most once.
+  return text.substring(0, start);
+}
+
 // TDLib commonly leaves the blank line(s) separating ordinary text from a
 // quote/pre entity outside the entity range. Rendering those line breaks and
 // adding the block card's own margin produces a conspicuous empty band. Keep
@@ -387,22 +426,25 @@ function trimBoundaryBreaks(runs: RichRun[]): RichRun[] {
     link: run.link,
     url: run.url
   }));
-  while (out.length > 0) {
-    const first: RichRun = out[0];
-    const trimmed: string = first.text.replace(/^[ \t]*[\r\n]+[ \t]*/, '');
+  // Advance a cursor instead of shifting the remaining array per blank run.
+  // O(runs + text), including heavily entity-split block separators.
+  let begin: number = 0;
+  while (begin < out.length) {
+    const first: RichRun = out[begin];
+    const trimmed: string = trimLeadingBlockBreaks(first.text);
     if (trimmed === first.text) {
       break;
     }
     if (trimmed === '') {
-      out.shift();
+      begin++;
     } else {
       first.text = trimmed;
       break;
     }
   }
-  while (out.length > 0) {
+  while (out.length > begin) {
     const last: RichRun = out[out.length - 1];
-    const trimmed: string = last.text.replace(/[ \t]*[\r\n]+[ \t]*$/, '');
+    const trimmed: string = trimTrailingBlockBreaks(last.text);
     if (trimmed === last.text) {
       break;
     }
@@ -413,13 +455,11 @@ function trimBoundaryBreaks(runs: RichRun[]): RichRun[] {
       break;
     }
   }
-  return out;
+  return begin === 0 ? out : out.slice(begin);
 }
 
 function trimBlockText(text: string): string {
-  return text
-    .replace(/^[ \t]*[\r\n]+[ \t]*/, '')
-    .replace(/[ \t]*[\r\n]+[ \t]*$/, '');
+  return trimTrailingBlockBreaks(trimLeadingBlockBreaks(text));
 }
 
 interface ParseCacheEntry {
@@ -548,12 +588,14 @@ function parseFormattedTextUncached(text: string, entities: TdObject[]): RichSeg
 // @提及/#话题/命令等可点击实体不算——"复制链接"复制出一个 @名字没有意义。
 export function messageUrls(text: string, entities: TdObject[]): string[] {
   const out: string[] = [];
+  const seen: Set<string> = new Set<string>();
   for (const e of entities) {
     const type = e['type'] as TdObject | undefined;
     const t: string = type !== undefined ? ((type['@type'] as string | undefined) ?? '') : '';
     if (t === 'textEntityTypeTextUrl') {
       const url: string = (type!['url'] as string | undefined) ?? '';
-      if (url !== '' && out.indexOf(url) < 0) {
+      if (url !== '' && !seen.has(url)) {
+        seen.add(url);
         out.push(url);
       }
     } else if (t === 'textEntityTypeUrl') {
@@ -561,7 +603,8 @@ export function messageUrls(text: string, entities: TdObject[]): string[] {
       const length: number = (e['length'] as number | undefined) ?? 0;
       // TDLib 的 offset/length 是 UTF-16 码元，和 JS 的 substring 同一口径。
       const url: string = text.substring(offset, offset + length);
-      if (url !== '' && out.indexOf(url) < 0) {
+      if (url !== '' && !seen.has(url)) {
+        seen.add(url);
         out.push(url);
       }
     }

@@ -1,4 +1,5 @@
 import { image } from '@kit.ImageKit';
+import { DrawnImageReceiver } from '../common/DrawnImageReceiver';
 import { CachedImageSession } from '../../util/CachedImageSession';
 import { MINI_PLACEHOLDER_BLUR } from '../../util/miniThumbPlaceholder';
 import { scrollPlaceholderState } from '../../util/scrollEffects';
@@ -7,6 +8,7 @@ import { subscribeThumbPath, thumbPathFor } from '../../util/mediaThumbChannel';
 import { liveThumbPath } from '../../util/liveThumbPath';
 import { shouldReattachThumb } from '../../util/liveThumbAttach';
 import { warnStaleThumbAttach } from '../../util/thumbAttachGuard';
+import { EMPTY_LIVE_THUMB_DISPLAY, LiveThumbDisplayState, liveThumbDisplayState } from '../../util/liveThumbDisplayState';
 
 // 自己订阅、自己换图的缩略图。
 //
@@ -48,8 +50,8 @@ export class LiveThumbSpecCache {
       p.boxWidth === next.boxWidth && p.boxHeight === next.boxHeight &&
       p.radius === next.radius && p.fit === next.fit && p.opaque === next.opaque &&
       p.backdrop === next.backdrop && p.mini === next.mini &&
-      p.syncDisplay === next.syncDisplay &&
-      p.deferMiniOnScroll === next.deferMiniOnScroll && sameRadii(p.radii, next.radii)) {
+      p.syncDisplay === next.syncDisplay && p.drawOnCanvas === next.drawOnCanvas &&
+      p.deferMiniOnScroll === next.deferMiniOnScroll && p.readyWithoutPath === next.readyWithoutPath && sameRadii(p.radii, next.radii)) {
       return p;
     }
     this.previous = next;
@@ -66,8 +68,11 @@ function sameRadii(a: BorderRadiuses | undefined, b: BorderRadiuses | undefined)
 }
 
 export interface LiveThumbSpec {
+  // Album video badge may be shown without a path on missing/failed thumbnails.
+  readyWithoutPath?: boolean;
   // Chat cells opt in; shared viewer/filmstrip uses keep the default policy.
   syncDisplay?: boolean;
+  drawOnCanvas?: boolean;
   fileId: number;
   initialPath: string;
   boxWidth: number;
@@ -95,15 +100,37 @@ export interface LiveThumbSpec {
 export struct LiveThumbImage {
   @Require @Param spec: LiveThumbSpec;
   @BuilderParam placeholder: () => void;
-  @Local private path: string = '';
-  @Local private pixelMap: image.PixelMap | undefined = undefined;
+  @BuilderParam readyContent: () => void = this.emptyReadyContent;
+
+  @Builder
+  emptyReadyContent() {}
+  // Prepare source/decoder state without publishing a transient empty image.
+  // One UI snapshot is reset/reseeded by V2 instead of two independent locals.
+  private path: string = '';
+  @Local private displayState: LiveThumbDisplayState = EMPTY_LIVE_THUMB_DISPLAY;
+  private get pixelMap(): image.PixelMap | undefined { return this.displayState.pixels; }
   private scrollState = scrollPlaceholderState;
+  private imageReceiver: DrawnImageReceiver = new DrawnImageReceiver();
+  private imageActive: boolean = false;
   private imageSession: CachedImageSession = new CachedImageSession(
-    (pixels: image.PixelMap | undefined): void => {
-      // 同值不写：activate/reuse 会把同一个位图重新投递一次，不比较就是一次
-      // 空转的重渲染（CachedImage 那边同一处已有守卫，这里原本漏了）。
-      if (this.pixelMap !== pixels) { this.pixelMap = pixels; }
+    (pixels: image.PixelMap | undefined, _ready: boolean, width?: number, height?: number): void => {
+      this.imageReceiver.setPixels(this.spec.drawOnCanvas === true ? pixels : undefined, width, height);
+      this.publishDisplay(pixels);
     });
+
+  private publishDisplay(pixels: image.PixelMap | undefined): void {
+    if (!this.imageActive) { return; }
+    const previous = this.displayState;
+    const next = liveThumbDisplayState(previous, this.path !== '', pixels);
+    if (previous !== next) { this.displayState = next; }
+  }
+
+  private updateImageSession(): void {
+    this.imageSession.update(this.imageSpec());
+    // Same-source pending upgrades can intentionally keep the held bitmap and
+    // skip the session callback. Publish visibility only if it actually changed.
+    this.publishDisplay(this.pixelMap);
+  }
   private unsubThumb: (() => void) | null = null;
   // 订阅此刻挂在哪个文件上。两个用途：① 同 key 短路，让 attach 幂等；
   // ② 让「订阅挂在哪」成为可判定的事实，而不是靠推断 params 到没到。
@@ -139,7 +166,7 @@ export struct LiveThumbImage {
     this.unsubThumb = subscribeThumbPath(fileId, (path: string): void => {
       if (this.attachedFileId !== fileId) { return; }
       this.path = path;
-      this.imageSession.update(this.imageSpec());
+      this.updateImageSession();
     });
   }
 
@@ -168,24 +195,29 @@ export struct LiveThumbImage {
       this.attach(this.spec.fileId, this.spec.fileId === 0 ? this.spec.initialPath : '');
     }
     // 即使文件未变，尺寸/像素格式等输入变化仍需交给同一个图片会话。
-    this.imageSession.update(this.imageSpec());
+    this.updateImageSession();
+    this.syncImageReceiver();
   }
 
   aboutToAppear(): void {
+    this.imageActive = true;
     this.attach(this.spec.fileId, this.spec.initialPath);
     this.imageSession.activate(this.imageSpec());
   }
 
   aboutToRecycle(): void {
-    // path 不清（翻页图片乱跳的根修之一）：@Local 由框架在下次复用前重置，
-    // aboutToReuse 里同步播种，空窗只剩「通道确实没图」的固有情形。
+    // Keep the held pixels/display while pooled. V2 resets the single snapshot
+    // immediately before reuse; activation synchronously publishes its final state.
+    this.imageActive = false;
     this.detach('recycle');
     this.imageSession.recycle();
   }
 
   aboutToReuse(): void {
-    // @Param 已是新值、@Local path 已被框架重置（批 0.5 判读）：同步重挂+
-    // 播种。initialPath 也是新行的值，V1「不敢用 initialPath 兜底」的坑不在。
+    this.imageActive = true;
+    // Match the former @Local path reset, without a separate reactive write.
+    // Do not carry a previous file's private path into a new attachment.
+    this.path = '';
     this.attach(this.spec.fileId, this.spec.initialPath);
     this.imageSession.activate(this.imageSpec());
   }
@@ -193,16 +225,17 @@ export struct LiveThumbImage {
   // 不退订会让箭头函数一直持有本组件实例，组件无法释放（官方状态管理 FAQ
   // 明确点过这个泄漏）。
   aboutToDisappear(): void {
+    this.imageActive = false;
+    this.imageReceiver.setPixels(undefined);
     this.detach('disappear');
     this.imageSession.dispose();
   }
 
-  // 不变量检查挂在**分支条件**上：build 里不能放语句，而这里同样是拿当前
-  // @Param 求值的——不受"参数什么时候落地"影响。返回值就是要画的路径。
-  // 顺带读一次 spec.fileId，让这个渲染域把它登记成依赖。见 util/thumbAttachGuard。
-  private drawPath(): string {
+  // Both visibility and pixels come from the final published snapshot. The
+  // non-observed working path is used only for source preparation/diagnostics.
+  private hasImagePath(): boolean {
     warnStaleThumbAttach(this.attachedFileId, this.spec.fileId, this.path, this.detachPhase);
-    return this.path;
+    return this.displayState.hasPath;
   }
 
   private preparedImageSpec: CachedImageSpec | undefined = undefined;
@@ -213,22 +246,24 @@ export struct LiveThumbImage {
   // stable without that extra dependency rebuild.
   private imageSpec(): CachedImageSpec {
     const spec: LiveThumbSpec = this.spec;
+    const path: string = this.path;
     const previous = this.preparedImageSpec;
     // Compare scalar inputs before allocating the candidate or its source key.
     // Do not short-circuit solely on spec identity: path notifications are
     // independent, and comparing values also handles a changed input in place.
     if (previous !== undefined && this.preparedImageFileId === spec.fileId &&
-      previous.path === this.path && previous.boxWidth === spec.boxWidth &&
+      previous.path === path && previous.boxWidth === spec.boxWidth &&
       previous.boxHeight === spec.boxHeight && previous.radius === spec.radius && previous.fit === spec.fit &&
-      previous.syncDisplay === (spec.syncDisplay === true) && previous.opaque === spec.opaque &&
+      previous.syncDisplay === (spec.syncDisplay === true) && previous.drawOnCanvas === spec.drawOnCanvas &&
+      previous.opaque === spec.opaque &&
       previous.backdrop === spec.backdrop && previous.backdropImage === spec.mini &&
       previous.deferBackdropOnScroll === (spec.deferMiniOnScroll === true)) {
       return previous;
     }
     const next: CachedImageSpec = {
-      path: this.path, boxWidth: spec.boxWidth, boxHeight: spec.boxHeight,
+      path, boxWidth: spec.boxWidth, boxHeight: spec.boxHeight,
       radius: spec.radius, fit: spec.fit,
-      syncDisplay: spec.syncDisplay === true,
+      syncDisplay: spec.syncDisplay === true, drawOnCanvas: spec.drawOnCanvas,
       // A path upgrade for the same file keeps the held image until it is ready.
       sourceKey: spec.fileId > 0 ? `f${spec.fileId}` : '',
       opaque: spec.opaque, backdrop: spec.backdrop,
@@ -240,13 +275,46 @@ export struct LiveThumbImage {
     return next;
   }
 
-  private showMiniPlaceholder(): boolean {
-    return this.pixelMap === undefined && this.spec.mini !== '' &&
-      !(this.spec.deferMiniOnScroll === true && this.scrollState.active);
+  private useDrawnImage(): boolean {
+    const spec: LiveThumbSpec = this.spec;
+    return spec.drawOnCanvas === true && this.imageReceiver.canDraw(this.pixelMap, spec.fit);
   }
 
-  // 与 CachedImage 的原生图片属性保持一致。成员零参 Builder 直接读当前输入，
-  // 省去每格一层自定义组件及其复用/参数登记，仍保留同步显示与圆角抗锯齿。
+  private bindImageReceiver(): DrawnImageReceiver | undefined {
+    const spec: LiveThumbSpec = this.spec;
+    return spec.drawOnCanvas === true ? this.imageReceiver.bind(this.getUIContext(),
+      spec.boxWidth, spec.boxHeight, spec.fit, this.useDrawnImage()) : undefined;
+  }
+
+  private syncImageReceiver(): void {
+    if (this.imageActive) {
+      this.imageReceiver.setPixels(this.spec.drawOnCanvas === true ? this.pixelMap : undefined);
+    }
+  }
+
+  private shownMiniFileId: number = -1;
+  private shownMiniPath: string = '';
+  private shownMiniData: string = '';
+
+  private showMiniPlaceholder(): boolean {
+    if (this.pixelMap !== undefined) { return false; }
+    const spec: LiveThumbSpec = this.spec;
+    if (spec.mini === '') { return false; }
+    const alreadyShown: boolean = this.shownMiniFileId === spec.fileId &&
+      this.shownMiniData === spec.mini && (spec.fileId !== 0 || this.shownMiniPath === spec.initialPath);
+    if (alreadyShown) { return true; }
+    // Still defer the first miniature creation during a fling. Once visible,
+    // retain it until decoded pixels arrive, instead of flashing the backdrop
+    // at every scroll start. Identity checks prevent carrying it to a new row.
+    if (spec.deferMiniOnScroll === true && this.scrollState.active) { return false; }
+    this.shownMiniFileId = spec.fileId;
+    this.shownMiniPath = spec.initialPath;
+    this.shownMiniData = spec.mini;
+    return true;
+  }
+
+  // 与 CachedImage 共用绘制接管；聊天格直接画在 Stack，查看器保留原生 Image。
+  // 成员零参 Builder 读取当前输入，圆角裁剪由原有容器承接。
   // 圆角取值：给了四角就按四角画，否则沿用单值。
   private effectiveRadii(): Length | BorderRadiuses {
     const radii: BorderRadiuses | undefined = this.spec.radii;
@@ -264,20 +332,31 @@ export struct LiveThumbImage {
           .objectFit(this.spec.fit)
           .blur(MINI_PLACEHOLDER_BLUR);
       }
-      Image(this.pixelMap)
-        .syncLoad(this.spec.syncDisplay === true && this.pixelMap !== undefined)
-        .draggable(false)
-        .width(this.spec.boxWidth).height(this.spec.boxHeight)
-        .backgroundColor(this.spec.backdrop !== '' ? this.spec.backdrop : Color.Transparent)
-        .borderRadius(this.effectiveRadii()).clip(true)
-        .interpolation(ImageInterpolation.High)
-        .objectFit(this.spec.fit);
-    }.width(this.spec.boxWidth).height(this.spec.boxHeight);
+      if (!this.useDrawnImage()) {
+        Image(this.pixelMap)
+          .syncLoad(this.spec.syncDisplay === true && this.pixelMap !== undefined)
+          .draggable(false)
+          .width(this.spec.boxWidth).height(this.spec.boxHeight)
+          .backgroundColor(this.spec.backdrop !== '' ? this.spec.backdrop : Color.Transparent)
+          .borderRadius(this.effectiveRadii()).clip(true)
+          .interpolation(ImageInterpolation.High)
+          .objectFit(this.spec.fit);
+      }
+      this.readyContent();
+    }.width(this.spec.boxWidth).height(this.spec.boxHeight)
+    .backgroundColor(this.useDrawnImage() && this.spec.backdrop !== '' ? this.spec.backdrop : Color.Transparent)
+    .borderRadius(this.effectiveRadii()).clip(this.useDrawnImage())
+    .drawModifier(this.bindImageReceiver());
   }
 
   build() {
-    if (this.drawPath() !== '') {
+    if (this.hasImagePath()) {
       this.imageContent();
+    } else if (this.spec.readyWithoutPath === true) {
+      Stack() {
+        this.placeholder();
+        this.readyContent();
+      }.width(this.spec.boxWidth).height(this.spec.boxHeight);
     } else {
       this.placeholder();
     }

@@ -1,8 +1,6 @@
+import { DrawnMessageRow } from './DrawnMessageRow';
 import { MessageTextLayout } from '../../util/messageTextInput';
 import { StickerMessageBubble } from './StickerMessageBubble';
-import { TextMessageBubble } from './TextMessageBubble';
-import { AlbumMessageBubble } from './AlbumMessageBubble';
-import { SingleMediaBubble } from './SingleMediaBubble';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { BubbleFocusChannel } from '../../util/bubbleFocusChannel';
 import { RowLeaveChannel } from '../../util/rowLeaveChannel';
@@ -20,7 +18,6 @@ import {
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
 } from '../../store/AppSettings';
-import { LightweightPlainTextBubble } from './LightweightPlainTextBubble';
 import { MessageBubble } from './MessageBubble';
 
 // One stable controller belongs to the ChatPage. The wrapper only forwards
@@ -445,12 +442,13 @@ export struct ReusableMessageBubble {
 
   build() {
     if (this.shownGroup.photoPaths.length > 1) {
-      // 在实例化通用类型内容之前分流，相册只建立公共壳与自身需要的状态。
-      AlbumMessageBubble({ group: this.shownGroup, data: this.data, actions: this.actions,
+      // DrawnMessageRow owns the eligibility/legacy decision. Skip the duplicate
+      // dispatch component for all three row kinds; keep reuse identity unchanged.
+      DrawnMessageRow({ kind: 'album', group: this.shownGroup, data: this.data, actions: this.actions,
         nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
         .opacity(this.translationFade);
     } else if (this.shownGroup.head.contentType === 'photo' || this.shownGroup.head.contentType === 'video') {
-      SingleMediaBubble({ msg: this.shownGroup.head, group: this.shownGroup,
+      DrawnMessageRow({ kind: 'single', group: this.shownGroup,
         data: this.data, actions: this.actions,
         nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
         .opacity(this.translationFade);
@@ -460,32 +458,8 @@ export struct ReusableMessageBubble {
         data: this.data, actions: this.actions,
         nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
         .opacity(this.translationFade);
-    } else if (this.data.lightweightPlainText && this.shownGroup.head.translatedText === '') {
-      LightweightPlainTextBubble({
-        jumpFocus: this.jumpFocus,
-        leaving: this.leaving,
-        msg: this.shownGroup.head,
-        nowSec: this.nowSec,
-        chatId: this.data.chatId,
-        contentWidth: this.data.contentWidth,
-        isGroup: this.data.isGroup,
-        themeBubbleOut: this.data.themeBubbleOut,
-        showUnreadDivider: this.data.showUnreadDivider,
-        dividerIsResume: this.data.dividerIsResume === true,
-        dateLabel: this.shownGroup.dateLabel,
-        editingActive: this.data.editingActive,
-        canReply: this.data.canReply,
-        isPinnedMsg: this.data.isPinnedMsg,
-        canReport: this.data.canReport,
-        showAvatar: this.shownGroup.showAvatar,
-        showSenderName: this.shownGroup.showSenderName,
-        animateIn: this.data.animateIn,
-        memberIds: this.shownGroup.memberIds,
-        actions: this.actions
-      })
-        .opacity(this.translationFade);
     } else if (this.shownGroup.head.contentType === 'text' || this.shownGroup.head.contentType === 'richMessage') {
-      TextMessageBubble({ msg: this.shownGroup.head, group: this.shownGroup,
+      DrawnMessageRow({ kind: 'text', group: this.shownGroup,
         data: this.data, actions: this.actions,
         nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
         .opacity(this.translationFade);

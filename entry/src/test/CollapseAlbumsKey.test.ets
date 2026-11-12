@@ -78,6 +78,23 @@ function hints(moreOlder: boolean, sticky: Set<number>, withhold: boolean): RunH
 
 export default function collapseAlbumsKeyTest() {
   describe('collapseAlbumsKey', () => {
+    it('相册配文表情沿用实际文字成员，迟到资源刷新快照但保持行身份', 0, () => {
+      const u = usersOf();
+      const first = media(1, 'emoji-album', 101, '', u);
+      const second = media(2, 'emoji-album', 102, '', u);
+      second.text = '😀'; second.inlineCustomEmojiIds = ['123'];
+      second.inlineCustomEmojiPaths = ['']; second.inlineCustomEmojiRepaint = [false];
+      const before = collapseAlbums([first, second])[0];
+      expect(before.head.id).assertEqual(1);
+      expect(before.captionMessage === second).assertTrue();
+      const loaded = cloneMessage(second);
+      loaded.inlineCustomEmojiPaths = ['/data/emoji.png']; loaded.inlineCustomEmojiRepaint = [true];
+      const after = collapseAlbums([first, loaded])[0];
+      expect(after.captionMessage === loaded).assertTrue();
+      expect(after.key === before.key).assertFalse();
+      expect(repeatRowKey(after, 0, 0) === repeatRowKey(before, 0, 0)).assertTrue();
+    });
+
     it('相册行：只有缩略图路径变化时 key 不变', 0, () => {
       const u = usersOf();
       const before: AlbumGroup[] = collapseAlbums([
