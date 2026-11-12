@@ -9,6 +9,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { allocChatDestToken, markChatDestHidden, markChatDestShown } from '../../util/chatDestTracker';
 import { HdsNavDestination } from '@kit.UIDesignKit';
 import { logE } from '../../util/log';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 
 // 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
 // 本模块并调用它，页面因此不再需要进 main_pages.json。
@@ -32,6 +33,9 @@ export struct ArchivePage {
   // 跟这个走而不是跟全局那道（理由见 ChatListView.obeyGlobalGate：全局那道由
   // 首页导航栏的显隐驱动，而归档页在时导航栏自始至终是盖着的，开不回来）。
   @State private pageVisible: boolean = true;
+  // 列表容器的高度，用来把边缘虚化的 fractionStops 归一化（0..1）。容器尺寸变了
+  // 才写，避免每帧刷新触发重排。
+  @State private bodyH: number = 0;
   @State archivedCount: number = 0;
   @State unreadCount: number = 0;
   private clockTimer: number = -1;
@@ -104,9 +108,38 @@ export struct ArchivePage {
     return plural('ap_chats_n', this.archivedCount, this.archivedCount);
   }
 
+  // 标题条高度：状态栏让位 + 56 的行高。列表的首行位置也用这个值，两者必须同源。
+  private headerHeight(): number {
+    return this.topSafe + 62;
+  }
+
   build() {
     HdsNavDestination() {
-    Column() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      // 列表铺满整页并往上顶：内容从标题条底下穿过去，标题条本身是透明的，
+      // 靠 linearGradientBlur 只虚化顶部一条，落到标题上的内容自然淡出。
+      // 注意 linearGradientBlur 是容器级属性，必须挂在包裹 List 的容器上。
+      Column() {
+        ChatListView({
+          listKey: 'archive',
+          reserveDockSpace: false,
+          obeyGlobalGate: false,
+          pageVisible: this.pageVisible,
+          contentTopInset: this.headerHeight()
+        });
+      }
+      .width('100%').height('100%')
+      .linearGradientBlur(BLUR_MAX_VP, {
+        fractionStops: edgeBlurStops(this.bodyH),
+        direction: GradientDirection.Bottom
+      })
+      .clip(false)
+      .onAreaChange((oldArea: Area, newArea: Area): void => {
+        const h: number = Number(newArea.height);
+        if (h > 0 && Math.abs(h - this.bodyH) > 0.5) {
+          this.bodyH = h;
+        }
+      });
       Row() {
         Row() {
           SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
@@ -127,16 +160,11 @@ export struct ArchivePage {
         }
         .layoutWeight(1).alignItems(HorizontalAlign.Start).margin({ left: 4 });
       }
-      .width('100%').height(this.topSafe + 62)
+      .width('100%').height(this.headerHeight())
       .padding({ left: 6, right: 16, top: this.topSafe })
-      .backgroundColor($r('app.color.surface'))
-      .border({ width: { bottom: 0.5 }, color: $r('app.color.divider') });
-      ChatListView({
-        listKey: 'archive',
-        reserveDockSpace: false,
-        obeyGlobalGate: false,
-        pageVisible: this.pageVisible
-      });
+      .backgroundColor(Color.Transparent)
+      // 标题条只负责画，不负责挡手指：触摸要穿到下面的列表去。
+      .hitTestBehavior(HitTestMode.Transparent);
     }
     .width('100%').height('100%')
     .backgroundColor($r('app.color.page_bg'))
