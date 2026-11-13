@@ -11,9 +11,14 @@ export class DrawnChromePainter {
   private missingFill: common2D.Color = { alpha: 30, red: 128, green: 128, blue: 128 };
   private divider: common2D.Color = { alpha: 20, red: 0, green: 0, blue: 0 };
 
+  private density: number = 0;
+  constructor() { this.brush.setAntiAlias(true); this.pen.setAntiAlias(true); }
+  bind(density: number): void {
+    if (this.density !== density) { this.pen.setStrokeWidth(density); this.density = density; }
+  }
+
   paint(c: drawing.Canvas, p: DrawnBubbleChrome, d: number, accent: common2D.Color,
     secondary: common2D.Color, pressed: DrawnReactionChip | null): void {
-    this.brush.setAntiAlias(true); this.pen.setAntiAlias(true); this.pen.setStrokeWidth(d);
     if (p.content.forward !== null) {
       p.content.forward.paragraph.paint(c, p.forwardRect.x * d, p.forwardRect.y * d);
     }

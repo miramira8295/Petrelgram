@@ -509,6 +509,9 @@ export default class EntryAbility extends UIAbility {
             derived, base, size.width);
           return;
         }
+        // Width alone already participates in layout keys. Only a real density
+        // change invalidates cached font units; do not churn them during resize.
+        if (Math.abs(this.uiDensity - derived) > 0.0001) { invalidateTextMeasurements(); }
         this.uiDensity = derived;
         hilog.info(DOMAIN, 'testTag',
           'windowSizeChange accepted: px=%{public}d vp=%{public}f density=%{public}f',

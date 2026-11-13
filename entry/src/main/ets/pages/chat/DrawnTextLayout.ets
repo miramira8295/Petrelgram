@@ -1,5 +1,7 @@
+import { DrawnRowLayoutEngine } from './DrawnLayoutWarmCache';
+import { DrawnBubbleOutlineCache, DrawnRoundRectCache } from './DrawnBubbleGeometry';
+import { DrawnTextUnits } from '../../util/drawnTextUnits';
 import { UIContext } from '@kit.ArkUI';
-import { drawing } from '@kit.ArkGraphics2D';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { MessageBubbleRenderData } from './ReusableMessageBubble';
 import { DrawnBubblePlan, DrawnBubbleStyle } from './DrawnBubblePlan';
@@ -8,11 +10,10 @@ import { DrawnRichTextLayout, DrawnRichTextLayouts } from './DrawnRichTextLayout
 import { DrawnSenderHeaderCache } from './DrawnSenderHeader';
 import { DrawnReplyQuoteCache } from './DrawnReplyQuote';
 import { DrawnTextLineCache, drawnColor } from './DrawnTextLine';
-import { DrawnTextFooterCache } from './DrawnTextFooter';
+import { DrawnTextFooterCache, sameDrawnFooterGeometry } from './DrawnTextFooter';
 import { DrawnBubbleChrome, DrawnChromeLayouts, placeChromeComments, placeChromeReactions } from './DrawnBubbleChrome';
 import { BubbleCornerCache } from '../../util/messageBubblePresentation';
 import { cornerPx } from '../../util/bubbleCornerInset';
-import { glassBubbleCommands } from '../../util/bubbleGlassPath';
 import { BUBBLE_AVATAR_GUTTER_VP, bubbleMaxWidth } from '../../util/mediaBox';
 import { drawnTailGutter } from '../../util/drawnPlainTextPolicy';
 import { placeDrawnFooter } from '../../util/drawnFooterPlacement';
@@ -26,7 +27,10 @@ interface DrawnBodyLastLine { right: number; top: number; }
 
 // One bounded source/paragraph cache per row; the footer and chrome have their
 // own caches. No text serialization, entity scans or shaping on status updates.
-export class DrawnTextLayouts {
+export class DrawnTextLayouts implements DrawnRowLayoutEngine {
+  private units: DrawnTextUnits = new DrawnTextUnits();
+  private outlines: DrawnBubbleOutlineCache = new DrawnBubbleOutlineCache();
+  private quoteShapes: DrawnRoundRectCache = new DrawnRoundRectCache();
   private sources: DrawnRichSourceCache = new DrawnRichSourceCache();
   private bodies: DrawnRichTextLayouts = new DrawnRichTextLayouts();
   private headers: DrawnSenderHeaderCache = new DrawnSenderHeaderCache();
@@ -45,7 +49,8 @@ export class DrawnTextLayouts {
   private key: string = '';
 
   prepare(ui: UIContext, group: AlbumGroup, data: MessageBubbleRenderData, style: DrawnBubbleStyle): DrawnBubblePlan | null {
-    const m = group.head, d = ui.vp2px(1);
+    this.units.prepare(ui, style.textEnvironment);
+    const m = group.head, d = this.units.density;
     const avatarSpace = data.isGroup && !m.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0;
     const maxPx = Math.floor((bubbleMaxWidth(data.contentWidth, avatarSpace) - 16) * d);
     if (!(d > 0) || !(maxPx > 0)) { return null; }
@@ -77,10 +82,13 @@ export class DrawnTextLayouts {
       style.views, m.isOutgoing, maxPx, secondary, style.environment);
     const chrome = this.chrome.prepare(ui, m, data.isChannel, maxPx / d, style.environment);
     const key = `${avatarSpace}:${group.showAvatar}:${group.showSenderName}:${m.isOutgoing}:${m.senderId}:` +
-      `${m.senderInitials}:${style.radius}:${style.environment}:${data.themeBubbleOut}:${style.views}`;
+      `${m.senderInitials}:${style.radius}:${style.environment}:${data.themeBubbleOut}`;
     const old = this.current;
     if (old !== null && key === this.key && old.caption === body && old.header === header &&
-      old.quote === quote && old.footer === footer.line && old.chrome?.content === chrome) { return old; }
+      old.quote === quote && sameDrawnFooterGeometry(old.footerSlot, footer) && old.chrome?.content === chrome) {
+      if (old.footerSlot !== null) { old.footerSlot.line = footer.line; }
+      return old;
+    }
     const placed = placeDrawnFooter({ maxWidthPx: maxPx, bodyWidthPx: body.widthVp * d,
       bodyHeightPx: body.heightVp * d, lastLineRightPx: chrome.hasReactions ? Number.NaN : last.right, lastLineTopPx: last.top,
       chromeWidthPx: Math.max(header?.widthPx ?? 0, quote?.widthPx ?? 0, chrome.width * d,
@@ -105,14 +113,13 @@ export class DrawnTextLayouts {
     p.quote = quote;
     if (quote !== null) {
       p.quoteRect = { x: left, y, width: contentWidth, height: quote.heightPx / d };
-      p.quoteBackground = new drawing.RoundRect({ left: 0, top: 0, right: placed.widthPx,
-        bottom: quote.heightPx }, 4 * d, 4 * d);
+      p.quoteBackground = this.quoteShapes.prepare(0, 0, placed.widthPx, quote.heightPx, 4 * d);
       p.quoteStripe = { left: 0, top: 0, right: 4 * d, bottom: quote.heightPx };
       p.quoteClip = { left: 10 * d, top: 3 * d, right: placed.widthPx - 6 * d, bottom: 35 * d };
       y += quote.heightPx / d + 4;
     }
     p.caption = body; p.captionX = left; p.captionY = y;
-    p.footer = footer.line; p.views = style.views !== '';
+    p.footerSlot = footer; p.views = style.views !== '';
     p.footerWidth = footer.widthPx / d; p.footerTextOffset = footer.textOffsetPx / d;
     p.footerX = left + contentWidth - p.footerWidth;
     p.footerY = y + placed.footerYPx / d;
@@ -133,13 +140,11 @@ export class DrawnTextLayouts {
     const bubbleHeight = p.height;
     if (avatarSpace > 0 && group.showAvatar && p.height < 38) { this.alignShortRow(p, 38 - p.height); }
     const c = this.corners.prepare(style.radius, m.isOutgoing, group.showSenderName, group.showAvatar);
-    if (!p.outline.buildFromSvgString(glassBubbleCommands(shellWidth, bubbleHeight, m.isOutgoing, group.showAvatar,
-      cornerPx(c.topLeft), cornerPx(c.topRight), cornerPx(c.bottomRight), cornerPx(c.bottomLeft), 8, 12, d, 0, gutter))) {
-      throw new Error('invalid text bubble outline');
-    }
+    p.outline = this.outlines.prepare(shellWidth, bubbleHeight, m.isOutgoing, group.showAvatar,
+      cornerPx(c.topLeft), cornerPx(c.topRight), cornerPx(c.bottomRight), cornerPx(c.bottomLeft), d, gutter);
     if (avatarSpace > 0 && group.showAvatar) {
       p.avatar = { x: 0, y: p.height - 38, width: 38, height: 38 };
-      p.initials = this.initials.prepare(m.senderInitials, 38 * d, ui.fp2px(38 * .4), drawnColor(Color.White), style.textEnvironment, true);
+      p.initials = this.initials.prepare(m.senderInitials, 38 * d, this.units.fp2px(38 * .4), drawnColor(Color.White), style.textEnvironment, true);
     }
     this.current = p; this.key = key; return p;
   }

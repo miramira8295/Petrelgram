@@ -1,3 +1,4 @@
+import { DrawnTextUnits } from '../../util/drawnTextUnits';
 import { UIContext } from '@kit.ArkUI';
 import { common2D, drawing } from '@kit.ArkGraphics2D';
 import { DrawnTextLine, DrawnTextLineCache, drawnColor } from './DrawnTextLine';
@@ -34,6 +35,7 @@ export class DrawnSenderHeader {
 }
 
 export class DrawnSenderHeaderCache {
+  private units: DrawnTextUnits = new DrawnTextUnits();
   private name: DrawnTextLineCache = new DrawnTextLineCache();
   private role: DrawnTextLineCache = new DrawnTextLineCache();
   private current: DrawnSenderHeader | null = null;
@@ -44,12 +46,13 @@ export class DrawnSenderHeaderCache {
 
   prepare(ui: UIContext, name: string, role: string, maxPx: number, nameColor: ResourceColor,
     tagColor: ResourceColor, tagFill: ResourceColor, textEnvironment: string, appearance: string): DrawnSenderHeader {
-    const density: number = ui.vp2px(1);
+    this.units.prepare(ui, textEnvironment);
+    const density: number = this.units.density;
     // Match the native header: the tag keeps its space (55% cap); the name shrinks.
     const tag = role !== '' ? this.role.prepare(role, Math.max(1, maxPx * 0.55 - 12 * density),
-      ui.fp2px(11), drawnColor(tagColor), textEnvironment) : null;
+      this.units.fp2px(11), drawnColor(tagColor), textEnvironment) : null;
     const nameMax: number = maxPx - (tag !== null ? tag.widthPx + 17 * density : 0);
-    const sender = this.name.prepare(name, nameMax, ui.fp2px(14), drawnColor(nameColor), textEnvironment, true);
+    const sender = this.name.prepare(name, nameMax, this.units.fp2px(14), drawnColor(nameColor), textEnvironment, true);
     if (this.current !== null && this.current.name === sender && this.current.role === tag &&
       this.current.density === density && this.appearance === appearance && this.nameColor === nameColor &&
       this.tagColor === tagColor && this.tagFill === tagFill) { return this.current; }

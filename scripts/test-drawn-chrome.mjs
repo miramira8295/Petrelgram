@@ -2,7 +2,7 @@
 // Font metrics are deterministic doubles; this does not measure device speed.
 import assert from 'node:assert/strict';
 import { ctx, load, root, compiled, ui, data, style, group, layoutCounters } from './test-drawn-text-row.mjs';
-for(const file of ['packAlbumRows','albumCellRenderData'])load(root+'util/'+file+'.ets');
+for(const file of ['packAlbumRows','albumGeometryCache','albumCellRenderData'])load(root+'util/'+file+'.ets');
 load(root+'pages/chat/DrawnAlbumGridLayout.ets');
 load(root+'pages/chat/DrawnSingleMediaGeometry.ets');
 load(root+'pages/chat/DrawnMediaLayout.ets');
@@ -74,7 +74,7 @@ for(let i=0;i<1000;i++){
 assert.ok(maxProbes<30,`indexed probes ${maxProbes}, not a 1000-chip scan`);
 console.log(`PASS: 1000 differential hit tests over 1001 chips (including arrow); max ${maxProbes} indexed probes.`);
 
-const row=Object.create(ctx.DrawnMessageRow.prototype),events=[];
+const row=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),canvasAttributes:new ctx.DrawnCanvasAttributes()}),events=[];
 row.group=message(3);row.data={...data,isChannel:false};row.kind='text';row.env={gestureScheme:0,screenWidthVp:400};
 row.dragGesture=new ctx.MessageDragGesture();row.foreground={press(){},setPress(){},pressReaction(){}};
 row.actions=new Proxy({},{get:(_t,k)=>(...args)=>events.push([k,...args])});
@@ -133,6 +133,7 @@ ctx.drawing.Brush=native;ctx.drawing.Pen=native;
 load(root+'pages/chat/DrawnChromePainter.ets',['DrawnChromePainter']);
 const painter=new ctx.DrawnChromePainter(),allocated=nativeObjects,paintWarm=layoutCounters();
 const canvas=new Proxy({}, {get:()=>()=>paints++});
+painter.bind(2);
 for(let i=0;i<100;i++)painter.paint(canvas,ip.chrome,2,{}, {},ip.chrome.reactions.chips[0]);
 assert.equal(nativeObjects,allocated);assert.deepEqual(layoutCounters(),paintWarm);assert.ok(paints>0);
 const cache=layouts.chrome.reactions;cache.measure(ui,reactions(1000),250,true,'1');cache.flow(250);

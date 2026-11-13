@@ -1,3 +1,7 @@
+import { DrawnSlotActivation } from './DrawnSlotActivation';
+import { DrawnSlotContent } from './DrawnSlotContent';
+import { DrawnStage, drawnStageMetrics } from '../../util/drawnStageMetrics';
+import { DrawnImageRevision } from '../../util/drawnImageRevision';
 import { DrawnFrameBatch } from '../../util/drawnFrameBatch';
 import { OneShotFrameCallback } from '../../util/oneShotFrameCallback';
 import { image } from '@kit.ImageKit';
@@ -17,6 +21,7 @@ import { AlbumGroup } from '../../util/collapseAlbums';
 // invalidates its drawing receiver; only placeholder/native-fallback changes
 // notify the host. The existing session owns references, cancellation and retry.
 export class DrawnImageSlot {
+  readonly state: DrawnImageRevision = new DrawnImageRevision();
   readonly receiver: DrawnImageReceiver = new DrawnImageReceiver();
   pixels: image.PixelMap | undefined = undefined;
   path: string = '';
@@ -34,6 +39,10 @@ export class DrawnImageSlot {
   private boundCell: AlbumCellRenderData | null = null;
   private boundDensity: number = 0;
   private opaque: boolean = true;
+  private activation: DrawnSlotActivation = new DrawnSlotActivation((): void => { this.state.publish(); });
+  readonly content: DrawnSlotContent = new DrawnSlotContent(this.activation);
+  get activated(): boolean { return this.activation.ready; }
+  setVisible(visible: boolean): void { this.activation.setVisible(visible); }
 
   constructor(notify: () => void) {
     this.notify = notify;
@@ -47,12 +56,17 @@ export class DrawnImageSlot {
       if (this.active && (wasReady !== (pixels !== undefined) ||
         wasNative !== !this.receiver.canDraw(pixels, ImageFit.Cover) ||
         (wasNative && previous !== pixels))) { this.notify(); }
-    });
+    }, (start: () => void): (() => void) => this.activation.scheduleDecode(start));
   }
 
-  bind(ui: UIContext, tile: DrawnBubbleTile, density: number = ui.vp2px(1)): void {
+  bind(ui: UIContext, tile: DrawnBubbleTile, density: number = ui.vp2px(1), staged: boolean = false): void {
     const input = tile.cell, previous = this.boundCell;
-    if (this.active && previous !== null && this.boundDensity === density && this.opaque === (tile.opaque ?? true) &&
+    const wasReady = this.activation.ready;
+    const resetActivation = !this.active || this.activation.staged !== staged ||
+      previous?.chatId !== input.chatId || previous?.messageId !== input.messageId;
+    this.activation.bind(ui, staged, resetActivation);
+    this.content.bind(input, staged);
+    if (!resetActivation && this.active && previous !== null && this.boundDensity === density && this.opaque === (tile.opaque ?? true) &&
       this.width === tile.width && this.height === tile.height && previous.thumbFileId === input.thumbFileId &&
       previous.thumbPath === input.thumbPath && previous.mini === input.mini &&
       (input.thumbFileId !== 0 || (previous.chatId === input.chatId && previous.messageId === input.messageId))) { return; }
@@ -86,11 +100,16 @@ export class DrawnImageSlot {
     this.mini = mini;
     this.width = tile.width; this.height = tile.height;
     this.receiver.bind(ui, tile.width, tile.height, ImageFit.Cover, true, density);
-    if (!this.active) {
+    if (resetActivation) {
       this.active = true;
       this.session.activate(this.spec());
     } else { this.session.update(this.spec()); }
-    if (hadPath !== (this.path !== '') || previousMini !== this.mini) { this.notify(); }
+    // An already drawable static picture has no subtree left to activate.
+    // Do not queue six no-op jobs for an entirely cached album.
+    if (!cell.isVideo && !cell.isLive && this.pixels !== undefined &&
+      this.receiver.canDraw(this.pixels, ImageFit.Cover)) { this.activation.finishCached(); }
+    this.activation.request();
+    if (wasReady !== this.activation.ready || hadPath !== (this.path !== '') || previousMini !== this.mini) { this.notify(); }
   }
 
   // Local video poster for messages without a thumbnail file/channel. The
@@ -120,7 +139,7 @@ export class DrawnImageSlot {
     this.generation++;
     if (this.unsubscribe !== null) { this.unsubscribe(); this.unsubscribe = null; }
   }
-  recycle(): void { this.active = false; this.detach(); this.fileId = -1; this.session.recycle(); }
+  recycle(): void { this.active = false; this.activation.cancel(); this.content.recycle(); this.detach(); this.fileId = -1; this.session.recycle(); }
   dispose(): void {
     this.recycle(); this.session.dispose(); this.pixels = undefined; this.receiver.setPixels(undefined);
   }
@@ -139,13 +158,24 @@ export class DrawnMediaController {
   private changed: () => void;
   private batching: boolean = false;
   private dirty: boolean = false;
+  private dirtySlots: Set<DrawnImageSlot> = new Set();
   private frame: DrawnFrameBatch = new DrawnFrameBatch();
   private ui: UIContext | null = null;
   private schedule = (task: () => void): void => { this.ui?.postFrameCallback(new OneShotFrameCallback(task)); };
-  private publish = (): void => { if (this.active) { this.notify(); } };
+  private publish = (): void => {
+    if (!this.active) { return; }
+    // O(K) for K changed slots, no scan of the other N-K images.
+    for (const slot of this.dirtySlots) { slot.state.publish(); }
+    this.dirtySlots.clear();
+    if (this.dirty) { this.dirty = false; this.notify(); }
+  };
   private avatarGeneration: number = 0;
   private boundTiles: DrawnBubbleTile[] | null = null;
+  private preparedPlan: DrawnBubblePlan | null = null;
+  private preparedGroup: AlbumGroup | null = null;
   private boundDensity: number = 0;
+  private staged: boolean = false;
+  private visible: boolean | null = null;
 
   constructor(notify: () => void, changed: () => void) {
     this.notify = notify; this.changed = changed;
@@ -161,19 +191,32 @@ export class DrawnMediaController {
     });
   }
 
-  prepare(ui: UIContext, plan: DrawnBubblePlan, group: AlbumGroup): void {
+  prepare(ui: UIContext, plan: DrawnBubblePlan, group: AlbumGroup, staged: boolean = false): void {
+    // Lifecycle + input + plan monitors can converge on the same snapshots.
+    // Image/avatar channels remain live, so this never suppresses late delivery.
+    if (this.active && this.ui === ui && this.preparedPlan === plan && this.preparedGroup === group && this.staged === staged) {
+      drawnStageMetrics.skip(DrawnStage.Media); return;
+    }
+    this.preparedPlan = null; this.preparedGroup = null;
+    const traced = drawnStageMetrics.begin(DrawnStage.Media);
+    const contextChanged = this.ui !== ui;
     this.ui = ui; this.active = true; this.batching = true;
     try {
-      if (this.boundTiles !== plan.tiles || this.boundDensity !== plan.density) {
+      if (contextChanged || this.boundTiles !== plan.tiles || this.boundDensity !== plan.density || this.staged !== staged) {
         const count = plan.tiles.length;
-        while (this.slots.length > count) { this.slots.pop()?.dispose(); }
+        while (this.slots.length > count) {
+          const removed = this.slots.pop();
+          if (removed !== undefined) { this.dirtySlots.delete(removed); removed.dispose(); }
+        }
         for (let i = 0; i < count; i++) {
           if (i === this.slots.length) {
-            this.slots.push(new DrawnImageSlot((): void => { this.markDirty(); }));
+            const slot = new DrawnImageSlot((): void => { this.markSlotDirty(slot); });
+            this.slots.push(slot);
           }
-          this.slots[i].bind(ui, plan.tiles[i], plan.density);
+          this.slots[i].bind(ui, plan.tiles[i], plan.density, staged && !plan.tiles[i].cell.isPlaySlot && !plan.tiles[i].cell.uploading);
+          if (staged && this.visible !== null) { this.slots[i].setVisible(this.visible); }
         }
-        this.boundTiles = plan.tiles; this.boundDensity = plan.density;
+        this.boundTiles = plan.tiles; this.boundDensity = plan.density; this.staged = staged;
       }
       const m = group.head;
       const key = plan.avatar.width > 0 ? senderChannelKey(m.senderId, m.senderIsUser) : '';
@@ -196,15 +239,32 @@ export class DrawnMediaController {
         }
       }
       this.avatar.bind(ui, 38, 38, ImageFit.Cover, key !== '', plan.density);
+      this.preparedPlan = plan; this.preparedGroup = group;
     } finally {
       this.batching = false;
-      if (this.dirty) { this.dirty = false; this.frame.cancel(); this.publish(); }
+      try {
+        if (this.dirty || this.dirtySlots.size > 0) { this.frame.cancel(); this.publish(); }
+      } finally { drawnStageMetrics.end(traced); }
     }
   }
 
+  setVisible(visible: boolean): void {
+    if (!this.active || this.visible === visible) { return; }
+    this.visible = visible;
+    // O(N) only at visibility transitions; frame draining never scans rows.
+    for (const slot of this.slots) { slot.setVisible(visible); }
+  }
+
+  private markSlotDirty(slot: DrawnImageSlot): void {
+    if (!this.active) { return; }
+    this.dirtySlots.add(slot);
+    if (!this.batching) { this.frame.request(this.schedule, this.publish); }
+  }
+
   private markDirty(): void {
-    if (this.batching) { this.dirty = true; }
-    else if (this.active) { this.frame.request(this.schedule, this.publish); }
+    if (!this.active) { return; }
+    this.dirty = true;
+    if (!this.batching) { this.frame.request(this.schedule, this.publish); }
   }
 
   get avatarHasPath(): boolean { return this.avatarPath !== ''; }
@@ -218,7 +278,9 @@ export class DrawnMediaController {
     if (this.avatarUnsub !== null) { this.avatarUnsub(); this.avatarUnsub = null; }
   }
   recycle(): void {
-    this.active = false; this.boundTiles = null; this.frame.cancel(); this.ui = null;
+    this.preparedPlan = null; this.preparedGroup = null;
+    this.active = false; this.visible = null; this.boundTiles = null; this.frame.cancel(); this.ui = null;
+    this.dirtySlots.clear(); this.dirty = false;
     for (const slot of this.slots) { slot.recycle(); }
     this.detachAvatar(); this.avatarSession.recycle();
   }

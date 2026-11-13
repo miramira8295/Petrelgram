@@ -20,7 +20,7 @@ const ctx=vm.createContext({FrameCallback:class {},ViewV2:View,ViewPU:View,Drawn
 function load(path,names=[]){const text=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'')
   .replace(/@(?:Require|Param|Local|Computed|Event)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'').replace(/\bexport /g,'');
   vm.runInContext(ts.transpileModule(text+names.map(n=>`\nglobalThis.${n}=${n};`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx,{filename:path});}
-for(const file of ['packAlbumRows','albumCellRenderData','drawnContentPolicy','drawnAlbumPolicy'])load(root+'util/'+file+'.ets');
+for(const file of ['packAlbumRows','albumGeometryCache','albumCellRenderData','drawnContentPolicy','drawnAlbumPolicy'])load(root+'util/'+file+'.ets');
 load(root+'pages/chat/DrawnAlbumGridLayout.ets',['DrawnAlbumGridLayouts']);
 load(root+'util/drawnFrameBatch.ets');load(root+'util/oneShotFrameCallback.ets');
 load(root+'pages/chat/DrawnAlbumGridMedia.ets',['DrawnAlbumGridMedia']);

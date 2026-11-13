@@ -2,6 +2,7 @@ import { TdObject } from '../tdkit/TdTypes';
 import { parseFormattedText, RichRun, RichSegment } from './richText';
 import { linkTextHidesUrl } from './messageLinkAction';
 import { DrawnPlainLayoutCache } from './drawnPlainTextPolicy';
+import { DrawnSourcePool } from './drawnSourcePool';
 
 
 export interface DrawnRichLink {
@@ -31,6 +32,19 @@ interface DrawnRichSourceKey {
 }
 
 interface DrawnRichSourceDecision { source: DrawnRichSource | null; reason: string; }
+const sharedDrawnSources: DrawnSourcePool<DrawnRichSourceDecision> = new DrawnSourcePool();
+
+function drawnSourceCost(content: string, source: DrawnRichSource | null): number {
+  let cost = content.length * 2 + 128;
+  if (source === null) { return cost; }
+  for (const run of source.runs) {
+    cost += 128 + 2 * (run.text.length + run.url.length + run.customEmojiId.length);
+  }
+  for (const link of source.links) {
+    cost += 128 + 2 * (link.label.length + link.url.length + link.accessibilityLabel.length);
+  }
+  return cost;
+}
 
 // Four source snapshots per text owner, including negative results. The existing
 // parser already uses a WeakMap, sorted entity events and active-entity heaps.
@@ -40,6 +54,7 @@ export class DrawnRichSourceCache {
   private entities: TdObject[] | null = null;
   private result: DrawnRichSource | null = null;
   private parser: DrawnRichParser;
+  private shared: boolean;
   // Reason travels with positive/negative cache entries; never reparse for diagnostics.
   reason: string = '';
   private reject = (reason: string): DrawnRichSource | null => { this.reason = reason; return null; };
@@ -47,7 +62,9 @@ export class DrawnRichSourceCache {
     new DrawnPlainLayoutCache<DrawnRichSourceKey, DrawnRichSourceDecision>(
       (a: DrawnRichSourceKey, b: DrawnRichSourceKey): boolean => a.content === b.content && a.entities === b.entities);
 
-  constructor(parser: DrawnRichParser = parseFormattedText) { this.parser = parser; }
+  constructor(parser: DrawnRichParser = parseFormattedText) {
+    this.parser = parser; this.shared = parser === parseFormattedText;
+  }
 
   prepare(content: string, entities: TdObject[]): DrawnRichSource | null {
     if (this.entities === entities && this.content === content) { return this.result; }
@@ -55,8 +72,18 @@ export class DrawnRichSourceCache {
     const key: DrawnRichSourceKey = { content, entities };
     const hit = this.sources.get(key);
     if (hit !== undefined) { this.result = hit.source; this.reason = hit.reason; return this.result; }
+    const shared = this.shared ? sharedDrawnSources.get(content, entities) : undefined;
+    if (shared !== undefined) {
+      this.result = shared.source; this.reason = shared.reason;
+      this.sources.put(key, shared);
+      return this.result;
+    }
     try {
       this.result = this.prepareSource(content, entities);
+      if (this.shared) {
+        sharedDrawnSources.put(content, entities, { source: this.result, reason: this.reason },
+          drawnSourceCost(content, this.result));
+      }
       return this.result;
     } catch (error) {
       this.reason = 'parser-exception'; throw error as Error;

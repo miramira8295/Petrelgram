@@ -13368,13 +13368,53 @@
       "name": "link_copied_internal",
       "value": "Internal link copied (only opens in this app)"
     },
-    {"name": "diag_drawn_title", "value": "Bubble rendering diagnostics"},
-    {"name": "diag_drawn_hint", "value": "Applied immediately and saved. Compare row and text rendering; media loading and players remain independent."},
-    {"name": "diag_drawn_enabled", "value": "Master: row and text drawing"},
-    {"name": "diag_drawn_text", "value": "Text rows"},
-    {"name": "diag_drawn_single", "value": "Single photo / video rows"},
-    {"name": "diag_drawn_album", "value": "Album rows"},
-    {"name": "diag_drawn_plain", "value": "Plain text drawing"},
-    {"name": "diag_drawn_rich", "value": "Rich text drawing"}
+    {
+      "name": "diag_drawn_title",
+      "value": "Bubble rendering diagnostics"
+    },
+    {
+      "name": "diag_drawn_hint",
+      "value": "Applied immediately and saved. Compare row and text rendering; media loading and players remain independent."
+    },
+    {
+      "name": "diag_drawn_enabled",
+      "value": "Master: row and text drawing"
+    },
+    {
+      "name": "diag_drawn_text",
+      "value": "Text rows"
+    },
+    {
+      "name": "diag_drawn_single",
+      "value": "Single photo / video rows"
+    },
+    {
+      "name": "diag_drawn_album",
+      "value": "Album rows"
+    },
+    {
+      "name": "diag_drawn_plain",
+      "value": "Plain text drawing"
+    },
+    {
+      "name": "diag_drawn_trace",
+      "value": "Drawn renderer stage tracing"
+    },
+    {
+      "name": "diag_drawn_rich",
+      "value": "Rich text drawing"
+    },
+    {
+      "name": "diag_drawn_routes_hint",
+      "value": "Route entries include predictive reuse; repeated evaluations are deduplicated. Clearing logs resets counts."
+    },
+    {
+      "name": "diag_drawn_home_warmup",
+      "value": "Home drawing warmup (restart for comparison)"
+    },
+    {
+      "name": "diag_drawn_refresh",
+      "value": "Refresh counts"
+    }
   ]
 }

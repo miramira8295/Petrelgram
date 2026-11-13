@@ -1,3 +1,4 @@
+import { DrawnTextFooter } from './DrawnTextFooter';
 import { common2D, drawing } from '@kit.ArkGraphics2D';
 import { AlbumCellRenderData } from '../../util/albumCellRenderData';
 import { DrawnAlbumRect } from '../../util/drawnAlbumPolicy';
@@ -25,7 +26,14 @@ export class DrawnBubblePlan {
   bubbleX: number = 0;
   bubbleY: number = 0;
   grid: DrawnAlbumRect = { x: 0, y: 0, width: 0, height: 0 };
-  outline: drawing.Path = new drawing.Path();
+  private outlinePath: drawing.Path | null = null;
+  // Layout engines normally assign a cached outline. Do not allocate an empty
+  // native Path just to overwrite it on every new footer/media plan.
+  get outline(): drawing.Path {
+    if (this.outlinePath === null) { this.outlinePath = new drawing.Path(); }
+    return this.outlinePath;
+  }
+  set outline(path: drawing.Path) { this.outlinePath = path; }
   tiles: DrawnBubbleTile[] = [];
   // Existing grid-local snapshot; shared by native anchors without allocation.
   // Separate from absolute hit-test/paint tiles and footer/shell geometry.
@@ -41,7 +49,12 @@ export class DrawnBubblePlan {
   caption: DrawnRichTextLayout | null = null;
   captionX: number = 0;
   captionY: number = 0;
-  footer: DrawnTextLine | null = null;
+  // Geometry stays immutable. A same-size footer slot can replace only its
+  // paint paragraph; the foreground has a separate content dependency.
+  footerSlot: DrawnTextFooter | null = null;
+  private footerLine: DrawnTextLine | null = null;
+  get footer(): DrawnTextLine | null { return this.footerSlot?.line ?? this.footerLine; }
+  set footer(line: DrawnTextLine | null) { this.footerLine = line; }
   footerX: number = 0;
   footerY: number = 0;
   footerWidth: number = 0;

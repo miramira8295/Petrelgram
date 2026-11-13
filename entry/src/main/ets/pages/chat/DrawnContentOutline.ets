@@ -24,6 +24,11 @@ export class DrawnContentOutline extends DrawModifier {
   private corners: BorderRadiuses = {};
   private shadowOn: boolean = false;
 
+  constructor() {
+    super(); this.brush.setAntiAlias(true); this.shadow.setAntiAlias(true);
+    this.shadow.setColor({ alpha: 20, red: 0, green: 0, blue: 0 });
+  }
+
   bind(outgoing: boolean, tail: boolean, corners: BorderRadiuses, fill: ResourceColor,
     environment: string, shadowOn: boolean, density: number): DrawnContentOutline {
     const geometry = `${outgoing}:${tail}:${cornerPx(corners.topLeft)}:${cornerPx(corners.topRight)}:` +
@@ -54,7 +59,6 @@ export class DrawnContentOutline extends DrawModifier {
       }
       this.path = path; this.width = width; this.height = height;
       if (this.density !== d) {
-        this.shadow.setAntiAlias(true); this.shadow.setColor({ alpha: 20, red: 0, green: 0, blue: 0 });
         this.shadow.setMaskFilter(drawing.MaskFilter.createBlurMaskFilter(drawing.BlurType.NORMAL, (2 * .57735 + .5) * d));
       }
       this.density = d;
@@ -64,7 +68,7 @@ export class DrawnContentOutline extends DrawModifier {
       canvas.save(); canvas.translate(0, d); canvas.attachBrush(this.shadow);
       canvas.drawPath(this.path); canvas.detachBrush(); canvas.restore();
     }
-    this.brush.setAntiAlias(true); this.brush.setColor(this.fill);
+    this.brush.setColor(this.fill);
     canvas.attachBrush(this.brush); canvas.drawPath(this.path); canvas.detachBrush();
   }
 }

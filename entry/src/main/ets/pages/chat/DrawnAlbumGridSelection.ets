@@ -14,8 +14,13 @@ export class DrawnAlbumGridSelection extends DrawModifier {
   private readonly white: common2D.Color = { alpha: 255, red: 255, green: 255, blue: 255 };
   private readonly empty: common2D.Color = { alpha: 77, red: 0, green: 0, blue: 0 };
 
+  constructor() {
+    super(); this.brush.setAntiAlias(true); this.pen.setAntiAlias(true); this.pen.setColor(this.white);
+  }
+
   bind(plan: DrawnAlbumGridPlan, environment: number): DrawnAlbumGridSelection {
     let dirty = false;
+    if (plan.density !== this.plan?.density) { this.pen.setStrokeWidth(1.5 * plan.density); }
     if (environment !== this.environment) {
       this.environment = environment; this.accent = drawnColor($r('app.color.primary')); dirty = true;
     }
@@ -27,8 +32,6 @@ export class DrawnAlbumGridSelection extends DrawModifier {
     const p = this.plan;
     if (p === null || !p.tiles[0]?.cell.selectionActive) { return; }
     const c = context.canvas, d = p.density;
-    this.brush.setAntiAlias(true); this.pen.setAntiAlias(true);
-    this.pen.setStrokeWidth(1.5 * d); this.pen.setColor(this.white);
     for (const tile of p.tiles) {
       const x = (tile.x + tile.width - 16) * d, y = (tile.y + 16) * d;
       this.brush.setColor(tile.cell.selected ? this.accent : this.empty);

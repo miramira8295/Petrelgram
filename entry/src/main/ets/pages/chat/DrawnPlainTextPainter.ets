@@ -13,13 +13,22 @@ export class DrawnPlainTextPainter extends DrawModifier {
   private pen: drawing.Pen = new drawing.Pen();
   private shadow: drawing.Brush = new drawing.Brush();
 
+  private statusWidth: number = 0;
+  constructor() {
+    super(); this.brush.setAntiAlias(true); this.pen.setAntiAlias(true); this.shadow.setAntiAlias(true);
+    this.pen.setCapStyle(drawing.CapStyle.ROUND_CAP);
+  }
+
   bind(layout: DrawnPlainTextLayout | null, sendState: string, shadowOn: boolean): DrawnPlainTextPainter {
     if (this.layout === layout && this.sendState === sendState && this.shadowOn === shadowOn) { return this; }
     if (layout !== null && this.layout?.density !== layout.density) {
-      this.shadow.setAntiAlias(true);
       this.shadow.setColor({ alpha: 20, red: 0, green: 0, blue: 0 });
       this.shadow.setMaskFilter(drawing.MaskFilter.createBlurMaskFilter(drawing.BlurType.NORMAL,
         (2 * 0.57735 + 0.5) * layout.density));
+    }
+    if (layout !== null) {
+      const width = Math.max(layout.density, layout.iconPx / 10);
+      if (width !== this.statusWidth) { this.pen.setStrokeWidth(width); this.statusWidth = width; }
     }
     this.layout = layout;
     this.sendState = sendState;
@@ -40,7 +49,6 @@ export class DrawnPlainTextPainter extends DrawModifier {
       canvas.detachBrush();
       canvas.restore();
     }
-    this.brush.setAntiAlias(true);
     this.brush.setColor(layout.fill);
     canvas.attachBrush(this.brush);
     canvas.drawPath(layout.outline);
@@ -67,9 +75,6 @@ export class DrawnPlainTextPainter extends DrawModifier {
     const size: number = layout.iconPx;
     const x: number = layout.statusX;
     const y: number = layout.statusY;
-    this.pen.setAntiAlias(true);
-    this.pen.setStrokeWidth(Math.max(layout.density, size / 10));
-    this.pen.setCapStyle(drawing.CapStyle.ROUND_CAP);
     this.pen.setColor(this.sendState === 'failed' ? { alpha: 255, red: 255, green: 0, blue: 0 }
       : (this.sendState === 'read' ? layout.accent : layout.secondary));
     canvas.attachPen(this.pen);

@@ -13368,13 +13368,53 @@
       "name": "link_copied_internal",
       "value": "已复制内部链接（仅本应用可打开）"
     },
-    {"name": "diag_drawn_title", "value": "气泡绘制调试"},
-    {"name": "diag_drawn_hint", "value": "修改后立即生效并保存。用于对照整行和文字绘制；媒体加载与播放器保持独立。"},
-    {"name": "diag_drawn_enabled", "value": "总开关：整行和文字自绘"},
-    {"name": "diag_drawn_text", "value": "文本整行"},
-    {"name": "diag_drawn_single", "value": "单图 / 视频整行"},
-    {"name": "diag_drawn_album", "value": "相册整行"},
-    {"name": "diag_drawn_plain", "value": "普通文字绘制"},
-    {"name": "diag_drawn_rich", "value": "富文本绘制"}
+    {
+      "name": "diag_drawn_title",
+      "value": "气泡绘制调试"
+    },
+    {
+      "name": "diag_drawn_hint",
+      "value": "修改后立即生效并保存。用于对照整行和文字绘制；媒体加载与播放器保持独立。"
+    },
+    {
+      "name": "diag_drawn_enabled",
+      "value": "总开关：整行和文字自绘"
+    },
+    {
+      "name": "diag_drawn_text",
+      "value": "文本整行"
+    },
+    {
+      "name": "diag_drawn_single",
+      "value": "单图 / 视频整行"
+    },
+    {
+      "name": "diag_drawn_album",
+      "value": "相册整行"
+    },
+    {
+      "name": "diag_drawn_plain",
+      "value": "普通文字绘制"
+    },
+    {
+      "name": "diag_drawn_trace",
+      "value": "自绘分段性能记录"
+    },
+    {
+      "name": "diag_drawn_rich",
+      "value": "富文本绘制"
+    },
+    {
+      "name": "diag_drawn_routes_hint",
+      "value": "路由计数包含预测复用；同一行重复计算不重复计数，日志清空时归零。"
+    },
+    {
+      "name": "diag_drawn_home_warmup",
+      "value": "首页预热绘制资源（重启后对照）"
+    },
+    {
+      "name": "diag_drawn_refresh",
+      "value": "刷新计数"
+    }
   ]
 }

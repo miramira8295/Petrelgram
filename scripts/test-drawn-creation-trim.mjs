@@ -63,10 +63,17 @@ painter.bind(ui,60,45,'very long duration and size',false,'1');assert.equal(shap
 assert.ok(painter.background.rect.right<=108,'badge respects width including padding');
 const last=paints.length;painter.bind(ui,60,45,'',false,'1');painter.drawForeground({canvas});assert.equal(paints.length,last,'suppressed native-accessibility badge leaves no old paint');
 painter.bind(ui,60,45,'new',true,'2');assert.equal(conversions,4);assert.equal(shapes,3);
+const pendingPainter = new ctx.DrawnVideoDecoration(), pendingPaths=paths, pendingShapes=shapes;
+for(let i=0;i<1000;i++)pendingPainter.bind(ui,100+i%4,80+i%3,'',false,'1');
+assert.equal(paths,pendingPaths);assert.equal(shapes,pendingShapes,'pending dimensions do not build paths or paragraphs');
+pendingPainter.bind(ui,150,100,'latest',true,'1');assert.equal(paths,pendingPaths+1);assert.equal(shapes,pendingShapes+1);
+const geometryPaths=paths;pendingPainter.bind(ui,200,120,'',false,'1');assert.equal(paths,geometryPaths);
+pendingPainter.bind(ui,200,120,'new size',true,'1');assert.equal(paths,geometryPaths+1,'publication consumes the latest delayed geometry');
 console.log('PASS: 1000 stable draws and 1000 playback changes reuse paragraph/path/metrics; resize/ellipsis/clear/environment refresh correctly.');
 
 // Actual compiled video tree: inactive video has only its lifecycle Stack;
 // player and accessible labels still use native children on demand.
+load(root+'pages/chat/DrawnVideoMeta.ets',['drawnVideoMetaCache']);
 load(compiled+'pages/chat/DrawnAlbumVideo.ts',['DrawnAlbumVideo']);
 const created=[],native=[];let eid=0;
 for(const name of ['If','Stack','Row','Circle','SymbolGlyph','Text','__Common__'])ctx[name]=new Proxy({}, {get:(_t,k)=>(...args)=>{if(k==='create')created.push(name);}});
@@ -80,12 +87,23 @@ video.cell={...cell,isPlaySlot:true};video.initialRender();assert.equal(native.l
 video.sendState='sending';video.initialRender();assert.equal(native.length,1);assert.equal(video.decoration.play,false);
 video.sendState='sent';video.cell={...cell,isLive:true};video.initialRender();assert.equal(video.decoration.play,false);assert.ok(created.includes('Text'),'Live Photo label preserved');
 ctx.a11yRuntimeState.active=true;video.cell=cell;created.length=0;video.initialRender();assert.ok(created.includes('Text'));assert.ok(created.includes('Circle'));assert.equal(video.decoration.label,null);
+ctx.a11yRuntimeState.active=false;video.cell=undefined;video.mediaWidth=150;video.mediaHeight=100;created.length=0;
+const pendingNativeCount=native.length;video.initialRender();assert.equal(native.length,pendingNativeCount);
+assert.equal(created.filter(n=>n==='Stack').length,1,'pending input keeps one fixed shell');
+assert.equal(video.decoration.mediaWidth,150);assert.equal(video.decoration.mediaHeight,100);
+assert.equal(video.decoration.label,null);assert.equal(video.decoration.play,false,'pending slot never paints old badges');
 console.log('PASS: compiled idle video removes four native nodes; playback/upload/Live Photo/accessibility branches preserved.');
 
 // The capture and press containers must remain distinct: both own opacity,
 // while jump scale belongs to the inner canvas. Avatar remains their sibling.
+load(root+'util/drawnRouteMetrics.ets',['DrawnRouteReason','DrawnRouteTracker','drawnRouteMetrics']);
+load(root+'util/drawnStageMetrics.ets',['drawnStageMetrics','DrawnStage']);
+load(root+'pages/chat/DrawnMediaFrames.ets',['DrawnMediaFrames']);
+load(root+'pages/chat/DrawnLayoutWarmCache.ets',['takeDrawnWarmLayout']);
+ctx.getTdClient ??= () => ctx; ctx.setTimeout ??= () => 0; ctx.clearTimeout ??= () => {};
+load(root+'pages/chat/DrawnRecycledLayouts.ets',['DrawnLayoutRetention','takeDrawnRecycledLayout','drawnRecycledLayouts']);
 load(compiled+'pages/chat/DrawnMessageRow.ts',['DrawnMessageRow']);
-const row=Object.create(ctx.DrawnMessageRow.prototype), nodes=[], stack=[];
+const row=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames()}), nodes=[], stack=[];
 for(const name of ['Column','Row','Stack','If','Text','Image','Gesture','GestureGroup','PanGesture','LongPressGesture'])ctx[name]=new Proxy({}, {get:(_t,k)=>(...args)=>{
  if(name==='If'||name.endsWith('Gesture')||name==='GestureGroup')return;
  if(k==='create'){const n={type:name,parent:stack.at(-1),attrs:{}};nodes.push(n);stack.push(n);}
@@ -95,7 +113,7 @@ for(const name of ['Alignment','FlexAlign','PanDirection','GesturePriority','Ges
 ctx.TransitionEffect={IDENTITY:0};ctx.DRAWN_BUBBLE_PRESS={name:'press'};ctx.DRAWN_BUBBLE_PRESS_NONE={name:'none'};
 ctx.ShatterDeleteOverlay=class {constructor(_owner,params){native.push(params);}};
 Object.assign(row,{kind:'text',group:{dateLabel:'',showSenderName:false,showAvatar:false,head:{rowId:10,isOutgoing:false,inlineButtons:[],reactions:[]}},
- data:{chatId:1,showUnreadDivider:false,animateIn:false},actions:{rowLeave:{particleBudget:()=>8000}},env:{},leaving:0,capturedDeleteKey:'',imageStateRevision:0,
+ data:{chatId:1,showUnreadDivider:false,animateIn:false},actions:{rowLeave:{particleBudget:()=>8000}},env:{},leaving:0,capturedDeleteKey:'',avatarStateRevision:0,
  observeComponentCreation2:fn=>fn(++eid,true),ifElseBranchUpdateFunction:(_id,fn)=>fn(),canvasContent(){nodes.push({type:'canvas',parent:stack.at(-1),attrs:{}});},
  leaveCapture:capture,avatarPainter:{bind:()=>({})},media:{}});
 Object.defineProperty(row,'plan',{configurable:true,value:{width:200,height:80,avatar:{width:38},caption:null}});

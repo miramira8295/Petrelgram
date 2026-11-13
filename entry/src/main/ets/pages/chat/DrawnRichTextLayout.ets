@@ -1,3 +1,4 @@
+import { DrawnTextUnits } from '../../util/drawnTextUnits';
 import { ColorMetrics, UIContext } from '@kit.ArkUI';
 import { common2D, text } from '@kit.ArkGraphics2D';
 import { DrawnPlainLayoutCache } from '../../util/drawnPlainTextPolicy';
@@ -66,6 +67,7 @@ export class DrawnRichTextLayout {
 }
 
 export class DrawnRichTextLayouts {
+  private units: DrawnTextUnits = new DrawnTextUnits();
   private cache: DrawnPlainLayoutCache<DrawnRichTextSpec, DrawnRichTextLayout> =
     new DrawnPlainLayoutCache<DrawnRichTextSpec, DrawnRichTextLayout>(sameRichSpec);
   private generation: number = 0;
@@ -73,10 +75,11 @@ export class DrawnRichTextLayouts {
   private failedSpec: DrawnRichTextSpec | null = null;
 
   prepare(ui: UIContext, spec: DrawnRichTextSpec): DrawnRichTextLayout {
-    const density: number = ui.vp2px(1);
-    const fontPx: number = ui.fp2px(spec.fontSize);
-    const reservePx: number = ui.fp2px(14);
-    const linePx: number = ui.fp2px(spec.fontSize * 1.34);
+    this.units.prepare(ui, spec.environment);
+    const density: number = this.units.density;
+    const fontPx: number = this.units.fp2px(spec.fontSize);
+    const reservePx: number = this.units.fp2px(14);
+    const linePx: number = this.units.fp2px(spec.fontSize * 1.34);
     const environment: string = `${spec.environment}:${density}:${fontPx}:${reservePx}:${linePx}`;
     if (this.environment !== environment) { this.failedSpec = null; this.environment = environment; }
     this.cache.prepare(environment);

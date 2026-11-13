@@ -16,6 +16,7 @@ export class DrawnVideoDecoration extends DrawModifier {
   private label: DrawnTextLine | null = null;
   private background: drawing.RoundRect | null = null;
   private triangle: drawing.Path | null = null;
+  private triangleDirty: boolean = true;
   private environment: string = '';
   private density: number = 0;
   private fontPx: number = 0;
@@ -39,7 +40,10 @@ export class DrawnVideoDecoration extends DrawModifier {
       this.pen.setStrokeWidth(this.density); this.pen.setColor(VIDEO_PLAY_STROKE);
     }
     const geometryChanged = metricsChanged || width !== this.mediaWidth || height !== this.mediaHeight;
-    if (geometryChanged) {
+    if (geometryChanged) { this.triangleDirty = true; }
+    // A pending slot has exact dimensions but nothing to paint yet. Do not
+    // rebuild native paths synchronously only to hide them until publication.
+    if (play && this.triangleDirty) {
       const diameter = Math.min(40, Math.min(width, height) * .46) * this.density;
       this.centerX = width * this.density / 2; this.centerY = height * this.density / 2;
       this.radius = diameter / 2;
@@ -50,6 +54,7 @@ export class DrawnVideoDecoration extends DrawModifier {
       this.triangle.lineTo(x + icon * .5, this.centerY);
       this.triangle.lineTo(x - icon * .35, this.centerY + icon / 2);
       this.triangle.close();
+      this.triangleDirty = false;
     }
     if (geometryChanged || content !== this.content) {
       this.label = content === '' ? null : this.labelCache.prepare(content,

@@ -1,4 +1,7 @@
-// Diagnostic preferences: fixed six flags, never scan message contents.
+// Renderer flags default on; performance tracing defaults off.
+export const KEY_DEBUG_DRAWN_TRACE: string = 'debugDrawnTrace';
+// Independent of renderer routing, for cold-start A/B. Takes effect next launch.
+export const KEY_DEBUG_DRAWN_HOME_WARMUP: string = 'debugDrawnHomeWarmup';
 export const KEY_DEBUG_DRAWN_ENABLED: string = 'debugDrawnEnabled';
 export const KEY_DEBUG_DRAWN_TEXT: string = 'debugDrawnText';
 export const KEY_DEBUG_DRAWN_SINGLE: string = 'debugDrawnSingle';

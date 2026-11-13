@@ -32,7 +32,7 @@ assert.deepEqual(layoutCounters(),before);
 const row=new ctx.DrawnTextLayouts().prepare(ui,group(content,entities),data,style);
 assert.ok(row);assert.equal(row.caption.emojis.length,3);
 // Use the real media layout path too, not only the shared rich paragraph.
-for(const file of ['packAlbumRows','albumCellRenderData'])load(root+'util/'+file+'.ets');
+for(const file of ['packAlbumRows','albumGeometryCache','albumCellRenderData'])load(root+'util/'+file+'.ets');
 for(const file of ['DrawnAlbumGridLayout','DrawnSingleMediaGeometry','DrawnMediaLayout'])
   load(root+'pages/chat/'+file+'.ets',file==='DrawnMediaLayout'?['DrawnMediaLayouts']:[]);
 const album={...group(),caption:content,captionEntities:entities,memberIds:[10,11,12],

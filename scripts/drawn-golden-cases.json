@@ -1,0 +1,226 @@
+{
+  "status": "fixture specification; real-device baseline images not captured yet",
+  "cases": [
+    {
+      "id": "plain-short",
+      "text": "你好，Petrel。",
+      "date": 1700000000,
+      "views": "1.2K",
+      "note": "Use fixed offline assets and capture component bounds; freeze animation/time."
+    },
+    {
+      "id": "plain-long",
+      "text": "固定长文本，用于验证换行、气泡外壳与时间的位置。固定长文本，用于验证换行、气泡外壳与时间的位置。固定长文本，用于验证换行、气泡外壳与时间的位置。固定长文本，用于验证换行、气泡外壳与时间的位置。固定长文本，用于验证换行、气泡外壳与时间的位置。固定长文本，用于验证换行、气泡外壳与时间的位置。固定长文本，用于验证换行、气泡外壳与时间的位置。固定长文本，用于验证换行、气泡外壳与时间的位置。",
+      "date": 1700000000,
+      "views": "1.2K",
+      "note": "Use fixed offline assets and capture component bounds; freeze animation/time."
+    },
+    {
+      "id": "outgoing-read",
+      "text": "发送与已读状态",
+      "date": 1700000000,
+      "views": "1.2K",
+      "note": "Use fixed offline assets and capture component bounds; freeze animation/time."
+    },
+    {
+      "id": "outgoing-sending",
+      "text": "发送中状态",
+      "date": 1700000000,
+      "views": "1.2K",
+      "note": "Use fixed offline assets and capture component bounds; freeze animation/time."
+    },
+    {
+      "id": "quote",
+      "text": "回复引用中的消息",
+      "date": 1700000000,
+      "views": "1.2K",
+      "note": "Use fixed offline assets and capture component bounds; freeze animation/time."
+    },
+    {
+      "id": "links",
+      "text": "https://example.com/a https://example.com/b",
+      "date": 1700000000,
+      "views": "1.2K",
+      "note": "Use fixed offline assets and capture component bounds; freeze animation/time."
+    },
+    {
+      "id": "code",
+      "text": "const total = 42;",
+      "date": 1700000000,
+      "views": "1.2K",
+      "note": "Use fixed offline assets and capture component bounds; freeze animation/time."
+    },
+    {
+      "id": "group-name",
+      "text": "带昵称、身份标签和静态头像",
+      "date": 1700000000,
+      "views": "1.2K",
+      "note": "Use fixed offline assets and capture component bounds; freeze animation/time."
+    },
+    {
+      "id": "single-caption",
+      "text": "单图配文与页脚",
+      "date": 1700000000,
+      "views": "1.2K",
+      "note": "Use fixed offline assets and capture component bounds; freeze animation/time."
+    },
+    {
+      "id": "footer-inline",
+      "text": "末行剩余空间足够",
+      "date": 1700000000,
+      "views": "1.2K",
+      "note": "Use fixed offline assets and capture component bounds; freeze animation/time."
+    },
+    {
+      "id": "footer-overflow",
+      "text": "末行剩余空间不足",
+      "date": 1700000000,
+      "views": "1.2K",
+      "note": "Use fixed offline assets and capture component bounds; freeze animation/time."
+    },
+    {
+      "id": "album-2",
+      "count": 2,
+      "ratios": [
+        1,
+        0.6
+      ],
+      "caption": "固定相册配文",
+      "senderName": "Petrel",
+      "views": "1.2K",
+      "date": 1700000000
+    },
+    {
+      "id": "album-3",
+      "count": 3,
+      "ratios": [
+        1,
+        0.6,
+        1.5
+      ],
+      "caption": "固定相册配文",
+      "senderName": "Petrel",
+      "views": "1.2K",
+      "date": 1700000000
+    },
+    {
+      "id": "album-4",
+      "count": 4,
+      "ratios": [
+        1,
+        0.6,
+        1.5,
+        1
+      ],
+      "caption": "固定相册配文",
+      "senderName": "Petrel",
+      "views": "1.2K",
+      "date": 1700000000
+    },
+    {
+      "id": "album-5",
+      "count": 5,
+      "ratios": [
+        1,
+        0.6,
+        1.5,
+        1,
+        1
+      ],
+      "caption": "固定相册配文",
+      "senderName": "Petrel",
+      "views": "1.2K",
+      "date": 1700000000
+    },
+    {
+      "id": "album-6",
+      "count": 6,
+      "ratios": [
+        1,
+        0.6,
+        1.5,
+        1,
+        1,
+        0.75
+      ],
+      "caption": "固定相册配文",
+      "senderName": "Petrel",
+      "views": "1.2K",
+      "date": 1700000000
+    },
+    {
+      "id": "album-7",
+      "count": 7,
+      "ratios": [
+        1,
+        0.6,
+        1.5,
+        1,
+        1,
+        0.75,
+        1.2
+      ],
+      "caption": "固定相册配文",
+      "senderName": "Petrel",
+      "views": "1.2K",
+      "date": 1700000000
+    },
+    {
+      "id": "album-8",
+      "count": 8,
+      "ratios": [
+        1,
+        0.6,
+        1.5,
+        1,
+        1,
+        0.75,
+        1.2,
+        1
+      ],
+      "caption": "固定相册配文",
+      "senderName": "Petrel",
+      "views": "1.2K",
+      "date": 1700000000
+    },
+    {
+      "id": "album-9",
+      "count": 9,
+      "ratios": [
+        1,
+        0.6,
+        1.5,
+        1,
+        1,
+        0.75,
+        1.2,
+        1,
+        1
+      ],
+      "caption": "固定相册配文",
+      "senderName": "Petrel",
+      "views": "1.2K",
+      "date": 1700000000
+    },
+    {
+      "id": "album-10",
+      "count": 10,
+      "ratios": [
+        1,
+        0.6,
+        1.5,
+        1,
+        1,
+        0.75,
+        1.2,
+        1,
+        1,
+        1
+      ],
+      "caption": "固定相册配文",
+      "senderName": "Petrel",
+      "views": "1.2K",
+      "date": 1700000000
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { drawnRouteMetrics } from './drawnRouteMetrics';
 // 运行日志缓冲。**这里是全应用日志的唯一出口**——logI / logW / logE 取代了
 // 原来散在 148 个文件里的 700 多处 console.*。
 //
@@ -16,6 +17,7 @@
 // **上报必须由用户主动触发。** 这份缓冲含 [StoreDiag] 的消息 id 这类东西，属于
 // 聊天痕迹，和崩溃记录不是一回事。
 
+import { drawnStageMetrics } from './drawnStageMetrics';
 import { drawnTextMetrics } from './drawnTextMetrics';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
@@ -197,15 +199,17 @@ export function logE(...args: Object[]): void {
 
 // 大致有多少字节可发，给设置页显示"将发送 xx KB"。
 export function diagLogSize(): number {
-  return drawnTextMetrics.summary().length + collectAll().length;
+  return drawnRouteMetrics.summary().length + drawnStageMetrics.summary().length + drawnTextMetrics.summary().length + collectAll().length;
 }
 
 // 供设置页在上报前展示给用户看：发出去的就是这些。
 export function diagLogText(): string {
-  return drawnTextMetrics.summary() + collectAll();
+  return drawnRouteMetrics.summary() + drawnStageMetrics.summary() + drawnTextMetrics.summary() + collectAll();
 }
 
 export function clearDiagLog(): void {
+  drawnRouteMetrics.reset();
+  drawnStageMetrics.reset();
   drawnTextMetrics.reset();
   lines.splice(0, lines.length);
   try {

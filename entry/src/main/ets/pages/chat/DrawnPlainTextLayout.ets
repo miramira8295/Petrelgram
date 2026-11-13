@@ -1,3 +1,4 @@
+import { DrawnTextUnits } from '../../util/drawnTextUnits';
 import { placeDrawnFooter } from '../../util/drawnFooterPlacement';
 import { DrawnSenderHeader } from './DrawnSenderHeader';
 import { DrawnReplyQuote } from './DrawnReplyQuote';
@@ -129,6 +130,7 @@ class DrawnPlainParagraphEntry {
 }
 
 export class DrawnPlainTextLayouts {
+  private units: DrawnTextUnits = new DrawnTextUnits();
   private paragraphs: DrawnPlainLayoutCache<DrawnPlainTextSpec, DrawnPlainParagraphEntry> =
     new DrawnPlainLayoutCache<DrawnPlainTextSpec, DrawnPlainParagraphEntry>(sameDrawnPlainParagraphSpec);
   private currentSpec: DrawnPlainTextSpec | null = null;
@@ -144,9 +146,10 @@ export class DrawnPlainTextLayouts {
 
   private prepareCurrent(ui: UIContext, spec: DrawnPlainTextSpec, header: DrawnSenderHeader | null,
     quote: DrawnReplyQuote | null): DrawnPlainTextLayout {
-    const density: number = ui.vp2px(1);
-    const fontPx: number = ui.fp2px(spec.fontSize);
-    const smallPx: number = ui.fp2px(11);
+    this.units.prepare(ui, spec.textEnvironment);
+    const density: number = this.units.density;
+    const fontPx: number = this.units.fp2px(spec.fontSize);
+    const smallPx: number = this.units.fp2px(11);
     const environment: string = `${spec.textEnvironment}:${density}:${fontPx}:${smallPx}`;
     if (this.currentLayout !== null && this.currentSpec !== null &&
       this.currentEnvironment === environment && this.currentLayout.header === header &&
@@ -267,7 +270,7 @@ export class DrawnPlainTextLayouts {
     const lastTop: number = last !== undefined ? Math.max(0, last.baseline - last.ascent) : Number.NaN;
     const footerBuilder = new text.ParagraphBuilder({ textStyle: { fontSize: smallPx, color: secondary } }, fonts);
     if (spec.edited !== '') {
-      footerBuilder.pushStyle({ fontSize: ui.fp2px(10.5), color: secondary });
+      footerBuilder.pushStyle({ fontSize: this.units.fp2px(10.5), color: secondary });
       footerBuilder.addText(spec.edited);
       footerBuilder.popStyle();
       footerBuilder.addPlaceholder({ width: 4 * density, height: 0,
@@ -278,7 +281,7 @@ export class DrawnPlainTextLayouts {
     const footer = footerBuilder.build();
     drawnTextMetrics.layoutCall();
     footer.layoutSync(maxPx);
-    const iconPx: number = ui.fp2px(12);
+    const iconPx: number = this.units.fp2px(12);
     const statusWidth: number = spec.outgoing ? iconPx * 4 / 3 + 4 * density : 0;
     const footerWidth: number = Math.ceil(footer.getMaxIntrinsicWidth()) + statusWidth;
     const footerHeight: number = Math.max(footer.getHeight(), spec.outgoing ? iconPx : 0);

@@ -1,4 +1,8 @@
 import { KEY_IMMERSIVE_BARS_HIDDEN } from '../../util/immersiveBars';
+import { DrawnHomeWarmup } from './DrawnHomeWarmup';
+import { KEY_DEBUG_DRAWN_HOME_WARMUP } from '../../util/debugDrawnRenderer';
+import { stackOf } from '../../util/navStacks';
+import { chatEnv } from '../../util/chatEnvMirror';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, dockModeForBreakpoint, isSmallSquare, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
@@ -105,6 +109,8 @@ const DOCK_REVEAL_FRAME_DELAY_MS: number = 12;
 // Tabs — only dock taps switch tabs.
 @Component
 export struct MainScreen {
+  private drawnWarmup: DrawnHomeWarmup = new DrawnHomeWarmup();
+  @StorageProp(KEY_DEBUG_DRAWN_HOME_WARMUP) @Watch('syncDock') private drawnHomeWarmupOn: boolean = true;
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -343,6 +349,7 @@ export struct MainScreen {
   }
 
   aboutToDisappear(): void {
+    this.drawnWarmup.cancel();
     this.dockActive = false;
     this.syncDock();
     this.miniBarHolder.dispose();
@@ -394,6 +401,10 @@ export struct MainScreen {
   }
 
   private syncDock(): void {
+    this.drawnWarmup.update(this.getUIContext(), (): boolean => this.drawnHomeWarmupOn && this.dockActive && this.appIsForeground &&
+      !this.accountSwitching && this.tab === 0 && this.chatNavBarVisible && !this.chatDetailHiding &&
+      !this.chatViewerCoversWindow && stackOf('chat')?.size() === 0 &&
+      chatEnv.drawnEnabled !== false && !chatEnv.bubbleMaterialOn);
     if (!this.dockVisible()) {
       this.dockRevealSeq++;
       this.dockRevealPending = false;
@@ -1202,6 +1213,7 @@ export struct MainScreen {
       }
     }
     .width('100%').height('100%')
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .onTouch((): void => { this.drawnWarmup.cancel(); });
   }
 }

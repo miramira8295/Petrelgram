@@ -19,5 +19,18 @@
   "test-drawn-completion.mjs",
   "test-drawn-inline-emoji.mjs",
   "test-chatlist-scroll-lifecycle.mjs",
-  "test-drawn-creation-trim.mjs"
+  "test-drawn-creation-trim.mjs",
+  "test-drawn-reuse-trim.mjs",
+  "test-drawn-geometry-reuse.mjs",
+  "test-drawn-bind-trim.mjs",
+  "test-drawn-state-seed.mjs",
+  "test-drawn-route-footer.mjs",
+  "test-drawn-snapshot-cache.mjs",
+  "test-drawn-paint-trim.mjs",
+  "test-drawn-native-attributes.mjs",
+  "test-drawn-home-warmup.mjs",
+  "test-drawn-message-warmup.mjs",
+  "test-drawn-frame-activation.mjs",
+  "test-drawn-activation-reuse.mjs",
+  "test-drawn-recycled-layouts.mjs"
 ]

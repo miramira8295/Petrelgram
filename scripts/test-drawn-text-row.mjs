@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 const imported=await import(process.env.TYPESCRIPT_MODULE||'typescript'), ts=imported.default||imported;
 const root='entry/src/main/ets/', compiled='entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/'+root;
-let parseCalls=0, bodyLayouts=0, lastReads=0, pathBuilds=0, totalLayouts=0;
+let parseCalls=0, bodyLayouts=0, lastReads=0, pathBuilds=0, totalLayouts=0, unitConversions=0;
 class Paragraph {
   constructor(style,parts){this.style=style;this.parts=parts;this.content=parts.map(p=>p.text||'').join('');}
   layoutSync(max){
@@ -55,25 +55,35 @@ const ctx=vm.createContext({ViewV2:class{},ViewPU:class{},Color:{White:'white'},
   tableScrollTouched:()=>false,isEdgeSwipeStart:x=>x<36,SWIPE_REPLY_MAX:-70,SWIPE_REPLY_TRIGGER:-40,SWIPE_SELECT_MAX:70,SWIPE_SELECT_TRIGGER:40,
   Curve:{EaseOut:1},Date:{now:()=>1000},messageDragType:()=> 'general.plain-text'});
 function load(path,names=[]){const s=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/@(?:Require|Param|Local|Computed|Event)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'').replace(/\bexport /g,'');vm.runInContext(ts.transpileModule(s+names.map(n=>`\nglobalThis.${n}=${n};`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx,{filename:path});}
+load(root+'util/drawnTextUnits.ets');
+load(root+'pages/chat/DrawnMediaColors.ets');
 for(const file of ['mediaBox','messageBubblePresentation','bubbleCornerInset','bubbleGlassPath','drawnPlainTextPolicy','drawnFooterPlacement','richText','messageLinkAction'])load(root+'util/'+file+'.ets');
 vm.runInContext('globalThis.actualParser=parseFormattedText',ctx);ctx.countParse=(...a)=>{parseCalls++;return ctx.actualParser(...a);};
 vm.runInContext('parseFormattedText=countParse',ctx);
-for(const file of ['drawnRichHitIndex','drawnRichTextPolicy','drawnAlbumPolicy','drawnTextRowPolicy','drawnContentPolicy','messageDragGesture'])load(root+'util/'+file+'.ets',[file==='messageDragGesture'?'MessageDragGesture':file==='drawnTextRowPolicy'?'drawnTextRowEligible':file==='drawnRichTextPolicy'?'DrawnRichSourceCache':'drawnTailGutter']);
-for(const file of ['DrawnTextLine','DrawnRichTextLayout','DrawnSenderHeader','DrawnReplyQuote','DrawnReactionLayout','DrawnBubbleChrome','DrawnBubblePlan','DrawnTextFooter','DrawnTextLayout'])load(root+'pages/chat/'+file+'.ets',file==='DrawnTextLayout'?['DrawnTextLayouts']:[]);
+for(const file of ['drawnSourcePool','drawnRichHitIndex','drawnRichTextPolicy','drawnAlbumPolicy','drawnTextRowPolicy','drawnContentPolicy','messageDragGesture'])load(root+'util/'+file+'.ets',[file==='messageDragGesture'?'MessageDragGesture':file==='drawnTextRowPolicy'?'drawnTextRowEligible':file==='drawnRichTextPolicy'?'DrawnRichSourceCache':'drawnTailGutter']);
+for(const file of ['DrawnTextLine','DrawnRichTextLayout','DrawnSenderHeader','DrawnReplyQuote','DrawnReactionLayout','DrawnBubbleChrome','DrawnBubbleGeometry','DrawnBubblePlan','DrawnTextFooter','DrawnTextLayout'])load(root+'pages/chat/'+file+'.ets',file==='DrawnTextLayout'?['DrawnTextLayouts']:[]);
 load(root+'util/drawnMediaSlot.ets',['DrawnMediaSlots']);
+load(root+'util/drawnRouteMetrics.ets',['DrawnRouteReason','DrawnRouteTracker','drawnRouteMetrics']);
+load(root+'util/drawnStageMetrics.ets',['drawnStageMetrics','DrawnStage']);
+load(root+'pages/chat/DrawnMediaFrames.ets',['DrawnMediaFrames']);
+load(root+'pages/chat/DrawnNativeAttributes.ets',['DrawnMediaAnchorPool','DrawnCanvasAttributes']);
+load(root+'pages/chat/DrawnLayoutWarmCache.ets',['takeDrawnWarmLayout']);
+ctx.getTdClient ??= () => ctx; ctx.setTimeout ??= () => 0; ctx.clearTimeout ??= () => {};
+load(root+'pages/chat/DrawnRecycledLayouts.ets',['DrawnLayoutRetention','takeDrawnRecycledLayout','drawnRecycledLayouts']);
 load(compiled+'pages/chat/DrawnMessageRow.ts',['DrawnMessageRow']);
-const ui={vp2px:n=>n*2,fp2px:n=>n*2};
+const ui={vp2px:n=>{unitConversions++;return n*2;},fp2px:n=>{unitConversions++;return n*2;}};
 const data={playSlotKey:'',chatId:9,isGroup:false,isChannel:false,contentWidth:400,themeBubbleOut:'',selectionActive:false,selectedMemberIds:[],canReply:true,lightweightPlainText:true};
 const style={radius:20,fontSize:16,environment:'1',textEnvironment:'1',role:'',views:''};
 function group(content='hello',entities=[]){return{head:{id:10,rowId:10,contentType:'text',text:content,textEntities:entities,date:1,editDate:0,isOutgoing:false,senderId:5,senderName:'',senderInitials:'AB',senderIsUser:true,senderAvatarPath:'',senderTag:'',sendState:'sent',translatedText:'',reactions:[],inlineButtons:[],forwardFrom:'',commentCount:0,replyToMessageId:0,replySenderName:'',replyText:'',replyThumbPath:'',replyDiceLayers:[],linkUrl:'',linkTitle:'',linkSiteName:'',linkDescription:'',linkPhotoFileId:0},memberIds:[10],showAvatar:true,showSenderName:true,dateLabel:''};}
 const layouts=new ctx.DrawnTextLayouts();let g=group(),p=layouts.prepare(ui,g,data,style);
 assert.ok(ctx.drawnTextRowEligible(g,data,false,false));assert.equal(p.tiles.length,0);assert.equal(p.caption.source.content,'hello');
 assert.ok(p.footerY<p.captionY+p.caption.heightVp,'short last line shares footer');
-const initial={parseCalls,bodyLayouts,lastReads,pathBuilds,totalLayouts};
+const initial={parseCalls,bodyLayouts,lastReads,pathBuilds,totalLayouts,unitConversions};
 for(let i=0;i<1000;i++){g.head.sendState=i%2?'sent':'read';assert.equal(layouts.prepare(ui,g,data,style),p);}
-assert.deepEqual({parseCalls,bodyLayouts,lastReads,pathBuilds,totalLayouts},initial,'1000 status changes must do no parsing, shaping, last-line query or outline allocation');
+assert.deepEqual({parseCalls,bodyLayouts,lastReads,pathBuilds,totalLayouts,unitConversions},initial,'1000 status changes must do no parsing, shaping, last-line query or outline allocation');
 for(let i=0;i<100;i++){g.head.date=i;layouts.prepare(ui,g,data,{...style,views:String(i)});}
 assert.equal(bodyLayouts,initial.bodyLayouts);assert.equal(parseCalls,initial.parseCalls);assert.equal(lastReads,initial.lastReads);
+assert.equal(unitConversions,initial.unitConversions,'footer-only changes reuse native units as well as body paragraphs');
 // Header/reply/footer changes reuse the body and its link rectangles.
 g.head.senderName='Sender';g.head.replyToMessageId=33;g.head.replySenderName='Quoted';g.head.replyText='quote';
 p=layouts.prepare(ui,g,{...data,isGroup:true},{...style,role:'admin'});const body=p.caption;
@@ -105,7 +115,7 @@ for(const field of ['inlineButtons','replyDiceLayers']){const x=group();x.head[f
 const structured=group();structured.head.contentType='richMessage';assert.equal(ctx.drawnTextRowEligible(structured,data,false,false),false);
 assert.equal(ctx.drawnTextRowEligible(group(),data,true,false),false);assert.equal(ctx.drawnTextRowEligible(group(),data,false,true),false);
 // Replay real compiled link/reply/avatar/drag handlers, including reuse.
-const events=[],row=Object.create(ctx.DrawnMessageRow.prototype);
+const events=[],row=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()});
 row.kind='text';row.group=links;row.data=data;row.env={gestureScheme:0,screenWidthVp:400};row.dragGesture=new ctx.MessageDragGesture();
 row.actions=new Proxy({},{get:(_t,k)=>(...args)=>events.push([k,...args])});row.foreground={press(){},pressReaction(){},setPress(){}};
 row.getUIContext=()=>({animateTo:(_o,fn)=>fn()});p=layouts.prepare(ui,links,data,style);Object.defineProperty(row,'plan',{configurable:true,value:p});
@@ -121,7 +131,7 @@ row.claimed=false;row.menuShown=false;ctx.Date.now=()=>2000;row.touch(touch(0,x,
 const tiny=layouts.prepare(ui,group('x'),{...data,isGroup:true},{...style,fontSize:10});
 assert.equal(tiny.height,38);assert.ok(tiny.bubbleY>0);assert.equal(tiny.avatar.y,0);
 // Live sending and busy links retain the exact plan and cached paragraph.
-const gate=Object.create(ctx.DrawnMessageRow.prototype);gate.kind='text';gate.group=links;gate.data=data;
+const gate=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()});gate.kind='text';gate.group=links;gate.data=data;
 gate.env={appearanceEpoch:1,langEpoch:1,bubbleMaterialOn:false,bubbleRadius:20,msgTextSize:16,linkNavBusy:''};
 gate.a11y={active:false};gate.translation=null;gate.sendState='sent';gate.avatarAnimated=false;gate.role='';gate.views='';
 gate.textLayouts=null;gate.albumLayouts=null;gate.getUIContext=()=>ui;
@@ -175,7 +185,7 @@ gate.env.drawnRich=false;assert.equal(gate.plan,null);gate.env.drawnRich=true;as
 // not merely return null after discarding a freshly built paragraph.
 load(root+'util/drawnSingleMediaPolicy.ets',['drawnSingleMediaEligible']);
 for(const kind of ['text','single','album'])for(const plain of [true,false]){
- const cold=Object.create(ctx.DrawnMessageRow.prototype),message=group('body');
+ const cold=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()}),message=group('body');
  if(kind!=='text')message.head.contentType='photo';
  if(kind==='album'){message.memberIds=[10,11];message.photoRatios=[1,1];message.caption='caption';}
  const flag=plain?'drawnPlain':'drawnRich',owner=kind==='text'?'textLayouts':kind==='single'?'singleLayouts':'albumLayouts';
@@ -192,3 +202,32 @@ for(const kind of ['text','single','album'])for(const plain of [true,false]){
  }
 }
 console.log('PASS: plain/rich switches skip cold allocation and 1000 warm prepares for text/single/album; empty media stays eligible.');
+
+// Home -> actual compiled row: transfer the production layout engine, then
+// prepare current inputs. Matching body survives a new UIContext wrapper and
+// message snapshot; edited text/width/font/config must invalidate it.
+{
+ const owner={};ctx.getTdClient=()=>owner;ctx.setTimeout=()=>1;ctx.clearTimeout=()=>{};
+ const reserve=vm.runInContext('drawnLayoutWarmCache',ctx);
+ const homeGroup=group('visit https://warm.test',[]),engine=new ctx.DrawnTextLayouts();
+ const environment={...gate.env,drawnEnabled:true,drawnText:true,drawnPlain:true,drawnRich:true};
+ const homeStyle={radius:environment.bubbleRadius,fontSize:environment.msgTextSize,
+   environment:`${environment.appearanceEpoch}:${environment.langEpoch}:0`,textEnvironment:`${environment.langEpoch}:0`,role:'',views:''};
+ const home=engine.prepare(ui,homeGroup,data,homeStyle),before=bodyLayouts;
+ reserve.put(owner,data.chatId,homeGroup.head.id,'text',engine);
+ const incoming={...homeGroup,head:{...homeGroup.head}};
+ const recipient=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),
+  kind:'text',group:incoming,data:{...data},env:environment,a11y:{active:false},translation:null,
+  role:'',views:'',textLayouts:null,singleLayouts:null,albumLayouts:null,
+  getUIContext:()=>({vp2px:n=>n*2,fp2px:n=>n*2})});
+ const adopted=recipient.plan;
+ assert.equal(recipient.textLayouts,engine);
+ assert.equal(adopted.caption,home.caption);assert.equal(bodyLayouts,before,'matching warm body must not shape again');
+ assert.equal(reserve.hasEntries(),false,'no second live row can claim the same engine');
+ recipient.group={...incoming,head:{...incoming.head,text:'edited body'}};
+ assert.notEqual(recipient.plan.caption,home.caption);assert.equal(bodyLayouts,before+1);
+ recipient.data={...data,contentWidth:350};void recipient.plan;assert.equal(bodyLayouts,before+2);
+ recipient.env={...environment,msgTextSize:18};void recipient.plan;assert.equal(bodyLayouts,before+3);
+ recipient.env={...recipient.env,appearanceEpoch:2};void recipient.plan;assert.equal(bodyLayouts,before+4);
+ console.log('PASS: home-prepared real rich paragraph transfers into compiled row without re-layout; message edits, width, font and theme invalidate correctly.');
+}

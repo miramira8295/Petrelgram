@@ -1,5 +1,6 @@
 import { AlbumGroup } from './collapseAlbums';
-import { AlbumCell, packAlbumRows } from './packAlbumRows';
+import { AlbumCell } from './packAlbumRows';
+import { albumGeometryCache } from './albumGeometryCache';
 import { slotKey } from '../pages/chat/playSlot';
 
 export interface AlbumCellRenderContext {
@@ -129,7 +130,7 @@ export class AlbumCellRenderCache {
       this.ratios.some((ratio: number, i: number): boolean => ratio !== group.photoRatios[i])) {
       this.width = width;
       this.ratios = group.photoRatios.slice();
-      this.geometry = packAlbumRows(this.ratios, width);
+      this.geometry = albumGeometryCache.prepare(this.ratios, width);
     }
     // One index per preparation: O(S + N), instead of scanning S selected ids
     // for each tile. Normal browsing has an empty selection and allocates none.

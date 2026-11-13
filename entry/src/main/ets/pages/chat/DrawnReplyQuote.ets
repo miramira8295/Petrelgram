@@ -1,3 +1,4 @@
+import { DrawnTextUnits } from '../../util/drawnTextUnits';
 import { UIContext } from '@kit.ArkUI';
 import { common2D, drawing } from '@kit.ArkGraphics2D';
 import { DrawnTextLine, DrawnTextLineCache, drawnColor } from './DrawnTextLine';
@@ -39,6 +40,7 @@ export class DrawnReplyQuote {
 }
 
 export class DrawnReplyQuoteCache {
+  private units: DrawnTextUnits = new DrawnTextUnits();
   private sender: DrawnTextLineCache = new DrawnTextLineCache();
   private excerpt: DrawnTextLineCache = new DrawnTextLineCache();
   private current: DrawnReplyQuote | null = null;
@@ -49,12 +51,13 @@ export class DrawnReplyQuoteCache {
 
   prepare(ui: UIContext, sender: string, excerpt: string, maxPx: number, accent: ResourceColor,
     foreground: ResourceColor, fill: ResourceColor, textEnvironment: string, appearance: string, hasMedia: boolean = false): DrawnReplyQuote {
-    const density: number = ui.vp2px(1);
+    this.units.prepare(ui, textEnvironment);
+    const density: number = this.units.density;
     const mediaWidthPx = hasMedia ? 38 * density : 0;
     const limit: number = Math.max(1, Math.min(maxPx - 16 * density - mediaWidthPx, Math.round(maxPx / density * 0.76) * density));
-    const senderLine = this.sender.prepare(sender, limit, ui.fp2px(12), drawnColor(accent), textEnvironment,
+    const senderLine = this.sender.prepare(sender, limit, this.units.fp2px(12), drawnColor(accent), textEnvironment,
       false, 16 * density);
-    const excerptLine = this.excerpt.prepare(excerpt, limit, ui.fp2px(12), drawnColor(foreground), textEnvironment,
+    const excerptLine = this.excerpt.prepare(excerpt, limit, this.units.fp2px(12), drawnColor(foreground), textEnvironment,
       false, 16 * density);
     if (this.current !== null && this.current.sender === senderLine && this.current.excerpt === excerptLine &&
       this.current.density === density && this.current.mediaWidthPx === mediaWidthPx && this.appearance === appearance && this.accent === accent &&

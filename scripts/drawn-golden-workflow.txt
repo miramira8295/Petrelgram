@@ -1,0 +1,18 @@
+自绘像素回归准备（尚无真机基准，不是现有 CI 的像素通过证明）
+
+样例：drawn-golden-cases.json，共20条：短/长正文、发送/已读、引用、链接、代码、昵称头像、单图配文、页脚临界宽度、2–10格相册。
+应在隔离的固定样例场景呈现这些消息，使用离线固定图片，不发送到真实会话。
+用同一设备的原生渲染结果建立并人工检查基准，保存每个气泡组件边界的PNG。
+冻结时钟、动画、播放/进度和图像下载，保持图片加载完成。不要用宿主字体替身生成“真机基准”。
+旧实现仅作语义/布局对照；不强求旧实现和自绘仅子像素差异。
+
+baseline/与current/目录都必须有environment.json及<case-id>.png。
+environment.json必须包含：device、os、resolution、density、fontScale、font、theme、language、renderer、timezone、renderOptions。
+renderOptions记录实际文字字号、气泡半径、内容宽度、分栏和玻璃设置。两次任何字段不一致直接拒绝比较。
+
+独立环境准备：python3 -m venv build/golden-venv
+build/golden-venv/bin/pip install Pillow
+运行：build/golden-venv/bin/python scripts/drawn-golden.py BASE CURRENT --output RESULT
+默认单通道容差2，任何超过容差的像素都会失败，输出report.json、diff图和高对比mask。
+尺寸变化直接失败；缺图直接失败；不会悄悄更新基准，不会将截图中的状态栏/时间遮盖来掩盖气泡差异。
+比较时间为O(总像素)，逐张处理，额外内存为O(最大单张图片)，不在应用运行路径执行。

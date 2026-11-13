@@ -250,7 +250,12 @@ export struct ReusableMessageBubble {
   // 代价可以忽略：messageActions() 惰性建一次、全生命周期同一个引用，
   // @Param 每帧只多一次 === 比较，比较结果恒为相等，不会触发任何刷新。
   @Param actions: MessageBubbleActions = EMPTY_ACTIONS;
-  @Local private liveGroup: AlbumGroup | null = null;
+  // V2 initializes current Params before this Local and shownGroup. Seed the
+  // current snapshot instead of publishing null then filling it in on reuse.
+  // One average O(1) channel lookup, no cloning/traversal/subscription here.
+  // attachPresentation still rereads and subscribes for later arrivals.
+  @Local private liveGroup: AlbumGroup | null =
+    messageRowPresentationFor(this.data.chatId, this.group.head.rowId) ?? this.group;
   @Local private jumpFocus: number = 0;
   @Local private leaving: number = 0;
   private unsubFocus: (() => void) | null = null;
@@ -274,14 +279,13 @@ export struct ReusableMessageBubble {
   }
 
   // 订阅当前挂在哪条 (chatId, rowId) 上。同 key 短路（审计 P1-1 / 3.4）：复用
-  // 一次会挂两遍——aboutToReuse 一次、@Param group 落地触发 @Monitor 再一次，每次
-  // 都是一整轮「退订 + 读现值 + 重订阅」，是滚动时的每行常数开销。
+  // 生命周期与后续 @Param group 更新都可能调用 attach；同 key 时保留订阅，
+  // 避免重复「退订 + 重订阅」。
   // 记下 key 同时也让「订阅挂在哪」成为可判定的事实，谁先到都不影响正确性。
   private attachedKey: string = '';
 
-  // 同值不写：复用时框架把 liveGroup 重置为 null，这里会补种一次；但 attach 在
-  // 每次 @Monitor('msg') 落地时也会走，重投同一个对象时不该再产生一次通知
-  // （12.4s 采集里 liveGroup 变了 1171 次）。
+  // 同值不写：初始化/复用已经预填快照；attach 只在通道又有新值时补写。
+  // 后续 @Monitor('group') 重投同一个对象也不产生额外通知。
   private applyLiveGroup(next: AlbumGroup): void {
     if (this.liveGroup !== next) {
       this.liveGroup = next;
@@ -291,8 +295,7 @@ export struct ReusableMessageBubble {
   private attachPresentation(group: AlbumGroup): void {
     const key: string = `${this.data.chatId}:${group.head.rowId}`;
     if (this.unsubPresentation !== null && this.attachedKey === key) {
-      // 已挂在同一行上：订阅原样保留，只重新取一次现值（复用时框架会把
-      // liveGroup 重置回 null，短路分支不补种会让这一帧退回 @Prop 的快照）。
+      // 已挂在同一行上：保留订阅并读取现值，接住预填之后到达的新快照。
       this.applyLiveGroup(messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group);
       this.jumpFocus = this.actions.bubbleFocus.value(group.head.rowId);
       this.leaving = this.actions.rowLeave.value(group.head.rowId);
@@ -421,11 +424,8 @@ export struct ReusableMessageBubble {
     // 「常量：包括 readonly 的常量，不重置」，而 attachedKey / unsubPresentation
     // 都是无装饰器成员，V2 视作常量——不退订就会漏订阅。
     //
-    // 【liveGroup 不在这里置 null（2026-09-14）】它是 @Local，框架在 aboutToReuse
-    // 之前统一重置回初值 null（批 0.5 实测 1370/1370），aboutToReuse 里的
-    // attachPresentation 随即重新取现值——这里再赋一次纯属重复。而这一次赋值并不
-    // 便宜：13:52 profile 里 aboutToRecycle 的 117ms 有 110ms 落在 @Local 的 setter
-    // 上（要通知所有读过 liveGroup 的绑定），每次回收约 0.18ms。
+    // 不在回收时写 liveGroup：下次 V2 reset 用当前 Param 预填对应行快照，
+    // aboutToReuse 再核对通道。这里清空只会额外通知旧行的绑定。
     this.detachPresentation();
   }
 

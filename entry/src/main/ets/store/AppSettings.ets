@@ -1,4 +1,5 @@
-import { DEBUG_DRAWN_KEYS } from '../util/debugDrawnRenderer';
+import { drawnStageMetrics } from '../util/drawnStageMetrics';
+import { DEBUG_DRAWN_KEYS, KEY_DEBUG_DRAWN_TRACE, KEY_DEBUG_DRAWN_HOME_WARMUP } from '../util/debugDrawnRenderer';
 import { KEY_HIDE_PINNED_DEFAULT, pinnedVisibilityDefaults } from '../util/pinnedVisibilityState';
 import { KEY_VIDEO_AUTO_PRELOAD, publishVideoPreload } from '../util/videoPreloadSetting';
 import { HOLD_SPEED_LIMIT_DEFAULT, normalizeHoldSpeedLimit } from '../util/holdSpeedLimit';
@@ -591,6 +592,9 @@ export async function initSettings(context: common.Context): Promise<void> {
     // ⚠️ 临时（P6 标定）：走 normalize 而不是直接信落盘值——档位表将来收窄时，
     // 旧值会变成野值，而 cachedCount 收到野值不报错，只是行为不可解释。
     for (const key of DEBUG_DRAWN_KEYS) { AppStorage.setOrCreate(key, await s.get(key, true) as boolean); }
+    AppStorage.setOrCreate(KEY_DEBUG_DRAWN_HOME_WARMUP, await s.get(KEY_DEBUG_DRAWN_HOME_WARMUP, true) as boolean);
+    const drawnTrace = await s.get(KEY_DEBUG_DRAWN_TRACE, false) as boolean;
+    AppStorage.setOrCreate(KEY_DEBUG_DRAWN_TRACE, drawnTrace); drawnStageMetrics.setEnabled(drawnTrace);
     AppStorage.setOrCreate(KEY_DEBUG_LIST_CACHED,
       normalizeListCachedCount(await s.get(KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT) as number));
     AppStorage.setOrCreate(KEY_MATERIAL_THICKNESS,
@@ -688,6 +692,8 @@ export async function initSettings(context: common.Context): Promise<void> {
       AppStorage.setOrCreate(key, '');
     }
     for (const key of DEBUG_DRAWN_KEYS) { AppStorage.setOrCreate(key, true); }
+    AppStorage.setOrCreate(KEY_DEBUG_DRAWN_HOME_WARMUP, true);
+    AppStorage.setOrCreate(KEY_DEBUG_DRAWN_TRACE, false); drawnStageMetrics.setEnabled(false);
     AppStorage.setOrCreate(KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT); // ⚠️ 临时（P6 标定）
     AppStorage.setOrCreate(KEY_PROXY_SWITCH_DELAY_SEC, PROXY_SWITCH_DELAY_DEFAULT);
     AppStorage.setOrCreate(KEY_POWER_THRESHOLD, POWER_THRESHOLD_DEFAULT);
@@ -751,6 +757,7 @@ export function setNumber(key: string, value: number): void {
 }
 
 export function setBoolean(key: string, value: boolean): void {
+  if (key === KEY_DEBUG_DRAWN_TRACE) { drawnStageMetrics.setEnabled(value); }
   if (key === KEY_HIDE_PINNED_DEFAULT) { pinnedVisibilityDefaults.hidden = value; }
   if (key === KEY_CRASH_UPLOAD) {
     // 崩溃上报的开关额外落一个标记文件。扩展进程读不到 AppStorage、也不能

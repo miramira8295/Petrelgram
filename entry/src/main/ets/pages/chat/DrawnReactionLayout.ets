@@ -1,3 +1,4 @@
+import { DrawnTextUnits } from '../../util/drawnTextUnits';
 import { UIContext } from '@kit.ArkUI';
 import { common2D, drawing } from '@kit.ArkGraphics2D';
 import { ReactionInfo } from '../../store/MessageEntry';
@@ -52,6 +53,7 @@ export class DrawnReactionPlan {
 // Bounded slots, not a history-wide Map. Measurement and wrapping are separate:
 // a footer/width change can reflow chips without shaping each label again.
 export class DrawnReactionLayouts {
+  private units: DrawnTextUnits = new DrawnTextUnits();
   private emojis: DrawnTextLineCache[] = [];
   private counts: DrawnTextLineCache[] = [];
   private source: ReactionInfo[] | null = null;
@@ -63,7 +65,8 @@ export class DrawnReactionLayouts {
 
   measure(ui: UIContext, reactions: ReactionInfo[], maxWidth: number, arrow: boolean,
     environment: string): number {
-    const d = ui.vp2px(1), key = `${d}:${ui.fp2px(13)}:${maxWidth}:${arrow}:${environment}`;
+    this.units.prepare(ui, environment);
+    const d = this.units.density, key = `${d}:${this.units.fp2px(13)}:${maxWidth}:${arrow}:${environment}`;
     if (this.source === reactions && this.metricKey === key) { return this.natural; }
     this.emojis.length = Math.min(this.emojis.length, reactions.length);
     this.counts.length = Math.min(this.counts.length, reactions.length);
@@ -72,10 +75,10 @@ export class DrawnReactionLayouts {
     for (let i = 0; i < reactions.length; i++) {
       const r = reactions[i];
       if (i === this.emojis.length) { this.emojis.push(new DrawnTextLineCache()); this.counts.push(new DrawnTextLineCache()); }
-      const count = this.counts[i].prepare(`${r.count}`, Math.max(1, (maxWidth - 37) * d), ui.fp2px(12),
+      const count = this.counts[i].prepare(`${r.count}`, Math.max(1, (maxWidth - 37) * d), this.units.fp2px(12),
         drawnColor(r.isChosen ? Color.White : COLOR_TEXT_SECONDARY), environment);
       const emoji = r.customEmojiId === '' ? this.emojis[i].prepare(r.emoji,
-        Math.max(1, (maxWidth - 22) * d - count.widthPx), ui.fp2px(13),
+        Math.max(1, (maxWidth - 22) * d - count.widthPx), this.units.fp2px(13),
         drawnColor(r.isChosen ? Color.White : COLOR_TEXT_SECONDARY), environment) : null;
       const iconWidth = emoji !== null ? emoji.widthPx / d : 15;
       const chipWidth = Math.min(maxWidth, 22 + iconWidth + count.widthPx / d);

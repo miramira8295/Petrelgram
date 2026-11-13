@@ -1,5 +1,5 @@
 import { AlbumGroup } from '../../util/collapseAlbums';
-import { AlbumCellRenderCache } from '../../util/albumCellRenderData';
+import { AlbumCellRenderCache, AlbumCellRenderData } from '../../util/albumCellRenderData';
 import { drawnLiveSurface } from '../../util/drawnContentPolicy';
 import { MessageBubbleRenderData } from './ReusableMessageBubble';
 import { DrawnBubbleTile } from './DrawnBubblePlan';
@@ -21,6 +21,7 @@ export class DrawnAlbumGridLayouts {
   private signature: string = '';
   private previous: DrawnAlbumGridPlan | null = null;
   private cells: AlbumCellRenderCache = new AlbumCellRenderCache();
+  private preparedRows: AlbumCellRenderData[][] | null = null;
 
   private sameMedia(a: AlbumGroup, b: AlbumGroup): boolean {
     return a === b || (a.memberIds === b.memberIds && a.photoRatios === b.photoRatios &&
@@ -41,6 +42,13 @@ export class DrawnAlbumGridLayouts {
     const rows = this.cells.prepare(group, { chatId: data.chatId, selectionActive: data.selectionActive,
       selectedMemberIds: data.selectedMemberIds, playSlotKey: slot,
       autoplayMuted: data.autoplayMuted, playSlotStartMs: data.playSlotStartMs }, width);
+    // A publisher may replace arrays with equal values. The cell cache already
+    // compared them once; do not allocate new tiles or wake every image binding.
+    if (this.previous !== null && rows === this.preparedRows && this.signature === signature &&
+      this.previous.width === width && this.previous.density === density) {
+      this.source = group; this.selected = data.selectedMemberIds;
+      return this.previous;
+    }
     const tiles: DrawnBubbleTile[] = [];
     let y = 0;
     // Rows partition the N cells; this is O(N + S), not N squared.
@@ -55,6 +63,7 @@ export class DrawnAlbumGridLayouts {
     }
     const next: DrawnAlbumGridPlan = { width, height: Math.max(0, y - 2), density, tiles };
     this.source = group; this.selected = data.selectedMemberIds; this.signature = signature; this.previous = next;
+    this.preparedRows = rows;
     return next;
   }
 }

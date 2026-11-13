@@ -43,6 +43,7 @@ outline.bind(true,true,corners,123,'2',true,3);assert.equal(outline.fill,123);
 console.log('PASS: 1000 unchanged paints build no additional paths; appearance/shadow retain geometry; dimensions/density invalidate once.');
 
 context.DrawnVideoDecoration=class {};context.a11yRuntimeState={active:false};
+load(root+'pages/chat/DrawnVideoMeta.ets',['drawnVideoMetaCache']);
 load(compiled+'pages/chat/DrawnAlbumVideo.ts',['DrawnAlbumVideo']);
 const events=[],actions=new Proxy({}, {get:(_t,k)=>(...args)=>events.push([k,...args])});
 const cell={chatId:1,messageId:10,idx:2,width:150,height:100,isVideo:true,isLive:false,isPlaySlot:true,videoFileId:8,inlineFileId:9,videoFileSize:30,videoDuration:2};

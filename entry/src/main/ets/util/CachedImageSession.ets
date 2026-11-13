@@ -23,12 +23,15 @@ export class CachedImageSession {
   private heldKey: string = '';
   private awaiting: PixelRequest | null = null;
   private seq: number = 0;
+  private cancelDeferred: (() => void) | null = null;
+  private scheduleDecode: ((start: () => void) => (() => void)) | undefined;
   private retryTimer: number = -1;
   private retryCount: number = 0;
   private publish: (pixels: image.PixelMap | undefined, ready: boolean, width?: number, height?: number) => void;
 
-  constructor(publish: (pixels: image.PixelMap | undefined, ready: boolean, width?: number, height?: number) => void) {
-    this.publish = publish;
+  constructor(publish: (pixels: image.PixelMap | undefined, ready: boolean, width?: number, height?: number) => void,
+    scheduleDecode?: (start: () => void) => (() => void)) {
+    this.publish = publish; this.scheduleDecode = scheduleDecode;
   }
 
   // @Local is reset by V2 reuse, while held still owns a reference. Activation
@@ -58,6 +61,7 @@ export class CachedImageSession {
 
   private cancelPending(): void {
     this.seq++;
+    this.cancelDeferred?.(); this.cancelDeferred = null;
     if (this.retryTimer !== -1) {
       clearTimeout(this.retryTimer);
       this.retryTimer = -1;
@@ -158,18 +162,21 @@ export class CachedImageSession {
       this.publish(this.held.pixelMap, false, this.held.width, this.held.height);
     }
     const token = this.seq;
-    this.awaiting = req;
-    loadPixelMap(req).then((handle: PixelHandle | undefined): void => {
-      if (token !== this.seq || !this.active) {
-        return;
-      }
-      this.awaiting = null;
-      if (handle !== undefined) {
-        this.swapTo(req, handle);
-      } else {
-        this.retryFailedDecode(token, req);
-      }
-    });
+    const start = (): void => {
+      this.cancelDeferred = null;
+      if (token !== this.seq || !this.active) { return; }
+      this.awaiting = req;
+      loadPixelMap(req).then((handle: PixelHandle | undefined): void => {
+        if (token !== this.seq || !this.active) { return; }
+        this.awaiting = null;
+        if (handle !== undefined) { this.swapTo(req, handle); }
+        else { this.retryFailedDecode(token, req); }
+      });
+    };
+    // Only cache misses are staged. Cache/owned hits and source clearing above
+    // stay synchronous, so reuse never displays another message's old bitmap.
+    if (this.scheduleDecode !== undefined) { this.cancelDeferred = this.scheduleDecode(start); }
+    else { start(); }
   }
 
   private retryFailedDecode(token: number, req: PixelRequest): void {

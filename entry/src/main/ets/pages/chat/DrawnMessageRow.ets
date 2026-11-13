@@ -1,3 +1,10 @@
+import { DrawnMediaAnchorPool, DrawnCanvasAttributes } from './DrawnNativeAttributes';
+import { drawnPainterReserve } from './DrawnPainterReserve';
+import { DrawnRowLayoutEngine, takeDrawnWarmLayout } from './DrawnLayoutWarmCache';
+import { DrawnLayoutRetention, takeDrawnRecycledLayout } from './DrawnRecycledLayouts';
+import { DrawnRouteReason, DrawnRouteTracker } from '../../util/drawnRouteMetrics';
+import { DrawnInvalidation, DrawnStage, drawnStageMetrics } from '../../util/drawnStageMetrics';
+import { DrawnMediaFrame, DrawnMediaFrames } from './DrawnMediaFrames';
 import { DrawnMediaSlot, DrawnMediaSlots } from '../../util/drawnMediaSlot';
 import { DrawnInlineEmojiLayer } from './DrawnInlineEmojiLayer';
 import { DrawnBusyLink } from './DrawnBusyLink';
@@ -37,12 +44,14 @@ import { drawnChromeTextSupported, drawnTailGutter } from '../../util/drawnPlain
 import { textMeasureEnvironment } from '../../util/textMeasureCache';
 import { chatEnv } from '../../util/chatEnvMirror';
 import { a11yRuntimeState } from '../../util/a11yState';
-import { TranslationStatus } from '../../util/translationChannel';
+import { TranslationStatus, translationStatusFor } from '../../util/translationChannel';
+import { sendStateFor } from '../../util/sendStateChannel';
+import { viewCountLabelFor } from '../../util/viewCountChannel';
+import { senderRoleFor, senderRoleKey } from '../../util/senderRoleChannel';
 import { pinForTranslationGrowth } from '../../util/translationGrowthPin';
 import { senderHasAnimatedPhoto } from '../../services/PhotoAnimationFetch';
 import { animationDurationFor, scrollActiveNow, scrollPlaceholderState } from '../../util/scrollEffects';
 import { MINI_PLACEHOLDER_BLUR } from '../../util/miniThumbPlaceholder';
-import { thumbBackdropColor } from '../../util/thumbBackdrop';
 import { AlbumCornerRadiiCache } from '../../util/albumCornerRadii';
 import { ShatterDeleteOverlay } from '../common/ShatterDeleteOverlay';
 import { DrawnRowLeaveCapture } from './DrawnRowLeaveCapture';
@@ -69,12 +78,18 @@ export struct DrawnMessageRow {
   @Param nowSec: number = 0;
   @Param jumpFocus: number = 0;
   @Param leaving: number = 0;
-  @Local private sendState: string = '';
-  @Local private views: string = '';
-  @Local private role: string = '';
-  @Local private translation: TranslationStatus | null = null;
-  @Local private avatarAnimated: boolean = false;
-  @Local private imageStateRevision: number = 0;
+  // V2 resets these initializers after the current @Param values and before
+  // @Computed plan. Read fixed-count channel snapshots here so reuse does not
+  // lay out blank metadata first and repeat layout after attach(). No listeners
+  // or IO here; attach still subscribes and catches changes since this snapshot.
+  @Local private sendState: string = sendStateFor(this.group.head.rowId) || this.group.head.sendState;
+  @Local private views: string = viewCountLabelFor(this.data.chatId, this.group.head.id);
+  @Local private role: string = this.group.head.senderTag ||
+    (this.data.isGroup && !this.group.head.isOutgoing && this.group.showSenderName
+      ? senderRoleFor(senderRoleKey(this.data.chatId, this.group.head.senderId)) : '');
+  @Local private translation: TranslationStatus | null = translationStatusFor(this.group.head.id);
+  @Local private avatarAnimated: boolean = senderHasAnimatedPhoto(this.group.head.senderId, this.group.head.senderIsUser);
+  @Local private avatarStateRevision: number = 0;
   @Local private menuShown: boolean = false;
   @Local private swipeX: number = 0;
   @Local private capturedDeleteKey: string = '';
@@ -84,15 +99,18 @@ export struct DrawnMessageRow {
   private env = chatEnv;
   private a11y = a11yRuntimeState;
   private scroll = scrollPlaceholderState;
-  private albumLayouts: DrawnAlbumLayouts | null = null;
-  private singleLayouts: DrawnSingleMediaLayouts | null = null;
-  private textLayouts: DrawnTextLayouts | null = null;
-  private painter: DrawnBubblePainter = new DrawnBubblePainter();
-  private avatarPainter: DrawnBubbleAvatar = new DrawnBubbleAvatar();
-  private foreground: DrawnBubbleForeground = new DrawnBubbleForeground();
+  private albumLayouts: DrawnRowLayoutEngine | null = null;
+  private singleLayouts: DrawnRowLayoutEngine | null = null;
+  private textLayouts: DrawnRowLayoutEngine | null = null;
+  private layoutRetention: DrawnLayoutRetention = new DrawnLayoutRetention();
+  private nativeAnchors: DrawnMediaAnchorPool = new DrawnMediaAnchorPool();
+  private canvasAttributes: DrawnCanvasAttributes = new DrawnCanvasAttributes();
+  private painter: DrawnBubblePainter = drawnPainterReserve.takeBackground();
+  private avatarPainter: DrawnBubbleAvatar = drawnPainterReserve.takeAvatar();
+  private foreground: DrawnBubbleForeground = drawnPainterReserve.takeForeground();
   private media: DrawnMediaController = new DrawnMediaController(
-    (): void => { this.imageStateRevision++; }, (): void => {
-      this.avatarPainter.invalidate();
+    (): void => { this.avatarStateRevision++; }, (): void => {
+      drawnStageMetrics.invalidated(DrawnInvalidation.AvatarImage); this.avatarPainter.invalidate();
       const m = this.group.head;
       const animated = senderHasAnimatedPhoto(m.senderId, m.senderIsUser);
       if (this.avatarAnimated !== animated) { this.avatarAnimated = animated; }
@@ -118,12 +136,21 @@ export struct DrawnMessageRow {
   private touchLink: DrawnRichHit | null = null;
   private touchReaction: DrawnReactionChip | null = null;
   @Local private allowBodyDrag: boolean = true;
+  private attachedGroup: AlbumGroup | null = null;
+  private attachedData: MessageBubbleRenderData | null = null;
+  private attachedEnvironment: string = '';
   private inputIdentity: string = '';
   private touchX: number = 0;
   private touchY: number = 0;
   private touchRowId: number = 0;
   private touchChatId: number = 0;
   private failureLogged: boolean = false;
+  private routeTracker: DrawnRouteTracker | undefined = undefined;
+  private recordRoute(reason: DrawnRouteReason): void {
+    if (this.routeTracker === undefined) { this.routeTracker = new DrawnRouteTracker(); }
+    this.routeTracker.record(this.data.chatId, this.group.head.rowId, reason);
+  }
+  private rejectRoute(reason: DrawnRouteReason): null { this.recordRoute(reason); return null; }
   private keyboardContext: MessageBubbleContext | null = null;
   private keyboardState(): MessageBubbleContext {
     if (this.keyboardContext === null) { this.keyboardContext = new MessageBubbleContext(); }
@@ -138,6 +165,8 @@ export struct DrawnMessageRow {
   // This getter owns bounded, non-observed layout caches. Lazy initialization
   // avoids allocating unused text/media engines; prepare reuses body paragraphs.
   // It never publishes component state, subscribes channels or performs IO.
+  // Route telemetry is a fixed-size non-observed counter, deduplicated per owner.
+  // It counts evaluations that ENTER/change a route (including predictive reuse).
   @Computed
   private get plan(): DrawnBubblePlan | null {
     const environment = `${this.env.appearanceEpoch}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
@@ -145,58 +174,88 @@ export struct DrawnMessageRow {
     const eligible = this.kind === 'text' ? drawnTextRowEligible(this.group, this.data, this.env.bubbleMaterialOn, this.a11y.active)
       : this.kind === 'single' ? drawnSingleMediaEligible(this.group, this.env.bubbleMaterialOn, this.a11y.active)
       : drawnAlbumEligible(this.group, this.data, this.env.bubbleMaterialOn, this.a11y.active);
-    if (this.env.drawnEnabled === false) { return null; }
-    if (this.kind === 'text' ? this.env.drawnText === false : this.kind === 'single' ? this.env.drawnSingle === false : this.env.drawnAlbum === false) { return null; }
+    if (this.env.drawnEnabled === false) { return this.rejectRoute(DrawnRouteReason.Disabled); }
+    if (this.kind === 'text' ? this.env.drawnText === false : this.kind === 'single' ? this.env.drawnSingle === false : this.env.drawnAlbum === false) { return this.rejectRoute(DrawnRouteReason.Disabled); }
     // Match the former caption gate without building a paragraph just to discard
     // it. Empty media rows remain eligible when a body renderer is disabled.
     const bodyText = this.kind === 'album' ? this.group.caption : this.group.head.text;
-    if (bodyText !== '' && (this.data.lightweightPlainText ? this.env.drawnPlain === false : this.env.drawnRich === false)) { return null; }
-    if (!eligible) { return null; }
-    if (this.translation !== null) { return null; }
-    if (drawnTextUsesRtlLayout(textEnvironment)) { return null; }
+    if (bodyText !== '' && (this.data.lightweightPlainText ? this.env.drawnPlain === false : this.env.drawnRich === false)) { return this.rejectRoute(DrawnRouteReason.BodyDisabled); }
+    if (this.env.bubbleMaterialOn) { return this.rejectRoute(DrawnRouteReason.Material); }
+    if (this.a11y.active) { return this.rejectRoute(DrawnRouteReason.Accessibility); }
+    if (!eligible) { return this.rejectRoute(DrawnRouteReason.Policy); }
+    if (this.translation !== null) { return this.rejectRoute(DrawnRouteReason.Translation); }
+    if (drawnTextUsesRtlLayout(textEnvironment)) { return this.rejectRoute(DrawnRouteReason.Rtl); }
     const m = this.group.head;
-    if (!drawnChromeTextSupported(m.forwardFrom)) { return null; }
-    if (!drawnChromeTextSupported(m.senderName)) { return null; }
-    if (!drawnChromeTextSupported(m.senderTag || this.role)) { return null; }
-    if (!drawnChromeTextSupported(m.replySenderName)) { return null; }
-    if (!drawnChromeTextSupported(m.replyText)) { return null; }
+    if (!drawnChromeTextSupported(m.forwardFrom)) { return this.rejectRoute(DrawnRouteReason.Chrome); }
+    if (!drawnChromeTextSupported(m.senderName)) { return this.rejectRoute(DrawnRouteReason.Chrome); }
+    if (!drawnChromeTextSupported(m.senderTag || this.role)) { return this.rejectRoute(DrawnRouteReason.Chrome); }
+    if (!drawnChromeTextSupported(m.replySenderName)) { return this.rejectRoute(DrawnRouteReason.Chrome); }
+    if (!drawnChromeTextSupported(m.replyText)) { return this.rejectRoute(DrawnRouteReason.Chrome); }
+    const traced = drawnStageMetrics.begin(DrawnStage.Layout);
     try {
-      if (this.kind === 'text' && this.textLayouts === null) { this.textLayouts = new DrawnTextLayouts(); }
-      if (this.kind === 'album' && this.albumLayouts === null) { this.albumLayouts = new DrawnAlbumLayouts(); }
-      if (this.kind === 'single' && this.singleLayouts === null) { this.singleLayouts = new DrawnSingleMediaLayouts(); }
+      const ui = this.getUIContext();
+      if (this.kind === 'text' && this.textLayouts === null) {
+        this.textLayouts = takeDrawnRecycledLayout(this.data.chatId, m.rowId, 'text') ??
+          takeDrawnWarmLayout(this.data.chatId, m.id, 'text') ?? new DrawnTextLayouts();
+      }
+      if (this.kind === 'album' && this.albumLayouts === null) {
+        this.albumLayouts = takeDrawnRecycledLayout(this.data.chatId, m.rowId, 'album') ??
+          takeDrawnWarmLayout(this.data.chatId, m.id, 'album') ?? new DrawnAlbumLayouts();
+      }
+      if (this.kind === 'single' && this.singleLayouts === null) {
+        this.singleLayouts = takeDrawnRecycledLayout(this.data.chatId, m.rowId, 'single') ??
+          takeDrawnWarmLayout(this.data.chatId, m.id, 'single') ?? new DrawnSingleMediaLayouts();
+      }
       const layouts = this.kind === 'text' ? this.textLayouts : this.kind === 'single' ? this.singleLayouts : this.albumLayouts;
-      const p = layouts?.prepare(this.getUIContext(), this.group, this.data, {
+      if (layouts !== null) { this.layoutRetention.remember(this.group, this.data, this.kind, layouts); }
+      const p = layouts?.prepare(ui, this.group, this.data, {
         radius: this.env.bubbleRadius, fontSize: this.env.msgTextSize, environment, textEnvironment,
         role: m.senderTag || this.role, views: this.views
       }) ?? null;
+      this.recordRoute(p === null ? DrawnRouteReason.LayoutNull : DrawnRouteReason.Drawn);
       return p;
     } catch (error) {
       if (!this.failureLogged) {
         this.failureLogged = true;
         logW(`DrawnMessageRow: layout unavailable, using legacy: ${(error as Error)?.message ?? String(error)}`);
       }
-      return null;
-    }
+      return this.rejectRoute(DrawnRouteReason.Exception);
+    } finally { drawnStageMetrics.end(traced); }
   }
 
   private attach(): void {
     if (!this.active) { return; }
-    const m = this.group.head;
-    const identity = `${this.data.chatId}:${m.rowId}`;
-    if (identity !== this.inputIdentity) {
-      this.inputIdentity = identity; this.touchPlan = null; this.touchReaction = null; this.touchLink = null;
-      this.touchRowId = 0; this.touchChatId = 0; this.foreground.press(null);
+    this.syncMediaVisibility();
+    const environment = this.roleEnvironment;
+    if (this.attachedGroup === this.group && this.attachedData === this.data &&
+      this.attachedEnvironment === environment) {
+      drawnStageMetrics.skip(DrawnStage.Attach); return;
     }
-    // The same sender can gain/lose an animated photo; identity-only memoization
-    // would miss store updates. This is one O(1) lookup, with no network request.
-    this.avatarAnimated = senderHasAnimatedPhoto(m.senderId, m.senderIsUser);
-    this.channels.attach(this.data.chatId, m, this.data.isGroup && !m.isOutgoing && this.group.showSenderName);
+    // A failed A → B bind must not leave an A cache hit over partial B state.
+    this.attachedGroup = null; this.attachedData = null;
+    const traced = drawnStageMetrics.begin(DrawnStage.Attach);
+    try {
+      const m = this.group.head;
+      const identity = `${this.data.chatId}:${m.rowId}`;
+      if (identity !== this.inputIdentity) {
+        this.inputIdentity = identity; this.touchPlan = null; this.touchReaction = null; this.touchLink = null;
+        this.touchRowId = 0; this.touchChatId = 0; this.foreground.press(null);
+      }
+      // The same sender can gain/lose an animated photo; identity-only memoization
+      // would miss store updates. This is one O(1) lookup, with no network request.
+      this.avatarAnimated = senderHasAnimatedPhoto(m.senderId, m.senderIsUser);
+      this.channels.attach(this.data.chatId, m, this.data.isGroup && !m.isOutgoing && this.group.showSenderName);
+      // Commit only after successful attachment. Channels deliver later status,
+      // translation and avatar changes independently of these input snapshots.
+      this.attachedGroup = this.group; this.attachedData = this.data;
+      this.attachedEnvironment = environment;
+    } finally { drawnStageMetrics.end(traced); }
   }
   private syncMedia(): void {
     if (!this.active) { return; }
     const p = this.plan;
     if (p === null) { this.media.recycle(); }
-    else { this.media.prepare(this.getUIContext(), p, this.group); }
+    else { this.media.prepare(this.getUIContext(), p, this.group, this.kind === 'album'); }
   }
   @Computed
   private get roleEnvironment(): string { return `${this.env.langEpoch}:${this.env.bubbleMaterialOn}`; }
@@ -223,6 +282,11 @@ export struct DrawnMessageRow {
   private layoutChanged(): void { this.syncMedia(); this.syncDeleteCapture(); }
   aboutToAppear(): void { this.active = true; this.attach(); this.syncMedia(); this.syncDeleteCapture(); }
   aboutToRecycle(): void {
+    this.layoutRetention.release();
+    this.textLayouts = null; this.albumLayouts = null; this.singleLayouts = null;
+    this.mediaVisibilityEpoch++; this.mediaVisibilityKey = '';
+    this.routeTracker?.reset();
+    this.attachedGroup = null; this.attachedData = null; this.attachedEnvironment = '';
     this.inputIdentity = '';
     this.leaveCapture.reset();
     this.allowBodyDrag = true;
@@ -263,7 +327,7 @@ export struct DrawnMessageRow {
       if (albumRectContains(tile, event.x, event.y)) {
         if (this.data.selectionActive) { this.actions.onToggleSelectedMessage(tile.cell.messageId); }
         else if (tile.cell.failed && (this.kind === 'single' ? m.photoPath === ''
-          : this.imageSlot(tile.cell.idx, this.imageStateRevision)?.path === '') && tile.cell.thumbFileId !== 0) {
+          : this.imageSlot(tile.cell.idx)?.path === '') && tile.cell.thumbFileId !== 0) {
           this.actions.onSpecialPhotoRetry(tile.cell.messageId);
         } else if (this.kind === 'single' && m.isAnimation) {
           if (drawnAnimationPlaying(m, this.data, this.env, true)) { this.openMenu(event.x); }
@@ -429,12 +493,49 @@ export struct DrawnMessageRow {
     return this.gridCorners.prepare(pure, this.env.bubbleRadius, m.isOutgoing, this.group.showSenderName, this.group.showAvatar);
   }
 
-  // Reading the revision at the call site subscribes that UI expression only.
-  // Bitmap-only updates bypass it; these O(1) reads cover native fallback/mini/progress.
-  private imageSlot(index: number, _revision: number): DrawnImageSlot | undefined { return this.media.slots[index]; }
+  // Track only this physical slot. Ordinary bitmap upgrades invalidate its
+  // modifier directly; placeholder/fallback changes publish this slot's revision.
+  private imageSlot(index: number): DrawnImageSlot | undefined {
+    const slot = this.media.slots[index];
+    return this.readImageSlot(slot, slot?.state.revision ?? 0);
+  }
+  private readImageSlot(slot: DrawnImageSlot | undefined, _revision: number): DrawnImageSlot | undefined { return slot; }
+  private mediaActivated(index: number): boolean {
+    return this.kind !== 'album' || this.imageSlot(index)?.activated === true;
+  }
+  private mediaVisibilityEpoch: number = 0;
+  private mediaVisibilityKey: string = '';
+  private syncMediaVisibility(): number {
+    const key = `${this.data.chatId}:${this.group.head.rowId}`;
+    if (key !== this.mediaVisibilityKey) { this.mediaVisibilityKey = key; this.mediaVisibilityEpoch++; }
+    return this.mediaVisibilityEpoch;
+  }
+  private mediaVisibility(): (visible: boolean, ratio: number) => void {
+    const generation = this.syncMediaVisibility();
+    const chatId = this.data.chatId, rowId = this.group.head.rowId;
+    return (_visible: boolean, ratio: number): void => {
+      if (this.active && generation === this.mediaVisibilityEpoch && this.data.chatId === chatId && this.group.head.rowId === rowId) {
+        this.media.setVisible(ratio > 0);
+      }
+    };
+  }
+  private mediaOverlay(index: number): boolean {
+    const slot = this.imageSlot(index);
+    // ForEach owns tile existence. A queued old callback can still run after
+    // shrink/fallback, even while the controller holds its old image slots.
+    return this.nativeTiles[index] !== undefined && slot !== undefined &&
+      (this.mediaActivated(index) || (slot.pixels !== undefined && !slot.receiver.canDraw(slot.pixels, ImageFit.Cover))) &&
+      (this.sendState === 'sending' || slot.path === '' || slot.pixels === undefined ||
+        !slot.receiver.canDraw(slot.pixels, ImageFit.Cover));
+  }
   private nativeAvatar(_revision: number): boolean {
     return this.media.avatarPixels !== undefined && !this.media.avatar.canDraw(this.media.avatarPixels, ImageFit.Cover);
   }
+
+  // The plan may retain identity for same-size footer edits. Keep paint content
+  // as a separate dependency, so only the foreground observer is replayed.
+  @Computed
+  private get footerPaintKey(): string { return `${this.views}:${this.group.head.date}:${this.group.head.editDate}`; }
 
   // Computed publishes only when the grid snapshot changes. Footer, caption
   // placement and shell style can invalidate plan without touching tile nodes.
@@ -442,6 +543,11 @@ export struct DrawnMessageRow {
   private get nativeTiles(): DrawnBubbleTile[] { return this.plan?.nativeTiles ?? EMPTY_DRAWN_NATIVE_TILES; }
   @Computed
   private get mediaChatId(): number { return this.data.chatId; }
+  private mediaFrameCache: DrawnMediaFrames = new DrawnMediaFrames();
+  @Computed
+  private get mediaFrames(): DrawnMediaFrame[] {
+    return this.mediaFrameCache.prepare(this.nativeTiles, this.mediaChatId, this.kind === 'single');
+  }
   private mediaSlotCache: DrawnMediaSlots = new DrawnMediaSlots();
   @Computed
   private get mediaSlots(): DrawnMediaSlot[] { return this.mediaSlotCache.prepare(this.nativeTiles.length); }
@@ -450,21 +556,22 @@ export struct DrawnMessageRow {
   // including when an old callback runs after a shrink, rotation or fallback.
   @Builder
   mediaTile(slot: DrawnMediaSlot) {
-    if (this.nativeTiles[slot.index] !== undefined) {
-      Stack() {
-        if (this.imageSlot(slot.index, this.imageStateRevision)?.pixels !== undefined &&
-          !this.imageSlot(slot.index, this.imageStateRevision)?.receiver.canDraw(this.imageSlot(slot.index, this.imageStateRevision)?.pixels, ImageFit.Cover)) {
-          Image(this.imageSlot(slot.index, this.imageStateRevision)?.pixels).width((this.nativeTiles[slot.index]?.width ?? 0)).height((this.nativeTiles[slot.index]?.height ?? 0))
+    Stack() {
+      // Ready static images have no placeholder/progress subtree. Pending
+      // images still allow a mini/native fallback and progress at the same time.
+      if (this.mediaOverlay(slot.index)) {
+        if (this.imageSlot(slot.index)?.pixels !== undefined &&
+          !this.imageSlot(slot.index)?.receiver.canDraw(this.imageSlot(slot.index)?.pixels, ImageFit.Cover)) {
+          Image(this.imageSlot(slot.index)?.pixels).width((this.nativeTiles[slot.index]?.width ?? 0)).height((this.nativeTiles[slot.index]?.height ?? 0))
             .draggable(false).objectFit(ImageFit.Cover);
-        }
-        if (this.imageSlot(slot.index, this.imageStateRevision)?.showMini(this.scroll.active)) {
-          Image(this.imageSlot(slot.index, this.imageStateRevision)?.mini ?? '').width((this.nativeTiles[slot.index]?.width ?? 0)).height((this.nativeTiles[slot.index]?.height ?? 0))
+        } else if (this.imageSlot(slot.index)?.showMini(this.scroll.active)) {
+          Image(this.imageSlot(slot.index)?.mini ?? '').width((this.nativeTiles[slot.index]?.width ?? 0)).height((this.nativeTiles[slot.index]?.height ?? 0))
             .draggable(false).objectFit(ImageFit.Cover).blur(MINI_PLACEHOLDER_BLUR);
         }
         if (this.sendState === 'sending') {
           LiveProgressRing({ fileId: (this.nativeTiles[slot.index]?.cell.isVideo ?? false) ? this.kind === 'single' ? this.group.head.videoFileId : (this.nativeTiles[slot.index]?.cell.videoFileId ?? 0)
             : (this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0), initialPercent: 0, ringSize: Math.min(44, Math.min((this.nativeTiles[slot.index]?.width ?? 0), (this.nativeTiles[slot.index]?.height ?? 0)) * .3) });
-        } else if (this.imageSlot(slot.index, this.imageStateRevision)?.path === '') {
+        } else if (this.imageSlot(slot.index)?.path === '') {
           if (!(this.nativeTiles[slot.index]?.cell.isVideo ?? false) && ((this.nativeTiles[slot.index]?.cell.failed ?? false) || (this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0) === 0)) {
             Column({ space: 3 }) {
               SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(17).fontColor([Color.White]);
@@ -475,24 +582,21 @@ export struct DrawnMessageRow {
               ringSize: Math.min(34, Math.min((this.nativeTiles[slot.index]?.width ?? 0), (this.nativeTiles[slot.index]?.height ?? 0)) * .4) });
           }
         }
-        if (this.kind === 'single' && (this.nativeTiles[slot.index]?.cell.isVideo ?? false)) {
-          DrawnSingleMediaVideo({ msg: this.group.head, data: this.data, actions: this.actions,
-            slot: this.media.slots[0], sendState: this.sendState, mediaWidth: (this.nativeTiles[slot.index]?.width ?? 0), mediaHeight: (this.nativeTiles[slot.index]?.height ?? 0),
-            thumbReady: ((this.imageSlot(0, this.imageStateRevision)?.path ?? '') !== '' ||
-              (this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0) === 0 || (this.nativeTiles[slot.index]?.cell.failed ?? false)) });
-        } else if ((this.nativeTiles[slot.index]?.cell.isVideo ?? false) || (this.nativeTiles[slot.index]?.cell.isLive ?? false)) {
-          DrawnAlbumVideo({ cell: this.nativeTiles[slot.index]?.cell, actions: this.actions, sendState: this.sendState,
-            thumbReady: ((this.imageSlot(slot.index, this.imageStateRevision)?.path ?? '') !== '' ||
-              (this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0) === 0 || (this.nativeTiles[slot.index]?.cell.failed ?? false)) });
-        }
       }
-      .width((this.nativeTiles[slot.index]?.width ?? 0)).height((this.nativeTiles[slot.index]?.height ?? 0))
-      .position({ x: (this.nativeTiles[slot.index]?.x ?? 0), y: (this.nativeTiles[slot.index]?.y ?? 0) })
-      .backgroundColor(thumbBackdropColor((this.nativeTiles[slot.index]?.cell.isVideo ?? false))).borderRadius(this.kind === 'single' ? 0 : 6).clip(true)
-      .drawModifier(this.imageSlot(slot.index, this.imageStateRevision)?.receiver)
-      .geometryTransition((this.nativeTiles[slot.index]?.cell.isVideo ?? false) && this.kind !== 'single' ? '' : `media_${this.mediaChatId}_${(this.nativeTiles[slot.index]?.cell.messageId ?? 0)}`)
-      .hitTestBehavior(HitTestMode.None);
+      if (this.kind === 'single' && (this.nativeTiles[slot.index]?.cell.isVideo ?? false)) {
+        DrawnSingleMediaVideo({ msg: this.group.head, data: this.data, actions: this.actions,
+          slot: this.media.slots[0], sendState: this.sendState, mediaWidth: (this.nativeTiles[slot.index]?.width ?? 0), mediaHeight: (this.nativeTiles[slot.index]?.height ?? 0),
+          thumbReady: ((this.imageSlot(0)?.path ?? '') !== '' ||
+            (this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0) === 0 || (this.nativeTiles[slot.index]?.cell.failed ?? false)) });
+      } else if (((this.nativeTiles[slot.index]?.cell.isVideo ?? false) || (this.nativeTiles[slot.index]?.cell.isLive ?? false)) && this.mediaActivated(slot.index)) {
+        DrawnAlbumVideo({ cell: this.media.slots[slot.index]?.content.cell, actions: this.actions, sendState: this.sendState,
+          mediaWidth: this.nativeTiles[slot.index]?.width ?? 0, mediaHeight: this.nativeTiles[slot.index]?.height ?? 0,
+          thumbReady: ((this.imageSlot(slot.index)?.path ?? '') !== '' ||
+            (this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0) === 0 || (this.nativeTiles[slot.index]?.cell.failed ?? false)) });
+      }
     }
+    .attributeModifier(this.nativeAnchors.bind(slot.index, this.mediaFrames[slot.index]))
+    .drawModifier(this.media.slots[slot.index]?.receiver);
   }
 
   @Builder
@@ -512,7 +616,7 @@ export struct DrawnMessageRow {
           .position({ x: this.plan?.captionX ?? 0, y: this.plan?.captionY ?? 0 });
       }
       Row().width(this.plan?.width ?? 0).height(this.plan?.height ?? 0)
-        .drawModifier(this.foreground.bind(this.plan, this.sendState))
+        .drawModifier(this.foreground.bind(this.plan, this.sendState, this.footerPaintKey))
         .hitTestBehavior(HitTestMode.None);
       if ((this.plan?.caption?.emojis.length ?? 0) > 0) {
         DrawnInlineEmojiLayer({ plan: this.plan?.caption ?? null, msg: this.group.captionMessage ?? this.group.head })
@@ -524,14 +628,13 @@ export struct DrawnMessageRow {
           themeBubbleOut: this.data.themeBubbleOut });
       }
     }
-    .width(this.plan?.width ?? 0).height(this.plan?.height ?? 0)
+    .attributeModifier(this.canvasAttributes.bind(this.plan?.width ?? 0, this.plan?.height ?? 0,
+      1 + this.jumpFocus * JUMP_FOCUS_SCALE,
+      this.group.head.isOutgoing ? '100%' : (this.plan?.bubbleX ?? 0),
+      1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS, this.canDragMessage() && this.allowBodyDrag))
     .drawModifier(this.painter.bind(this.plan, !this.env.scrollActive))
-    .scale({ x: 1 + this.jumpFocus * JUMP_FOCUS_SCALE, y: 1 + this.jumpFocus * JUMP_FOCUS_SCALE,
-      centerX: this.group.head.isOutgoing ? '100%' : (this.plan?.bubbleX ?? 0), centerY: '50%' })
-    .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
     .onTouch((e: TouchEvent): void => { this.touch(e); })
     .onClick((e: ClickEvent): void => { this.click(e); })
-    .draggable(this.canDragMessage() && this.allowBodyDrag)
     .onDragStart((event: DragEvent): DragItemInfo => {
       // Reaction holds are handled before the system's 500ms drag recognizer.
       // Never export the message when the initial target was a reaction chip.
@@ -602,7 +705,7 @@ export struct DrawnMessageRow {
               Row().width(this.plan?.width ?? 0).height(this.plan?.height ?? 0)
                 .drawModifier(this.avatarPainter.bind(this.plan, this.media)).hitTestBehavior(HitTestMode.None);
             }
-            if ((this.plan?.avatar.width ?? 0) > 0 && this.nativeAvatar(this.imageStateRevision)) {
+            if ((this.plan?.avatar.width ?? 0) > 0 && this.nativeAvatar(this.avatarStateRevision)) {
               Image(this.media.avatarPixels).width(38).height(38).borderRadius(19).clip(true)
                 .position({ x: this.plan?.avatar.x ?? 0, y: this.plan?.avatar.y ?? 0 })
                 .draggable(false).objectFit(ImageFit.Cover).hitTestBehavior(HitTestMode.None);
@@ -635,7 +738,10 @@ export struct DrawnMessageRow {
               this.keyboardGutter()),
             drawnRight: 4 + (this.group.head.isOutgoing ? this.keyboardGutter() : 0) });
         }
-      }.width('100%').transition(this.data.animateIn
+      }.width('100%')
+        .onVisibleAreaApproximateChange({ ratios: [0], expectedUpdateInterval: 16 },
+          this.kind === 'album' ? this.mediaVisibility() : undefined)
+        .transition(this.data.animateIn
         ? TransitionEffect.translate({ y: 16 }).combine(TransitionEffect.OPACITY)
           .animation({ duration: animationDurationFor(this.env.chatEffects && this.env.messageEffects &&
             !this.env.powerSaving, scrollActiveNow(), 220), curve: Curve.FastOutSlowIn })

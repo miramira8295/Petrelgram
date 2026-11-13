@@ -22,6 +22,7 @@
 
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { getTdClient } from '../tdkit/Globals';
+import { TdClient } from '../tdkit/TdClient';
 import { logW } from './log';
 
 // 首屏两种落点的请求几何。**MessageStore 与预取共用这一份**——抄第二份必然漂。
@@ -117,6 +118,8 @@ export function canPrefetchChat(
 }
 
 interface PendingPrefetch {
+  owner: TdClient;
+  stopGuard?: () => void;
   promise: Promise<TdObject>;
   at: number;
   route: InitialPageRoute;
@@ -130,13 +133,16 @@ const pending: Map<number, PendingPrefetch> = new Map();
 
 // 发起预取。已经有在途的同会话请求就不重发。
 export function prefetchInitialPage(
-  chatId: number, unreadCount: number, lastReadInboxId: number
-): void {
-  const existing: PendingPrefetch | undefined = pending.get(chatId);
-  if (existing !== undefined && Date.now() - existing.at < PREFETCH_TTL_MS) {
-    return;
-  }
+  chatId: number, unreadCount: number, lastReadInboxId: number, speculative: boolean = false
+): Promise<TdObject> {
+  const owner = getTdClient();
   const route: InitialPageRoute = initialPageRoute(unreadCount, lastReadInboxId);
+  const existing: PendingPrefetch | undefined = pending.get(chatId);
+  if (existing !== undefined && existing.owner === owner && sameRoute(existing.route, route) &&
+    Date.now() - existing.at < PREFETCH_TTL_MS) {
+    return existing.promise;
+  }
+  if (existing !== undefined) { existing.stopGuard?.(); pending.delete(chatId); }
   const req: TdRequest = { '@type': 'getChatHistory' };
   req['chat_id'] = chatId;
   req['from_message_id'] = route.fromMessageId;
@@ -151,13 +157,45 @@ export function prefetchInitialPage(
   req['only_local'] = true;
   // **失败也要留在表里**：store 取走时会看到一个 rejected 的 Promise，它自己
   // catch 之后照原路重发。这里不 catch 掉，否则会变成一个永远 pending 的洞。
-  const promise: Promise<TdObject> = getTdClient().send(req);
+  const promise: Promise<TdObject> = owner.send(req);
   // 未被取走的 rejection 会冒到全局，这里挂一个空收尾；store 那边是另一条
   // then 链，不受影响。
   promise.catch((e: TdError): void => {
     logW(`chatPrefetch ${chatId} failed (store will retry): ${e.message}`);
   });
-  pending.set(chatId, { promise: promise, at: Date.now(), route: route });
+  const item: PendingPrefetch = { owner, promise: promise, at: Date.now(), route: route };
+  pending.set(chatId, item);
+  if (speculative) { item.stopGuard = guardSpeculativePage(owner, chatId, promise); }
+  return promise;
+}
+
+// Home has a much longer snapshot-to-open gap than a click. Invalidate on any
+// relevant chat update; file updates conservatively invalidate too, otherwise
+// completed downloads could be seeded as stale/incomplete files. Fixed listener
+// count, O(1) per update. Only speculative requests install these observers.
+function guardSpeculativePage(owner: TdClient, chatId: number, promise: Promise<TdObject>): () => void {
+  const kinds = ['updateNewMessage', 'updateMessageContent', 'updateMessageEdited',
+    'updateDeleteMessages', 'updateMessageInteractionInfo', 'updateMessageIsPinned',
+    'updateMessageUnreadReactions', 'updateChatReadInbox', 'updateChatReadOutbox',
+    'updateChatLastMessage', 'updateMessageSendSucceeded', 'updateMessageSendFailed', 'updateFile'];
+  const stops: Array<() => void> = [];
+  for (const kind of kinds) {
+    stops.push(owner.onUpdate(kind, (update: TdObject): void => {
+      const msg = update['message'] as TdObject | undefined;
+      if (kind === 'updateFile' || update['chat_id'] === chatId || msg?.['chat_id'] === chatId) {
+        expirePrefetchedPage(chatId, promise);
+      }
+    }));
+  }
+  const timer = setTimeout((): void => { expirePrefetchedPage(chatId, promise); }, PREFETCH_TTL_MS);
+  return (): void => { clearTimeout(timer); for (const stop of stops) { stop(); } };
+}
+
+// Home speculation may never be consumed. Expire only its exact request;
+// never delete a newer navigation request or cancel another consumer's IO.
+export function expirePrefetchedPage(chatId: number, promise: Promise<TdObject>): void {
+  const item = pending.get(chatId);
+  if (item?.promise === promise) { pending.delete(chatId); item.stopGuard?.(); }
 }
 
 // 取走（一次性）。路由不一致或已过期一律返回 null。
@@ -169,7 +207,8 @@ export function takePrefetchedPage(
     return null;
   }
   pending.delete(chatId);
-  if (Date.now() - hit.at >= PREFETCH_TTL_MS || !sameRoute(hit.route, route)) {
+  hit.stopGuard?.();
+  if (hit.owner !== getTdClient() || Date.now() - hit.at >= PREFETCH_TTL_MS || !sameRoute(hit.route, route)) {
     return null;
   }
   return hit.promise;
@@ -179,10 +218,11 @@ export function takePrefetchedPage(
 // **只看在不在、不看路由**：围栏是个观感兜底，路由对不上时最坏是白撤一次围栏。
 export function hasPrefetchedPage(chatId: number): boolean {
   const hit: PendingPrefetch | undefined = pending.get(chatId);
-  return hit !== undefined && Date.now() - hit.at < PREFETCH_TTL_MS;
+  return hit !== undefined && hit.owner === getTdClient() && Date.now() - hit.at < PREFETCH_TTL_MS;
 }
 
 // 仅供单测。
 export function resetPrefetchForTest(): void {
+  for (const item of pending.values()) { item.stopGuard?.(); }
   pending.clear();
 }

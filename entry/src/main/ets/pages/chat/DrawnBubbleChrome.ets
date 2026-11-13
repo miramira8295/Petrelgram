@@ -1,3 +1,4 @@
+import { DrawnTextUnits } from '../../util/drawnTextUnits';
 import { UIContext } from '@kit.ArkUI';
 import { MessageEntry, ReactionInfo } from '../../store/MessageEntry';
 import { DrawnAlbumRect } from '../../util/drawnAlbumPolicy';
@@ -30,6 +31,7 @@ export class DrawnBubbleChrome {
 // Shared by text and albums. Incoming message snapshots may change for unrelated
 // reasons; fixed fields + reaction array identity keep a warm hit O(1).
 export class DrawnChromeLayouts {
+  private units: DrawnTextUnits = new DrawnTextUnits();
   private forward: DrawnTextLineCache | null = null;
   private comments: DrawnTextLineCache | null = null;
   private reactions: DrawnReactionLayouts | null = null;
@@ -49,20 +51,21 @@ export class DrawnChromeLayouts {
       }
       return EMPTY_DRAWN_CHROME;
     }
-    const d = ui.vp2px(1);
+    this.units.prepare(ui, environment);
+    const d = this.units.density;
     const avatars = commentCount > 0 ? Math.min(3, msg.commentReplierIds.length) : 0;
-    const key = `${d}:${ui.fp2px(13)}:${maxWidth}:${environment}:${isChannel}:` +
+    const key = `${d}:${this.units.fp2px(13)}:${maxWidth}:${environment}:${isChannel}:` +
       `${msg.forwardFrom}:${commentCount}:${avatars}`;
     if (this.previous !== null && this.key === key && this.reactionSource === msg.reactions) { return this.previous; }
     const p = new DrawnChromeContent();
     if (msg.forwardFrom !== '' && this.forward === null) { this.forward = new DrawnTextLineCache(); }
     if (commentCount > 0 && this.comments === null) { this.comments = new DrawnTextLineCache(); }
     p.forward = msg.forwardFrom !== '' && this.forward !== null ? this.forward.prepare(str('mb_forwarded_from', msg.forwardFrom),
-      maxWidth * d, ui.fp2px(13), drawnColor(COLOR_PRIMARY), environment, true) : null;
+      maxWidth * d, this.units.fp2px(13), drawnColor(COLOR_PRIMARY), environment, true) : null;
     p.avatarCount = avatars;
     const avatarWidth = avatars > 0 ? 22 + (avatars - 1) * 14 + 6 : 0;
     p.comments = commentCount > 0 && this.comments !== null ? this.comments.prepare(plural('mb_comments_n', commentCount, commentCount),
-      Math.max(1, (maxWidth - avatarWidth - 19) * d), ui.fp2px(13), drawnColor(COLOR_PRIMARY), environment, true) : null;
+      Math.max(1, (maxWidth - avatarWidth - 19) * d), this.units.fp2px(13), drawnColor(COLOR_PRIMARY), environment, true) : null;
     if (msg.reactions.length > 0 && this.reactions === null) { this.reactions = new DrawnReactionLayouts(); }
     if (msg.reactions.length === 0) { this.reactions = null; }
     const reactionWidth = this.reactions !== null ? this.reactions.measure(ui, msg.reactions, maxWidth, !isChannel, environment) : 0;

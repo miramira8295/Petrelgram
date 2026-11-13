@@ -43,7 +43,7 @@ function context() {
 function cacheSetup(source = read(cacheFile)) {
   const host = context();
   const slot = read('entry/src/main/ets/pages/chat/playSlot.ets').match(/export function slotKey\([\s\S]*?\n}/)[0];
-  vm.runInContext(compile(read('entry/src/main/ets/util/packAlbumRows.ets') + '\n' + slot + '\n' + source) +
+  vm.runInContext(compile(read('entry/src/main/ets/util/packAlbumRows.ets') + '\n' + read('entry/src/main/ets/util/albumGeometryCache.ets') + '\n' + slot + '\n' + source) +
     '\nglobalThis.cache = new AlbumCellRenderCache();', host.ctx);
   return { ...host, cache: host.ctx.cache };
 }
