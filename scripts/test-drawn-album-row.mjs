@@ -20,7 +20,7 @@ const ctx = vm.createContext({
   }},
   DrawnSenderHeaderCache: class { prepare(){return {heightPx:32};} },
   DrawnReplyQuoteCache: class { prepare(){return {heightPx:76};} },
-  DrawnRichSourceCache: class {prepare(s){return s === 'unsupported' ? null : {text:s};}},
+  DrawnRichSourceCache: class {reason='';prepare(s){this.reason=s==='unsupported'?'inline-code':'';return s === 'unsupported' ? null : {text:s};}},
   DrawnRichTextLayouts: class {prepare(_ui, args){return {heightVp:44,widthVp:100,paragraph:{getLineCount:()=>2,getLineMetrics:()=>({left:0,width:100,baseline:60,ascent:30})}, ...args};}},
   getUserStore: () => ({accentColorId:()=>-1}), getAccentColorStore: () => ({}),
   AVATAR_PALETTE: ['red','blue'], COLOR_PRIMARY: 'blue', COLOR_TEXT_SECONDARY: 'gray',
@@ -94,6 +94,7 @@ for(const field of ['inlineButtons','replyDiceLayers']) {g=group();g.head[field]
 for(const field of ['photoIsVideo','photoIsLive']) {g=group();g[field][3]=true;assert.equal(ctx.drawnAlbumEligible(g,data,false,false),true,field);}
 assert.equal(ctx.drawnAlbumEligible(group(),data,true,false),false);assert.equal(ctx.drawnAlbumEligible(group(),data,false,true),false);
 g=group();g.caption='unsupported';assert.equal(layouts.prepare(ui,g,data,style),null);
+assert.equal(layouts.failureReason,ctx.DrawnRouteReason.InlineCode);
 // Replay actual compiled interaction handlers using an immutable plan.
 const row=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()}), events=[];
 row.dragGesture=new ctx.MessageDragGesture();row.kind='album';row.group=group();row.data={...data,canReply:true};row.env={gestureScheme:0,screenWidthVp:400,powerSaving:false,reduceAnim:false};

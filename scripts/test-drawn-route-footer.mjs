@@ -12,7 +12,7 @@ assert.match(metrics.summary(),/policy=2\b/);assert.match(metrics.summary(),/mat
 tracker.record(2,10,R.Policy);tracker.reset();tracker.record(2,10,R.Policy);
 assert.match(metrics.summary(),/policy=4\b/);metrics.reset();tracker.record(2,10,R.Policy);
 assert.match(metrics.summary(),/policy=1\b/,'clear epoch allows next observed route to be counted');
-assert.equal(metrics.counts.length,11);assert.equal(Object.keys(tracker).length,4);
+assert.equal(metrics.counts.length,36);assert.equal(Object.keys(tracker).length,4);
 const trace=[];ctx.hiTraceMeter={HiTraceOutputLevel:{COMMERCIAL:3},startSyncTrace:(_level,name)=>trace.push(name),finishSyncTrace:()=>trace.push('end')};
 ctx.drawnStageMetrics.setEnabled(true);metrics.reset();
 for(let i=0;i<1000;i++)tracker.record(1,10,R.Policy);
@@ -29,7 +29,7 @@ for(const [name,change]of [
  ['disabled',r=>r.env.drawnEnabled=false],['body-disabled',r=>r.env.drawnPlain=false],
  ['material',r=>r.env.bubbleMaterialOn=true],['a11y',r=>r.a11y.active=true],
  ['policy',r=>r.group.head.linkUrl='preview'],['translation',r=>r.translation={phase:'loading'}],
- ['chrome',r=>r.group.head.senderName='name\trole'],['layout-null',r=>r.textLayouts.prepare=()=>null],
+ ['chrome-sender',r=>{r.data.isGroup=true;r.group.head.senderName='name\trole';}],['layout-null',r=>r.textLayouts.prepare=()=>null],
  ['exception',r=>r.textLayouts.prepare=()=>{throw Error('injected');}]]){
  const row=makeRow();change(row);metrics.reset();assert.equal(row.plan,null,name);
  for(let i=0;i<1000;i++)assert.equal(row.plan,null);
@@ -40,7 +40,7 @@ const row=makeRow();metrics.reset();assert.ok(row.plan);assert.match(metrics.sum
 vm.runInContext('globalThis.savedRtl=drawnTextUsesRtlLayout; drawnTextUsesRtlLayout=()=>true;',ctx);
 metrics.reset();assert.equal(row.plan,null);assert.match(metrics.summary(),/rtl=1\b/);
 vm.runInContext('drawnTextUsesRtlLayout=savedRtl;',ctx);
-console.log('PASS: fixed 11 counters, 10000 repeated gates deduplicated, identity/recycle/clear epochs, compiled disabled/material/a11y/policy/body/translation/rtl/chrome/layout-null/exception/success reasons.');
+console.log('PASS: fixed 36 counters, 10000 repeated gates deduplicated, identity/recycle/clear epochs, compiled disabled/material/a11y/policy/body/translation/rtl/chrome/layout-null/exception/success reasons.');
 
 for(const f of ['packAlbumRows','albumGeometryCache','albumCellRenderData'])load(root+'util/'+f+'.ets');
 for(const f of ['DrawnAlbumGridLayout','DrawnSingleMediaGeometry','DrawnMediaLayout'])load(root+'pages/chat/'+f+'.ets',f==='DrawnMediaLayout'?['DrawnMediaLayouts']:[]);
@@ -87,3 +87,76 @@ const fg=new ctx.DrawnBubbleForeground(),plan={density:2,statusSize:12};fg.bind(
 for(let i=0;i<1000;i++)fg.bind(plan,'sent','11:1:0');assert.equal(invalidations,first);
 fg.bind(plan,'sent','22:1:0');assert.equal(invalidations,first+1);
 console.log('PASS: text/single/album 1000 equal-size footer changes retain plan/body/grid/outline; larger footers change geometry; failed A-B-A cannot corrupt A; separate paint key invalidates only on content change.');
+
+// Hidden metadata must never force a row off the renderer. Toggle each actual
+// layout predicate on the SAME compiled row, exercising live/reused inputs.
+for(const [field,reason,show] of [
+ ['senderName',R.ChromeSender,r=>{r.data={...r.data,isGroup:true};}],
+ ['senderTag',R.ChromeRole,r=>{r.data={...r.data,isGroup:true};r.group={...r.group,head:{...r.group.head,senderName:'shown'}};}],
+ ['replySenderName',R.ChromeReplySender,r=>{r.group={...r.group,head:{...r.group.head,replyToMessageId:8}};}],
+ ['replyText',R.ChromeReplyText,r=>{r.group={...r.group,head:{...r.group.head,replyToMessageId:8}};}]
+]) {
+ const r=makeRow();r.group.head[field]='hidden\tmetadata';
+ let prepared=0;r.textLayouts={failureReason:R.Drawn,prepare:()=>{prepared++;return {};}};
+ assert.ok(r.plan,field+' hidden');show(r);metrics.reset();
+ assert.equal(r.plan,null,field+' shown');assert.equal(r.routeTracker.reason,reason);assert.equal(prepared,1);
+ // A -> hidden -> A must not retain the previous rejection.
+ r.data={...r.data,isGroup:false};r.group={...r.group,head:{...r.group.head,replyToMessageId:0}};
+ assert.ok(r.plan);assert.equal(r.routeTracker.reason,R.Drawn);
+}
+for(const hide of [r=>r.group.showSenderName=false,r=>r.group.head.isOutgoing=true,r=>r.group.head.senderName='']){
+ const r=makeRow();r.data.isGroup=true;r.group.head.senderName='name\t';r.group.head.senderTag='role\t';hide(r);
+ assert.ok(r.plan,'hidden header branch');
+}
+const forward=makeRow();forward.group.head.forwardFrom='source\t';assert.equal(forward.plan,null);
+assert.equal(forward.routeTracker.reason,R.ChromeForward);
+
+// Real parser -> source negative cache -> layout result -> compiled row route.
+// One parse at most per rejected source, no parse on 1000 diagnostic reads.
+for(const kind of ['text','single','album']) {
+ for(const [body,entities,reason,label] of [
+  ['a\tb',[],R.TextTab,'body-tab'],['a\ufeffb',[],R.TextBom,'body-bom'],
+  ['a\u202eb',[],R.TextDirection,'body-direction'],
+  ['abc',[{offset:0,length:3,type:{'@type':'textEntityTypeCode'}}],R.InlineCode,'body-inline-code'],
+  ['abc',[{offset:0,length:3,type:{'@type':'textEntityTypeSpoiler'}}],R.Spoiler,'body-spoiler']
+ ]) {
+  const r=makeRow();r.kind=kind;r.group=message(kind);r.data.lightweightPlainText=false;
+  r.group.head.text=body;r.group.head.textEntities=entities;r.group.caption=body;r.group.captionEntities=entities;
+  const engine=kind==='text'?new ctx.DrawnTextLayouts():new ctx.DrawnMediaLayouts(kind==='single');
+  r.textLayouts=kind==='text'?engine:null;r.singleLayouts=kind==='single'?engine:null;r.albumLayouts=kind==='album'?engine:null;
+  metrics.reset();const before=layoutCounters().parseCalls;
+  assert.equal(r.plan,null,kind+label);assert.equal(engine.failureReason,reason);assert.equal(r.routeTracker.reason,reason);
+  const parsed=layoutCounters().parseCalls;assert.ok(parsed-before<=1);
+  for(let i=0;i<1000;i++)assert.equal(r.plan,null);
+  assert.equal(layoutCounters().parseCalls,parsed);assert.match(metrics.summary(),new RegExp(label+'=1\\b'));
+  // Existing raw-cache result also explains rejection in a different owner.
+  const second=kind==='text'?new ctx.DrawnTextLayouts():new ctx.DrawnMediaLayouts(kind==='single');
+  assert.equal(second.prepare(ui,r.group,r.data,style),null);assert.equal(second.failureReason,reason);
+  assert.equal(layoutCounters().parseCalls,parsed,'cross-owner negative source hit');
+  // Successful A, rejected B, successful A: no stale failure on fast positive hit.
+  const good=message(kind);assert.ok(engine.prepare(ui,good,r.data,style));
+  assert.equal(engine.failureReason,R.Drawn);assert.equal(engine.prepare(ui,r.group,r.data,style),null);
+  assert.ok(engine.prepare(ui,good,r.data,style));assert.equal(engine.failureReason,R.Drawn);
+ }
+}
+const labels=[['empty',R.SourceEmpty],['text-limit',R.TextLimit],['entity-limit',R.EntityLimit],
+ ['segments:2',R.TextSegments],['segment-kind:pre',R.TextSegmentKind],['segment-offset',R.TextSegmentOffset],
+ ['run-limit',R.TextRunLimit],['empty-run',R.EmptyRun],['run-offset',R.RunOffset],['text-coverage',R.TextCoverage],
+ ['link-limit',R.LinkLimit],['future-reason',R.SourceUnknown]];
+for(const [input,reason] of labels)assert.equal(ctx.drawnSourceRouteReason(input),reason);
+trace.length=0;ctx.drawnStageMetrics.setEnabled(true);metrics.reset();tracker.reset();
+for(let i=0;i<1000;i++)tracker.record(1,10,R.TextTab);
+tracker.record(1,10,R.TextBom);ctx.drawnStageMetrics.setEnabled(false);
+assert.deepEqual(trace,['PG/route/body-tab','end','PG/route/body-bom','end']);
+assert.equal(metrics.counts.length,36,'fixed memory regardless of messages/reasons');
+console.log('PASS: hidden/shown header and quote guards, text/single/album exact rejection propagation, 15000 cached failures without reparsing, cross-owner negative hits, A-B-A reset, fixed private trace labels.');
+
+// An exception is logged on first parse; the cached negative result must retain
+// its cause too, rather than becoming an unexplained layout-null on reuse.
+let parserAttempts=0;
+const failedSource=new ctx.DrawnRichSourceCache(()=>{parserAttempts++;throw Error('injected parser failure');});
+const failureRow=makeRow();failureRow.textLayouts=new ctx.DrawnTextLayouts();failureRow.textLayouts.sources=failedSource;
+assert.equal(failureRow.plan,null);assert.equal(failureRow.routeTracker.reason,R.Exception);
+for(let i=0;i<1000;i++){assert.equal(failureRow.plan,null);assert.equal(failureRow.routeTracker.reason,R.SourceParserException);}
+assert.equal(parserAttempts,1);
+console.log('PASS: parser exception remains identifiable on 1000 cached failures without retrying parsing.');

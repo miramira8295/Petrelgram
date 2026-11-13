@@ -1,3 +1,4 @@
+import { DrawnRouteReason, drawnSourceRouteReason } from '../../util/drawnRouteMetrics';
 import { DrawnRowLayoutEngine } from './DrawnLayoutWarmCache';
 import { DrawnBubbleOutlineCache, DrawnRoundRectCache } from './DrawnBubbleGeometry';
 import { DrawnTextUnits } from '../../util/drawnTextUnits';
@@ -28,6 +29,7 @@ interface DrawnBodyLastLine { right: number; top: number; }
 // One bounded source/paragraph cache per row; the footer and chrome have their
 // own caches. No text serialization, entity scans or shaping on status updates.
 export class DrawnTextLayouts implements DrawnRowLayoutEngine {
+  failureReason: DrawnRouteReason = DrawnRouteReason.Drawn;
   private units: DrawnTextUnits = new DrawnTextUnits();
   private outlines: DrawnBubbleOutlineCache = new DrawnBubbleOutlineCache();
   private quoteShapes: DrawnRoundRectCache = new DrawnRoundRectCache();
@@ -49,13 +51,14 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
   private key: string = '';
 
   prepare(ui: UIContext, group: AlbumGroup, data: MessageBubbleRenderData, style: DrawnBubbleStyle): DrawnBubblePlan | null {
+    this.failureReason = DrawnRouteReason.Drawn;
     this.units.prepare(ui, style.textEnvironment);
     const m = group.head, d = this.units.density;
     const avatarSpace = data.isGroup && !m.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0;
     const maxPx = Math.floor((bubbleMaxWidth(data.contentWidth, avatarSpace) - 16) * d);
-    if (!(d > 0) || !(maxPx > 0)) { return null; }
+    if (!(d > 0) || !(maxPx > 0)) { this.failureReason = DrawnRouteReason.InvalidGeometry; return null; }
     const source = this.sources.prepare(m.text, m.textEntities);
-    if (source === null) { return null; }
+    if (source === null) { this.failureReason = drawnSourceRouteReason(this.sources.reason); return null; }
     const body = this.bodies.prepare(ui, { source, maxWidthVp: maxPx / d, minWidthVp: 0,
       fontSize: style.fontSize, reserve: '', foreground: bubbleTextFor(m.isOutgoing),
       accent: COLOR_PRIMARY, environment: style.environment });

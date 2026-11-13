@@ -1,3 +1,4 @@
+import { DrawnRouteReason, drawnSourceRouteReason } from '../../util/drawnRouteMetrics';
 import { DrawnRowLayoutEngine } from './DrawnLayoutWarmCache';
 import { DrawnBubbleOutlineCache, DrawnRoundRectCache } from './DrawnBubbleGeometry';
 import { DrawnTextUnits } from '../../util/drawnTextUnits';
@@ -32,6 +33,7 @@ interface MediaCaptionLastLine { right: number; top: number; }
 // progress notifications never call this class. Geometry traverses each tile
 // once, O(N + S), with no per-tile search through selection or message lists.
 export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
+  failureReason: DrawnRouteReason = DrawnRouteReason.Drawn;
   private colors: DrawnMediaColors = new DrawnMediaColors();
   private units: DrawnTextUnits = new DrawnTextUnits();
   private footerShapes: DrawnRoundRectCache = new DrawnRoundRectCache();
@@ -82,6 +84,7 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
 
   prepare(ui: UIContext, group: AlbumGroup, data: MessageBubbleRenderData,
     style: DrawnBubbleStyle): DrawnBubblePlan | null {
+    this.failureReason = DrawnRouteReason.Drawn;
     const m = group.head;
     this.units.prepare(ui, style.textEnvironment);
     const d = this.units.density;
@@ -95,10 +98,10 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
     const maxWidth = this.single ? inlineMaxWidth(data.contentWidth, avatarSpace)
       : mediaThumbWidth(data.contentWidth, avatarSpace);
     let gridWidth = maxWidth;
-    if (!(gridWidth > 20) || !(d > 0)) { return null; }
+    if (!(gridWidth > 20) || !(d > 0)) { this.failureReason = DrawnRouteReason.InvalidGeometry; return null; }
     const captionText = this.single ? m.text : group.caption;
     const source = captionText !== '' ? this.sources.prepare(captionText, this.single ? m.textEntities : group.captionEntities) : null;
-    if (captionText !== '' && source === null) { return null; }
+    if (captionText !== '' && source === null) { this.failureReason = drawnSourceRouteReason(this.sources.reason); return null; }
     const chrome = this.chrome.prepare(ui, m, data.isChannel, gridWidth - 16, style.environment);
     const shownName = data.isGroup && !m.isOutgoing && group.showSenderName && m.senderName !== '';
     const pure = captionText === '' && m.text === '' && !shownName && m.replyToMessageId === 0 && m.forwardFrom === '' &&
@@ -127,7 +130,7 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
     const grid = this.single && this.singleGeometry !== null
       ? this.singleGeometry.prepare(m, data.chatId, data.contentWidth, avatarSpace, d)
       : this.grids?.prepare(group, data, maxWidth, d);
-    if (grid === undefined) { return null; }
+    if (grid === undefined) { this.failureReason = DrawnRouteReason.MissingGrid; return null; }
     const old = this.cached;
     const previous = this.cachedGroup;
     // A new immutable message snapshot need not imply new geometry. Subcaches

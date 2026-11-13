@@ -186,11 +186,20 @@ export struct DrawnMessageRow {
     if (this.translation !== null) { return this.rejectRoute(DrawnRouteReason.Translation); }
     if (drawnTextUsesRtlLayout(textEnvironment)) { return this.rejectRoute(DrawnRouteReason.Rtl); }
     const m = this.group.head;
-    if (!drawnChromeTextSupported(m.forwardFrom)) { return this.rejectRoute(DrawnRouteReason.Chrome); }
-    if (!drawnChromeTextSupported(m.senderName)) { return this.rejectRoute(DrawnRouteReason.Chrome); }
-    if (!drawnChromeTextSupported(m.senderTag || this.role)) { return this.rejectRoute(DrawnRouteReason.Chrome); }
-    if (!drawnChromeTextSupported(m.replySenderName)) { return this.rejectRoute(DrawnRouteReason.Chrome); }
-    if (!drawnChromeTextSupported(m.replyText)) { return this.rejectRoute(DrawnRouteReason.Chrome); }
+    // Match the actual header/quote/forward branches in both layout engines.
+    // Hidden metadata must not reject a drawable row or scan unused strings.
+    if (m.forwardFrom !== '' && !drawnChromeTextSupported(m.forwardFrom)) {
+      return this.rejectRoute(DrawnRouteReason.ChromeForward);
+    }
+    const shownName = this.data.isGroup && !m.isOutgoing && this.group.showSenderName && m.senderName !== '';
+    if (shownName) {
+      if (!drawnChromeTextSupported(m.senderName)) { return this.rejectRoute(DrawnRouteReason.ChromeSender); }
+      if (!drawnChromeTextSupported(m.senderTag || this.role)) { return this.rejectRoute(DrawnRouteReason.ChromeRole); }
+    }
+    if (m.replyToMessageId !== 0) {
+      if (!drawnChromeTextSupported(m.replySenderName)) { return this.rejectRoute(DrawnRouteReason.ChromeReplySender); }
+      if (!drawnChromeTextSupported(m.replyText)) { return this.rejectRoute(DrawnRouteReason.ChromeReplyText); }
+    }
     const traced = drawnStageMetrics.begin(DrawnStage.Layout);
     try {
       const ui = this.getUIContext();
@@ -212,7 +221,8 @@ export struct DrawnMessageRow {
         radius: this.env.bubbleRadius, fontSize: this.env.msgTextSize, environment, textEnvironment,
         role: m.senderTag || this.role, views: this.views
       }) ?? null;
-      this.recordRoute(p === null ? DrawnRouteReason.LayoutNull : DrawnRouteReason.Drawn);
+      this.recordRoute(p === null ? (layouts?.failureReason === undefined || layouts.failureReason === DrawnRouteReason.Drawn
+        ? DrawnRouteReason.LayoutNull : layouts.failureReason) : DrawnRouteReason.Drawn);
       return p;
     } catch (error) {
       if (!this.failureLogged) {

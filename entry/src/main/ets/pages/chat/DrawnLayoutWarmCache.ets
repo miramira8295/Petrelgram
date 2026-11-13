@@ -1,3 +1,4 @@
+import { DrawnRouteReason } from '../../util/drawnRouteMetrics';
 import { UIContext } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
 import { AlbumGroup } from '../../util/collapseAlbums';
@@ -5,6 +6,8 @@ import { MessageBubbleRenderData } from './ReusableMessageBubble';
 import { DrawnBubblePlan, DrawnBubbleStyle } from './DrawnBubblePlan';
 
 export interface DrawnRowLayoutEngine {
+  // Non-observed result of the latest prepare, including negative cache hits.
+  readonly failureReason: DrawnRouteReason;
   prepare(ui: UIContext, group: AlbumGroup, data: MessageBubbleRenderData, style: DrawnBubbleStyle): DrawnBubblePlan | null;
 }
 
