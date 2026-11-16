@@ -42,7 +42,7 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WID
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import {
-  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH, plainBackdropBlur, plainGlassFill
 } from '../../util/overlayMaterial';
 import { materialModifierWhen } from '../../util/materialModifier';
 import { navigateToChat } from '../../util/chatNav';
@@ -1078,8 +1078,8 @@ export struct ChatListPage {
     .width(TOP_ACTION_SIZE).height(TOP_ACTION_SIZE)
     .borderRadius(TOP_ACTION_SIZE / 2)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
-    .backdropBlur(overlayBackdropBlur('control'))
+    .backgroundColor(plainGlassFill($r('app.color.surface')))
+    .backdropBlur(plainBackdropBlur('bar'))
     .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
     .clip(true)
     .stateStyles({
@@ -1120,8 +1120,8 @@ export struct ChatListPage {
     .height(TOP_ACTION_SIZE)
     .borderRadius(TOP_ACTION_SIZE / 2)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
-    .backdropBlur(overlayBackdropBlur('control'))
+    .backgroundColor(plainGlassFill($r('app.color.surface')))
+    .backdropBlur(plainBackdropBlur('bar'))
     .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
     .clip(true)
     .stateStyles({
@@ -1483,8 +1483,9 @@ export struct ChatListPage {
     // 未选项只铺一层轻量 tint，不再各自叠模糊/材质；选中态由下层滑动胶囊表达。
     // 2026-10-30 试过摘掉这层底、让未选项直接压在玻璃条上：观感发空、可读性也差，
     // 用户当场让改回来。别再摘。
-    .backgroundColor(this.selectedIndex === index
-      ? Color.Transparent : $r('app.color.material_tint'))
+    // 2026-11-16 23:56：整排已经是一条轨道了，未选项不再各铺一层 25% 白底
+    // （那层底正是"塑料感"的来源）。只留选中态由下层滑动胶囊表达。
+    .backgroundColor(Color.Transparent)
     .stateStyles({
       normal: this.tabNormalStyle,
       pressed: this.tabPressedStyle
@@ -1602,7 +1603,7 @@ export struct ChatListPage {
           // Sliding selection pill behind the labels — follows the finger
           // during Tabs content swipes. 独立组件 + AppStorage 旁路，拖动每帧
           // 只脏它自己（见 FOLDER_PILL_X 的说明）。
-          FolderPill();
+          FolderPill({ accent: this.accent() });
           // 间距只放在标签之间，末项不留尾部空白，居中与滚动终点才对称。
           Row({ space: 6 }) {
             ForEach(this.tabs(), (spec: TabSpec, index: number) => {
@@ -1617,6 +1618,14 @@ export struct ChatListPage {
       // 与文字在同一个 Stack 里，坐标随内容一起平移，不用另算偏移。
       .align(Alignment.Top)
       .width('100%')
+      // 轨道胶囊（2026-11-16 22:45 用户：整排一条玻璃、两侧留边）。挂在内层 Scroll 上，
+      // 天然处在 Column 的水平内边距里，比整屏窄一圈。
+      .backgroundColor('#1FFFFFFF')
+      .backdropBlur(plainBackdropBlur('card'))
+      .attributeModifier(materialModifierWhen('control', true))
+      .borderRadius(FOLDER_BAR_HEIGHT / 2)
+      .padding({ left: 6, right: 6 })
+      .clip(true)
       .onTouch((event: TouchEvent): void => {
         if (event.type === TouchType.Down) {
           this.stripUserMoved = true;
@@ -1642,7 +1651,7 @@ export struct ChatListPage {
     // 在观感：文件夹条和它上面那块 HDS 标题栏成了两截玻璃，加上大标题底下的空白，
     // 首页顶部被切成了三段。维持「无独立外框、只留选中胶囊」这一版，别再给这里加底。
     .width('100%')
-    .padding({ left: homeCardMarginVp(this.widthBp), right: homeCardMarginVp(this.widthBp) })
+    .padding({ left: homeCardMarginVp(this.widthBp) + 8, right: homeCardMarginVp(this.widthBp) + 8 })
     .margin({ bottom: 2 })
     .transition(
       TransitionEffect.OPACITY
@@ -1982,6 +1991,9 @@ struct TopBarSlideContainer {
 // 只有这一个组件，不再整页 ExecuteRerender。
 @Component
 struct FolderPill {
+  // 选中胶囊的强调色（跟随「自定义强调色」）。2026-11-17 00:24 用户要求选中态
+  // 必须能看见淡色底，而材质在本机会把底色吃掉，所以由这里传进来单独盖一层。
+  @Prop accent: ResourceColor = COLOR_TAB_PILL_BG;
   @StorageProp(FOLDER_PILL_X) pillX: number = 0;
   @StorageProp(FOLDER_PILL_W) pillW: number = 0;
   // 这一帧要不要"滑过去"（见 FOLDER_PILL_ANIMATE）。
@@ -1992,7 +2004,16 @@ struct FolderPill {
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
 
   build() {
-    Row()
+    Stack() {
+      // 2026-11-17 00:22 用户要"选中要有淡强调色"：材质在时底色会被系统吃掉，
+      // 所以单独盖一层 26% 的强调色。这一层不参与材质，只是玻璃上的一层薄色。
+      Row()
+        .width('100%').height('100%')
+        .borderRadius(FOLDER_CHIP_HEIGHT / 2)
+        .backgroundColor(this.accent)
+        .opacity(0.26)
+        .hitTestBehavior(HitTestMode.None)
+    }
       .width(this.pillW).height(FOLDER_CHIP_HEIGHT)
       .borderRadius(FOLDER_CHIP_HEIGHT / 2)
       .position({
@@ -2023,7 +2044,7 @@ struct FolderPill {
       // 之下」的必然结果——想在材质上保住蓝色，只能在玻璃**上面**再盖一层半透明
       // 强调色，官方把那种叠法列为「发实」的典型，别这么干。
       .backgroundColor(overlayGlassFill('control', COLOR_TAB_PILL_BG))
-      .backdropBlur(overlayBackdropBlur('control'))
+      .backdropBlur(plainBackdropBlur('bar'))
       .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0));
   }
 }
