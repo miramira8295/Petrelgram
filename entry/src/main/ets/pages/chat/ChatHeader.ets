@@ -13,7 +13,8 @@ import { WebmStickerView } from './WebmStickerView';
 import { COLOR_PRIMARY } from '../../util/theme';
 import { chromeIconColorOf, chromeTextColorOf } from '../../util/chatChrome';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
-import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { plainBackdropBlur, plainGlassFill, overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
+import { materialModifierWhen } from '../../util/materialModifier';
 import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { str } from '../../util/strings';
 import { HeaderIdentitySession } from './HeaderIdentitySession';
@@ -229,19 +230,21 @@ export struct ChatHeader {
   }
 
   private actionFill(pressed: boolean): ResourceColor {
-    return plainGlassFill(pressed ? $r('app.color.surface_alt') : $r('app.color.surface'));
+    // 统一走 plainGlassFill：它统一返回 app.color.dock_glass（#2EFFFFFF 半透明白），
+    // 52 处自绘玻璃因此共用同一个底色来源；按下态单独加深一档。
+    return pressed ? '#3DFFFFFF' : plainGlassFill($r('app.color.surface'));
   }
 
   @Styles
   identityNormalStyle() {
-    .backgroundColor(plainGlassFill($r('app.color.surface')))
+    .backgroundColor(Color.Transparent)
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
 
   @Styles
   identityPressedStyle() {
-    .backgroundColor(plainGlassFill($r('app.color.surface_alt')))
+    .backgroundColor(Color.Transparent)
     .opacity(0.78)
     .scale({ x: 0.985, y: 0.96 })
   }
@@ -313,10 +316,11 @@ export struct ChatHeader {
     .borderRadius(CHAT_HEADER_RADIUS)
     .justifyContent(FlexAlign.Center)
     .shadow({ radius: this.appDark ? 0 : 4, color: this.appDark ? '#00000000' : '#12000000', offsetX: 0, offsetY: this.appDark ? 0 : 1 })
-    .backgroundColor(this.actionFill(this.backPressed))
+    .backgroundColor(Color.Transparent)
     .opacity(this.backPressed ? 0.72 : 1)
     .scale({ x: this.backPressed ? 0.9 : 1, y: this.backPressed ? 0.9 : 1 })
-    .backdropBlur(plainBackdropBlur('bar'))
+    .backdropBlur(overlayBackdropBlur('bar'))
+    .attributeModifier(materialModifierWhen('bar', true))
     .visualEffect(hdsVisualEffect('bar', !this.appDark))
     .border(chromeOutline(this.appDark))
     .clip(this.appDark)
@@ -362,11 +366,12 @@ export struct ChatHeader {
     .borderRadius(CHAT_HEADER_RADIUS)
     .justifyContent(FlexAlign.Center)
     .shadow({ radius: this.appDark ? 0 : 4, color: this.appDark ? '#00000000' : '#12000000', offsetX: 0, offsetY: this.appDark ? 0 : 1 })
-    .backgroundColor(this.actionFill(this.menuPressed))
+    .backgroundColor(Color.Transparent)
     .opacity(this.menuPressed ? 0.72 : 1)
     .scale({ x: this.menuPressed ? 0.9 : 1, y: this.menuPressed ? 0.9 : 1 })
     // 和身份胶囊同一档：半透明底 + backdropBlur 自绘玻璃，API 26 上让位给材质。
-    .backdropBlur(plainBackdropBlur('bar'))
+    .backdropBlur(overlayBackdropBlur('bar'))
+    .attributeModifier(materialModifierWhen('bar', true))
     .visualEffect(hdsVisualEffect('bar', !this.appDark))
     .border(chromeOutline(this.appDark))
     .clip(this.appDark)
@@ -480,7 +485,8 @@ export struct ChatHeader {
       .shadow({ radius: this.appDark ? 0 : 4, color: this.appDark ? '#00000000' : '#12000000', offsetX: 0, offsetY: this.appDark ? 0 : 1 })
       .stateStyles({ normal: this.identityNormalStyle, pressed: this.identityPressedStyle })
       // 暗色模式与输入栏统一：关闭光晕和阴影，使用标准描边及圆角裁剪。
-      .backdropBlur(plainBackdropBlur('bar'))
+      .backdropBlur(overlayBackdropBlur('bar'))
+    .attributeModifier(materialModifierWhen('bar', true))
       .visualEffect(hdsVisualEffect('bar', !this.appDark))
       .border(chromeOutline(this.appDark))
       .clip(this.appDark)
