@@ -1277,7 +1277,7 @@ export struct ChatListPage {
       // MainScreen 那条「底部边缘淡化」用 calc 定位失效、被画到了屏幕顶部
       // （它的 backdropBlur(18) 正好压在标题栏上）。那里修好后这条栏不必摘材质，
       // 仍按 titleBarStyle(..., false) 走：透明背板 + 关掉滚动渐变模糊。
-      style: titleBarStyle(Color.Transparent, this.accent(), false, false),
+      style: titleBarStyle(Color.Transparent, this.accent(), false, true),
       content: content
     };
     this.titleBarOptionsCache = options;
