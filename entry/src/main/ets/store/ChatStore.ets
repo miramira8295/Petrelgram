@@ -413,6 +413,10 @@ export class ChatStore {
   applyWorkerOrder(lists: OrderSnapshot[]): void {
     for (const snapshot of lists) {
       this.workerLists.set(snapshot.key, snapshot.ids);
+      // 2026-11-16 23:10 用户报「群组聊天有很多未读、页签没角标」的根因修复：
+      // 角标缓存按 listKey 存，第一次算时这个分组还没加载 → 缓存了个 0，之后
+      // 列表加载完也不会重算。分组内容一变就作废它自己的角标缓存。
+      this.invalidateUnreadBadge(snapshot.key);
       this.workerPinned.set(snapshot.key, new Set<number>(snapshot.pinned));
     }
     this.notify();
@@ -423,6 +427,7 @@ export class ChatStore {
   ingestForTest(entries: ChatEntry[], lists: OrderSnapshot[] = []): void {
     for (const list of lists) {
       this.workerLists.set(list.key, list.ids);
+      this.invalidateUnreadBadge(list.key);
       this.workerPinned.set(list.key, new Set<number>(list.pinned));
       this.pinEpochs.set(list.key, this.pinEpoch(list.key) + 1);
     }
