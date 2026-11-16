@@ -21,7 +21,7 @@ tracker.record(1,10,R.Drawn);assert.equal(trace.length,2,'disabled route telemet
 
 // Every early exit in the real compiled getter publishes a reason. The counter
 // must not allocate layout engines or parse content just to identify a gate.
-const makeRow=()=>Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),kind:'text',group:group('body'),data:{...data},
+const makeRow=()=>Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{interaction:new ctx.DrawnRowInteraction(),layoutRetention:new ctx.DrawnLayoutRetention(),kind:'text',group:group('body'),data:{...data},
  env:{drawnEnabled:true,drawnText:true,drawnPlain:true,drawnRich:true,bubbleMaterialOn:false,langEpoch:1,appearanceEpoch:1,bubbleRadius:12,msgTextSize:16},
  a11y:{active:false},translation:null,role:'',views:'',failureLogged:false,textLayouts:{prepare:()=>({})},getUIContext:()=>ui});
 ctx.logW=()=>{};

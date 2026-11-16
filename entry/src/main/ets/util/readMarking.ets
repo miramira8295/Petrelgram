@@ -55,3 +55,21 @@ export function visibleMessageIds(
   }
   return Array.from(ids);
 }
+
+// Cache only visible IDs, never a history snapshot. The timeline increments
+// revision on every immutable groups replacement, including same-size edits.
+// A cache hit is O(1); a miss is O(visible members), retained space is O(visible members).
+// Callers still recheck unread flags on every invocation (new mentions/retries).
+export class VisibleReadIds {
+  private revision: number = -1;
+  private start: number = -1;
+  private end: number = -1;
+  private count: number = -1;
+  private ids: number[] = [];
+  prepare(revision: number, count: number, memberIdsAt: (index: number) => number[], start: number, end: number): number[] {
+    if (this.revision === revision && this.count === count && this.start === start && this.end === end) { return this.ids; }
+    this.ids = visibleMessageIds(count, memberIdsAt, start, end);
+    this.revision = revision; this.count = count; this.start = start; this.end = end;
+    return this.ids;
+  }
+}

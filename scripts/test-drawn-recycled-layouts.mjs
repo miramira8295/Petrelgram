@@ -60,7 +60,7 @@ retention.release();assert.equal(global.entries.size,1,'double recycle cannot of
 for(const fn of [...timers.values()])fn();assert.equal(global.entries.size,0);assert.equal(timers.size,0);
 // Exercise the real compiler-generated row getter and recycle method together.
 // A cached engine must be removed from the old owner before the new one uses it.
-const makeRow = () => Object.assign(Object.create(ctx.DrawnMessageRow.prototype), {
+const makeRow = () => Object.assign(Object.create(ctx.DrawnMessageRow.prototype), {interaction:new ctx.DrawnRowInteraction(),
  kind:'text', group:g, data, env:{appearanceEpoch:1,langEpoch:1,bubbleMaterialOn:false,bubbleRadius:20,msgTextSize:16},
  a11y:{active:false}, translation:null, role:'', views:'', textLayouts:null, albumLayouts:null, singleLayouts:null,
  layoutRetention:new ctx.DrawnLayoutRetention(), getUIContext:()=>wrapper,

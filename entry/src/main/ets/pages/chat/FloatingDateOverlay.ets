@@ -131,38 +131,33 @@ export struct FloatingDateOverlay {
   }
 
   build() {
-    // 外层这个 Row 常驻挂载：ArkUI 要求 build 有唯一根节点，条件渲染只能放在
-    // 它里面。label 为空时内层不挂载，屏幕上是零高度的空节点，与原来"整条
-    // 不挂载"在视觉与布局上等价（Stack 是 TopStart 对齐，子节点各自独立）。
-    //
-    // 修饰器栈与搬来之前逐条一致：surface 底、divider 边、圆角 14、阴影、
-    // headerChromeHeight() + 8 的顶边距、200ms EaseOut 的出入场。
+    // Keep the tiny date surface resident so the first scroll updates text
+    // instead of constructing its subtree. Hidden state already disables blur,
+    // effects and hit testing; the overlay does not size the message List.
     Row() {
-      if (this.state.label !== '') {
-        Row() {
-          Text(this.state.label)
-            .fontSize(12)
-            .fontColor(COLOR_TEXT_PRIMARY)
-            .fontWeight(FontWeight.Medium);
-        }
-        .height(28)
-        .padding({ left: 12, right: 12 })
-        // 【自绘玻璃，不走组件级系统材质】和顶部那张浮卡（TopBanners）同一笔账：
-        // 系统已经把**组件级** systemMaterial 收回，只有 HDS 导航级的栏还拿得到。
-        // 继续用 overlayGlassFill + overlayBackdropBlur 会两头落空——前者按"底下
-        // 还有材质在画"返回 25% 的淡色，后者按"把观感让给材质"返回 0 半径，结果
-        // 既没有材质也没有自己的玻璃，看上去就是一块近乎透明的平板（用户
-        // 2026-09-22：「日期好像纯透明底色呢，应该和 hds 的顶部 bar 样式一样」）。
-        // 迁到输入框/顶部浮卡那一套：plainGlassFill + plainBackdropBlur +
-        // hdsVisualEffect，档位仍用它原来的 'bar'，厚度偏移照旧生效。
-        .backgroundColor(plainGlassFill($r('app.color.surface')))
-        .backdropBlur(this.state.shown ? this.glassBlur() : 0)
-        .visualEffect(hdsVisualEffect('bar', this.state.shown))
-        .border({ width: 0.5, color: $r('app.color.divider') })
-        .borderRadius(14)
-        .shadow({ radius: 5, color: '#22000000', offsetX: 0, offsetY: 2 })
-        .clip(true);
+      Row() {
+        Text(this.state.label)
+          .fontSize(12)
+          .fontColor(COLOR_TEXT_PRIMARY)
+          .fontWeight(FontWeight.Medium);
       }
+      .height(28)
+      .padding({ left: 12, right: 12 })
+      // 【自绘玻璃，不走组件级系统材质】和顶部那张浮卡（TopBanners）同一笔账：
+      // 系统已经把**组件级** systemMaterial 收回，只有 HDS 导航级的栏还拿得到。
+      // 继续用 overlayGlassFill + overlayBackdropBlur 会两头落空——前者按"底下
+      // 还有材质在画"返回 25% 的淡色，后者按"把观感让给材质"返回 0 半径，结果
+      // 既没有材质也没有自己的玻璃，看上去就是一块近乎透明的平板（用户
+      // 2026-09-22：「日期好像纯透明底色呢，应该和 hds 的顶部 bar 样式一样」）。
+      // 迁到输入框/顶部浮卡那一套：plainGlassFill + plainBackdropBlur +
+      // hdsVisualEffect，档位仍用它原来的 'bar'，厚度偏移照旧生效。
+      .backgroundColor(plainGlassFill($r('app.color.surface')))
+      .backdropBlur(this.state.shown ? this.glassBlur() : 0)
+      .visualEffect(hdsVisualEffect('bar', this.state.shown))
+      .border({ width: 0.5, color: $r('app.color.divider') })
+      .borderRadius(14)
+      .shadow({ radius: 5, color: '#22000000', offsetX: 0, offsetY: 2 })
+      .clip(true);
     }
     .width('100%')
     .justifyContent(FlexAlign.Center)
@@ -172,6 +167,7 @@ export struct FloatingDateOverlay {
     .translate({ y: this.state.shown ? 0 : -5 })
     // Keep scroll driven visibility synchronous. A resident animation here
     // makes ArkUI include the chat List in the same layout flush.
+    .accessibilityLevel(this.state.shown ? 'auto' : 'no-hide-descendants')
     .hitTestBehavior(HitTestMode.None);
   }
 }

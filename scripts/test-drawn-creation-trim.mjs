@@ -24,7 +24,7 @@ const ctx=vm.createContext({ViewV2:View,ViewPU:View,
 });
 function load(path,names){
  const source=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'')
-  .replace(/@(?:Require|Param|Local|Computed|Event)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'').replace(/\bexport /g,'');
+  .replace(/@(?:Require|Param|Local|Computed|Event|ObservedV2|Trace)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'').replace(/\bexport /g,'');
  vm.runInContext(ts.transpileModule(source+names.map(n=>`\nglobalThis.${n}=${n};`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx,{filename:path});
 }
 load(root+'pages/chat/DrawnRowLeaveCapture.ets',['DrawnRowLeaveCapture']);
@@ -74,6 +74,8 @@ console.log('PASS: 1000 stable draws and 1000 playback changes reuse paragraph/p
 // Actual compiled video tree: inactive video has only its lifecycle Stack;
 // player and accessible labels still use native children on demand.
 load(root+'pages/chat/DrawnVideoMeta.ets',['drawnVideoMetaCache']);
+load(root+'util/drawnStageMetrics.ets',['drawnStageMetrics','DrawnStage']);
+load(root+'pages/chat/DrawnMediaPosition.ets',['DrawnMediaPosition']);
 load(compiled+'pages/chat/DrawnAlbumVideo.ts',['DrawnAlbumVideo']);
 const created=[],native=[];let eid=0;
 for(const name of ['If','Stack','Row','Circle','SymbolGlyph','Text','__Common__'])ctx[name]=new Proxy({}, {get:(_t,k)=>(...args)=>{if(k==='create')created.push(name);}});
@@ -94,17 +96,18 @@ assert.equal(video.decoration.mediaWidth,150);assert.equal(video.decoration.medi
 assert.equal(video.decoration.label,null);assert.equal(video.decoration.play,false,'pending slot never paints old badges');
 console.log('PASS: compiled idle video removes four native nodes; playback/upload/Live Photo/accessibility branches preserved.');
 
-// The capture and press containers must remain distinct: both own opacity,
-// while jump scale belongs to the inner canvas. Avatar remains their sibling.
+// Capture stays outside canvas press/jump feedback. The old press-only Row
+// is removed; avatar remains outside both opacity scopes.
 load(root+'util/drawnRouteMetrics.ets',['DrawnRouteReason','DrawnRouteTracker','drawnRouteMetrics']);
-load(root+'util/drawnStageMetrics.ets',['drawnStageMetrics','DrawnStage']);
 load(root+'pages/chat/DrawnMediaFrames.ets',['DrawnMediaFrames']);
 load(root+'pages/chat/DrawnLayoutWarmCache.ets',['takeDrawnWarmLayout']);
 ctx.getTdClient ??= () => ctx; ctx.setTimeout ??= () => 0; ctx.clearTimeout ??= () => {};
 load(root+'pages/chat/DrawnRecycledLayouts.ets',['DrawnLayoutRetention','takeDrawnRecycledLayout','drawnRecycledLayouts']);
+load(root+'util/drawnRowChromePolicy.ets',['drawnRowChromeReason']);
+load(root+'pages/chat/DrawnRowInteraction.ets',['DrawnRowInteraction']);
 load(compiled+'pages/chat/DrawnMessageRow.ts',['DrawnMessageRow']);
-const row=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames()}), nodes=[], stack=[];
-for(const name of ['Column','Row','Stack','If','Text','Image','Gesture','GestureGroup','PanGesture','LongPressGesture'])ctx[name]=new Proxy({}, {get:(_t,k)=>(...args)=>{
+const row=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{interaction:new ctx.DrawnRowInteraction(),layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames()}), nodes=[], stack=[];
+for(const name of ['__Common__','Column','Row','Stack','If','Text','Image','Gesture','GestureGroup','PanGesture','LongPressGesture'])ctx[name]=new Proxy({}, {get:(_t,k)=>(...args)=>{
  if(name==='If'||name.endsWith('Gesture')||name==='GestureGroup')return;
  if(k==='create'){const n={type:name,parent:stack.at(-1),attrs:{}};nodes.push(n);stack.push(n);}
  else if(k==='pop')stack.pop();else if(stack.length)stack.at(-1).attrs[k]=args;
@@ -120,8 +123,8 @@ Object.defineProperty(row,'plan',{configurable:true,value:{width:200,height:80,a
 Object.defineProperty(row,'deleteCaptureSupported',{configurable:true,value:true});row.nativeAvatar=()=>false;
 row.initialRender();
 const shot=nodes.find(n=>n.attrs.id?.[0]==='dissolve-delete-message-1-10');assert.ok(shot);
-const press=nodes.find(n=>n.attrs.attributeModifier);assert.equal(press.parent,shot);
-assert.equal(nodes.find(n=>n.type==='canvas').parent,press);
+assert.equal(nodes.find(n=>n.type==='canvas').parent,shot);
+assert.equal(nodes.filter(n=>n.type==='Row').length,3,'outer alignment + capture + avatar only; no press-only wrapper');
 const avatar=nodes.find(n=>n.attrs.drawModifier);assert.equal(avatar.parent,shot.parent,'avatar stays outside deletion/press capture');
 assert.equal(nodes.filter(n=>n.type==='Stack').length,1,'no resident deletion Stack');
 assert.equal(shot.attrs.opacity[0],1);assert.equal(native.filter(n=>n.nodeId).length,0,'no idle overlay');
@@ -129,4 +132,23 @@ row.leaving=1;row.capturedDeleteKey=row.deleteNodeKey;nodes.length=0;row.initial
 assert.equal(nodes.find(n=>n.attrs.id).attrs.opacity[0],0);assert.equal(native.at(-1).nodeId,row.deleteNodeKey);
 const oldNative=native.length;Object.defineProperty(row,'deleteCaptureSupported',{configurable:true,value:false});nodes.length=0;row.initialRender();
 assert.equal(nodes.find(n=>n.attrs.id).attrs.opacity[0],0);assert.equal(native.length,oldNative,'live surface skips snapshot overlay');
-console.log('PASS: compiled capture/press/jump/independent-avatar hierarchy and deletion/live-surface branches preserved without resident wrapper.');
+console.log('PASS: compiled canvas is directly inside capture; one press Row removed, avatar stays outside, deletion/live-surface branches preserved.');
+
+// A staged date must be rendered only by its host. Ordinary text/media rows
+// still own the same native pill; execute the real compiled row branch.
+ctx.FontWeight={Medium:'Medium'};ctx.COLOR_TEXT_SECONDARY='secondary';ctx.$r=x=>x;
+row.group.dateLabel='2026-11-16';row.leaving=0;row.dateInHost=false;
+nodes.length=0;stack.length=0;row.initialRender();
+assert.equal(nodes.filter(n=>n.type==='Text').length,1,'ordinary row keeps native date');
+row.dateInHost=true;nodes.length=0;stack.length=0;row.initialRender();
+assert.equal(nodes.filter(n=>n.type==='Text').length,0,'staged body never duplicates its host date');
+console.log('PASS: compiled message body suppresses external date only; ordinary row date remains.');
+
+// Positioned animated avatar's generated wrapper must not intercept the canvas.
+ctx.SenderAnimatedLayer=class {};
+row.avatarAnimated=true;nodes.length=0;stack.length=0;row.initialRender();
+const animatedWrapper=nodes.find(n=>n.type==='__Common__');
+assert.ok(animatedWrapper,'animated avatar creates a positioned wrapper');
+assert.equal(animatedWrapper.attrs.hitTestBehavior?.[0],ctx.HitTestMode.None,
+ 'outer wrapper passes taps and long presses to the existing avatar handler');
+console.log('PASS: compiled animated avatar wrapper is touch-through.');

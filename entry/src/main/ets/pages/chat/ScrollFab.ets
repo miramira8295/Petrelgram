@@ -28,6 +28,7 @@ export struct ScrollFab {
   // 正在滚回底部：转圈并禁用，避免连点排队。
   @Prop busy: boolean;
   @Prop mention: boolean = false;
+  @Prop active: boolean = true;
   // 箭头的颜色由页面按**壁纸**算好传进来（chatChrome）：这颗浮在壁纸上，
   // 跟深浅色模式取色会在"浅色模式 + 黑壁纸"下变成黑箭头压黑底。
   @Prop iconColor: ResourceColor;
@@ -68,9 +69,9 @@ export struct ScrollFab {
         } else if (this.mention) {
           Text('@').fontSize(25).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY);
         } else {
-          // 只在离开底部时挂载，出现即弹一下提示"这里可以回去"。
+          // Retained while hidden; only an active button runs the arrival effect.
           SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([this.iconColor])
-            .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
+            .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), this.active);
         }
       }
       .width(46).height(46)
@@ -89,7 +90,7 @@ export struct ScrollFab {
       // materialModifier，而那一层在这颗圆上什么都不画——结果就是一个只剩描边的
       // 空心圈，浮在自绘玻璃的输入栏上面格格不入（用户 2026-09-18 截图）。
       // 描边也一并去掉：输入栏那颗控件没有，而 divider 压在深色照片上就是一道白圈。
-      .backdropBlur(plainBackdropBlur('control'))
+      .backdropBlur(this.active ? plainBackdropBlur('control') : 0)
       // 【这里必须是 'card'，不能是 'control'】（2026-09-21 真机验证，用户截图
       // 「底栏磨砂半透明，圆圈实心白」）
       //
@@ -107,14 +108,14 @@ export struct ScrollFab {
       //
       // ⚠️ 输入栏左边那颗回形针（ChatComposerInput 的附件键）仍然是 'control'，
       // 同样的白。要不要一起改由用户定，别顺手动。
-      .visualEffect(hdsVisualEffect('card'))
+      .visualEffect(hdsVisualEffect('card', this.active))
       // 阴影保留：那颗附件键坐在已经是玻璃的输入栏里，这颗是浮在照片上的，
       // 没有一点投影在浅色图上会糊掉。
       .shadow({ radius: 7, color: '#26000000', offsetX: 0, offsetY: 2 })
-      .enabled(!this.busy)
+      .enabled(this.active && !this.busy)
       .accessibilityText(this.mention ? $r('app.string.cp_jump_unread_mention') : (this.busy
         ? $r('app.string.cp_returning_latest') : $r('app.string.cp_return_latest')))
-      .onClick((): void => { this.onTap(); })
+      .onClick((): void => { if (this.active && !this.busy) { this.onTap(); } })
       .position({ x: 6, y: 10 });
       if (this.unreadCount > 0) {
         Row() {
@@ -130,12 +131,15 @@ export struct ScrollFab {
         .position({ x: unreadBadgeOffsetX(this.unreadCount), y: 0 })
         // The badge is updated during scrolling; a resident transition pulls
         // the message List into the same layout flush.
-        .enabled(!this.busy)
-        .onClick((): void => { this.onTap(); })
+        .enabled(this.active && !this.busy)
+        .onClick((): void => { if (this.active && !this.busy) { this.onTap(); } })
         .accessibilityText(plural('cp_unread_a11y', this.unreadCount, this.unreadCount));
       }
     }
     .width(52).height(56)
+    .visibility(this.active ? Visibility.Visible : Visibility.Hidden)
+    .hitTestBehavior(this.active ? HitTestMode.Default : HitTestMode.None)
+    .accessibilityLevel(this.active ? 'auto' : 'no-hide-descendants')
     // Visibility is state driven and synchronous while the list is moving.
   }
 }

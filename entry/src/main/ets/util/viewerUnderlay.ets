@@ -1,6 +1,7 @@
 // One controller per chat column. Only its matching, fully opaque viewer may
 // hide that column; layout and the message nodes remain mounted underneath.
 export class ViewerUnderlay {
+  fadeOnly: boolean = false;
   private active: boolean = false;
   private mounted: boolean = false;
   private entered: boolean = false;

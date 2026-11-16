@@ -1,3 +1,5 @@
+import { DrawnStagedAlbumRow } from './DrawnStagedAlbumRow';
+import { DrawnStage, drawnStageMetrics } from '../../util/drawnStageMetrics';
 import { DrawnMessageRow } from './DrawnMessageRow';
 import { MessageTextLayout } from '../../util/messageTextInput';
 import { StickerMessageBubble } from './StickerMessageBubble';
@@ -293,26 +295,29 @@ export struct ReusableMessageBubble {
   }
 
   private attachPresentation(group: AlbumGroup): void {
-    const key: string = `${this.data.chatId}:${group.head.rowId}`;
-    if (this.unsubPresentation !== null && this.attachedKey === key) {
-      // 已挂在同一行上：保留订阅并读取现值，接住预填之后到达的新快照。
+    const traced = drawnStageMetrics.begin(DrawnStage.PresentationAttach);
+    try {
+      const key: string = `${this.data.chatId}:${group.head.rowId}`;
+      if (this.unsubPresentation !== null && this.attachedKey === key) {
+        // 已挂在同一行上：保留订阅并读取现值，接住预填之后到达的新快照。
+        this.applyLiveGroup(messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group);
+        this.jumpFocus = this.actions.bubbleFocus.value(group.head.rowId);
+        this.leaving = this.actions.rowLeave.value(group.head.rowId);
+        return;
+      }
+      this.detachPresentation();
+      this.attachedKey = key;
+      this.unsubFocus = this.actions.bubbleFocus.subscribe(group.head.rowId,
+        (strength: number): void => { this.jumpFocus = strength; });
+      this.unsubLeave = this.actions.rowLeave.subscribe(group.head.rowId,
+        (strength: number): void => { this.leaving = strength; });
       this.applyLiveGroup(messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group);
-      this.jumpFocus = this.actions.bubbleFocus.value(group.head.rowId);
-      this.leaving = this.actions.rowLeave.value(group.head.rowId);
-      return;
-    }
-    this.detachPresentation();
-    this.attachedKey = key;
-    this.unsubFocus = this.actions.bubbleFocus.subscribe(group.head.rowId,
-      (strength: number): void => { this.jumpFocus = strength; });
-    this.unsubLeave = this.actions.rowLeave.subscribe(group.head.rowId,
-      (strength: number): void => { this.leaving = strength; });
-    this.applyLiveGroup(messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group);
-    this.unsubPresentation = subscribeMessageRowPresentation(
-      this.data.chatId,
-      group.head.rowId,
-      (next: AlbumGroup): void => { this.applyPresentation(next); }
-    );
+      this.unsubPresentation = subscribeMessageRowPresentation(
+        this.data.chatId,
+        group.head.rowId,
+        (next: AlbumGroup): void => { this.applyPresentation(next); }
+      );
+    } finally { drawnStageMetrics.end(traced); }
   }
 
   // 旁路更新落到界面上。
@@ -444,7 +449,7 @@ export struct ReusableMessageBubble {
     if (this.shownGroup.photoPaths.length > 1) {
       // DrawnMessageRow owns the eligibility/legacy decision. Skip the duplicate
       // dispatch component for all three row kinds; keep reuse identity unchanged.
-      DrawnMessageRow({ kind: 'album', group: this.shownGroup, data: this.data, actions: this.actions,
+      DrawnStagedAlbumRow({ group: this.shownGroup, data: this.data, actions: this.actions,
         nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
         .opacity(this.translationFade);
     } else if (this.shownGroup.head.contentType === 'photo' || this.shownGroup.head.contentType === 'video') {

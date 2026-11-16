@@ -1,3 +1,9 @@
+import { DrawnRowInteraction } from './DrawnRowInteraction';
+import { UIContext } from '@kit.ArkUI';
+import { DrawnPreparedAlbum, DrawnAlbumPublication } from './DrawnPreparedAlbum';
+import { drawnRowChromeReason } from '../../util/drawnRowChromePolicy';
+import { DrawnAlbumCanvas } from './DrawnAlbumCanvas';
+import { withAlbumCanvasTransition } from '../../util/albumCanvasTransition';
 import { DrawnMediaAnchorPool, DrawnCanvasAttributes } from './DrawnNativeAttributes';
 import { drawnPainterReserve } from './DrawnPainterReserve';
 import { DrawnRowLayoutEngine, takeDrawnWarmLayout } from './DrawnLayoutWarmCache';
@@ -36,11 +42,10 @@ import { DrawnBubblePainter, DrawnBubbleForeground, DrawnBubbleAvatar } from './
 import { DrawnImageSlot, DrawnMediaController } from './DrawnMediaController';
 import { DrawnBubbleController } from './DrawnBubbleController';
 import { DrawnBubbleMenu } from './DrawnBubbleMenu';
-import { DRAWN_BUBBLE_PRESS, DRAWN_BUBBLE_PRESS_NONE } from './DrawnBubblePress';
 import { drawnAlbumEligible, albumRectContains } from '../../util/drawnAlbumPolicy';
 import { DrawnRichHit } from '../../util/drawnRichTextPolicy';
 import { drawnTextUsesRtlLayout } from './DrawnPlainTextLayout';
-import { drawnChromeTextSupported, drawnTailGutter } from '../../util/drawnPlainTextPolicy';
+import { drawnTailGutter } from '../../util/drawnPlainTextPolicy';
 import { textMeasureEnvironment } from '../../util/textMeasureCache';
 import { chatEnv } from '../../util/chatEnvMirror';
 import { a11yRuntimeState } from '../../util/a11yState';
@@ -75,24 +80,66 @@ export struct DrawnMessageRow {
   @Require @Param group: AlbumGroup;
   @Require @Param data: MessageBubbleRenderData;
   @Require @Param actions: MessageBubbleActions;
+  @Param preparedAlbum: DrawnPreparedAlbum | null = null;
+  // Stable channel: the staged parent owns admission, the child consumes the
+  // packet atomically. Parent builders never unpack the observed payload.
+  @Param publication: DrawnAlbumPublication | undefined = undefined;
+  @Computed
+  private get rowGroup(): AlbumGroup { return this.publication?.packet?.group ?? this.group; }
+  @Computed
+  private get rowData(): MessageBubbleRenderData { return this.publication?.packet?.data ?? this.data; }
+  @Computed
+  private get rowPreparedAlbum(): DrawnPreparedAlbum | null { return this.publication?.packet ?? this.preparedAlbum; }
+
+  @Param presentationActive: boolean = true;
   @Param nowSec: number = 0;
   @Param jumpFocus: number = 0;
   @Param leaving: number = 0;
+  // A staged album host can own the native date header above this body.
+  @Param dateInHost: boolean = false;
   // V2 resets these initializers after the current @Param values and before
   // @Computed plan. Read fixed-count channel snapshots here so reuse does not
   // lay out blank metadata first and repeat layout after attach(). No listeners
   // or IO here; attach still subscribes and catches changes since this snapshot.
-  @Local private sendState: string = sendStateFor(this.group.head.rowId) || this.group.head.sendState;
-  @Local private views: string = viewCountLabelFor(this.data.chatId, this.group.head.id);
-  @Local private role: string = this.group.head.senderTag ||
-    (this.data.isGroup && !this.group.head.isOutgoing && this.group.showSenderName
-      ? senderRoleFor(senderRoleKey(this.data.chatId, this.group.head.senderId)) : '');
-  @Local private translation: TranslationStatus | null = translationStatusFor(this.group.head.id);
-  @Local private avatarAnimated: boolean = senderHasAnimatedPhoto(this.group.head.senderId, this.group.head.senderIsUser);
-  @Local private avatarStateRevision: number = 0;
-  @Local private menuShown: boolean = false;
-  @Local private swipeX: number = 0;
-  @Local private capturedDeleteKey: string = '';
+  @Local private sendState: string = sendStateFor(this.rowGroup.head.rowId) || this.rowGroup.head.sendState;
+  @Local private views: string = viewCountLabelFor(this.rowData.chatId, this.rowGroup.head.id);
+  @Local private role: string = this.rowGroup.head.senderTag ||
+    (this.rowData.isGroup && !this.rowGroup.head.isOutgoing && this.rowGroup.showSenderName
+      ? senderRoleFor(senderRoleKey(this.rowData.chatId, this.rowGroup.head.senderId)) : '');
+  @Local private translation: TranslationStatus | null = translationStatusFor(this.rowGroup.head.id);
+  // A retained staged child receives new params without V2 reuse/reset. Keep
+  // the metadata owner explicit so plan never applies the previous row's
+  // snapshots to a newly published prepared layout. Fixed fields only, O(1).
+  @Local private metadataOwner: string = this.metadataKey();
+  private metadataKey(): string {
+    const m = this.rowGroup.head;
+    return `${this.rowData.chatId}:${m.rowId}:${m.id}:${m.senderId}:${m.senderTag}:${this.rowData.isGroup}:${m.isOutgoing}:${this.rowGroup.showSenderName}`;
+  }
+  @Local private avatarAnimated: boolean = senderHasAnimatedPhoto(this.rowGroup.head.senderId, this.rowGroup.head.senderIsUser);
+  // Ordinary, stable owner; each getter still reads an individual @Trace.
+  // No @Monitor targets this reference. Metadata above must remain seeded
+  // before plan is recalculated by V2; interaction reset cannot replace that.
+  private interaction: DrawnRowInteraction = new DrawnRowInteraction();
+  private get avatarStateRevision(): number { return this.interaction.avatarRevision; }
+  private set avatarStateRevision(value: number) {
+    if (this.interaction.avatarRevision !== value) { this.interaction.avatarRevision = value; }
+  }
+  private get menuShown(): boolean { return this.interaction.menuShown; }
+  private set menuShown(value: boolean) {
+    if (this.interaction.menuShown !== value) { this.interaction.menuShown = value; }
+  }
+  private get swipeX(): number { return this.interaction.swipeX; }
+  private set swipeX(value: number) {
+    if (this.interaction.swipeX !== value) { this.interaction.swipeX = value; }
+  }
+  private get capturedDeleteKey(): string { return this.interaction.capturedDeleteKey; }
+  private set capturedDeleteKey(value: string) {
+    if (this.interaction.capturedDeleteKey !== value) { this.interaction.capturedDeleteKey = value; }
+  }
+  private get allowBodyDrag(): boolean { return this.interaction.allowBodyDrag; }
+  private set allowBodyDrag(value: boolean) {
+    if (this.interaction.allowBodyDrag !== value) { this.interaction.allowBodyDrag = value; }
+  }
   private leaveCapture: DrawnRowLeaveCapture = new DrawnRowLeaveCapture((key: string): void => {
     if (this.capturedDeleteKey !== key) { this.capturedDeleteKey = key; }
   });
@@ -108,19 +155,28 @@ export struct DrawnMessageRow {
   private painter: DrawnBubblePainter = drawnPainterReserve.takeBackground();
   private avatarPainter: DrawnBubbleAvatar = drawnPainterReserve.takeAvatar();
   private foreground: DrawnBubbleForeground = drawnPainterReserve.takeForeground();
+  private albumCanvas: DrawnAlbumCanvas = new DrawnAlbumCanvas();
+  private retainedCanvasMode: boolean = false;
+  // Physical component/window scope, retained across row recycling only.
+  // Stable identity lets media's existing O(1) duplicate-bind guard work.
+  private rowUi: UIContext | null = null;
+  private rowContext(): UIContext {
+    if (!this.rowUi) { this.rowUi = this.getUIContext(); }
+    return this.rowUi;
+  }
   private media: DrawnMediaController = new DrawnMediaController(
     (): void => { this.avatarStateRevision++; }, (): void => {
       drawnStageMetrics.invalidated(DrawnInvalidation.AvatarImage); this.avatarPainter.invalidate();
-      const m = this.group.head;
+      const m = this.rowGroup.head;
       const animated = senderHasAnimatedPhoto(m.senderId, m.senderIsUser);
       if (this.avatarAnimated !== animated) { this.avatarAnimated = animated; }
-    });
+    }, (): void => { this.albumCanvas.imageChanged(); });
   private channels: DrawnBubbleController = new DrawnBubbleController({
     send: (value: string): void => { if (this.sendState !== value) { this.sendState = value; } },
     views: (value: string): void => { if (this.views !== value) { this.views = value; } },
     role: (value: string): void => { if (this.role !== value) { this.role = value; } },
     translation: (value: TranslationStatus | null): void => {
-      if (this.translation !== value) { this.translation = value; pinForTranslationGrowth(this.data.chatId); }
+      if (this.translation !== value) { this.translation = value; pinForTranslationGrowth(this.rowData.chatId); }
     }
   });
   private gridCorners: AlbumCornerRadiiCache = new AlbumCornerRadiiCache();
@@ -135,7 +191,6 @@ export struct DrawnMessageRow {
   private touchPlan: DrawnBubblePlan | null = null;
   private touchLink: DrawnRichHit | null = null;
   private touchReaction: DrawnReactionChip | null = null;
-  @Local private allowBodyDrag: boolean = true;
   private attachedGroup: AlbumGroup | null = null;
   private attachedData: MessageBubbleRenderData | null = null;
   private attachedEnvironment: string = '';
@@ -148,7 +203,7 @@ export struct DrawnMessageRow {
   private routeTracker: DrawnRouteTracker | undefined = undefined;
   private recordRoute(reason: DrawnRouteReason): void {
     if (this.routeTracker === undefined) { this.routeTracker = new DrawnRouteTracker(); }
-    this.routeTracker.record(this.data.chatId, this.group.head.rowId, reason);
+    this.routeTracker.record(this.rowData.chatId, this.rowGroup.head.rowId, reason);
   }
   private rejectRoute(reason: DrawnRouteReason): null { this.recordRoute(reason); return null; }
   private keyboardContext: MessageBubbleContext | null = null;
@@ -156,7 +211,7 @@ export struct DrawnMessageRow {
     if (this.keyboardContext === null) { this.keyboardContext = new MessageBubbleContext(); }
     return this.keyboardContext;
   }
-  private keyboardGutter(): number { return this.kind === 'text' ? drawnTailGutter(this.group.showAvatar) : 7; }
+  private keyboardGutter(): number { return this.kind === 'text' ? drawnTailGutter(this.rowGroup.showAvatar) : 7; }
   private keyboardWidth(): number {
     const p = this.plan;
     return p !== null ? p.width - p.bubbleX - this.keyboardGutter() : 0;
@@ -171,55 +226,72 @@ export struct DrawnMessageRow {
   private get plan(): DrawnBubblePlan | null {
     const environment = `${this.env.appearanceEpoch}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
     const textEnvironment = `${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
-    const eligible = this.kind === 'text' ? drawnTextRowEligible(this.group, this.data, this.env.bubbleMaterialOn, this.a11y.active)
-      : this.kind === 'single' ? drawnSingleMediaEligible(this.group, this.env.bubbleMaterialOn, this.a11y.active)
-      : drawnAlbumEligible(this.group, this.data, this.env.bubbleMaterialOn, this.a11y.active);
+    const eligible = this.kind === 'text' ? drawnTextRowEligible(this.rowGroup, this.rowData, this.env.bubbleMaterialOn, this.a11y.active)
+      : this.kind === 'single' ? drawnSingleMediaEligible(this.rowGroup, this.env.bubbleMaterialOn, this.a11y.active)
+      : drawnAlbumEligible(this.rowGroup, this.rowData, this.env.bubbleMaterialOn, this.a11y.active);
     if (this.env.drawnEnabled === false) { return this.rejectRoute(DrawnRouteReason.Disabled); }
     if (this.kind === 'text' ? this.env.drawnText === false : this.kind === 'single' ? this.env.drawnSingle === false : this.env.drawnAlbum === false) { return this.rejectRoute(DrawnRouteReason.Disabled); }
     // Match the former caption gate without building a paragraph just to discard
     // it. Empty media rows remain eligible when a body renderer is disabled.
-    const bodyText = this.kind === 'album' ? this.group.caption : this.group.head.text;
-    if (bodyText !== '' && (this.data.lightweightPlainText ? this.env.drawnPlain === false : this.env.drawnRich === false)) { return this.rejectRoute(DrawnRouteReason.BodyDisabled); }
+    const bodyText = this.kind === 'album' ? this.rowGroup.caption : this.rowGroup.head.text;
+    if (bodyText !== '' && (this.rowData.lightweightPlainText ? this.env.drawnPlain === false : this.env.drawnRich === false)) { return this.rejectRoute(DrawnRouteReason.BodyDisabled); }
     if (this.env.bubbleMaterialOn) { return this.rejectRoute(DrawnRouteReason.Material); }
     if (this.a11y.active) { return this.rejectRoute(DrawnRouteReason.Accessibility); }
     if (!eligible) { return this.rejectRoute(DrawnRouteReason.Policy); }
-    if (this.translation !== null) { return this.rejectRoute(DrawnRouteReason.Translation); }
+    // Read Local values even during handoff to retain async dependencies.
+    // Before attach commits the new owner, use current channel snapshots;
+    // do not mutate the prepared packet with stale views/role/translation.
+    const currentOwner = this.metadataOwner === this.metadataKey();
+    const localViews = this.views, localRole = this.role, localTranslation = this.translation;
+    const views = currentOwner ? localViews : viewCountLabelFor(this.rowData.chatId, this.rowGroup.head.id);
+    const role = currentOwner ? localRole : (this.rowGroup.head.senderTag ||
+      (this.rowData.isGroup && !this.rowGroup.head.isOutgoing && this.rowGroup.showSenderName
+        ? senderRoleFor(senderRoleKey(this.rowData.chatId, this.rowGroup.head.senderId)) : ''));
+    const translation = currentOwner ? localTranslation : translationStatusFor(this.rowGroup.head.id);
+    if (translation !== null) { return this.rejectRoute(DrawnRouteReason.Translation); }
     if (drawnTextUsesRtlLayout(textEnvironment)) { return this.rejectRoute(DrawnRouteReason.Rtl); }
-    const m = this.group.head;
-    // Match the actual header/quote/forward branches in both layout engines.
-    // Hidden metadata must not reject a drawable row or scan unused strings.
-    if (m.forwardFrom !== '' && !drawnChromeTextSupported(m.forwardFrom)) {
-      return this.rejectRoute(DrawnRouteReason.ChromeForward);
+    const m = this.rowGroup.head;
+    if (this.kind === 'album' && this.rowPreparedAlbum?.sameInput(this.rowGroup, this.rowData) &&
+      (this.presentationActive === false || this.rowPreparedAlbum.matches(this.rowGroup, this.rowData, {
+      radius: this.env.bubbleRadius, fontSize: this.env.msgTextSize, environment, textEnvironment,
+      role: m.senderTag || role, views
+    }))) {
+      drawnStageMetrics.markRoute(this.presentationActive === false ? 'PG/row-plan-held' : 'PG/row-plan-hit');
+      drawnStageMetrics.skip(DrawnStage.Layout);
+      this.recordRoute(DrawnRouteReason.Drawn);
+      return this.rowPreparedAlbum.plan;
     }
-    const shownName = this.data.isGroup && !m.isOutgoing && this.group.showSenderName && m.senderName !== '';
-    if (shownName) {
-      if (!drawnChromeTextSupported(m.senderName)) { return this.rejectRoute(DrawnRouteReason.ChromeSender); }
-      if (!drawnChromeTextSupported(m.senderTag || this.role)) { return this.rejectRoute(DrawnRouteReason.ChromeRole); }
-    }
-    if (m.replyToMessageId !== 0) {
-      if (!drawnChromeTextSupported(m.replySenderName)) { return this.rejectRoute(DrawnRouteReason.ChromeReplySender); }
-      if (!drawnChromeTextSupported(m.replyText)) { return this.rejectRoute(DrawnRouteReason.ChromeReplyText); }
-    }
+    const chromeReason = drawnRowChromeReason(this.rowGroup, this.rowData, role);
+    if (chromeReason !== DrawnRouteReason.Drawn) { return this.rejectRoute(chromeReason); }
     const traced = drawnStageMetrics.begin(DrawnStage.Layout);
     try {
-      const ui = this.getUIContext();
+      // Footer/role/theme arrivals keep using this physical host's engine;
+      // handing off a plan must not make the first views update reshape text.
+      if (this.kind === 'album' && this.rowPreparedAlbum?.sameInput(this.rowGroup, this.rowData) && this.rowPreparedAlbum.engine !== null) {
+        drawnStageMetrics.markRoute('PG/row-plan-refresh');
+        const p = this.rowPreparedAlbum.refresh({ radius: this.env.bubbleRadius, fontSize: this.env.msgTextSize,
+          environment, textEnvironment, role: m.senderTag || role, views });
+        this.recordRoute(p === null ? this.rowPreparedAlbum.engine.failureReason : DrawnRouteReason.Drawn);
+        return p;
+      }
+      const ui = this.rowContext();
       if (this.kind === 'text' && this.textLayouts === null) {
-        this.textLayouts = takeDrawnRecycledLayout(this.data.chatId, m.rowId, 'text') ??
-          takeDrawnWarmLayout(this.data.chatId, m.id, 'text') ?? new DrawnTextLayouts();
+        this.textLayouts = takeDrawnRecycledLayout(this.rowData.chatId, m.rowId, 'text') ??
+          takeDrawnWarmLayout(this.rowData.chatId, m.id, 'text') ?? new DrawnTextLayouts();
       }
       if (this.kind === 'album' && this.albumLayouts === null) {
-        this.albumLayouts = takeDrawnRecycledLayout(this.data.chatId, m.rowId, 'album') ??
-          takeDrawnWarmLayout(this.data.chatId, m.id, 'album') ?? new DrawnAlbumLayouts();
+        this.albumLayouts = takeDrawnRecycledLayout(this.rowData.chatId, m.rowId, 'album') ??
+          takeDrawnWarmLayout(this.rowData.chatId, m.id, 'album') ?? new DrawnAlbumLayouts();
       }
       if (this.kind === 'single' && this.singleLayouts === null) {
-        this.singleLayouts = takeDrawnRecycledLayout(this.data.chatId, m.rowId, 'single') ??
-          takeDrawnWarmLayout(this.data.chatId, m.id, 'single') ?? new DrawnSingleMediaLayouts();
+        this.singleLayouts = takeDrawnRecycledLayout(this.rowData.chatId, m.rowId, 'single') ??
+          takeDrawnWarmLayout(this.rowData.chatId, m.id, 'single') ?? new DrawnSingleMediaLayouts();
       }
       const layouts = this.kind === 'text' ? this.textLayouts : this.kind === 'single' ? this.singleLayouts : this.albumLayouts;
-      if (layouts !== null) { this.layoutRetention.remember(this.group, this.data, this.kind, layouts); }
-      const p = layouts?.prepare(ui, this.group, this.data, {
+      if (layouts !== null) { this.layoutRetention.remember(this.rowGroup, this.rowData, this.kind, layouts); }
+      const p = layouts?.prepare(ui, this.rowGroup, this.rowData, {
         radius: this.env.bubbleRadius, fontSize: this.env.msgTextSize, environment, textEnvironment,
-        role: m.senderTag || this.role, views: this.views
+        role: m.senderTag || role, views
       }) ?? null;
       this.recordRoute(p === null ? (layouts?.failureReason === undefined || layouts.failureReason === DrawnRouteReason.Drawn
         ? DrawnRouteReason.LayoutNull : layouts.failureReason) : DrawnRouteReason.Drawn);
@@ -233,11 +305,25 @@ export struct DrawnMessageRow {
     } finally { drawnStageMetrics.end(traced); }
   }
 
+  // The staged packet and the child's visibility Param arrive in separate
+  // updates. Bind the admitted owner as soon as its packet is published: a
+  // false -> true visibility reset may reseed Monitor without a callback.
+  // Never bind the retained packet while it still belongs to the previous row.
+  private presentationReady(): boolean {
+    if (this.publication === undefined) { return this.presentationActive !== false; }
+    const packet = this.publication.packet;
+    return this.publication.hostActive && packet !== null &&
+      packet.group.head.rowId === this.group.head.rowId && packet.data.chatId === this.data.chatId;
+  }
+
   private attach(): void {
-    if (!this.active) { return; }
+    // Packet monitors may run after recursive V2 reset has reseeded the epoch.
+    // The explicit live host is authoritative for this retained child.
+    if (this.publication?.hostActive === true) { this.active = true; }
+    if (!this.active || !this.presentationReady()) { return; }
     this.syncMediaVisibility();
     const environment = this.roleEnvironment;
-    if (this.attachedGroup === this.group && this.attachedData === this.data &&
+    if (this.attachedGroup === this.rowGroup && this.attachedData === this.rowData &&
       this.attachedEnvironment === environment) {
       drawnStageMetrics.skip(DrawnStage.Attach); return;
     }
@@ -245,8 +331,8 @@ export struct DrawnMessageRow {
     this.attachedGroup = null; this.attachedData = null;
     const traced = drawnStageMetrics.begin(DrawnStage.Attach);
     try {
-      const m = this.group.head;
-      const identity = `${this.data.chatId}:${m.rowId}`;
+      const m = this.rowGroup.head;
+      const identity = `${this.rowData.chatId}:${m.rowId}`;
       if (identity !== this.inputIdentity) {
         this.inputIdentity = identity; this.touchPlan = null; this.touchReaction = null; this.touchLink = null;
         this.touchRowId = 0; this.touchChatId = 0; this.foreground.press(null);
@@ -254,44 +340,81 @@ export struct DrawnMessageRow {
       // The same sender can gain/lose an animated photo; identity-only memoization
       // would miss store updates. This is one O(1) lookup, with no network request.
       this.avatarAnimated = senderHasAnimatedPhoto(m.senderId, m.senderIsUser);
-      this.channels.attach(this.data.chatId, m, this.data.isGroup && !m.isOutgoing && this.group.showSenderName);
+      this.channels.attach(this.rowData.chatId, m, this.rowData.isGroup && !m.isOutgoing && this.rowGroup.showSenderName);
+      const metadataOwner = this.metadataKey();
+      if (this.metadataOwner !== metadataOwner) { this.metadataOwner = metadataOwner; }
       // Commit only after successful attachment. Channels deliver later status,
       // translation and avatar changes independently of these input snapshots.
-      this.attachedGroup = this.group; this.attachedData = this.data;
+      this.attachedGroup = this.rowGroup; this.attachedData = this.rowData;
       this.attachedEnvironment = environment;
     } finally { drawnStageMetrics.end(traced); }
   }
   private syncMedia(): void {
-    if (!this.active) { return; }
+    if (!this.active || !this.presentationReady()) { return; }
     const p = this.plan;
-    if (p === null) { this.media.recycle(); }
-    else { this.media.prepare(this.getUIContext(), p, this.group, this.kind === 'album'); }
+    if (p === null) { this.albumCanvas.reset(); this.media.recycle(); }
+    else {
+      const ui = this.rowContext();
+      this.media.prepare(ui, p, this.rowGroup, this.kind === 'album');
+      this.albumCanvas.bind(ui, p.nativeTiles, this.media.slots, p.density, this.albumCanvasEnabled);
+    }
   }
+  @Computed
+  private get albumCanvasEnabled(): boolean {
+    return this.kind === 'album' && this.env.drawnAlbumCanvas !== false && this.sendState !== 'sending';
+  }
+  @Computed
+  private get publicationActivationEpoch(): number { return this.publication?.activationEpoch ?? 0; }
+  @Monitor('publicationActivationEpoch')
+  private publicationActivated(): void {
+    if (this.publication?.hostActive !== true) { return; }
+    // Do not rely on a retained descendant receiving aboutToReuse. The host
+    // explicitly resumes it; pending presentation still blocks old bindings.
+    this.active = true;
+    this.attach(); this.syncMedia(); this.syncDeleteCapture();
+  }
+  @Monitor('presentationActive')
+  private presentationChanged(): void {
+    if (this.presentationReady()) { this.attach(); this.syncMedia(); this.syncDeleteCapture(); }
+    else { this.channels.detach(); }
+  }
+  @Monitor('albumCanvasEnabled')
+  private albumCanvasPolicyChanged(): void { this.syncMedia(); }
   @Computed
   private get roleEnvironment(): string { return `${this.env.langEpoch}:${this.env.bubbleMaterialOn}`; }
   @Monitor('roleEnvironment')
   private roleEnvironmentChanged(): void { this.attach(); }
-  @Monitor('group', 'data')
+  @Monitor('rowGroup', 'rowData')
   private inputChanged(): void {
-    this.attach();
-    // Cached geometry may retain identity across sender/path updates. Unchanged
-    // tile arrays skip image binding entirely; avatar refresh is constant time.
-    this.syncMedia();
+    const traced = drawnStageMetrics.begin(DrawnStage.RowInput);
+    try {
+      this.attach();
+      // Cached geometry may retain identity across sender/path updates. Unchanged
+      // tile arrays skip image binding entirely; avatar refresh is constant time.
+      this.syncMedia();
+    } finally { drawnStageMetrics.end(traced); }
   }
   @Computed
-  private get deleteNodeKey(): string { return `dissolve-delete-message-${this.data.chatId}-${this.group.head.rowId}`; }
+  private get deleteNodeKey(): string { return `dissolve-delete-message-${this.rowData.chatId}-${this.rowGroup.head.rowId}`; }
   @Computed
-  private get deleteCaptureSupported(): boolean { return !drawnLiveSurface(this.group, this.data); }
+  private get deleteCaptureSupported(): boolean { return !drawnLiveSurface(this.rowGroup, this.rowData); }
   @Monitor('deleteNodeKey', 'leaving', 'deleteCaptureSupported', 'actions')
   private syncDeleteCapture(): void {
-    if (!this.active || this.plan === null) { this.leaveCapture.reset(); return; }
-    this.leaveCapture.bind(this.deleteNodeKey, this.group.head.rowId, this.leaving,
+    if (!this.active || !this.presentationReady() || this.plan === null) { this.leaveCapture.reset(); return; }
+    this.leaveCapture.bind(this.deleteNodeKey, this.rowGroup.head.rowId, this.leaving,
       this.deleteCaptureSupported, this.actions.rowLeave);
   }
   @Monitor('plan')
-  private layoutChanged(): void { this.syncMedia(); this.syncDeleteCapture(); }
+  private layoutChanged(): void {
+    const traced = drawnStageMetrics.begin(DrawnStage.RowLayoutChanged);
+    try { this.syncMedia(); this.syncDeleteCapture(); }
+    finally { drawnStageMetrics.end(traced); }
+  }
   aboutToAppear(): void { this.active = true; this.attach(); this.syncMedia(); this.syncDeleteCapture(); }
   aboutToRecycle(): void {
+    // A staged child keeps its physical branch while hidden. Releasing pixels
+    // must not temporarily replace one canvas with six native tiles on reuse.
+    if (this.presentationActive !== false) { this.retainedCanvasMode = this.albumCanvas.state.ready; }
     this.layoutRetention.release();
     this.textLayouts = null; this.albumLayouts = null; this.singleLayouts = null;
     this.mediaVisibilityEpoch++; this.mediaVisibilityKey = '';
@@ -299,22 +422,25 @@ export struct DrawnMessageRow {
     this.attachedGroup = null; this.attachedData = null; this.attachedEnvironment = '';
     this.inputIdentity = '';
     this.leaveCapture.reset();
-    this.allowBodyDrag = true;
+    this.interaction.reset();
     this.dragGesture.reset(); this.draggingMessage = false; this.touchOnBody = false;
-    this.active = false; this.channels.detach(); this.media.recycle();
-    this.touchRowId = 0; this.touchChatId = 0; this.menuShown = false; this.swipeX = 0;
+    this.active = false; this.channels.detach(); this.albumCanvas.reset(); this.media.recycle();
+    this.touchRowId = 0; this.touchChatId = 0;
     this.claimed = false; this.touchLink = null; this.touchPlan = null; this.foreground.press(null);
     this.touchReaction = null;
   }
   aboutToReuse(): void {
-    this.allowBodyDrag = true;
-    this.dragGesture.reset(); this.draggingMessage = false; this.touchOnBody = false;
-    this.touchRowId = 0; this.touchChatId = 0; this.touchPlan = null; this.touchLink = null;
-    this.touchReaction = null;
-    this.claimed = false; this.edge = false; this.menuOffset = 0; this.menuShown = false; this.swipeX = 0;
-    this.active = true; this.attach(); this.syncMedia(); this.syncDeleteCapture();
+    const traced = drawnStageMetrics.begin(DrawnStage.RowReuse);
+    try {
+      this.interaction.reset();
+      this.dragGesture.reset(); this.draggingMessage = false; this.touchOnBody = false;
+      this.touchRowId = 0; this.touchChatId = 0; this.touchPlan = null; this.touchLink = null;
+      this.touchReaction = null;
+      this.claimed = false; this.edge = false; this.menuOffset = 0;
+      this.active = true; this.attach(); this.syncMedia(); this.syncDeleteCapture();
+    } finally { drawnStageMetrics.end(traced); }
   }
-  aboutToDisappear(): void { this.aboutToRecycle(); this.media.dispose(); }
+  aboutToDisappear(): void { this.aboutToRecycle(); this.media.dispose(); this.rowUi = null; }
 
   private linkAt(x: number, y: number): DrawnRichHit | null {
     const p = this.plan;
@@ -327,33 +453,40 @@ export struct DrawnMessageRow {
   private click(event: ClickEvent): void {
     const p = this.plan;
     if (this.claimed || p === null || (event.source === SourceType.TouchScreen &&
-      (this.touchRowId !== this.group.head.rowId || this.touchChatId !== this.data.chatId))) { return; }
-    const m = this.group.head;
+      (this.touchRowId !== this.rowGroup.head.rowId || this.touchChatId !== this.rowData.chatId))) {
+      return;
+    }
+    const m = this.rowGroup.head;
     if (p.avatar.width > 0 && albumRectContains(p.avatar, event.x, event.y)) {
       if (m.senderIsUser && m.senderId > 0) { this.actions.onAvatarTap(m.senderId); }
       return;
     }
     for (const tile of p.tiles) {
       if (albumRectContains(tile, event.x, event.y)) {
-        if (this.data.selectionActive) { this.actions.onToggleSelectedMessage(tile.cell.messageId); }
+        if (this.rowData.selectionActive) { this.actions.onToggleSelectedMessage(tile.cell.messageId); }
         else if (tile.cell.failed && (this.kind === 'single' ? m.photoPath === ''
           : this.imageSlot(tile.cell.idx)?.path === '') && tile.cell.thumbFileId !== 0) {
           this.actions.onSpecialPhotoRetry(tile.cell.messageId);
         } else if (this.kind === 'single' && m.isAnimation) {
-          if (drawnAnimationPlaying(m, this.data, this.env, true)) { this.openMenu(event.x); }
+          if (drawnAnimationPlaying(m, this.rowData, this.env, true)) { this.openMenu(event.x); }
           else { this.actions.onAnimationTap(m.id, false); }
+        } else if (this.albumCanvas.state.ready) {
+          withAlbumCanvasTransition(tile.cell.messageId, (): void => {
+            this.actions.onMediaTap(tile.cell.messageId, event.windowX, event.windowY);
+          });
         } else { this.actions.onMediaTap(tile.cell.messageId, event.windowX, event.windowY); }
         return;
       }
     }
-    if (this.data.selectionActive) { return; }
+
+    if (this.rowData.selectionActive) { return; }
     const chrome = p.chrome;
     const reaction = this.reactionAt(event.x, event.y);
     if (reaction !== null) {
       if (event.source === SourceType.TouchScreen && (this.touchPlan !== p || this.touchReaction !== reaction)) { return; }
       this.foreground.press(null);
       if (reaction.reaction === null) {
-        this.actions.onShowReactorsList(m.id, `reactors_anchor_${this.data.chatId}_${m.id}`);
+        this.actions.onShowReactorsList(m.id, `reactors_anchor_${this.rowData.chatId}_${m.id}`);
       } else { this.actions.onSetReaction(m.id, reaction.key, reaction.reaction.isChosen); }
       return;
     }
@@ -387,16 +520,16 @@ export struct DrawnMessageRow {
     if (this.claimed || this.draggingMessage || tableScrollTouched()) { return; }
     const f = firstFinger(event.fingerList), p = this.plan;
     const x = this.rowToCanvasX(f?.localX ?? 0, Number(event.target.area.width));
-    const y = (f?.localY ?? 0) - (this.group.showSenderName ? 3 : 1);
+    const y = (f?.localY ?? 0) - (this.rowGroup.showSenderName ? 3 : 1);
     const reaction = this.reactionAt(x, y);
-    if (!this.data.selectionActive && reaction !== null && reaction.reaction !== null &&
+    if (!this.rowData.selectionActive && reaction !== null && reaction.reaction !== null &&
       this.touchPlan === p && this.touchReaction === reaction) {
       this.claimed = true; this.foreground.press(null);
-      this.actions.onShowReactors(this.group.head.id, reaction.key); return;
+      this.actions.onShowReactors(this.rowGroup.head.id, reaction.key); return;
     }
     if (f !== undefined && p !== null && p.avatar.width > 0 && albumRectContains(p.avatar, x, y)) {
       this.claimed = true; this.foreground.press(null);
-      const m = this.group.head;
+      const m = this.rowGroup.head;
       if (m.senderIsUser && m.senderId > 0) { this.actions.onAvatarLongPress(m.senderId, m.senderName); }
       return;
     }
@@ -407,17 +540,18 @@ export struct DrawnMessageRow {
     if (this.claimed || this.draggingMessage || tableScrollTouched()) { return; }
     this.claimed = true; this.foreground.press(null);
     const policy = messageGesturePolicy(this.env.gestureScheme);
-    if (this.data.selectionActive || policy.longPressSelects) { this.actions.onSelectMessages(this.group.memberIds); }
+    if (this.rowData.selectionActive || policy.longPressSelects) { this.actions.onSelectMessages(this.rowGroup.memberIds); }
     else if (policy.longPressOpensMenu) { this.openMenu(x); }
   }
   private rowToCanvasX(x: number, rowWidth: number): number {
-    return x - (this.group.head.isOutgoing ? rowWidth - 4 - (this.plan?.width ?? 0) : 4);
+    return x - (this.rowGroup.head.isOutgoing ? rowWidth - 4 - (this.plan?.width ?? 0) : 4);
   }
   private rowTouch(event: TouchEvent): void {
     const t = event.changedTouches[0] ?? event.touches[0];
     if (event.type === TouchType.Down && t !== undefined) {
       this.claimed = false; this.draggingMessage = false;
-      this.touchRowId = this.group.head.rowId; this.touchChatId = this.data.chatId;
+      this.touchRowId = this.rowGroup.head.rowId; this.touchChatId = this.rowData.chatId;
+
       this.edge = isEdgeSwipeStart(t.windowX, this.env.screenWidthVp);
     }
     if (event.type === TouchType.Cancel || event.touches.length > 1) {
@@ -434,7 +568,7 @@ export struct DrawnMessageRow {
       this.touchLink = this.linkAt(t.x, t.y);
       this.touchReaction = this.reactionAt(t.x, t.y);
       this.foreground.setPress(this.touchLink, this.plan?.density ?? 1);
-      if (!this.data.selectionActive) { this.foreground.pressReaction(this.touchReaction); }
+      if (!this.rowData.selectionActive) { this.foreground.pressReaction(this.touchReaction); }
     } else if (event.type === TouchType.Cancel || event.touches.length > 1 || this.touchPlan !== this.plan) {
       this.touchLink = null; this.foreground.press(null);
       this.touchReaction = null;
@@ -447,25 +581,25 @@ export struct DrawnMessageRow {
     }
   }
   private swipe(offset: number): void {
-    if (this.edge || this.data.editingActive || this.draggingMessage ||
+    if (this.edge || this.rowData.editingActive || this.draggingMessage ||
       (this.touchOnBody && this.canDragMessage() && this.dragGesture.prefersDrag(Date.now()))) { return; }
-    this.swipeX = Math.max(this.data.canReply ? SWIPE_REPLY_MAX : 0, Math.min(SWIPE_SELECT_MAX, offset));
+    this.swipeX = Math.max(this.rowData.canReply ? SWIPE_REPLY_MAX : 0, Math.min(SWIPE_SELECT_MAX, offset));
     if (this.swipeX !== 0) { this.claimed = true; this.foreground.press(null); }
   }
   private endSwipe(): void {
-    const usable = !this.edge && !this.data.editingActive && !this.draggingMessage &&
+    const usable = !this.edge && !this.rowData.editingActive && !this.draggingMessage &&
       !(this.touchOnBody && this.canDragMessage() && this.dragGesture.prefersDrag(Date.now()));
-    const reply = usable && this.data.canReply && this.swipeX <= SWIPE_REPLY_TRIGGER;
+    const reply = usable && this.rowData.canReply && this.swipeX <= SWIPE_REPLY_TRIGGER;
     const select = usable && this.swipeX >= SWIPE_SELECT_TRIGGER;
     this.getUIContext().animateTo({ duration: this.env.powerSaving || this.env.reduceAnim ? 0 : 180,
       curve: Curve.EaseOut }, (): void => { this.swipeX = 0; });
-    if (reply) { this.actions.onReplyTo(this.group.head.id); }
-    else if (select) { this.actions.onSelectMessages(this.group.memberIds); }
+    if (reply) { this.actions.onReplyTo(this.rowGroup.head.id); }
+    else if (select) { this.actions.onSelectMessages(this.rowGroup.memberIds); }
   }
 
   private canDragMessage(): boolean {
-    return this.kind === 'text' && !this.data.selectionActive && !this.data.editingActive &&
-      this.group.memberIds.length === 1 && this.group.head.id > 0;
+    return this.kind === 'text' && !this.rowData.selectionActive && !this.rowData.editingActive &&
+      this.rowGroup.memberIds.length === 1 && this.rowGroup.head.id > 0;
   }
   private dragTouch(event: TouchEvent): void {
     const t = event.touches[0] ?? event.changedTouches[0], p = this.plan;
@@ -482,7 +616,7 @@ export struct DrawnMessageRow {
     const now = Date.now();
     if (t !== undefined) { this.dragGesture.move(t.windowX, t.windowY, now); }
     if (event.type === TouchType.Up || event.type === TouchType.Cancel || event.touches.length > 1) {
-      const stale = this.touchRowId !== this.group.head.rowId || this.touchChatId !== this.data.chatId;
+      const stale = this.touchRowId !== this.rowGroup.head.rowId || this.touchChatId !== this.rowData.chatId;
       if (this.dragGesture.end(now, event.type !== TouchType.Up || stale || this.claimed)) {
         this.invokeLongPress(t?.x ?? this.touchX);
       }
@@ -491,16 +625,16 @@ export struct DrawnMessageRow {
 
   @Builder
   menu() {
-    DrawnBubbleMenu({ msg: this.group.head, group: this.group, data: this.data,
+    DrawnBubbleMenu({ msg: this.rowGroup.head, group: this.rowGroup, data: this.rowData,
       actions: this.actions, nowSec: this.nowSec });
   }
 
   private gridRadii(): BorderRadiuses {
-    const m = this.group.head;
-    const pure = this.group.caption === '' && m.text === '' && m.replyToMessageId === 0 &&
-      m.reactions.length === 0 && m.forwardFrom === '' && !(this.data.isChannel && m.commentCount > 0) &&
-      !(this.data.isGroup && !m.isOutgoing && this.group.showSenderName && m.senderName !== '');
-    return this.gridCorners.prepare(pure, this.env.bubbleRadius, m.isOutgoing, this.group.showSenderName, this.group.showAvatar);
+    const m = this.rowGroup.head;
+    const pure = this.rowGroup.caption === '' && m.text === '' && m.replyToMessageId === 0 &&
+      m.reactions.length === 0 && m.forwardFrom === '' && !(this.rowData.isChannel && m.commentCount > 0) &&
+      !(this.rowData.isGroup && !m.isOutgoing && this.rowGroup.showSenderName && m.senderName !== '');
+    return this.gridCorners.prepare(pure, this.env.bubbleRadius, m.isOutgoing, this.rowGroup.showSenderName, this.rowGroup.showAvatar);
   }
 
   // Track only this physical slot. Ordinary bitmap upgrades invalidate its
@@ -516,15 +650,15 @@ export struct DrawnMessageRow {
   private mediaVisibilityEpoch: number = 0;
   private mediaVisibilityKey: string = '';
   private syncMediaVisibility(): number {
-    const key = `${this.data.chatId}:${this.group.head.rowId}`;
+    const key = `${this.rowData.chatId}:${this.rowGroup.head.rowId}`;
     if (key !== this.mediaVisibilityKey) { this.mediaVisibilityKey = key; this.mediaVisibilityEpoch++; }
     return this.mediaVisibilityEpoch;
   }
   private mediaVisibility(): (visible: boolean, ratio: number) => void {
     const generation = this.syncMediaVisibility();
-    const chatId = this.data.chatId, rowId = this.group.head.rowId;
+    const chatId = this.rowData.chatId, rowId = this.rowGroup.head.rowId;
     return (_visible: boolean, ratio: number): void => {
-      if (this.active && generation === this.mediaVisibilityEpoch && this.data.chatId === chatId && this.group.head.rowId === rowId) {
+      if (this.active && generation === this.mediaVisibilityEpoch && this.rowData.chatId === chatId && this.rowGroup.head.rowId === rowId) {
         this.media.setVisible(ratio > 0);
       }
     };
@@ -544,21 +678,23 @@ export struct DrawnMessageRow {
 
   // The plan may retain identity for same-size footer edits. Keep paint content
   // as a separate dependency, so only the foreground observer is replayed.
-  @Computed
-  private get footerPaintKey(): string { return `${this.views}:${this.group.head.date}:${this.group.head.editDate}`; }
+  // Cheap projections read their underlying state in the consuming observer.
+  // They need no extra Computed binding to clear/rebuild during recursive reuse.
+  private get footerPaintKey(): string { return `${this.views}:${this.rowGroup.head.date}:${this.rowGroup.head.editDate}`; }
 
   // Computed publishes only when the grid snapshot changes. Footer, caption
   // placement and shell style can invalidate plan without touching tile nodes.
   @Computed
   private get nativeTiles(): DrawnBubbleTile[] { return this.plan?.nativeTiles ?? EMPTY_DRAWN_NATIVE_TILES; }
-  @Computed
-  private get mediaChatId(): number { return this.data.chatId; }
+  private get mediaChatId(): number { return this.rowData.chatId; }
   private mediaFrameCache: DrawnMediaFrames = new DrawnMediaFrames();
   @Computed
   private get mediaFrames(): DrawnMediaFrame[] {
     return this.mediaFrameCache.prepare(this.nativeTiles, this.mediaChatId, this.kind === 'single');
   }
   private mediaSlotCache: DrawnMediaSlots = new DrawnMediaSlots();
+  // This equality boundary keeps same-count tile replacements from notifying
+  // ForEach. The physical cache alone does not suppress reactive propagation.
   @Computed
   private get mediaSlots(): DrawnMediaSlot[] { return this.mediaSlotCache.prepare(this.nativeTiles.length); }
 
@@ -579,7 +715,7 @@ export struct DrawnMessageRow {
             .draggable(false).objectFit(ImageFit.Cover).blur(MINI_PLACEHOLDER_BLUR);
         }
         if (this.sendState === 'sending') {
-          LiveProgressRing({ fileId: (this.nativeTiles[slot.index]?.cell.isVideo ?? false) ? this.kind === 'single' ? this.group.head.videoFileId : (this.nativeTiles[slot.index]?.cell.videoFileId ?? 0)
+          LiveProgressRing({ fileId: (this.nativeTiles[slot.index]?.cell.isVideo ?? false) ? this.kind === 'single' ? this.rowGroup.head.videoFileId : (this.nativeTiles[slot.index]?.cell.videoFileId ?? 0)
             : (this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0), initialPercent: 0, ringSize: Math.min(44, Math.min((this.nativeTiles[slot.index]?.width ?? 0), (this.nativeTiles[slot.index]?.height ?? 0)) * .3) });
         } else if (this.imageSlot(slot.index)?.path === '') {
           if (!(this.nativeTiles[slot.index]?.cell.isVideo ?? false) && ((this.nativeTiles[slot.index]?.cell.failed ?? false) || (this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0) === 0)) {
@@ -588,25 +724,29 @@ export struct DrawnMessageRow {
               Text($r('app.string.settings_retry')).fontSize(11).fontColor(Color.White);
             }.padding(7).backgroundColor('#80000000').borderRadius(18);
           } else if ((this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0) !== 0 && !(this.nativeTiles[slot.index]?.cell.failed ?? false)) {
-            LiveProgressRing({ fileId: (this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0), initialPercent: this.kind === 'single' ? this.group.head.photoProgress : (this.nativeTiles[slot.index]?.cell.progress ?? 0),
+            LiveProgressRing({ fileId: (this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0), initialPercent: this.kind === 'single' ? this.rowGroup.head.photoProgress : (this.nativeTiles[slot.index]?.cell.progress ?? 0),
               ringSize: Math.min(34, Math.min((this.nativeTiles[slot.index]?.width ?? 0), (this.nativeTiles[slot.index]?.height ?? 0)) * .4) });
           }
         }
       }
       if (this.kind === 'single' && (this.nativeTiles[slot.index]?.cell.isVideo ?? false)) {
-        DrawnSingleMediaVideo({ msg: this.group.head, data: this.data, actions: this.actions,
+        DrawnSingleMediaVideo({ msg: this.rowGroup.head, data: this.rowData, actions: this.actions,
           slot: this.media.slots[0], sendState: this.sendState, mediaWidth: (this.nativeTiles[slot.index]?.width ?? 0), mediaHeight: (this.nativeTiles[slot.index]?.height ?? 0),
           thumbReady: ((this.imageSlot(0)?.path ?? '') !== '' ||
             (this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0) === 0 || (this.nativeTiles[slot.index]?.cell.failed ?? false)) });
-      } else if (((this.nativeTiles[slot.index]?.cell.isVideo ?? false) || (this.nativeTiles[slot.index]?.cell.isLive ?? false)) && this.mediaActivated(slot.index)) {
-        DrawnAlbumVideo({ cell: this.media.slots[slot.index]?.content.cell, actions: this.actions, sendState: this.sendState,
-          mediaWidth: this.nativeTiles[slot.index]?.width ?? 0, mediaHeight: this.nativeTiles[slot.index]?.height ?? 0,
-          thumbReady: ((this.imageSlot(slot.index)?.path ?? '') !== '' ||
-            (this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0) === 0 || (this.nativeTiles[slot.index]?.cell.failed ?? false)) });
+      } else if (this.kind === 'album' && (this.media.slots[slot.index]?.content.hostReady ?? false)) {
+        DrawnAlbumVideo({ content: this.media.slots[slot.index]?.content, actions: this.actions, sendState: this.sendState });
       }
     }
     .attributeModifier(this.nativeAnchors.bind(slot.index, this.mediaFrames[slot.index]))
     .drawModifier(this.media.slots[slot.index]?.receiver);
+  }
+
+  // Preserve the equality boundary for retained canvas/native branch changes.
+  // The same effective mode must not replay the grid during staged reuse.
+  @Computed
+  private get useAlbumCanvas(): boolean {
+    return this.presentationActive === false ? this.retainedCanvasMode : this.albumCanvas.state.ready;
   }
 
   @Builder
@@ -614,12 +754,15 @@ export struct DrawnMessageRow {
     Stack({ alignContent: Alignment.TopStart }) {
       if (this.kind !== 'text') {
         Stack({ alignContent: Alignment.TopStart }) {
-          ForEach(this.mediaSlots, (slot: DrawnMediaSlot) => {
-            this.mediaTile(slot);
-          }, (slot: DrawnMediaSlot): string => slot.key);
+          if (!this.useAlbumCanvas) {
+            ForEach(this.mediaSlots, (slot: DrawnMediaSlot) => {
+              this.mediaTile(slot);
+            }, (slot: DrawnMediaSlot): string => slot.key);
+          }
         }.width(this.plan?.grid.width ?? 0).height(this.plan?.grid.height ?? 0)
         .position({ x: this.plan?.grid.x ?? 0, y: this.plan?.grid.y ?? 0 })
-        .borderRadius(this.gridRadii()).clip(true).hitTestBehavior(HitTestMode.None);
+        .borderRadius(this.gridRadii()).clip(true).hitTestBehavior(HitTestMode.None)
+        .drawModifier(this.useAlbumCanvas ? this.albumCanvas : undefined);
       }
       if ((this.plan?.caption?.source.links.length ?? 0) > 0 && this.plan?.caption?.source.targets.has(this.env.linkNavBusy)) {
         DrawnBusyLink({ plan: this.plan?.caption ?? null, url: this.env.linkNavBusy })
@@ -629,19 +772,20 @@ export struct DrawnMessageRow {
         .drawModifier(this.foreground.bind(this.plan, this.sendState, this.footerPaintKey))
         .hitTestBehavior(HitTestMode.None);
       if ((this.plan?.caption?.emojis.length ?? 0) > 0) {
-        DrawnInlineEmojiLayer({ plan: this.plan?.caption ?? null, msg: this.group.captionMessage ?? this.group.head })
+        DrawnInlineEmojiLayer({ plan: this.plan?.caption ?? null, msg: this.rowGroup.captionMessage ?? this.rowGroup.head })
           .position({ x: this.plan?.captionX ?? 0, y: this.plan?.captionY ?? 0 });
       }
       if ((this.plan?.quote?.mediaWidthPx ?? 0) > 0 || (this.plan?.chrome?.content.avatarCount ?? 0) > 0 ||
         (this.plan?.chrome?.reactions?.images.length ?? 0) > 0 || this.plan?.chrome?.reactions?.arrow) {
-        DrawnChromeIslands({ plan: this.plan, msg: this.group.head, chatId: this.data.chatId,
-          themeBubbleOut: this.data.themeBubbleOut });
+        DrawnChromeIslands({ plan: this.plan, msg: this.rowGroup.head, chatId: this.rowData.chatId,
+          themeBubbleOut: this.rowData.themeBubbleOut });
       }
     }
     .attributeModifier(this.canvasAttributes.bind(this.plan?.width ?? 0, this.plan?.height ?? 0,
       1 + this.jumpFocus * JUMP_FOCUS_SCALE,
-      this.group.head.isOutgoing ? '100%' : (this.plan?.bubbleX ?? 0),
-      1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS, this.canDragMessage() && this.allowBodyDrag))
+      this.rowGroup.head.isOutgoing ? '100%' : (this.plan?.bubbleX ?? 0),
+      1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS, this.canDragMessage() && this.allowBodyDrag,
+      this.deleteCaptureSupported && (this.plan?.caption?.source.links.length ?? 0) === 0))
     .drawModifier(this.painter.bind(this.plan, !this.env.scrollActive))
     .onTouch((e: TouchEvent): void => { this.touch(e); })
     .onClick((e: ClickEvent): void => { this.click(e); })
@@ -651,12 +795,12 @@ export struct DrawnMessageRow {
       if (!this.touchOnBody || this.claimed) { return {}; }
       this.dragGesture.claim(); this.draggingMessage = true; this.claimed = true;
       this.menuShown = false; this.foreground.press(null);
-      return configureMessageDrag(event, this.data.chatId, this.group.head.id, messageDragType(this.group.head.contentType));
+      return configureMessageDrag(event, this.rowData.chatId, this.rowGroup.head.id, messageDragType(this.rowGroup.head.contentType));
     })
     .onDragEnd((): void => { this.draggingMessage = false; })
     .bindContextMenu(this.menuShown, this.menu(), {
       offset: { x: this.menuOffset, y: 0 },
-      preview: drawnLiveSurface(this.group, this.data) || menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp) ? MenuPreviewMode.NONE : MenuPreviewMode.IMAGE,
+      preview: drawnLiveSurface(this.rowGroup, this.rowData) || menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp) ? MenuPreviewMode.NONE : MenuPreviewMode.IMAGE,
       previewAnimationOptions: { scale: [0.98, 1.035], transition: this.menuFx.preview() },
       borderRadius: 16, backgroundColor: Color.Transparent,
       backgroundBlurStyle: containerBlur('menu'), systemMaterial: overlayMaterial('menu'),
@@ -669,46 +813,44 @@ export struct DrawnMessageRow {
   build() {
     if (this.plan === null) {
       if (this.kind === 'text') {
-        LegacyTextRow({ group: this.group, data: this.data, actions: this.actions,
+        LegacyTextRow({ group: this.rowGroup, data: this.rowData, actions: this.actions,
           nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving });
       } else if (this.kind === 'single') {
-        LegacySingleMediaBubble({ msg: this.group.head, group: this.group, data: this.data, actions: this.actions,
+        LegacySingleMediaBubble({ msg: this.rowGroup.head, group: this.rowGroup, data: this.rowData, actions: this.actions,
           nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving });
       } else {
-        LegacyAlbumMessageBubble({ group: this.group, data: this.data, actions: this.actions,
-          nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving });
+        LegacyAlbumMessageBubble({ group: this.rowGroup, data: this.rowData, actions: this.actions,
+          nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving, dateInHost: this.dateInHost });
       }
     } else {
       Column() {
-        if (this.group.dateLabel !== '') {
-          Text(this.group.dateLabel).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).fontWeight(FontWeight.Medium)
+        if (!this.dateInHost && this.rowGroup.dateLabel !== '') {
+          Text(this.rowGroup.dateLabel).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).fontWeight(FontWeight.Medium)
             .backgroundColor($r('app.color.system_pill')).borderRadius(11)
             .padding({ left: 10, right: 10, top: 3, bottom: 3 }).margin({ top: 5, bottom: 3 });
         }
-        if (this.data.showUnreadDivider) {
+        if (this.rowData.showUnreadDivider) {
           Row() {
             Divider().layoutWeight(1).strokeWidth(1).color(COLOR_TEXT_SECONDARY).opacity(.55);
-            Text(this.data.dividerIsResume ? $r('app.string.mb_last_viewed_position') : $r('app.string.mb_unread'))
+            Text(this.rowData.dividerIsResume ? $r('app.string.mb_last_viewed_position') : $r('app.string.mb_unread'))
               .fontSize(13).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium).margin({ left: 10, right: 10 });
             Divider().layoutWeight(1).strokeWidth(1).color(COLOR_TEXT_SECONDARY).opacity(.55);
           }.width('100%').height(26).padding({ left: 12, right: 12, bottom: 4 });
         }
         Row() {
           Stack({ alignContent: Alignment.TopStart }) {
-            // Keep capture opacity separate from press opacity/scale and the
+            // Keep capture opacity separate from canvas press feedback and the
             // content's jump transform. The existing outer Stack hosts deletion;
             // no extra component + Stack are needed on every normal message.
             Row() {
-              Row() { this.canvasContent(); }
-                .attributeModifier(!this.deleteCaptureSupported || (this.plan?.caption?.source.links.length ?? 0) > 0
-                  ? DRAWN_BUBBLE_PRESS_NONE : DRAWN_BUBBLE_PRESS);
+              this.canvasContent();
             }.id(this.deleteNodeKey)
             .opacity(this.leaving > 0 && (!this.deleteCaptureSupported || this.capturedDeleteKey === this.deleteNodeKey) ? 0 : 1)
             .hitTestBehavior(this.leaving > 0 ? HitTestMode.None : HitTestMode.Default);
             if (this.leaving > 0 && this.deleteCaptureSupported) {
               ShatterDeleteOverlay({ nodeId: this.deleteNodeKey, particleBudget: this.actions.rowLeave.particleBudget(),
                 onCaptured: this.leaveCapture.captured(),
-                onFinish: this.leaveCapture.finished(this.group.head.rowId, this.actions.rowLeave) })
+                onFinish: this.leaveCapture.finished(this.rowGroup.head.rowId, this.actions.rowLeave) })
                 .position({ x: 0, y: 0 }).hitTestBehavior(HitTestMode.None);
             }
             if ((this.plan?.avatar.width ?? 0) > 0) {
@@ -720,38 +862,40 @@ export struct DrawnMessageRow {
                 .position({ x: this.plan?.avatar.x ?? 0, y: this.plan?.avatar.y ?? 0 })
                 .draggable(false).objectFit(ImageFit.Cover).hitTestBehavior(HitTestMode.None);
             }
+            // Position creates an outer wrapper; it must also pass touches to the canvas avatar hit region.
             if (this.avatarAnimated && (this.plan?.avatar.width ?? 0) > 0) {
-              SenderAnimatedLayer({ senderId: this.group.head.senderId, senderIsUser: this.group.head.senderIsUser, avatarSize: 38 })
-                .position({ x: this.plan?.avatar.x ?? 0, y: this.plan?.avatar.y ?? 0 });
+              SenderAnimatedLayer({ senderId: this.rowGroup.head.senderId, senderIsUser: this.rowGroup.head.senderIsUser, avatarSize: 38 })
+                .position({ x: this.plan?.avatar.x ?? 0, y: this.plan?.avatar.y ?? 0 })
+                .hitTestBehavior(HitTestMode.None);
             }
           }.width(this.plan?.width ?? 0).height(this.plan?.height ?? 0);
-        }.width('100%').padding({ left: 4, right: 4, top: this.group.showSenderName ? 3 : 1,
-          bottom: this.group.showAvatar ? 3 : 1 })
-        .justifyContent(this.group.head.isOutgoing ? FlexAlign.End : FlexAlign.Start)
+        }.width('100%').padding({ left: 4, right: 4, top: this.rowGroup.showSenderName ? 3 : 1,
+          bottom: this.rowGroup.showAvatar ? 3 : 1 })
+        .justifyContent(this.rowGroup.head.isOutgoing ? FlexAlign.End : FlexAlign.Start)
         .translate({ x: this.swipeX })
         .parallelGesture(PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 8 })
           .onActionUpdate((e: GestureEvent): void => { this.swipe(e.offsetX); })
           .onActionEnd((): void => { this.endSwipe(); }).onActionCancel((): void => { this.endSwipe(); }))
         .parallelGesture(LongPressGesture({ fingers: 1, repeat: false,
-          duration: this.group.head.reactions.length > 0 ? 450 : 500 })
+          duration: this.rowGroup.head.reactions.length > 0 ? 450 : 500 })
           .onAction((e: GestureEvent): void => { this.longPress(e); }))
         .onTouch((e: TouchEvent): void => { this.rowTouch(e); })
         .onClick((e: ClickEvent): void => {
-          if (!this.claimed && !this.data.selectionActive && messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
+          if (!this.claimed && !this.rowData.selectionActive && messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
             this.openMenu(this.rowToCanvasX(e.x, Number(e.target.area.width)));
           }
         });
-        if (this.group.head.inlineButtons.length > 0) {
-          BubbleInlineKeyboard({ msg: this.group.head, group: this.group, data: this.data, actions: this.actions,
+        if (this.rowGroup.head.inlineButtons.length > 0) {
+          BubbleInlineKeyboard({ msg: this.rowGroup.head, group: this.rowGroup, data: this.rowData, actions: this.actions,
             context: this.keyboardState(), drawnWidth: this.keyboardWidth(),
-            drawnLeft: 4 + (this.plan?.bubbleX ?? 0) + (this.group.head.isOutgoing ? 0 :
+            drawnLeft: 4 + (this.plan?.bubbleX ?? 0) + (this.rowGroup.head.isOutgoing ? 0 :
               this.keyboardGutter()),
-            drawnRight: 4 + (this.group.head.isOutgoing ? this.keyboardGutter() : 0) });
+            drawnRight: 4 + (this.rowGroup.head.isOutgoing ? this.keyboardGutter() : 0) });
         }
       }.width('100%')
         .onVisibleAreaApproximateChange({ ratios: [0], expectedUpdateInterval: 16 },
           this.kind === 'album' ? this.mediaVisibility() : undefined)
-        .transition(this.data.animateIn
+        .transition(this.rowData.animateIn
         ? TransitionEffect.translate({ y: 16 }).combine(TransitionEffect.OPACITY)
           .animation({ duration: animationDurationFor(this.env.chatEffects && this.env.messageEffects &&
             !this.env.powerSaving, scrollActiveNow(), 220), curve: Curve.FastOutSlowIn })

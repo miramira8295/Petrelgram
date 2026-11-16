@@ -6,8 +6,8 @@ import { mediaEntryIsPhoto, mediaEntryIsVideo } from '../../util/mediaEntryKind'
 import { MEDIA_VIEWING_PRIORITY } from '../../util/downloadPriority';
 import { KEY_POWER_SMOOTH_TRANSITIONS } from '../../store/AppSettings';
 import { promptAction } from '@kit.ArkUI';
+import { albumCanvasTransitionFor } from '../../util/albumCanvasTransition';
 import { ViewerUnderlay } from '../../util/viewerUnderlay';
-import { logI } from '../../util/log';
 import { MessageStore } from '../../store/MessageStore';
 import { VIEWER_CHROME_ON_OPEN } from './MediaViewerOverlay';
 
@@ -56,7 +56,6 @@ export class ChatViewerSession {
   @Trace underlayHidden: boolean = false;
   readonly underlay: ViewerUnderlay = new ViewerUnderlay((hidden: boolean): void => {
     this.underlayHidden = hidden;
-    logI(`[ViewerUnderlay] hidden=${hidden}`);
   });
 
   private playbackRequestedIds: number[] = [];
@@ -191,7 +190,8 @@ export class ChatViewerSession {
     //
     // 查看器**内部**那 9 处动画（chrome 淡入、缩放复位等）仍留在 EFFECT_BLUR 下
     // ——它们确实属于"模糊与缩放效果"。
-    animateToUI({ duration: this.host.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300), curve: Curve.Friction }, () => {
+    this.underlay.fadeOnly = albumCanvasTransitionFor(messageId);
+    animateToUI({ duration: this.host.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, this.underlay.fadeOnly ? 160 : 300), curve: Curve.Friction }, () => {
       this.onMediaTap(messageId);
     });
   }
@@ -232,7 +232,7 @@ export class ChatViewerSession {
     this.host.handoffFromViewer(viewerMessageId, handoffAlbumIdx, this.viewerPositionMs);
     this.host.resumePrefetch();
     // 与打开同一把闸，理由见 openViewer 里那段说明。
-    const duration: number = this.host.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 260);
+    const duration: number = this.host.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, this.underlay.fadeOnly ? 160 : 260);
     this.viewerClosing = true;
     animateToUI({ duration, curve: Curve.Friction }, () => {
       this.setTarget(0);
@@ -260,7 +260,7 @@ export class ChatViewerSession {
 
   private onMediaTap(messageId: number): void {
     const store = this.host.store();
-    if (store === null) { return; }
+    if (store === null) {  return; }
     const idx = this.host.messages().findIndex((m: MessageEntry) => m.id === messageId);
     if (idx < 0) {
       return;

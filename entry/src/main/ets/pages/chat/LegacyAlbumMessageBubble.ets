@@ -20,6 +20,8 @@ export struct LegacyAlbumMessageBubble {
   @Param nowSec: number = 0;
   @Param jumpFocus: number = 0;
   @Param leaving: number = 0;
+  // A staged album host can own the native date header above this body.
+  @Param dateInHost: boolean = false;
   private context: MessageBubbleContext = new MessageBubbleContext();
   private cornerCache: AlbumCornerRadiiCache = new AlbumCornerRadiiCache();
   private env = chatEnv;
@@ -63,7 +65,7 @@ export struct LegacyAlbumMessageBubble {
 
   build() {
     DrawnContentRow({ msg: this.group.head, group: this.group, data: this.data, actions: this.actions,
-      nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving, context: this.context }) {
+      nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving, context: this.context, dateInHost: this.dateInHost }) {
       this.content();
     }
   }

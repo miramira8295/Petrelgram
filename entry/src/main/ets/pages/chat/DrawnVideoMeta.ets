@@ -33,3 +33,24 @@ export class DrawnVideoMetaCache {
 }
 
 export const drawnVideoMetaCache: DrawnVideoMetaCache = new DrawnVideoMetaCache();
+
+// One numeric snapshot per physical video island. Reading an unchanged label
+// does not create a key or touch the shared LRU, including after V2 reuse.
+// No message, player, UI context or image is retained here.
+export class DrawnVideoMetaMemo {
+  private bytes: number = -1;
+  private seconds: number = -1;
+  private wide: boolean = false;
+  private language: number = -1;
+  private label: string = '';
+
+  prepare(bytes: number, seconds: number, wide: boolean, language: number): string {
+    if (this.bytes === bytes && this.seconds === seconds && this.wide === wide && this.language === language) {
+      return this.label;
+    }
+    const label = drawnVideoMetaCache.prepare(bytes, seconds, wide, language);
+    this.bytes = bytes; this.seconds = seconds; this.wide = wide; this.language = language;
+    this.label = label;
+    return label;
+  }
+}

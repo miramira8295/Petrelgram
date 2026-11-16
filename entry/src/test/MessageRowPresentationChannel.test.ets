@@ -151,7 +151,7 @@ export default function messageRowPresentationChannelTest() {
       expect(rows).assertEqual(1);
       unsub();
     });
-    it('album_video_poster_still_notifies_row_after_file_delivery', 0, () => {
+    it('album_video_poster_delivered_locally_does_not_notify_row', 0, () => {
       const entries = album(890260, 910260);
       entries[1].contentType = 'video';
       const next = entries.map((m: MessageEntry): MessageEntry => cloneMessage(m));
@@ -162,7 +162,7 @@ export default function messageRowPresentationChannelTest() {
       let rows = 0;
       const unsub = subscribeMessageRowPresentation(991108, first.head.rowId, (): void => { rows++; });
       publishMessageRowPresentations(991108, [collapseAlbums(next)[0]]);
-      expect(rows).assertEqual(1);
+      expect(rows).assertEqual(0);
       unsub();
     });
     it('album_existing_failure_path_arrival_refreshes_tap_to_retry', 0, () => {

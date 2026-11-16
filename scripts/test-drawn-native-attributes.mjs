@@ -6,6 +6,8 @@ import assert from 'node:assert/strict';
 const ts=(await import(process.env.TYPESCRIPT_MODULE||'typescript')).default;
 const root='entry/src/main/ets/';
 const ctx=vm.createContext({HitTestMode:{None:0}});
+const metrics=fs.readFileSync(root+'util/drawnStageMetrics.ets','utf8').replace(/^import\s[^;]+;\n/gm,'').replace(/\bexport /g,'');
+vm.runInContext(ts.transpileModule(metrics,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);
 const source=fs.readFileSync(root+'pages/chat/DrawnNativeAttributes.ets','utf8').replace(/^import\s[^;]+;\n/gm,'').replace(/\bexport /g,'');
 vm.runInContext(ts.transpileModule(source+'\nglobalThis.pool=DrawnMediaAnchorPool;globalThis.canvas=DrawnCanvasAttributes;', {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);
 function snapshot(modifier){
@@ -52,3 +54,23 @@ assert.doesNotMatch(tile,/Stack\.(size|position|borderRadius|clip|geometryTransi
 assert.doesNotMatch(source,/\.drawModifier\(|\.bindContextMenu\(/,'unsupported builder/drawing APIs remain in the DSL');
 assert.match(compiled,/Stack.bindContextMenu\(this.menuShown/,'context menu stays on original canvas host');
 console.log('PASS: 9000 warm anchors have equal complete snapshots; same geometry/new message changes only transition; resize/video/fallback/recreated node/A-B-A/focus/drag preserved; nine-slot bound and compiled attribute ownership verified. Native diff counts are modeled, not device timing.');
+// Press affects only the canvas opacity/group. It must not override jump scale,
+// capture-parent opacity, media geometry or drag policy; scroll/link/live gates
+// retain the ordinary appearance. Release/reuse clears all pressed attributes.
+let scrolling=false;ctx.tableScrollTouched=()=>scrolling;
+const feedback=c.bind(200,300,1.02,'100%',1.1,true,true);
+function pressState(modifier) {
+ const attrs=snapshot(modifier);let node;
+ node=new Proxy({}, {get:(_t,k)=>(...args)=>{attrs[k]=JSON.parse(JSON.stringify(args));return node;}});
+ modifier.applyPressedAttribute(node);return attrs;
+}
+const baseline=snapshot(feedback),pressed=pressState(feedback);
+assert.deepEqual(changes(baseline,pressed),['opacity','renderGroup']);
+assert.deepEqual(pressed.opacity,[.84]);assert.deepEqual(pressed.scale,baseline.scale);
+assert.deepEqual(snapshot(feedback),baseline,'normal state clears pressed rendering');
+scrolling=true;assert.deepEqual(pressState(feedback),baseline);
+scrolling=false;feedback.bind(200,300,1.02,'100%',1.1,true,false);
+assert.deepEqual(pressState(feedback),baseline,'links/live playback suppress whole-bubble dim');
+assert.doesNotMatch(compiled,/Row.attributeModifier(?:\.bind\(this\))?\([^;]*DRAWN_BUBBLE_PRESS/);
+assert.match(compiled,/Row.id\(this.deleteNodeKey\)/,'deletion capture keeps an independent parent');
+console.log('PASS: pressed canvas fades without changing jump geometry; scroll/link/live gates and release restore state; deletion capture remains outside the pressed node.');

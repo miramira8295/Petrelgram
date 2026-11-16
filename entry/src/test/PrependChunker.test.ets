@@ -2,6 +2,7 @@ import { describe, it, expect } from '@ohos/hypium';
 import {
   PrependChunker, PrependChunkClock, PrependChunkHost, headOffsetOf, PREPEND_CHUNK_GAP_MS
 } from '../main/ets/util/prependChunker';
+import { timelinePrependRows, TIMELINE_SCROLL_CACHE_ROWS } from '../main/ets/util/timelineCacheBudget';
 
 // 头插分批（方案 A）。背景：Repeat(reusable:false) 一次头插超过 List.cachedCount
 // 行，可视行全部新建（翻历史每页 29 行 ⇒ 每次翻页整屏重建）。分批器每次只放出
@@ -140,6 +141,40 @@ class Rig {
 
 export default function prependChunkerTest(): void {
   describe('prependChunker', (): void => {
+    it('头插预算不超过快速滑动缓存窗，停稳也不提前使用未建好的大缓存', 0, (): void => {
+      const configured: number[] = [1, 2, 3, 4, 8, 10, 16];
+      for (const count of configured) {
+        expect(timelinePrependRows(count)).assertEqual(Math.min(count, TIMELINE_SCROLL_CACHE_ROWS));
+      }
+      expect(timelinePrependRows(8)).assertEqual(3);
+      expect(timelinePrependRows(10)).assertEqual(3);
+      expect(timelinePrependRows(8, true, true)).assertEqual(8);
+      expect(timelinePrependRows(10, true, true)).assertEqual(8);
+      expect(timelinePrependRows(8, true, false)).assertEqual(16);
+      expect(timelinePrependRows(10, true, false)).assertEqual(16);
+      expect(timelinePrependRows(8, false, false)).assertEqual(3);
+    });
+
+    it('设置缓存8但快滑只有3时，29行历史分十批发布且已显示内容始终保留', 0, (): void => {
+      const shown: string[] = rows('d', 4);
+      const rig: Rig = new Rig(shown);
+      rig.host.k = timelinePrependRows(8);
+      const target: string[] = rows('n', 29).concat(shown);
+      rig.page.publish(target);
+      expect(rig.page.displayed.length).assertEqual(7);
+      expect(rig.page.displayed[3]).assertEqual('d0');
+      for (let batch = 1; batch < 10; batch++) {
+        const previous: number = rig.page.displayed.length;
+        rig.clock.advance(PREPEND_CHUNK_GAP_MS);
+        expect(rig.page.displayed.length - previous).assertEqual(batch === 9 ? 2 : 3);
+        expect(rig.page.displayed.slice(-4).join(',')).assertEqual(shown.join(','));
+      }
+      expect(rig.page.displayed === target).assertTrue();
+      expect(rig.host.republished).assertEqual(9);
+      expect(rig.chunker.pendingRows()).assertEqual(0);
+      expect(rig.clock.armed()).assertEqual(0);
+    });
+
     it('headOffsetOf：先试提示下标，不准再顺序找；找不到或超出扫描上限返回 -1', 0, (): void => {
       const shown: string[] = rows('d', 4);
       const target: string[] = rows('n', 5).concat(shown);

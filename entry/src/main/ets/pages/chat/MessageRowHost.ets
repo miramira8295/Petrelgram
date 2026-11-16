@@ -1,3 +1,4 @@
+import { MessageRowClock, messageRowNeedsClock } from '../../util/messageRowClock';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { CHAT_PAGE_REUSE_ID_LEVEL, rowReuseId } from '../../util/rowReuseId';
 import {
@@ -23,7 +24,7 @@ import {
 @ComponentV2
 export struct MessageRowHost {
   @Require @Param group: AlbumGroup;
-  @Param nowSec: number = 0;
+  @Require @Param clock: MessageRowClock;
   @Require @Param data: MessageBubbleRenderData;
   @Require @Param actions: MessageBubbleActions;
   @Require @Param reusePageScope: number;
@@ -76,10 +77,16 @@ export struct MessageRowHost {
       rowReuseId(this.data, this.group, CHAT_PAGE_REUSE_ID_LEVEL);
   }
 
+  private rowNowSec(): number {
+    // Branch before reading @Trace: ordinary incoming rows must not register
+    // a clock dependency just to forward a value that their body never uses.
+    return messageRowNeedsClock(this.group.head) ? this.clock.nowSec : 0;
+  }
+
   build() {
     ReusableMessageBubble({
       group: this.group,
-      nowSec: this.nowSec,
+      nowSec: this.rowNowSec(),
       data: this.data,
       actions: this.actions
     }).reuse({ reuseId: (): string => this.bubbleReuseId() });

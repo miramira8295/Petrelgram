@@ -1,3 +1,6 @@
+import { DrawnStage, drawnStageMetrics } from '../../util/drawnStageMetrics';
+import { KEY_DEBUG_TIMELINE_LAZY } from '../../util/debugTimelineRenderer';
+import { TimelineLazyDataSource } from './TimelineLazyDataSource';
 import { animateToUI } from '../../util/uiContext';
 import { PreparedMessageKeyCache } from '../../util/preparedMessageKeyCache';
 import { OneShotFrameCallback as ChatPageFrameCallback } from '../../util/oneShotFrameCallback';
@@ -172,12 +175,23 @@ export class ChatTimelineSession {
 
   // 消息列表的内部真相。Repeat 和 MediaViewerOverlay 不直接订阅这个普通字段；
   // publishGroupsNow 把它连同加载/分页状态一次性装进 timelineSnapshot 发布。
-  groups: AlbumGroup[] = [];
+  private groupSnapshot: AlbumGroup[] = [];
+  groupsRevision: number = 0;
+  get groups(): AlbumGroup[] { return this.groupSnapshot; }
+  set groups(value: AlbumGroup[]) {
+    if (this.groupSnapshot === value) { return; }
+    this.groupSnapshot = value; this.groupsRevision++;
+  }
 
   // Repeat 的数据源。**与 this.groups 逐项同对象**，区别只在更新方式：纯前插时
   // 在这同一个 @Trace 数组上 splice（让 MVCP 的"显示区外前插保位"真正触发），
   // 其余发布整份换引用。理由与真机对照见 util/splicePublish 文件头。
   @Trace timelineRows: AlbumGroup[] = [];
+
+  // Read once per conversation. A diagnostics toggle affects the next session,
+  // never the ownership of an already scrolling List.
+  readonly lazyTimelineEnabled: boolean = AppStorage.get<boolean>(KEY_DEBUG_TIMELINE_LAZY) ?? true;
+  readonly lazyRows: TimelineLazyDataSource = new TimelineLazyDataSource();
 
   @Trace timelineSnapshot: ChatTimelineSnapshot = emptyChatTimelineSnapshot();
 
@@ -389,8 +403,20 @@ export class ChatTimelineSession {
       this.bindings!.langEpoch(),
       this.timelineGeometryDividerId()
     );
+    if (this.lazyTimelineEnabled) {
+      this.publishLazyRows(groups);
+    } else {
+      this.groups = groups;
+      this.timelineRows = groups;
+    }
+  }
+
+  private publishLazyRows(groups: AlbumGroup[]): void {
     this.groups = groups;
+    // Keep the existing session invariant; the lazy branch does not subscribe
+    // to this array. Prefetch data and geometry have already been reconciled.
     this.timelineRows = groups;
+    this.lazyRows.setRows(groups, this.rowKeyOf, this.bindings!.langEpoch(), this.listRebuildEpoch);
   }
 
   // 纯前插：在**同一个** @Local 数组上 splice，再把内容变了的旧行按下标原地换掉。
@@ -404,6 +430,10 @@ export class ChatTimelineSession {
       this.bindings!.langEpoch(),
       this.timelineGeometryDividerId()
     );
+    if (this.lazyTimelineEnabled) {
+      this.publishLazyRows(next);
+      return;
+    }
     const prev: AlbumGroup[] = this.groups;
     const patches: number[] = patchIndicesAfterPrepend(prev, next, head);
     this.timelineRows.splice(0, 0, ...next.slice(0, head));
@@ -455,6 +485,10 @@ export class ChatTimelineSession {
       this.bindings!.langEpoch(),
       this.timelineGeometryDividerId()
     );
+    if (this.lazyTimelineEnabled) {
+      this.publishLazyRows(next);
+      return;
+    }
     const prev: AlbumGroup[] = this.groups;
     for (let i = 0; i < prev.length; i++) {
       if (next[i] !== prev[i]) {
@@ -497,6 +531,10 @@ export class ChatTimelineSession {
       this.bindings!.langEpoch(),
       this.timelineGeometryDividerId()
     );
+    if (this.lazyTimelineEnabled) {
+      this.publishLazyRows(next);
+      return;
+    }
     const prev: AlbumGroup[] = this.groups;
     if (kind === 'dropHead') {
       this.timelineRows.splice(0, count);
@@ -548,83 +586,86 @@ export class ChatTimelineSession {
   // collapseAlbums 每次都产出全新对象，而 Repeat 按 item 引用判断要不要刷新，
   // 不还原没变过的行就等于每次发布都刷新整个可见窗口。
   publishGroupsNow(target: AlbumGroup[]): void {
-    // 头插超过 List.cachedCount 行时只放出紧贴已显示内容的那一批，其余到点续发
-    // （util/prependChunker）。下面整段拿到的就是这一批的快照，预取源与行数组同批推进。
-    const groups: AlbumGroup[] = this.prependChunker.shape(this.groups, target);
-    const next: AlbumGroup[] = reuseUnchangedRows(this.groups, groups);
-    // 【顺序（2026-09-11，两次 jscrash 之后）】预取数据面**必须先于** UI 面更新。
-    // splice 发布让 List 同步长行、同步回调 onScrollIndex；那时若 groupsData
-    // 还是旧长度，BasicPrefetcher 内部的旧区间与新下标对不上，IndexRange 抛
-    // "Invalid range"（jscrash 20260911100232 / 100238，均落在
-    // handleTimelineScrollIndex 的 visibleAreaChanged）。新数组时代 Repeat 的更
-    // 新经微任务延后，回调总在 setRows 之后到，所以从未撞上。
-    //
-    // ⚠️ 预取源拿的是 **groups（原始那份）**，不是 next（合并那份）——两者
-    // 必须不同，这不是笔误。
-    //
-    // photoPaths / head.photoPath **刻意不进行 key**（collapseAlbums.ets 里
-    // mutableSig 只带 photoFileId），因为缩略图落地要走 mediaThumbChannel 旁路
-    // 直达气泡，不该拖着整行重建。代价是：缩略图/原图落地那一次发布里行 key
-    // 一个字没变 ⇒ sameRenderSnapshot 为真 ⇒ reuseUnchangedRows 还回**上一份
-    // 快照的对象** ⇒ 那一行的 photoPath 在 next 里**永远停在 ''**。
-    //
-    // 给 Repeat 用的 this.groups 必须是 next（对象身份不变才不会白刷新一整屏），
-    // 但 AlbumGroupDataSource.imageRequestFor 是按 head.photoPath 决定预不预取的：
-    // 喂它 next，它对这些行 `return null`，BasicPrefetcher 一次都不会预取——
-    // 预取整条静默失效。所以数据面喂原始那份，UI 面喂合并那份。
-    //
-    // 这一行**在 changed 之外**，故意的：合并那份逐项相同（changed === false）
-    // 恰恰是「只有旁路字段变了」的那次发布，而那正是预取源唯一需要的更新。
-    this.groupsData.setRows(groups);
-    const changed: boolean = !sameRowArray(this.groups, next);
-    // 全等的一次发布不换数组引用：@Local 的通知是按引用发的，换一个逐项相同
-    // 的新数组照样通知 ⇒ Repeat 照样跑一遍 diff。changed 本来就算好了，用上。
-    if (changed) {
-      // 删消息时让剩下的行平滑合拢（issue #149）。**只有这一种发布带动画**：
-      // 判据见 util/rowRemoval —— 行变少、且少掉的那几行前后都还有行留着。
-      // 往上翻页时从一头砍掉旧行同样是"行变少"，但那是滚动热路径，绝不能动画。
-      // 判据只在行数变少时才跑，平时零成本。
-      if (next.length < this.groups.length &&
-        isInteriorRowRemoval(
-          this.groups.map((g: AlbumGroup): number => g.head.id),
-          next.map((g: AlbumGroup): number => g.head.id))) {
-        animateToUI({
-          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200),
-          curve: Curve.EaseOut
-        }, (): void => {
-          this.replaceTimelineGroups(next);
-          this.commitTimelineSnapshot();
-        });
-      } else {
-        // 对象优先的形状判定：只有对象不同的那几行才去算 rowIdentity
-        // （原先每次发布都要拼 2N 个身份串，揭示期每帧一次）。
-        const plan: EdgeSplicePlan | null = SPLICE_PUBLISH_ENABLED
-          ? planEdgeSpliceRows(this.groups, next,
-              (row: Object): string => rowIdentity(row as AlbumGroup))
-          : null;
-        const patchShape: boolean = plan !== null &&
-          (plan.kind === 'patch' || plan.kind === 'append');
-        // 临时探针：见 splicePublish 末尾。揭示期那种每帧一次的 patch 不扫。
-        if (PUBLISH_DUPLICATE_SCAN && !(plan !== null && plan.kind === 'patch')) {
-          this.reportDuplicateRows(next, plan === null ? 'replace' : plan.kind);
-        }
-        if (plan !== null && plan.kind === 'prepend') {
-          this.splicePrependGroups(next, plan.count);
-        } else if (patchShape && SPLICE_PATCH_PUBLISH_ENABLED) {
-          this.spliceAppendGroups(next, plan!.count);
-        } else if (plan !== null && !patchShape) {
-          this.spliceDropGroups(next, plan.kind, plan.count);
+    const traced = drawnStageMetrics.begin(DrawnStage.GroupsPublish);
+    try {
+      // 头插超过 List.cachedCount 行时只放出紧贴已显示内容的那一批，其余到点续发
+      // （util/prependChunker）。下面整段拿到的就是这一批的快照，预取源与行数组同批推进。
+      const groups: AlbumGroup[] = this.prependChunker.shape(this.groups, target);
+      const next: AlbumGroup[] = reuseUnchangedRows(this.groups, groups);
+      // 【顺序（2026-09-11，两次 jscrash 之后）】预取数据面**必须先于** UI 面更新。
+      // splice 发布让 List 同步长行、同步回调 onScrollIndex；那时若 groupsData
+      // 还是旧长度，BasicPrefetcher 内部的旧区间与新下标对不上，IndexRange 抛
+      // "Invalid range"（jscrash 20260911100232 / 100238，均落在
+      // handleTimelineScrollIndex 的 visibleAreaChanged）。新数组时代 Repeat 的更
+      // 新经微任务延后，回调总在 setRows 之后到，所以从未撞上。
+      //
+      // ⚠️ 预取源拿的是 **groups（原始那份）**，不是 next（合并那份）——两者
+      // 必须不同，这不是笔误。
+      //
+      // photoPaths / head.photoPath **刻意不进行 key**（collapseAlbums.ets 里
+      // mutableSig 只带 photoFileId），因为缩略图落地要走 mediaThumbChannel 旁路
+      // 直达气泡，不该拖着整行重建。代价是：缩略图/原图落地那一次发布里行 key
+      // 一个字没变 ⇒ sameRenderSnapshot 为真 ⇒ reuseUnchangedRows 还回**上一份
+      // 快照的对象** ⇒ 那一行的 photoPath 在 next 里**永远停在 ''**。
+      //
+      // 给 Repeat 用的 this.groups 必须是 next（对象身份不变才不会白刷新一整屏），
+      // 但 AlbumGroupDataSource.imageRequestFor 是按 head.photoPath 决定预不预取的：
+      // 喂它 next，它对这些行 `return null`，BasicPrefetcher 一次都不会预取——
+      // 预取整条静默失效。所以数据面喂原始那份，UI 面喂合并那份。
+      //
+      // 这一行**在 changed 之外**，故意的：合并那份逐项相同（changed === false）
+      // 恰恰是「只有旁路字段变了」的那次发布，而那正是预取源唯一需要的更新。
+      this.groupsData.setRows(groups);
+      const changed: boolean = !sameRowArray(this.groups, next);
+      // 全等的一次发布不换数组引用：@Local 的通知是按引用发的，换一个逐项相同
+      // 的新数组照样通知 ⇒ Repeat 照样跑一遍 diff。changed 本来就算好了，用上。
+      if (changed) {
+        // 删消息时让剩下的行平滑合拢（issue #149）。**只有这一种发布带动画**：
+        // 判据见 util/rowRemoval —— 行变少、且少掉的那几行前后都还有行留着。
+        // 往上翻页时从一头砍掉旧行同样是"行变少"，但那是滚动热路径，绝不能动画。
+        // 判据只在行数变少时才跑，平时零成本。
+        if (next.length < this.groups.length &&
+          isInteriorRowRemoval(
+            this.groups.map((g: AlbumGroup): number => g.head.id),
+            next.map((g: AlbumGroup): number => g.head.id))) {
+          animateToUI({
+            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200),
+            curve: Curve.EaseOut
+          }, (): void => {
+            this.replaceTimelineGroups(next);
+            this.commitTimelineSnapshot();
+          });
         } else {
-          this.replaceTimelineGroups(next);
+          // 对象优先的形状判定：只有对象不同的那几行才去算 rowIdentity
+          // （原先每次发布都要拼 2N 个身份串，揭示期每帧一次）。
+          const plan: EdgeSplicePlan | null = SPLICE_PUBLISH_ENABLED
+            ? planEdgeSpliceRows(this.groups, next,
+                (row: Object): string => rowIdentity(row as AlbumGroup))
+            : null;
+          const patchShape: boolean = plan !== null &&
+            (plan.kind === 'patch' || plan.kind === 'append');
+          // 临时探针：见 splicePublish 末尾。揭示期那种每帧一次的 patch 不扫。
+          if (PUBLISH_DUPLICATE_SCAN && !(plan !== null && plan.kind === 'patch')) {
+            this.reportDuplicateRows(next, plan === null ? 'replace' : plan.kind);
+          }
+          if (plan !== null && plan.kind === 'prepend') {
+            this.splicePrependGroups(next, plan.count);
+          } else if (patchShape && SPLICE_PATCH_PUBLISH_ENABLED) {
+            this.spliceAppendGroups(next, plan!.count);
+          } else if (plan !== null && !patchShape) {
+            this.spliceDropGroups(next, plan.kind, plan.count);
+          } else {
+            this.replaceTimelineGroups(next);
+          }
         }
       }
-    }
-    if (!this.pageVisible && changed) {
-      this.hiddenListDirty = true;
-    }
-    // Loading/paging flags and rows become visible to ChatTimelineHost through
-    // one immutable publication, after this whole transaction is complete.
-    this.commitTimelineSnapshot();
+      if (!this.pageVisible && changed) {
+        this.hiddenListDirty = true;
+      }
+      // Loading/paging flags and rows become visible to ChatTimelineHost through
+      // one immutable publication, after this whole transaction is complete.
+      this.commitTimelineSnapshot();
+    } finally { drawnStageMetrics.end(traced); }
   }
 
   // 临时探针（2026-09-11）：发布的这一份里有没有两行同身份。见 splicePublish 末尾。
@@ -896,46 +937,49 @@ export class ChatTimelineSession {
   }
 
   handleTimelineScrollIndex(start: number, end: number): void {
-    this.bindings!.playSlot.armSettle();
-    this.curStartIdx = start;
-    this.curEndIdx = end;
-    this.indexGroupsLen = this.groups.length;
-    if (this.bindings!.imeTailPinned()) {
-      return;
-    }
-    this.refreshAtBottom();
-    this.fillViewportIfNeeded();
-    this.curBottomId = this.bottomVisibleId(end);
-    this.bindings!.syncReturnState();
-    this.bindings!.markVisibleRead(end);
-    this.bindings!.topCard.updatePinnedFromScroll(start);
-    const visible: PrefetchRange | null =
-      clampPrefetchRange(start, end, this.groupsData.totalCount());
-    if (visible !== null) {
-      // 预取器的区间校验会抛（jscrash 20260911 ×2："Invalid range"）。预取只是
-      // 锦上添花，任何一次失败都不该带走整个应用；打一行日志留证据即可。
-      try {
-        this.imagePrefetcher.visibleAreaChanged(visible.start, visible.end);
-      } catch (e) {
-        logE(`[Prefetch] visibleAreaChanged(${visible.start},${visible.end})` +
-          ` total=${this.groupsData.totalCount()} rows=${this.groups.length} failed: ${e}`);
+    const traced = drawnStageMetrics.begin(DrawnStage.ScrollIndex);
+    try {
+      this.bindings!.playSlot.armSettle();
+      this.curStartIdx = start;
+      this.curEndIdx = end;
+      this.indexGroupsLen = this.groups.length;
+      if (this.bindings!.imeTailPinned()) {
+        return;
       }
-    }
-    if (!this.chatTgsScrollActive) {
-      this.bindings!.translation.drive(this.bindings!.translateChatsEnabled(), start, end);
-    }
-    this.syncMediaWindow(start, end);
-    if (olderTriggerHit(start, OLDER_TRIGGER_ROWS)) {
-      // 落地后的 start 天然贴着触发线：loadAround 只在目标上方放 15 行，而
-      // ScrollAlign.START 不算 contentStartOffset。这一页取回来就是一次前插。
-      // olderArmed 不动，用户下一次滑动照样能取。
-      if (!this.bindings!.jumpLandingHolding()) {
-        this.maybeLoadOlder();
+      this.refreshAtBottom();
+      this.fillViewportIfNeeded();
+      this.curBottomId = this.bottomVisibleId(end);
+      this.bindings!.syncReturnState();
+      this.bindings!.markVisibleRead(end);
+      this.bindings!.topCard.updatePinnedFromScroll(start);
+      const visible: PrefetchRange | null =
+        clampPrefetchRange(start, end, this.groupsData.totalCount());
+      if (visible !== null) {
+        // 预取器的区间校验会抛（jscrash 20260911 ×2："Invalid range"）。预取只是
+        // 锦上添花，任何一次失败都不该带走整个应用；打一行日志留证据即可。
+        try {
+          this.imagePrefetcher.visibleAreaChanged(visible.start, visible.end);
+        } catch (e) {
+          logE(`[Prefetch] visibleAreaChanged(${visible.start},${visible.end})` +
+            ` total=${this.groupsData.totalCount()} rows=${this.groups.length} failed: ${e}`);
+        }
       }
-    }
-    if (reachedNewerPageTrigger(end, this.groups.length)) {
-      this.maybeLoadNewer(end);
-    }
+      if (!this.chatTgsScrollActive) {
+        this.bindings!.translation.drive(this.bindings!.translateChatsEnabled(), start, end);
+      }
+      this.syncMediaWindow(start, end);
+      if (olderTriggerHit(start, OLDER_TRIGGER_ROWS)) {
+        // 落地后的 start 天然贴着触发线：loadAround 只在目标上方放 15 行，而
+        // ScrollAlign.START 不算 contentStartOffset。这一页取回来就是一次前插。
+        // olderArmed 不动，用户下一次滑动照样能取。
+        if (!this.bindings!.jumpLandingHolding()) {
+          this.maybeLoadOlder();
+        }
+      }
+      if (reachedNewerPageTrigger(end, this.groups.length)) {
+        this.maybeLoadNewer(end);
+      }
+    } finally { drawnStageMetrics.end(traced); }
   }
 
   handleTimelineWillScroll(_offset: number, _state: ScrollState, source: ScrollSource): void {
@@ -944,32 +988,35 @@ export class ChatTimelineSession {
   }
 
   handleTimelineDidScroll(offset: number, state: ScrollState): void {
-    if (this.bindings!.imeTailPinned() && !this.listTouchActive) {
-      return;
-    }
-    if (state !== ScrollState.Idle && offset !== 0) {
-      noteScrollPlaceholderMotion();
-    }
-    if (this.nextDidScrollIsUserDriven && state !== ScrollState.Idle) {
-      this.userScrollOffsetTotal += offset;
-    }
-    this.nextDidScrollIsUserDriven = false;
-    this.refreshAtBottom();
-    this.bindings!.flash.syncFlashRect();
-    if (state === ScrollState.Scroll) {
-      this.accumulateNewerDrag(offset);
-    }
-    if (this.listTouchActive) {
-      if (this.stayAtUnread) {
-        this.stayAtUnread = false;
+    const traced = drawnStageMetrics.begin(DrawnStage.ScrollDid);
+    try {
+      if (this.bindings!.imeTailPinned() && !this.listTouchActive) {
+        return;
       }
-      if (!this.listUserScrollActive) {
-        this.listUserScrollActive = true;
+      if (state !== ScrollState.Idle && offset !== 0) {
+        noteScrollPlaceholderMotion();
       }
-    }
-    if (this.listUserScrollActive) {
-      this.updateFloatDate(this.curStartIdx);
-    }
+      if (this.nextDidScrollIsUserDriven && state !== ScrollState.Idle) {
+        this.userScrollOffsetTotal += offset;
+      }
+      this.nextDidScrollIsUserDriven = false;
+      this.refreshAtBottom();
+      this.bindings!.flash.syncFlashRect();
+      if (state === ScrollState.Scroll) {
+        this.accumulateNewerDrag(offset);
+      }
+      if (this.listTouchActive) {
+        if (this.stayAtUnread) {
+          this.stayAtUnread = false;
+        }
+        if (!this.listUserScrollActive) {
+          this.listUserScrollActive = true;
+        }
+      }
+      if (this.listUserScrollActive) {
+        this.updateFloatDate(this.curStartIdx);
+      }
+    } finally { drawnStageMetrics.end(traced); }
   }
 
   handleTimelineScrollStart(): void {
@@ -1041,21 +1088,58 @@ export class ChatTimelineSession {
   }
 
   handleTimelineScrollStop(): void {
-    this.timelineScrollActive = false;
-    this.nextDidScrollIsUserDriven = false;
-    setScrollActive(false);
-    setStickerDecodePaused(false);
-    // 滚动中冻结的 update 发布在这里冲刷（调度中枢批 1）。先于
-    // driveVisibleWork：让本轮可见性工作拿到冲刷后的最新行。
-    this.bindings!.store()?.flushScrollDeferredUpdate();
-    this.maybeTrimWindow();
-    this.resumeChatTgsAfterScroll();
-    this.driveVisibleWork();
-    this.bindings!.playSlot.armSettle();
-    this.bindings!.capMessageReuseBuckets();
-    // MessageStore may consume a ready prefetch synchronously. Do not publish
-    // that snapshot from inside ArkUI's scroll callback/update pass.
-    this.scheduleScrollWork((): void => { this.flushQueuedOlderLoad(); });
+    // Diagnose the synchronous callback without changing its order, scheduling
+    // or exception propagation. Fixed stages; disabled tracing performs no IO,
+    // timing reads, allocations or history/member traversal.
+    const stop = drawnStageMetrics.begin(DrawnStage.ScrollStop);
+    try {
+      const state = drawnStageMetrics.begin(DrawnStage.ScrollStopState);
+      try {
+        this.timelineScrollActive = false;
+        this.nextDidScrollIsUserDriven = false;
+      } finally { drawnStageMetrics.end(state); }
+      const effects = drawnStageMetrics.begin(DrawnStage.ScrollStopEffects);
+      try {
+        setScrollActive(false);
+      } finally { drawnStageMetrics.end(effects); }
+      const decode = drawnStageMetrics.begin(DrawnStage.ScrollStopDecode);
+      try {
+        setStickerDecodePaused(false);
+      } finally { drawnStageMetrics.end(decode); }
+      const flush = drawnStageMetrics.begin(DrawnStage.ScrollStopFlush);
+      try {
+        // Deferred message updates must reach visible work before it runs.
+        this.bindings!.store()?.flushScrollDeferredUpdate();
+      } finally { drawnStageMetrics.end(flush); }
+      const trim = drawnStageMetrics.begin(DrawnStage.ScrollStopTrim);
+      try {
+        this.maybeTrimWindow();
+      } finally { drawnStageMetrics.end(trim); }
+      const animations = drawnStageMetrics.begin(DrawnStage.ScrollStopAnimations);
+      try {
+        this.resumeChatTgsAfterScroll();
+      } finally { drawnStageMetrics.end(animations); }
+      const visible = drawnStageMetrics.begin(DrawnStage.ScrollStopVisible);
+      try {
+        this.driveVisibleWork(false);
+      } finally { drawnStageMetrics.end(visible); }
+      const play = drawnStageMetrics.begin(DrawnStage.ScrollStopPlay);
+      try {
+        this.bindings!.playSlot.armSettle();
+      } finally { drawnStageMetrics.end(play); }
+      const cache = drawnStageMetrics.begin(DrawnStage.ScrollStopCache);
+      try {
+        this.bindings!.capMessageReuseBuckets();
+      } finally { drawnStageMetrics.end(cache); }
+      const schedule = drawnStageMetrics.begin(DrawnStage.ScrollStopSchedule);
+      try {
+        // Keep potentially synchronous history publication outside this callback.
+        this.scheduleScrollWork((): void => {
+          const history = drawnStageMetrics.begin(DrawnStage.ScrollStopHistory);
+          try { this.flushQueuedOlderLoad(); } finally { drawnStageMetrics.end(history); }
+        });
+      } finally { drawnStageMetrics.end(schedule); }
+    } finally { drawnStageMetrics.end(stop); }
   }
 
   handleTimelineAreaChange(area: Area): void {
@@ -1229,28 +1313,34 @@ export class ChatTimelineSession {
 
   // 翻译 + 媒体窗口的统一驱动。滑动时由 onScrollIndex 带着真实区间调用，
   // 数据变化时由这里按"当前视口"调用一次 —— 否则进页面不滑动就什么都不发生。
-  driveVisibleWork(): void {
+  driveVisibleWork(settlePlayback: boolean = true): void {
     if (this.groups.length === 0) {
       return;
     }
-    this.refreshAtBottom();
+    const bottom = drawnStageMetrics.begin(DrawnStage.VisibleBottom);
+    try { this.refreshAtBottom(); } finally { drawnStageMetrics.end(bottom); }
     if (this.curEndIdx >= 0 && this.curEndIdx < this.groups.length) {
       this.curBottomId = this.bottomVisibleId(this.curEndIdx);
       this.bindings!.syncReturnState();
-      this.bindings!.markVisibleRead(this.curEndIdx);
+      const read = drawnStageMetrics.begin(DrawnStage.VisibleRead);
+      try { this.bindings!.markVisibleRead(this.curEndIdx); } finally { drawnStageMetrics.end(read); }
     }
     if (this.curStartIdx >= 0 && this.curStartIdx < this.groups.length) {
-      this.bindings!.topCard.updatePinnedFromScroll(this.curStartIdx);
+      const pinned = drawnStageMetrics.begin(DrawnStage.VisiblePinned);
+      try { this.bindings!.topCard.updatePinnedFromScroll(this.curStartIdx); } finally { drawnStageMetrics.end(pinned); }
     }
     // 首帧之前还没有滚动事件，curStartIdx/curEndIdx 是 -1：用首屏兜底
     // （聊天默认停在底部，所以取末尾一屏），滑动事件到了会立刻纠正。
     const range: VisibleRange = visibleRangeOrFallback(
       this.curStartIdx, this.curEndIdx, this.groups.length, this.bindings!.listCachedCount());
-    this.bindings!.translation.drive(this.bindings!.translateChatsEnabled(), range.start, range.end);
-    this.syncMediaWindow(range.start, range.end);
+    const translation = drawnStageMetrics.begin(DrawnStage.VisibleTranslation);
+    try { this.bindings!.translation.drive(this.bindings!.translateChatsEnabled(), range.start, range.end); }
+    finally { drawnStageMetrics.end(translation); }
+    const media = drawnStageMetrics.begin(DrawnStage.VisibleMedia);
+    try { this.syncMediaWindow(range.start, range.end); } finally { drawnStageMetrics.end(media); }
     // 同一个道理：数据一变（新消息到达、翻页、被查看器等场景清空候选表后
     // 恢复）就补一次播放位判定，不指望用户正好在这一刻滚动。
-    this.bindings!.playSlot.armSettle();
+    if (settlePlayback) { this.bindings!.playSlot.armSettle(); }
   }
 
   anchorItemY(index: number): number {
@@ -1918,57 +2008,62 @@ export class ChatTimelineSession {
 
   // Fire at most one loadOlder per arm (see olderArmed).
   maybeLoadOlder(): void {
-    // 诊断：用户报"999+ 却滑不动"，而日志里 loadOlder 一次都没被调用过——
-    // 需要看清是没被叫、还是被 olderArmed 挡住、还是 store 拒绝。
-    const store: MessageStore | null = this.bindings!.store();
-    if (!this.olderArmed || store === null) {
-      return;
-    }
-    // 手指**物理按着**时仍旧只排队、不发布。
-    //
-    // 【2026-09-11 真机回归，用户报"有时会往前跳一页"】这是拆闸时开的洞：
-    //   · ScrollAnchorController 在 touchActive 时**只跳过 fallback 那一支**
-    //     （reason=touch-fallback）；
-    //   · 而 29 行的前插必然把锚点行推出可视区，getItemRect 返回全零哨兵，
-    //     算出来的 mode 恰恰就是 fallback；
-    //   · 老设计里两者永远撞不上——flushQueuedOlderLoad 明确「手指按着不发」。
-    // 删掉排队之后，手指按着时发布 → 需要补位 → 补位被 touch 闸挡掉 → 一次都
-    // 不补 → 内容整页飞走。
-    //
-    // 惯性那半边保留（延迟收益主要在那儿：撞顶到历史出现原本要等 835~1187ms）。
-    // 惯性中没有手指在控制位置，fallback 也不会被 touch 闸挡。
-    if (this.listTouchActive) {
-      this.olderArmed = false;
-      this.olderLoadQueued = true;
-      // 保留网络提前量，但 prefetchOlder 不发布消息快照。
-      store.prefetchOlder();
-      return;
-    }
-    // **不再等停稳**（2026-09-10）。
-    //
-    // 这道闸原来的理由是"发布会让内容动，动就得补位，补位在惯性中是抢"。
-    // 三处几何跳变修掉之后（首行假胶囊、接缝行昵称回收、半个相册补齐，见
-    // util/collapseAlbums 的 RunHeadHints），前插对 List 而言已经是**纯插入**，
-    // 位置由 maintainVisibleContentPosition 自己保住，一次程序性滚动都不需要
-    // ——没有可抢的东西，也就没有等的必要。
-    //
-    // 等待的代价是实打实的：真机实测撞顶到历史出现 835 / 1053 / 1187ms，数据
-    // 其实早就在手上（`older prefetch ready`），纯粹被这道闸压着，用户报"卡在那"、
-    // "得再拽一下"。
-    //
-    // ⚠️ 更正（2026-09-11，真机 71/71 打脸）：这里原本写着"几何不变时补位闸
-    // 自己会返回 false"——**那是错的**。向上这侧的判据是 shouldCapturePrependAnchor，
-    // 它只看 `notifyKind==='older' && 消息窗口变长`，从不问 key 变没变；
-    // prependBreaksAnchor 除了单测没有任何生产调用方（向下那侧的
-    // appendBreaksAnchor 才是接着的）。所以只要翻一页历史就必然补位一次。
-    // 2026-09-11 之后前插锚点整体默认不做（见 PREPEND_ANCHOR_ENABLED），此段仅作历史。
-    //
-    // 两页在手时仍然**合成一次**发布（loadOlderMerged）：连发两次会让第二页
-    // 撞上 stale-index、整页无补偿地插进来，那是另一回事，与等不等手势无关。
-    const started: boolean = store.loadOlderMerged();
-    if (started || !store.getHasMoreOlder()) {
-      this.olderArmed = false;
-    }
+    const traced = drawnStageMetrics.begin(DrawnStage.LoadOlder);
+    try {
+      // 诊断：用户报"999+ 却滑不动"，而日志里 loadOlder 一次都没被调用过——
+      // 需要看清是没被叫、还是被 olderArmed 挡住、还是 store 拒绝。
+      const store: MessageStore | null = this.bindings!.store();
+      if (!this.olderArmed || store === null || this.prependChunker.pendingRows() > 0) {
+        // Already fetched history must reach the list before fetching another page.
+        // Keep the arm: the final publication can retry if still near the top.
+        return;
+      }
+      // 手指**物理按着**时仍旧只排队、不发布。
+      //
+      // 【2026-09-11 真机回归，用户报"有时会往前跳一页"】这是拆闸时开的洞：
+      //   · ScrollAnchorController 在 touchActive 时**只跳过 fallback 那一支**
+      //     （reason=touch-fallback）；
+      //   · 而 29 行的前插必然把锚点行推出可视区，getItemRect 返回全零哨兵，
+      //     算出来的 mode 恰恰就是 fallback；
+      //   · 老设计里两者永远撞不上——flushQueuedOlderLoad 明确「手指按着不发」。
+      // 删掉排队之后，手指按着时发布 → 需要补位 → 补位被 touch 闸挡掉 → 一次都
+      // 不补 → 内容整页飞走。
+      //
+      // 惯性那半边保留（延迟收益主要在那儿：撞顶到历史出现原本要等 835~1187ms）。
+      // 惯性中没有手指在控制位置，fallback 也不会被 touch 闸挡。
+      if (this.listTouchActive) {
+        this.olderArmed = false;
+        this.olderLoadQueued = true;
+        // 保留网络提前量，但 prefetchOlder 不发布消息快照。
+        store.prefetchOlder();
+        return;
+      }
+      // **不再等停稳**（2026-09-10）。
+      //
+      // 这道闸原来的理由是"发布会让内容动，动就得补位，补位在惯性中是抢"。
+      // 三处几何跳变修掉之后（首行假胶囊、接缝行昵称回收、半个相册补齐，见
+      // util/collapseAlbums 的 RunHeadHints），前插对 List 而言已经是**纯插入**，
+      // 位置由 maintainVisibleContentPosition 自己保住，一次程序性滚动都不需要
+      // ——没有可抢的东西，也就没有等的必要。
+      //
+      // 等待的代价是实打实的：真机实测撞顶到历史出现 835 / 1053 / 1187ms，数据
+      // 其实早就在手上（`older prefetch ready`），纯粹被这道闸压着，用户报"卡在那"、
+      // "得再拽一下"。
+      //
+      // ⚠️ 更正（2026-09-11，真机 71/71 打脸）：这里原本写着"几何不变时补位闸
+      // 自己会返回 false"——**那是错的**。向上这侧的判据是 shouldCapturePrependAnchor，
+      // 它只看 `notifyKind==='older' && 消息窗口变长`，从不问 key 变没变；
+      // prependBreaksAnchor 除了单测没有任何生产调用方（向下那侧的
+      // appendBreaksAnchor 才是接着的）。所以只要翻一页历史就必然补位一次。
+      // 2026-09-11 之后前插锚点整体默认不做（见 PREPEND_ANCHOR_ENABLED），此段仅作历史。
+      //
+      // 两页在手时仍然**合成一次**发布（loadOlderMerged）：连发两次会让第二页
+      // 撞上 stale-index、整页无补偿地插进来，那是另一回事，与等不等手势无关。
+      const started: boolean = store.loadOlderMerged();
+      if (started || !store.getHasMoreOlder()) {
+        this.olderArmed = false;
+      }
+    } finally { drawnStageMetrics.end(traced); }
   }
 
   // ⚠️ 更正（2026-09-11）：下面这段里「惯性中既不 prime、也不做事后补偿」在
@@ -1992,7 +2087,7 @@ export class ChatTimelineSession {
   //
   // 手指抬起时把按着期间攒下的那一发打出去（maybeLoadOlder 的排队分支）。
   flushQueuedOlderLoad(): void {
-    if (!this.olderLoadQueued || this.listTouchActive) {
+    if (!this.olderLoadQueued || this.listTouchActive || this.prependChunker.pendingRows() > 0) {
       return;
     }
     this.olderLoadQueued = false;
@@ -2003,6 +2098,7 @@ export class ChatTimelineSession {
     const started: boolean = store.loadOlderMerged();
     logW(`[OlderGate] flush started=${started} start=${this.curStartIdx}` +
       ` rows=${this.groups.length}`);
+    if (started || !store.getHasMoreOlder()) { this.olderArmed = false; }
     if (!started && store.getHasMoreOlder()) {
       // 请求若被另一条在途事务拒绝，下一次手势仍可重试。
       this.olderArmed = true;
@@ -2043,36 +2139,39 @@ export class ChatTimelineSession {
 
   // 只有闸在膛上、且视口确实往下走过，才再取一页。见 util/pageGate。
   maybeLoadNewer(end: number): void {
-    const timelineStore: MessageStore | null = this.bindings!.store();
-    if (timelineStore === null) {
-      return;
-    }
-    const gate: PageGate = this.newerGate;
-    const canFire: boolean = canFirePageGate(gate, end);
-    // ⚠️ 诊断 [NewerFire]：用户报"下滑也推不动"。要能分清两件完全不同的事：
-    //   闸挡住了      → 这里 canFire=false，且写明是 armed 还是弱闸挡的；
-    //   闸放行了没进展 → canFire=true / started=true，但后面 rows 不涨、
-    //                    或者 rows 涨了而 endIdx 原地不动（位置被布局吃掉）。
-    // 按 end 去重：onScrollIndex 只在可见区间变化时触发，但布局抖动会让它高频
-    // 变化，不去重会把环形缓冲刷满（logW 攒 300 行才落盘）。
-    if (end !== this.newerFireLoggedEnd) {
-      this.newerFireLoggedEnd = end;
-      const blockedBy: string = canFire
-        ? 'none' : (gate.armed ? 'weakGate' : 'disarmed');
-    }
-    if (!canFire) {
-      return;
-    }
-    // 谁扣的这一枪的扳机。判据是**这一膛是谁压上去的**：手指位移上膛的是用户
-    // （armedByUser=true），会话开局给首屏自动补页留的那一发不是。标记随请求带
-    // 到发布点，决定那一页落地时复不复位锚点。
-    // 不能读 listTouchActive / listUserScrollActive——那两个标志的语义不对，而且
-    // 和上膛条件同源，会让 skip 结构上不可达（见 util/appendAnchor）。
-    const userDriven: boolean = newerPageIsUserDriven(pageGateShotIsUserDriven(gate));
-    const started: boolean = timelineStore.loadNewer(userDriven);
-    if (started || !timelineStore.getHasMoreNewer()) {
-      this.newerGate = firedPageGate(gate, end);
-    }
+    const traced = drawnStageMetrics.begin(DrawnStage.LoadNewer);
+    try {
+      const timelineStore: MessageStore | null = this.bindings!.store();
+      if (timelineStore === null) {
+        return;
+      }
+      const gate: PageGate = this.newerGate;
+      const canFire: boolean = canFirePageGate(gate, end);
+      // ⚠️ 诊断 [NewerFire]：用户报"下滑也推不动"。要能分清两件完全不同的事：
+      //   闸挡住了      → 这里 canFire=false，且写明是 armed 还是弱闸挡的；
+      //   闸放行了没进展 → canFire=true / started=true，但后面 rows 不涨、
+      //                    或者 rows 涨了而 endIdx 原地不动（位置被布局吃掉）。
+      // 按 end 去重：onScrollIndex 只在可见区间变化时触发，但布局抖动会让它高频
+      // 变化，不去重会把环形缓冲刷满（logW 攒 300 行才落盘）。
+      if (end !== this.newerFireLoggedEnd) {
+        this.newerFireLoggedEnd = end;
+        const blockedBy: string = canFire
+          ? 'none' : (gate.armed ? 'weakGate' : 'disarmed');
+      }
+      if (!canFire) {
+        return;
+      }
+      // 谁扣的这一枪的扳机。判据是**这一膛是谁压上去的**：手指位移上膛的是用户
+      // （armedByUser=true），会话开局给首屏自动补页留的那一发不是。标记随请求带
+      // 到发布点，决定那一页落地时复不复位锚点。
+      // 不能读 listTouchActive / listUserScrollActive——那两个标志的语义不对，而且
+      // 和上膛条件同源，会让 skip 结构上不可达（见 util/appendAnchor）。
+      const userDriven: boolean = newerPageIsUserDriven(pageGateShotIsUserDriven(gate));
+      const started: boolean = timelineStore.loadNewer(userDriven);
+      if (started || !timelineStore.getHasMoreNewer()) {
+        this.newerGate = firedPageGate(gate, end);
+      }
+    } finally { drawnStageMetrics.end(traced); }
   }
 
   // 用户手指拖动列表：攒够位移就给向下分页的闸重新上膛。

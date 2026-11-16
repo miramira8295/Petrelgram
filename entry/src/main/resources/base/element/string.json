@@ -1,5 +1,6 @@
 {
   "string": [
+    { "name": "diag_timeline_lazy", "value": "实验列表（退出并重新进入聊天生效）" },
     {
       "name": "a11y_selected",
       "value": "，已选中"
@@ -13387,6 +13388,14 @@
     {
       "name": "diag_drawn_single",
       "value": "单图 / 视频整行"
+    },
+    {
+      "name": "diag_drawn_album_staging",
+      "value": "相册整行分帧"
+    },
+    {
+      "name": "diag_drawn_album_canvas",
+      "value": "静态相册单画布"
     },
     {
       "name": "diag_drawn_album",

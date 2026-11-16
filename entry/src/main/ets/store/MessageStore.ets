@@ -1,3 +1,4 @@
+import { DrawnStage, drawnStageMetrics } from '../util/drawnStageMetrics';
 import { customEmojiNeedsRepainting, inlineEmojiUpdate, InlineEmojiUpdate } from '../util/inlineCustomEmojiPaint';
 import { rememberOpenedChat } from '../services/RecentChatHistoryService';
 import { SharedPayload } from '../util/sharedContent';
@@ -260,7 +261,7 @@ export class MessageStore {
   private historyPending: boolean = false;
   private historyPendingKind: string = 'history';
   private isGroupFlag: boolean = false;
-  private repliedFetched: number[] = [];
+  private repliedFetched: Set<number> = new Set();
   // Reply previews already fetched, kept so a window replacement can restore
   // them without a second request (repliedFetched would refuse one anyway).
   private repliedPreview: Map<number, RepliedPreview> = new Map();
@@ -6428,40 +6429,52 @@ export class MessageStore {
   // Mentions are per-message, independent of the normal inbox high-water mark.
   // Going back to an older mention must still report it as viewed.
   markVisibleMentions(messageIds: number[]): void {
-    const ids = messageIds.filter((id: number): boolean => {
-      const index = this.indexOf(id);
-      return index >= 0 && this.messages[index].containsUnreadMention === true &&
-        !this.viewedMentions.has(id);
-    });
-    if (ids.length === 0) { return; }
-    for (const id of ids) { this.viewedMentions.add(id); }
-    const request: TdRequest = { '@type': 'viewMessages' };
-    request['chat_id'] = this.chatId;
-    request['message_ids'] = ids;
-    request['source'] = this.viewSource();
-    request['force_read'] = true;
-    this.client.send(request, 12000).catch((): void => {
-      for (const id of ids) { this.viewedMentions.delete(id); }
-    });
+    const traced = drawnStageMetrics.begin(DrawnStage.ReadMentions);
+    try {
+      // Most scroll callbacks contain no new mention. Allocate a request array
+      // only after the first match; recheck every time so failed requests retry.
+      let ids: number[] | null = null;
+      for (const id of messageIds) {
+        const index = this.indexOf(id);
+        if (index >= 0 && this.messages[index].containsUnreadMention === true && !this.viewedMentions.has(id)) {
+          if (ids === null) { ids = []; }
+          ids.push(id);
+        }
+      }
+      if (ids === null) { return; }
+      const pendingIds = ids;
+      for (const id of ids) { this.viewedMentions.add(id); }
+      const request: TdRequest = { '@type': 'viewMessages' };
+      request['chat_id'] = this.chatId;
+      request['message_ids'] = ids;
+      request['source'] = this.viewSource();
+      request['force_read'] = true;
+      this.client.send(request, 12000).catch((): void => {
+        for (const id of pendingIds) { this.viewedMentions.delete(id); }
+      });
+    } finally { drawnStageMetrics.end(traced); }
   }
 
   markViewed(maxVisibleId: number): void {
-    if (maxVisibleId <= this.viewedUpTo) {
-      return;
-    }
-    this.viewedUpTo = maxVisibleId;
-    this.clearManualUnreadFlag();
-    const req: TdRequest = { '@type': 'viewMessages' };
-    req['chat_id'] = this.chatId;
-    req['message_ids'] = [maxVisibleId];
-    // **source 必须显式给**，四种作用域各自一个值（见 util/viewMessageSource）。
-    // 原来只给私聊话题设，论坛话题和消息话题都留给 TDLib "按会话打开状态去猜"，
-    // 于是话题群组读完退出未读仍在（issue #190）。
-    req['source'] = this.viewSource();
-    req['force_read'] = true;
-    this.client.send(req).catch((e: TdError) => {
-      logE(`MessageStore.viewMessages failed: ${e.message}`);
-    });
+    const traced = drawnStageMetrics.begin(DrawnStage.ReadViewed);
+    try {
+      if (maxVisibleId <= this.viewedUpTo) {
+        return;
+      }
+      this.viewedUpTo = maxVisibleId;
+      this.clearManualUnreadFlag();
+      const req: TdRequest = { '@type': 'viewMessages' };
+      req['chat_id'] = this.chatId;
+      req['message_ids'] = [maxVisibleId];
+      // **source 必须显式给**，四种作用域各自一个值（见 util/viewMessageSource）。
+      // 原来只给私聊话题设，论坛话题和消息话题都留给 TDLib "按会话打开状态去猜"，
+      // 于是话题群组读完退出未读仍在（issue #190）。
+      req['source'] = this.viewSource();
+      req['force_read'] = true;
+      this.client.send(req).catch((e: TdError) => {
+        logE(`MessageStore.viewMessages failed: ${e.message}`);
+      });
+    } finally { drawnStageMetrics.end(traced); }
   }
 
   // Submit or change a poll answer. The request is guarded per message so a
@@ -6625,69 +6638,71 @@ export class MessageStore {
   }
 
   private resolveReplies(): void {
-    const missing: number[] = [];
-    this.messages = this.messages.map((e: MessageEntry) => {
-      if (e.replyToMessageId === 0 || e.replyText !== '') {
-        return e;
-      }
-      const target = this.messages.find((x: MessageEntry) => x.id === e.replyToMessageId);
-      if (target === undefined) {
-        // 之前拉过的先用缓存补上。loadAround 会整体替换窗口、条目重建，
-        // replyText 又变空——而 repliedFetched 记着"已经拉过"，于是请求被挡、
-        // 引用块永远空着（点引用跳过去再划回来就必现）。缓存让重建后的条目
-        // 不用重新请求就能恢复。
-        const cached = this.repliedPreview.get(e.replyToMessageId);
-        if (cached !== undefined) {
-          const restored = cloneMessage(e);
-          restored.replySenderName = cached.senderName;
-          restored.replyText = cached.text;
-          restored.replyThumbPath = cached.thumbPath;
-          restored.replyThumbSticker = cached.thumbSticker;
-          restored.replyDiceLayers = cached.diceLayers;
-          return restored;
+    const traced = drawnStageMetrics.begin(DrawnStage.ReplyResolve);
+    try {
+      const missing: Set<number> = new Set();
+      this.messages = this.messages.map((e: MessageEntry) => {
+        if (e.replyToMessageId === 0 || e.replyText !== '') {
+          return e;
         }
-        // 原消息不在已加载窗口里 —— 拉一次，否则引用块永远是空的。
-        if (missing.indexOf(e.replyToMessageId) < 0) {
-          missing.push(e.replyToMessageId);
+        const targetIndex = this.indexOf(e.replyToMessageId);
+        const target = targetIndex >= 0 ? this.messages[targetIndex] : undefined;
+        if (target === undefined) {
+          // 之前拉过的先用缓存补上。loadAround 会整体替换窗口、条目重建，
+          // replyText 又变空——而 repliedFetched 记着"已经拉过"，于是请求被挡、
+          // 引用块永远空着（点引用跳过去再划回来就必现）。缓存让重建后的条目
+          // 不用重新请求就能恢复。
+          const cached = this.repliedPreview.get(e.replyToMessageId);
+          if (cached !== undefined) {
+            const restored = cloneMessage(e);
+            restored.replySenderName = cached.senderName;
+            restored.replyText = cached.text;
+            restored.replyThumbPath = cached.thumbPath;
+            restored.replyThumbSticker = cached.thumbSticker;
+            restored.replyDiceLayers = cached.diceLayers;
+            return restored;
+          }
+          // 原消息不在已加载窗口里 —— 拉一次，否则引用块永远是空的。
+          missing.add(e.replyToMessageId);
+          return e;
         }
-        return e;
+        const c = cloneMessage(e);
+        c.replySenderName = target.senderName;
+        // 气泡里的引用块和输入栏的回复条必须说同一句话。这里原来自己另写了一套
+        // 「不是纯文本就取 placeholderLabel、再没有就 [图片]」，于是贴纸被说成
+        // 「[图片]」（issue #191）——贴纸的 placeholderLabel 是空的，而那条兜底
+        // 默认「没标签的都是图片」。统一走 replySnippetOf（有单测）。
+        c.replyText = replySnippetOf({
+          text: target.text, placeholderLabel: target.placeholderLabel,
+          contentType: target.contentType, paidMediaLocked: target.paidMediaLocked,
+          fileName: target.videoFileName, audioTitle: target.audioTitle, audioPerformer: target.audioPerformer,
+          isAnimation: target.isAnimation, pollQuestion: target.pollQuestion,
+          contactName: `${target.contactFirstName} ${target.contactLastName}`,
+          venueTitle: target.venueTitle, gameTitle: target.gameTitle
+        });
+        // 缩略图取的是**已经下到本地**的那张（target 就在窗口里，它自己的气泡
+        // 正显示着这张图）。没下完就是空串，引用块退回纯两行字，不占位、不闪。
+        c.replyThumbPath = replyThumbOf({
+          contentType: target.contentType, photoPath: target.photoPath,
+          paidMediaLocked: target.paidMediaLocked
+        });
+        c.replyThumbSticker = replyThumbIsSticker(target.contentType);
+        c.replyDiceLayers = replyDiceLayers(target.contentType, target.stickerPath, target.diceLayerPaths);
+        return c;
+      });
+      for (const id of missing) {
+        this.fetchRepliedMessage(id);
       }
-      const c = cloneMessage(e);
-      c.replySenderName = target.senderName;
-      // 气泡里的引用块和输入栏的回复条必须说同一句话。这里原来自己另写了一套
-      // 「不是纯文本就取 placeholderLabel、再没有就 [图片]」，于是贴纸被说成
-      // 「[图片]」（issue #191）——贴纸的 placeholderLabel 是空的，而那条兜底
-      // 默认「没标签的都是图片」。统一走 replySnippetOf（有单测）。
-      c.replyText = replySnippetOf({
-        text: target.text, placeholderLabel: target.placeholderLabel,
-        contentType: target.contentType, paidMediaLocked: target.paidMediaLocked,
-        fileName: target.videoFileName, audioTitle: target.audioTitle, audioPerformer: target.audioPerformer,
-        isAnimation: target.isAnimation, pollQuestion: target.pollQuestion,
-        contactName: `${target.contactFirstName} ${target.contactLastName}`,
-        venueTitle: target.venueTitle, gameTitle: target.gameTitle
-      });
-      // 缩略图取的是**已经下到本地**的那张（target 就在窗口里，它自己的气泡
-      // 正显示着这张图）。没下完就是空串，引用块退回纯两行字，不占位、不闪。
-      c.replyThumbPath = replyThumbOf({
-        contentType: target.contentType, photoPath: target.photoPath,
-        paidMediaLocked: target.paidMediaLocked
-      });
-      c.replyThumbSticker = replyThumbIsSticker(target.contentType);
-      c.replyDiceLayers = replyDiceLayers(target.contentType, target.stickerPath, target.diceLayerPaths);
-      return c;
-    });
-    for (const id of missing) {
-      this.fetchRepliedMessage(id);
-    }
+    } finally { drawnStageMetrics.end(traced); }
   }
 
   // 按需拉取被回复的原消息。只拉一次：请求过的记在 repliedFetched 里，
   // 失败（原消息已删除等）同样不再重试，否则每次 notify 都会再发一轮。
   private fetchRepliedMessage(messageId: number): void {
-    if (this.repliedFetched.indexOf(messageId) >= 0) {
+    if (this.repliedFetched.has(messageId)) {
       return;
     }
-    this.repliedFetched.push(messageId);
+    this.repliedFetched.add(messageId);
     const req: TdRequest = { '@type': 'getMessage' };
     req['chat_id'] = this.chatId;
     req['message_id'] = messageId;
@@ -6767,12 +6782,15 @@ export class MessageStore {
   }
 
   private indexOf(id: number): number {
-    for (let i = 0; i < this.messages.length; i++) {
-      if (this.messages[i].id === id) {
-        return i;
-      }
+    // Every insert/merge sorts by ID; patch/filter/slice preserve that order.
+    // Lower-bound keeps first-match behavior without a per-snapshot Map.
+    let low = 0, high = this.messages.length;
+    while (low < high) {
+      const middle = low + Math.floor((high - low) / 2);
+      if (this.messages[middle].id < id) { low = middle + 1; }
+      else { high = middle; }
     }
-    return -1;
+    return low < this.messages.length && this.messages[low].id === id ? low : -1;
   }
 
   private rememberMessageUsers(entry: MessageEntry): void {

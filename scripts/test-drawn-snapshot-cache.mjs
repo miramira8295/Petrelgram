@@ -24,9 +24,10 @@ const cacheCtx=vm.createContext({ViewV2:View,ViewPU:View,DrawnVideoDecoration:cl
  str:(k,n)=>`${language}:${k}:${n}`,ColorMetrics:{resourceColor(c){resolutions++;if(failColor)throw Error('color unavailable');return{alpha:255,red:theme,green:typeof c==='number'?c:2,blue:3};}}});
 load(cacheCtx,root+'util/formatFileSize.ets',['formatFileSize']);
 load(cacheCtx,root+'util/mediaDuration.ets',['formatMediaDuration']);
-load(cacheCtx,root+'pages/chat/DrawnVideoMeta.ets',['DrawnVideoMetaCache','drawnVideoMetaCache']);
+load(cacheCtx,root+'pages/chat/DrawnVideoMeta.ets',['DrawnVideoMetaCache','drawnVideoMetaCache','DrawnVideoMetaMemo']);
 load(cacheCtx,root+'pages/chat/DrawnTextLine.ets',['drawnColor']);
 load(cacheCtx,root+'pages/chat/DrawnMediaColors.ets',['DrawnMediaColors']);
+load(cacheCtx,root+'pages/chat/DrawnMediaPosition.ets',['DrawnMediaPosition']);
 load(cacheCtx,compiled+'pages/chat/DrawnAlbumVideo.ts',['DrawnAlbumVideo']);
 const meta=new cacheCtx.DrawnVideoMetaCache();
 // Independent old-expression oracle, including zero/one-sided values and width threshold.
@@ -43,12 +44,12 @@ language='en';const cell={videoFileSize:2048,videoDuration:65,width:150};
 const video=new cacheCtx.DrawnAlbumVideo(null,{cell,actions:{}});const initial=video.meta,afterInitial=formats;
 for(let i=0;i<1000;i++){
  video.resetStateVarsOnReuse({cell:{...cell,width:112+(i%40)},actions:{}});
- assert.equal(video.firstMeta,initial);
+ assert.equal(video.meta,initial);
 }
-assert.equal(formats,afterInitial,'real compiled reuse of video island hits shared metadata cache');
-video.resetStateVarsOnReuse({cell:{...cell,width:111},actions:{}});assert.equal(video.firstMeta,'en:size_kb:2.0');
-video.resetStateVarsOnReuse({cell:undefined,actions:{}});assert.equal(video.firstMeta,'');
-video.resetStateVarsOnReuse({cell:{...cell,videoFileSize:4096,videoDuration:3600},actions:{}});assert.equal(video.firstMeta,'1:00:00 · en:size_kb:4.0');
+assert.equal(formats,afterInitial,'real compiled reuse of video island retains its numeric label memo');
+video.resetStateVarsOnReuse({cell:{...cell,width:111},actions:{}});assert.equal(video.meta,'en:size_kb:2.0');
+video.resetStateVarsOnReuse({cell:undefined,actions:{}});assert.equal(video.meta,'');
+video.resetStateVarsOnReuse({cell:{...cell,videoFileSize:4096,videoDuration:3600},actions:{}});assert.equal(video.meta,'1:00:00 · en:size_kb:4.0');
 cacheCtx.chatEnv.langEpoch=2;language='de';assert.equal(video.meta,'1:00:00 · de:size_kb:4,0');
 // Fixed bounds, LRU retention, A-B-A and failed formatting must remain retryable.
 const bounded=new cacheCtx.DrawnVideoMetaCache();bounded.prepare(2048,1,true,2);
@@ -74,6 +75,7 @@ for(const [f,n]of [['bubbleFocusChannel',['BubbleFocusChannel']],['rowLeaveChann
 const getSnapshot=ctx.messageRowPresentationFor,subscribe=ctx.subscribeMessageRowPresentation;
 ctx.messageRowPresentationFor=(...a)=>{snapshotReads++;return getSnapshot(...a);};
 ctx.subscribeMessageRowPresentation=(...a)=>{subscriptions++;active++;const off=subscribe(...a);return()=>{active--;off();};};
+load(ctx,root+'util/drawnStageMetrics.ets',['drawnStageMetrics','DrawnStage','DrawnRowChangeSource']);
 load(ctx,compiled+'pages/chat/ReusableMessageBubble.ts',['ReusableMessageBubble']);
 const actions={bubbleFocus:new ctx.BubbleFocusChannel(),rowLeave:new ctx.RowLeaveChannel()};
 function group(id,path=''){return{key:'k'+id,head:{id,rowId:id,contentType:'photo',photoPath:path,translatedText:'',translationHidden:false},photoPaths:[path],photoFailed:[false],memberIds:[id],photoFileIds:[id]};}

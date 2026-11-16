@@ -20,6 +20,17 @@ assert.equal(trace.length,0);assert.equal(metrics.summary(),'','disabled stage d
 metrics.setEnabled(true);const outer=metrics.begin(S.Layout),inner=metrics.begin(S.Media);metrics.end(inner);
 metrics.setEnabled(false);metrics.end(outer);assert.deepEqual(trace.map(t=>t[0]),['start','start','end','end']);
 metrics.reset();assert.equal(metrics.summary(),'');trace.length=0;
+const stages=Object.values(S).filter(v=>typeof v==='number');
+assert.equal(stages.length,49);
+for(let i=0;i<1000;i++)for(const stage of stages){metrics.end(metrics.begin(stage));metrics.skip(stage);}
+assert.equal(trace.length,0);assert.equal(metrics.summary(),'');
+metrics.setEnabled(true);
+for(const stage of stages){metrics.end(metrics.begin(stage));metrics.skip(stage);}
+assert.equal(trace.filter(t=>t[0]==='start').length,49);
+assert.equal(metrics.summary().split('\n').filter(Boolean).length,49);
+assert.doesNotMatch(metrics.summary(),/undefined|NaN/);
+metrics.reset();metrics.setEnabled(false);trace.length=0;
+
 const cache=new ctx.DrawnMediaFrames();
 const tiles=Array.from({length:9},(_,i)=>({x:i*100,y:0,width:100,height:90,cell:{isVideo:false,messageId:i+1}}));
 const first=cache.prepare(tiles,10,false),json=JSON.stringify(first);
@@ -53,7 +64,7 @@ const shared=await import('./test-drawn-text-row.mjs');
 const c=shared.ctx;
 let attachCalls=0,fail=false;
 c.senderHasAnimatedPhoto=()=>false;
-const row=Object.assign(Object.create(c.DrawnMessageRow.prototype),{layoutRetention:new c.DrawnLayoutRetention(),
+const row=Object.assign(Object.create(c.DrawnMessageRow.prototype),{interaction:new c.DrawnRowInteraction(),layoutRetention:new c.DrawnLayoutRetention(),
  active:false,attachedGroup:null,attachedData:null,attachedEnvironment:'',inputIdentity:'',
  group:{head:{rowId:7,id:7,senderId:8,isOutgoing:false},showSenderName:true},data:{chatId:2,isGroup:true},
  env:{langEpoch:0,bubbleMaterialOn:false},foreground:{press(){}},
@@ -70,3 +81,17 @@ row.data={...row.data};fail=true;assert.throws(()=>row.inputChanged());fail=fals
 const previousData=row.data;row.data={...row.data};fail=true;assert.throws(()=>row.inputChanged());
 row.data=previousData;fail=false;row.inputChanged();assert.equal(attachCalls,8,'A/B-failure/A must restore attachment');
 console.log('PASS: 2000 media-only updates reuse native frames; resize/transition/video/shrink invalidate; duplicate lifecycle attachment skips, recycle/environment/retry remain live; trace disabled/balanced/painter stages.');
+
+// Sampling mode keeps fixed-cardinality counts but performs no trace bridge calls.
+// An already-open span must still be paired across a diagnostic-mode change.
+metrics.reset();metrics.setEnabled(true);trace.length=0;
+const opened=metrics.begin(S.Layout), previousOutput=metrics.setTraceOutput(false);
+assert.equal(previousOutput,true);metrics.end(opened);
+assert.deepEqual(trace.map(t=>t[0]),['start','end']);trace.length=0;
+for(let i=0;i<1000;i++) { metrics.end(metrics.begin(S.TileAttributes));metrics.markRoute('PG/route/drawn'); }
+assert.equal(trace.length,0);assert.match(metrics.summary(),/stage=PG\/tile-attributes calls=1000 skips=0 untraced=1000/);
+assert.equal(metrics.setTraceOutput(previousOutput),false);
+metrics.end(metrics.begin(S.Media));assert.deepEqual(trace.map(t=>t[0]),['start','end']);
+metrics.reset();metrics.setEnabled(false);
+assert.equal(metrics.summary(),'');
+console.log('PASS: method-sampling mode suppresses 1000 trace pairs/routes, keeps counts, balances open spans and restores output.');

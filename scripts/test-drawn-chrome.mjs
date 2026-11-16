@@ -74,7 +74,7 @@ for(let i=0;i<1000;i++){
 assert.ok(maxProbes<30,`indexed probes ${maxProbes}, not a 1000-chip scan`);
 console.log(`PASS: 1000 differential hit tests over 1001 chips (including arrow); max ${maxProbes} indexed probes.`);
 
-const row=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),canvasAttributes:new ctx.DrawnCanvasAttributes()}),events=[];
+const row=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{interaction:new ctx.DrawnRowInteraction(),layoutRetention:new ctx.DrawnLayoutRetention(),canvasAttributes:new ctx.DrawnCanvasAttributes()}),events=[];
 row.group=message(3);row.data={...data,isChannel:false};row.kind='text';row.env={gestureScheme:0,screenWidthVp:400};
 row.dragGesture=new ctx.MessageDragGesture();row.foreground={press(){},setPress(){},pressReaction(){}};
 row.actions=new Proxy({},{get:(_t,k)=>(...args)=>events.push([k,...args])});

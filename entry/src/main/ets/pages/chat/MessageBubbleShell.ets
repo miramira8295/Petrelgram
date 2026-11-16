@@ -209,6 +209,8 @@ export struct MessageBubbleShell {
   @Param jumpFocus: number = 0;
 
   @Param leaving: number = 0;
+  // A staged album host can own the native date header above this body.
+  @Param dateInHost: boolean = false;
 
   @Require @Param group: AlbumGroup;
 
@@ -1913,7 +1915,7 @@ export struct MessageBubbleShell {
       Column().height(0);
     } else if (this.msg.contentType === 'system') {
       Column() {
-        if (this.group.dateLabel !== '') {
+        if (!this.dateInHost && this.group.dateLabel !== '') {
           Text(this.group.dateLabel)
             .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).fontWeight(FontWeight.Medium)
             .backgroundColor($r('app.color.system_pill')).borderRadius(11)
@@ -1927,7 +1929,7 @@ export struct MessageBubbleShell {
       }.width('100%').alignItems(HorizontalAlign.Center).padding({ top: 3, bottom: 3 });
     } else {
     Column() {
-      if (this.group.dateLabel !== '') {
+      if (!this.dateInHost && this.group.dateLabel !== '') {
         // Day-change separator pill, centered ("7-6" / "2024-12-31").
         // 胶囊直接挂在根 Column 里（默认水平居中）：原来外面那层满宽 Row 只负责居中和上下
         // 5/3 的留白，换成胶囊自己的外边距，占的高度一样（与系统消息那一支写法一致）。

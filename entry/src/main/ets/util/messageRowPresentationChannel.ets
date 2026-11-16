@@ -1,3 +1,4 @@
+import { drawnStageMetrics, DrawnRowChangeSource } from './drawnStageMetrics';
 import { thumbPathFor } from './mediaThumbChannel';
 import { AlbumGroup } from './collapseAlbums';
 import { MessageEntry } from '../store/MessageEntry';
@@ -120,9 +121,9 @@ function samePresentation(a: AlbumGroup, b: AlbumGroup): boolean {
 // An album thumbnail already delivered to LiveThumbImage/ThumbReadyGate
 // must not additionally wake every tile, its caption and the shared shell.
 // Never suppress removals, local-only sources, file replacements or a path
-// that the file channel has not actually received. Video posters and failed
-// cells also read the row path directly (player / tap-to-retry), so keep their
-// notifications. Keep the latest full group
+// that the file channel has not actually received. Video islands subscribe to
+// that same channel for their player posters; taps resolve the current message
+// by ID. Failed cells still need row notifications for retry state. Keep the latest full group
 // in the channel cache so a recycled/new subscriber still seeds fresh inputs.
 function albumThumbsAlreadyDelivered(a: AlbumGroup, b: AlbumGroup): boolean {
   if (a.photoPaths.length <= 1 || a.photoPaths.length !== b.photoPaths.length ||
@@ -140,7 +141,7 @@ function albumThumbsAlreadyDelivered(a: AlbumGroup, b: AlbumGroup): boolean {
   for (let i = 0; i < b.photoPaths.length; i++) {
     if (a.photoFileIds[i] !== b.photoFileIds[i]) { return false; }
     if (a.photoPaths[i] === b.photoPaths[i]) { continue; }
-    if (a.photoIsVideo[i] || b.photoIsVideo[i] || b.photoFailed[i]) { return false; }
+    if (a.photoIsVideo[i] !== b.photoIsVideo[i] || b.photoFailed[i]) { return false; }
     const fileId: number = b.photoFileIds[i] ?? 0;
     if (fileId <= 0 || b.photoPaths[i] === '' || thumbPathFor(fileId) !== b.photoPaths[i]) {
       return false;
@@ -202,6 +203,7 @@ export function publishMessageRowPresentations(chatId: number, groups: AlbumGrou
     remember(owner, rowId, group);
     const listeners: Set<(group: AlbumGroup) => void> | undefined = owner.subs.get(rowId);
     if (listeners !== undefined) {
+      drawnStageMetrics.rowChanged(DrawnRowChangeSource.Presentation, previous, group);
       listeners.forEach((cb: (group: AlbumGroup) => void): void => cb(group));
     }
   }

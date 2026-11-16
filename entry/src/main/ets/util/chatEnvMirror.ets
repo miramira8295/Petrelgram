@@ -20,6 +20,8 @@ export class ChatEnvMirror {
   @Trace drawnText: boolean = true;
   @Trace drawnSingle: boolean = true;
   @Trace drawnAlbum: boolean = true;
+  @Trace drawnAlbumStaging: boolean = true;
+  @Trace drawnAlbumCanvas: boolean = true;
   @Trace drawnPlain: boolean = true;
   @Trace drawnRich: boolean = true;
 
@@ -70,6 +72,8 @@ const MIRRORED_KEYS: string[] = [
   'debugDrawnText',
   'debugDrawnSingle',
   'debugDrawnAlbum',
+  'debugDrawnAlbumCanvas',
+  'debugDrawnAlbumStaging',
   'debugDrawnPlain',
   'debugDrawnRich',
 
@@ -122,6 +126,12 @@ export function mirrorChatEnvKey(key: string, value: number | boolean | string):
       break;
     case 'debugDrawnSingle':
       if (chatEnv.drawnSingle !== (value as boolean)) { chatEnv.drawnSingle = value as boolean; }
+      break;
+    case 'debugDrawnAlbumStaging':
+      if (chatEnv.drawnAlbumStaging !== (value as boolean)) { chatEnv.drawnAlbumStaging = value as boolean; }
+      break;
+    case 'debugDrawnAlbumCanvas':
+      if (chatEnv.drawnAlbumCanvas !== (value as boolean)) { chatEnv.drawnAlbumCanvas = value as boolean; }
       break;
     case 'debugDrawnAlbum':
       if (chatEnv.drawnAlbum !== (value as boolean)) { chatEnv.drawnAlbum = value as boolean; }

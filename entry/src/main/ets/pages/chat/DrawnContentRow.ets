@@ -50,6 +50,8 @@ export struct DrawnContentRow {
   @Param nowSec: number = 0;
   @Param jumpFocus: number = 0;
   @Param leaving: number = 0;
+  // A staged album host can own the native date header above this body.
+  @Param dateInHost: boolean = false;
   @BuilderParam body: () => void;
   @Local private swipeReplyX: number = 0;
   @Local private draggingMessage: boolean = false;
@@ -381,10 +383,10 @@ export struct DrawnContentRow {
   build() {
     if (!this.supported) {
       MessageBubbleShell({ msg: this.msg, group: this.group, data: this.data, actions: this.actions,
-        nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving, context: this.context }) { this.body(); }
+        nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving, context: this.context, dateInHost: this.dateInHost }) { this.body(); }
     } else {
       Column() {
-        if (this.group.dateLabel !== '') {
+        if (!this.dateInHost && this.group.dateLabel !== '') {
           Text(this.group.dateLabel).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).fontWeight(FontWeight.Medium)
             .backgroundColor($r('app.color.system_pill')).borderRadius(11)
             .padding({ left: 10, right: 10, top: 3, bottom: 3 }).margin({ top: 5, bottom: 3 });

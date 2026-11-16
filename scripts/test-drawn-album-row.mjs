@@ -34,7 +34,7 @@ const ctx = vm.createContext({
 });
 function load(path,names=[]) {
   const text=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'')
-    .replace(/@(?:Require|Param|Local|Computed|Event)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'').replace(/\bexport /g,'');
+    .replace(/@(?:Require|Param|Local|Computed|Event|ObservedV2|Trace)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'').replace(/\bexport /g,'');
   vm.runInContext(ts.transpileModule(text+names.map(n=>`\nglobalThis.${n}=${n};`).join(''),
     {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx,{filename:path});
 }
@@ -54,7 +54,17 @@ load(root+'pages/chat/DrawnNativeAttributes.ets',['DrawnMediaAnchorPool','DrawnC
 load(root+'pages/chat/DrawnLayoutWarmCache.ets',['takeDrawnWarmLayout']);
 ctx.getTdClient ??= () => ctx; ctx.setTimeout ??= () => 0; ctx.clearTimeout ??= () => {};
 load(root+'pages/chat/DrawnRecycledLayouts.ets',['DrawnLayoutRetention','takeDrawnRecycledLayout','drawnRecycledLayouts']);
+load(root+'util/drawnRowChromePolicy.ets',['drawnRowChromeReason']);
+load(root+'pages/chat/DrawnRowInteraction.ets',['DrawnRowInteraction']);
 load(compiled+'pages/chat/DrawnMessageRow.ts',['DrawnMessageRow']);
+// Geometry/gesture fixtures bypass the constructor and model already-seeded
+// metadata. Real constructor/reuse/param handoff is covered by state-seed.
+Object.defineProperty(ctx.DrawnMessageRow.prototype,'metadataOwner',{
+ get(){return this.metadataKey();},
+ set(value){Object.defineProperty(this,'metadataOwner',{value,writable:true,configurable:true});},configurable:true
+});
+
+ctx.DrawnMessageRow.prototype.albumCanvas = {state:{ready:false},bind(){},reset(){}};
 function group(n=6) {
   return { head:{id:10,rowId:10,date:1,editDate:0,isOutgoing:false,senderId:5,senderName:'',senderInitials:'AB',senderIsUser:true,
     sendState:'sent',senderTag:'',text:'',translatedText:'',reactions:[],inlineButtons:[],forwardFrom:'',commentCount:0,
@@ -96,15 +106,27 @@ assert.equal(ctx.drawnAlbumEligible(group(),data,true,false),false);assert.equal
 g=group();g.caption='unsupported';assert.equal(layouts.prepare(ui,g,data,style),null);
 assert.equal(layouts.failureReason,ctx.DrawnRouteReason.InlineCode);
 // Replay actual compiled interaction handlers using an immutable plan.
-const row=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()}), events=[];
+const row=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{interaction:new ctx.DrawnRowInteraction(),layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()}), events=[];
 row.dragGesture=new ctx.MessageDragGesture();row.kind='album';row.group=group();row.data={...data,canReply:true};row.env={gestureScheme:0,screenWidthVp:400,powerSaving:false,reduceAnim:false};
 row.actions=new Proxy({}, {get:(_t,k)=>(...args)=>events.push([k,...args])});
-row.foreground={press(){},pressReaction(){},setPress(){}};row.media={slots:Array.from({length:6},()=>({activated:true,state:{revision:0},path:'/ready'}))};
+row.foreground={press(){},pressReaction(){},setPress(){}};row.media={slots:Array.from({length:6},()=>({activated:true,content:{hostReady:false},state:{revision:0},path:'/ready'}))};
 row.getUIContext=()=>({animateTo:(_opts,fn)=>fn()});
 const p=layouts.prepare(ui,row.group,row.data,style);Object.defineProperty(row,'plan',{configurable:true,value:p});
 const tile=p.tiles[2];const click={x:tile.x+5,y:tile.y+5,windowX:100,windowY:200,source:1};
 const down={type:0,changedTouches:[{x:click.x,y:click.y,windowX:100}],touches:[{x:click.x,y:click.y,windowX:100}]};
 row.touch(down);row.rowTouch(down);row.click(click);assert.equal(events.at(-1)[0],'onMediaTap');assert.equal(events.at(-1)[1],102);
+// Cold/gray tiles use the same hit geometry; no bitmap or decode is required
+// to dispatch an open. Check every cell rather than only the ready third one.
+for(const slot of row.media.slots){slot.path='';slot.pixels=undefined;}
+for(const t of p.tiles){
+ const tap={x:t.x+t.width/2,y:t.y+t.height/2,windowX:100,windowY:200,source:1};
+ const press={type:0,changedTouches:[{...tap}],touches:[{...tap}]};
+ row.touch(press);row.rowTouch(press);row.click(tap);
+ assert.deepEqual(events.at(-1),['onMediaTap',t.cell.messageId,100,200]);
+}
+row.rowTouch(down);
+console.log('PASS: all six gray/loading cells dispatch media opens without decoded pixels; native hit testing remains a device check.');
+
 row.data.selectionActive=true;row.click(click);assert.deepEqual(events.at(-1),['onToggleSelectedMessage',102]);row.data.selectionActive=false;
 const eventCount=events.length;row.group={...row.group,head:{...row.group.head,rowId:11}};row.click(click);assert.equal(events.length,eventCount,'late click cannot open recycled message');
 row.rowTouch(down);row.swipe(-60);row.endSwipe();assert.equal(events.at(-1)[0],'onReplyTo');
@@ -130,9 +152,14 @@ row.ifElseBranchUpdateFunction=(_id,fn)=>fn();row.forEachUpdateFunction=(_id,ite
 row.gridCorners=vm.runInContext('new AlbumCornerRadiiCache()',ctx);
 row.painter={bind:()=>({})};row.foreground.bind=()=>({});row.menuFx={preview:()=>({}),menu:()=>({})};
 row.avatarStateRevision=0;row.scroll={active:false};row.group.dateLabel='';
-row.media.slots=Array.from({length:6},()=>({activated:true,state:{revision:0},path:'/ready',pixels:{},receiver:{canDraw:()=>true},showMini:()=>false}));
+row.media.slots=Array.from({length:6},()=>({activated:true,content:{hostReady:false},state:{revision:0},path:'/ready',pixels:{},receiver:{canDraw:()=>true},showMini:()=>false}));
 row.mediaSlotCache=new ctx.DrawnMediaSlots();
 row.canvasContent();assert.equal(created.filter(n=>n==='Stack').length,8);assert.equal(created.filter(n=>n==='Image'||n==='Text').length,0);
+// Same compiled builder, now ready: remove the six native tile anchors.
+created.length=0;row.albumCanvas={state:{ready:true}};row.canvasContent();
+assert.equal(created.filter(n=>n==='Stack').length,2,'ready album has one grid canvas and its row host');
+assert.equal(created.filter(n=>n==='ForEach').length,0,'no hidden per-image anchors in canvas mode');
+row.albumCanvas.state.ready=false;
 const oldBindings=[...callbacks];row.media.slots=[];Object.defineProperty(row,'plan',{configurable:true,value:null});
 for(const callback of oldBindings) callback(1,false);
 console.log('PASS: compiled six-photo paint tree has eight Stack anchors and no Image/Text leaves; stale native bindings survive shrink/fallback.');
@@ -162,7 +189,7 @@ assert.equal(playing.tiles[2].cell.isPlaySlot,true);assert.equal(playing.tiles[2
 assert.equal(playing.tiles[2].cell.playSlotStartMs,500);assert.equal(playing.tiles[2].cell.autoplayMuted,true);
 assert.equal(playing.tiles[2].key,idle.tiles[2].key,'playback keeps stable native tile anchor');
 assert.equal(playing.tiles[1].cell,idle.tiles[1].cell,'unaffected photo data retained');
-assert.match(code,/cell: this.media.slots\[slot.index\]\?\.content.cell/);
+assert.match(code,/content: this.media.slots\[slot.index\]\?\.content/);
 console.log('PASS: 1000 other-row playback updates retain plan/no layout work; owned slot routes current cell/mute/start to stable anchor.');
 
 // Physical-slot identity is deliberately independent of message/geometry. Keep
@@ -174,7 +201,7 @@ const two=slots.prepare(2);assert.equal(two[1],six[1]);assert.equal(six.length,6
 const nine=slots.prepare(9);assert.equal(nine[0],two[0]);assert.equal(two.length,2);
 assert.equal(new Set(nine.map(s=>s.key)).size,9);assert.equal(slots.prepare(0).length,0);
 
-const replay=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()});
+const replay=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{interaction:new ctx.DrawnRowInteraction(),layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()});
 Object.assign(replay,row);replay.mediaSlotCache=new ctx.DrawnMediaSlots();
 replay.group=group();replay.data={...data};replay.sendState='sent';
 let currentId=0,nextId=0,generated=0;
@@ -206,13 +233,13 @@ const snapshot=(base,count=6)=>({...p,caption:null,chrome:null,quote:null,
 function setReplayPlan(plan){
   if(plan)plan.nativeTiles=plan.tiles.map(t=>({...t,x:t.x-plan.grid.x,y:t.y-plan.grid.y}));
   Object.defineProperty(replay,'plan',{configurable:true,value:plan});
-  replay.media={slots:(plan?.tiles??[]).map(t=>({content:{cell:t.cell},activated:true,state:{revision:0},path:'/ready',pixels:{},receiver:{canDraw:()=>true},showMini:()=>false}))};
+  replay.media={slots:(plan?.tiles??[]).map(t=>({content:{cell:t.cell,hostReady:t.cell.isVideo||t.cell.isLive},activated:true,state:{revision:0},path:'/ready',pixels:{},receiver:{canDraw:()=>true},showMini:()=>false}))};
 }
-setReplayPlan(snapshot(100));replay.media.slots[2].activated=false;
+setReplayPlan(snapshot(100));replay.media.slots[2].activated=false;replay.media.slots[2].content.hostReady=false;
 replay.canvasContent();assert.equal(generated,6);
 assert.equal(children.size,0,'pending video island is not created during initial row build');
 const anchorBefore=[...nodes].filter(([,node])=>node.attrs.geometryTransition).map(([id,node])=>[id,JSON.stringify(node.attrs.size)]);
-replay.media.slots[2].activated=true;replay.media.slots[2].state.revision++;
+replay.media.slots[2].activated=true;replay.media.slots[2].content.hostReady=true;replay.media.slots[2].state.revision++;
 for(const [id,fn] of [...observers])invoke(id,fn,false);
 assert.equal(generated,6,'activation keeps the existing six tile generators');
 assert.equal(children.size,1,'only the activated video island appears');
@@ -230,7 +257,7 @@ for(const base of [200,100,330]){
     assert.equal(a.drawModifier[0],replay.media.slots[i].receiver);
     assert.equal(a.geometryTransition[0],i===2?'':`media_${data.chatId}_${base+i}`);
   });
-  assert.equal([...children.values()][0].cell,replay.plan.tiles[2].cell,'video receives live cell after A/B/A');
+  assert.equal([...children.values()][0].content.cell,replay.plan.tiles[2].cell,'video receives live cell after A/B/A');
 }
 // Old attribute observers can run before removed branches during shrink/fallback.
 const retained=[...observers];setReplayPlan(snapshot(500,2));
@@ -292,7 +319,8 @@ const routeClass=routeSource.statements.find(n=>ts.isClassDeclaration(n)&&n.name
 const render=routeClass.members.find(n=>ts.isMethodDeclaration(n)&&n.name.getText(routeSource)==='initialRender');
 const routed=[],alphas=[];
 class RouteChild {constructor(_parent,params){routed.push(params);}}
-const routeCtx=vm.createContext({DrawnMessageRow:RouteChild,ViewV2:{create(){}},If:{create(){},pop(){}},
+class AlbumRouteChild {constructor(_parent,params){routed.push({...params,stagedAlbum:true});}}
+const routeCtx=vm.createContext({DrawnStagedAlbumRow:AlbumRouteChild,DrawnMessageRow:RouteChild,ViewV2:{create(){}},If:{create(){},pop(){}},
   __Common__:{create(){},opacity:n=>alphas.push(n),pop(){}}});
 vm.runInContext(ts.transpileModule(`class RouteProbe {${render.getText(routeSource)}};globalThis.RouteProbe=RouteProbe;`,
   {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,routeCtx);
@@ -300,12 +328,12 @@ const router=new routeCtx.RouteProbe();router.observeComponentCreation2=fn=>fn(1
 Object.assign(router,{data,actions:{},nowSec:50,jumpFocus:.2,leaving:.3,translationFade:.5});
 for(const [contentType,photos,kind] of [['photo',6,'album'],['photo',1,'single'],['video',1,'single'],['text',0,'text'],['richMessage',0,'text']]){
   router.shownGroup={...group(),head:{...group().head,contentType},photoPaths:Array(photos).fill('')};router.initialRender();
-  const params=routed.at(-1);assert.equal(params.kind,kind);assert.equal(params.group,router.shownGroup);
+  const params=routed.at(-1);if(kind==='album'){assert.equal(params.stagedAlbum,true);}else{assert.equal(params.kind,kind);}assert.equal(params.group,router.shownGroup);
   assert.equal(params.data,data);assert.equal(params.actions,router.actions);assert.equal(params.nowSec,50);
   assert.equal(params.jumpFocus,.2);assert.equal(params.leaving,.3);assert.equal(alphas.at(-1),.5);
 }
 assert.doesNotMatch(render.getText(routeSource),/new\s+(TextMessageBubble|AlbumMessageBubble|SingleMediaBubble)\b/);
-console.log('PASS: compiled album/photo/video/plain/rich routes directly instantiate shared row and preserve data/actions/focus/delete/translation opacity.');
+console.log('PASS: compiled album/photo/video/plain/rich routes instantiate staged album/shared single-text rows and preserve data/actions/focus/delete/translation opacity.');
 
 const sharedSource=ts.createSourceFile('DrawnMessageRow.ts',code,ts.ScriptTarget.Latest,true);
 const sharedClass=sharedSource.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='DrawnMessageRow');
@@ -316,6 +344,7 @@ Object.assign(routeCtx,{LegacyTextRow:legacy('text'),LegacySingleMediaBubble:leg
 vm.runInContext(ts.transpileModule(`class FallbackProbe {${sharedRender.getText(sharedSource)}};globalThis.FallbackProbe=FallbackProbe;`,
   {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,routeCtx);
 const fallback=new routeCtx.FallbackProbe();Object.assign(fallback,router,{plan:null,group:group()});
+Object.defineProperties(fallback,{rowGroup:{get(){return this.group;}},rowData:{get(){return this.data;}}});
 for(const kind of ['text','single','album']){
   fallback.kind=kind;fallback.initialRender();assert.equal(legacyCalls.at(-1).name,kind);
   assert.equal(legacyCalls.at(-1).params.group,fallback.group);assert.equal(legacyCalls.at(-1).params.actions,fallback.actions);

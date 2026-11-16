@@ -38,6 +38,8 @@ load(root+'pages/chat/DrawnNativeAttributes.ets',['DrawnMediaAnchorPool','DrawnC
 load(root+'pages/chat/DrawnLayoutWarmCache.ets',['takeDrawnWarmLayout']);
 ctx.getTdClient ??= () => ctx; ctx.setTimeout ??= () => 0; ctx.clearTimeout ??= () => {};
 load(root+'pages/chat/DrawnRecycledLayouts.ets',['DrawnLayoutRetention','takeDrawnRecycledLayout','drawnRecycledLayouts']);
+load(root+'util/drawnRowChromePolicy.ets',['drawnRowChromeReason']);
+load(root+'pages/chat/DrawnRowInteraction.ets',['DrawnRowInteraction']);
 load(compiled+'pages/chat/DrawnMessageRow.ts',['DrawnMessageRow']);
 let current=0,nextId=0,callbacks,branches,reads,calls;
 for(const name of ['Stack','If','Image','Column','Text','SymbolGlyph'])ctx[name]=new Proxy({name},{get:(t,k)=>k==='name'?name:(...args)=>{
@@ -49,8 +51,8 @@ ctx.ViewV2.create=()=>{};
 function execute(id,initial=false){const old=current;current=id;const c=callbacks.get(id);if(!c)return;reads=c.reads=new Set();c.fn(id,initial);current=old;reads=callbacks.get(old)?.reads;}
 function descendants(id){for(const [child,c]of [...callbacks])if(c.parent===id){descendants(child);callbacks.delete(child);branches.delete(child);}}
 function render(count){callbacks=new Map();branches=new Map();nextId=0;calls=0;
- const row=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()}),tiles=Array.from({length:count},(_,i)=>({width:100,height:100,x:i*100,y:0,cell:{isVideo:false,isLive:false,messageId:i+1,thumbFileId:i+20,failed:false}}));
- const slots=tiles.map((_,i)=>{const state={};Object.defineProperty(state,'revision',{get(){reads?.add(i);return 0;}});return{content:{cell:tiles[i].cell},activated:true,state,pixels:{},path:'/ready',mini:'mini',receiver:{canDraw:()=>true},showMini(scrolling){return this.pixels===undefined&&this.path!==''&&(!scrolling||this.miniShown);}};});
+ const row=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{interaction:new ctx.DrawnRowInteraction(),layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()}),tiles=Array.from({length:count},(_,i)=>({width:100,height:100,x:i*100,y:0,cell:{isVideo:false,isLive:false,messageId:i+1,thumbFileId:i+20,failed:false}}));
+ const slots=tiles.map((_,i)=>{const state={};Object.defineProperty(state,'revision',{get(){reads?.add(i);return 0;}});return{content:{cell:tiles[i].cell,hostReady:false},activated:true,state,pixels:{},path:'/ready',mini:'mini',receiver:{canDraw:()=>true},showMini(scrolling){return this.pixels===undefined&&this.path!==''&&(!scrolling||this.miniShown);}};});
  Object.assign(row,{kind:'album',sendState:'sent',scroll:{active:false},group:{head:{}},data:{},actions:{},media:{slots},
  observeComponentCreation2(fn,type){const id=++nextId;callbacks.set(id,{fn,type,parent:current,reads:new Set()});execute(id,true);},
  ifElseBranchUpdateFunction(branch,fn){if(branches.get(current)===branch)return;descendants(current);branches.set(current,branch);fn();},
@@ -78,9 +80,12 @@ slots[0].pixels={native:true};slots[0].receiver.canDraw=()=>false;updateSlot(0);
 row.sendState='sent';slots[0].pixels=undefined;slots[0].path='';updateSlot(0);assert.equal(countType('Image'),0);assert.equal(countType('LiveProgressRing'),1);
 tiles[0].cell.failed=true;for(const id of [...callbacks.keys()])if(callbacks.has(id))execute(id);assert.equal(countType('LiveProgressRing'),0);assert.equal(countType('SymbolGlyph'),1);
 // Video island remains outside the overlay predicate across poster availability.
-({row,slots,tiles}=render(1));tiles[0].cell.isVideo=true;for(const id of [...callbacks.keys()])if(callbacks.has(id))execute(id);assert.equal(countType('DrawnAlbumVideo'),1);
-slots[0].path='';slots[0].pixels=undefined;updateSlot(0);assert.equal(countType('DrawnAlbumVideo'),1);assert.equal([...callbacks.values()].find(c=>c.type.name==='DrawnAlbumVideo').params.thumbReady,false);
-slots[0].path='/new';slots[0].pixels={};updateSlot(0);assert.equal([...callbacks.values()].find(c=>c.type.name==='DrawnAlbumVideo').params.thumbReady,true);
+({row,slots,tiles}=render(1));tiles[0].cell.isVideo=true;slots[0].content.hostReady=true;for(const id of [...callbacks.keys()])if(callbacks.has(id))execute(id);assert.equal(countType('DrawnAlbumVideo'),1);
+slots[0].path='';slots[0].pixels=undefined;updateSlot(0);assert.equal(countType('DrawnAlbumVideo'),1);assert.equal([...callbacks.values()].find(c=>c.type.name==='DrawnAlbumVideo').params.thumbReady,undefined);
+slots[0].path='/new';slots[0].pixels={};updateSlot(0);assert.equal([...callbacks.values()].find(c=>c.type.name==='DrawnAlbumVideo').params.thumbReady,undefined);
+const videoParams=[...callbacks.values()].find(c=>c.type.name==='DrawnAlbumVideo').params;
+assert.equal(videoParams.content,slots[0].content);
+assert.equal(videoParams.mediaWidth,undefined);assert.equal(videoParams.mediaHeight,undefined);
 // A removed tile cannot create upload progress while old controller slots linger.
 ({row,slots,tiles}=render(1));row.sendState='sending';tiles.length=0;
 assert.equal(row.mediaOverlay(0),false);
@@ -91,7 +96,7 @@ const stale=[...callbacks.values()].map(c=>c.fn);tiles.length=0;slots.length=0;f
 console.log('PASS: compiled loaded grids use 3N callbacks / 2N If / 2N DSL attribute submissions (geometry now uses native modifier diff), one slot change leaves siblings untouched; mini/upload/native fallback/retry/video/shrink branches preserved.');
 
 const visible=[];
-const guarded=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),active:true,data:{chatId:1},group:{head:{rowId:1}},mediaVisibilityEpoch:0,mediaVisibilityKey:'',media:{setVisible:v=>visible.push(v)}});
+const guarded=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{interaction:new ctx.DrawnRowInteraction(),layoutRetention:new ctx.DrawnLayoutRetention(),active:true,data:{chatId:1},group:{head:{rowId:1}},mediaVisibilityEpoch:0,mediaVisibilityKey:'',media:{setVisible:v=>visible.push(v)}});
 const oldA=guarded.mediaVisibility();guarded.group={head:{rowId:2}};const bCallback=guarded.mediaVisibility();guarded.group={head:{rowId:1}};const newA=guarded.mediaVisibility();
 oldA(false,0);bCallback(false,0);assert.equal(visible.length,0);newA(true,1);assert.deepEqual(visible,[true]);
 guarded.active=false;newA(false,0);assert.deepEqual(visible,[true]);

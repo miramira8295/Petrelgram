@@ -49,7 +49,7 @@ export default function chatEnvMirrorTest() {
         AppStorage.setOrCreate(key, false);
         seedChatEnvFromStorage();
         const states: boolean[] = [chatEnv.drawnEnabled, chatEnv.drawnText, chatEnv.drawnSingle,
-          chatEnv.drawnAlbum, chatEnv.drawnPlain, chatEnv.drawnRich];
+          chatEnv.drawnAlbum, chatEnv.drawnPlain, chatEnv.drawnRich, chatEnv.drawnAlbumCanvas, chatEnv.drawnAlbumStaging];
         for (let j = 0; j < states.length; j++) { expect(states[j]).assertEqual(j !== i); }
         AppStorage.setOrCreate(key, true); mirrorChatEnvKey(key, true);
       }

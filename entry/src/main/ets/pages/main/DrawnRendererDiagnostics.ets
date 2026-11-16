@@ -1,3 +1,5 @@
+import { KEY_DEBUG_TIMELINE_LAZY } from '../../util/debugTimelineRenderer';
+import { drawnRowAdmission } from '../../util/drawnRowAdmission';
 import { drawnRecycledLayouts } from '../chat/DrawnRecycledLayouts';
 import { drawnMediaActivation } from '../../util/drawnMediaActivation';
 import { drawnStageMetrics } from '../../util/drawnStageMetrics';
@@ -5,7 +7,7 @@ import { drawnPainterReserve } from '../chat/DrawnPainterReserve';
 import { drawnHomeMessageSummary } from './DrawnHomeMessages';
 import { KEY_DEBUG_DRAWN_HOME_WARMUP } from '../../util/debugDrawnRenderer';
 import { drawnRouteMetrics } from '../../util/drawnRouteMetrics';
-import { KEY_DEBUG_DRAWN_TRACE, KEY_DEBUG_DRAWN_ENABLED, KEY_DEBUG_DRAWN_TEXT, KEY_DEBUG_DRAWN_SINGLE, KEY_DEBUG_DRAWN_ALBUM, KEY_DEBUG_DRAWN_PLAIN, KEY_DEBUG_DRAWN_RICH } from '../../util/debugDrawnRenderer';
+import { KEY_DEBUG_DRAWN_TRACE, KEY_DEBUG_DRAWN_ENABLED, KEY_DEBUG_DRAWN_TEXT, KEY_DEBUG_DRAWN_SINGLE, KEY_DEBUG_DRAWN_ALBUM, KEY_DEBUG_DRAWN_PLAIN, KEY_DEBUG_DRAWN_RICH, KEY_DEBUG_DRAWN_ALBUM_CANVAS, KEY_DEBUG_DRAWN_ALBUM_STAGING } from '../../util/debugDrawnRenderer';
 import { setBoolean } from '../../store/AppSettings';
 import { COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_SURFACE } from '../../util/theme';
 
@@ -13,13 +15,16 @@ interface DrawnRendererToggleArgs { label: Resource; key: string; checked: boole
 
 @Component
 export struct DrawnRendererDiagnostics {
-  @State private routeSummary: string = (drawnRouteMetrics.summary() + drawnStageMetrics.summary() + drawnPainterReserve.summary() + drawnHomeMessageSummary() + drawnMediaActivation.summary() + drawnRecycledLayouts.summary());
-  aboutToAppear(): void { this.routeSummary = (drawnRouteMetrics.summary() + drawnStageMetrics.summary() + drawnPainterReserve.summary() + drawnHomeMessageSummary() + drawnMediaActivation.summary() + drawnRecycledLayouts.summary()); }
+  @State private routeSummary: string = (drawnRouteMetrics.summary() + drawnStageMetrics.summary() + drawnPainterReserve.summary() + drawnHomeMessageSummary() + drawnMediaActivation.summary() + drawnRecycledLayouts.summary() + drawnRowAdmission.summary());
+  aboutToAppear(): void { this.routeSummary = (drawnRouteMetrics.summary() + drawnStageMetrics.summary() + drawnPainterReserve.summary() + drawnHomeMessageSummary() + drawnMediaActivation.summary() + drawnRecycledLayouts.summary() + drawnRowAdmission.summary()); }
+  @StorageProp(KEY_DEBUG_TIMELINE_LAZY) private lazyTimelineOn: boolean = true;
   @StorageProp(KEY_DEBUG_DRAWN_TRACE) private stageTrace: boolean = false;
   @StorageProp(KEY_DEBUG_DRAWN_HOME_WARMUP) private homeWarmupOn: boolean = true;
   @StorageProp(KEY_DEBUG_DRAWN_ENABLED) private masterOn: boolean = true;
   @StorageProp(KEY_DEBUG_DRAWN_TEXT) private text: boolean = true;
   @StorageProp(KEY_DEBUG_DRAWN_SINGLE) private single: boolean = true;
+  @StorageProp(KEY_DEBUG_DRAWN_ALBUM_STAGING) private albumStagingOn: boolean = true;
+  @StorageProp(KEY_DEBUG_DRAWN_ALBUM_CANVAS) private albumCanvasOn: boolean = true;
   @StorageProp(KEY_DEBUG_DRAWN_ALBUM) private album: boolean = true;
   @StorageProp(KEY_DEBUG_DRAWN_PLAIN) private plain: boolean = true;
   @StorageProp(KEY_DEBUG_DRAWN_RICH) private rich: boolean = true;
@@ -37,11 +42,14 @@ export struct DrawnRendererDiagnostics {
       Text($r('app.string.diag_drawn_hint')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
       Text($r('app.string.diag_drawn_routes_hint')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
       Text(this.routeSummary).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
-      Button($r('app.string.diag_drawn_refresh')).onClick((): void => { this.routeSummary = (drawnRouteMetrics.summary() + drawnStageMetrics.summary() + drawnPainterReserve.summary() + drawnHomeMessageSummary() + drawnMediaActivation.summary() + drawnRecycledLayouts.summary()); });
+      Button($r('app.string.diag_drawn_refresh')).onClick((): void => { this.routeSummary = (drawnRouteMetrics.summary() + drawnStageMetrics.summary() + drawnPainterReserve.summary() + drawnHomeMessageSummary() + drawnMediaActivation.summary() + drawnRecycledLayouts.summary() + drawnRowAdmission.summary()); });
+      this.toggleRow({ label: $r('app.string.diag_timeline_lazy'), key: KEY_DEBUG_TIMELINE_LAZY, checked: this.lazyTimelineOn });
       this.toggleRow({ label: $r('app.string.diag_drawn_enabled'), key: KEY_DEBUG_DRAWN_ENABLED, checked: this.masterOn });
       this.toggleRow({ label: $r('app.string.diag_drawn_text'), key: KEY_DEBUG_DRAWN_TEXT, checked: this.text });
       this.toggleRow({ label: $r('app.string.diag_drawn_single'), key: KEY_DEBUG_DRAWN_SINGLE, checked: this.single });
       this.toggleRow({ label: $r('app.string.diag_drawn_album'), key: KEY_DEBUG_DRAWN_ALBUM, checked: this.album });
+      this.toggleRow({ label: $r('app.string.diag_drawn_album_staging'), key: KEY_DEBUG_DRAWN_ALBUM_STAGING, checked: this.albumStagingOn });
+      this.toggleRow({ label: $r('app.string.diag_drawn_album_canvas'), key: KEY_DEBUG_DRAWN_ALBUM_CANVAS, checked: this.albumCanvasOn });
       this.toggleRow({ label: $r('app.string.diag_drawn_plain'), key: KEY_DEBUG_DRAWN_PLAIN, checked: this.plain });
       this.toggleRow({ label: $r('app.string.diag_drawn_rich'), key: KEY_DEBUG_DRAWN_RICH, checked: this.rich });
       this.toggleRow({ label: $r('app.string.diag_drawn_trace'), key: KEY_DEBUG_DRAWN_TRACE, checked: this.stageTrace });

@@ -429,7 +429,7 @@ export struct MediaViewerOverlay {
     this.initialViewerMsgId = this.viewerMsgId;
     this.activatePhotoLoad(this.viewerMsgId, false);
     this.noteViewedVideo();
-    const entranceMs: number = this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300);
+    const entranceMs: number = this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, this.underlay?.fadeOnly ? 160 : 300);
     if (this.underlay !== null && entranceMs > 0) {
       // 等入场黑幕盖住会话页后再藏系统状态栏，避免入场动画中途 TYPE_SYSTEM 变 0
       // 把底下还没退完的 HdsNavDestination 标题栏往上扯。
@@ -1870,7 +1870,7 @@ export struct MediaViewerOverlay {
             .clip(true)
             // 和图片一样，每页固定绑定自己的消息；翻页后退出也回到对应缩略图。
             // 绑定外层容器，播放器的旋转和 Surface 尺寸仍由内部独立管理。
-            .geometryTransition(`media_${this.chatId}_${vm.id}`);
+            .geometryTransition(this.underlay?.fadeOnly ? '' : `media_${this.chatId}_${vm.id}`);
           } else {
             // Gestures live on this UNSCALED wrapper, not on the Image: a
             // scaled component reports gesture coordinates/offsets in its own
@@ -1923,7 +1923,7 @@ export struct MediaViewerOverlay {
             // 正是 geometryTransition 要求的形状，动画仍由节点的出现/消失驱动。
             // vm.id 三处必须逐字一致（本行 + MessageBubble 的单图与相册格两行），
             // 而**编译器不校验配对**，漏一端只在真机上表现为落点错。
-            .geometryTransition(`media_${this.chatId}_${vm.id}`)
+            .geometryTransition(this.underlay?.fadeOnly ? '' : `media_${this.chatId}_${vm.id}`)
             // Parallel, not Exclusive. Exclusive has to hold the single tap
             // back until the double-tap window expires, and since a single tap
             // at 1x now closes the viewer, that wait showed up as a stall
@@ -2405,12 +2405,12 @@ export struct MediaViewerOverlay {
     // 理由详见 ChatPage.openViewer 里的说明。
     .transition(
       TransitionEffect.OPACITY
-        .animation({ duration: this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300), curve: Curve.Friction }),
+        .animation({ duration: this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, this.underlay?.fadeOnly ? 160 : 300), curve: Curve.Friction }),
       this.underlayEntranceFinished
     )
     .onAppear((): void => {
       // Reduced-motion/zero-duration opens are opaque on their first frame.
-      if (this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300) <= 0) {
+      if (this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, this.underlay?.fadeOnly ? 160 : 300) <= 0) {
         this.underlayEntranceFinished(true);
       }
     });

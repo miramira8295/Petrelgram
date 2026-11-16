@@ -32,5 +32,14 @@
   "test-drawn-message-warmup.mjs",
   "test-drawn-frame-activation.mjs",
   "test-drawn-activation-reuse.mjs",
-  "test-drawn-recycled-layouts.mjs"
+  "test-drawn-recycled-layouts.mjs",
+  "test-drawn-album-canvas.mjs",
+  "test-drawn-row-admission.mjs",
+  "test-drawn-derived-reuse.mjs",
+  "test-timeline-lazy.mjs",
+  "test-overlay-message-deps.mjs",
+  "test-message-row-clock.mjs",
+  "test-scroll-chrome-retention.mjs",
+  "test-scroll-stop-stages.mjs",
+  "test-message-id-search.mjs"
 ]

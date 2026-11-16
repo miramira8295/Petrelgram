@@ -1,5 +1,6 @@
 {
   "string": [
+    { "name": "diag_timeline_lazy", "value": "Experimental list (reopen chat to apply)" },
     {
       "name": "a11y_selected",
       "value": ", selected"
@@ -13387,6 +13388,14 @@
     {
       "name": "diag_drawn_single",
       "value": "Single photo / video rows"
+    },
+    {
+      "name": "diag_drawn_album_staging",
+      "value": "Stage album rows across frames"
+    },
+    {
+      "name": "diag_drawn_album_canvas",
+      "value": "Static album canvas"
     },
     {
       "name": "diag_drawn_album",

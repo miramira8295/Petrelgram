@@ -1,3 +1,4 @@
+import { DrawnMediaPosition } from './DrawnMediaPosition';
 import { SmartLoopVideo } from '../common/SmartLoopVideo';
 import { drawnAnimationPlaying, drawnAnimationDownloadExpected } from '../../util/drawnAnimationPolicy';
 import { MessageEntry } from '../../store/MessageEntry';
@@ -41,7 +42,7 @@ export struct DrawnSingleMediaVideo {
   private observationKey: string = '';
   private observationEpoch: number = 0;
   private candidateId: number = 0;
-  private centerY: number = 0;
+  private mediaPosition: DrawnMediaPosition = new DrawnMediaPosition();
   private boundSlot: DrawnImageSlot | undefined = undefined;
   private unsubProgress: (() => void) | null = null;
   private unsubPoster: (() => void) | null = null;
@@ -101,7 +102,7 @@ export struct DrawnSingleMediaVideo {
     if (this.unsubProgress !== null) { this.unsubProgress(); this.unsubProgress = null; }
     if (this.unsubPoster !== null) { this.unsubPoster(); this.unsubPoster = null; }
     if (this.candidateId !== 0) { this.actions.onMediaGone(this.candidateId, -1); }
-    this.candidateId = 0; this.centerY = 0; this.binding = ''; this.boundSlot = undefined;
+    this.candidateId = 0; this.binding = ''; this.boundSlot = undefined;
   }
   @Monitor('msg', 'data', 'slot', 'mediaWidth', 'mediaHeight', 'sendState')
   private changed(): void { this.attach(); }
@@ -150,13 +151,10 @@ export struct DrawnSingleMediaVideo {
       if (this.mediaVisible !== visible) { this.mediaVisible = visible; if (visible) { this.requestDownload(); } }
       if (this.msg.isAnimation || this.sendState === 'sending') { return; }
       if (ratio <= 0) { this.actions.onMediaGone(id, -1); }
-      else { this.actions.onMediaRatio(id, -1, ratio, this.centerY); }
-    };
-  }
-  private areaCallback(): (old: Area, area: Area) => void {
-    const epoch = this.observationGeneration(), key = this.inputKey();
-    return (_old: Area, area: Area): void => {
-      if (this.acceptsObservation(epoch, key)) { this.centerY = Number(area.globalPosition.y) + Number(area.height) / 2; }
+      else {
+        const center = this.mediaPosition.center(this.getUIContext());
+        if (center !== undefined) { this.actions.onMediaRatio(id, -1, ratio, center); }
+      }
     };
   }
   private positionCallback(): (ms: number) => void {
@@ -254,6 +252,6 @@ export struct DrawnSingleMediaVideo {
       }
     }.width(this.mediaWidth).height(this.mediaHeight).hitTestBehavior(HitTestMode.None)
     .onVisibleAreaApproximateChange({ ratios: [0, .08, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, .9],
-      expectedUpdateInterval: 200 }, this.ratioCallback()).onAreaChange(this.areaCallback());
+      expectedUpdateInterval: 200 }, this.ratioCallback()).id(this.mediaPosition.nodeId);
   }
 }

@@ -1,3 +1,4 @@
+import { KEY_DEBUG_TIMELINE_LAZY } from '../util/debugTimelineRenderer';
 import { drawnStageMetrics } from '../util/drawnStageMetrics';
 import { DEBUG_DRAWN_KEYS, KEY_DEBUG_DRAWN_TRACE, KEY_DEBUG_DRAWN_HOME_WARMUP } from '../util/debugDrawnRenderer';
 import { KEY_HIDE_PINNED_DEFAULT, pinnedVisibilityDefaults } from '../util/pinnedVisibilityState';
@@ -592,8 +593,11 @@ export async function initSettings(context: common.Context): Promise<void> {
     // ⚠️ 临时（P6 标定）：走 normalize 而不是直接信落盘值——档位表将来收窄时，
     // 旧值会变成野值，而 cachedCount 收到野值不报错，只是行为不可解释。
     for (const key of DEBUG_DRAWN_KEYS) { AppStorage.setOrCreate(key, await s.get(key, true) as boolean); }
+    AppStorage.setOrCreate(KEY_DEBUG_TIMELINE_LAZY, await s.get(KEY_DEBUG_TIMELINE_LAZY, true) as boolean);
     AppStorage.setOrCreate(KEY_DEBUG_DRAWN_HOME_WARMUP, await s.get(KEY_DEBUG_DRAWN_HOME_WARMUP, true) as boolean);
-    const drawnTrace = await s.get(KEY_DEBUG_DRAWN_TRACE, false) as boolean;
+    // Performance recording is session-scoped; never resume a diagnostic run
+    // merely because an older build persisted its switch.
+    const drawnTrace: boolean = false;
     AppStorage.setOrCreate(KEY_DEBUG_DRAWN_TRACE, drawnTrace); drawnStageMetrics.setEnabled(drawnTrace);
     AppStorage.setOrCreate(KEY_DEBUG_LIST_CACHED,
       normalizeListCachedCount(await s.get(KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT) as number));
@@ -692,6 +696,7 @@ export async function initSettings(context: common.Context): Promise<void> {
       AppStorage.setOrCreate(key, '');
     }
     for (const key of DEBUG_DRAWN_KEYS) { AppStorage.setOrCreate(key, true); }
+    AppStorage.setOrCreate(KEY_DEBUG_TIMELINE_LAZY, true);
     AppStorage.setOrCreate(KEY_DEBUG_DRAWN_HOME_WARMUP, true);
     AppStorage.setOrCreate(KEY_DEBUG_DRAWN_TRACE, false); drawnStageMetrics.setEnabled(false);
     AppStorage.setOrCreate(KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT); // ⚠️ 临时（P6 标定）

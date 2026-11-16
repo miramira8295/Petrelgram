@@ -1,3 +1,5 @@
+import { MessageRowClock } from '../../util/messageRowClock';
+import { TimelineLazyEntry } from './TimelineLazyDataSource';
 import { MessageListStateCard } from './MessageListState';
 import { InitialLoadingHint } from './InitialLoadingHint';
 import { showInitialLoadingHint } from '../../util/initialLoadingHint';
@@ -16,8 +18,11 @@ import { SelectionSession } from './SelectionSession';
 import { RowPageInputs } from '../../util/rowPageInputs';
 import { canRenderLightweightPlainTextRow } from '../../util/messageBubbleReuse';
 import { ChatTimelineSession } from './ChatTimelineSession';
+import { TIMELINE_SCROLL_CACHE_ROWS } from '../../util/timelineCacheBudget';
 
-// 完整消息流渲染宿主：List、Repeat、行与覆盖层都归同一组件。
+type ChatTimelineRowBinding = RepeatItem<AlbumGroup> | TimelineLazyEntry;
+
+// 完整消息流渲染宿主：List、行与覆盖层都归同一组件。
 // 数据发布与视口状态由 ChatTimelineSession 持有。
 // Repeat 自身的外壳复用开关。
 //
@@ -49,7 +54,7 @@ export struct ChatTimelineHost {
   @Require @Param rowPageInputs: RowPageInputs;
   @Require @Param actions: MessageBubbleActions;
   @Require @Param reusePageScope: number;
-  @Param nowSec: number = 0;
+  @Require @Param clock: MessageRowClock;
   @Param listCachedCount: number = 8;
   @Param appearanceEpoch: number = 0;
   @Param headerStartOffset: number = 0;
@@ -66,7 +71,7 @@ export struct ChatTimelineHost {
   // 用户设置值——停稳那一帧会补建缓存行，但那时是静止态、有余量。
   @Local private fastScroll: boolean = false;
   // 滑动中保留的缓存行数（可视区上下各 3 行，够接住 120Hz 的连续滚动）。
-  private static readonly FAST_SCROLL_CACHED: number = 3;
+  private static readonly FAST_SCROLL_CACHED: number = TIMELINE_SCROLL_CACHE_ROWS;
 
   @Event onEmptyRetry: () => void = (): void => {};
   // 【第二轮第 12 项】签名从 `() => void` 改成带 mode。
@@ -83,7 +88,9 @@ export struct ChatTimelineHost {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
   }
 
-  // 入参是**整个 RepeatItem**，不是从它里面取出来的值。官方《Repeat》使用限制：
+  // 入参是完整行绑定（RepeatItem / 带 @Trace item 的 TimelineLazyEntry），
+  // 不提前取出 item 快照；LazyForEach 的同 key 行内容也能原地响应。
+  // Repeat 路径必须传**整个 RepeatItem**，不是从它里面取出来的值。官方《Repeat》使用限制：
   // 「当 Repeat 与自定义组件或 @Builder 函数混用时，必须将 RepeatItem 类型整体
   // 进行传参，组件才能监听到数据变化」，反例正是按值传 ri.item —— 那样 Repeat
   // 更新这一行时（它只换 RepeatItem 里的 item，不重跑 .each()）这个 @Builder
@@ -92,12 +99,12 @@ export struct ChatTimelineHost {
   // 直接用于 Repeat 的 template 中，只能放在 template 里的普通 V2 组件之下。
   // 薄壳透传已准备的参数，reuseId 在里面用当前行计算并挂给内层气泡。
   @Builder
-  private preparedMessageBubble(ri: RepeatItem<AlbumGroup>) {
+  private preparedMessageBubble(ri: ChatTimelineRowBinding) {
     // 每次参数绑定只准备一次；宿主用同一份 data 与当前 group 现算复用桶。
     // 准备耗时的打点在 prepareRowData() 里（@Builder 体内不能声明局部变量）。
     MessageRowHost({
       group: ri.item,
-      nowSec: this.nowSec,
+      clock: this.clock,
       data: this.prepareRowData(ri.item),
       actions: this.actions,
       reusePageScope: this.reusePageScope
@@ -136,68 +143,74 @@ export struct ChatTimelineHost {
   @LocalBuilder
   timelineList() {
     List({ scroller: this.session.scroller }) {
-      Repeat<AlbumGroup>(this.session.timelineRows)
-        .each((ri: RepeatItem<AlbumGroup>) => {
-          this.timelineRow(ri);
-        })
-        // 五个模板**共用同一个 builder**：templateId 只负责把外壳的缓存池按结构
-        // 分开，渲染逻辑一份就够。少注册一个，那一档就退回 .each 的默认池，
-        // 等于没分——所以遍历 ROW_TEMPLATE_IDS 注册，不手写五遍。
-        .templateId((group: AlbumGroup, _index: number): string =>
-          this.rowTemplateIdOf(group))
-        .template(ROW_TEMPLATE_DEFERRED, (ri: RepeatItem<AlbumGroup>) => {
-          this.timelineRow(ri);
-        }, { cachedCount: 8 })
-        .template(ROW_TEMPLATE_PLAIN, (ri: RepeatItem<AlbumGroup>) => {
-          this.timelineRow(ri);
-        }, { cachedCount: 10 })
-        .template(ROW_TEMPLATE_PLAIN_GUTTER, (ri: RepeatItem<AlbumGroup>) => {
-          this.timelineRow(ri);
-        }, { cachedCount: 8 })
-        .template(ROW_TEMPLATE_RICH, (ri: RepeatItem<AlbumGroup>) => {
-          this.timelineRow(ri);
-        }, { cachedCount: 10 })
-        .template(ROW_TEMPLATE_RICH_GUTTER, (ri: RepeatItem<AlbumGroup>) => {
-          this.timelineRow(ri);
-        }, { cachedCount: 8 })
-        .key((group: AlbumGroup): string => this.session.rowKeyOf(group))
-        // Repeat owns the ListItem root, so let it reuse that complete subtree.
-        // Forcing reusable=false delegates scrolling reuse to the nested
-        // @ReusableV2 bubble. During a history prepend that bubble is then
-        // detached from one Repeat node and attached to another, which ArkUI
-        // reports as setChild/changing-parent and renders as a row flash.
-        // Repeat reuse updates the complete RepeatItem binding; the bubble's
-        // @Monitor('group') reattaches its presentation subscription.
-        // ⚠️ **reusable 必须是 false，别再改回 true。** 2026-09-10 两轮真机定案。
-        //
-        // 第二轮（补齐 6 处「只有 aboutToReuse、没有等效 @Monitor」的组件之后
-        // 再开 true）**重复依然复现**——所以那 6 处不是根因，已从嫌疑里排除。
-        // 那一版的手感确实变好（外壳不再每次重建、震颤明显减轻），但正确性
-        // 压过流畅度。
-        //
-        // 【症状】往上翻历史时，每隔一个复用池容量就出现一条"比上下都新"的
-        // 消息——同一条消息在列表里重复出现，相册的位置画成文本、不该有图的
-        // 气泡长出图、滑动中显示 a 停稳后变 b，全是这一个 bug 的不同切面。
-        //
-        // 【数据侧全部清白】[OrderGuard] 窗口严格升序 0 告警；[Visible] 打出的
-        // 可见区 id 严格递增且相邻（差恒为 1048576）；[MergeGuard] 两页合并的
-        // 边界假设成立。**模型从头到尾是对的，错的只有屏幕。**
-        //
-        // 【怎么锁定到复用池】重复的周期跟着 List 的 cachedCount 走：
-        // cachedCount=4 时每 21 条重复一次，改成 8 之后变成 27
-        // （周期 ≈ 可视行数 + 2×cachedCount，正是一次最坏回收潮的池子容量）。
-        // 这个判据来自设备本身，不依赖任何探针参照物。
-        //
-        // 【为什么是这一层】这里叠了两层复用：Repeat 复用整个 ListItem 子树，
-        // 气泡又有自己的 @ReusableV2 池（.reuse({reuseId})）。把本行改成 false
-        // 之后重复完全消失（用户实测长时间翻阅无一例），说明壳没更新发生在
-        // Repeat 这一层。
-        //
-        // 【代价，已知并接受】false **不等于不复用**——滚动复用交回给内层的
-        // @ReusableV2 气泡，贵的那部分子树照常复用。原注释记录的代价是：前插时
-        // 气泡会在两个 Repeat 节点之间搬家，ArkUI 报 setChild/changing-parent，
-        // 表现为行闪一下。拿"偶尔闪一下"换"消息不再重复"，值。
-        .virtualScroll({ totalCount: this.session.timelineRows.length, reusable: REPEAT_ROW_REUSE });
+      if (this.session.lazyTimelineEnabled) {
+        LazyForEach(this.session.lazyRows, (row: TimelineLazyEntry) => {
+          this.timelineRow(row);
+        }, (row: TimelineLazyEntry): string => row.key);
+      } else {
+        Repeat<AlbumGroup>(this.session.timelineRows)
+          .each((ri: RepeatItem<AlbumGroup>) => {
+            this.timelineRow(ri);
+          })
+          // 五个模板**共用同一个 builder**：templateId 只负责把外壳的缓存池按结构
+          // 分开，渲染逻辑一份就够。少注册一个，那一档就退回 .each 的默认池，
+          // 等于没分——所以遍历 ROW_TEMPLATE_IDS 注册，不手写五遍。
+          .templateId((group: AlbumGroup, _index: number): string =>
+            this.rowTemplateIdOf(group))
+          .template(ROW_TEMPLATE_DEFERRED, (ri: RepeatItem<AlbumGroup>) => {
+            this.timelineRow(ri);
+          }, { cachedCount: 8 })
+          .template(ROW_TEMPLATE_PLAIN, (ri: RepeatItem<AlbumGroup>) => {
+            this.timelineRow(ri);
+          }, { cachedCount: 10 })
+          .template(ROW_TEMPLATE_PLAIN_GUTTER, (ri: RepeatItem<AlbumGroup>) => {
+            this.timelineRow(ri);
+          }, { cachedCount: 8 })
+          .template(ROW_TEMPLATE_RICH, (ri: RepeatItem<AlbumGroup>) => {
+            this.timelineRow(ri);
+          }, { cachedCount: 10 })
+          .template(ROW_TEMPLATE_RICH_GUTTER, (ri: RepeatItem<AlbumGroup>) => {
+            this.timelineRow(ri);
+          }, { cachedCount: 8 })
+          .key((group: AlbumGroup): string => this.session.rowKeyOf(group))
+          // Repeat owns the ListItem root, so let it reuse that complete subtree.
+          // Forcing reusable=false delegates scrolling reuse to the nested
+          // @ReusableV2 bubble. During a history prepend that bubble is then
+          // detached from one Repeat node and attached to another, which ArkUI
+          // reports as setChild/changing-parent and renders as a row flash.
+          // Repeat reuse updates the complete RepeatItem binding; the bubble's
+          // @Monitor('group') reattaches its presentation subscription.
+          // ⚠️ **reusable 必须是 false，别再改回 true。** 2026-09-10 两轮真机定案。
+          //
+          // 第二轮（补齐 6 处「只有 aboutToReuse、没有等效 @Monitor」的组件之后
+          // 再开 true）**重复依然复现**——所以那 6 处不是根因，已从嫌疑里排除。
+          // 那一版的手感确实变好（外壳不再每次重建、震颤明显减轻），但正确性
+          // 压过流畅度。
+          //
+          // 【症状】往上翻历史时，每隔一个复用池容量就出现一条"比上下都新"的
+          // 消息——同一条消息在列表里重复出现，相册的位置画成文本、不该有图的
+          // 气泡长出图、滑动中显示 a 停稳后变 b，全是这一个 bug 的不同切面。
+          //
+          // 【数据侧全部清白】[OrderGuard] 窗口严格升序 0 告警；[Visible] 打出的
+          // 可见区 id 严格递增且相邻（差恒为 1048576）；[MergeGuard] 两页合并的
+          // 边界假设成立。**模型从头到尾是对的，错的只有屏幕。**
+          //
+          // 【怎么锁定到复用池】重复的周期跟着 List 的 cachedCount 走：
+          // cachedCount=4 时每 21 条重复一次，改成 8 之后变成 27
+          // （周期 ≈ 可视行数 + 2×cachedCount，正是一次最坏回收潮的池子容量）。
+          // 这个判据来自设备本身，不依赖任何探针参照物。
+          //
+          // 【为什么是这一层】这里叠了两层复用：Repeat 复用整个 ListItem 子树，
+          // 气泡又有自己的 @ReusableV2 池（.reuse({reuseId})）。把本行改成 false
+          // 之后重复完全消失（用户实测长时间翻阅无一例），说明壳没更新发生在
+          // Repeat 这一层。
+          //
+          // 【代价，已知并接受】false **不等于不复用**——滚动复用交回给内层的
+          // @ReusableV2 气泡，贵的那部分子树照常复用。原注释记录的代价是：前插时
+          // 气泡会在两个 Repeat 节点之间搬家，ArkUI 报 setChild/changing-parent，
+          // 表现为行闪一下。拿"偶尔闪一下"换"消息不再重复"，值。
+          .virtualScroll({ totalCount: this.session.timelineRows.length, reusable: REPEAT_ROW_REUSE });
+      }
     }
     .width('100%').height('100%')
     .opacity(this.session.initialTimelineMasked ? 0 : 1)
@@ -257,7 +270,7 @@ export struct ChatTimelineHost {
   // on the page preserves the existing message-bubble/reuse and selection
   // behavior.
   @Builder
-  timelineRow(ri: RepeatItem<AlbumGroup>) {
+  timelineRow(ri: ChatTimelineRowBinding) {
     ListItem() {
       if (ri.item.initialDeferred === true) {
         Column()
@@ -355,7 +368,7 @@ export struct ChatTimelineHost {
     // ArkUI 给的是 vp 数值；非数值一律丢弃，record 本身也再挡一道有限性检查。
     .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
       const raw: Length | undefined = size.height;
-      if (typeof raw !== 'number') {
+      if (typeof raw !== 'number' || ri.index < 0) {
         return;
       }
       this.session.viewportGeometry.record(

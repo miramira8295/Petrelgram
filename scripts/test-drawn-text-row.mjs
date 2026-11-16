@@ -54,7 +54,7 @@ const ctx=vm.createContext({ViewV2:class{},ViewPU:class{},Color:{White:'white'},
   firstFinger:list=>list[0],messageGesturePolicy:()=>({tapOpensMenu:true,longPressSelects:false,longPressOpensMenu:true}),
   tableScrollTouched:()=>false,isEdgeSwipeStart:x=>x<36,SWIPE_REPLY_MAX:-70,SWIPE_REPLY_TRIGGER:-40,SWIPE_SELECT_MAX:70,SWIPE_SELECT_TRIGGER:40,
   Curve:{EaseOut:1},Date:{now:()=>1000},messageDragType:()=> 'general.plain-text'});
-function load(path,names=[]){const s=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/@(?:Require|Param|Local|Computed|Event)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'').replace(/\bexport /g,'');vm.runInContext(ts.transpileModule(s+names.map(n=>`\nglobalThis.${n}=${n};`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx,{filename:path});}
+function load(path,names=[]){const s=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/@(?:Require|Param|Local|Computed|Event|ObservedV2|Trace)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'').replace(/\bexport /g,'');vm.runInContext(ts.transpileModule(s+names.map(n=>`\nglobalThis.${n}=${n};`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx,{filename:path});}
 load(root+'util/drawnTextUnits.ets');
 load(root+'pages/chat/DrawnMediaColors.ets');
 for(const file of ['mediaBox','messageBubblePresentation','bubbleCornerInset','bubbleGlassPath','drawnPlainTextPolicy','drawnFooterPlacement','richText','messageLinkAction'])load(root+'util/'+file+'.ets');
@@ -70,7 +70,17 @@ load(root+'pages/chat/DrawnNativeAttributes.ets',['DrawnMediaAnchorPool','DrawnC
 load(root+'pages/chat/DrawnLayoutWarmCache.ets',['takeDrawnWarmLayout']);
 ctx.getTdClient ??= () => ctx; ctx.setTimeout ??= () => 0; ctx.clearTimeout ??= () => {};
 load(root+'pages/chat/DrawnRecycledLayouts.ets',['DrawnLayoutRetention','takeDrawnRecycledLayout','drawnRecycledLayouts']);
+load(root+'util/drawnRowChromePolicy.ets',['drawnRowChromeReason']);
+load(root+'pages/chat/DrawnRowInteraction.ets',['DrawnRowInteraction']);
 load(compiled+'pages/chat/DrawnMessageRow.ts',['DrawnMessageRow']);
+// Constructor-free geometry fixtures model metadata already seeded for the
+// current input. state-seed separately exercises the real owner handoff.
+Object.defineProperty(ctx.DrawnMessageRow.prototype,'metadataOwner',{
+ get(){return this.metadataKey();},
+ set(value){Object.defineProperty(this,'metadataOwner',{value,writable:true,configurable:true});},configurable:true
+});
+
+ctx.DrawnMessageRow.prototype.albumCanvas = {state:{ready:false},bind(){},reset(){}};
 const ui={vp2px:n=>{unitConversions++;return n*2;},fp2px:n=>{unitConversions++;return n*2;}};
 const data={playSlotKey:'',chatId:9,isGroup:false,isChannel:false,contentWidth:400,themeBubbleOut:'',selectionActive:false,selectedMemberIds:[],canReply:true,lightweightPlainText:true};
 const style={radius:20,fontSize:16,environment:'1',textEnvironment:'1',role:'',views:''};
@@ -115,7 +125,7 @@ for(const field of ['inlineButtons','replyDiceLayers']){const x=group();x.head[f
 const structured=group();structured.head.contentType='richMessage';assert.equal(ctx.drawnTextRowEligible(structured,data,false,false),false);
 assert.equal(ctx.drawnTextRowEligible(group(),data,true,false),false);assert.equal(ctx.drawnTextRowEligible(group(),data,false,true),false);
 // Replay real compiled link/reply/avatar/drag handlers, including reuse.
-const events=[],row=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()});
+const events=[],row=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{interaction:new ctx.DrawnRowInteraction(),layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()});
 row.kind='text';row.group=links;row.data=data;row.env={gestureScheme:0,screenWidthVp:400};row.dragGesture=new ctx.MessageDragGesture();
 row.actions=new Proxy({},{get:(_t,k)=>(...args)=>events.push([k,...args])});row.foreground={press(){},pressReaction(){},setPress(){}};
 row.getUIContext=()=>({animateTo:(_o,fn)=>fn()});p=layouts.prepare(ui,links,data,style);Object.defineProperty(row,'plan',{configurable:true,value:p});
@@ -123,7 +133,7 @@ const hit=p.caption.hits.find(h=>h.link.url==='https://two.test');const x=p.capt
 const touch=(type,x,y)=>({type,touches:[{x,y,windowX:100,windowY:200}],changedTouches:[{x,y,windowX:100,windowY:200}]});
 row.touch(touch(0,x,y));row.rowTouch(touch(0,x,y));row.click({x,y,source:1});assert.equal(events.at(-1)[1],'https://two.test');
 row.group={...links,head:{...links.head,rowId:11}};const before=events.length;row.click({x,y,source:1});assert.equal(events.length,before);
-row.group=links;row.touch(touch(0,x,y));row.rowTouch(touch(0,x,y));ctx.Date.now=()=>1600;row.swipe(-60);assert.equal(row.swipeX,undefined,'held text favors system drag');
+row.group=links;row.touch(touch(0,x,y));row.rowTouch(touch(0,x,y));ctx.Date.now=()=>1600;row.swipe(-60);assert.equal(row.swipeX,0,'held text favors system drag');
 row.touch(touch(1,x,y));assert.equal(row.menuShown,true,'held unmoved text opens menu on release');
 row.claimed=false;row.menuShown=false;ctx.Date.now=()=>2000;row.touch(touch(0,x,y));row.rowTouch(touch(0,x,y));row.dragGesture.claim();row.draggingMessage=true;ctx.Date.now=()=>2600;row.touch(touch(1,x,y));assert.equal(row.menuShown,false,'claimed system drag never opens menu');
 
@@ -131,7 +141,7 @@ row.claimed=false;row.menuShown=false;ctx.Date.now=()=>2000;row.touch(touch(0,x,
 const tiny=layouts.prepare(ui,group('x'),{...data,isGroup:true},{...style,fontSize:10});
 assert.equal(tiny.height,38);assert.ok(tiny.bubbleY>0);assert.equal(tiny.avatar.y,0);
 // Live sending and busy links retain the exact plan and cached paragraph.
-const gate=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()});gate.kind='text';gate.group=links;gate.data=data;
+const gate=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{interaction:new ctx.DrawnRowInteraction(),layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()});gate.kind='text';gate.group=links;gate.data=data;
 gate.env={appearanceEpoch:1,langEpoch:1,bubbleMaterialOn:false,bubbleRadius:20,msgTextSize:16,linkNavBusy:''};
 gate.a11y={active:false};gate.translation=null;gate.sendState='sent';gate.avatarAnimated=false;gate.role='';gate.views='';
 gate.textLayouts=null;gate.albumLayouts=null;gate.getUIContext=()=>ui;
@@ -148,6 +158,14 @@ row.group=g;row.data={...data,isGroup:true};p=layouts.prepare(ui,g,row.data,styl
 Object.defineProperty(row,'plan',{configurable:true,value:p});row.claimed=false;row.draggingMessage=false;
 row.click({x:p.quoteRect.x+1,y:p.quoteRect.y+1,source:2});assert.equal(events.at(-1)[0],'onReplyTap');
 row.click({x:1,y:p.avatar.y+1,source:2});assert.equal(events.at(-1)[0],'onAvatarTap');
+row.avatarAnimated=true;
+row.touch(touch(0,1,p.avatar.y+1));row.rowTouch(touch(0,1,p.avatar.y+1));
+row.click({x:1,y:p.avatar.y+1,source:1});
+assert.equal(events.at(-1)[0],'onAvatarTap');assert.equal(events.at(-1)[1],g.head.senderId);
+const avatarTapCount=events.length;
+row.group={...g,head:{...g.head,rowId:g.head.rowId+1}};
+row.click({x:1,y:p.avatar.y+1,source:1});assert.equal(events.length,avatarTapCount,'stale avatar tap rejected after reuse');
+row.group=g;
 row.longPress({fingerList:[{localX:5,localY:p.avatar.y+4}],target:{area:{width:400}}});
 assert.equal(events.at(-1)[0],'onAvatarLongPress');assert.equal(events.at(-1)[1],g.head.senderId);
 row.claimed=false;row.data.selectionActive=true;const beforeSelect=events.length;
@@ -185,7 +203,7 @@ gate.env.drawnRich=false;assert.equal(gate.plan,null);gate.env.drawnRich=true;as
 // not merely return null after discarding a freshly built paragraph.
 load(root+'util/drawnSingleMediaPolicy.ets',['drawnSingleMediaEligible']);
 for(const kind of ['text','single','album'])for(const plain of [true,false]){
- const cold=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()}),message=group('body');
+ const cold=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{interaction:new ctx.DrawnRowInteraction(),layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()}),message=group('body');
  if(kind!=='text')message.head.contentType='photo';
  if(kind==='album'){message.memberIds=[10,11];message.photoRatios=[1,1];message.caption='caption';}
  const flag=plain?'drawnPlain':'drawnRich',owner=kind==='text'?'textLayouts':kind==='single'?'singleLayouts':'albumLayouts';
@@ -216,7 +234,7 @@ console.log('PASS: plain/rich switches skip cold allocation and 1000 warm prepar
  const home=engine.prepare(ui,homeGroup,data,homeStyle),before=bodyLayouts;
  reserve.put(owner,data.chatId,homeGroup.head.id,'text',engine);
  const incoming={...homeGroup,head:{...homeGroup.head}};
- const recipient=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{layoutRetention:new ctx.DrawnLayoutRetention(),
+ const recipient=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{interaction:new ctx.DrawnRowInteraction(),layoutRetention:new ctx.DrawnLayoutRetention(),
   kind:'text',group:incoming,data:{...data},env:environment,a11y:{active:false},translation:null,
   role:'',views:'',textLayouts:null,singleLayouts:null,albumLayouts:null,
   getUIContext:()=>({vp2px:n=>n*2,fp2px:n=>n*2})});

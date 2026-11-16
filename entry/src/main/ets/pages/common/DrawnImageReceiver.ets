@@ -51,6 +51,7 @@ export class DrawnImageReceiver extends DrawModifier {
     this.invalidate();
   }
 
+
   canDraw(pixels: image.PixelMap | undefined, fit: ImageFit): boolean {
     return (fit === ImageFit.Cover || fit === ImageFit.Contain) &&
       (pixels === undefined || (pixels === this.pixels && this.pixelWidth > 0 && this.pixelHeight > 0));

@@ -82,6 +82,7 @@ export class CachedImageSession {
     }
   }
 
+
   private sameAsHeld(path: string, width: number, height: number, opaque: boolean): boolean {
     const held = this.heldReq;
     return held !== null && held.opaque === opaque &&

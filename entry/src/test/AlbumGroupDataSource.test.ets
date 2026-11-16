@@ -1,3 +1,4 @@
+import { TimelineLazyDataSource, TimelineLazyEntry } from '../main/ets/pages/chat/TimelineLazyDataSource';
 import { describe, it, expect } from '@ohos/hypium';
 import { TdClient } from '../main/ets/tdkit/TdClient';
 import { TdObject, TdBridge } from '../main/ets/tdkit/TdTypes';
@@ -26,6 +27,7 @@ class FakeBridge implements TdBridge {
 // BasicPrefetcher 重新读 totalCount() 的那一条通知。
 class CountingListener implements DataChangeListener {
   reloaded: number = 0;
+  batches: DataOperation[][] = [];
   onDataReloaded(): void { this.reloaded++; }
   onDataAdded(_index: number): void {}
   onDataAdd(_index: number): void {}
@@ -35,7 +37,7 @@ class CountingListener implements DataChangeListener {
   onDataDelete(_index: number): void {}
   onDataChanged(_index: number): void {}
   onDataChange(_index: number): void {}
-  onDatasetChange(_ops: DataOperation[]): void {}
+  onDatasetChange(ops: DataOperation[]): void { this.batches.push(ops); }
 }
 
 function usersOf(): UserStore {
@@ -433,6 +435,98 @@ export default function albumGroupDataSourceTest() {
           }
         }
       }
+    });
+
+    it('lazy_prepend_retains_entries_and_updates_callback_indices', 0, () => {
+      const users = usersOf(); const source = new TimelineLazyDataSource();
+      const listener = new CountingListener(); source.registerDataChangeListener(listener);
+      const keyOf = (g: AlbumGroup): string => repeatRowKey(g, 0, 0);
+      const old = groupsOf([[100, 100], [200, 5000]], users);
+      source.setRows(old, keyOf, 0, 0);
+      const a = source.getData(0); const b = source.getData(1);
+      const head = groupsOf([[10, 1], [20, 2], [30, 3]], users);
+      source.setRows(head.concat(old), keyOf, 0, 0);
+      expect(source.getData(3) === a).assertTrue(); expect(source.getData(4) === b).assertTrue();
+      expect(a.index).assertEqual(3); expect(b.index).assertEqual(4);
+      const add = listener.batches[1][0] as DataAddOperation;
+      expect(add.type).assertEqual(DataOperationType.ADD); expect(add.index).assertEqual(0);
+      expect(add.count).assertEqual(3); expect(listener.reloaded).assertEqual(0);
+    });
+    it('lazy_content_update_keeps_key_and_notifies_only_row', 0, () => {
+      const users = usersOf(); const source = new TimelineLazyDataSource();
+      const listener = new CountingListener(); source.registerDataChangeListener(listener);
+      const keyOf = (g: AlbumGroup): string => repeatRowKey(g, 0, 0);
+      const old = groupsOf([[100, 100]], users); source.setRows(old, keyOf, 0, 0);
+      const row = source.getData(0);
+      const edited = collapseAlbums([entry(100, 100, users, 'new text')]);
+      source.setRows(edited, keyOf, 0, 0);
+      expect(source.getData(0) === row).assertTrue(); expect(row.item === edited[0]).assertTrue();
+      expect(listener.batches.length).assertEqual(1);
+    });
+    it('lazy_placeholder_reveal_keeps_identity', 0, () => {
+      const users = usersOf(); const source = new TimelineLazyDataSource();
+      const keyOf = (g: AlbumGroup): string => repeatRowKey(g, 0, 0);
+      const staged = groupsOf([[100, 100]], users); staged[0].initialDeferred = true;
+      source.setRows(staged, keyOf, 0, 0); const row = source.getData(0);
+      const shown = groupsOf([[100, 100]], users); source.setRows(shown, keyOf, 0, 0);
+      expect(source.getData(0) === row).assertTrue(); expect(row.item.initialDeferred === true).assertFalse();
+    });
+    it('lazy_trim_retires_removed_index_and_keeps_survivors', 0, () => {
+      const users = usersOf(); const source = new TimelineLazyDataSource();
+      const listener = new CountingListener(); source.registerDataChangeListener(listener);
+      const keyOf = (g: AlbumGroup): string => repeatRowKey(g, 0, 0);
+      const old = groupsOf([[10, 1], [20, 2], [30, 3]], users); source.setRows(old, keyOf, 0, 0);
+      const removed = source.getData(0); const survivor = source.getData(1);
+      source.setRows(old.slice(1), keyOf, 0, 0);
+      expect(removed.index).assertEqual(-1); expect(survivor.index).assertEqual(0);
+      expect(source.getData(0) === survivor).assertTrue();
+      const op = listener.batches[1][0] as DataDeleteOperation;
+      expect(op.type).assertEqual(DataOperationType.DELETE); expect(op.count).assertEqual(1);
+    });
+    it('lazy_append_and_interior_delete_use_incremental_operations', 0, () => {
+      const users = usersOf(); const source = new TimelineLazyDataSource();
+      const listener = new CountingListener(); source.registerDataChangeListener(listener);
+      const keyOf = (g: AlbumGroup): string => repeatRowKey(g, 0, 0);
+      const all = groupsOf([[10, 1], [20, 2], [30, 3]], users);
+      source.setRows(all.slice(0, 2), keyOf, 0, 0); source.setRows(all, keyOf, 0, 0);
+      expect((listener.batches[1][0] as DataAddOperation).index).assertEqual(2);
+      const last = source.getData(2);
+      source.setRows([all[0], all[2]], keyOf, 0, 0);
+      expect((listener.batches[2][0] as DataDeleteOperation).index).assertEqual(1);
+      expect(source.getData(1) === last).assertTrue();
+    });
+    it('lazy_reorder_retains_binding_and_epoch_rebuild_replaces_it', 0, () => {
+      const users = usersOf(); const source = new TimelineLazyDataSource();
+      const listener = new CountingListener(); source.registerDataChangeListener(listener);
+      const keyOf = (g: AlbumGroup): string => repeatRowKey(g, 0, 0);
+      const all = groupsOf([[10, 1], [20, 2], [30, 3]], users); source.setRows(all, keyOf, 0, 0);
+      const first = source.getData(0); const last = source.getData(2);
+      source.setRows([all[2], all[1], all[0]], keyOf, 0, 0);
+      expect(listener.batches[1][0].type).assertEqual(DataOperationType.RELOAD);
+      expect(source.getData(2) === first).assertTrue(); expect(source.getData(0) === last).assertTrue();
+      source.setRows(all, (g: AlbumGroup): string => repeatRowKey(g, 1, 1), 1, 1);
+      expect(source.getData(0) === first).assertFalse(); expect(first.index).assertEqual(-1);
+    });
+    it('lazy_unchanged_rows_do_not_recompute_keys_or_notify', 0, () => {
+      const users = usersOf(); const source = new TimelineLazyDataSource();
+      const listener = new CountingListener(); source.registerDataChangeListener(listener);
+      let keys: number = 0;
+      const keyOf = (g: AlbumGroup): string => { keys++; return repeatRowKey(g, 0, 0); };
+      const all = groupsOf([[10, 1], [20, 2], [30, 3]], users); source.setRows(all, keyOf, 0, 0);
+      for (let i = 0; i < 1000; i++) { source.setRows(all, keyOf, 0, 0); }
+      expect(keys).assertEqual(3); expect(listener.batches.length).assertEqual(1);
+    });
+    it('lazy_clear_and_listener_lifecycle', 0, () => {
+      const users = usersOf(); const source = new TimelineLazyDataSource();
+      const listener = new CountingListener(); source.registerDataChangeListener(listener);
+      source.registerDataChangeListener(listener);
+      const keyOf = (g: AlbumGroup): string => repeatRowKey(g, 0, 0);
+      const all = groupsOf([[10, 1]], users); source.setRows(all, keyOf, 0, 0);
+      const row = source.getData(0); source.setRows([], keyOf, 0, 0);
+      expect(source.totalCount()).assertEqual(0); expect(row.index).assertEqual(-1);
+      expect(listener.batches.length).assertEqual(2);
+      source.unregisterDataChangeListener(listener); source.setRows(all, keyOf, 0, 0);
+      expect(listener.batches.length).assertEqual(2);
     });
   });
 }

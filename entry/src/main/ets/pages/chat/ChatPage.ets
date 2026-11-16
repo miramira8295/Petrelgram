@@ -1,7 +1,9 @@
+import { MessageRowClock } from '../../util/messageRowClock';
 import { closeContextMenu } from '../../util/uiContext';
 import { showToast, showToastOptions } from '../../util/toast';
 import { shareableMessageLink, ShareableMessageLink } from '../../util/deepLink';
 import { ChatTimelineBindings, ChatTimelineSession } from './ChatTimelineSession';
+import { timelinePrependRows } from '../../util/timelineCacheBudget';
 import { subscribeVideoPreload } from '../../util/videoPreloadSetting';
 import { initVideoPosterStore } from '../../util/videoPosterStore';
 import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
@@ -235,7 +237,7 @@ import {
 import {
   ANCHOR_UNREAD, InitialAnchor, anchorLatchesBottom, initialAnchorOf
 } from '../../util/initialAnchor';
-import { isAtLiveTail, newestVisibleMessageId, visibleMessageIds } from '../../util/readMarking';
+import { isAtLiveTail, newestVisibleMessageId, VisibleReadIds } from '../../util/readMarking';
 import { openForwardOrigin } from '../../util/chatNavigation';
 import {
   confirmStopLiveLocation, normalizePhoneForDial, SharedLocationUris, sharedLocationUris
@@ -836,7 +838,11 @@ export struct ChatPage {
   // 本页是否真的在屏上（NavDestination.onShown/onHidden）。给 ChatBackdrop 决定
   // 整屏光栅的 pin 生命周期：隐藏即还引用（2 秒宽限期），显示即重新 retain。
   @Local private surfaceActive: boolean = true;
-  @Local nowSec: number = 0;
+  private rowClock: MessageRowClock = new MessageRowClock();
+  private get nowSec(): number { return this.rowClock.nowSec; }
+  private set nowSec(value: number) {
+    if (this.rowClock.nowSec !== value) { this.rowClock.nowSec = value; }
+  }
   private nowSecTimer: number = -1;
   // 查看器的目标、控制层、横屏和播放交接状态集中在 ChatViewerSession；页面只
   // 负责把它接到消息列表、播放位和系统方向 API。
@@ -1483,17 +1489,6 @@ export struct ChatPage {
   // Task 6 迁移本页时 leaveChat 成功回调原样留了 this.getUIContext().getRouter().back()，是漏改，
   // 不是有意为之。标题栏返回键现在由 HDS 自己弹出同一条 Navigation 栈。
   // 会话操作条：从 ChatEntry 镜像两个标量；同值不写，免得惊动 TopBanners。
-  // 收藏面板的副标题用。找不到就给空串——面板照样能开，只是标题少一行。
-  private audioTitleOf(messageId: number): string {
-    const found = this.timeline.messages.find((m: MessageEntry): boolean => m.id === messageId);
-    return found !== undefined ? found.audioTitle : '';
-  }
-
-  private audioPerformerOf(messageId: number): string {
-    const found = this.timeline.messages.find((m: MessageEntry): boolean => m.id === messageId);
-    return found !== undefined ? found.audioPerformer : '';
-  }
-
   private syncActionBar(): void {
     const e: ChatEntry | undefined = getChatStore().entryOf(this.chatId);
     const canUnarchive: boolean = e !== undefined ? e.actionBarCanUnarchive : false;
@@ -1825,7 +1820,10 @@ export struct ChatPage {
       visibleStartIndex: (): number => this.timeline.curStartIdx
     });
     this.timeline.prependChunker.bind({
-      chunkRows: (): number => this.listCachedCount,
+      // Keep Repeat's cache protection; LazyForEach publishes 8 moving / 16 idle.
+      chunkRows: (): number => timelinePrependRows(this.listCachedCount,
+        this.timeline.lazyTimelineEnabled,
+        this.timeline.listTouchActive || this.timeline.listUserScrollActive),
       // 跳转落地期间整份发布，不扣头部：目标行被扣着时 landPendingJump 按完整
       // 快照算出的下标指向的是另一条消息（真机 [JumpLand] 实测，判据见
       // util/jumpLandingOwner.chunkPrependAllowed）。
@@ -1836,6 +1834,10 @@ export struct ChatPage {
         const target: AlbumGroup[] | null = this.timeline.prependChunker.latestTarget();
         if (target !== null && this.store !== null) {
           this.timeline.publishGroupsNow(target);
+          if (this.timeline.prependChunker.pendingRows() === 0 && this.timeline.curStartIdx <= 4) {
+            this.timeline.flushQueuedOlderLoad();
+            this.timeline.maybeLoadOlder();
+          }
         }
       }
     });
@@ -4450,13 +4452,16 @@ export struct ChatPage {
     this.scrollToLatest();
   }
 
+  private visibleReadIds: VisibleReadIds = new VisibleReadIds();
+  private visibleMembersAt = (index: number): number[] => this.timeline.groups[index].memberIds;
+
   private markVisibleRead(end: number): void {
     if (this.store === null || end < 0 || end >= this.timeline.groups.length) {
       return;
     }
     if (this.timeline.pageVisible && this.appIsForeground && !this.viewerOpen()) {
-      this.store.markVisibleMentions(visibleMessageIds(this.timeline.groups.length,
-        (index: number): number[] => this.timeline.groups[index].memberIds, this.timeline.curStartIdx, end));
+      this.store.markVisibleMentions(this.visibleReadIds.prepare(this.timeline.groupsRevision, this.timeline.groups.length,
+        this.visibleMembersAt, this.timeline.curStartIdx, end));
     }
     // 往回找第一条"真实"消息行、以及"是不是实时尾部"，两个判定都在
     // util/readMarking（8 条测）——已读是高水位，报高了就吞掉没看过的消息。
@@ -6763,7 +6768,7 @@ export struct ChatPage {
       rowPageInputs: this.rowPageInputs,
       actions: this.messageActions(),
       reusePageScope: this.reusePageScope,
-      nowSec: this.nowSec,
+      clock: this.rowClock,
       listCachedCount: this.listCachedCount,
       appearanceEpoch: this.appearanceEpoch,
       headerStartOffset: this.headerChromeHeight(),
@@ -6807,15 +6812,14 @@ export struct ChatPage {
     AudioFavoriteFlow({
       targetMessageId: this.favoriteAudioId,
       chatId: this.chatId,
-      trackTitle: this.audioTitleOf(this.favoriteAudioId),
-      trackArtist: this.audioPerformerOf(this.favoriteAudioId),
+      timeline: this.timeline,
       bottomSafe: this.bottomSafe,
       onClose: (): void => { this.favoriteAudioId = 0; }
     });
     ChatOverlayHost({
       selection: this.selection,
       overlayState: this.overlayState,
-      messages: this.timeline.messages,
+      timeline: this.timeline,
       chatId: this.chatId,
       threadRootId: this.threadRootId,
       store: this.store,

@@ -1,3 +1,5 @@
+import { tableScrollTouched } from '../../util/tableTouchChannel';
+import { DrawnStage, drawnStageMetrics } from '../../util/drawnStageMetrics';
 import { DrawnMediaFrame } from './DrawnMediaFrames';
 
 const EMPTY_DRAWN_ANCHOR: DrawnMediaFrame = {
@@ -18,10 +20,13 @@ export class DrawnMediaAnchorAttributes implements AttributeModifier<StackAttrib
   }
 
   applyNormalAttribute(node: StackAttribute): void {
-    const f = this.frame;
-    node.size(f).position(f.position).backgroundColor(f.backdrop)
-      .borderRadius(f.radius).clip(true).geometryTransition(f.transition)
-      .hitTestBehavior(HitTestMode.None);
+    const traced = drawnStageMetrics.begin(DrawnStage.TileAttributes);
+    try {
+      const f = this.frame;
+      node.size(f).position(f.position).backgroundColor(f.backdrop)
+        .borderRadius(f.radius).clip(true).geometryTransition(f.transition)
+        .hitTestBehavior(HitTestMode.None);
+    } finally { drawnStageMetrics.end(traced); }
   }
 }
 
@@ -48,18 +53,29 @@ export class DrawnCanvasAttributes implements AttributeModifier<StackAttribute> 
   private focus: ScaleOptions = { x: 1, y: 1, centerX: 0, centerY: '50%' };
   private light: number = 1;
   private drag: boolean = false;
+  private press: boolean = false;
 
   bind(width: number, height: number, scale: number, center: number | string,
-    brightness: number, draggable: boolean): DrawnCanvasAttributes {
+    brightness: number, draggable: boolean, press: boolean = false): DrawnCanvasAttributes {
     if (this.box.width !== width || this.box.height !== height) { this.box = { width, height }; }
     if (this.focus.x !== scale || this.focus.centerX !== center) {
       this.focus = { x: scale, y: scale, centerX: center, centerY: '50%' };
     }
-    this.light = brightness; this.drag = draggable;
+    this.light = brightness; this.drag = draggable; this.press = press;
     return this;
   }
 
   applyNormalAttribute(node: StackAttribute): void {
-    node.size(this.box).scale(this.focus).brightness(this.light).draggable(this.drag);
+    const traced = drawnStageMetrics.begin(DrawnStage.CanvasAttributes);
+    try { node.size(this.box).scale(this.focus).brightness(this.light).draggable(this.drag).opacity(1).renderGroup(false); }
+    finally { drawnStageMetrics.end(traced); }
+  }
+
+  // Fade feedback on the existing canvas host replaces an otherwise empty
+  // press wrapper. Keep the jump scale independent; deletion opacity belongs
+  // to the parent capture node and the avatar is a sibling outside this node.
+  applyPressedAttribute(node: StackAttribute): void {
+    const on = this.press && !tableScrollTouched();
+    node.opacity(on ? .84 : 1).renderGroup(on);
   }
 }

@@ -39,12 +39,13 @@ export class DrawnImageSlot {
   private boundCell: AlbumCellRenderData | null = null;
   private boundDensity: number = 0;
   private opaque: boolean = true;
+  private thumbFailed: boolean = false;
   private activation: DrawnSlotActivation = new DrawnSlotActivation((): void => { this.state.publish(); });
   readonly content: DrawnSlotContent = new DrawnSlotContent(this.activation);
   get activated(): boolean { return this.activation.ready; }
   setVisible(visible: boolean): void { this.activation.setVisible(visible); }
 
-  constructor(notify: () => void) {
+  constructor(notify: () => void, pixelsChanged: () => void = (): void => {}) {
     this.notify = notify;
     this.session = new CachedImageSession((pixels: image.PixelMap | undefined, _ready: boolean,
       width?: number, height?: number): void => {
@@ -53,6 +54,7 @@ export class DrawnImageSlot {
       const wasNative = !this.receiver.canDraw(this.pixels, ImageFit.Cover);
       this.pixels = pixels;
       this.receiver.setPixels(pixels, width, height);
+      pixelsChanged();
       if (this.active && (wasReady !== (pixels !== undefined) ||
         wasNative !== !this.receiver.canDraw(pixels, ImageFit.Cover) ||
         (wasNative && previous !== pixels))) { this.notify(); }
@@ -66,10 +68,15 @@ export class DrawnImageSlot {
       previous?.chatId !== input.chatId || previous?.messageId !== input.messageId;
     this.activation.bind(ui, staged, resetActivation);
     this.content.bind(input, staged);
+    this.content.setGeometry(tile.width, tile.height);
+    this.thumbFailed = input.failed;
     if (!resetActivation && this.active && previous !== null && this.boundDensity === density && this.opaque === (tile.opaque ?? true) &&
       this.width === tile.width && this.height === tile.height && previous.thumbFileId === input.thumbFileId &&
       previous.thumbPath === input.thumbPath && previous.mini === input.mini &&
-      (input.thumbFileId !== 0 || (previous.chatId === input.chatId && previous.messageId === input.messageId))) { return; }
+      (input.thumbFileId !== 0 || (previous.chatId === input.chatId && previous.messageId === input.messageId))) {
+      this.syncThumbReady();
+      return;
+    }
     this.boundCell = input; this.boundDensity = density; this.opaque = tile.opaque ?? true;
     const hadPath = this.path !== '';
     const previousMini = this.mini;
@@ -87,6 +94,7 @@ export class DrawnImageSlot {
           if (!this.active || this.fileId !== fileId || this.generation !== generation) { return; }
           const hadPath = this.path !== '';
           this.path = path;
+          this.syncThumbReady();
           this.session.update(this.spec());
           if (hadPath !== (path !== '')) { this.notify(); }
         });
@@ -95,6 +103,7 @@ export class DrawnImageSlot {
     this.initialPath = cell.thumbPath;
     this.path = same && cell.thumbFileId === 0 && this.path !== '' ? this.path
       : liveThumbPath(cell.thumbFileId, thumbPathFor(cell.thumbFileId), this.path, cell.thumbPath, same);
+    this.syncThumbReady();
     const mini = miniPlaceholderOf(cell.mini);
     if (this.mini !== mini) { this.miniShown = false; }
     this.mini = mini;
@@ -117,8 +126,13 @@ export class DrawnImageSlot {
   updateLocalPath(path: string): void {
     if (!this.active || path === '' || this.path === path) { return; }
     const hadPath = this.path !== '';
-    this.path = path; this.session.update(this.spec());
+    this.path = path; this.syncThumbReady(); this.session.update(this.spec());
     if (!hadPath) { this.notify(); }
+  }
+
+
+  private syncThumbReady(): void {
+    this.content.setThumbReady(this.path !== '' || this.fileId === 0 || this.thumbFailed);
   }
 
   private spec(): CachedImageSpec {
@@ -156,6 +170,7 @@ export class DrawnMediaController {
   private active: boolean = false;
   private notify: () => void;
   private changed: () => void;
+  private pixelsChanged: () => void;
   private batching: boolean = false;
   private dirty: boolean = false;
   private dirtySlots: Set<DrawnImageSlot> = new Set();
@@ -177,8 +192,8 @@ export class DrawnMediaController {
   private staged: boolean = false;
   private visible: boolean | null = null;
 
-  constructor(notify: () => void, changed: () => void) {
-    this.notify = notify; this.changed = changed;
+  constructor(notify: () => void, changed: () => void, pixelsChanged: () => void = (): void => {}) {
+    this.notify = notify; this.changed = changed; this.pixelsChanged = pixelsChanged;
     this.avatarSession = new CachedImageSession((pixels: image.PixelMap | undefined, _ready: boolean,
       width?: number, height?: number): void => {
       const previous = this.avatarPixels;
@@ -210,7 +225,9 @@ export class DrawnMediaController {
         }
         for (let i = 0; i < count; i++) {
           if (i === this.slots.length) {
-            const slot = new DrawnImageSlot((): void => { this.markSlotDirty(slot); });
+            const slot = new DrawnImageSlot((): void => {
+              this.markSlotDirty(slot); this.pixelsChanged();
+            }, this.pixelsChanged);
             this.slots.push(slot);
           }
           this.slots[i].bind(ui, plan.tiles[i], plan.density, staged && !plan.tiles[i].cell.isPlaySlot && !plan.tiles[i].cell.uploading);

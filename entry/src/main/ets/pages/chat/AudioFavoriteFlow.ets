@@ -1,3 +1,5 @@
+import { ChatTimelineSession } from './ChatTimelineSession';
+import { MessageEntry } from '../../store/MessageEntry';
 import { showToast } from '../../util/toast';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
@@ -26,14 +28,22 @@ export struct AudioFavoriteFlow {
   // 0 = 不显示。由 ChatPage 在点击胶囊时填。
   @Param targetMessageId: number = 0;
   @Param chatId: number = 0;
-  @Param trackTitle: string = '';
-  @Param trackArtist: string = '';
+  @Require @Param timeline: ChatTimelineSession;
   @Param bottomSafe: number = 0;
   @Param onClose: () => void = (): void => {};
   @Local private collections: MusicCollection[] = [];
   @Local private creating: boolean = false;
   @Local private newName: string = '';
   private unsub: (() => void) | null = null;
+
+  // Closed: no array read/dependency. Open: one lookup shared by both labels;
+  // a new snapshot or target invalidates the computed entry, keeping edits live.
+  @Computed
+  private get track(): MessageEntry | null {
+    if (this.targetMessageId === 0) { return null; }
+    return this.timeline.messages.find((message: MessageEntry): boolean =>
+      message.id === this.targetMessageId) ?? null;
+  }
 
   aboutToAppear(): void {
     ensureMusicCollections(this.getUIContext().getHostContext() as common.UIAbilityContext);
@@ -82,7 +92,7 @@ export struct AudioFavoriteFlow {
           Column() {
             MusicCreateDialog({
               fromAddTo: true,
-              trackTitle: this.trackTitle,
+              trackTitle: this.track?.audioTitle ?? '',
               name: this.newName,
               onNameChange: (name: string): void => { this.newName = name; },
               onCancel: (): void => { this.creating = false; this.newName = ''; },
@@ -96,8 +106,8 @@ export struct AudioFavoriteFlow {
           MusicAddToSheet({
             collections: this.collections,
             trackKey: this.trackKey(),
-            trackTitle: this.trackTitle,
-            trackArtist: this.trackArtist,
+            trackTitle: this.track?.audioTitle ?? '',
+            trackArtist: this.track?.audioPerformer ?? '',
             bottomInset: this.bottomSafe,
             onToggle: (collectionId: string): void => {
               toggleTrackInCollectionById(collectionId, this.trackKey());

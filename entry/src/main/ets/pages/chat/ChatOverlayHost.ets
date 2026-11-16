@@ -1,5 +1,5 @@
 import { SelectionSession } from './SelectionSession';
-import { MessageEntry } from '../../store/MessageEntry';
+import { ChatTimelineSession } from './ChatTimelineSession';
 import { ChatOverlayState } from './ChatOverlayState';
 import { ReactionSheet } from './ReactionSheet';
 import { ForwardSheet } from './ForwardSheet';
@@ -19,13 +19,13 @@ import { selectionHasRemovableForwardCaption } from '../../util/forwardMessagesR
 // showContactSheet/showVideoNoteRecorder/reactionTargetId/reactionPendingKey/
 // forwardMessageIds 这 9 个标量 @Param 收口成一个 @Require @Param
 // overlayState: ChatOverlayState——组件内所有读点相应改成 this.overlayState.xxx。
-// messages/chatId/threadRootId/bottomSafe/keyboardH 不属于 overlay 簇（页面
-// 持有的会话级/视口状态），原样保留标量 @Param。
+// 消息通过稳定的 timeline 引用传递，只在打开的消息面板分支内读 @Trace messages。
+// 页面及关闭的宿主都不订阅消息数组；打开后仍响应编辑/删除/新快照。
 @ComponentV2
 export struct ChatOverlayHost {
   @Require @Param overlayState: ChatOverlayState;
 
-  @Param messages: MessageEntry[] = [];
+  @Require @Param timeline: ChatTimelineSession;
   @Require @Param selection: SelectionSession;
   @Param chatId: number = 0;
   @Param threadRootId: number = 0;
@@ -76,7 +76,7 @@ export struct ChatOverlayHost {
 
   private forwardHasRemovableCaption(): boolean {
     return selectionHasRemovableForwardCaption(
-      [...this.messages, ...this.selection.entries()], this.overlayState.forwardMessageIds);
+      [...this.timeline.messages, ...this.selection.entries()], this.overlayState.forwardMessageIds);
   }
 
   build() {
@@ -85,7 +85,7 @@ export struct ChatOverlayHost {
         ReactionSheet({
           show: this.overlayState.showReactionSheet,
           onShowChange: (show: boolean): void => { this.overlayState.setSheet('reaction', show); },
-          messages: this.messages,
+          messages: this.timeline.messages,
           targetId: this.overlayState.reactionTargetId,
           chatId: this.chatId,
           pendingKey: this.overlayState.reactionPendingKey,

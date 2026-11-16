@@ -98,35 +98,32 @@ export struct ChatPageSurface {
     }
   }
 
+  private floatingActionsAllowed(): boolean {
+    return !this.search.mode && !this.showEmojiPanel && this.emojiDrawer.shellHeight <= 0;
+  }
+
   @Builder
   private floatingActions() {
-    // The latest-message FAB belongs to the chat layer. Keeping it visible
-    // while the media panel is open puts it above (and blocks) the GIF tab.
-    // 显隐跟着"有没有可返回的位置"走，而不是"在不在底部"：站在最新消息上
-    // 但引用链还没退完时，箭头仍然该在。
-    if ((this.hasReturnTarget || this.unreadMentions.count > 0) &&
-      !this.search.mode && !this.showEmojiPanel && this.emojiDrawer.shellHeight <= 0) {
-      Column({ space: 4 }) {
-        if (this.unreadMentions.count > 0) {
-          ScrollFab({ unreadCount: 0, mention: true,
-            busy: this.unreadMentions.busy || this.pendingJumpId !== 0,
-            iconColor: COLOR_PRIMARY, onTap: (): void => { this.unreadMentions.next(); } });
-        }
-        if (this.hasReturnTarget) {
-          ScrollFab({
-            unreadCount: this.unreadBadge,
-            busy: this.scrollToBottomBusy,
-            // It floats over the wallpaper, so keep the wallpaper-aware ink.
-            iconColor: this.chromeIconColor,
-            onTap: (): void => { this.onReturnTap(); }
-          });
-        }
+    // Retain one return button per surface; toggling the return target no
+    // longer builds a V1 subtree during a fling. Absolute bottom alignment
+    // keeps a mention-only button at the original bottom position.
+    Stack({ alignContent: Alignment.BottomEnd }) {
+      ScrollFab({
+        active: this.hasReturnTarget && this.floatingActionsAllowed(),
+        unreadCount: this.unreadBadge,
+        busy: this.scrollToBottomBusy,
+        iconColor: this.chromeIconColor,
+        onTap: (): void => { this.onReturnTap(); }
+      }).margin({ right: 14, bottom: this.bottomChromeH + 8 });
+      if (this.unreadMentions.count > 0 && this.floatingActionsAllowed()) {
+        ScrollFab({ unreadCount: 0, mention: true,
+          busy: this.unreadMentions.busy || this.pendingJumpId !== 0,
+          iconColor: COLOR_PRIMARY, onTap: (): void => { this.unreadMentions.next(); } })
+          .margin({ right: 14, bottom: this.bottomChromeH + 8 + (this.hasReturnTarget ? 60 : 0) });
       }
-      .width('100%').height('100%')
-      .justifyContent(FlexAlign.End).alignItems(HorizontalAlign.End)
-      .padding({ right: 14, bottom: this.bottomChromeH + 8 })
-      .hitTestBehavior(HitTestMode.Transparent);
     }
+    .width('100%').height('100%')
+    .hitTestBehavior(HitTestMode.Transparent);
   }
 
   build() {
