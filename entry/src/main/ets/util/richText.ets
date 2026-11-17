@@ -1,7 +1,12 @@
+import { DrawnInlineIcon } from './drawnInlineIcon';
 import { TdObject } from '../tdkit/TdTypes';
 
 // A styled inline run of text (part of a normal text segment).
 export interface RichRun {
+  icon?: DrawnInlineIcon;
+  script?: number;
+  marked?: boolean;
+  math?: string;
   offset: number;
   text: string;
   bold: boolean;

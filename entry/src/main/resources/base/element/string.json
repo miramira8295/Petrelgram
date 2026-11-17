@@ -1,6 +1,33 @@
 {
   "string": [
-    { "name": "diag_timeline_lazy", "value": "实验列表（退出并重新进入聊天生效）" },
+    {
+      "name": "a11y_message_reactions",
+      "value": "查看反应"
+    },
+    {
+      "name": "a11y_message_sending",
+      "value": "发送中"
+    },
+    {
+      "name": "a11y_message_failed",
+      "value": "发送失败"
+    },
+    {
+      "name": "a11y_message_read",
+      "value": "已读"
+    },
+    {
+      "name": "a11y_message_sent",
+      "value": "已发送"
+    },
+    {
+      "name": "mb_spoiler",
+      "value": "剧透内容，点击显示"
+    },
+    {
+      "name": "diag_timeline_lazy",
+      "value": "实验列表（退出并重新进入聊天生效）"
+    },
     {
       "name": "a11y_selected",
       "value": "，已选中"
@@ -13424,6 +13451,26 @@
     {
       "name": "diag_drawn_refresh",
       "value": "刷新计数"
+    },
+    {
+      "name": "document_login_title",
+      "value": "登录网站"
+    },
+    {
+      "name": "document_login_message",
+      "value": "是否使用当前 Telegram 账号登录 %1$s？"
+    },
+    {
+      "name": "document_login_accept",
+      "value": "登录，不允许机器人发消息"
+    },
+    {
+      "name": "document_login_open",
+      "value": "直接打开，不登录"
+    },
+    {
+      "name": "document_login_write",
+      "value": "登录并允许机器人发消息"
     }
   ]
 }

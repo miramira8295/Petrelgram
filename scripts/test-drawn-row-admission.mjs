@@ -37,7 +37,7 @@ advance(109);advance(109);assert.equal(calls.at(-1),999);advance(110);assert.equ
 console.log('PASS: actual-frame cap, duplicate/stale callback tokens, reentrancy, 10000 O(1) cancellations, bounded overflow, exception recovery.');
 
 // Actual media geometry with deterministic native font doubles from text suite.
-for(const f of ['packAlbumRows','albumGeometryCache','albumCellRenderData'])load(root+'util/'+f+'.ets');
+for(const f of ['albumGeometryCache','albumCellRenderData'])load(root+'util/'+f+'.ets');
 for(const f of ['DrawnAlbumGridLayout','DrawnSingleMediaGeometry','DrawnMediaLayout','DrawnAlbumLayout'])load(root+'pages/chat/'+f+'.ets',f==='DrawnAlbumLayout'?['DrawnAlbumLayouts']:[]);
 function loadObserved(file,names){
  const source=fs.readFileSync(file,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'')
@@ -106,7 +106,7 @@ assert.equal(h.pending,false);assert.equal(hostQueue.completed,updates);assert.e
 for(const state of ['sending','sent','read']){h.group={...h.group,head:{...h.group.head,sendState:state}};h.request();assert.ok(h.target);assert.equal(h.pending,false);}
 // Special outer heights and policies use original behavior, no fake estimate.
 for(const change of [x=>x.data.showUnreadDivider=true,x=>x.group.head.inlineButtons=[{}],
- x=>x.a11y={active:true},x=>x.env={...ctx.chatEnv,bubbleMaterialOn:true},x=>x.env={...ctx.chatEnv,drawnAlbumStaging:false}]) {
+ x=>x.env={...ctx.chatEnv,drawnAlbumStaging:false}]) {
  const x=host(album(600));change(x);assert.equal(x.target,null);x.aboutToAppear();assert.equal(x.work,null);
 }
 const gone=host(album(700));gone.aboutToAppear();gone.aboutToDisappear();advance(205);assert.equal(gone.publication.packet,null);

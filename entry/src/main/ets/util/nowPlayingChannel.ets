@@ -16,7 +16,13 @@
 // path 也一起带走：暂停/继续走 VoicePlayback 的全局单例，它要文件路径，而那
 // 同样是页面里的东西。带上之后底栏不依赖任何页面就能控制播放。
 
+import { MusicTrack } from './musicTrackModel';
+
 export interface NowPlaying {
+  sourceMessageId?: number;
+  // One transient track, never resolved as a synthetic Telegram message.
+  documentTrack?: MusicTrack;
+  documentPlaylist?: MusicTrack[];
   chatId: number;
   messageId: number;
   // 空串表示没有元数据，调用方自己退回文件名/占位文案。

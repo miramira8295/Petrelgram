@@ -49,7 +49,7 @@ view.presentation.msg.reactions = [];
 view.presentation.msg.translatedText = 'translation'; assert.equal(view.drawnTextLayout, null);
 view.presentation.msg.translatedText = ''; view.context.translationStatus = 'pending'; assert.equal(view.drawnTextLayout, null);
 view.context.translationStatus = null; view.env.bubbleMaterialOn = true; assert.equal(view.drawnTextLayout, null);
-view.env.bubbleMaterialOn = false; rtl = true; assert.equal(view.drawnTextLayout, null); rtl = false;
+view.env.bubbleMaterialOn = false; rtl = true; assert.ok(view.drawnTextLayout); rtl = false;
 view.env.linkNavBusy = 'https://example.org'; assert.notEqual(view.drawnTextLayout, null);
 view.env.linkNavBusy = ''; assert.notEqual(view.drawnTextLayout, null);
 view.drawnSource.prepare = () => null; assert.equal(view.drawnTextLayout, null, 'unsupported entities retain native renderer');

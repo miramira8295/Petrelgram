@@ -13,6 +13,8 @@ import { TdObject } from '../tdkit/TdTypes';
 // - 位深：AVMetadataExtractor 也不给，界面上就不显示这一项。
 
 export interface MusicTrack {
+  // Embedded audio has a synthetic playback ID; navigation retains the real message.
+  sourceMessageId?: number;
   chatId: number;
   messageId: number;
   // 已经回退过：没有 title 就是文件名。

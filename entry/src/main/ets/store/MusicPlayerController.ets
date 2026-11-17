@@ -39,6 +39,8 @@ export type MusicPlaybackListener = (snapshot: MusicPlaybackSnapshot) => void;
 export class MusicPlayerController {
   private queue: MusicTrack[] = [];
   private index: number = -1;
+  private indexedDocumentQueue: MusicTrack[] | undefined;
+  private documentIndices: Map<number, number> = new Map<number, number>();
   private loadingKey: string = '';
   private voice: VoiceState;
   private listeners: MusicPlaybackListener[] = [];
@@ -62,7 +64,9 @@ export class MusicPlayerController {
       this.notify();
     });
     // 一首放完自动下一首（设计稿里播放列表是连续的）。
-    getVoicePlayback().setMusicCompletionListener((): void => { this.next(); });
+    getVoicePlayback().setMusicCompletionListener((messageId: number): void => {
+      if (this.current()?.messageId === messageId) { this.next(); }
+    });
   }
 
   dispose(): void {
@@ -121,13 +125,20 @@ export class MusicPlayerController {
 
   // 接管一首**已经在放**的歌——从会话页起播、用户随后才点开音乐中心的那种。
   // 不重新起播（那会把进度归零），只是让这一页知道当前放的是哪首。
-  // 手上已经有曲目时什么都不做：那说明队列是音乐中心自己建的，别被旧的通道值盖掉。
-  adopt(track: MusicTrack): void {
-    if (this.current() !== null) {
-      return;
+  // 同一曲目保留队列；外部换曲时取消旧下载并接管新快照。
+  adopt(track: MusicTrack, playlist?: MusicTrack[]): void {
+    if (this.current()?.messageId === track.messageId && this.current()?.chatId === track.chatId &&
+      this.current()?.sourceMessageId === track.sourceMessageId &&
+      (playlist === undefined || playlist === this.queue)) { return; }
+    this.playSeq++;
+    this.loadingKey = '';
+    this.queue = playlist !== undefined && playlist.length > 0 ? playlist : [track];
+    if (this.indexedDocumentQueue !== this.queue) {
+      this.indexedDocumentQueue = this.queue; this.documentIndices.clear();
+      for (let i: number = 0; i < this.queue.length; i++) { this.documentIndices.set(this.queue[i].messageId, i); }
     }
-    this.queue = [track];
-    this.index = 0;
+    this.index = this.documentIndices.get(track.messageId) ?? -1;
+    if (this.index < 0) { this.queue = [track]; this.index = 0; }
     this.notify();
   }
 
@@ -185,7 +196,7 @@ export class MusicPlayerController {
       }
       // 路径是刚下下来的，原来的 track 里还是空的——补一份再起播。
       const ready: MusicTrack = {
-        chatId: track.chatId, messageId: track.messageId, title: track.title, artist: track.artist,
+        chatId: track.chatId, messageId: track.messageId, sourceMessageId: track.sourceMessageId, title: track.title, artist: track.artist,
         album: track.album, durationSec: track.durationSec, fileId: track.fileId,
         fileSize: track.fileSize, mimeType: track.mimeType, fileName: track.fileName,
         localPath: path, coverFileId: track.coverFileId,
@@ -215,6 +226,10 @@ export class MusicPlayerController {
     if (track === null) {
       return;
     }
+    const state = getVoicePlayback().current();
+    if (state.mode === 'music' && state.playingId === track.messageId && state.status !== 'error' && state.status !== 'idle') {
+      getVoicePlayback().toggleMusicById(track.messageId); return;
+    }
     const source: AudioSource = track.localPath !== ''
       ? localAudioSource(track.localPath)
       : streamAudioSource(track.fileId, track.fileSize, track.mimeType);
@@ -222,7 +237,10 @@ export class MusicPlayerController {
       this.playAt(this.index);
       return;
     }
-    getVoicePlayback().toggleMusicSource(track.messageId, source, track.durationSec);
+    if (track.sourceMessageId !== undefined) {
+      getVoicePlayback().setDocumentPlaylist(this.queue);
+      getVoicePlayback().toggleDocumentMusic(track.fileId, source, track.durationSec);
+    } else { getVoicePlayback().toggleMusicSource(track.messageId, source, track.durationSec); }
   }
 
   // 设计稿：往回按一下先回到开头，3 秒内再按才是上一首。
@@ -267,11 +285,16 @@ export class MusicPlayerController {
     const source: AudioSource = track.localPath !== ''
       ? localAudioSource(track.localPath)
       : streamAudioSource(track.fileId, track.fileSize, track.mimeType);
-    getVoicePlayback().startMusicSource(track.messageId, source, track.durationSec);
+    if (track.sourceMessageId !== undefined) {
+      getVoicePlayback().setDocumentPlaylist(this.queue);
+      getVoicePlayback().startDocumentMusic(track.fileId, source, track.durationSec);
+    } else { getVoicePlayback().startMusicSource(track.messageId, source, track.durationSec); }
     // 底栏的迷你条靠这个通道认曲目——它对音乐中心一无所知（见 nowPlayingChannel）。
     publishNowPlaying({
       chatId: track.chatId,
-      messageId: track.messageId,
+      messageId: track.messageId, sourceMessageId: track.sourceMessageId,
+      documentTrack: track.sourceMessageId !== undefined ? track : undefined,
+      documentPlaylist: track.sourceMessageId !== undefined ? this.queue : undefined,
       title: track.title,
       performer: track.artist,
       // 缓存里有就带上；没有也不在这儿发请求——迷你条没封面只是少张图，

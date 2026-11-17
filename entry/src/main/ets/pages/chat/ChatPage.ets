@@ -495,6 +495,17 @@ export struct ChatPage {
   private messageActions(): MessageBubbleActions {
     if (this.messageActionsCache === null) {
       this.messageActionsCache = {
+        onSwitchInlineCurrent: (text: string): void => {
+          // Match Android setFieldText: populate the real composer, never send.
+          // Leaving edit mode prevents the bot query from replacing an old message.
+          if (this.composer.editingId !== 0) { this.composer.cancelEdit(); }
+          this.draft = text;
+          this.updateSuggestions(text);
+          const chat = this.chatId;
+          setTimeout((): void => {
+            if (this.chatId === chat) { focusControl.requestFocus('chat_composer'); }
+          }, 0);
+        },
         bubbleFocus: this.flash.focus,
         rowLeave: this.rowLeave,
         onStopLiveLocation: (): void => { confirmStopLiveLocation(); },
@@ -520,6 +531,9 @@ export struct ChatPage {
         },
         onBotCallback: (messageId: number, data: string): void => {
           this.messageActionsState.onBotCallback(messageId, data);
+        },
+        onDocumentAnchor: (windowY: number): void => {
+          if (Number.isFinite(windowY)) { this.timeline.scroller.scrollBy(0, windowY - this.headerChromeHeight() - 8); }
         },
         onReplyTap: (messageId: number, fromId: number): void => {
           this.onReplyTap(messageId, fromId);

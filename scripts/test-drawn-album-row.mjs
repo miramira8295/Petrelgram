@@ -11,7 +11,7 @@ let pathBuilds = 0, measureCalls = 0;
 const ui = {vp2px: n => n * 2, fp2px: n => n * 2};
 class TextCache { prepare(text, max, font) { measureCalls++; return {widthPx: Math.min(max, text.length * font / 2), heightPx: font + 4, paragraph: {paint(){}}}; } }
 const ctx = vm.createContext({
-  ViewV2: class {}, ViewPU: class {}, Color: { White: '#fff' }, $r: x => x,
+  drawnFirstStrongRtl:()=>false, ViewV2: class {}, ViewPU: class {}, Color: { White: '#fff' }, $r: x => x,
   drawing: { Path: class {buildFromSvgString(s) {this.svg=s;pathBuilds++;return true;}}, RoundRect: class {constructor(rect){this.rect=rect;}} },
   DrawnTextLineCache: TextCache, drawnColor: x => x,
   DrawnTextFooterCache: class {prepare(ui,time,edited,views,outgoing,max,color,env){
@@ -20,7 +20,8 @@ const ctx = vm.createContext({
   }},
   DrawnSenderHeaderCache: class { prepare(){return {heightPx:32};} },
   DrawnReplyQuoteCache: class { prepare(){return {heightPx:76};} },
-  DrawnRichSourceCache: class {reason='';prepare(s){this.reason=s==='unsupported'?'inline-code':'';return s === 'unsupported' ? null : {text:s};}},
+  DrawnWebPreviewSource: class {prepare(base){return base;}},
+  DrawnTranslatedSource: class {reason='';prepare(s){this.reason=s==='unsupported'?'inline-code':'';return s === 'unsupported' || s === '' ? null : {text:s};}},
   DrawnRichTextLayouts: class {prepare(_ui, args){return {heightVp:44,widthVp:100,paragraph:{getLineCount:()=>2,getLineMetrics:()=>({left:0,width:100,baseline:60,ascent:30})}, ...args};}},
   getUserStore: () => ({accentColorId:()=>-1}), getAccentColorStore: () => ({}),
   AVATAR_PALETTE: ['red','blue'], COLOR_PRIMARY: 'blue', COLOR_TEXT_SECONDARY: 'gray',
@@ -40,7 +41,7 @@ function load(path,names=[]) {
 }
 load(root+'util/drawnTextUnits.ets');
 load(root+'pages/chat/DrawnMediaColors.ets');
-for (const file of ['packAlbumRows','albumGeometryCache','albumCellRenderData','messageBubblePresentation','bubbleCornerInset','bubbleGlassPath','albumCornerRadii','drawnAlbumPolicy','drawnContentPolicy','drawnFooterPlacement']) load(root+'util/'+file+'.ets',file==='drawnAlbumPolicy'?['drawnAlbumEligible','albumRectContains']:[]);
+for (const file of ['androidSmallAlbumGeometry','packAlbumRows','albumGeometryCache','albumCellRenderData','messageBubblePresentation','bubbleCornerInset','bubbleGlassPath','albumCornerRadii','drawnAlbumPolicy','drawnContentPolicy','drawnFooterPlacement']) load(root+'util/'+file+'.ets',file==='drawnAlbumPolicy'?['drawnAlbumEligible','albumRectContains']:[]);
 for(const file of ['DrawnReactionLayout','DrawnBubbleChrome','DrawnAlbumGridLayout','DrawnBubbleGeometry','DrawnBubblePlan'])load(root+'pages/chat/'+file+'.ets');
 load(root+'pages/chat/DrawnSingleMediaGeometry.ets');
 load(root+'pages/chat/DrawnMediaLayout.ets');
@@ -83,7 +84,7 @@ for(let n=2;n<=10;n++) for(const width of [260,400,800]) for(let flags=0;flags<1
   g.head.isOutgoing=!!(flags&2);g.showAvatar=!!(flags&4);if(flags&8){g.caption='caption';g.head.senderName='name';g.head.replyToMessageId=55;}
   const p=layouts.prepare(ui,g,d,style);
   assert.equal(p.tiles.length,n);assert.ok(p.height>0&&p.width>0);
-  const expected=ctx.packAlbumRows(g.photoRatios,p.grid.width).flat();
+  const expected=ctx.packAndroidAlbumRows(g.photoRatios,p.grid.width).flat();
   p.tiles.forEach((t,i)=>{
     assert.equal(t.width,expected[i].width);assert.equal(t.height,expected[i].height);assert.equal(t.cell.idx,i);
     assert.ok(t.x>=p.grid.x&&t.y>=p.grid.y);assert.ok(t.x+t.width<=p.grid.x+p.grid.width+.01);
@@ -97,12 +98,12 @@ for(let n=2;n<=10;n++) for(const width of [260,400,800]) for(let flags=0;flags<1
   cases++;
 }
 let g=group();assert.ok(ctx.drawnAlbumEligible(g,data,false,false));
-for(const field of ['translatedText','linkUrl','linkTitle','linkSiteName','linkDescription']) {
-  g=group();g.head[field]='x';assert.equal(ctx.drawnAlbumEligible(g,data,false,false),false,field);
+for(const field of ['linkUrl','linkTitle','linkSiteName','linkDescription']) {
+  g=group();g.head[field]='x';assert.equal(ctx.drawnAlbumEligible(g,data,false,false),true,field);
 }
 for(const field of ['inlineButtons','replyDiceLayers']) {g=group();g.head[field]=[{}];assert.equal(ctx.drawnAlbumEligible(g,data,false,false),true,field);}
 for(const field of ['photoIsVideo','photoIsLive']) {g=group();g[field][3]=true;assert.equal(ctx.drawnAlbumEligible(g,data,false,false),true,field);}
-assert.equal(ctx.drawnAlbumEligible(group(),data,true,false),false);assert.equal(ctx.drawnAlbumEligible(group(),data,false,true),false);
+assert.equal(ctx.drawnAlbumEligible(group(),data,true,false),true);assert.equal(ctx.drawnAlbumEligible(group(),data,false,true),true);
 g=group();g.caption='unsupported';assert.equal(layouts.prepare(ui,g,data,style),null);
 assert.equal(layouts.failureReason,ctx.DrawnRouteReason.InlineCode);
 // Replay actual compiled interaction handlers using an immutable plan.

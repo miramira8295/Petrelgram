@@ -25,6 +25,8 @@ import { MessageBubble } from './MessageBubble';
 // One stable controller belongs to the ChatPage. The wrapper only forwards
 // ids/current arrays, so no callback retains the AlbumGroup that created a row.
 export interface MessageBubbleActions {
+  onSwitchInlineCurrent?: (text: string) => void;
+  onDocumentAnchor?: (windowY: number) => void;
   bubbleFocus: BubbleFocusChannel;
   // 删除动画：删之前通过旁路通道等待气泡消散。
   rowLeave: RowLeaveChannel;

@@ -43,7 +43,7 @@ load('pages/chat/DrawnPreparedAlbum.ets', ['DrawnAlbumPublication']);
 const filename = compiled + 'pages/chat/DrawnMessageRow.ts';
 const source = ts.createSourceFile(filename, fs.readFileSync(filename, 'utf8'), ts.ScriptTarget.Latest, true);
 const rowClass = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text === 'DrawnMessageRow');
-const methods = ['presentationReady', 'publicationActivated', 'publicationActivationEpoch', 'presentationChanged', 'rowGroup', 'rowContext', 'syncMedia', 'imageSlot', 'readImageSlot', 'mediaActivated', 'mediaOverlay', 'mediaTile'];
+const methods = ['presentationReady', 'publicationActivated', 'publicationActivationEpoch', 'presentationChanged', 'rowGroup', 'rowData', 'rowContext', 'syncMedia', 'imageSlot', 'readImageSlot', 'mediaActivated', 'mediaOverlay', 'mediaTile'];
 const selected = methods.map(name => {
   const member = rowClass.members.find(n => (ts.isMethodDeclaration(n) || ts.isGetAccessorDeclaration(n)) && n.name.getText(source) === name);
   assert.ok(member, `compiled row contains ${name}`);
@@ -184,7 +184,7 @@ console.log('PASS: real controller + compiled retained mediaTile keeps six video
 const syncRow=new ctx.RowProbe();let uiReads=0,slotBinds=0;
 const syncTiles=tiles(600);
 const syncMedia=new ctx.DrawnMediaController(()=>{},()=>{});
-Object.assign(syncRow,{active:true,presentationActive:true,kind:'album',group,media:syncMedia,
+Object.assign(syncRow,{active:true,presentationActive:true,kind:'album',group,data:{chatId:1},media:syncMedia,
  plan:{tiles:syncTiles,nativeTiles:syncTiles,density:2,avatar:{width:0}},
  albumCanvas:{bind(){},reset(){}},albumCanvasEnabled:true,getUIContext:()=>{uiReads++;return {...ui};}});
 syncRow.syncMedia();

@@ -26,20 +26,20 @@ export default function drawnRichTextTest(): void {
       });
       const emoji: TdObject[] = [richEntity('Spoiler', 0, 2)];
       const plain: TdObject[] = [];
-      expect(cache.prepare('😀 body', emoji) === null).assertTrue();
-      expect(cache.reason).assertEqual('spoiler');
+      expect(cache.prepare('😀 body', emoji) !== null).assertTrue();
+      expect(cache.reason).assertEqual('');
       for (let i: number = 0; i < 1000; i++) { cache.prepare('😀 body', emoji); }
       expect(calls).assertEqual(1);
       expect(cache.prepare('body', plain) !== null).assertTrue();
       expect(cache.reason).assertEqual('');
-      expect(cache.prepare('😀 body', emoji) === null).assertTrue();
-      expect(cache.reason).assertEqual('spoiler');
+      expect(cache.prepare('😀 body', emoji) !== null).assertTrue();
+      expect(cache.reason).assertEqual('');
       expect(calls).assertEqual(2);
-      expect(cache.prepare('a\tb', plain) === null).assertTrue();
-      expect(cache.reason).assertEqual('direction-or-control:U+9');
-      expect(calls).assertEqual(2);
-      expect(cache.prepare('code', [richEntity('Code', 0, 4)]) === null).assertTrue();
-      expect(cache.reason).assertEqual('inline-code');
+      expect(cache.prepare('a\tb', plain) !== null).assertTrue();
+      expect(cache.reason).assertEqual('');
+      expect(calls).assertEqual(3);
+      expect(cache.prepare('code', [richEntity('Code', 0, 4)])?.runs[0].code).assertTrue();
+      expect(cache.reason).assertEqual('');
     });
     it('ordinary_blocks_draw_independently_of_neighboring_quotes', 0, (): void => {
       const text: string = 'first\nquote\nlast';
@@ -78,13 +78,13 @@ export default function drawnRichTextTest(): void {
       const segment = parseFormattedText('😀', [richEntity('CustomEmoji', 0, 2)])[0];
       expect(drawnRichSegmentSource(segment)?.runs[0].customEmojiId).assertEqual('123');
     });
-    it('segment_source_keeps_unsupported_inline_content_on_native_path', 0, (): void => {
-      for (const kind of ['Spoiler', 'Code']) {
+    it('segment_source_preserves_spoiler_flags', 0, (): void => {
+      for (const kind of ['Spoiler']) {
         const segment = parseFormattedText('word', [richEntity(kind, 0, 4)])[0];
-        expect(drawnRichSegmentSource(segment) === null).assertTrue();
-        expect(drawnRichSegmentSource(segment) === null).assertTrue();
+        expect(drawnRichSegmentSource(segment)?.runs[0].spoiler).assertTrue();
+        expect(drawnRichSegmentSource(segment)?.runs[0].spoiler).assertTrue();
       }
-      expect(drawnRichSegmentSource(parseFormattedText('مرحبا', [])[0]) === null).assertTrue();
+      expect(drawnRichSegmentSource(parseFormattedText('مرحبا', [])[0])?.rtl).assertTrue();
     });
     it('segment_edits_do_not_reuse_previous_link_target_or_style', 0, (): void => {
       const first = drawnRichSegmentSource(parseFormattedText('link', [
@@ -107,13 +107,13 @@ export default function drawnRichTextTest(): void {
       expect(calls).assertEqual(1);
       expect(first?.runs[0].bold).assertTrue();
     });
-    it('unsupported results are cached instead of repeatedly parsed', 0, (): void => {
+    it('concealed sources are cached instead of repeatedly parsed', 0, (): void => {
       let calls: number = 0;
       const cache = new DrawnRichSourceCache((s: string, e: TdObject[]): RichSegment[] => {
         calls++; return parseFormattedText(s, e);
       });
       const entities: TdObject[] = [richEntity('Spoiler', 0, 4)];
-      for (let i: number = 0; i < 100; i++) { expect(cache.prepare('hide', entities) === null).assertTrue(); }
+      for (let i: number = 0; i < 100; i++) { expect(cache.prepare('hide', entities) !== null).assertTrue(); }
       expect(calls).assertEqual(1);
     });
     it('bounded source cache reuses A B A and evicts the least recently used entry', 0, (): void => {
@@ -180,15 +180,30 @@ export default function drawnRichTextTest(): void {
       expect(cache.prepare('https://a.example', [])?.links[0].hidesUrl).assertFalse();
       expect(cache.prepare('click', [richEntity('TextUrl', 0, 5, 'https://a.example')])?.links[0].hidesUrl).assertTrue();
     });
-    it('code spoiler and block formatting preserve native rendering', 0, (): void => {
+    it('inline_code_preserves_utf16_offsets_styles_and_cache_identity', 0, (): void => {
       const cache = new DrawnRichSourceCache();
-      for (const kind of ['Code', 'Spoiler', 'Pre', 'PreCode', 'BlockQuote', 'ExpandableBlockQuote']) {
-        expect(cache.prepare('text', [richEntity(kind, 0, 4)]) === null).assertTrue();
+      const body: string = '😀 code 中文';
+      const entities: TdObject[] = [richEntity('Code', 3, 4)];
+      const source = cache.prepare(body, entities);
+      expect(source?.content).assertEqual(body);
+      expect(source?.runs[1].offset).assertEqual(3);
+      expect(source?.runs[1].text).assertEqual('code');
+      expect(source?.runs[1].code).assertTrue();
+      for (let i: number = 0; i < 1000; i++) { expect(cache.prepare(body, entities) === source).assertTrue(); }
+      const segment = parseFormattedText(body, entities)[0];
+      expect(drawnRichSegmentSource(segment)?.runs[1].code).assertTrue();
+      expect(drawnRichSegmentSource(segment) === drawnRichSegmentSource(segment)).assertTrue();
+    });
+    it('spoiler stays concealed while code and quote blocks retain their structure', 0, (): void => {
+      const cache = new DrawnRichSourceCache();
+      expect(cache.prepare('text', [richEntity('Spoiler', 0, 4)]) !== null).assertTrue();
+      for (const kind of ['Pre', 'PreCode', 'BlockQuote', 'ExpandableBlockQuote']) {
+        expect(cache.prepare('text', [richEntity(kind, 0, 4)])?.blocks?.length).assertEqual(1);
       }
     });
-    it('caps input and keeps bidi tabs and empty text on the native path', 0, (): void => {
+    it('preserves bidi tabs and caps empty or oversized input', 0, (): void => {
       const cache = new DrawnRichSourceCache();
-      for (const s of ['', 'a\tb', 'hello\u202eworld', 'مرحبا', 'x'.repeat(16385)]) {
+      for (const s of ['', 'x'.repeat(16385)]) {
         expect(cache.prepare(s, []) === null).assertTrue();
       }
     });

@@ -58,7 +58,7 @@ function plan(name, width, count = 1) {
   const hits = Array.from({ length: count }, (_, i) => ({ key: name + i,
     link: { url: name + i, accessibilityLabel: name + i, hidesUrl: i % 2 === 0 },
     widthVp: 12, heightVp: 20, x: (i % 3) * 25, y: Math.floor(i / 3) * 24, accessible: true }));
-  return { emojis: [], widthVp: width, heightVp: 24 * Math.ceil(count / 3), source: { content: name, links: hits.map(h=>h.link), targets: new Set(hits.map(h=>h.link.url)) },
+  return { accessibilityText: name, emojis: [], maths: [], icons: [], widthVp: width, heightVp: 24 * Math.ceil(count / 3), source: { content: name, links: hits.map(h=>h.link), targets: new Set(hits.map(h=>h.link.url)) },
     paragraph: { paint() { paints.push(name); } }, hits, hitIndex: new ctx.DrawnRichHitIndex(hits) };
 }
 function render(view) {

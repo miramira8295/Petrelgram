@@ -2,7 +2,7 @@
 // Font metrics are deterministic doubles; this does not measure device speed.
 import assert from 'node:assert/strict';
 import { ctx, load, root, compiled, ui, data, style, group, layoutCounters } from './test-drawn-text-row.mjs';
-for(const file of ['packAlbumRows','albumGeometryCache','albumCellRenderData'])load(root+'util/'+file+'.ets');
+for(const file of ['albumGeometryCache','albumCellRenderData'])load(root+'util/'+file+'.ets');
 load(root+'pages/chat/DrawnAlbumGridLayout.ets');
 load(root+'pages/chat/DrawnSingleMediaGeometry.ets');
 load(root+'pages/chat/DrawnMediaLayout.ets');

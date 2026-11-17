@@ -1,16 +1,49 @@
+import { DrawnAlbumTransition } from './DrawnAlbumTransition';
+import { OneShotFrameCallback } from '../../util/oneShotFrameCallback';
+import { DrawnDocumentVideo } from './DrawnDocumentVideo';
+import { DrawnDocumentEmbed } from './DrawnDocumentEmbed';
+import { DrawnDocumentArticleImage } from './DrawnDocumentArticleImage';
+import { DocumentSwitchInline } from '../../services/DocumentSwitchInline';
+import { str } from '../../util/strings';
+import { DocumentLoginUrl, DocumentLoginPrompt } from '../../services/DocumentLoginUrl';
+import { documentAnchorName, expandDocumentAnchor } from '../../util/drawnDocumentAnchors';
+import { DrawnDocumentNote } from './DrawnDocumentNote';
+import { DrawnRichSource } from '../../util/drawnRichTextPolicy';
+import { DrawnDocumentPostAuthor } from './DrawnDocumentPostAuthor';
+import { DrawnDocumentAudio } from './DrawnDocumentAudio';
+import { DrawnDocumentVoice } from './DrawnDocumentVoice';
+import { DrawnDocumentFile } from './DrawnDocumentFile';
+import { DrawnDocumentMap } from './DrawnDocumentMap';
+import { DrawnDocumentWidget, DrawnDocumentWidgetPlacement } from '../../util/drawnDocumentWidget';
+import { DrawnInlineIconLayer } from './DrawnInlineIconLayer';
+import { DrawnDocumentGallery } from './DrawnDocumentGallery';
+import { DrawnDocumentMedia } from '../../util/drawnDocumentMedia';
+import { DrawnDocumentMediaIsland } from './DrawnDocumentMediaIsland';
+import { DocumentMediaSession } from '../../util/documentMediaViewer';
+import { stackOf } from '../../util/navStacks';
+import { showToast } from '../../util/toast';
+import { DrawnMathLayer } from './DrawnMathLayer';
+import { DrawnRichLink } from '../../util/drawnRichTextPolicy';
+import { DrawnTableIsland } from './DrawnTableIsland';
+import { DrawnTablePlacement, DrawnDocumentMediaPlacement } from './DrawnRichTextLayout';
+import { TdObject } from '../../tdkit/TdTypes';
+import { DrawnGlassBackground } from './DrawnGlassBackground';
+import { COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT } from '../../util/theme';
+import { DrawnRowAccessibility } from './DrawnRowAccessibility';
+import { DrawnPreviewImage } from './DrawnPreviewImage';
+import { linkPreviewPresentation } from '../../util/linkPreview';
 import { DrawnRowInteraction } from './DrawnRowInteraction';
 import { UIContext } from '@kit.ArkUI';
 import { DrawnPreparedAlbum, DrawnAlbumPublication } from './DrawnPreparedAlbum';
 import { drawnRowChromeReason } from '../../util/drawnRowChromePolicy';
 import { DrawnAlbumCanvas } from './DrawnAlbumCanvas';
-import { withAlbumCanvasTransition } from '../../util/albumCanvasTransition';
 import { DrawnMediaAnchorPool, DrawnCanvasAttributes } from './DrawnNativeAttributes';
 import { drawnPainterReserve } from './DrawnPainterReserve';
 import { DrawnRowLayoutEngine, takeDrawnWarmLayout } from './DrawnLayoutWarmCache';
 import { DrawnLayoutRetention, takeDrawnRecycledLayout } from './DrawnRecycledLayouts';
 import { DrawnRouteReason, DrawnRouteTracker } from '../../util/drawnRouteMetrics';
 import { DrawnInvalidation, DrawnStage, drawnStageMetrics } from '../../util/drawnStageMetrics';
-import { DrawnMediaFrame, DrawnMediaFrames } from './DrawnMediaFrames';
+import { DrawnMediaFrame, DrawnMediaFrames, drawnAlbumTransitionFrame } from './DrawnMediaFrames';
 import { DrawnMediaSlot, DrawnMediaSlots } from '../../util/drawnMediaSlot';
 import { DrawnInlineEmojiLayer } from './DrawnInlineEmojiLayer';
 import { DrawnBusyLink } from './DrawnBusyLink';
@@ -44,7 +77,6 @@ import { DrawnBubbleController } from './DrawnBubbleController';
 import { DrawnBubbleMenu } from './DrawnBubbleMenu';
 import { drawnAlbumEligible, albumRectContains } from '../../util/drawnAlbumPolicy';
 import { DrawnRichHit } from '../../util/drawnRichTextPolicy';
-import { drawnTextUsesRtlLayout } from './DrawnPlainTextLayout';
 import { drawnTailGutter } from '../../util/drawnPlainTextPolicy';
 import { textMeasureEnvironment } from '../../util/textMeasureCache';
 import { chatEnv } from '../../util/chatEnvMirror';
@@ -73,6 +105,8 @@ import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { logW } from '../../util/log';
 
 const EMPTY_DRAWN_NATIVE_TILES: DrawnBubbleTile[] = [];
+
+interface DrawnSpoilerOwner { rowId: number; chatId: number; content: string; }
 
 @ComponentV2
 export struct DrawnMessageRow {
@@ -106,6 +140,91 @@ export struct DrawnMessageRow {
   @Local private role: string = this.rowGroup.head.senderTag ||
     (this.rowData.isGroup && !this.rowGroup.head.isOutgoing && this.rowGroup.showSenderName
       ? senderRoleFor(senderRoleKey(this.rowData.chatId, this.rowGroup.head.senderId)) : '');
+  @Local private revealedSpoiler: DrawnSpoilerOwner | null = null;
+  private rowSpoilersRevealed(): boolean {
+    const owner = this.revealedSpoiler;
+    return !!owner && owner.rowId === this.rowGroup.head.rowId && owner.chatId === this.rowData.chatId &&
+      owner.content === (this.kind === 'album' ? this.rowGroup.caption : this.rowGroup.head.text);
+  }
+  private revealDrawnSpoilers(): void {
+    this.revealedSpoiler = { rowId: this.rowGroup.head.rowId, chatId: this.rowData.chatId,
+      content: this.kind === 'album' ? this.rowGroup.caption : this.rowGroup.head.text };
+  }
+  @Local private expandedBlockOffsets: ReadonlyArray<number> | undefined = undefined;
+  private expandedBlockChat: number = 0;
+  private expandedBlockRow: number = 0;
+  @Local private mathRevision: number = 0;
+  private emptyWidgets: DrawnDocumentWidgetPlacement[] = [];
+  private emptyDocumentMedia: DrawnDocumentMediaPlacement[] = [];
+  @Local private noteShown: boolean = false;
+  @Local private noteSource: DrawnRichSource | null = null;
+  private loginUrl: DocumentLoginUrl | null = null;
+  private loginOwner: TdObject[] | undefined;
+  private switchInline: DocumentSwitchInline | null = null;
+  private loginRow: string = '';
+  private documentOwner: string = '';
+  private documentBlocks: TdObject[] | undefined;
+  private pendingAnchor: string | null = null;
+  private pendingDocument: TdObject[] | undefined;
+  private documentNodeId(): string { return `drawn-doc-${this.rowData.chatId}-${this.rowGroup.head.rowId}`; }
+  private openDocumentLink(url: string): boolean {
+    const name = documentAnchorName(url), source = this.plan?.caption?.source;
+    if (name === null || source?.anchorPaths === undefined) { return false; }
+    if (!this.presentationReady()) { return true; }
+    const note = source.footnotes?.get(name);
+    this.documentOwner = this.documentNodeId(); this.documentBlocks = this.rowGroup.head.richBlocks;
+    if (note !== undefined) { this.noteSource = note; this.noteShown = true; return true; }
+    if (name !== '' && !source.anchorPaths.has(name)) { return true; }
+    this.noteShown = false;
+    const previous = this.rowExpandedBlocks() ?? [];
+    const branch = source.anchorPaths.get(name) ?? null;
+    const next = branch === null ? previous : expandDocumentAnchor(branch, previous);
+    const changed = next !== previous && (next.length !== previous.length || next.some((offset: number, index: number): boolean => offset !== previous[index]));
+    this.pendingAnchor = name; this.pendingDocument = this.rowGroup.head.richBlocks;
+    if (changed) {
+      this.expandedBlockChat = this.rowData.chatId; this.expandedBlockRow = this.rowGroup.head.rowId;
+      this.expandedBlockText = this.kind === 'album' ? this.rowGroup.caption : this.rowGroup.head.text;
+      this.expandedBlockDocument = this.rowGroup.head.richBlocks; this.expandedBlockOffsets = next;
+    } else { this.flushDocumentAnchor(); }
+    return true;
+  }
+  private flushDocumentAnchor(): void {
+    const name = this.pendingAnchor;
+    if (name === null) { return; }
+    this.pendingAnchor = null;
+    if (!this.presentationReady() || this.documentOwner !== this.documentNodeId() || this.pendingDocument !== this.rowGroup.head.richBlocks) { return; }
+    const y = name === '' ? 0 : this.plan?.caption?.anchors.get(name);
+    if (y === undefined || this.actions.onDocumentAnchor === undefined) { return; }
+    try {
+      const rect = this.getUIContext().getComponentUtils().getRectangleById(this.documentNodeId());
+      if (rect.size.height > 0) { this.actions.onDocumentAnchor(this.getUIContext().px2vp(rect.windowOffset.y) + (this.plan?.captionY ?? 0) + y); }
+    } catch (_) { /* A recycled native node is no longer a scroll target. */ }
+  }
+  @Builder private documentNote() {
+    DrawnDocumentNote({ source: this.noteSource, msg: this.rowGroup.head, maxWidthVp: Math.max(120, this.env.screenWidthVp - 32),
+      onLinkTap: (link: DrawnRichLink): void => {
+        if (this.documentOwner === this.documentNodeId() && this.documentBlocks === this.rowGroup.head.richBlocks && !this.openDocumentLink(link.url)) { this.actions.onLinkTap(link.url, link.hidesUrl); }
+      } });
+  }
+  private emptyTables: DrawnTablePlacement[] = [];
+  private expandedBlockText: string = '';
+  private expandedBlockDocument: TdObject[] | undefined = undefined;
+  private rowExpandedBlocks(): ReadonlyArray<number> | undefined {
+    const offsets = this.expandedBlockOffsets;
+    return this.expandedBlockChat === this.rowData.chatId && this.expandedBlockRow === this.rowGroup.head.rowId && this.expandedBlockDocument === this.rowGroup.head.richBlocks &&
+      this.expandedBlockText === (this.kind === 'album' ? this.rowGroup.caption : this.rowGroup.head.text) ? offsets : undefined;
+  }
+  private toggleDrawnQuote(offset: number): void {
+    const offsets = this.rowExpandedBlocks() ?? [];
+    const next: number[] = [];
+    let found: boolean = false;
+    for (const item of offsets) { if (item === offset) { found = true; } else { next.push(item); } }
+    if (!found) { next.push(offset); }
+    this.expandedBlockChat = this.rowData.chatId; this.expandedBlockRow = this.rowGroup.head.rowId;
+    this.expandedBlockText = this.kind === 'album' ? this.rowGroup.caption : this.rowGroup.head.text;
+    this.expandedBlockDocument = this.rowGroup.head.richBlocks;
+    this.expandedBlockOffsets = next;
+  }
   @Local private translation: TranslationStatus | null = translationStatusFor(this.rowGroup.head.id);
   // A retained staged child receives new params without V2 reuse/reset. Keep
   // the metadata owner explicit so plan never applies the previous row's
@@ -234,9 +353,8 @@ export struct DrawnMessageRow {
     // Match the former caption gate without building a paragraph just to discard
     // it. Empty media rows remain eligible when a body renderer is disabled.
     const bodyText = this.kind === 'album' ? this.rowGroup.caption : this.rowGroup.head.text;
-    if (bodyText !== '' && (this.rowData.lightweightPlainText ? this.env.drawnPlain === false : this.env.drawnRich === false)) { return this.rejectRoute(DrawnRouteReason.BodyDisabled); }
-    if (this.env.bubbleMaterialOn) { return this.rejectRoute(DrawnRouteReason.Material); }
-    if (this.a11y.active) { return this.rejectRoute(DrawnRouteReason.Accessibility); }
+    const structuredBody = this.kind === 'text' && this.rowGroup.head.contentType === 'richMessage';
+    if ((bodyText !== '' || structuredBody) && (!structuredBody && this.rowData.lightweightPlainText ? this.env.drawnPlain === false : this.env.drawnRich === false)) { return this.rejectRoute(DrawnRouteReason.BodyDisabled); }
     if (!eligible) { return this.rejectRoute(DrawnRouteReason.Policy); }
     // Read Local values even during handoff to retain async dependencies.
     // Before attach commits the new owner, use current channel snapshots;
@@ -248,13 +366,11 @@ export struct DrawnMessageRow {
       (this.rowData.isGroup && !this.rowGroup.head.isOutgoing && this.rowGroup.showSenderName
         ? senderRoleFor(senderRoleKey(this.rowData.chatId, this.rowGroup.head.senderId)) : ''));
     const translation = currentOwner ? localTranslation : translationStatusFor(this.rowGroup.head.id);
-    if (translation !== null) { return this.rejectRoute(DrawnRouteReason.Translation); }
-    if (drawnTextUsesRtlLayout(textEnvironment)) { return this.rejectRoute(DrawnRouteReason.Rtl); }
     const m = this.rowGroup.head;
     if (this.kind === 'album' && this.rowPreparedAlbum?.sameInput(this.rowGroup, this.rowData) &&
       (this.presentationActive === false || this.rowPreparedAlbum.matches(this.rowGroup, this.rowData, {
       radius: this.env.bubbleRadius, fontSize: this.env.msgTextSize, environment, textEnvironment,
-      role: m.senderTag || role, views
+      mathRevision: this.mathRevision, translationStatus: translation, replaceTranslation: this.env.translateReplaceOriginal, spoilersRevealed: this.rowSpoilersRevealed(), expandedBlocks: this.rowExpandedBlocks(), role: m.senderTag || role, views
     }))) {
       drawnStageMetrics.markRoute(this.presentationActive === false ? 'PG/row-plan-held' : 'PG/row-plan-hit');
       drawnStageMetrics.skip(DrawnStage.Layout);
@@ -270,7 +386,7 @@ export struct DrawnMessageRow {
       if (this.kind === 'album' && this.rowPreparedAlbum?.sameInput(this.rowGroup, this.rowData) && this.rowPreparedAlbum.engine !== null) {
         drawnStageMetrics.markRoute('PG/row-plan-refresh');
         const p = this.rowPreparedAlbum.refresh({ radius: this.env.bubbleRadius, fontSize: this.env.msgTextSize,
-          environment, textEnvironment, role: m.senderTag || role, views });
+          environment, textEnvironment, mathRevision: this.mathRevision, translationStatus: translation, replaceTranslation: this.env.translateReplaceOriginal, spoilersRevealed: this.rowSpoilersRevealed(), expandedBlocks: this.rowExpandedBlocks(), role: m.senderTag || role, views });
         this.recordRoute(p === null ? this.rowPreparedAlbum.engine.failureReason : DrawnRouteReason.Drawn);
         return p;
       }
@@ -291,7 +407,7 @@ export struct DrawnMessageRow {
       if (layouts !== null) { this.layoutRetention.remember(this.rowGroup, this.rowData, this.kind, layouts); }
       const p = layouts?.prepare(ui, this.rowGroup, this.rowData, {
         radius: this.env.bubbleRadius, fontSize: this.env.msgTextSize, environment, textEnvironment,
-        role: m.senderTag || role, views
+        mathRevision: this.mathRevision, translationStatus: translation, replaceTranslation: this.env.translateReplaceOriginal, spoilersRevealed: this.rowSpoilersRevealed(), expandedBlocks: this.rowExpandedBlocks(), role: m.senderTag || role, views
       }) ?? null;
       this.recordRoute(p === null ? (layouts?.failureReason === undefined || layouts.failureReason === DrawnRouteReason.Drawn
         ? DrawnRouteReason.LayoutNull : layouts.failureReason) : DrawnRouteReason.Drawn);
@@ -317,6 +433,8 @@ export struct DrawnMessageRow {
   }
 
   private attach(): void {
+    if (this.loginRow !== this.documentNodeId() || this.loginOwner !== this.rowGroup.head.richBlocks) { this.loginUrl?.cancel(); this.switchInline?.cancel(); }
+    if (this.documentOwner !== this.documentNodeId() || this.documentBlocks !== this.rowGroup.head.richBlocks) { this.noteShown = false; this.noteSource = null; this.pendingAnchor = null; }
     // Packet monitors may run after recursive V2 reset has reseeded the epoch.
     // The explicit live host is authoritative for this retained child.
     if (this.publication?.hostActive === true) { this.active = true; }
@@ -334,6 +452,7 @@ export struct DrawnMessageRow {
       const m = this.rowGroup.head;
       const identity = `${this.rowData.chatId}:${m.rowId}`;
       if (identity !== this.inputIdentity) {
+        this.canvasTransition?.cancel();
         this.inputIdentity = identity; this.touchPlan = null; this.touchReaction = null; this.touchLink = null;
         this.touchRowId = 0; this.touchChatId = 0; this.foreground.press(null);
       }
@@ -356,12 +475,12 @@ export struct DrawnMessageRow {
     else {
       const ui = this.rowContext();
       this.media.prepare(ui, p, this.rowGroup, this.kind === 'album');
-      this.albumCanvas.bind(ui, p.nativeTiles, this.media.slots, p.density, this.albumCanvasEnabled);
+      this.albumCanvas.bind(ui, p.nativeTiles, this.media.slots, p.density, this.albumCanvasEnabled, this.sendState === 'sending', `${this.rowData.chatId}:${this.rowGroup.head.rowId}`);
     }
   }
   @Computed
   private get albumCanvasEnabled(): boolean {
-    return this.kind === 'album' && this.env.drawnAlbumCanvas !== false && this.sendState !== 'sending';
+    return this.kind === 'album' && this.env.drawnAlbumCanvas !== false;
   }
   @Computed
   private get publicationActivationEpoch(): number { return this.publication?.activationEpoch ?? 0; }
@@ -378,7 +497,9 @@ export struct DrawnMessageRow {
     if (this.presentationReady()) { this.attach(); this.syncMedia(); this.syncDeleteCapture(); }
     else { this.channels.detach(); }
   }
-  @Monitor('albumCanvasEnabled')
+  @Computed
+  private get mediaSending(): boolean { return this.sendState === 'sending'; }
+  @Monitor('albumCanvasEnabled', 'mediaSending')
   private albumCanvasPolicyChanged(): void { this.syncMedia(); }
   @Computed
   private get roleEnvironment(): string { return `${this.env.langEpoch}:${this.env.bubbleMaterialOn}`; }
@@ -412,6 +533,9 @@ export struct DrawnMessageRow {
   }
   aboutToAppear(): void { this.active = true; this.attach(); this.syncMedia(); this.syncDeleteCapture(); }
   aboutToRecycle(): void {
+    this.canvasTransition?.cancel();
+    this.loginUrl?.cancel(); this.switchInline?.cancel();
+    this.noteShown = false; this.noteSource = null; this.pendingAnchor = null;
     // A staged child keeps its physical branch while hidden. Releasing pixels
     // must not temporarily replace one canvas with six native tiles on reuse.
     if (this.presentationActive !== false) { this.retainedCanvasMode = this.albumCanvas.state.ready; }
@@ -450,30 +574,28 @@ export struct DrawnMessageRow {
     const c = this.plan?.chrome;
     return c?.reactions?.hit(x - c.reactionsX, y - c.reactionsY) ?? null;
   }
-  private click(event: ClickEvent): void {
+  private click(event: ClickEvent, hitX: number = event.x, hitY: number = event.y, semantic: boolean = false): void {
     const p = this.plan;
-    if (this.claimed || p === null || (event.source === SourceType.TouchScreen &&
+    if (this.claimed || p === null || (!semantic && event.source === SourceType.TouchScreen &&
       (this.touchRowId !== this.rowGroup.head.rowId || this.touchChatId !== this.rowData.chatId))) {
       return;
     }
     const m = this.rowGroup.head;
-    if (p.avatar.width > 0 && albumRectContains(p.avatar, event.x, event.y)) {
+    if (p.avatar.width > 0 && albumRectContains(p.avatar, hitX, hitY)) {
       if (m.senderIsUser && m.senderId > 0) { this.actions.onAvatarTap(m.senderId); }
       return;
     }
     for (const tile of p.tiles) {
-      if (albumRectContains(tile, event.x, event.y)) {
+      if (albumRectContains(tile, hitX, hitY)) {
         if (this.rowData.selectionActive) { this.actions.onToggleSelectedMessage(tile.cell.messageId); }
         else if (tile.cell.failed && (this.kind === 'single' ? m.photoPath === ''
           : this.imageSlot(tile.cell.idx)?.path === '') && tile.cell.thumbFileId !== 0) {
           this.actions.onSpecialPhotoRetry(tile.cell.messageId);
         } else if (this.kind === 'single' && m.isAnimation) {
-          if (drawnAnimationPlaying(m, this.rowData, this.env, true)) { this.openMenu(event.x); }
+          if (drawnAnimationPlaying(m, this.rowData, this.env, true)) { this.openMenu(hitX); }
           else { this.actions.onAnimationTap(m.id, false); }
         } else if (this.albumCanvas.state.ready) {
-          withAlbumCanvasTransition(tile.cell.messageId, (): void => {
-            this.actions.onMediaTap(tile.cell.messageId, event.windowX, event.windowY);
-          });
+          this.openCanvasMedia(tile, event);
         } else { this.actions.onMediaTap(tile.cell.messageId, event.windowX, event.windowY); }
         return;
       }
@@ -481,37 +603,109 @@ export struct DrawnMessageRow {
 
     if (this.rowData.selectionActive) { return; }
     const chrome = p.chrome;
-    const reaction = this.reactionAt(event.x, event.y);
+    const reaction = this.reactionAt(hitX, hitY);
     if (reaction !== null) {
-      if (event.source === SourceType.TouchScreen && (this.touchPlan !== p || this.touchReaction !== reaction)) { return; }
+      if (!semantic && event.source === SourceType.TouchScreen && (this.touchPlan !== p || this.touchReaction !== reaction)) { return; }
       this.foreground.press(null);
       if (reaction.reaction === null) {
         this.actions.onShowReactorsList(m.id, `reactors_anchor_${this.rowData.chatId}_${m.id}`);
       } else { this.actions.onSetReaction(m.id, reaction.key, reaction.reaction.isChosen); }
       return;
     }
-    if (chrome !== null && chrome.content.forward !== null && albumRectContains(chrome.forwardRect, event.x, event.y)) {
-      if (event.source === SourceType.TouchScreen && this.touchPlan !== p) { return; }
+    if (chrome !== null && chrome.content.forward !== null && albumRectContains(chrome.forwardRect, hitX, hitY)) {
+      if (!semantic && event.source === SourceType.TouchScreen && this.touchPlan !== p) { return; }
       if (m.forwardOriginChatId !== 0 || m.forwardOriginUserId !== 0) {
         this.actions.onForwardTap(m.forwardOriginChatId, m.forwardOriginMsgId, m.forwardOriginUserId);
       }
       return;
     }
-    if (chrome !== null && chrome.content.comments !== null && albumRectContains(chrome.commentsRect, event.x, event.y)) {
-      if (event.source !== SourceType.TouchScreen || this.touchPlan === p) { this.actions.onCommentTap(m.id); }
+    if (chrome !== null && chrome.content.comments !== null && albumRectContains(chrome.commentsRect, hitX, hitY)) {
+      if (semantic || event.source !== SourceType.TouchScreen || this.touchPlan === p) { this.actions.onCommentTap(m.id); }
       return;
     }
-    if (p.quote !== null && albumRectContains(p.quoteRect, event.x, event.y)) {
+    if (p.quote !== null && albumRectContains(p.quoteRect, hitX, hitY)) {
       this.actions.onReplyTap(m.replyToMessageId, m.id); return;
     }
-    const link = this.linkAt(event.x, event.y);
+    const link = this.linkAt(hitX, hitY);
     if (link !== null) {
-      if (event.source !== SourceType.TouchScreen || (this.touchPlan === p && this.touchLink === link)) {
-        this.foreground.press(null); this.actions.onLinkTap(link.link.url, link.link.hidesUrl);
+      if (semantic || event.source !== SourceType.TouchScreen || (this.touchPlan === p && this.touchLink === link)) {
+        this.foreground.press(null);
+        if (link.link.action === 'web-preview') {
+          if (m.linkPhotoFailed) { this.actions.onLinkPreviewRetry(m.id); }
+          else if (linkPreviewPresentation(m.linkUrl, m.linkPreviewType, m.linkSiteName).actionable) { this.actions.onLinkTap(m.linkUrl, false); }
+        }
+        else if (link.link.action === 'page-button' && link.link.button !== undefined) {
+          const button = link.link.button;
+          if (button.kind === 'login') { this.openLoginButton(button.buttonId ?? 0, button.value); }
+          else if (button.kind === 'switch-inline') { this.openSwitchInline(button.value); }
+          else if (button.kind === 'url') { this.actions.onLinkTap(button.value, true); }
+          else if (button.kind === 'copy') { this.actions.onCopyCode(button.value); }
+          else if (button.kind === 'callback') { this.actions.onBotCallback(m.id, button.value); }
+          else if (button.kind === 'webapp') { this.actions.onMiniApp(m.id, button.value); }
+          else if (button.kind === 'profile' && button.userId > 0) { this.actions.onAvatarTap(button.userId); }
+          else if (button.kind === 'game') { this.actions.onGameOpen(m.id); }
+          else if (button.kind !== 'disabled') { showToast($r('app.string.miniapp_button_unsupported')); }
+        }
+        else if (link.link.action === 'translation-toggle') { this.actions.onToggleTranslation(m.id, !m.translationHidden); }
+        else if (link.link.action === 'translation-retry') { this.actions.onRetryTranslation(m.id); }
+        else if (link.link.action === 'spoiler') { this.revealDrawnSpoilers(); }
+        else if (link.link.action === 'copy') { this.actions.onCopyCode(link.link.label); }
+        else if (link.link.action === 'quote' && link.link.blockOffset !== undefined) { this.toggleDrawnQuote(link.link.blockOffset); }
+        else if (!this.openDocumentLink(link.link.url)) { this.actions.onLinkTap(link.link.url, link.link.hidesUrl); }
       }
       return;
     }
-    if (messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) { this.openMenu(event.x); }
+    if (messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) { this.openMenu(hitX); }
+  }
+  private openSwitchInline(query: string): void {
+    const row = this.documentNodeId(), blocks = this.rowGroup.head.richBlocks;
+    this.loginRow = row; this.loginOwner = blocks;
+    if (this.switchInline === null) { this.switchInline = new DocumentSwitchInline(); }
+    this.switchInline.open(this.rowData.chatId, this.rowGroup.head.id, query, {
+      current: (): boolean => this.presentationReady() && !this.rowData.selectionActive &&
+        row === this.documentNodeId() && blocks === this.rowGroup.head.richBlocks,
+      insert: (text: string): void => {
+        if (this.actions.onSwitchInlineCurrent !== undefined) { this.actions.onSwitchInlineCurrent(text); }
+        else { showToast($r('app.string.miniapp_button_unsupported')); }
+      },
+      unavailable: (): void => { showToast($r('app.string.miniapp_button_unsupported')); }
+    });
+  }
+  private openLoginButton(buttonId: number, url: string): void {
+    const row = this.documentNodeId(), blocks = this.rowGroup.head.richBlocks;
+    this.loginRow = row; this.loginOwner = blocks;
+    if (this.loginUrl === null) { this.loginUrl = new DocumentLoginUrl(); }
+    this.loginUrl.open(this.rowData.chatId, this.rowGroup.head.id, buttonId, url, {
+      current: (): boolean => this.presentationReady() && !this.rowData.selectionActive &&
+        row === this.documentNodeId() && blocks === this.rowGroup.head.richBlocks,
+      open: (target: string, ask: boolean): void => this.actions.onLinkTap(target, ask),
+      confirm: (prompt: DocumentLoginPrompt): Promise<string> => new Promise<string>((resolve): void => {
+        const sheets: SheetInfo[] = [
+          { title: str('document_login_accept'), action: (): void => resolve('login') },
+          { title: str('document_login_open'), action: (): void => resolve('open') }
+        ];
+        if (prompt.writeAccess) { sheets.push({ title: str('document_login_write'), action: (): void => resolve('write') }); }
+        this.getUIContext().showActionSheet({ title: str('document_login_title'),
+          message: str('document_login_message', prompt.domain), sheets, cancel: (): void => resolve('cancel') });
+      })
+    });
+  }
+  private claimDocumentWidget(widget: DrawnDocumentWidget): boolean {
+    this.claimed = true;
+    if (!this.presentationReady() || !this.plan?.caption?.widgetOwners.has(widget)) { return false; }
+    if (this.rowData.selectionActive) { this.actions.onToggleSelectedMessage(this.rowGroup.head.id); return false; }
+    return true;
+  }
+  private openDocumentMedia(media: DrawnDocumentMedia): void {
+    this.claimed = true;
+    if (!this.presentationReady()) { return; }
+    if (this.rowData.selectionActive) { this.actions.onToggleSelectedMessage(this.rowGroup.head.id); return; }
+    const items = this.plan?.caption?.source.mediaItems;
+    if (items === undefined || items[media.index] !== media) { return; }
+    const session: DocumentMediaSession = { media: items, chatId: this.rowData.chatId,
+      messageId: this.rowGroup.head.id, date: this.rowGroup.head.date, senderName: this.rowGroup.head.senderName };
+    const params: Record<string, Object> = { 'documentMedia': session, 'startIndex': media.index };
+    stackOf('chat')?.pushPath({ name: 'DownloadPreviewPage', param: params });
   }
   private openMenu(x: number): void {
     this.menuOffset = x - (this.plan?.width ?? 0) / 2; this.menuShown = true;
@@ -581,13 +775,13 @@ export struct DrawnMessageRow {
     }
   }
   private swipe(offset: number): void {
-    if (this.edge || this.rowData.editingActive || this.draggingMessage ||
+    if (tableScrollTouched() || this.edge || this.rowData.editingActive || this.draggingMessage ||
       (this.touchOnBody && this.canDragMessage() && this.dragGesture.prefersDrag(Date.now()))) { return; }
     this.swipeX = Math.max(this.rowData.canReply ? SWIPE_REPLY_MAX : 0, Math.min(SWIPE_SELECT_MAX, offset));
     if (this.swipeX !== 0) { this.claimed = true; this.foreground.press(null); }
   }
   private endSwipe(): void {
-    const usable = !this.edge && !this.rowData.editingActive && !this.draggingMessage &&
+    const usable = !tableScrollTouched() && !this.edge && !this.rowData.editingActive && !this.draggingMessage &&
       !(this.touchOnBody && this.canDragMessage() && this.dragGesture.prefersDrag(Date.now()));
     const reply = usable && this.rowData.canReply && this.swipeX <= SWIPE_REPLY_TRIGGER;
     const select = usable && this.swipeX >= SWIPE_SELECT_TRIGGER;
@@ -627,6 +821,34 @@ export struct DrawnMessageRow {
   menu() {
     DrawnBubbleMenu({ msg: this.rowGroup.head, group: this.rowGroup, data: this.rowData,
       actions: this.actions, nowSec: this.nowSec });
+  }
+
+  @Local private canvasTransitionIndex: number = -1;
+  private canvasTransition: DrawnAlbumTransition | null = null;
+  private canvasTransitionFrame: DrawnMediaFrame | undefined = undefined;
+
+  private openCanvasMedia(tile: DrawnBubbleTile, event: ClickEvent): void {
+    if (this.canvasTransition === null) {
+      this.canvasTransition = new DrawnAlbumTransition((index: number): void => {
+        if (this.canvasTransitionIndex !== index) { this.canvasTransitionIndex = index; }
+      }, (task: () => void): void => { this.rowContext().postFrameCallback(new OneShotFrameCallback(task)); });
+    }
+    const chatId = this.rowData.chatId, rowId = this.rowGroup.head.rowId;
+    const index = tile.cell.idx;
+    const source = this.nativeTiles[index];
+    const frame = this.mediaFrames[index];
+    const transitionFrame = source !== undefined && frame !== undefined
+      ? drawnAlbumTransitionFrame(frame, source, this.gridRadii()) : undefined;
+    const windowX = event.windowX, windowY = event.windowY;
+    // begin first clears the previous anchor, then publishes the new index.
+    this.canvasTransitionFrame = transitionFrame;
+    this.canvasTransition.begin(index, tile.cell.messageId, (): boolean => {
+      const current = this.nativeTiles[index];
+      return this.active && this.presentationReady() && this.albumCanvas.state.ready &&
+        this.rowData.chatId === chatId && this.rowGroup.head.rowId === rowId && current !== undefined &&
+        source !== undefined && current.cell.messageId === tile.cell.messageId &&
+        current.x === source.x && current.y === source.y && current.width === source.width && current.height === source.height;
+    }, (): void => { this.actions.onMediaTap(tile.cell.messageId, windowX, windowY); });
   }
 
   private gridRadii(): BorderRadiuses {
@@ -749,11 +971,24 @@ export struct DrawnMessageRow {
     return this.presentationActive === false ? this.retainedCanvasMode : this.albumCanvas.state.ready;
   }
 
+  private glassLive(): boolean { return this.env.bubbleMaterialOn && !this.env.powerSaving; }
+
   @Builder
   canvasContent() {
     Stack({ alignContent: Alignment.TopStart }) {
+      if (this.glassLive()) {
+        DrawnGlassBackground({ plan: this.plan, fillColor: this.rowGroup.head.isOutgoing ?
+          (this.rowData.themeBubbleOut || COLOR_BUBBLE_OUT) : COLOR_BUBBLE_IN });
+      }
       if (this.kind !== 'text') {
         Stack({ alignContent: Alignment.TopStart }) {
+          if (this.useAlbumCanvas && this.canvasTransitionIndex >= 0) {
+            Stack() {}
+              .attributeModifier(this.nativeAnchors.bind(this.canvasTransitionIndex, this.canvasTransitionFrame))
+              .drawModifier(this.media.slots[this.canvasTransitionIndex]?.receiver)
+              .accessibilityLevel('no')
+              .onAreaChange((): void => { this.canvasTransition?.ready(); });
+          }
           if (!this.useAlbumCanvas) {
             ForEach(this.mediaSlots, (slot: DrawnMediaSlot) => {
               this.mediaTile(slot);
@@ -764,13 +999,27 @@ export struct DrawnMessageRow {
         .borderRadius(this.gridRadii()).clip(true).hitTestBehavior(HitTestMode.None)
         .drawModifier(this.useAlbumCanvas ? this.albumCanvas : undefined);
       }
-      if ((this.plan?.caption?.source.links.length ?? 0) > 0 && this.plan?.caption?.source.targets.has(this.env.linkNavBusy)) {
+      if (this.plan?.caption?.hitsByUrl.has(this.env.linkNavBusy)) {
         DrawnBusyLink({ plan: this.plan?.caption ?? null, url: this.env.linkNavBusy })
           .position({ x: this.plan?.captionX ?? 0, y: this.plan?.captionY ?? 0 });
       }
       Row().width(this.plan?.width ?? 0).height(this.plan?.height ?? 0)
         .drawModifier(this.foreground.bind(this.plan, this.sendState, this.footerPaintKey))
         .hitTestBehavior(HitTestMode.None);
+      if (this.plan?.caption?.previewImage !== null && this.plan?.caption?.previewImage !== undefined) {
+        Stack() { DrawnPreviewImage({ msg: this.rowGroup.head, plan: this.plan?.caption ?? null }); }
+          .width(this.plan?.caption?.widthVp ?? 0).height(this.plan?.caption?.heightVp ?? 0)
+          .position({ x: this.plan?.captionX ?? 0, y: this.plan?.captionY ?? 0 })
+          .hitTestBehavior(HitTestMode.None);
+      }
+      if ((this.plan?.caption?.icons.length ?? 0) > 0) {
+        DrawnInlineIconLayer({ plan: this.plan?.caption ?? null })
+          .position({ x: this.plan?.captionX ?? 0, y: this.plan?.captionY ?? 0 }).hitTestBehavior(HitTestMode.None);
+      }
+      if ((this.plan?.caption?.maths.length ?? 0) > 0) {
+        DrawnMathLayer({ plan: this.plan?.caption ?? null, onMetricsChanged: (): void => { this.mathRevision++; } })
+          .position({ x: this.plan?.captionX ?? 0, y: this.plan?.captionY ?? 0 });
+      }
       if ((this.plan?.caption?.emojis.length ?? 0) > 0) {
         DrawnInlineEmojiLayer({ plan: this.plan?.caption ?? null, msg: this.rowGroup.captionMessage ?? this.rowGroup.head })
           .position({ x: this.plan?.captionX ?? 0, y: this.plan?.captionY ?? 0 });
@@ -786,7 +1035,7 @@ export struct DrawnMessageRow {
       this.rowGroup.head.isOutgoing ? '100%' : (this.plan?.bubbleX ?? 0),
       1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS, this.canDragMessage() && this.allowBodyDrag,
       this.deleteCaptureSupported && (this.plan?.caption?.source.links.length ?? 0) === 0))
-    .drawModifier(this.painter.bind(this.plan, !this.env.scrollActive))
+    .drawModifier(this.painter.bind(this.plan, !this.env.scrollActive && !this.glassLive(), !this.glassLive()))
     .onTouch((e: TouchEvent): void => { this.touch(e); })
     .onClick((e: ClickEvent): void => { this.click(e); })
     .onDragStart((event: DragEvent): DragItemInfo => {
@@ -844,7 +1093,7 @@ export struct DrawnMessageRow {
             // no extra component + Stack are needed on every normal message.
             Row() {
               this.canvasContent();
-            }.id(this.deleteNodeKey)
+            }.accessibilityLevel(this.a11y.active ? 'no-hide-descendants' : 'auto').id(this.deleteNodeKey)
             .opacity(this.leaving > 0 && (!this.deleteCaptureSupported || this.capturedDeleteKey === this.deleteNodeKey) ? 0 : 1)
             .hitTestBehavior(this.leaving > 0 ? HitTestMode.None : HitTestMode.Default);
             if (this.leaving > 0 && this.deleteCaptureSupported) {
@@ -868,7 +1117,91 @@ export struct DrawnMessageRow {
                 .position({ x: this.plan?.avatar.x ?? 0, y: this.plan?.avatar.y ?? 0 })
                 .hitTestBehavior(HitTestMode.None);
             }
-          }.width(this.plan?.width ?? 0).height(this.plan?.height ?? 0);
+            if (this.a11y.active) {
+              DrawnRowAccessibility({ plan: this.plan, msg: this.rowGroup.head, sendState: this.sendState,
+                onActivate: (x: number, y: number, event: ClickEvent): void => { this.click(event, x, y, true); },
+                onMenu: (): void => {
+                  if (this.rowData.selectionActive) { this.actions.onToggleSelectedMessage(this.rowGroup.head.id); }
+                  else { this.openMenu((this.plan?.width ?? 0) / 2); }
+                } });
+            }
+            if ((this.plan?.caption?.widgets.length ?? 0) > 0) {
+              ForEach(this.plan?.caption?.widgets ?? this.emptyWidgets, (item: DrawnDocumentWidgetPlacement) => {
+                if (item.widget.kind === 'video-embed') {
+                  DrawnDocumentVideo({ widget: item.widget, boxWidth: item.width, boxHeight: item.height,
+                    onClaim: (): boolean => this.claimDocumentWidget(item.widget),
+                    onOpen: (url: string): void => { this.actions.onLinkTap(url, true); } })
+                    .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'html-embed') {
+                  DrawnDocumentEmbed({ widget: item.widget, boxWidth: item.width, boxHeight: item.height,
+                    onMetricsChanged: (): void => {
+                      if (this.presentationReady() && this.plan?.caption?.widgetOwners.has(item.widget)) { this.mathRevision++; }
+                    },
+                    onClaim: (): boolean => this.claimDocumentWidget(item.widget),
+                    onOpen: (url: string): void => { this.actions.onLinkTap(url, true); } })
+                    .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'article-image') {
+                  DrawnDocumentArticleImage({ widget: item.widget })
+                    .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'post-author' || item.widget.kind === 'chat-link') {
+                  DrawnDocumentPostAuthor({ widget: item.widget, boxWidth: item.width,
+                    onOpen: (): void => {
+                      if (this.claimDocumentWidget(item.widget) && item.widget.url !== undefined && item.widget.url !== '') {
+                        this.actions.onLinkTap(item.widget.url, true);
+                      }
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'map') {
+                  DrawnDocumentMap({ widget: item.widget, chatId: this.rowData.chatId, boxWidth: item.width, boxHeight: item.height,
+                    onOpen: (): void => {
+                      if (this.claimDocumentWidget(item.widget)) { this.actions.onLocationOpen(item.widget.latitude, item.widget.longitude, '', true); }
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'audio') {
+                  DrawnDocumentAudio({ widget: item.widget, audioItems: this.plan?.caption?.source.audioItems, chatId: this.rowData.chatId, messageId: this.rowGroup.head.id, boxWidth: item.width,
+                    onClaim: (): boolean => this.claimDocumentWidget(item.widget) })
+                    .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'voice') {
+                  DrawnDocumentVoice({ widget: item.widget, boxWidth: item.width,
+                    onClaim: (): boolean => this.claimDocumentWidget(item.widget) })
+                    .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else {
+                  DrawnDocumentFile({ widget: item.widget, chatId: this.rowData.chatId, messageId: this.rowGroup.head.id, boxWidth: item.width,
+                    onClaim: (): boolean => this.claimDocumentWidget(item.widget) })
+                    .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                }
+              }, (item: DrawnDocumentWidgetPlacement): string => `${this.rowData.chatId}:${this.rowGroup.head.id}:${item.widget.key}`);
+            }
+            if ((this.plan?.caption?.media.length ?? 0) > 0) {
+            ForEach(this.plan?.caption?.media ?? this.emptyDocumentMedia, (asset: DrawnDocumentMediaPlacement) => {
+              if (asset.slides !== undefined) {
+                DrawnDocumentGallery({ slides: asset.slides, boxWidth: asset.width, boxHeight: asset.height,
+                  onOpen: (media: DrawnDocumentMedia): void => { this.openDocumentMedia(media); } })
+                  .position({ x: (this.plan?.captionX ?? 0) + asset.x, y: (this.plan?.captionY ?? 0) + asset.y });
+              } else {
+              DrawnDocumentMediaIsland({ media: asset.media, boxWidth: asset.width, boxHeight: asset.height,
+                onOpen: (): void => {
+                  this.openDocumentMedia(asset.media);
+                } })
+                .position({ x: (this.plan?.captionX ?? 0) + asset.x, y: (this.plan?.captionY ?? 0) + asset.y });
+              }
+            }, (asset: DrawnDocumentMediaPlacement): string => `${this.rowData.chatId}:${this.rowGroup.head.id}:${asset.key}`);
+            }
+            if ((this.plan?.caption?.tables.length ?? 0) > 0) {
+            ForEach(this.plan?.caption?.tables ?? this.emptyTables, (table: DrawnTablePlacement) => {
+              DrawnTableIsland({ msg: this.rowGroup.head, placement: table, onMetricsChanged: (): void => { this.mathRevision++; },
+                onClaimTouch: (): void => {
+                  if (!this.claimed && this.rowData.selectionActive) { this.actions.onToggleSelectedMessage(this.rowGroup.head.id); }
+                  this.claimed = true;
+                },
+                onLinkTap: (link: DrawnRichLink): void => {
+                  if (this.rowData.selectionActive) { this.claimed = true; this.actions.onToggleSelectedMessage(this.rowGroup.head.id); }
+                  else { this.claimed = true; if (!this.openDocumentLink(link.url)) { this.actions.onLinkTap(link.url, link.hidesUrl); } }
+                } })
+                .position({ x: (this.plan?.captionX ?? 0) + table.x, y: (this.plan?.captionY ?? 0) + table.y });
+            }, (table: DrawnTablePlacement): string => table.key);
+            }
+          }.width(this.plan?.width ?? 0).height(this.plan?.height ?? 0)
+            .id(this.rowGroup.head.richBlocks !== undefined ? this.documentNodeId() : undefined)
+            .onAreaChange((this.plan?.caption?.source.anchorPaths?.size ?? 0) > 0 ? (): void => this.flushDocumentAnchor() : undefined);
         }.width('100%').padding({ left: 4, right: 4, top: this.rowGroup.showSenderName ? 3 : 1,
           bottom: this.rowGroup.showAvatar ? 3 : 1 })
         .justifyContent(this.rowGroup.head.isOutgoing ? FlexAlign.End : FlexAlign.Start)
@@ -893,6 +1226,7 @@ export struct DrawnMessageRow {
             drawnRight: 4 + (this.rowGroup.head.isOutgoing ? this.keyboardGutter() : 0) });
         }
       }.width('100%')
+        .bindSheet($$this.noteShown, this.documentNote, { height: SheetSize.MEDIUM, dragBar: true, showClose: true })
         .onVisibleAreaApproximateChange({ ratios: [0], expectedUpdateInterval: 16 },
           this.kind === 'album' ? this.mediaVisibility() : undefined)
         .transition(this.rowData.animateIn

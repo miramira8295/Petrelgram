@@ -104,11 +104,11 @@ for(const [params,label,expectedSubs]of [
  row.aboutToRecycle();row.resetStateVarsOnReuse(params);assert.equal(row.role,label);
  const before=prepares;row.aboutToReuse();assert.equal(row.role,label);assert.equal(prepares,before);assert.equal(activeSubscriptions,expectedSubs);
 }
-// Initial translation falls back immediately without a spurious growth pin.
+// Initial translation stays drawn immediately without a spurious growth pin.
 for(const failed of [false,true]){
  if(failed)ctx.publishTranslationFailed(1,'network');else ctx.publishTranslating(1);
  row.aboutToRecycle();const before=prepares,beforePins=pins;
- row.resetStateVarsOnReuse(pa);assert.equal(row.plan,null);assert.equal(prepares,before);
+ row.resetStateVarsOnReuse(pa);assert.notEqual(row.plan,null);assert.equal(prepares,before+1);
  assert.equal(row.translation.phase,failed?'failed':'loading');row.aboutToReuse();assert.equal(pins,beforePins);
  ctx.clearTranslationStatus(1);assert.equal(row.translation,null);assert.equal(pins,beforePins+1);assert.notEqual(row.plan,null);
 }
@@ -121,7 +121,7 @@ ctx.publishViewCount(2,2,12000);assert.equal(row.views,'12K');ctx.publishSenderR
 // reads the stored final state without creating then tearing down a drawn plan.
 const release=ctx.pushTranslationStatusHold(()=>true),beforePins=pins;
 ctx.publishTranslating(2);assert.equal(row.translation,null);
-row.aboutToRecycle();row.resetStateVarsOnReuse(pb);assert.equal(row.plan,null);row.aboutToReuse();assert.equal(pins,beforePins);
+row.aboutToRecycle();row.resetStateVarsOnReuse(pb);assert.equal(row.plan.style.translationStatus.phase,'loading');row.aboutToReuse();assert.equal(pins,beforePins);
 release();assert.equal(pins,beforePins);ctx.clearTranslationStatus(2);assert.equal(pins,beforePins+1);
 // Repeated reuse cannot accumulate subscriptions or scale reads with history.
 let maxReads=0;
@@ -133,7 +133,7 @@ for(let i=0;i<1000;i++){
 assert.equal(maxReads,5);row.aboutToRecycle();assert.equal(activeSubscriptions,0);
 assert.equal(ctx.drawnPainterReserve.hits + ctx.drawnPainterReserve.misses, 3,
  '1000 compiled reuse resets keep the original three painter owners, without reacquiring resources');
-console.log('PASS: compiled constructor/reset seed current state before plan; text/single/album A-B-A, role visibility/tags, sends/views/animated avatar, translation fallback/hold/late updates; 1000 reuse cycles keep five snapshot reads and zero duplicate layout on unchanged channels.');
+console.log('PASS: compiled constructor/reset seed current state before plan; text/single/album A-B-A, role visibility/tags, sends/views/animated avatar, translation continuity/hold/late updates; 1000 reuse cycles keep five snapshot reads and zero duplicate layout on unchanged channels.');
 
 // Real generated reuse must retain the interaction owner, not reconstruct it
 // or write five default values before every computed reset.
@@ -177,7 +177,7 @@ for(const name of ['sendState','views','role','translation','avatarAnimated'])
 for(const name of ['plan','nativeTiles','mediaFrames','mediaSlots','useAlbumCanvas']) {
  assert.ok(resetBody.includes(`this.resetComputed("${name}")`),'retain geometry/visual equality boundary: '+name);
 }
-assert.equal((resetBody.match(/this.resetComputed\(/g)||[]).length,13,'nine visual boundaries, three publication projections and explicit host activation');
+assert.equal((resetBody.match(/this.resetComputed\(/g)||[]).length,14,'nine visual boundaries, three publication projections, host activation and sending-only boundary');
 console.log('PASS: compiled reuse retains one interaction owner, 1000 clean cycles write zero UI fields, dirty recycle/reuse clears exactly four, avatar revision remains live, metadata stays pre-plan, rows and stale deletion callbacks stay isolated.');
 
 // Retained staged children receive parameter updates WITHOUT Local reset. The
@@ -187,7 +187,7 @@ let refreshes=0;
 const retained=new ctx.DrawnMessageRow(null,pa);
 retained.aboutToAppear();
 function packet(params){
- const style={radius:12,fontSize:16,environment:'1:1:1',textEnvironment:'1:1',
+ const style={translationStatus:ctx.translationStatusFor(params.group.head.id),radius:12,fontSize:16,environment:'1:1:1',textEnvironment:'1:1',
   role:params.group.head.senderTag || (params.data.isGroup&&!params.group.head.isOutgoing&&params.group.showSenderName
     ?ctx.senderRoleFor(ctx.senderRoleKey(params.data.chatId,params.group.head.senderId)):''),
   views:ctx.viewCountLabelFor(params.data.chatId,params.group.head.id)};
@@ -219,15 +219,15 @@ assert.equal(refreshes,priorRefresh+1);assert.equal(retained.preparedAlbum.style
 priorRefresh=refreshes;ctx.publishSenderRole('2:1002','owner B updated');planGetter.call(retained);
 assert.equal(refreshes,priorRefresh+1);assert.equal(retained.preparedAlbum.style.role,'owner B updated');
 // An old translated row cannot incorrectly force the next untranslated row to
-// Legacy, nor can an untranslated old row suppress the new owner's fallback.
-ctx.publishTranslating(2);assert.equal(planGetter.call(retained),null);
+// Legacy, nor can an untranslated old row suppress the new owner's status.
+ctx.publishTranslating(2);assert.notEqual(planGetter.call(retained),null);assert.equal(retained.preparedAlbum.style.translationStatus.phase,'loading');
 retained.group=pa.group;retained.data=pa.data;retained.preparedAlbum=packet(pa);
 assert.equal(planGetter.call(retained),retained.preparedAlbum.plan);retained.inputChanged();
 retained.group=pb.group;retained.data=pb.data;retained.preparedAlbum=packet(pb);
-assert.equal(planGetter.call(retained),null);retained.inputChanged();
+assert.notEqual(planGetter.call(retained),null);assert.equal(retained.preparedAlbum.style.translationStatus.phase,'loading');retained.inputChanged();
 ctx.clearTranslationStatus(2);assert.notEqual(planGetter.call(retained),null);
 retained.aboutToRecycle();assert.equal(activeSubscriptions,0);
-console.log('PASS: 1000 retained param handoffs before/after Monitor cause zero prepared refreshes; A/B/A, role policy/tag changes, async views/role and translation fallback remain correct.');
+console.log('PASS: 1000 retained param handoffs before/after Monitor cause zero prepared refreshes; A/B/A, role policy/tag changes, async views/role and translation continuity remain correct.');
 
 // Recursive reset may reseed Computed epoch before Monitor delivery. Actual
 // attach/inputChanged must still resume the retained child from its live host.

@@ -1,3 +1,5 @@
+import { DrawnInlineIconLayer } from './DrawnInlineIconLayer';
+import { DrawnMathLayer } from './DrawnMathLayer';
 import { DrawnInlineEmojiLayer } from './DrawnInlineEmojiLayer';
 import { MessageEntry } from '../../store/MessageEntry';
 import { DrawnBusyLink } from './DrawnBusyLink';
@@ -18,6 +20,7 @@ export struct DrawnRichTextView {
   // Reuse can update this child before its parent's fallback branch removes
   // it. Every independently scheduled node update must accept that empty state.
   @Require @Param plan: DrawnRichTextLayout | null;
+  @Event onMetricsChanged: () => void = (): void => {};
   @Event onLinkTap: (link: DrawnRichLink) => void = (_link: DrawnRichLink): void => {};
   private painter: DrawnRichTextPainter = new DrawnRichTextPainter();
   private emptyHits: DrawnRichHit[] = [];
@@ -86,8 +89,12 @@ export struct DrawnRichTextView {
         .width(this.plan?.widthVp ?? 0).height(this.plan?.heightVp ?? 0)
         .drawModifier(this.painter.bind(this.plan))
         .hitTestBehavior(HitTestMode.None)
-        .accessibilityText(this.plan?.source.content ?? '')
+        .accessibilityText(this.plan?.accessibilityText ?? '')
         .accessibilityLevel(this.plan === null ? 'no' : 'yes');
+      if ((this.plan?.icons.length ?? 0) > 0) { DrawnInlineIconLayer({ plan: this.plan }); }
+      if ((this.plan?.maths.length ?? 0) > 0) {
+        DrawnMathLayer({ plan: this.plan, onMetricsChanged: (): void => this.onMetricsChanged() });
+      }
       if ((this.plan?.emojis.length ?? 0) > 0) {
         DrawnInlineEmojiLayer({ plan: this.plan, msg: this.msg });
       }
@@ -99,7 +106,7 @@ export struct DrawnRichTextView {
             .stateStyles({ normal: drawnLinkIdleStyle, pressed: drawnLinkPressedStyle })
             .accessibilityText(hit.link.accessibilityLabel)
             .accessibilityDescription(hit.link.url)
-            .accessibilityRole(AccessibilityRoleType.HYPERLINK)
+            .accessibilityRole(hit.link.action === undefined ? AccessibilityRoleType.HYPERLINK : AccessibilityRoleType.BUTTON)
             .accessibilityLevel(hit.accessible ? 'yes' : 'no')
             .onClick((): void => { this.tapHit(hit); });
         }, (hit: DrawnRichHit): string => hit.key);

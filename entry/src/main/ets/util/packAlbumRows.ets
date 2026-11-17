@@ -1,8 +1,12 @@
+import { androidSmallAlbumGeometry } from './androidSmallAlbumGeometry';
+
 // Pack album media into stable Telegram-style mosaic rows. Cell widths still
 // respect source ratios, but extreme portraits/panoramas are clamped so a last
 // row can never become an enormous tower or a paper-thin strip.
 
 export interface AlbumCell {
+  x?: number;
+  y?: number;
   idx: number;
   width: number;
   height: number;
@@ -109,6 +113,84 @@ export function packAlbumRows(ratios: number[], targetWidth: number): AlbumCell[
     }
     rows.push(row);
     index += count;
+  }
+  return rows;
+}
+
+// Telegram Android MessageObject.GroupedMessages.calculate, revision
+// 21f7d109da6ab3506c9e9577f98c6a38771ab335: general branch; small layouts delegate to physical rectangle rules.
+// Keep source order and Android's crop/score/tie rules. ArkUI adaptation: use
+// the allocated bubble width (not display width), with physical 2vp gutters.
+// Legacy row-slot consumers continue to use packAlbumRows.
+export function packAndroidAlbumRows(ratios: number[], targetWidth: number): AlbumCell[][] {
+  const n = ratios.length;
+  if (n < 2 || n > 10 || !Number.isFinite(targetWidth) || targetWidth <= 6) {
+    return packAlbumRows(ratios, targetWidth);
+  }
+  const small = androidSmallAlbumGeometry(ratios, targetWidth);
+  if (small !== null) { return small; }
+  let average = 1; // Android deliberately starts this accumulator at one.
+  const cropped: number[] = [];
+  for (const ratio of ratios) { average += Number.isFinite(ratio) && ratio > 0 ? ratio : 1; }
+  average /= n;
+  const prefix: number[] = [0];
+  for (let i = 0; i < n; i++) {
+    const raw = Number.isFinite(ratios[i]) && ratios[i] > 0 ? ratios[i] : 1;
+    const ratio = clamp(average > 1.1 ? Math.max(1, raw) : Math.min(1, raw), 0.66667, 1.7);
+    cropped.push(ratio); prefix.push(prefix[i] + ratio);
+  }
+  let best: number[] = [];
+  let bestScore = Number.POSITIVE_INFINITY;
+  // Prefix sums make every row estimate O(1). At most 42 candidates;
+  // no unbounded partitions, sorting, or retained candidate-layout objects.
+  const consider = (counts: number[]): void => {
+    let end = 0;
+    let height = 0;
+    let minimum = Number.POSITIVE_INFINITY;
+    let decreasing = false;
+    for (let r = 0; r < counts.length; r++) {
+      const start = end; end += counts[r];
+      const h = targetWidth / (prefix[end] - prefix[start]);
+      height += h; minimum = Math.min(minimum, h);
+      if (r > 0 && counts[r - 1] > counts[r]) { decreasing = true; }
+    }
+    let score = Math.abs(height - targetWidth * 4 / 3);
+    if (decreasing) { score *= 1.2; }
+    if (minimum < 120) { score *= 1.5; }
+    // Treat roundoff from prefix subtraction as a tie; keep enumeration order.
+    if (score < bestScore - 1e-9) { bestScore = score; best = counts; }
+  };
+  for (let a = 1; a <= 3; a++) {
+    const b = n - a;
+    if (b >= 1 && b <= 3) { consider([a, b]); }
+  }
+  for (let a = 1; a <= 3; a++) {
+    for (let b = 1; b <= (average < 0.85 ? 4 : 3); b++) {
+      const c = n - a - b;
+      if (c >= 1 && c <= 3) { consider([a, b, c]); }
+    }
+  }
+  for (let a = 1; a <= 3; a++) {
+    for (let b = 1; b <= 3; b++) {
+      for (let c = 1; c <= 3; c++) {
+        const d = n - a - b - c;
+        if (d >= 1 && d <= 3) { consider([a, b, c, d]); }
+      }
+    }
+  }
+  const rows: AlbumCell[][] = [];
+  let index = 0;
+  for (const count of best) {
+    const available = targetWidth - CELL_GAP * (count - 1);
+    const sum = prefix[index + count] - prefix[index];
+    const height = available / sum;
+    const row: AlbumCell[] = [];
+    let used = 0;
+    for (let i = 0; i < count; i++) {
+      const width = i === count - 1 ? available - used : available * cropped[index + i] / sum;
+      row.push({ idx: index + i, width, height }); used += width;
+    }
+    rows.push(row); index += count;
   }
   return rows;
 }

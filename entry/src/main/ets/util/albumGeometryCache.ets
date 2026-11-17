@@ -1,4 +1,4 @@
-import { AlbumCell, packAlbumRows } from './packAlbumRows';
+import { AlbumCell, packAlbumRows, packAndroidAlbumRows } from './packAlbumRows';
 
 // Pure vp geometry, shared across physical row owners. Never retains messages,
 // paths, bitmaps, selection or playback state. Consumers must not mutate cells.
@@ -9,18 +9,18 @@ export class AlbumGeometryCache {
   private entries: Map<string, AlbumCell[][]> = new Map<string, AlbumCell[][]>();
   private cells: number = 0;
 
-  prepare(ratios: number[], width: number): AlbumCell[][] {
+  prepare(ratios: number[], width: number, android: boolean = false): AlbumCell[][] {
     if (ratios.length === 0 || ratios.length > 32 || !Number.isFinite(width) ||
       !ratios.every((ratio: number): boolean => Number.isFinite(ratio))) {
       return packAlbumRows(ratios, width);
     }
-    const key = `${width}:${ratios.join(',')}`;
+    const key = `${android}:${width}:${ratios.join(',')}`;
     const hit = this.entries.get(key);
     if (hit !== undefined) {
       this.entries.delete(key); this.entries.set(key, hit);
       return hit;
     }
-    const rows = packAlbumRows(ratios, width);
+    const rows = android ? packAndroidAlbumRows(ratios, width) : packAlbumRows(ratios, width);
     this.entries.set(key, rows); this.cells += ratios.length;
     while (this.entries.size > 64 || this.cells > 512) {
       const oldest = this.entries.keys().next().value as string;

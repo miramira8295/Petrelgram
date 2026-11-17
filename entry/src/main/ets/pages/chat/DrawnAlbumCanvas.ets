@@ -1,7 +1,7 @@
 import { DrawnStage, drawnStageMetrics } from '../../util/drawnStageMetrics';
 import { DrawContext, UIContext } from '@kit.ArkUI';
 import { drawing } from '@kit.ArkGraphics2D';
-import { DrawnBubbleTile } from './DrawnBubblePlan';
+import { DrawnBubbleTile, DrawnTileCorners } from './DrawnBubblePlan';
 import { DrawnImageSlot } from './DrawnMediaController';
 import { DrawnFrameBatch } from '../../util/drawnFrameBatch';
 import { OneShotFrameCallback } from '../../util/oneShotFrameCallback';
@@ -12,6 +12,7 @@ class DrawnAlbumCanvasState {
 }
 
 interface DrawnAlbumCanvasClip {
+  corners: DrawnTileCorners | undefined;
   x: number;
   y: number;
   width: number;
@@ -33,6 +34,7 @@ export class DrawnAlbumCanvas extends DrawModifier {
   // owner changes or the row recycles. Late bitmap arrivals must not tear down
   // the grid; cached albums can still enter the canvas path on their next bind.
   private nativeOnly: boolean = false;
+  private sendingOwner: string = '';
   private clips: DrawnAlbumCanvasClip[] = [];
   private batch: DrawnFrameBatch = new DrawnFrameBatch();
   private brush: drawing.Brush | null = null;
@@ -43,14 +45,26 @@ export class DrawnAlbumCanvas extends DrawModifier {
     this.invalidate();
   };
 
-  bind(ui: UIContext, tiles: DrawnBubbleTile[], slots: DrawnImageSlot[], density: number, enabled: boolean): void {
-    if (!enabled || tiles.length < 2 || tiles.length > 10 || slots.length !== tiles.length) { this.reset(); return; }
-    if (this.ui === ui && this.tiles === tiles && this.slots === slots && this.density === density) { return; }
+  bind(ui: UIContext, tiles: DrawnBubbleTile[], slots: DrawnImageSlot[], density: number, enabled: boolean, forceNative: boolean = false, ownerKey: string = ''): void {
+    if (forceNative || this.sendingOwner !== '') {
+      const owner = ownerKey || tiles.map((tile: DrawnBubbleTile): string => `${tile.cell.chatId}:${tile.cell.messageId}`).join('|');
+      if (forceNative) { this.sendingOwner = owner; }
+      else if (this.sendingOwner !== owner) { this.sendingOwner = ''; }
+      forceNative = forceNative || (owner !== '' && this.sendingOwner === owner);
+    }
+    if (!enabled || tiles.length < 2 || tiles.length > 10 || slots.length !== tiles.length) { this.reset(true); return; }
+    if (this.ui === ui && this.tiles === tiles && this.slots === slots && this.density === density) {
+      if (forceNative && !this.nativeOnly) {
+        this.nativeOnly = true;
+        if (this.state.ready) { this.state.ready = false; this.invalidate(); }
+      }
+      return;
+    }
     const traced = drawnStageMetrics.begin(DrawnStage.AlbumCanvasBind);
     try {
       for (const tile of tiles) {
         const cell = tile.cell;
-        if (cell.isVideo || cell.isLive || cell.uploading || cell.failed || tile.opaque === false) { this.reset(); return; }
+        if (cell.isVideo || cell.isLive || cell.uploading || cell.failed || tile.opaque === false) { this.reset(true); return; }
       }
       this.batch.cancel();
       let sameOwner = this.tiles !== null && this.tiles.length === tiles.length;
@@ -63,6 +77,7 @@ export class DrawnAlbumCanvas extends DrawModifier {
         }
       }
       if (!sameOwner) { this.nativeOnly = false; }
+      if (forceNative) { this.nativeOnly = true; this.state.ready = false; }
       if (this.brush === null) {
         this.brush = new drawing.Brush(); this.brush.setAntiAlias(true);
         this.brush.setColor({ alpha: 255, red: 215, green: 220, blue: 226 });
@@ -73,10 +88,18 @@ export class DrawnAlbumCanvas extends DrawModifier {
       for (let i = 0; i < tiles.length; i++) {
         const tile = tiles[i], old = this.clips[i];
         if (old !== undefined && old.x === tile.x * density && old.y === tile.y * density &&
-          old.width === tile.width && old.height === tile.height && old.density === density) { continue; }
-        const radius = Math.min(6, tile.width / 2, tile.height / 2) * density;
-        this.clips[i] = { x: tile.x * density, y: tile.y * density, width: tile.width, height: tile.height, density,
-          round: new drawing.RoundRect({ left: 0, top: 0, right: tile.width * density, bottom: tile.height * density }, radius, radius) };
+          old.width === tile.width && old.height === tile.height && old.density === density && old.corners === tile.corners) { continue; }
+        const radius = Math.min(4, tile.width / 2, tile.height / 2) * density;
+        const round = new drawing.RoundRect({ left: 0, top: 0, right: tile.width * density, bottom: tile.height * density }, radius, radius);
+        const corners = tile.corners;
+        if (corners !== undefined) {
+          round.setCorner(drawing.CornerPos.TOP_LEFT_POS, corners.topLeft * density, corners.topLeft * density);
+          round.setCorner(drawing.CornerPos.TOP_RIGHT_POS, corners.topRight * density, corners.topRight * density);
+          round.setCorner(drawing.CornerPos.BOTTOM_LEFT_POS, corners.bottomLeft * density, corners.bottomLeft * density);
+          round.setCorner(drawing.CornerPos.BOTTOM_RIGHT_POS, corners.bottomRight * density, corners.bottomRight * density);
+        }
+        this.clips[i] = { corners, x: tile.x * density, y: tile.y * density, width: tile.width, height: tile.height, density,
+          round };
       }
       this.clips.length = tiles.length;
       this.updateReady();
@@ -126,7 +149,8 @@ export class DrawnAlbumCanvas extends DrawModifier {
     } finally { drawnStageMetrics.end(traced); }
   }
 
-  reset(): void {
+  reset(preserveSendingOwner: boolean = false): void {
+    if (!preserveSendingOwner) { this.sendingOwner = ''; }
     this.nativeOnly = false;
     this.batch.cancel(); this.ui = null; this.tiles = null; this.slots = null;
     if (this.state.ready) { this.state.ready = false; this.invalidate(); }

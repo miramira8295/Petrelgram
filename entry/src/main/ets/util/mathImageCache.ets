@@ -1,114 +1,131 @@
 import { image } from '@kit.ImageKit';
-import {
-  LatexMathColorFormat, TeXParseResult, TeXResultCode, latexStringToImageWithError
-} from '@cangjie-tpc/formula_hybrid';
+import { LatexMathColorFormat, TeXParseResult, TeXResultCode, latexStringToImageWithError } from '@cangjie-tpc/formula_hybrid';
 import { KEY_APP_DARK } from './theme';
 import { logW } from './log';
 
-// LaTeX 公式 → 位图。进程级缓存。
-//
-// 【为什么要缓存】渲染一次要过一趟仓颉侧的 TeX 排版，结果是一张位图。消息行
-// 会反复 build（滚动、复用、旁路快照更新），每次都重排一遍公式既慢又白费。
-// 同一条公式 + 同一档字号颜色 = 同一张图，算一次就够。
-//
-// 【为什么按 表达式+字号+颜色 做键】颜色是**烘进位图**的（库的入参就是前景色），
-// 深浅色切换后旧图颜色不对；字号同理，超采样倍率变了图就得重出。
-//
-// 【失败要记下来】公式写错时 resultCode 非 0。不记的话每次 build 都会重新去
-// 排一遍同一条坏公式——记成"这条不行"，调用方退回显示 LaTeX 原文。
-
-export interface MathImage {
-  pixel: image.PixelMap;
-  // 位图的像素尺寸。ImageSpan 要显式宽高，按超采样倍率换算回显示尺寸。
-  width: number;
-  height: number;
+export interface MathImage { pixel: image.PixelMap; width: number; height: number; }
+export interface MathImageMetrics { width: number; height: number; }
+interface MathImageJob {
+  key: string;
+  expression: string;
+  size: number;
+  color: number;
+  listeners: Set<() => void>;
+  running: boolean;
+  epoch: number;
 }
-
-// 公式很少，几十条足够；超了按插入顺序淘汰最旧的。
 const MAX_ENTRIES: number = 64;
-
+const MAX_BYTES: number = 24 * 1024 * 1024;
+const MAX_PENDING: number = 256;
 const cache: Map<string, MathImage> = new Map<string, MathImage>();
+const metrics: Map<string, MathImageMetrics> = new Map<string, MathImageMetrics>();
 const failed: Set<string> = new Set<string>();
-const inFlight: Set<string> = new Set<string>();
+const jobs: Map<string, MathImageJob> = new Map<string, MathImageJob>();
+const queue: MathImageJob[] = [];
+let queueHead: number = 0;
+let running: number = 0;
+let cachedBytes: number = 0;
+let epoch: number = 0;
 
-// 公式的前景色（ARGB 数值）。**颜色是烘进位图的**，所以它必须进缓存键。
-//
-// 【为什么在这里读 AppStorage，而不是让组件传进来】RichMessageView 是
-// @ComponentV2，订阅不了 AppStorage；而气泡那一层现在根本没有深浅色这个信号，
-// 为一条偶尔出现的公式往气泡的入参和复用键里加一个字段不划算。深浅色切换时
-// EntryAbility 会 recomputeAppearance + bump 材质纪元，气泡本来就会整体重建，
-// 那时这里自然读到新值、按新键重排一张。
 export function mathForegroundColor(): number {
   return (AppStorage.get<boolean>(KEY_APP_DARK) ?? false) ? 0xFFFFFFFF : 0xFF0E1621;
 }
-
 export function mathKeyOf(expression: string, fontSize: number, colorArgb: number): string {
   return `${expression}|${fontSize}|${colorArgb}`;
 }
-
-export function mathImageFor(key: string): MathImage | undefined {
-  return cache.get(key);
+export function mathImageFor(key: string): MathImage | undefined { return cache.get(key); }
+export function mathMetricsFor(key: string): MathImageMetrics | undefined { return metrics.get(key); }
+export function mathImageFailed(key: string): boolean { return failed.has(key); }
+function rememberFailure(key: string): void {
+  failed.add(key);
+  if (failed.size > MAX_ENTRIES * 2) { failed.delete(failed.keys().next().value as string); }
 }
-
-export function mathImageFailed(key: string): boolean {
-  return failed.has(key);
-}
-
 function remember(key: string, entry: MathImage): void {
-  cache.delete(key);
-  cache.set(key, entry);
-  while (cache.size > MAX_ENTRIES) {
-    const oldest: string | undefined = cache.keys().next().value as string | undefined;
-    if (oldest === undefined) {
-      break;
+  metrics.delete(key); metrics.set(key, { width: entry.width, height: entry.height });
+  if (metrics.size > MAX_ENTRIES * 8) { metrics.delete(metrics.keys().next().value as string); }
+  const previous = cache.get(key);
+  if (previous !== undefined) { cachedBytes -= previous.width * previous.height * 4; }
+  cache.delete(key); cache.set(key, entry); cachedBytes += entry.width * entry.height * 4;
+  while (cache.size > MAX_ENTRIES || cachedBytes > MAX_BYTES) {
+    const oldest = cache.keys().next().value as string | undefined;
+    if (oldest === undefined) { break; }
+    const removed = cache.get(oldest)!;
+    cachedBytes -= removed.width * removed.height * 4; cache.delete(oldest);
+    // Active drawing layers may still hold the PixelMap. Do not explicitly
+    // release a shared pixel under them; dropping this cache reference is safe.
+  }
+}
+async function render(job: MathImageJob): Promise<void> {
+  let source: image.ImageSource | null = null;
+  try {
+    const result: TeXParseResult = await latexStringToImageWithError(job.expression, job.size,
+      job.color, 0x00000000, LatexMathColorFormat.COLOR_FORMAT_BGRA_8888);
+    if (result.resultCode !== TeXResultCode.Success) { throw new Error(`formula code=${result.resultCode}`); }
+    source = image.createImageSource(result.imageBytes);
+    const info = await source.getImageInfo();
+    if (!(info.size.width > 0 && info.size.height > 0) || info.size.width * info.size.height > MAX_BYTES / 4) {
+      throw new Error('formula image exceeds budget');
     }
-    cache.delete(oldest);
-  }
-}
-
-// 排一条公式。已经有结果、已经失败过、或正在排的，直接返回不重复发起。
-// onReady 只在**这一次真的产出新图**时回调，调用方据此触发重绘。
-export function ensureMathImage(expression: string, fontSize: number, colorArgb: number,
-  onReady: () => void): void {
-  const trimmed: string = expression.trim();
-  if (trimmed === '' || fontSize <= 0) {
-    return;
-  }
-  const key: string = mathKeyOf(trimmed, fontSize, colorArgb);
-  if (cache.has(key) || failed.has(key) || inFlight.has(key)) {
-    return;
-  }
-  inFlight.add(key);
-  // 背景透明：公式要落在气泡底色/壁纸上，不能自带一块白板。
-  latexStringToImageWithError(trimmed, fontSize, colorArgb, 0x00000000,
-    LatexMathColorFormat.COLOR_FORMAT_BGRA_8888)
-    .then((result: TeXParseResult): Promise<void> => {
-      if (result.resultCode !== TeXResultCode.Success) {
-        inFlight.delete(key);
-        failed.add(key);
-        logW(`[Math] parse failed code=${result.resultCode}`);
-        return Promise.resolve();
+    const pixel = await source.createPixelMap();
+    if (job.epoch === epoch) { remember(job.key, { pixel, width: info.size.width, height: info.size.height }); }
+  } catch (error) {
+    if (job.epoch === epoch) { rememberFailure(job.key); logW(`[Math] render failed: ${(error as Error).message}`); }
+  } finally {
+    source?.release();
+    if (job.epoch === epoch) {
+      running--; jobs.delete(job.key);
+      // Snapshot allows listeners to detach/rebind while delivery is in progress.
+      const listeners = Array.from(job.listeners);
+      for (const listener of listeners) {
+        if (!job.listeners.has(listener)) { continue; }
+        try { listener(); } catch (error) { logW(`[Math] listener failed: ${(error as Error).message}`); }
       }
-      const source: image.ImageSource = image.createImageSource(result.imageBytes);
-      return source.createPixelMap().then((pixel: image.PixelMap): Promise<void> => {
-        return pixel.getImageInfo().then((info: image.ImageInfo): void => {
-          inFlight.delete(key);
-          remember(key, {
-            pixel, width: info.size.width, height: info.size.height
-          });
-          onReady();
-        });
-      });
-    })
-    .catch((e: Error): void => {
-      inFlight.delete(key);
-      failed.add(key);
-      logW(`[Math] render failed: ${e.message}`);
-    });
+      job.listeners.clear();
+      pump();
+    }
+  }
+}
+function pump(): void {
+  while (running < 2 && queueHead < queue.length) {
+    const job = queue[queueHead++];
+    if (jobs.get(job.key) !== job) { continue; }
+    if (job.listeners.size === 0) { jobs.delete(job.key); continue; }
+    job.running = true; running++;
+    render(job);
+  }
+  // Amortized O(1) deque; never shift the remaining queue for every completion.
+  if (queueHead === queue.length) { queue.length = 0; queueHead = 0; }
+  else if (queueHead > 128) { queue.splice(0, queueHead); queueHead = 0; }
 }
 
+// One render per key, all active consumers notified. A recycled row can cancel
+// its listener without cancelling another row's request. Cache/queue are bounded.
+// Terminal failures retain the readable source formula, never a blank rectangle.
+export function ensureMathImage(expression: string, fontSize: number, colorArgb: number,
+  onReady: () => void): () => void {
+  const trimmed = expression.trim();
+  const key = mathKeyOf(trimmed, fontSize, colorArgb);
+  if (trimmed === '' || !(fontSize > 0) || !Number.isFinite(fontSize) || fontSize > 512 || trimmed.length > 8192 ||
+    cache.has(key) || failed.has(key)) { return (): void => {}; }
+  let job = jobs.get(key);
+  if (job === undefined) {
+    if (jobs.size >= MAX_PENDING) { rememberFailure(key); return (): void => {}; }
+    job = { key, expression: trimmed, size: fontSize, color: colorArgb, listeners: new Set<() => void>(), running: false, epoch };
+    jobs.set(key, job); queue.push(job);
+  }
+  job.listeners.add(onReady); pump();
+  const owned = job;
+  return (): void => {
+    owned.listeners.delete(onReady);
+    if (!owned.running && owned.listeners.size === 0 && jobs.get(key) === owned) { jobs.delete(key); }
+    if (queue.length > MAX_PENDING * 2) {
+      const active = queue.slice(queueHead).filter((item: MathImageJob): boolean => jobs.get(item.key) === item);
+      queue.length = 0; queueHead = 0;
+      for (const item of active) { queue.push(item); }
+    }
+  };
+}
 export function resetMathImageCacheForTest(): void {
-  cache.clear();
-  failed.clear();
-  inFlight.clear();
+  epoch++; cache.clear(); metrics.clear(); failed.clear(); jobs.clear(); queue.length = 0;
+  queueHead = 0; running = 0; cachedBytes = 0;
 }

@@ -22,7 +22,6 @@ import { linkTextHidesUrl } from '../../util/messageLinkAction';
 import { MessageBubbleContext } from './MessageBubbleShell';
 import { DrawnRichLink, DrawnRichSourceCache, drawnRichSegmentSource } from '../../util/drawnRichTextPolicy';
 import { textMeasureEnvironment } from '../../util/textMeasureCache';
-import { drawnTextUsesRtlLayout } from './DrawnPlainTextLayout';
 import { DrawnRichTextLayout, DrawnRichTextLayouts } from './DrawnRichTextLayout';
 import { DrawnRichTextView } from './DrawnRichTextView';
 import { logW } from '../../util/log';
@@ -72,6 +71,8 @@ export struct MessageBubbleText {
   @Local revealedSpoilerKeys: ReadonlyArray<string> = EMPTY_TEXT_INTERACTION_KEYS;
 
   @Local expandedQuoteKeys: ReadonlyArray<string> = EMPTY_TEXT_INTERACTION_KEYS;
+  @Local private drawnSpoilersRevealed: boolean = false;
+  @Local private drawnExpandedBlocks: ReadonlyArray<number> | undefined = undefined;
   private textRowId: number = 0;
   private previousText: string = '';
   private drawnSource: DrawnRichSourceCache = new DrawnRichSourceCache();
@@ -83,7 +84,6 @@ export struct MessageBubbleText {
     if (this.env.drawnEnabled === false || this.env.drawnRich === false || (this.mode !== 'body' && this.mode !== 'caption') || this.env.bubbleMaterialOn ||
       this.msg.translatedText !== '' || this.context.translationStatus !== null) { return null; }
     const textEnvironment: string = `${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
-    if (drawnTextUsesRtlLayout(textEnvironment)) { return null; }
     try {
       const source = this.drawnSource.prepare(this.text, this.entities);
       if (source === null) { return null; }
@@ -91,7 +91,7 @@ export struct MessageBubbleText {
       // is O(1), and leaving busy state reuses the cached paragraph/geometry.
       if (this.drawnLayouts === null) { this.drawnLayouts = new DrawnRichTextLayouts(); }
       return this.drawnLayouts.prepare(this.getUIContext(), {
-        source, maxWidthVp: this.mode === 'caption' ? this.captionMaxW() : this.maxWidth,
+        source, spoilersRevealed: this.drawnSpoilersRevealed, expandedBlocks: this.drawnExpandedBlocks, maxWidthVp: this.mode === 'caption' ? this.captionMaxW() : this.maxWidth,
         minWidthVp: this.measuredTimeLayerWidth(),
         fontSize: this.env.msgTextSize, reserve: this.timeReserveInText() ? this.timeReserve() : '',
         foreground: bubbleTextFor(this.msg.isOutgoing), accent: this.accent(),
@@ -108,6 +108,17 @@ export struct MessageBubbleText {
 
   private tapDrawnLink(link: DrawnRichLink): void {
     if (this.context.gestureClaimed) { return; }
+    if (link.action === 'spoiler') { this.drawnSpoilersRevealed = true; return; }
+    if (link.action === 'copy') { this.actions.onCopyCode(link.label); return; }
+    if (link.action === 'quote' && link.blockOffset !== undefined) {
+      const next: number[] = [];
+      let found: boolean = false;
+      for (const offset of this.drawnExpandedBlocks ?? []) {
+        if (offset === link.blockOffset) { found = true; } else { next.push(offset); }
+      }
+      if (!found) { next.push(link.blockOffset); }
+      this.drawnExpandedBlocks = next; return;
+    }
     this.actions.onLinkTap(link.url, link.hidesUrl);
   }
 
@@ -780,6 +791,7 @@ export struct MessageBubbleText {
     // 展示快照合并了消息与文本输入；监听根对象，再按消息身份/正文判断。
     // 同一行的发送态/下载态更新不能收起用户已经展开的引用。
     if (this.textRowId !== this.msg.rowId || this.previousText !== this.text) {
+      this.drawnExpandedBlocks = undefined; this.drawnSpoilersRevealed = false;
       if (this.revealedSpoilerKeys.length > 0) { this.revealedSpoilerKeys = EMPTY_TEXT_INTERACTION_KEYS; }
       if (this.expandedQuoteKeys.length > 0) { this.expandedQuoteKeys = EMPTY_TEXT_INTERACTION_KEYS; }
       this.rememberTextSource();

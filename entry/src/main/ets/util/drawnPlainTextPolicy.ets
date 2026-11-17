@@ -123,10 +123,10 @@ export class DrawnPlainLayoutCache<K, T> {
   }
 }
 
-// Chrome is independently bounded and keeps unsupported direction/control cases
-// on the original renderer. Empty reply labels remain legal (loading/deleted target).
+// Chrome is independently bounded; system paragraphs own BiDi and control
+// characters. Empty reply labels remain legal (loading/deleted target).
 export function drawnChromeTextSupported(content: string): boolean {
-  return content.length <= 4096 && !/[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff\u202a-\u202e\u2066-\u2069\t]/.test(content);
+  return content.length <= 4096;
 }
 
 // ClickEvent uses vp; drawing and the cached quote rectangle use physical px.

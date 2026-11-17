@@ -35,8 +35,9 @@ export class DrawnPreparedAlbum {
   }
   private matchesStyle(style: DrawnBubbleStyle): boolean {
     const old = this.style;
-    return old.radius === style.radius &&
-      old.fontSize === style.fontSize && old.environment === style.environment &&
+    return (old.translationStatus ?? null) === (style.translationStatus ?? null) &&
+      (old.replaceTranslation === true) === (style.replaceTranslation === true) && (old.spoilersRevealed === true) === (style.spoilersRevealed === true) && old.expandedBlocks === style.expandedBlocks && old.radius === style.radius &&
+      old.mathRevision === style.mathRevision && old.fontSize === style.fontSize && old.environment === style.environment &&
       old.textEnvironment === style.textEnvironment && old.role === style.role && old.views === style.views;
   }
   height(): number {

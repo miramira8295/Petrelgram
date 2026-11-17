@@ -1,3 +1,4 @@
+import { DocumentMediaSession, DocumentMediaViewer } from '../../util/documentMediaViewer';
 import { showToast } from '../../util/toast';
 import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { common } from '@kit.AbilityKit';
@@ -38,12 +39,14 @@ export struct DownloadPreviewPage {
   @Local private videoLandscape: boolean = false;
   @Local private topSafe: number = 0;
   private items: DownloadCenterItem[] = [];
+  private documentViewer: DocumentMediaViewer | null = null;
   private navStack: NavPathStack | undefined = undefined;
   private readonly chatDestToken: number = allocChatDestToken();
   private inChatStack: boolean = false;
   private willShowSeen: boolean = false;
 
   aboutToDisappear(): void {
+    this.documentViewer?.dispose();
     markChatDestHidden(this.chatDestToken, true);
   }
 
@@ -63,6 +66,25 @@ export struct DownloadPreviewPage {
 
   private applyParams(param: Object | undefined): void {
     const p = param as Record<string, Object> | undefined;
+    const session = p?.['documentMedia'] as DocumentMediaSession | undefined;
+    if (session !== undefined) {
+      const start = (p?.['startIndex'] as number | undefined) ?? 0;
+      if (start < 0 || start >= session.media.length) { this.close(); return; }
+      this.documentViewer?.dispose();
+      this.documentViewer = new DocumentMediaViewer(session, (): void => {
+        if (this.documentViewer === null) { return; }
+        this.items = this.documentViewer.items;
+        this.messages = this.documentViewer.entries.slice();
+        this.groups = collapseAlbums(this.messages);
+      });
+      this.items = this.documentViewer.items;
+      this.messages = this.documentViewer.entries.slice(); this.groups = collapseAlbums(this.messages);
+      initVideoPosterStore(this.ctx().cacheDir);
+      this.topSafe = AppStorage.get<number>('topSafeHeight') ?? 0;
+      this.initIdx = start; this.viewerMsgId = start + 1;
+      this.documentViewer.activate(start);
+      return;
+    }
     const items: DownloadCenterItem[] = p !== undefined ? ((p['items'] as DownloadCenterItem[] | undefined) ?? []) : [];
     const start: number = p !== undefined ? ((p['startIndex'] as number | undefined) ?? 0) : 0;
     if (items.length === 0 || start < 0 || start >= items.length) {
@@ -70,7 +92,7 @@ export struct DownloadPreviewPage {
       this.close();
       return;
     }
-    const base: MessageEntry = buildMessageEntry(viewerBaseMessage(), getUserStore());
+    const base: MessageEntry = buildMessageEntry(viewerBaseMessage(), getUserStore(), false);
     const entries: MessageEntry[] = items.map((it: DownloadCenterItem, i: number): MessageEntry =>
       viewerEntryFor(base, it, viewerMessageIdAt(i)));
     initVideoPosterStore(this.ctx().cacheDir);
@@ -129,7 +151,8 @@ export struct DownloadPreviewPage {
           MediaViewerOverlay({
             topSafe: this.topSafe,
             viewerMsgId: this.viewerMsgId,
-            onViewerMsgIdChange: (msgId: number): void => { this.viewerMsgId = msgId; },
+            onViewerMsgIdChange: (msgId: number): void => { this.viewerMsgId = msgId; this.documentViewer?.activate(msgId - 1); },
+            onRequestPhoto: (id: number, retry: boolean): void => { this.documentViewer?.activate(id - 1, retry); },
             chromeVisible: this.chromeVisible,
             onChromeVisibleChange: (visible: boolean): void => { this.chromeVisible = visible; },
             videoLandscape: this.videoLandscape,

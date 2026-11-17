@@ -1,3 +1,6 @@
+import { DrawnWebPreviewSource } from './DrawnWebPreviewSource';
+import { TranslationStatus } from '../../util/translationChannel';
+import { DrawnTranslatedSource } from './DrawnTranslatedSource';
 import { DrawnRouteReason, drawnSourceRouteReason } from '../../util/drawnRouteMetrics';
 import { DrawnRowLayoutEngine } from './DrawnLayoutWarmCache';
 import { DrawnBubbleOutlineCache, DrawnRoundRectCache } from './DrawnBubbleGeometry';
@@ -12,7 +15,6 @@ import { placeDrawnFooter } from '../../util/drawnFooterPlacement';
 import { BubbleCornerCache } from '../../util/messageBubblePresentation';
 import { cornerPx, senderLeadInset } from '../../util/bubbleCornerInset';
 import { mediaThumbWidth, inlineMaxWidth, BUBBLE_AVATAR_GUTTER_VP } from '../../util/mediaBox';
-import { DrawnRichSourceCache } from '../../util/drawnRichTextPolicy';
 import { DrawnRichTextLayout, DrawnRichTextLayouts } from './DrawnRichTextLayout';
 import { DrawnSenderHeaderCache } from './DrawnSenderHeader';
 import { DrawnReplyQuoteCache } from './DrawnReplyQuote';
@@ -46,6 +48,11 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
   private cachedGroup: AlbumGroup | null = null;
   private cachedSelection: number[] | null = null;
   private cachedViews: string = '';
+  private cachedMathRevision: number | undefined = undefined;
+  private cachedTranslation: TranslationStatus | null = null;
+  private cachedReplace: boolean = false;
+  private cachedSpoilers: boolean | undefined = undefined;
+  private cachedExpanded: ReadonlyArray<number> | undefined = undefined;
   private cachedKey: string = '';
   private cachedGrid: DrawnAlbumGridPlan | null = null;
   private cachedUi: UIContext | null = null;
@@ -59,7 +66,8 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
   private lastLines: WeakMap<DrawnRichTextLayout, MediaCaptionLastLine> = new WeakMap();
 
   private corners: BubbleCornerCache = new BubbleCornerCache();
-  private sources: DrawnRichSourceCache = new DrawnRichSourceCache();
+  private previews: DrawnWebPreviewSource = new DrawnWebPreviewSource();
+  private sources: DrawnTranslatedSource = new DrawnTranslatedSource();
   private captions: DrawnRichTextLayouts = new DrawnRichTextLayouts();
   private headers: DrawnSenderHeaderCache = new DrawnSenderHeaderCache();
   private quotes: DrawnReplyQuoteCache = new DrawnReplyQuoteCache();
@@ -74,8 +82,12 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
   private placeTiles(grid: DrawnAlbumGridPlan, x: number, y: number): DrawnBubbleTile[] {
     if (grid === this.placedGrid && x === this.placedX && y === this.placedY) { return this.placedTiles; }
     const tiles: DrawnBubbleTile[] = [];
-    for (const t of grid.tiles) {
-      tiles.push({ cell: t.cell, x: x + t.x, y: y + t.y, width: t.width, height: t.height, opaque: !this.single,
+    for (let i = 0; i < grid.tiles.length; i++) {
+      const t = grid.tiles[i], old = this.placedTiles[i];
+      if (this.placedGrid?.tiles[i] === t && x === this.placedX && y === this.placedY && old !== undefined) {
+        tiles.push(old); continue;
+      }
+      tiles.push({ cell: t.cell, corners: t.corners, edgeMask: t.edgeMask, x: x + t.x, y: y + t.y, width: t.width, height: t.height, opaque: !this.single,
         key: `${t.key}:${x}:${y}:${t.cell.failed}:${t.cell.thumbFileId}` });
     }
     this.placedGrid = grid; this.placedX = x; this.placedY = y; this.placedTiles = tiles;
@@ -93,23 +105,25 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
       `${data.chatId}:${data.selectionActive}:${playing ? data.playSlotKey : ''}:${playing && data.autoplayMuted}:` +
       `${playing ? data.playSlotStartMs : 0}:${style.radius}:${style.fontSize}:${style.environment}:${style.textEnvironment}:${style.role}`;
     if (this.cached !== null && this.cachedUi === ui && this.cachedGroup === group && this.cachedSelection === data.selectedMemberIds &&
-      this.cachedKey === key && this.cachedViews === style.views) { return this.cached; }
+      this.cachedTranslation === (style.translationStatus ?? null) && this.cachedReplace === (style.replaceTranslation === true) && this.cachedKey === key && this.cachedViews === style.views && this.cachedMathRevision === style.mathRevision && this.cachedExpanded === style.expandedBlocks && (this.cachedSpoilers === true) === (style.spoilersRevealed === true)) { return this.cached; }
     const avatarSpace = data.isGroup && !m.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0;
     const maxWidth = this.single ? inlineMaxWidth(data.contentWidth, avatarSpace)
       : mediaThumbWidth(data.contentWidth, avatarSpace);
     let gridWidth = maxWidth;
     if (!(gridWidth > 20) || !(d > 0)) { this.failureReason = DrawnRouteReason.InvalidGeometry; return null; }
     const captionText = this.single ? m.text : group.caption;
-    const source = captionText !== '' ? this.sources.prepare(captionText, this.single ? m.textEntities : group.captionEntities) : null;
+    const translatedSource = this.sources.prepare(captionText, this.single ? m.textEntities : group.captionEntities, m, style.translationStatus ?? null, style.replaceTranslation === true);
+    if (captionText !== '' && translatedSource === null) { this.failureReason = drawnSourceRouteReason(this.sources.reason); return null; }
+    const source = this.previews.prepare(translatedSource, m, style.environment);
     if (captionText !== '' && source === null) { this.failureReason = drawnSourceRouteReason(this.sources.reason); return null; }
     const chrome = this.chrome.prepare(ui, m, data.isChannel, gridWidth - 16, style.environment);
     const shownName = data.isGroup && !m.isOutgoing && group.showSenderName && m.senderName !== '';
-    const pure = captionText === '' && m.text === '' && !shownName && m.replyToMessageId === 0 && m.forwardFrom === '' &&
+    const pure = source === null && captionText === '' && m.text === '' && !shownName && m.replyToMessageId === 0 && m.forwardFrom === '' &&
       !chrome.hasReactions && chrome.comments === null;
     const tail = group.showAvatar && !pure;
     const radius = pure ? 15 : style.radius;
     const c = this.corners.prepare(radius, m.isOutgoing, pure || group.showSenderName, pure || group.showAvatar);
-    const secondary = this.colors.resolve(captionText === '' && !chrome.hasReactions ? Color.White : COLOR_TEXT_SECONDARY, style.environment);
+    const secondary = this.colors.resolve(source === null && !chrome.hasReactions ? Color.White : COLOR_TEXT_SECONDARY, style.environment);
     const accentId = m.senderId > 0 ? getUserStore().accentColorId(m.senderId) : -1;
     const senderColor: ResourceColor = (accentId >= 0 ? getAccentColorStore().nameColorHex(accentId, false) : '') ||
       AVATAR_PALETTE[Math.abs(m.senderId) % AVATAR_PALETTE.length];
@@ -120,8 +134,8 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
       senderColor, this.tagText, this.tagFill, style.textEnvironment, style.environment) : null;
     const quote = m.replyToMessageId !== 0 ? this.quotes.prepare(ui, m.replySenderName, m.replyText, maxWidth * d,
       COLOR_PRIMARY, this.quoteText, this.quoteFill, style.textEnvironment, style.environment, m.replyThumbPath !== '' || m.replyDiceLayers.length > 0) : null;
-    const caption = source !== null ? this.captions.prepare(ui, { source, maxWidthVp: maxWidth - 16, minWidthVp: 0,
-      fontSize: style.fontSize, reserve: '', foreground: bubbleTextFor(m.isOutgoing),
+    const caption = source !== null ? this.captions.prepare(ui, { source, mathRevision: style.mathRevision, maxWidthVp: maxWidth - 16, minWidthVp: 0,
+      spoilersRevealed: style.spoilersRevealed, expandedBlocks: style.expandedBlocks, fontSize: style.fontSize, reserve: '', foreground: bubbleTextFor(m.isOutgoing),
       accent: COLOR_PRIMARY, environment: style.environment }) : null;
     const footer = this.footer.prepare(ui, formatClockTime(m.date), m.editDate > 0 ? str('mb_edited') : '',
       style.views, m.isOutgoing, (maxWidth - 16) * d, secondary, style.environment);
@@ -146,7 +160,7 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
       this.cachedGroup = group; this.cachedSelection = data.selectedMemberIds;
       footer.line.recolor(old.secondary);
       if (old.footerSlot !== null) { old.footerSlot.line = footer.line; }
-      this.cachedViews = style.views;
+      this.cachedTranslation = style.translationStatus ?? null; this.cachedReplace = style.replaceTranslation === true; this.cachedViews = style.views; this.cachedMathRevision = style.mathRevision; this.cachedExpanded = style.expandedBlocks; this.cachedSpoilers = style.spoilersRevealed;
       return old;
     }
     const p = new DrawnBubblePlan();
@@ -237,12 +251,13 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
     if (avatarSpace > 0 && group.showAvatar) { p.height = Math.max(38, p.height); }
     p.outline = this.outlines.prepare(shellWidth, p.height, m.isOutgoing, tail,
       cornerPx(c.topLeft), cornerPx(c.topRight), cornerPx(c.bottomRight), cornerPx(c.bottomLeft), d, 7);
+    p.shellWidth = shellWidth; p.shellHeight = p.height; p.shellCommands = this.outlines.commands; p.shellRadii = c;
     if (avatarSpace > 0 && group.showAvatar) {
       p.avatar = { x: 0, y: p.height - 38, width: 38, height: 38 };
       p.initials = this.initials.prepare(m.senderInitials, 38 * d, this.units.fp2px(38 * .4), this.colors.resolve(Color.White, style.environment),
         style.textEnvironment, true);
     }
-    this.cachedViews = style.views;
+    this.cachedTranslation = style.translationStatus ?? null; this.cachedReplace = style.replaceTranslation === true; this.cachedViews = style.views; this.cachedMathRevision = style.mathRevision; this.cachedExpanded = style.expandedBlocks; this.cachedSpoilers = style.spoilersRevealed;
     this.cached = p; this.cachedGroup = group; this.cachedSelection = data.selectedMemberIds; this.cachedKey = key;
     this.cachedGrid = grid; this.cachedUi = ui; this.cachedPure = pure;
     return p;

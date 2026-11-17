@@ -236,12 +236,13 @@ export struct MusicCenterPage {
     // 已经是同一首就不动（避免每次通道回调都重取消息）。
     const current: MusicTrack | null = this.player.current();
     if (current !== null && current.chatId === playing.chatId
-      && current.messageId === playing.messageId) {
+      && current.messageId === playing.messageId && current.sourceMessageId === playing.sourceMessageId) {
       return;
     }
+    if (playing.documentTrack !== undefined) { this.player.adopt(playing.documentTrack, playing.documentPlaylist); return; }
     const key: string = musicTrackKey(playing.chatId, playing.messageId);
     resolveMusicTracks([key]).then((tracks: MusicTrack[]): void => {
-      if (tracks.length > 0) {
+      if (tracks.length > 0 && currentNowPlaying() === playing) {
         this.player.adopt(tracks[0]);
       }
     });
@@ -485,7 +486,7 @@ export struct MusicCenterPage {
     if (track === null || track.chatId === 0) {
       return;
     }
-    const params: Record<string, Object> = { 'chatId': track.chatId, 'jumpTo': track.messageId };
+    const params: Record<string, Object> = { 'chatId': track.chatId, 'jumpTo': track.sourceMessageId ?? track.messageId };
     navigateToChat(params, 'navbar').catch(logChatNavFailure);
   }
 
@@ -648,7 +649,7 @@ export struct MusicCenterPage {
         onNext: (): void => { this.player.next(); },
         onSeek: (fraction: number): void => { this.player.seekFraction(fraction); },
         onOpenPlaylist: (): void => { this.sheet = SHEET_PLAYLIST; },
-        onOpenAddTo: (): void => { this.sheet = SHEET_ADD; },
+        onOpenAddTo: (): void => { if (this.current?.sourceMessageId === undefined) { this.sheet = SHEET_ADD; } },
         onOpenCast: (): void => {
           this.refreshDevices();
           this.sheet = SHEET_CAST;

@@ -116,6 +116,7 @@ export struct MediaViewerOverlay {
   // （onMediaTap，本组件尚未构造）和**关闭**（closeViewer，本组件正被 if 摘掉）
   // 两处，查看器开着的整段时间里页面一次都不往下推新值。
   @Param @Once viewerMsgId: number = 0;
+  @Event onRequestPhoto: (id: number, retry: boolean) => void = (): void => {};
   @Event onViewerMsgIdChange: (msgId: number) => void = (): void => {};
   @Param @Once chromeVisible: boolean = VIEWER_CHROME_ON_OPEN;
   @Event onChromeVisibleChange: (visible: boolean) => void = (): void => {};
@@ -344,7 +345,7 @@ export struct MediaViewerOverlay {
     this.startLoadingHold(msgId);
     if (this.store !== null) {
       this.store.requestFullPhoto(msgId, forceRetry, MEDIA_VIEWING_PRIORITY);
-    }
+    } else { this.onRequestPhoto(msgId, forceRetry); }
   }
 
   private liveFileProgress(fileId: number): number {

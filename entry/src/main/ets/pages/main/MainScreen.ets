@@ -753,7 +753,7 @@ export struct MainScreen {
     if (np === null) {
       return;
     }
-    getVoicePlayback().toggleMusic(np.messageId, np.path, np.durationSec);
+    getVoicePlayback().toggleMusicById(np.messageId);
   }
 
   // 终止：整条收掉，底栏掉回四格。
@@ -773,7 +773,7 @@ export struct MainScreen {
     if (np === null || np.chatId === 0) {
       return;
     }
-    const params: Record<string, Object> = { 'chatId': np.chatId, 'jumpTo': np.messageId };
+    const params: Record<string, Object> = { 'chatId': np.chatId, 'jumpTo': np.sourceMessageId ?? np.messageId };
     navigateToChat(params, 'navbar').catch(logChatNavFailure);
   }
 

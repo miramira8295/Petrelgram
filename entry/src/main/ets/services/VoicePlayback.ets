@@ -1,3 +1,8 @@
+import { MusicTrack } from '../util/musicTrackModel';
+import { publishNowPlaying } from '../util/nowPlayingChannel';
+import { cachedMusicCover } from './MusicCoverCache';
+import { TdClient } from '../tdkit/TdClient';
+import { TdObject, TdRequest } from '../tdkit/TdTypes';
 import { media } from '@kit.MediaKit';
 import { VideoStreamSession } from './VideoStreamSession';
 import { VideoRangeServer } from './VideoRangeServer';
@@ -84,6 +89,56 @@ class VoicePlayback {
   private rangeServer: VideoRangeServer | null = null;
   private generation: number = 0;
   private preferredSpeed: number = 1;
+  private documentPlaylist: MusicTrack[] = [];
+  private documentIndices: Map<number, number> = new Map<number, number>();
+  private documentClient: TdClient | null = null;
+  private documentDownloadSerial: number = 0;
+  private documentDownloading: boolean = false;
+  setDocumentPlaylist(tracks: MusicTrack[]): void {
+    const client = getTdClient();
+    if (this.documentPlaylist === tracks && this.documentClient === client) { return; }
+    this.documentDownloadSerial++; this.documentDownloading = false;
+    this.documentPlaylist = tracks.length <= 2048 ? tracks : [];
+    this.documentClient = client; this.documentIndices.clear();
+    for (let i: number = 0; i < this.documentPlaylist.length; i++) {
+      this.documentIndices.set(this.documentPlaylist[i].messageId, i);
+    }
+  }
+  private clearDocumentPlaylist(): void {
+    this.documentDownloadSerial++; this.documentDownloading = false;
+    this.documentPlaylist = []; this.documentIndices.clear(); this.documentClient = null;
+  }
+  private advanceDocumentPlaylist(messageId: number): void {
+    const client = this.documentClient;
+    if (client === null || client !== getTdClient()) { this.clearDocumentPlaylist(); return; }
+    const index = this.documentIndices.get(messageId);
+    if (index === undefined || index + 1 >= this.documentPlaylist.length) { return; }
+    const track = this.documentPlaylist[index + 1], playlist = this.documentPlaylist;
+    const source = track.localPath !== '' ? localAudioSource(track.localPath)
+      : streamAudioSource(track.fileId, track.fileSize, track.mimeType);
+    if (audioSourcePlayable(source)) { this.playDocumentTrack(track, source); return; }
+    // At most one pending whole-file fallback. A new playback/stop invalidates it.
+    if (this.documentDownloading) { return; }
+    this.documentDownloading = true;
+    const serial = ++this.documentDownloadSerial, token = this.generation;
+    const request: TdRequest = { '@type': 'downloadFile' };
+    request['file_id'] = track.fileId; request['priority'] = 24; request['synchronous'] = true;
+    client.send(request).then((file: TdObject): void => {
+      if (serial !== this.documentDownloadSerial || token !== this.generation || playlist !== this.documentPlaylist || client !== getTdClient() ||
+        this.state.playingId !== messageId || this.state.status !== 'completed') { return; }
+      const local = file['local'] as TdObject | undefined;
+      const path = local?.['is_downloading_completed'] === true ? (local['path'] as string | undefined) ?? '' : '';
+      if (path !== '') { this.playDocumentTrack(track, localAudioSource(path)); }
+    }).catch((): void => { /* Leave the last item stopped; a later explicit tap can retry. */ })
+      .finally((): void => { if (serial === this.documentDownloadSerial) { this.documentDownloading = false; } });
+  }
+  private playDocumentTrack(track: MusicTrack, source: AudioSource): void {
+    if (source.path !== '') { track.localPath = source.path; }
+    this.startDocumentMusic(track.fileId, source, track.durationSec);
+    publishNowPlaying({ chatId: track.chatId, messageId: track.messageId, sourceMessageId: track.sourceMessageId,
+      documentTrack: track, documentPlaylist: this.documentPlaylist, title: track.title, performer: track.artist,
+      coverPath: cachedMusicCover(track.coverFileId), path: source.path, durationSec: track.durationSec });
+  }
   private musicCompletionListener: MusicCompletionListener | null = null;
   private state: VoiceState = {
     playingId: 0, paused: false, positionMs: 0, durationMs: 0,
@@ -107,6 +162,26 @@ class VoicePlayback {
     // 用户自己动过手就不再算"被系统打断"：打断结束时不该覆盖他的选择。
     this.pausedByFocusLoss = false;
     this.toggleSource(messageId, localAudioSource(path), fallbackDurationSec, 'voice');
+  }
+
+  // Embedded voice blocks have no standalone Telegram message ID. Negative
+  // file IDs form a disjoint namespace; ordinary callers still reject them.
+  toggleDocumentVoice(fileId: number, path: string, durationSec: number): void {
+    if (!Number.isSafeInteger(fileId) || fileId <= 0) { return; }
+    this.pausedByFocusLoss = false;
+    this.toggleSource(-fileId, localAudioSource(path), durationSec, 'voice', true);
+  }
+
+  startDocumentMusic(fileId: number, source: AudioSource, durationSec: number): void {
+    if (!Number.isSafeInteger(fileId) || fileId <= 0 || !audioSourcePlayable(source)) { return; }
+    this.pausedByFocusLoss = false;
+    this.play(-fileId, source, Math.max(0, durationSec), 'music');
+  }
+
+  toggleDocumentMusic(fileId: number, source: AudioSource, durationSec: number): void {
+    if (!Number.isSafeInteger(fileId) || fileId <= 0) { return; }
+    this.pausedByFocusLoss = false;
+    this.toggleSource(-fileId, source, durationSec, 'music', true);
   }
 
   toggleMusic(messageId: number, path: string, fallbackDurationSec: number): void {
@@ -166,9 +241,9 @@ class VoicePlayback {
   }
 
   private toggleSource(
-    messageId: number, source: AudioSource, fallbackDurationSec: number, mode: string
+    messageId: number, source: AudioSource, fallbackDurationSec: number, mode: string, embedded: boolean = false
   ): void {
-    if (messageId <= 0 || !audioSourcePlayable(source)) {
+    if (messageId === 0 || (!embedded && messageId < 0) || !audioSourcePlayable(source)) {
       return;
     }
     if (this.toggleCurrent(messageId, mode)) {
@@ -315,6 +390,7 @@ class VoicePlayback {
   }
 
   private play(messageId: number, source: AudioSource, fallbackDurationSec: number, mode: string): void {
+    if (messageId > 0 || mode !== 'music') { this.clearDocumentPlaylist(); }
     const token: number = ++this.generation;
     this.releaseResources();
     this.setState({
@@ -380,12 +456,13 @@ class VoicePlayback {
               completedId: messageId, status: 'completed', mode,
               speed: mode === 'voice' ? this.preferredSpeed : 1, errorId: 0
             });
-            if (mode === 'music' && this.musicCompletionListener !== null) {
-              const completionListener: MusicCompletionListener = this.musicCompletionListener;
+            if (mode === 'music' && (messageId < 0 || this.musicCompletionListener !== null)) {
+              const completionListener = this.musicCompletionListener;
               setTimeout((): void => {
-                if (this.state.playingId === messageId && this.state.mode === 'music' &&
+                if (token === this.generation && this.state.playingId === messageId && this.state.mode === 'music' &&
                   this.state.status === 'completed') {
-                  completionListener(messageId);
+                  if (messageId < 0) { this.advanceDocumentPlaylist(messageId); }
+                  else { completionListener?.(messageId); }
                 }
               }, 180);
             }
@@ -467,6 +544,7 @@ class VoicePlayback {
   }
 
   stop(completedId: number = 0): void {
+    this.clearDocumentPlaylist();
     this.generation++;
     this.releaseResources();
     this.setState({

@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';import vm from 'node:vm';
+const imported=await import(process.env.TYPESCRIPT_MODULE||'typescript'),ts=imported.default||imported;
+let epoch=1,requests=[],current=true,opened=[],choice='login',prompts=[];
+let client={send:r=>new Promise((resolve,reject)=>requests.push({r,resolve,reject}))};
+const ctx=vm.createContext({getTdClient:()=>client,TD_SESSION_EPOCH:'epoch',AppStorage:{get:()=>epoch}});
+function load(file,names){const source=fs.readFileSync('entry/src/main/ets/'+file,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/\bexport /g,'');vm.runInContext(ts.transpileModule(source+names.map(n=>`\nglobalThis.${n}=${n}`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);}
+load('services/DocumentLoginUrl.ets',['DocumentLoginUrl']);load('util/drawnPageButton.ets',['drawnPageButtonAction']);
+assert.equal(ctx.drawnPageButtonAction({'@type':'inlineKeyboardButtonTypeLoginUrl',id:7,url:'https://x'}).buttonId,7);
+assert.equal(ctx.drawnPageButtonAction({'@type':'inlineButtonTypeUrlAuth',button_id:8,url:'https://x'}).kind,'login');
+const controller=new ctx.DocumentLoginUrl(),actions={current:()=>current,confirm:async p=>{prompts.push(p);return choice},open:(...a)=>opened.push(a)};
+const tick=()=>new Promise(resolve=>setImmediate(resolve));
+let job=controller.open(1,2,3,'https://fallback',actions);controller.open(1,2,3,'https://fallback',actions);assert.equal(requests.length,1);
+requests.at(-1).resolve({'@type':'loginUrlInfoRequestConfirmation',url:'https://site',domain:'site',request_write_access:true});await tick();
+assert.equal(requests.at(-1).r.allow_write_access,false);requests.at(-1).resolve({url:'https://signed'});await job;assert.deepEqual(opened.pop(),['https://signed',false]);
+choice='write';job=controller.open(1,2,3,'https://fallback',actions);requests.at(-1).resolve({'@type':'loginUrlInfoRequestConfirmation',url:'https://site',request_write_access:true});await tick();assert.equal(requests.at(-1).r.allow_write_access,true);requests.at(-1).resolve({url:'https://write'});await job;
+const before=requests.length;choice='open';job=controller.open(1,2,3,'https://fallback',actions);requests.at(-1).resolve({'@type':'loginUrlInfoRequestConfirmation',url:'https://site'});await job;assert.equal(requests.length,before+1);assert.deepEqual(opened.pop(),['https://site',true]);
+const count=opened.length;job=controller.open(1,2,3,'https://fallback',actions);controller.cancel();requests.at(-1).resolve({'@type':'loginUrlInfoOpen',url:'https://stale',skip_confirmation:true});await job;assert.equal(opened.length,count);
+job=controller.open(1,2,3,'https://fallback',actions);epoch+=2;requests.at(-1).resolve({'@type':'loginUrlInfoOpen',url:'https://old-account'});await job;assert.equal(opened.length,count);
+job=controller.open(1,2,3,'https://fallback',actions);requests.at(-1).reject(new Error('unsupported'));await job;assert.deepEqual(opened.pop(),['https://fallback',true]);
+job=controller.open(1,2,3,'https://fallback',actions);current=false;requests.at(-1).resolve({'@type':'loginUrlInfoOpen',url:'https://reused'});await job;assert.equal(opened.length,count);
+console.log('PASS: TD/Android login button mapping, single-flight, explicit write permission, unauthenticated open, errors, stale owner and session epoch.');
+current=true;let answer;const delayed={...actions,confirm:()=>new Promise(resolve=>answer=resolve)};
+job=controller.open(1,2,3,'https://fallback',delayed);requests.at(-1).resolve({'@type':'loginUrlInfoRequestConfirmation',domain:'site',request_write_access:true});await tick();
+const requestCount=requests.length;epoch++;answer('write');await job;assert.equal(requests.length,requestCount,'stale authorization dialog cannot grant access');
+ctx.getTdClient=()=>{throw new Error('switching')};await controller.open(1,2,3,'https://fallback',actions);
+assert.equal(requests.length,requestCount);
+console.log('PASS: account changes while confirming cannot authorize; unavailable client exits without opening a URL.');

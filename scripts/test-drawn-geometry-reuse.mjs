@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {ctx,load,root,ui,data,style,group,layoutCounters} from './test-drawn-text-row.mjs';
-for(const f of ['packAlbumRows','albumGeometryCache','albumCellRenderData'])load(root+'util/'+f+'.ets');
+for(const f of ['albumGeometryCache','albumCellRenderData'])load(root+'util/'+f+'.ets');
 for(const f of ['DrawnAlbumGridLayout','DrawnSingleMediaGeometry','DrawnMediaLayout'])
   load(root+'pages/chat/'+f+'.ets',f==='DrawnMediaLayout'?['DrawnMediaLayouts']:[]);
 vm.runInContext('globalThis.AlbumGeometryCache=AlbumGeometryCache; globalThis.DrawnBubbleOutlineCache=DrawnBubbleOutlineCache; globalThis.DrawnSourcePool=DrawnSourcePool;',ctx);
@@ -155,3 +155,14 @@ try {
   }
 } finally { ctx.ColorMetrics.resourceColor=originalResolve; }
 console.log('PASS: real media layout avoids 1000 repeated color resolutions; theme changes preserve old plans; 100 custom outgoing colors match cold layouts with bounded palette storage.');
+const playGroup=album();playGroup.photoIsVideo=[true,true,false,false,false,false];playGroup.videoFileIds=[101,102,0,0,0,0];
+const playEngine=new ctx.DrawnMediaLayouts(false);
+const playData={...data,playSlotKey:'10:0',autoplayMuted:true,playSlotStartMs:0};
+const firstPlay=playEngine.prepare(ui,playGroup,playData,style),playCounts=layoutCounters();
+const secondPlay=playEngine.prepare(ui,playGroup,{...playData,playSlotKey:'11:1'},style);
+assert.notEqual(secondPlay.tiles[0],firstPlay.tiles[0]);assert.notEqual(secondPlay.tiles[1],firstPlay.tiles[1]);
+for(let i=2;i<6;i++){assert.equal(secondPlay.tiles[i],firstPlay.tiles[i]);assert.equal(secondPlay.nativeTiles[i],firstPlay.nativeTiles[i]);}
+assert.equal(layoutCounters().bodyLayouts,playCounts.bodyLayouts);
+const mutedPlay=playEngine.prepare(ui,playGroup,{...playData,playSlotKey:'11:1',autoplayMuted:false},style);
+for(const i of [0,2,3,4,5])assert.equal(mutedPlay.tiles[i],secondPlay.tiles[i]);assert.notEqual(mutedPlay.tiles[1],secondPlay.tiles[1]);
+console.log('PASS: playback target changes retain four unaffected tiles; mute changes only one; body layout stays cached.');

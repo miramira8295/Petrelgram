@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {ctx,ui,data,style,group,layoutCounters} from './test-drawn-text-row.mjs';
+const message=group('body https://body.test');
+Object.assign(message.head,{linkUrl:'https://preview.test',linkSiteName:'site',linkTitle:'title',
+ linkDescription:'description https://unrelated.test',linkPhotoFileId:88,linkPhotoWidth:400,linkPhotoHeight:300,linkPhotoPath:'',linkPhotoFailed:false});
+const engine=new ctx.DrawnTextLayouts();
+const first=engine.prepare(ui,message,data,style);
+assert.ok(first);assert.ok(first.caption.previewImage);
+assert.ok(first.caption.hits.some(h=>h.link.action==='web-preview'));
+assert.ok(!first.caption.hits.some(h=>h.link.url==='https://unrelated.test'),'description links cannot hijack the card');
+const image=first.caption.previewImage;
+assert.ok(image.x>=0&&image.x+image.width<=first.caption.widthVp);
+assert.ok(image.y>=0&&image.y+image.height<=first.caption.heightVp);
+const downloaded={...message,head:{...message.head,linkPhotoPath:'/new.png',linkPhotoProgress:100}};
+const before=layoutCounters();
+assert.equal(engine.prepare(ui,downloaded,data,style),first,'image arrival changes only its local component');
+assert.deepEqual(layoutCounters(),before);
+const edited={...message,head:{...message.head,linkTitle:'changed title'}};
+const next=engine.prepare(ui,edited,data,style);assert.notEqual(next.caption,first.caption);
+assert.ok(next.caption.accessibilityText.includes('changed title'));
+const empty={...message,head:{...message.head,text:'',textEntities:[]}};
+assert.ok(ctx.drawnTextRowEligible(empty,data,false,false));assert.ok(engine.prepare(ui,empty,data,style));
+const invalid={...message,head:{...message.head,text:'x'.repeat(16385)}};
+assert.equal(engine.prepare(ui,invalid,data,style),null,'a preview must never conceal an unsupported original body');
+console.log('PASS: drawn preview title/description/image geometry, unified card actions, photo arrival keeps paragraph/row plan, edits and preview-only messages.');

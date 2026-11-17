@@ -27,9 +27,8 @@ const makeRow=()=>Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{in
 ctx.logW=()=>{};
 for(const [name,change]of [
  ['disabled',r=>r.env.drawnEnabled=false],['body-disabled',r=>r.env.drawnPlain=false],
- ['material',r=>r.env.bubbleMaterialOn=true],['a11y',r=>r.a11y.active=true],
- ['policy',r=>r.group.head.linkUrl='preview'],['translation',r=>r.translation={phase:'loading'}],
- ['chrome-sender',r=>{r.data.isGroup=true;r.group.head.senderName='name\trole';}],['layout-null',r=>r.textLayouts.prepare=()=>null],
+ ['policy',r=>r.group.head.contentType='unsupported'],
+ ['chrome-sender',r=>{r.data.isGroup=true;r.group.head.senderName='x'.repeat(4097);}],['layout-null',r=>r.textLayouts.prepare=()=>null],
  ['exception',r=>r.textLayouts.prepare=()=>{throw Error('injected');}]]){
  const row=makeRow();change(row);metrics.reset();assert.equal(row.plan,null,name);
  for(let i=0;i<1000;i++)assert.equal(row.plan,null);
@@ -38,11 +37,11 @@ for(const [name,change]of [
 const row=makeRow();metrics.reset();assert.ok(row.plan);assert.match(metrics.summary(),/drawn=1\b/);
 // Exercise RTL without relying on the host's process language.
 vm.runInContext('globalThis.savedRtl=drawnTextUsesRtlLayout; drawnTextUsesRtlLayout=()=>true;',ctx);
-metrics.reset();assert.equal(row.plan,null);assert.match(metrics.summary(),/rtl=1\b/);
+metrics.reset();assert.ok(row.plan);assert.match(metrics.summary(),/drawn=1\b/);
 vm.runInContext('drawnTextUsesRtlLayout=savedRtl;',ctx);
 console.log('PASS: fixed 36 counters, 10000 repeated gates deduplicated, identity/recycle/clear epochs, compiled disabled/material/a11y/policy/body/translation/rtl/chrome/layout-null/exception/success reasons.');
 
-for(const f of ['packAlbumRows','albumGeometryCache','albumCellRenderData'])load(root+'util/'+f+'.ets');
+for(const f of ['albumGeometryCache','albumCellRenderData'])load(root+'util/'+f+'.ets');
 for(const f of ['DrawnAlbumGridLayout','DrawnSingleMediaGeometry','DrawnMediaLayout'])load(root+'pages/chat/'+f+'.ets',f==='DrawnMediaLayout'?['DrawnMediaLayouts']:[]);
 function message(kind){const g=group('caption');if(kind!=='text'){
  Object.assign(g.head,{contentType:'photo',photoWidth:160,photoHeight:120,photoFileId:1,photoPath:'',photoMini:'',photoProgress:0,photoFailed:false});
@@ -96,7 +95,7 @@ for(const [field,reason,show] of [
  ['replySenderName',R.ChromeReplySender,r=>{r.group={...r.group,head:{...r.group.head,replyToMessageId:8}};}],
  ['replyText',R.ChromeReplyText,r=>{r.group={...r.group,head:{...r.group.head,replyToMessageId:8}};}]
 ]) {
- const r=makeRow();r.group.head[field]='hidden\tmetadata';
+ const r=makeRow();r.group.head[field]='x'.repeat(4097);
  let prepared=0;r.textLayouts={failureReason:R.Drawn,prepare:()=>{prepared++;return {};}};
  assert.ok(r.plan,field+' hidden');show(r);metrics.reset();
  assert.equal(r.plan,null,field+' shown');assert.equal(r.routeTracker.reason,reason);assert.equal(prepared,1);
@@ -108,17 +107,14 @@ for(const hide of [r=>r.group.showSenderName=false,r=>r.group.head.isOutgoing=tr
  const r=makeRow();r.data.isGroup=true;r.group.head.senderName='name\t';r.group.head.senderTag='role\t';hide(r);
  assert.ok(r.plan,'hidden header branch');
 }
-const forward=makeRow();forward.group.head.forwardFrom='source\t';assert.equal(forward.plan,null);
+const forward=makeRow();forward.group.head.forwardFrom='x'.repeat(4097);assert.equal(forward.plan,null);
 assert.equal(forward.routeTracker.reason,R.ChromeForward);
 
 // Real parser -> source negative cache -> layout result -> compiled row route.
 // One parse at most per rejected source, no parse on 1000 diagnostic reads.
 for(const kind of ['text','single','album']) {
  for(const [body,entities,reason,label] of [
-  ['a\tb',[],R.TextTab,'body-tab'],['a\ufeffb',[],R.TextBom,'body-bom'],
-  ['a\u202eb',[],R.TextDirection,'body-direction'],
-  ['abc',[{offset:0,length:3,type:{'@type':'textEntityTypeCode'}}],R.InlineCode,'body-inline-code'],
-  ['abc',[{offset:0,length:3,type:{'@type':'textEntityTypeSpoiler'}}],R.Spoiler,'body-spoiler']
+  ['abc',Array.from({length:1025},()=>({offset:0,length:1,type:{'@type':'textEntityTypeBold'}})),R.EntityLimit,'body-entity-limit']
  ]) {
   const r=makeRow();r.kind=kind;r.group=message(kind);r.data.lightweightPlainText=false;
   r.group.head.text=body;r.group.head.textEntities=entities;r.group.caption=body;r.group.captionEntities=entities;
@@ -160,3 +156,45 @@ assert.equal(failureRow.plan,null);assert.equal(failureRow.routeTracker.reason,R
 for(let i=0;i<1000;i++){assert.equal(failureRow.plan,null);assert.equal(failureRow.routeTracker.reason,R.SourceParserException);}
 assert.equal(parserAttempts,1);
 console.log('PASS: parser exception remains identifiable on 1000 cached failures without retrying parsing.');
+
+// Inline code is a style in the same paragraph, not a renderer rejection.
+for(const kind of ['text','single','album']) {
+ const r=makeRow();r.kind=kind;r.group=message(kind);r.data.lightweightPlainText=false;
+ const body='中文 code 😀';
+ const entities=[{offset:3,length:4,type:{'@type':'textEntityTypeCode'}}];
+ r.group.head.text=body;r.group.head.textEntities=entities;r.group.caption=body;r.group.captionEntities=entities;
+ const engine=kind==='text'?new ctx.DrawnTextLayouts():new ctx.DrawnMediaLayouts(kind==='single');
+ r.textLayouts=kind==='text'?engine:null;r.singleLayouts=kind==='single'?engine:null;r.albumLayouts=kind==='album'?engine:null;
+ const plan=r.plan;
+ assert.ok(plan,kind+' inline code keeps drawn row');
+ const parts=plan.caption.paragraph.native.parts;
+ const code=parts.find(p=>p.text==='code');
+ assert.ok(code);
+ assert.deepEqual(Array.from(code.style.fontFamilies),['monospace']);
+ assert.equal(code.style.backgroundRect.leftTopRadius,3*plan.density);
+ const plain=parts.find(p=>p.text.startsWith('中文'));
+ assert.equal(plain.style.fontFamilies,undefined);
+ assert.equal(plain.style.backgroundRect,undefined);
+ assert.equal(Object.hasOwn(plain.style,'backgroundRect'),false,'ordinary text must omit native background fields entirely');
+ assert.equal(plan.caption.source.content,body,'UTF-16 content is never rewritten');
+ assert.equal(engine.failureReason,R.Drawn);
+ const before=layoutCounters().parseCalls;
+ for(let i=0;i<1000;i++)assert.ok(r.plan);
+ assert.equal(layoutCounters().parseCalls,before);
+}
+console.log('PASS: inline-code text, photo and album stay drawn; warm updates do not reparse.');
+for(const single of [false,true]){
+ const cache=new ctx.DrawnMediaLayouts(single),g=message(single?'single':'album');
+ const first=cache.prepare(ui,g,data,{...style,mathRevision:0});const calls=[];
+ const original=cache.captions.prepare.bind(cache.captions);cache.captions.prepare=(u,s)=>{calls.push(s.mathRevision);return original(u,s);};
+ const before=layoutCounters();const next=cache.prepare(ui,g,data,{...style,mathRevision:1});
+ assert.deepEqual(calls,[1],'media fast cache must forward geometry revision to caption engine');assert.equal(next,first,'ordinary caption keeps existing plan');
+ assert.equal(layoutCounters().bodyLayouts,before.bodyLayouts);
+ for(let i=0;i<1000;i++)assert.equal(cache.prepare(ui,g,data,{...style,mathRevision:1}),next);
+ assert.deepEqual(calls,[1]);
+}
+ctx.ObservedV2=target=>target;ctx.Trace=()=>{};
+load(root+'pages/chat/DrawnPreparedAlbum.ets',['DrawnPreparedAlbum']);
+const packet=Object.create(ctx.DrawnPreparedAlbum.prototype);packet.currentStyle={...style,mathRevision:1};
+assert.equal(packet.matchesStyle({...style,mathRevision:1}),true);assert.equal(packet.matchesStyle({...style,mathRevision:2}),false);
+console.log('PASS: prepared album invalidates on metrics revision; media caption receives revision, ordinary paragraphs and 1000 stable calls stay cached.');

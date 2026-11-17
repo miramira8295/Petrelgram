@@ -2,6 +2,13 @@
 // hide that column; layout and the message nodes remain mounted underneath.
 export class ViewerUnderlay {
   fadeOnly: boolean = false;
+  private sourceRelease: (() => void) | null = null;
+
+  holdSource(release: (() => void) | null): void {
+    const previous = this.sourceRelease;
+    this.sourceRelease = release;
+    previous?.();
+  }
   private active: boolean = false;
   private mounted: boolean = false;
   private entered: boolean = false;
@@ -61,6 +68,7 @@ export class ViewerUnderlay {
     if (!this.owns(session)) { return; }
     this.mounted = false;
     this.publish();
+    this.holdSource(null);
   }
 
   private owns(session: number): boolean {

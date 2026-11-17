@@ -19,7 +19,7 @@ let p=cache.prepare(ui,g,data,style);const before=layoutCounters(),body=p.captio
 for(let i=0;i<1000;i++){g.head.videoProgress=i%100;const next=cache.prepare(ui,g,{...data,playSlotKey:i%2?'10:-1':'',playSlotStartMs:i},style);assert.equal(next,p);}
 assert.deepEqual(layoutCounters(),before,'play slot/progress must not build paragraphs, outlines or scan lines');
 const refreshed={...g,head:{...g.head,photoPath:'/new'}};p=cache.prepare(ui,refreshed,data,style);assert.equal(p.caption,body);assert.equal(layoutCounters().bodyLayouts,before.bodyLayouts);
-assert.equal(ctx.drawnSingleMediaEligible(g,false,false),true);assert.equal(ctx.drawnSingleMediaEligible(g,true,false),false);
+assert.equal(ctx.drawnSingleMediaEligible(g,false,false),true);assert.equal(ctx.drawnSingleMediaEligible(g,true,false),true);
 assert.equal(ctx.drawnSingleMediaEligible({...g,head:{...g.head,isAnimation:true}},false,false),true);
 // Differential: linear selector preserves duplicate heights, codec filtering,
 // unknown sizes, original-file exclusion and cached-original preference.

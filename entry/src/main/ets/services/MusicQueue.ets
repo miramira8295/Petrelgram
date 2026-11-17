@@ -170,6 +170,8 @@ export class MusicQueue {
   }
 
   onCompleted(messages: MessageEntry[], messageId: number): void {
+    // Embedded document audio belongs to its own queue, not the chat timeline.
+    if (messageId <= 0) { return; }
     this.next(messages, messageId);
   }
 

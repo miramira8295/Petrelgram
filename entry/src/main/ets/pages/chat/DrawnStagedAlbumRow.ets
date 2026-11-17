@@ -15,7 +15,6 @@ import { drawnAlbumEligible } from '../../util/drawnAlbumPolicy';
 import { drawnRowChromeReason } from '../../util/drawnRowChromePolicy';
 import { DrawnRouteReason } from '../../util/drawnRouteMetrics';
 import { DrawnStage, drawnStageMetrics } from '../../util/drawnStageMetrics';
-import { drawnTextUsesRtlLayout } from './DrawnPlainTextLayout';
 import { textMeasureEnvironment } from '../../util/textMeasureCache';
 import { chatEnv } from '../../util/chatEnvMirror';
 import { a11yRuntimeState } from '../../util/a11yState';
@@ -84,14 +83,13 @@ export struct DrawnStagedAlbumRow {
     const m = this.group.head;
     if (this.env.drawnAlbumStaging === false || this.env.drawnEnabled === false || this.env.drawnAlbum === false ||
       this.data.showUnreadDivider || m.inlineButtons.length > 0 ||
-      !drawnAlbumEligible(this.group, this.data, this.env.bubbleMaterialOn, this.a11y.active) ||
-      translationStatusFor(m.id) !== null) { return null; }
+      !drawnAlbumEligible(this.group, this.data, this.env.bubbleMaterialOn, this.a11y.active)) { return null; }
     if (this.group.caption !== '' && (this.data.lightweightPlainText ? this.env.drawnPlain === false : this.env.drawnRich === false)) { return null; }
     const textEnvironment = `${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
-    if (drawnTextUsesRtlLayout(textEnvironment)) { return null; }
     const role = m.senderTag || (this.data.isGroup && !m.isOutgoing && this.group.showSenderName
       ? senderRoleFor(senderRoleKey(this.data.chatId, m.senderId)) : '');
-    const style: DrawnBubbleStyle = { radius: this.env.bubbleRadius, fontSize: this.env.msgTextSize,
+    const style: DrawnBubbleStyle = { translationStatus: translationStatusFor(m.id),
+      replaceTranslation: this.env.translateReplaceOriginal, radius: this.env.bubbleRadius, fontSize: this.env.msgTextSize,
       environment: `${this.env.appearanceEpoch}:${textEnvironment}`, textEnvironment, role,
       views: viewCountLabelFor(this.data.chatId, m.id) };
     if (this.owner !== getTdClient()) {

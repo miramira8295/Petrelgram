@@ -1,6 +1,33 @@
 {
   "string": [
-    { "name": "diag_timeline_lazy", "value": "Experimental list (reopen chat to apply)" },
+    {
+      "name": "a11y_message_reactions",
+      "value": "View reactions"
+    },
+    {
+      "name": "a11y_message_sending",
+      "value": "Sending"
+    },
+    {
+      "name": "a11y_message_failed",
+      "value": "Send failed"
+    },
+    {
+      "name": "a11y_message_read",
+      "value": "Read"
+    },
+    {
+      "name": "a11y_message_sent",
+      "value": "Sent"
+    },
+    {
+      "name": "mb_spoiler",
+      "value": "Spoiler, tap to reveal"
+    },
+    {
+      "name": "diag_timeline_lazy",
+      "value": "Experimental list (reopen chat to apply)"
+    },
     {
       "name": "a11y_selected",
       "value": ", selected"
@@ -13424,6 +13451,26 @@
     {
       "name": "diag_drawn_refresh",
       "value": "Refresh counts"
+    },
+    {
+      "name": "document_login_title",
+      "value": "Log in to website"
+    },
+    {
+      "name": "document_login_message",
+      "value": "Use your current Telegram account to log in to %1$s?"
+    },
+    {
+      "name": "document_login_accept",
+      "value": "Log in without allowing bot messages"
+    },
+    {
+      "name": "document_login_open",
+      "value": "Open without logging in"
+    },
+    {
+      "name": "document_login_write",
+      "value": "Log in and allow bot messages"
     }
   ]
 }

@@ -6,7 +6,8 @@ const PURE_ALBUM_INNER_CORNERS: BorderRadiuses = {
 };
 
 // The grid sits 2vp inside the bubble. Its outside contour must use the same
-// four corner centers as the shell; individual cells keep their 6vp corners.
+// four corner centers as the shell. Drawn cells delegate their outer corners
+// to this clip and use Android-style 4vp internal corners.
 export class AlbumCornerRadiiCache {
   private shell: BubbleCornerCache = new BubbleCornerCache();
   private previousOuter: BorderRadiuses | undefined = undefined;

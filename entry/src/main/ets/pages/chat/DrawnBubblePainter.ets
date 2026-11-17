@@ -14,6 +14,7 @@ export class DrawnBubblePainter extends DrawModifier {
   private brush: drawing.Brush = new drawing.Brush();
   private shadow: drawing.Brush = new drawing.Brush();
   private shadowOn: boolean = false;
+  private solid: boolean = true;
 
   constructor() {
     super();
@@ -21,8 +22,8 @@ export class DrawnBubblePainter extends DrawModifier {
     this.shadow.setColor({ alpha: 20, red: 0, green: 0, blue: 0 });
   }
 
-  bind(plan: DrawnBubblePlan | null, shadowOn: boolean): DrawnBubblePainter {
-    if (plan === this.plan && this.shadowOn === shadowOn) { drawnStageMetrics.skip(DrawnStage.Background); return this; }
+  bind(plan: DrawnBubblePlan | null, shadowOn: boolean, solid: boolean = true): DrawnBubblePainter {
+    if (plan === this.plan && this.shadowOn === shadowOn && this.solid === solid) { drawnStageMetrics.skip(DrawnStage.Background); return this; }
     const traced = drawnStageMetrics.begin(DrawnStage.Background);
     try {
       if (plan !== null && plan.density !== this.plan?.density) {
@@ -30,14 +31,14 @@ export class DrawnBubblePainter extends DrawModifier {
           (2 * .57735 + .5) * plan.density));
       }
       drawnStageMetrics.invalidated(plan !== this.plan ? DrawnInvalidation.BackgroundPlan : DrawnInvalidation.Shadow);
-      this.plan = plan; this.shadowOn = shadowOn;
+      this.plan = plan; this.shadowOn = shadowOn; this.solid = solid;
       this.invalidate(); return this;
     } finally { drawnStageMetrics.end(traced); }
   }
 
   drawBehind(context: DrawContext): void {
     const p = this.plan;
-    if (p === null) { return; }
+    if (p === null || !this.solid) { return; }
     const traced = drawnStageMetrics.begin(DrawnStage.BackgroundPaint);
     try {
       const c = context.canvas, d = p.density;

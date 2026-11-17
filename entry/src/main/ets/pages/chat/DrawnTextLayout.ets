@@ -1,3 +1,7 @@
+import { DrawnRichSource } from '../../util/drawnRichTextPolicy';
+import { DrawnStructuredSource } from './DrawnStructuredSource';
+import { DrawnWebPreviewSource } from './DrawnWebPreviewSource';
+import { DrawnTranslatedSource } from './DrawnTranslatedSource';
 import { DrawnRouteReason, drawnSourceRouteReason } from '../../util/drawnRouteMetrics';
 import { DrawnRowLayoutEngine } from './DrawnLayoutWarmCache';
 import { DrawnBubbleOutlineCache, DrawnRoundRectCache } from './DrawnBubbleGeometry';
@@ -6,7 +10,6 @@ import { UIContext } from '@kit.ArkUI';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { MessageBubbleRenderData } from './ReusableMessageBubble';
 import { DrawnBubblePlan, DrawnBubbleStyle } from './DrawnBubblePlan';
-import { DrawnRichSourceCache } from '../../util/drawnRichTextPolicy';
 import { DrawnRichTextLayout, DrawnRichTextLayouts } from './DrawnRichTextLayout';
 import { DrawnSenderHeaderCache } from './DrawnSenderHeader';
 import { DrawnReplyQuoteCache } from './DrawnReplyQuote';
@@ -33,7 +36,9 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
   private units: DrawnTextUnits = new DrawnTextUnits();
   private outlines: DrawnBubbleOutlineCache = new DrawnBubbleOutlineCache();
   private quoteShapes: DrawnRoundRectCache = new DrawnRoundRectCache();
-  private sources: DrawnRichSourceCache = new DrawnRichSourceCache();
+  private previews: DrawnWebPreviewSource = new DrawnWebPreviewSource();
+  private structured: DrawnStructuredSource | null = null;
+  private sources: DrawnTranslatedSource = new DrawnTranslatedSource();
   private bodies: DrawnRichTextLayouts = new DrawnRichTextLayouts();
   private headers: DrawnSenderHeaderCache = new DrawnSenderHeaderCache();
   private quotes: DrawnReplyQuoteCache = new DrawnReplyQuoteCache();
@@ -57,10 +62,19 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
     const avatarSpace = data.isGroup && !m.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0;
     const maxPx = Math.floor((bubbleMaxWidth(data.contentWidth, avatarSpace) - 16) * d);
     if (!(d > 0) || !(maxPx > 0)) { this.failureReason = DrawnRouteReason.InvalidGeometry; return null; }
-    const source = this.sources.prepare(m.text, m.textEntities);
+    let structuredSource: DrawnRichSource | undefined = undefined;
+    if (m.contentType === 'richMessage') {
+      if (this.structured === null) { this.structured = new DrawnStructuredSource(); }
+      const document = this.structured.prepare(m.richBlocks, style.textEnvironment);
+      if (document === null) { this.failureReason = DrawnRouteReason.Policy; return null; }
+      structuredSource = document;
+    }
+    const translatedSource = this.sources.prepare(m.text, m.textEntities, m, style.translationStatus ?? null, style.replaceTranslation === true, structuredSource);
+    if (m.text !== '' && translatedSource === null) { this.failureReason = drawnSourceRouteReason(this.sources.reason); return null; }
+    const source = this.previews.prepare(translatedSource, m, style.environment);
     if (source === null) { this.failureReason = drawnSourceRouteReason(this.sources.reason); return null; }
-    const body = this.bodies.prepare(ui, { source, maxWidthVp: maxPx / d, minWidthVp: 0,
-      fontSize: style.fontSize, reserve: '', foreground: bubbleTextFor(m.isOutgoing),
+    const body = this.bodies.prepare(ui, { source, mathRevision: style.mathRevision, maxWidthVp: maxPx / d, minWidthVp: 0,
+      spoilersRevealed: style.spoilersRevealed, expandedBlocks: style.expandedBlocks, fontSize: style.fontSize, reserve: '', foreground: bubbleTextFor(m.isOutgoing),
       accent: COLOR_PRIMARY, environment: style.environment });
     let last = this.lastLines.get(body);
     if (last === undefined) {
@@ -145,6 +159,7 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
     const c = this.corners.prepare(style.radius, m.isOutgoing, group.showSenderName, group.showAvatar);
     p.outline = this.outlines.prepare(shellWidth, bubbleHeight, m.isOutgoing, group.showAvatar,
       cornerPx(c.topLeft), cornerPx(c.topRight), cornerPx(c.bottomRight), cornerPx(c.bottomLeft), d, gutter);
+    p.shellWidth = shellWidth; p.shellHeight = bubbleHeight; p.shellCommands = this.outlines.commands; p.shellRadii = c;
     if (avatarSpace > 0 && group.showAvatar) {
       p.avatar = { x: 0, y: p.height - 38, width: 38, height: 38 };
       p.initials = this.initials.prepare(m.senderInitials, 38 * d, this.units.fp2px(38 * .4), drawnColor(Color.White), style.textEnvironment, true);

@@ -234,7 +234,7 @@ export struct MusicPlayerView {
         MusicRoundButton({
           icon: this.inCollection
             ? $r('sys.symbol.checkmark_square_on_square') : $r('sys.symbol.plus_square_on_square'),
-          diameter: 44, iconSize: 22, active: this.centerOn && this.track !== null,
+          diameter: 44, iconSize: 22, active: this.centerOn && this.track !== null && this.track.sourceMessageId === undefined,
           onTap: (): void => { this.onOpenAddTo(); }
         });
       }

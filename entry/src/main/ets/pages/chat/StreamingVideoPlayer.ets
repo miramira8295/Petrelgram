@@ -85,6 +85,7 @@ export struct StreamingVideoPlayer {
   // viewer. No control bar / gestures / speed / rotate — just poster +
   // surface + buffering hint. See build() and onPlayingChanged() below.
   @Prop embedded: boolean = false;
+  @Prop loopPlayback: boolean = false;
   @StorageProp('appIsForeground') @Watch('onAppForegroundChanged')
   private appIsForeground: boolean = true;
   // 音频焦点：拿着的时候别的应用/来电开始发声，系统会通知我们让位。
@@ -831,6 +832,7 @@ export struct StreamingVideoPlayer {
         player.setOptionLong(IjkMediaPlayer.OPT_CATEGORY_PLAYER, 'max-buffer-size', `${FULLSCREEN_PACKET_QUEUE_BYTES}`);
       }
       this.startupAt = Date.now();
+      if (this.embedded && this.loopPlayback) { player.setLoopCount(true); }
       player.setDataSource(sourceUrl);
       player.prepareAsync();
     } catch (e) {

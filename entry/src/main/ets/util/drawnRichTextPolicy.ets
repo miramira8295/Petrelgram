@@ -1,3 +1,7 @@
+import { DrawnDocumentWidget } from './drawnDocumentWidget';
+import { DrawnDocumentMedia } from './drawnDocumentMedia';
+import { DrawnPageButtonAction } from './drawnPageButton';
+import { drawnFirstStrongRtl } from './drawnTextDirection';
 import { TdObject } from '../tdkit/TdTypes';
 import { parseFormattedText, RichRun, RichSegment } from './richText';
 import { linkTextHidesUrl } from './messageLinkAction';
@@ -6,6 +10,9 @@ import { DrawnSourcePool } from './drawnSourcePool';
 
 
 export interface DrawnRichLink {
+  button?: DrawnPageButtonAction;
+  action?: 'page-button' | 'copy' | 'quote' | 'spoiler' | 'translation-toggle' | 'translation-retry' | 'web-preview';
+  blockOffset?: number;
   start: number;
   end: number;
   label: string;
@@ -17,7 +24,59 @@ export interface DrawnRichLink {
   accessibilityFirst: boolean;
 }
 
+export interface DrawnRichButton { source: DrawnRichSource; action: DrawnPageButtonAction; style: string; }
+
+export interface DrawnRichBlock {
+  article?: DrawnDocumentWidget;
+  divider?: boolean;
+  anchorName?: string;
+  widget?: DrawnDocumentWidget;
+  media?: DrawnDocumentMedia;
+  gallery?: DrawnDocumentMedia[];
+  buttons?: DrawnRichButton[];
+  buttonAlign?: string;
+  marker?: string;
+  title?: DrawnRichSource;
+  initiallyOpen?: boolean;
+  preview?: boolean;
+  imageRatio?: number;
+  fontSize?: number;
+  lineLimit?: number;
+  action?: 'translation-toggle' | 'translation-retry' | 'web-preview';
+  source: DrawnRichSource;
+  kind: string;
+  offset: number;
+  expandable: boolean;
+  language: string;
+}
+
+export interface DrawnRichTableCell {
+  source: DrawnRichSource;
+  header: boolean;
+  align: string;
+  valign?: string;
+  colspan: number;
+  rowspan: number;
+}
+
+export interface DrawnRichTable {
+  rows: DrawnRichTableCell[][];
+  bordered: boolean;
+  striped: boolean;
+}
+
+export interface DrawnAnchorBranch { offset: number; initiallyOpen: boolean; parent: DrawnAnchorBranch | null; }
 export interface DrawnRichSource {
+  hasEmbed?: boolean;
+  anchorNames?: string[];
+  anchorPaths?: Map<string, DrawnAnchorBranch | null>;
+  footnotes?: Map<string, DrawnRichSource>;
+  mediaItems?: DrawnDocumentMedia[];
+  audioItems?: DrawnDocumentWidget[];
+  hasMath?: boolean;
+  table?: DrawnRichTable;
+  rtl?: boolean;
+  blocks?: DrawnRichBlock[];
   content: string;
   runs: RichRun[];
   links: DrawnRichLink[];
@@ -37,6 +96,7 @@ const sharedDrawnSources: DrawnSourcePool<DrawnRichSourceDecision> = new DrawnSo
 function drawnSourceCost(content: string, source: DrawnRichSource | null): number {
   let cost = content.length * 2 + 128;
   if (source === null) { return cost; }
+  for (const block of source.blocks ?? []) { cost += 128 + drawnSourceCost(block.source.content, block.source); }
   for (const run of source.runs) {
     cost += 128 + 2 * (run.text.length + run.url.length + run.customEmojiId.length);
   }
@@ -96,11 +156,21 @@ export class DrawnRichSourceCache {
     if (content.length === 0) { return this.reject('empty'); }
     if (content.length > 16384) { return this.reject('text-limit'); }
     if (entities.length > 1024) { return this.reject('entity-limit'); }
-    const control = /[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff\u202a-\u202e\u2066-\u2069\t]/.exec(content);
-    if (control !== null) { return this.reject(`direction-or-control:U+${control[0].charCodeAt(0).toString(16)}`); }
     const segments = this.parser(content, entities);
-    if (segments.length !== 1) { return this.reject(`segments:${segments.length}`); }
-    if (segments[0].kind !== 'text') { return this.reject(`segment-kind:${segments[0].kind}`); }
+    if (segments.length !== 1 || segments[0].kind !== 'text') {
+      const blocks: DrawnRichBlock[] = [];
+      const targets = new Set<string>();
+      const links: DrawnRichLink[] = [];
+      for (const segment of segments) {
+        const source = drawnRichBlockSource(segment);
+        if (source === null) { return this.reject(`segment-kind:${segment.kind}`); }
+        blocks.push({ source, kind: segment.kind, offset: segment.offset,
+          expandable: segment.expandable, language: segment.language });
+        for (const link of source.links) { links.push(link); }
+        for (const target of source.targets) { targets.add(target); }
+      }
+      return { content, runs: [], links, targets, blocks };
+    }
     if (segments[0].offset !== 0) { return this.reject('segment-offset'); }
     const runs = segments[0].runs;
     if (runs.length === 0 || runs.length > 512) { return this.reject('run-limit'); }
@@ -110,7 +180,7 @@ export class DrawnRichSourceCache {
 
 function discardDrawnRichSource(_reason: string): DrawnRichSource | null { return null; }
 
-function buildDrawnRichSource(content: string, runs: RichRun[],
+export function buildDrawnRichSource(content: string, runs: RichRun[],
   reject: (reason: string) => DrawnRichSource | null = discardDrawnRichSource): DrawnRichSource | null {
   const links: DrawnRichLink[] = [];
   const targets = new Set<string>();
@@ -121,8 +191,6 @@ function buildDrawnRichSource(content: string, runs: RichRun[],
   // O(text length + runs): no per-character entity search, pairwise run
   // comparisons or growing concatenation. Cached parser output is read-only.
   for (const run of runs) {
-    if (run.code) { return reject('inline-code'); }
-    if (run.spoiler) { return reject('spoiler'); }
     if (run.text.length === 0) { return reject('empty-run'); }
     if (run.offset !== position || !content.startsWith(run.text, position)) { return reject('run-offset'); }
     const end: number = position + run.text.length;
@@ -154,7 +222,7 @@ function buildDrawnRichSource(content: string, runs: RichRun[],
   }
   if (position !== content.length) { return reject('text-coverage'); }
   if (links.length > 256) { return reject('link-limit'); }
-  return { content, runs, links, targets };
+  return { content, runs, links, targets, rtl: drawnFirstStrongRtl(content) };
 }
 
 // Parser-owned segments are immutable and weakly held. Source normalization
@@ -162,16 +230,25 @@ function buildDrawnRichSource(content: string, runs: RichRun[],
 const segmentSources: WeakMap<RichSegment, DrawnRichSource | null> = new WeakMap();
 
 export function drawnRichSegmentSource(segment: RichSegment): DrawnRichSource | null {
+  return segment.kind === 'text' ? drawnRichBlockSource(segment) : null;
+}
+
+export function drawnRichBlockSource(segment: RichSegment): DrawnRichSource | null {
   const cached = segmentSources.get(segment);
   if (cached !== undefined) { return cached; }
   let result: DrawnRichSource | null = null;
-  if (segment.kind === 'text' && segment.runs.length > 0 && segment.runs.length <= 512) {
+  if (segment.kind === 'pre' && segment.text.length > 0) {
+    const run: RichRun = { offset: 0, text: segment.text, code: true, spoiler: false,
+      bold: false, italic: false, underline: false, strike: false,
+      customEmojiId: '', link: false, url: '' };
+    result = buildDrawnRichSource(segment.text, [run]);
+  } else if ((segment.kind === 'text' || segment.kind === 'quote') && segment.runs.length > 0 && segment.runs.length <= 512) {
     const parts: string[] = [];
     const runs: RichRun[] = [];
     let position: number = 0;
     let supported: boolean = true;
     for (const run of segment.runs) {
-      if (run.code || run.spoiler || run.text.length === 0 ||
+      if (run.text.length === 0 ||
         position + run.text.length > 16384) { supported = false; break; }
       parts.push(run.text);
       // Block separators may have been trimmed. Local offsets belong to the
@@ -183,9 +260,7 @@ export function drawnRichSegmentSource(segment: RichSegment): DrawnRichSource | 
     }
     if (supported) {
       const content: string = parts.join('');
-      if (!/[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff\u202a-\u202e\u2066-\u2069\t]/.test(content)) {
-        result = buildDrawnRichSource(content, runs);
-      }
+      result = buildDrawnRichSource(content, runs);
     }
   }
   segmentSources.set(segment, result);
@@ -225,7 +300,7 @@ export function appendDrawnRichHits(hits: DrawnRichHit[], boxes: DrawnRichRect[]
     const top: number = Math.max(0, box.top);
     const bottom: number = Math.min(heightPx, box.bottom);
     if (right <= left || bottom <= top) { continue; }
-    hits.push({ key: `${generation}:${link.start}:${hits.length - before}`, link,
+    hits.push({ key: `${generation}:${link.start}:${hits.length}`, link,
       x: left / density, y: top / density, widthVp: (right - left) / density,
       heightVp: (bottom - top) / density, accessible: link.accessibilityFirst && hits.length === before });
     if (hits.length > 1024) { return false; }

@@ -45,6 +45,7 @@ assert.equal(completed.length,before,'unsupported capture completes once');asser
 capture.captured()();assert.equal(captured,'');
 console.log('PASS: deletion restore/recycle/A-B-A reject late capture, old completion retains original channel, 1000 unchanged binds have no writes.');
 
+load(root+'util/drawnTextDirection.ets',[]);
 load(root+'pages/chat/DrawnTextLine.ets',['DrawnTextLineCache']);
 load(root+'pages/chat/DrawnVideoDecoration.ets',['DrawnVideoDecoration']);
 const ui={vp2px:n=>{conversions++;return n*2;},fp2px:n=>{conversions++;return n*2;}};
@@ -112,11 +113,11 @@ for(const name of ['__Common__','Column','Row','Stack','If','Text','Image','Gest
  if(k==='create'){const n={type:name,parent:stack.at(-1),attrs:{}};nodes.push(n);stack.push(n);}
  else if(k==='pop')stack.pop();else if(stack.length)stack.at(-1).attrs[k]=args;
 }});
-for(const name of ['Alignment','FlexAlign','PanDirection','GesturePriority','GestureMode','SourceType'])ctx[name]=new Proxy({}, {get:(_t,k)=>k});
+for(const name of ['SheetSize','Alignment','FlexAlign','PanDirection','GesturePriority','GestureMode','SourceType'])ctx[name]=new Proxy({}, {get:(_t,k)=>k});
 ctx.TransitionEffect={IDENTITY:0};ctx.DRAWN_BUBBLE_PRESS={name:'press'};ctx.DRAWN_BUBBLE_PRESS_NONE={name:'none'};
 ctx.ShatterDeleteOverlay=class {constructor(_owner,params){native.push(params);}};
 Object.assign(row,{kind:'text',group:{dateLabel:'',showSenderName:false,showAvatar:false,head:{rowId:10,isOutgoing:false,inlineButtons:[],reactions:[]}},
- data:{chatId:1,showUnreadDivider:false,animateIn:false},actions:{rowLeave:{particleBudget:()=>8000}},env:{},leaving:0,capturedDeleteKey:'',avatarStateRevision:0,
+ data:{chatId:1,showUnreadDivider:false,animateIn:false},actions:{rowLeave:{particleBudget:()=>8000}},a11y:{active:false},env:{},leaving:0,capturedDeleteKey:'',avatarStateRevision:0,
  observeComponentCreation2:fn=>fn(++eid,true),ifElseBranchUpdateFunction:(_id,fn)=>fn(),canvasContent(){nodes.push({type:'canvas',parent:stack.at(-1),attrs:{}});},
  leaveCapture:capture,avatarPainter:{bind:()=>({})},media:{}});
 Object.defineProperty(row,'plan',{configurable:true,value:{width:200,height:80,avatar:{width:38},caption:null}});
@@ -129,9 +130,9 @@ const avatar=nodes.find(n=>n.attrs.drawModifier);assert.equal(avatar.parent,shot
 assert.equal(nodes.filter(n=>n.type==='Stack').length,1,'no resident deletion Stack');
 assert.equal(shot.attrs.opacity[0],1);assert.equal(native.filter(n=>n.nodeId).length,0,'no idle overlay');
 row.leaving=1;row.capturedDeleteKey=row.deleteNodeKey;nodes.length=0;row.initialRender();
-assert.equal(nodes.find(n=>n.attrs.id).attrs.opacity[0],0);assert.equal(native.at(-1).nodeId,row.deleteNodeKey);
+assert.equal(nodes.find(n=>n.attrs.id?.[0]===row.deleteNodeKey).attrs.opacity[0],0);assert.equal(native.at(-1).nodeId,row.deleteNodeKey);
 const oldNative=native.length;Object.defineProperty(row,'deleteCaptureSupported',{configurable:true,value:false});nodes.length=0;row.initialRender();
-assert.equal(nodes.find(n=>n.attrs.id).attrs.opacity[0],0);assert.equal(native.length,oldNative,'live surface skips snapshot overlay');
+assert.equal(nodes.find(n=>n.attrs.id?.[0]===row.deleteNodeKey).attrs.opacity[0],0);assert.equal(native.length,oldNative,'live surface skips snapshot overlay');
 console.log('PASS: compiled canvas is directly inside capture; one press Row removed, avatar stays outside, deletion/live-surface branches preserved.');
 
 // A staged date must be rendered only by its host. Ordinary text/media rows

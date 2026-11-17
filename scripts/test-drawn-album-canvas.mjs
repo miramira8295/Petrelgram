@@ -10,7 +10,7 @@ let clips = 0, brushes = 0, info = 0;
 const ctx = vm.createContext({
   FrameCallback: class {}, DrawModifier: class { invalidations = 0; invalidate() { this.invalidations++; } },
   ImageFit: { Cover: 0 }, vp2pxUI: n => n * 2,
-  drawing: { RoundRect: class { constructor(rect, rx, ry) { clips++; Object.assign(this, {rect, rx, ry}); } },
+  drawing: { CornerPos:{TOP_LEFT_POS:0,TOP_RIGHT_POS:1,BOTTOM_RIGHT_POS:2,BOTTOM_LEFT_POS:3}, RoundRect: class { constructor(rect, rx, ry) { clips++; Object.assign(this, {rect, rx, ry}); this.corners={}; } setCorner(pos,x,y){this.corners[pos]=[x,y];} },
     Brush: class { constructor() { brushes++; } setAntiAlias() {} setColor() {} },
     SamplingOptions: class {}, FilterMode: { FILTER_MODE_LINEAR: 1 }, ClipOp: { INTERSECT: 0 } },
   thumbPathFor: () => '', subscribeThumbPath: (id, fn) => { thumbs.set(id, fn); return () => thumbs.delete(id); },
@@ -32,7 +32,7 @@ load('pages/chat/DrawnSlotActivation.ets'); load('pages/chat/DrawnSlotContent.et
 load('pages/common/DrawnImageReceiver.ets');
 load('pages/chat/DrawnMediaController.ets', ['DrawnMediaController']);
 load('pages/chat/DrawnAlbumCanvas.ets', ['DrawnAlbumCanvas']);
-load('util/albumCanvasTransition.ets', ['withAlbumCanvasTransition','albumCanvasTransitionFor']);
+load('util/albumCanvasTransition.ets', ['withAlbumCanvasTransition','albumCanvasTransitionFor','withAlbumCanvasAnchor','takeAlbumCanvasAnchor']);
 const ui = {postFrameCallback:f => frames.push(f),postDelayedFrameCallback:f => frames.push(f)};
 const flush = () => { for (const f of frames.splice(0)) f.onFrame(0); };
 const tile = (id, i = 0) => ({x:(i % 3)*102, y:Math.floor(i/3)*82, width:100, height:80,
@@ -58,7 +58,7 @@ const draw = {canvas:{save(){depth++;},restore(){depth--;},translate(x,y){transl
   drawImageRectWithSrc(p){records.push(p.name);}}};
 painter.drawFront(draw); assert.deepEqual(records,[1,2,3,4,5,6]); assert.equal(depth,0);
 assert.deepEqual(translations,[[0,0],[204,0],[408,0],[0,164],[204,164],[408,164]]);
-assert.ok(rounds.every(r=>r.rx===12&&r.ry===12)); assert.equal(info,0);
+assert.ok(rounds.every(r=>r.rx===8&&r.ry===8)); assert.equal(info,0);
 const initialClips = clips;
 for (let i=0;i<1000;i++) {
   const b = a.map(t=>({...t,cell:{...t.cell,messageId:t.cell.messageId+100}}));
@@ -104,7 +104,7 @@ for(let count=2;count<=10;count++) {
  const slots=tiles.map(t=>({path:'/x',pixels:{},receiver:{canDraw:()=>true,drawFront(){}}}));
  for(const density of [1,2,3]) {
   painter.bind(ui,tiles,slots,density,true);assert.equal(painter.state.ready,true);assert.equal(painter.clips.length,count);
-  assert.equal(painter.clips[0].round.rx,6*density);
+  assert.equal(painter.clips[0].round.rx,4*density);
  }
  const narrow=tiles.map(t=>({...t,width:8,height:6}));painter.bind(ui,narrow,slots,2,true);assert.equal(painter.clips[0].round.rx,6);
 }
@@ -118,7 +118,7 @@ ctx.withAlbumCanvasTransition(1,()=>{
 });
 assert.throws(()=>ctx.withAlbumCanvasTransition(1,()=>{throw Error('cancel');}));
 assert.equal(ctx.albumCanvasTransitionFor(1),false);
-console.log('PASS: single canvas 2–10 tiles, 6vp clips, 1000 geometry reuses, bounded ownership, six bitmap upgrades/one invalidation, fallback and stale-callback guards, scoped transition cleanup.');
+console.log('PASS: single canvas 2–10 tiles, 4vp internal clips, 1000 geometry reuses, bounded ownership, six bitmap upgrades/one invalidation, fallback and stale-callback guards, scoped transition cleanup.');
 // Actual viewer open method: fade is chosen after validation, and a subsequent
 // ordinary thumbnail click restores the existing shared-element duration.
 const viewerSource=ts.createSourceFile('ChatViewerSession.ets',fs.readFileSync(root+'pages/chat/ChatViewerSession.ets','utf8'),ts.ScriptTarget.Latest,true);
@@ -129,7 +129,7 @@ const durations=[], opened=[];
 ctx.mediaEntryIsPhoto=()=>true;ctx.mediaEntryIsVideo=()=>false;ctx.KEY_POWER_SMOOTH_TRANSITIONS='motion';ctx.Curve={Friction:0};
 ctx.animateToUI=(options,fn)=>{durations.push(options.duration);fn();};
 const viewer=new ctx.ViewerProbe();
-Object.assign(viewer,{underlay:{fadeOnly:false},host:{logOpen(){},entryById:()=>({photoPath:'/ready'}),effectDuration:(_key,n)=>n},onMediaTap:id=>opened.push(id)});
+Object.assign(viewer,{underlay:{fadeOnly:false,holdSource(release){this.release=release;}},host:{logOpen(){},entryById:()=>({photoPath:'/ready'}),effectDuration:(_key,n)=>n},onMediaTap:id=>opened.push(id)});
 ctx.withAlbumCanvasTransition(7,()=>viewer.open(7));assert.equal(viewer.underlay.fadeOnly,true);assert.equal(durations.at(-1),160);
 viewer.open(7);assert.equal(viewer.underlay.fadeOnly,false);assert.equal(durations.at(-1),300);
 viewer.host.effectDuration=()=>0;ctx.withAlbumCanvasTransition(7,()=>viewer.open(7));assert.equal(durations.at(-1),0);
@@ -180,3 +180,37 @@ assert.equal(backgrounds,2,'detached canvas still paints geometry-only backdrops
 assert.deepEqual(shown,[],'reset never retains or draws a previous message bitmap');
 assert.equal(handoff.slots,null);assert.equal(handoff.tiles,null);
 console.log('PASS: ready→not-ready and reset paint the outgoing geometry backdrop before branch commit, with zero old pixels after reset.');
+// Sending -> sent retains the per-cell host for this physical message, even
+// when upload completion changes tile snapshots/server message IDs.
+const held=new ctx.DrawnAlbumCanvas(),readySlots=a.map(()=>({path:'/ready',pixels:{},receiver:{canDraw:()=>true}}));
+const uploading=a.map(t=>({...t,cell:{...t.cell,uploading:true}}));
+held.bind(ui,uploading,readySlots,2,true,true,'chat:stable-row');assert.equal(held.state.ready,false);
+held.bind(ui,a,readySlots,2,true,false,'chat:stable-row');assert.equal(held.state.ready,false);
+const confirmed=a.map(t=>({...t,cell:{...t.cell,messageId:t.cell.messageId+1000}}));
+held.bind(ui,confirmed,readySlots,2,true,false,'chat:stable-row');assert.equal(held.state.ready,false);
+held.reset();held.bind(ui,a,readySlots,2,true,false,'chat:next-row');assert.equal(held.state.ready,true);
+console.log('PASS: upload completion/server IDs do not replace the mounted media host; recycled/new owner can use merged canvas.');
+const localMedia=new ctx.DrawnMediaController(()=>{},()=>{});localMedia.prepare(ui,plan(a),group,true);
+const bindCounts=Array(6).fill(0);localMedia.slots.forEach((s,i)=>{const bind=s.bind.bind(s);s.bind=(...args)=>{bindCounts[i]++;return bind(...args);};});
+const changedTiles=a.slice();changedTiles[0]={...a[0],cell:{...a[0].cell,isPlaySlot:false}};changedTiles[1]={...a[1],cell:{...a[1].cell,isPlaySlot:true}};
+localMedia.prepare(ui,plan(changedTiles),group,true);assert.deepEqual(bindCounts,[1,1,0,0,0,0]);
+localMedia.prepare(ui,{...plan(changedTiles),density:3},group,true);assert.deepEqual(bindCounts,[2,2,1,1,1,1]);
+localMedia.recycle();localMedia.prepare(ui,plan(changedTiles),group,true);assert.deepEqual(bindCounts,[3,3,2,2,2,2]);localMedia.dispose();
+console.log('PASS: only changed tile identities enter binding; density changes and recycling still refresh every slot.');
+
+// Per-corner geometry is shared with native anchor clipping. Native paths
+// allocate at bind only, and react when edge membership changes at same size.
+const corners={topLeft:0,topRight:4,bottomLeft:0,bottomRight:4};
+const edgeTiles=a.map(t=>({...t,corners}));
+const edgePainter=new ctx.DrawnAlbumCanvas();
+const edgeSlots=edgeTiles.map(()=>({path:"/ready",pixels:{},receiver:{canDraw:()=>true}}));
+edgePainter.bind(ui,edgeTiles,edgeSlots,2,true);
+assert.equal(JSON.stringify(edgePainter.clips[0].round.corners),JSON.stringify({0:[0,0],1:[8,8],2:[8,8],3:[0,0]}));
+const clipCount=clips;
+for(let i=0;i<1000;i++)edgePainter.bind(ui,edgeTiles,edgeSlots,2,true);
+assert.equal(clips,clipCount);
+const moved=edgeTiles.map((t,i)=>i===0?{...t,corners:{...corners,topRight:0}}:t);
+edgePainter.bind(ui,moved,edgeSlots,2,true);
+assert.equal(clips,clipCount+1,'only a changed corner mask rebuilds its clip');
+assert.deepEqual(edgePainter.clips[0].round.corners[1],[0,0]);
+console.log('PASS: shared per-corner canvas geometry, stable binds allocate nothing, one changed edge rebuilds one clip.');

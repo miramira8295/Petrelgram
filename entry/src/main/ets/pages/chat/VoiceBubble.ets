@@ -24,6 +24,10 @@ const WAVEFORM_WIDTH: number = 132;
 // @Monitor 兜非复用路径（挂错 = 跟着别的那条语音的播放状态走）。
 @ComponentV2
 export struct VoiceBubble {
+  @Param waveformWidth: number = WAVEFORM_WIDTH;
+  @Param allowTranscription: boolean = true;
+  @Event onBeforeControl: () => boolean = (): boolean => true;
+  @Param documentFileId: number = 0;
   @Param msgId: number = 0;
   @Param durationSec: number = 0;
   @Param isOutgoing: boolean = false;
@@ -206,9 +210,11 @@ export struct VoiceBubble {
     return total;
   }
 
-  private bars(): number[] {
+  @Computed private get waveformBars(): number[] {
     return voiceWaveformBars(this.waveform, WAVEFORM_BAR_COUNT, this.msgId);
   }
+
+  private bars(): number[] { return this.waveformBars; }
 
   private playedBarCount(): number {
     return Math.round(Math.max(0, Math.min(1, this.progress)) * WAVEFORM_BAR_COUNT);
@@ -219,6 +225,7 @@ export struct VoiceBubble {
   }
 
   private onPlayTap(): void {
+    if (!this.onBeforeControl()) { return; }
     if (this.sourceUnavailable()) {
       return;
     }
@@ -226,10 +233,13 @@ export struct VoiceBubble {
       this.onNeedDownload();
       return;
     }
-    getVoicePlayback().toggle(this.msgId, this.voicePath, this.resolvedDuration());
+    if (this.documentFileId > 0) {
+      getVoicePlayback().toggleDocumentVoice(this.documentFileId, this.voicePath, this.resolvedDuration());
+    } else { getVoicePlayback().toggle(this.msgId, this.voicePath, this.resolvedDuration()); }
   }
 
   private onSpeedTap(): void {
+    if (!this.onBeforeControl()) { return; }
     if (this.voicePath === '') {
       return;
     }
@@ -294,7 +304,7 @@ export struct VoiceBubble {
       .justifyContent(FlexAlign.Start)
       .hitTestBehavior(HitTestMode.None);
     }
-    .width(WAVEFORM_WIDTH)
+    .width(this.waveformWidth)
     .height(32)
     .padding({ left: 0, right: 8 })
     .borderRadius(6)
@@ -313,16 +323,16 @@ export struct VoiceBubble {
         Text(this.speechText !== '' ? this.speechText : $r('app.string.voice_transcribing'))
           .fontSize(13).fontColor(this.speechSecondaryColor())
           .maxLines(4).textOverflow({ overflow: TextOverflow.Ellipsis });
-      }.width(WAVEFORM_WIDTH).alignItems(VerticalAlign.Top);
+      }.width(this.waveformWidth).alignItems(VerticalAlign.Top);
     } else if (this.speechState === 'done') {
       Text(this.speechText).fontSize(13.5).lineHeight(19)
         .fontColor(this.speechPrimaryColor())
-        .width(WAVEFORM_WIDTH)
+        .width(this.waveformWidth)
         .textAlign(TextAlign.Start);
     } else if (this.speechState === 'error') {
       Column({ space: 2 }) {
         Text(this.speechText !== '' ? this.speechText : $r('app.string.voice_transcribe_failed'))
-          .fontSize(12.5).fontColor('#FF3B30').width(WAVEFORM_WIDTH);
+          .fontSize(12.5).fontColor('#FF3B30').width(this.waveformWidth);
         this.recognizeControl();
       }
       .alignItems(HorizontalAlign.Start);
@@ -336,17 +346,17 @@ export struct VoiceBubble {
     Row({ space: 9 }) {
       this.playControl();
       Column({ space: 3 }) {
-        Row({ space: 1.8 }) {
+        Row({ space: 1.8 * this.waveformWidth / WAVEFORM_WIDTH }) {
           ForEach(this.bars(), (height: number, index: number) => {
             Column()
-              .width(2.1)
+              .width(2.1 * this.waveformWidth / WAVEFORM_WIDTH)
               .height(height)
               .borderRadius(1.1)
               .backgroundColor(index < this.playedBarCount()
                 ? this.accent() : this.inactiveWaveColor());
           }, (height: number, index: number): string => `${index}_${height}`);
         }
-        .width(WAVEFORM_WIDTH)
+        .width(this.waveformWidth)
         .height(22)
         .alignItems(VerticalAlign.Center);
         Row({ space: 5 }) {
@@ -379,7 +389,7 @@ export struct VoiceBubble {
               });
           }
         }
-        .width(WAVEFORM_WIDTH)
+        .width(this.waveformWidth)
         .height(20)
         .alignItems(VerticalAlign.Center);
       }
@@ -387,7 +397,7 @@ export struct VoiceBubble {
     }
     .alignItems(VerticalAlign.Center)
     .padding({ top: 1, right: 31 });
-      this.speechArea();
+      if (this.allowTranscription) { this.speechArea(); }
     }
     .alignItems(HorizontalAlign.Start)
     .padding({ bottom: 9 });

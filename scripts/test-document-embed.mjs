@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';
+const imported=await import(process.env.TYPESCRIPT_MODULE||'typescript'),ts=imported.default||imported;
+const root='entry/src/main/ets/',compiled='entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/'+root;
+let next=0,loads=[];const timers=new Map();
+const ctx=vm.createContext({ViewV2:class{},ViewPU:class{},setTimeout:cb=>{timers.set(++next,cb);return next;},clearTimeout:id=>timers.delete(id),webview:{WebviewController:class{stop(){}loadData(...args){loads.push(args);}}}});
+function load(path,names){const source=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/\bexport /g,'').replace(/@(?:Require|Param|Local|Computed|Event)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'');vm.runInContext(ts.transpileModule(source+names.map(n=>`\nglobalThis.${n}=${n};`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);}
+load(root+'util/documentEmbedNavigation.ets',['DocumentEmbedNavigation','documentEmbedUrl']);
+load(root+'util/documentEmbedMetrics.ets',['DocumentEmbedResizeBridge','setDocumentEmbedHeight','documentEmbedHeight','parseDocumentEmbedHeight']);
+load(root+'util/animationSlotPool.ets',['AnimationSlotPool']);load(root+'util/documentEmbedLease.ets',['documentEmbedPool']);load(compiled+'pages/chat/DrawnDocumentEmbed.ts',['DrawnDocumentEmbed']);
+function row(){const r=Object.create(ctx.DrawnDocumentEmbed.prototype);Object.assign(r,{widget:{html:'<b>ok</b>'},ready:false,loaded:false,loadTimer:-1,resizeTimer:-1,pendingHeight:0,resizeBridge:new ctx.DocumentEmbedResizeBridge(()=>{}),boxWidth:280,onMetricsChanged:()=>{},navigation:new ctx.DocumentEmbedNavigation(),failed:false,visible:true,timer:-1,generation:0,leased:false,cancelWait:null,touched:false,controller:new ctx.webview.WebviewController()});return r;}
+function flush(){const pending=[...timers.values()];timers.clear();for(const fn of pending)fn();}
+const a=row(),b=row(),c=row();for(const r of [a,b,c])r.schedule();assert.equal(ctx.documentEmbedPool.liveCount(),0);flush();assert.equal(ctx.documentEmbedPool.liveCount(),2);assert.equal(ctx.documentEmbedPool.waitingCount(),1);assert.equal(c.ready,false);
+a.load();assert.equal(loads.length,1);assert.equal(loads[0][3],'https://telegram.org/embed');a.aboutToDisappear();assert.equal(c.ready,true);assert.equal(ctx.documentEmbedPool.liveCount(),2);
+b.aboutToDisappear();c.aboutToDisappear();assert.equal(ctx.documentEmbedPool.liveCount(),0);
+const fast=row();fast.schedule();fast.aboutToDisappear();flush();assert.equal(fast.ready,false);assert.equal(ctx.documentEmbedPool.liveCount(),0);
+a.visible=true;a.schedule();b.visible=true;b.schedule();c.visible=true;c.schedule();flush();c.aboutToDisappear();assert.equal(ctx.documentEmbedPool.waitingCount(),0);a.aboutToDisappear();b.aboutToDisappear();
+const reused=row();reused.schedule();reused.widget={html:'new'};reused.sourceChanged();flush();reused.load();assert.equal(loads.at(-1)[0],'new');assert.equal(ctx.documentEmbedPool.liveCount(),1);reused.aboutToDisappear();
+for(let i=0;i<1000;i++){const r=row();r.schedule();r.aboutToDisappear();}flush();assert.equal(ctx.documentEmbedPool.liveCount(),0);assert.equal(ctx.documentEmbedPool.waitingCount(),0);
+console.log('PASS: HTML dwell, two-host capacity, O(1) transfer/cancel, recycled source, 1000 fast flings without leaked hosts/timers.');
+const nav=new ctx.DocumentEmbedNavigation();nav.reset('https://example.test/player');
+assert.equal(nav.decide('https://example.test/player',true,false,false),'allow');
+for(let i=0;i<8;i++)assert.equal(nav.decide(`https://cdn.test/${i}`,true,false,true),'allow');
+assert.equal(nav.decide('https://cdn.test/ninth',true,false,true),'block');
+nav.loaded();assert.equal(nav.decide('https://another.test',true,false,true),'block');
+assert.equal(nav.decide('https://another.test',true,true,false),'open');
+assert.equal(nav.decide('file:///private',true,true,false),'block');
+assert.equal(nav.decide('https://iframe.test',false,false,false),'allow');
+for(const url of ['javascript:alert(1)','data:text/html,x','file:///x','https://user:pw@example.test','https://x\ny','https://'+ 'a'.repeat(8193)])assert.equal(ctx.documentEmbedUrl(url),false);
+const remote=row();remote.widget={html:'',url:'https://example.test'};remote.schedule();flush();const oldController=remote.controller,oldWidget=remote.widget,oldGeneration=remote.generation;
+assert.equal(remote.current(oldController,oldWidget,oldGeneration),true);const loadCount=loads.length;remote.load();assert.equal(loads.length,loadCount,'URL src must not be overwritten by empty HTML');
+remote.finished();assert.equal(remote.loadTimer,-1);remote.widget={html:'new source'};remote.sourceChanged();assert.equal(remote.current(oldController,oldWidget,oldGeneration),false);remote.aboutToDisappear();
+const timed=row();timed.schedule();flush();timed.load();flush();assert.equal(timed.failed,true);assert.equal(timed.ready,false);assert.equal(ctx.documentEmbedPool.liveCount(),0);
+console.log('PASS: bounded redirects, real gesture navigation, URL load path, stale WebView ownership, completion and timeout lease release.');
+for(const raw of ['null','{}','{"height":false}','{"height":-1}','{"height":"NaN"}','x'.repeat(1025)])assert.equal(ctx.parseDocumentEmbedHeight('resize_frame',raw),0);
+assert.equal(ctx.parseDocumentEmbedHeight('other','{"height":100}'),0);assert.equal(ctx.parseDocumentEmbedHeight('resize_frame','{"height":"120.7"}'),121);
+assert.equal(ctx.parseDocumentEmbedHeight('resize_frame','{"height":100000}'),640);
+const sizing={width:0,height:0};assert.equal(ctx.documentEmbedHeight(sizing,280),10);assert.equal(ctx.setDocumentEmbedHeight(sizing,280,100),true);assert.equal(ctx.setDocumentEmbedHeight(sizing,280,100),false);assert.equal(ctx.documentEmbedHeight(sizing,320),10);
+const dynamic=row();dynamic.widget={html:'dynamic',width:0,height:0};let metrics=0;dynamic.onMetricsChanged=()=>metrics++;dynamic.schedule();flush();
+const staleBridge=dynamic.resizeBridge;
+for(let i=0;i<1000;i++)dynamic.resizeBridge.postEvent('resize_frame',JSON.stringify({height:100+i%3}));
+assert.equal(metrics,0);flush();assert.equal(metrics,1);assert.equal(ctx.documentEmbedHeight(dynamic.widget,280),100);
+for(let i=0;i<1000;i++)dynamic.resizeBridge.postEvent('resize_frame','{"height":100}');flush();assert.equal(metrics,1);
+dynamic.widget={html:'replacement',width:0,height:0};dynamic.sourceChanged();staleBridge.postEvent('resize_frame','{"height":600}');flush();assert.equal(metrics,1);
+dynamic.resizeBridge.postEvent('resize_frame','{"height":300}');dynamic.aboutToDisappear();flush();assert.equal(metrics,1);assert.equal(ctx.documentEmbedPool.liveCount(),0);
+console.log('PASS: bounded resize payload/height, 1000-event coalescing, unchanged geometry suppression, width cache, stale bridge and pending cancellation.');

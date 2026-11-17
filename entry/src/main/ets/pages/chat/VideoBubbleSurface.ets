@@ -14,6 +14,7 @@ export struct VideoBubbleSurface {
   @Param sourceWidth: number = 0;
   @Param sourceHeight: number = 0;
   @Param posterPath: string = '';
+  @Param loopPlayback: boolean = false;
   @Param muted: boolean = true;
   @Param startPositionMs: number = 0;
   @Param onPositionChanged: (positionMs: number) => void =
@@ -29,6 +30,7 @@ export struct VideoBubbleSurface {
       videoHeight: this.sourceHeight,
       posterPath: this.posterPath,
       embedded: true,
+      loopPlayback: this.loopPlayback,
       showControls: false,
       muted: this.muted,
       startPositionMs: this.startPositionMs,

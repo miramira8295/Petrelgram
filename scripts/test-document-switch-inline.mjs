@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';import vm from 'node:vm';
+const imported=await import(process.env.TYPESCRIPT_MODULE||'typescript'),ts=imported.default||imported;
+let epoch=1,requests=[],current=true,inserted=[],errors=0;
+const client={send:r=>new Promise((resolve,reject)=>requests.push({r,resolve,reject}))};
+const ctx=vm.createContext({getTdClient:()=>client,TD_SESSION_EPOCH:'epoch',AppStorage:{get:()=>epoch}});
+function load(file,names){const source=fs.readFileSync('entry/src/main/ets/'+file,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/\bexport /g,'');vm.runInContext(ts.transpileModule(source+names.map(n=>`\nglobalThis.${n}=${n}`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);}
+load('services/DocumentSwitchInline.ets',['DocumentSwitchInline']);load('util/drawnPageButton.ets',['drawnPageButtonAction']);
+assert.equal(ctx.drawnPageButtonAction({'@type':'inlineKeyboardButtonTypeSwitchInline',query:'x',target_chat:{'@type':'targetChatCurrent'}}).kind,'switch-inline');
+assert.equal(ctx.drawnPageButtonAction({'@type':'inlineButtonTypeSwitchInline',same_peer:true,query:''}).kind,'switch-inline');
+assert.equal(ctx.drawnPageButtonAction({'@type':'inlineButtonTypeSwitchInline',same_peer:false}).kind,'unsupported','chosen-chat must not silently target current chat');
+const c=new ctx.DocumentSwitchInline(),a={current:()=>current,insert:t=>inserted.push(t),unavailable:()=>errors++};
+const tick=()=>new Promise(resolve=>setImmediate(resolve));
+const message={via_bot_user_id:12,sender_id:{'@type':'messageSenderUser',user_id:99}};
+const bot={type:{'@type':'userTypeBot',is_inline:true},usernames:{active_usernames:['TestBot']}};
+let job=c.open(1,2,'hello',a);c.open(1,2,'duplicate',a);assert.equal(requests.length,1);
+requests.at(-1).resolve(message);await tick();assert.equal(requests.at(-1).r.user_id,12);
+requests.at(-1).resolve(bot);await job;assert.deepEqual(inserted,['@TestBot hello']);
+job=c.open(1,2,'',a);requests.at(-1).resolve({sender_id:{'@type':'messageSenderUser',user_id:99}});await tick();assert.equal(requests.at(-1).r.user_id,99);requests.at(-1).resolve(bot);await job;assert.equal(inserted.at(-1),'@TestBot ');
+const count=inserted.length;
+job=c.open(1,2,'stale',a);c.cancel();requests.at(-1).resolve(message);await job;assert.equal(inserted.length,count);
+job=c.open(1,2,'stale',a);requests.at(-1).resolve(message);await tick();epoch++;requests.at(-1).resolve(bot);await job;assert.equal(inserted.length,count);
+job=c.open(1,2,'stale',a);requests.at(-1).resolve(message);await tick();current=false;requests.at(-1).resolve(bot);await job;assert.equal(inserted.length,count);current=true;
+job=c.open(1,2,'bad',a);requests.at(-1).resolve({sender_id:{'@type':'messageSenderChat',chat_id:99}});await job;assert.equal(errors,1);
+job=c.open(1,2,'bad',a);requests.at(-1).resolve(message);await tick();requests.at(-1).resolve({...bot,type:{'@type':'userTypeRegular'}});await job;assert.equal(errors,2);
+job=c.open(1,2,'bad',a);requests.at(-1).reject(new Error('offline'));await job;assert.equal(errors,3);
+assert.equal(requests.some(r=>/sendMessage|sendInlineQueryResult/.test(r.r['@type'])),false);
+console.log('PASS: current-chat switch mapping, via-bot resolution, two-request singleflight, empty query, cancellation/account/owner guards, no automatic sends.');

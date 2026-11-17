@@ -16,13 +16,13 @@ const layouts=new ctx.DrawnRichTextLayouts();
 const spec={source,maxWidthVp:320,minWidthVp:0,fontSize:16,reserve:' 12:00 ',foreground:'black',accent:'blue',environment:'1'};
 const plan=layouts.prepare(ui,spec);
 assert.equal(plan.emojis.length,3);assert.deepEqual(Array.from(plan.emojis,e=>e.id),['a','b','a']);
-assert.equal(plan.paragraph.getRectsForPlaceholders().length,3);
+assert.equal(plan.paragraph.native.getRectsForPlaceholders().length,3);
 // Original lengths 2/5/2 become 1/1/1. Every link uses its projected offset,
 // while its payload remains original UTF-16 for copy/accessibility/confirmation.
-const boxes=plan.paragraph.getRectsForRange({start:8,end:11});
+const boxes=plan.paragraph.native.getRectsForRange({start:8,end:11});
 assert.equal(plan.hits.find(h=>h.link.url==='https://two.test').x,boxes[0].rect.left/2);
 assert.equal(plan.hits.find(h=>h.link.url==='https://icon.test').x,plan.emojis[2].rect.left/2);
-const end=plan.paragraph.boxes.at(-1).rect.right/2;
+const end=plan.paragraph.native.boxes.at(-1).rect.right/2;
 assert.ok(plan.widthVp>=end,'time reserve uses projected text length');
 assert.equal(plan.source.links[2].label,'🎬');
 const before=layoutCounters();
@@ -32,7 +32,7 @@ assert.deepEqual(layoutCounters(),before);
 const row=new ctx.DrawnTextLayouts().prepare(ui,group(content,entities),data,style);
 assert.ok(row);assert.equal(row.caption.emojis.length,3);
 // Use the real media layout path too, not only the shared rich paragraph.
-for(const file of ['packAlbumRows','albumGeometryCache','albumCellRenderData'])load(root+'util/'+file+'.ets');
+for(const file of ['albumGeometryCache','albumCellRenderData'])load(root+'util/'+file+'.ets');
 for(const file of ['DrawnAlbumGridLayout','DrawnSingleMediaGeometry','DrawnMediaLayout'])
   load(root+'pages/chat/'+file+'.ets',file==='DrawnMediaLayout'?['DrawnMediaLayouts']:[]);
 const album={...group(),caption:content,captionEntities:entities,memberIds:[10,11,12],

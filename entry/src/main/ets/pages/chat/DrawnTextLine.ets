@@ -1,3 +1,4 @@
+import { drawnFirstStrongRtl } from '../../util/drawnTextDirection';
 import { ColorMetrics } from '@kit.ArkUI';
 import { common2D, text } from '@kit.ArkGraphics2D';
 
@@ -60,7 +61,7 @@ export class DrawnTextLineCache {
       style.halfLeading = true;
     }
     const paragraphBuilder = new text.ParagraphBuilder({ textStyle: style, maxLines: 1,
-      textDirection: text.TextDirection.LTR, align: text.TextAlign.LEFT }, text.FontCollection.getGlobalInstance());
+      textDirection: drawnFirstStrongRtl(content) ? text.TextDirection.RTL : text.TextDirection.LTR, align: text.TextAlign.LEFT }, text.FontCollection.getGlobalInstance());
     paragraphBuilder.addText(content);
     const paragraph = paragraphBuilder.build();
     paragraph.layoutSync(maxPx);

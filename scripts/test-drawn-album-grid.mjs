@@ -20,7 +20,7 @@ const ctx=vm.createContext({FrameCallback:class {},ViewV2:View,ViewPU:View,Drawn
 function load(path,names=[]){const text=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'')
   .replace(/@(?:Require|Param|Local|Computed|Event)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'').replace(/\bexport /g,'');
   vm.runInContext(ts.transpileModule(text+names.map(n=>`\nglobalThis.${n}=${n};`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx,{filename:path});}
-for(const file of ['packAlbumRows','albumGeometryCache','albumCellRenderData','drawnContentPolicy','drawnAlbumPolicy'])load(root+'util/'+file+'.ets');
+for(const file of ['androidSmallAlbumGeometry','packAlbumRows','albumGeometryCache','albumCellRenderData','drawnContentPolicy','drawnAlbumPolicy'])load(root+'util/'+file+'.ets');
 load(root+'pages/chat/DrawnAlbumGridLayout.ets',['DrawnAlbumGridLayouts']);
 load(root+'util/drawnFrameBatch.ets');load(root+'util/oneShotFrameCallback.ets');
 load(root+'pages/chat/DrawnAlbumGridMedia.ets',['DrawnAlbumGridMedia']);
@@ -34,7 +34,7 @@ const data={chatId:3,selectionActive:false,selectedMemberIds:[],playSlotKey:'',a
 let cases=0;
 for(let n=2;n<=10;n++)for(const w of [170,277,480])for(const selection of [false,true]){
   const g=group(n),d={...data,selectionActive:selection,selectedMemberIds:[100,103]};
-  const p=new ctx.DrawnAlbumGridLayouts().prepare(g,d,w,2),rows=ctx.packAlbumRows(g.photoRatios,w);
+  const p=new ctx.DrawnAlbumGridLayouts().prepare(g,d,w,2),rows=ctx.packAndroidAlbumRows(g.photoRatios,w);
   const cells=rows.flat();assert.equal(p.tiles.length,n);
   for(let i=0;i<n;i++){const t=p.tiles[i];assert.equal(t.width,cells[i].width);assert.equal(t.height,cells[i].height);
     assert.ok(t.x>=0&&t.y>=0&&t.x+t.width<=p.width+.01&&t.y+t.height<=p.height+.01);
@@ -49,10 +49,9 @@ const changes=[{translatedText:'translation'},{reactions:[{emoji:'ok',count:2}]}
  {linkUrl:'https://example.org'},{linkTitle:'title'},{linkSiteName:'site'},{linkDescription:'description'},{linkPhotoFileId:9}];
 for(const change of changes){const updated={...g,head:{...g.head,...change},caption:'complex caption',captionEntities:[{}]};
   assert.equal(ctx.drawnAlbumEligible(updated,{...data,isChannel:true},false,false),
-    'reactions' in change || 'forwardFrom' in change || 'commentCount' in change ||
-      'inlineButtons' in change || 'replyThumbPath' in change || 'replyDiceLayers' in change);
+    true);
   assert.equal(cache.prepare(updated,data,277,2),first);}
-assert.equal(ctx.drawnAlbumEligible(g,data,true,false),false);assert.equal(ctx.drawnAlbumEligible(g,data,false,true),false);
+assert.equal(ctx.drawnAlbumEligible(g,data,true,false),true);assert.equal(ctx.drawnAlbumEligible(g,data,false,true),true);
 for(let i=0;i<1000;i++)assert.equal(cache.prepare(g,{...data,playSlotKey:'999:2',playSlotStartMs:i},277,2),first);
 const upload=cache.prepare({...g,head:{...g.head,sendState:'sending'}},data,277,2);assert.ok(upload.tiles.every(t=>t.cell.uploading));
 const video={...g,photoIsVideo:[false,true],videoFileIds:[0,50],inlineFileIds:[0,51]};
@@ -134,3 +133,40 @@ for(let i=0;i<1000;i++){assert.equal(compat.hasInlineLink(),false);assert.equal(
 assert.equal(parses,1);assert.equal(rxScans,1);assert.equal(measures,initialMeasures);
 compat.msg={...compat.msg,text:'changed',reactions:[...rx,{emoji:'y',customEmojiId:'',count:7}]};compat.hasInlineLink();assert.equal(parses,2);assert.ok(compat.reactionsRowWidth()>firstWidth);
 console.log('PASS: compatibility shell 1000 stable bindings do not reparse links or scan/measure reactions; content changes invalidate.');
+
+// Explicit spanning coordinates survive transport/cache/reuse. The same
+// rectangles drive native images and click targets; source order never sorts.
+for(const ratios of [[.6,1,1],[1,1,1,1],[1.4,.6,1,1],[3,1,1]]){
+  const owner=new ctx.DrawnAlbumGridLayouts();
+  const g={...group(ratios.length),photoRatios:ratios};
+  const p=owner.prepare(g,data,320,2);
+  const source=ctx.packAndroidAlbumRows(ratios,320).flat();
+  for(let i=0;i<source.length;i++){
+    const tile=p.tiles[i];assert.equal(tile.cell.messageId,g.memberIds[i]);
+    if(source[i].x!==undefined){assert.equal(tile.x,source[i].x);assert.equal(tile.y,source[i].y);}
+    const cx=tile.x+tile.width/2,cy=tile.y+tile.height/2;
+    assert.deepEqual(Array.from(p.tiles.filter(t=>cx>=t.x&&cx<t.x+t.width&&cy>=t.y&&cy<t.y+t.height),t=>t.cell.idx),[i]);
+  }
+  const snapshot=JSON.stringify(p);
+  assert.equal(owner.prepare(g,data,320,2),p,'warm geometry and cells retain identity');
+  const progress={...g,photoProgress:Array(ratios.length).fill(0)};progress.photoProgress[1]=.5;
+  const changed=owner.prepare(progress,data,320,2);
+  for(let i=0;i<ratios.length;i++)if(i!==1)assert.equal(changed.tiles[i],p.tiles[i],'progress preserves sibling tiles');
+  owner.prepare(group(2),data,200,3);
+  assert.equal(JSON.stringify(p),snapshot,'recycle must not mutate published spanning geometry');
+  assert.equal(JSON.stringify(owner.prepare(g,data,320,2)),snapshot,'A/B/A restores correct coordinates and source IDs');
+}
+console.log('PASS: spanning coordinates, unique tile hits, local progress and A/B/A reuse.');
+
+for(const ratios of [[.6,1,1],[1,1,1,1],[1.4,1,1,1],[1,1,1,1,1,1]]){
+ const g={...group(ratios.length),photoRatios:ratios};
+ const p=new ctx.DrawnAlbumGridLayouts().prepare(g,data,320,2);
+ for(const t of p.tiles){
+  const left=t.x<.01,top=t.y<.01,right=Math.abs(t.x+t.width-p.width)<.01,bottom=Math.abs(t.y+t.height-p.height)<.01;
+  assert.equal(t.corners.topLeft,left&&top?0:4);
+  assert.equal(t.corners.topRight,right&&top?0:4);
+  assert.equal(t.corners.bottomLeft,left&&bottom?0:4);
+  assert.equal(t.corners.bottomRight,right&&bottom?0:4);
+ }
+}
+console.log('PASS: spanning and ordinary tile corners follow physical album edges, not row indices.');

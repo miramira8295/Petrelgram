@@ -1,3 +1,4 @@
+import { TranslationStatus } from '../../util/translationChannel';
 import { DrawnTextFooter } from './DrawnTextFooter';
 import { common2D, drawing } from '@kit.ArkGraphics2D';
 import { AlbumCellRenderData } from '../../util/albumCellRenderData';
@@ -9,16 +10,34 @@ import { DrawnTextLine } from './DrawnTextLine';
 import { DrawnBubbleChrome } from './DrawnBubbleChrome';
 
 export interface DrawnBubbleStyle {
+  mathRevision?: number;
+  translationStatus?: TranslationStatus | null;
+  replaceTranslation?: boolean;
+  spoilersRevealed?: boolean;
+  expandedBlocks?: ReadonlyArray<number>;
   radius: number; fontSize: number; environment: string; textEnvironment: string;
   role: string; views: string;
 }
+export interface DrawnTileCorners {
+  topLeft: number;
+  topRight: number;
+  bottomLeft: number;
+  bottomRight: number;
+}
+
 export interface DrawnBubbleTile extends DrawnAlbumRect {
   cell: AlbumCellRenderData;
+  corners?: DrawnTileCorners;
+  edgeMask?: number;
   opaque?: boolean;
   key: string;
 }
 
 export class DrawnBubblePlan {
+  shellWidth: number = 0;
+  shellHeight: number = 0;
+  shellCommands: string = '';
+  shellRadii: BorderRadiuses | undefined = undefined;
   chrome: DrawnBubbleChrome | null = null;
   width: number = 0;
   height: number = 0;

@@ -15,6 +15,8 @@ export interface AlbumCellRenderContext {
 // Immutable input for one album tile. No group/page snapshots or subscriptions
 // cross this boundary; live thumbnail/progress channels remain owned by the tile.
 export interface AlbumCellRenderData {
+  gridX?: number;
+  gridY?: number;
   idx: number;
   width: number;
   height: number;
@@ -74,7 +76,7 @@ function prepareCell(previous: AlbumCellRenderData | undefined, cell: AlbumCell,
   // Match indexOf's strict equality even for malformed NaN ids.
   const selected = messageId === messageId && selectedIds !== null && selectedIds.has(messageId);
   if (previous !== undefined && previous.idx === i && previous.width === cell.width &&
-    previous.height === cell.height && previous.chatId === data.chatId && previous.messageId === messageId &&
+    previous.height === cell.height && previous.gridX === cell.x && previous.gridY === cell.y && previous.chatId === data.chatId && previous.messageId === messageId &&
     previous.thumbPath === thumbPath && previous.thumbFileId === thumbFileId && previous.mini === mini &&
     previous.progress === progress && previous.failed === failed && previous.isVideo === isVideo &&
     previous.isLive === isLive && previous.videoFileId === videoFileId && previous.videoFileSize === videoFileSize &&
@@ -86,7 +88,7 @@ function prepareCell(previous: AlbumCellRenderData | undefined, cell: AlbumCell,
     return previous;
   }
   return {
-    idx: i, width: cell.width, height: cell.height, chatId: data.chatId, messageId,
+    gridX: cell.x, gridY: cell.y, idx: i, width: cell.width, height: cell.height, chatId: data.chatId, messageId,
     thumbPath, thumbFileId, mini, progress, failed, isVideo, isLive,
     videoFileId, videoFileSize, videoDuration, videoMimeType, inlineFileId, inlineFileSize,
     uploading, isPlaySlot, autoplayMuted, playSlotStartMs, selectionActive, selected
@@ -96,6 +98,10 @@ function prepareCell(previous: AlbumCellRenderData | undefined, cell: AlbumCell,
 // One bounded cache per album view. Geometry is keyed by actual ratios/width,
 // so caption/translation/reaction updates cannot repack or replace unchanged rows.
 export class AlbumCellRenderCache {
+  private androidGeometry: boolean;
+
+  constructor(androidGeometry: boolean = false) { this.androidGeometry = androidGeometry; }
+
   private ratios: number[] = [];
   private width: number = -1;
   private geometry: AlbumCell[][] = [];
@@ -130,7 +136,7 @@ export class AlbumCellRenderCache {
       this.ratios.some((ratio: number, i: number): boolean => ratio !== group.photoRatios[i])) {
       this.width = width;
       this.ratios = group.photoRatios.slice();
-      this.geometry = albumGeometryCache.prepare(this.ratios, width);
+      this.geometry = albumGeometryCache.prepare(this.ratios, width, this.androidGeometry);
     }
     // One index per preparation: O(S + N), instead of scanning S selected ids
     // for each tile. Normal browsing has an empty selection and allocates none.

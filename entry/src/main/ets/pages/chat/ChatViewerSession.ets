@@ -6,7 +6,7 @@ import { mediaEntryIsPhoto, mediaEntryIsVideo } from '../../util/mediaEntryKind'
 import { MEDIA_VIEWING_PRIORITY } from '../../util/downloadPriority';
 import { KEY_POWER_SMOOTH_TRANSITIONS } from '../../store/AppSettings';
 import { promptAction } from '@kit.ArkUI';
-import { albumCanvasTransitionFor } from '../../util/albumCanvasTransition';
+import { albumCanvasTransitionFor, takeAlbumCanvasAnchor } from '../../util/albumCanvasTransition';
 import { ViewerUnderlay } from '../../util/viewerUnderlay';
 import { MessageStore } from '../../store/MessageStore';
 import { VIEWER_CHROME_ON_OPEN } from './MediaViewerOverlay';
@@ -190,6 +190,7 @@ export class ChatViewerSession {
     //
     // 查看器**内部**那 9 处动画（chrome 淡入、缩放复位等）仍留在 EFFECT_BLUR 下
     // ——它们确实属于"模糊与缩放效果"。
+    this.underlay.holdSource(takeAlbumCanvasAnchor(messageId));
     this.underlay.fadeOnly = albumCanvasTransitionFor(messageId);
     animateToUI({ duration: this.host.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, this.underlay.fadeOnly ? 160 : 300), curve: Curve.Friction }, () => {
       this.onMediaTap(messageId);

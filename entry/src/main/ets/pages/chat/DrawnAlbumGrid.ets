@@ -121,7 +121,7 @@ export struct DrawnAlbumGrid {
             DrawnAlbumVideo({ cell: this.cellAt(tile.cell.idx), actions: this.actions, thumbReady: this.ready(tile.cell.idx) });
           }
         }.width(tile.width).height(tile.height).position({ x: tile.x, y: tile.y })
-        .backgroundColor(thumbBackdropColor(tile.cell.isVideo)).borderRadius(6).clip(true)
+        .backgroundColor(thumbBackdropColor(tile.cell.isVideo)).borderRadius(tile.corners ?? 4).clip(true)
         .drawModifier(this.media.slots[tile.cell.idx]?.receiver)
         .geometryTransition(tile.cell.isVideo ? '' : `media_${tile.cell.chatId}_${tile.cell.messageId}`)
         .accessibilityText(this.label(tile.cell.idx))

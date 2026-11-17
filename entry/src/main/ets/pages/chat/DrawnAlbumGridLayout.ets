@@ -20,7 +20,7 @@ export class DrawnAlbumGridLayouts {
   private selected: number[] | null = null;
   private signature: string = '';
   private previous: DrawnAlbumGridPlan | null = null;
-  private cells: AlbumCellRenderCache = new AlbumCellRenderCache();
+  private cells: AlbumCellRenderCache = new AlbumCellRenderCache(true);
   private preparedRows: AlbumCellRenderData[][] | null = null;
 
   private sameMedia(a: AlbumGroup, b: AlbumGroup): boolean {
@@ -50,18 +50,39 @@ export class DrawnAlbumGridLayouts {
       return this.previous;
     }
     const tiles: DrawnBubbleTile[] = [];
-    let y = 0;
+    let rowY = 0;
+    let height = 0;
+    // One bounded extent pass handles spanning tiles; never scan neighbours
+    // for each corner. Outer contour belongs to the parent grid clip.
+    for (const row of rows) {
+      for (const cell of row) { height = Math.max(height, (cell.gridY ?? rowY) + cell.height); }
+      rowY += (row[0]?.height ?? 0) + 2;
+    }
+    rowY = 0;
     // Rows partition the N cells; this is O(N + S), not N squared.
     for (const row of rows) {
-      let x = 0;
+      let rowX = 0;
       for (const cell of row) {
-        tiles.push({ cell, x, y, width: cell.width, height: cell.height,
-          key: `${data.chatId}:${group.head.rowId}:${cell.messageId}:${cell.idx}:${x}:${y}:${cell.width}:${cell.height}:${cell.isVideo}:${cell.isLive}` });
-        x += cell.width + 2;
+        const x = cell.gridX ?? rowX;
+        const y = cell.gridY ?? rowY;
+        const left = x < 0.01, top = y < 0.01;
+        const right = Math.abs(x + cell.width - width) < 0.01;
+        const bottom = Math.abs(y + cell.height - height) < 0.01;
+        const edgeMask = (left ? 1 : 0) | (top ? 2 : 0) | (right ? 4 : 0) | (bottom ? 8 : 0);
+        const inner = Math.min(4, cell.width / 2, cell.height / 2);
+        const old = this.previous?.tiles[tiles.length];
+        if (old !== undefined && this.source?.head.rowId === group.head.rowId && old.cell === cell && old.x === x && old.y === y &&
+          old.width === cell.width && old.height === cell.height && old.edgeMask === edgeMask) { tiles.push(old); }
+        else { tiles.push({ cell, x, y, edgeMask,
+          corners: old?.edgeMask === edgeMask && old.width === cell.width && old.height === cell.height ? old.corners : {
+            topLeft: left && top ? 0 : inner, topRight: right && top ? 0 : inner,
+            bottomLeft: left && bottom ? 0 : inner, bottomRight: right && bottom ? 0 : inner }, width: cell.width, height: cell.height,
+          key: `${data.chatId}:${group.head.rowId}:${cell.messageId}:${cell.idx}:${x}:${y}:${cell.width}:${cell.height}:${cell.isVideo}:${cell.isLive}` }); }
+        rowX += cell.width + 2;
       }
-      y += (row[0]?.height ?? 0) + 2;
+      rowY += (row[0]?.height ?? 0) + 2;
     }
-    const next: DrawnAlbumGridPlan = { width, height: Math.max(0, y - 2), density, tiles };
+    const next: DrawnAlbumGridPlan = { width, height, density, tiles };
     this.source = group; this.selected = data.selectedMemberIds; this.signature = signature; this.previous = next;
     this.preparedRows = rows;
     return next;

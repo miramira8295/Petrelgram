@@ -5,6 +5,7 @@ import { glassBubbleCommands } from '../../util/bubbleGlassPath';
 // never reset/transform them, because an older plan may still be painting.
 // Fixed-size keys, no text, entities, media or UIContext retained here.
 export class DrawnBubbleOutlineCache {
+  commands: string = '';
   private key: string = '';
   private path: drawing.Path | null = null;
 
@@ -13,11 +14,11 @@ export class DrawnBubbleOutlineCache {
     const key = `${w}:${h}:${outgoing}:${tail}:${tl}:${tr}:${br}:${bl}:${density}:${gutter}`;
     if (this.path !== null && this.key === key) { return this.path; }
     const path = new drawing.Path();
-    if (!path.buildFromSvgString(glassBubbleCommands(w, h, outgoing, tail,
-      tl, tr, br, bl, 8, 12, density, 0, gutter))) {
+    const commands = glassBubbleCommands(w, h, outgoing, tail, tl, tr, br, bl, 8, 12, density, 0, gutter);
+    if (!path.buildFromSvgString(commands)) {
       throw new Error('invalid drawn bubble outline');
     }
-    this.key = key; this.path = path;
+    this.key = key; this.path = path; this.commands = commands;
     return path;
   }
 }

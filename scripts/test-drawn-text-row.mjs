@@ -25,7 +25,7 @@ class Paragraph {
       }
     }
     this.lines.push({left:0,width:x,baseline:y+h*.8,ascent:h*.8});this.height=y+h;
-    if(this.style.maxLines===1){this.lines=this.lines.slice(0,1);this.height=h;}
+    if(this.style.maxLines!==undefined){this.lines=this.lines.slice(0,this.style.maxLines);this.height=this.lines.length*h;this.boxes=this.boxes.filter(b=>b.rect.top<this.height);}
   }
   getHeight(){return this.height;}getLongestLine(){return Math.max(...this.lines.map(l=>l.width));}
   getMaxIntrinsicWidth(){return this.parts.reduce((a,p)=>a+(p.width??p.text.length*p.style.fontSize*.5),0);}
@@ -36,7 +36,7 @@ class Paragraph {
 }
 class ParagraphBuilder {
   constructor(style){this.style=style;this.stack=[style.textStyle];this.parts=[];}
-  pushStyle(s){this.stack.push(s);}popStyle(){this.stack.pop();}
+  pushStyle(s){if(Object.hasOwn(s,'backgroundRect'))assert.ok(s.backgroundRect,'absent background must omit native property');this.stack.push(s);}popStyle(){this.stack.pop();}
   addText(text){this.parts.push({text,style:this.stack.at(-1)});}addPlaceholder(p){this.parts.push(p);}
   build(){return new Paragraph(this.style,this.parts);}
 }
@@ -44,12 +44,15 @@ const enumMock=new Proxy({},{get:(_t,k)=>k});
 const ctx=vm.createContext({ViewV2:class{},ViewPU:class{},Color:{White:'white'},$r:x=>({resource:x}),
   ColorMetrics:{resourceColor:()=>({alpha:255,red:10,green:20,blue:30})},
   text:{ParagraphBuilder,FontCollection:{getGlobalInstance:()=>({})},FontWeight:enumMock,FontStyle:enumMock,
-    TextDecorationType:enumMock,TextDirection:enumMock,TextAlign:enumMock,WordBreak:enumMock,
+    TextBadgeType:enumMock,TextDecorationType:enumMock,TextDirection:enumMock,TextAlign:enumMock,WordBreak:enumMock,
     PlaceholderAlignment:enumMock,TextBaseline:enumMock,RectWidthStyle:enumMock,RectHeightStyle:enumMock},
-  drawing:{Path:class{buildFromSvgString(s){this.svg=s;pathBuilds++;return true;}},RoundRect:class{constructor(rect){this.rect=rect;}}},
+  drawing:{Pen:class{setAntiAlias(){}setColor(){}setStrokeWidth(){}},Brush:class{setAntiAlias(){}setColor(){}},Path:class{buildFromSvgString(s){this.svg=s;pathBuilds++;return true;}},RoundRect:class{constructor(rect){this.rect=rect;}}},
+  linkPreviewPresentation:(url,type,site)=>({siteLabel:site||'site',actionLabel:'open',actionable:!!url,isTelegram:false}),
+  botButtonBg:()=> 'blue',
+  mathMetricsFor:()=>undefined, mathKeyOf:(text,size,color)=>`${text}|${size}|${color}`,
   deviceInfo:{deviceType:'phone'},getUserStore:()=>({accentColorId:()=>-1}),getAccentColorStore:()=>({}),
   AVATAR_PALETTE:['red','blue'],COLOR_PRIMARY:'blue',COLOR_TEXT_SECONDARY:'gray',COLOR_BUBBLE_IN:'white',COLOR_BUBBLE_OUT:'green',
-  accentSoft:()=> ({resource:'soft'}),bubbleTextFor:()=> 'black',formatClockTime:d=>`12:${String(d%60).padStart(2,'0')}`,str:x=>x,plural:(k,n)=>`${n} comments`,reactionKeyFrom:(e,id)=>id||e,slotKey:(id,i)=>`${id}:${i}`,
+  accentSoft:()=> ({resource:'soft'}),bubbleTextFor:()=> 'black',formatClockTime:d=>`12:${String(d%60).padStart(2,'0')}`,str:x=>x,languageDisplayName:x=>x,plural:(k,n)=>`${n} comments`,reactionKeyFrom:(e,id)=>id||e,slotKey:(id,i)=>`${id}:${i}`,
   SourceType:{TouchScreen:1,Mouse:2},TouchType:{Down:0,Up:1,Move:2,Cancel:3},
   firstFinger:list=>list[0],messageGesturePolicy:()=>({tapOpensMenu:true,longPressSelects:false,longPressOpensMenu:true}),
   tableScrollTouched:()=>false,isEdgeSwipeStart:x=>x<36,SWIPE_REPLY_MAX:-70,SWIPE_REPLY_TRIGGER:-40,SWIPE_SELECT_MAX:70,SWIPE_SELECT_TRIGGER:40,
@@ -57,11 +60,11 @@ const ctx=vm.createContext({ViewV2:class{},ViewPU:class{},Color:{White:'white'},
 function load(path,names=[]){const s=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/@(?:Require|Param|Local|Computed|Event|ObservedV2|Trace)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'').replace(/\bexport /g,'');vm.runInContext(ts.transpileModule(s+names.map(n=>`\nglobalThis.${n}=${n};`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx,{filename:path});}
 load(root+'util/drawnTextUnits.ets');
 load(root+'pages/chat/DrawnMediaColors.ets');
-for(const file of ['mediaBox','messageBubblePresentation','bubbleCornerInset','bubbleGlassPath','drawnPlainTextPolicy','drawnFooterPlacement','richText','messageLinkAction'])load(root+'util/'+file+'.ets');
+for(const file of ['drawnTextDirection','mediaBox','messageBubblePresentation','bubbleCornerInset','bubbleGlassPath','drawnPlainTextPolicy','drawnFooterPlacement','richText','messageLinkAction','translationMode','drawnInlineIcon','richBlocks','tableLayout','drawnTableGrid','drawnPageButton','drawnDocumentMedia','documentEmbedNavigation','drawnDocumentWidget','documentEmbedMetrics','androidSmallAlbumGeometry','packAlbumRows'])load(root+'util/'+file+'.ets');
 vm.runInContext('globalThis.actualParser=parseFormattedText',ctx);ctx.countParse=(...a)=>{parseCalls++;return ctx.actualParser(...a);};
 vm.runInContext('parseFormattedText=countParse',ctx);
-for(const file of ['drawnSourcePool','drawnRichHitIndex','drawnRichTextPolicy','drawnAlbumPolicy','drawnTextRowPolicy','drawnContentPolicy','messageDragGesture'])load(root+'util/'+file+'.ets',[file==='messageDragGesture'?'MessageDragGesture':file==='drawnTextRowPolicy'?'drawnTextRowEligible':file==='drawnRichTextPolicy'?'DrawnRichSourceCache':'drawnTailGutter']);
-for(const file of ['DrawnTextLine','DrawnRichTextLayout','DrawnSenderHeader','DrawnReplyQuote','DrawnReactionLayout','DrawnBubbleChrome','DrawnBubbleGeometry','DrawnBubblePlan','DrawnTextFooter','DrawnTextLayout'])load(root+'pages/chat/'+file+'.ets',file==='DrawnTextLayout'?['DrawnTextLayouts']:[]);
+for(const file of ['drawnSourcePool','drawnRichHitIndex','drawnRichTextPolicy','drawnDocumentAnchors','drawnAlbumPolicy','drawnTextRowPolicy','drawnContentPolicy','messageDragGesture'])load(root+'util/'+file+'.ets',[file==='messageDragGesture'?'MessageDragGesture':file==='drawnTextRowPolicy'?'drawnTextRowEligible':file==='drawnRichTextPolicy'?'DrawnRichSourceCache':'drawnTailGutter']);
+for(const file of ['DrawnStructuredSource','DrawnTranslatedSource','DrawnWebPreviewSource','DrawnTextLine','DrawnRichCompositeParagraph','DrawnRichTextLayout','DrawnSenderHeader','DrawnReplyQuote','DrawnReactionLayout','DrawnBubbleChrome','DrawnBubbleGeometry','DrawnBubblePlan','DrawnTextFooter','DrawnTextLayout'])load(root+'pages/chat/'+file+'.ets',file==='DrawnTextLayout'?['DrawnTextLayouts']:[]);
 load(root+'util/drawnMediaSlot.ets',['DrawnMediaSlots']);
 load(root+'util/drawnRouteMetrics.ets',['DrawnRouteReason','DrawnRouteTracker','drawnRouteMetrics']);
 load(root+'util/drawnStageMetrics.ets',['drawnStageMetrics','DrawnStage']);
@@ -84,7 +87,7 @@ ctx.DrawnMessageRow.prototype.albumCanvas = {state:{ready:false},bind(){},reset(
 const ui={vp2px:n=>{unitConversions++;return n*2;},fp2px:n=>{unitConversions++;return n*2;}};
 const data={playSlotKey:'',chatId:9,isGroup:false,isChannel:false,contentWidth:400,themeBubbleOut:'',selectionActive:false,selectedMemberIds:[],canReply:true,lightweightPlainText:true};
 const style={radius:20,fontSize:16,environment:'1',textEnvironment:'1',role:'',views:''};
-function group(content='hello',entities=[]){return{head:{id:10,rowId:10,contentType:'text',text:content,textEntities:entities,date:1,editDate:0,isOutgoing:false,senderId:5,senderName:'',senderInitials:'AB',senderIsUser:true,senderAvatarPath:'',senderTag:'',sendState:'sent',translatedText:'',reactions:[],inlineButtons:[],forwardFrom:'',commentCount:0,replyToMessageId:0,replySenderName:'',replyText:'',replyThumbPath:'',replyDiceLayers:[],linkUrl:'',linkTitle:'',linkSiteName:'',linkDescription:'',linkPhotoFileId:0},memberIds:[10],showAvatar:true,showSenderName:true,dateLabel:''};}
+function group(content='hello',entities=[]){return{head:{id:10,rowId:10,contentType:'text',text:content,textEntities:entities,date:1,editDate:0,isOutgoing:false,senderId:5,senderName:'',senderInitials:'AB',senderIsUser:true,senderAvatarPath:'',senderTag:'',sendState:'sent',translatedText:'',reactions:[],inlineButtons:[],forwardFrom:'',commentCount:0,replyToMessageId:0,replySenderName:'',replyText:'',replyThumbPath:'',replyDiceLayers:[],linkPreviewType:'',linkUrl:'',linkTitle:'',linkSiteName:'',linkDescription:'',linkPhotoFileId:0},memberIds:[10],showAvatar:true,showSenderName:true,dateLabel:''};}
 const layouts=new ctx.DrawnTextLayouts();let g=group(),p=layouts.prepare(ui,g,data,style);
 assert.ok(ctx.drawnTextRowEligible(g,data,false,false));assert.equal(p.tiles.length,0);assert.equal(p.caption.source.content,'hello');
 assert.ok(p.footerY<p.captionY+p.caption.heightVp,'short last line shares footer');
@@ -109,7 +112,7 @@ for(const width of [180,260,400,800])for(const font of [12,16,24])for(const coun
  const right=plan.captionX+(width-48), footerRight=plan.footerX+plan.footerWidth;
  assert.ok(plan.width>0&&plan.height>0);assert.ok(footerRight<=plan.width+0.01);
  assert.ok(plan.footerY+plan.footer.heightPx/plan.density<=plan.height);
- const last=plan.caption.paragraph.lines.at(-1),lastRight=plan.captionX+last.width/2;
+ const last=plan.caption.paragraph.native.lines.at(-1),lastRight=plan.captionX+last.width/2;
  if(plan.footerY<plan.captionY+plan.caption.heightVp){assert.ok(plan.footerX>=lastRight+4-.01,'inline footer never overlaps body');}
  else assert.ok(plan.footerY>=plan.captionY+plan.caption.heightVp,'overflow footer gets own line');cases++;
 }
@@ -117,13 +120,13 @@ for(const width of [180,260,400,800])for(const font of [12,16,24])for(const coun
 const links=group('https://one.test https://two.test');p=layouts.prepare(ui,links,data,style);assert.equal(p.caption.source.links.length,2);
 const styled=group('bold link',[{offset:0,length:4,type:{'@type':'textEntityTypeBold'}},{offset:5,length:4,type:{'@type':'textEntityTypeTextUrl',url:'https://target.test'}}]);
 p=layouts.prepare(ui,styled,{...data,lightweightPlainText:false},style);assert.ok(p.caption.source.runs[0].bold);assert.equal(p.caption.source.links[0].url,'https://target.test');
-for(const kind of ['textEntityTypeSpoiler','textEntityTypeCode','textEntityTypePre','textEntityTypeBlockQuote']){
- const x=group('abc',[{offset:0,length:3,type:{'@type':kind,custom_emoji_id:'9'}}]);assert.equal(layouts.prepare(ui,x,data,style),null,kind);
+for(const kind of ['textEntityTypeSpoiler']){
+ const x=group('abc',[{offset:0,length:3,type:{'@type':kind,custom_emoji_id:'9'}}]);assert.ok(layouts.prepare(ui,x,data,style),kind);
 }
-for(const field of ['translatedText','linkUrl','linkTitle','linkSiteName','linkDescription']){const x=group();x.head[field]='x';assert.equal(ctx.drawnTextRowEligible(x,data,false,false),false,field);}
+for(const field of ['linkUrl','linkTitle','linkSiteName','linkDescription']){const x=group();x.head[field]='x';assert.equal(ctx.drawnTextRowEligible(x,data,false,false),true,field);}
 for(const field of ['inlineButtons','replyDiceLayers']){const x=group();x.head[field]=[{}];assert.equal(ctx.drawnTextRowEligible(x,data,false,false),true,field);}
 const structured=group();structured.head.contentType='richMessage';assert.equal(ctx.drawnTextRowEligible(structured,data,false,false),false);
-assert.equal(ctx.drawnTextRowEligible(group(),data,true,false),false);assert.equal(ctx.drawnTextRowEligible(group(),data,false,true),false);
+assert.equal(ctx.drawnTextRowEligible(group(),data,true,false),true);assert.equal(ctx.drawnTextRowEligible(group(),data,false,true),true);
 // Replay real compiled link/reply/avatar/drag handlers, including reuse.
 const events=[],row=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{interaction:new ctx.DrawnRowInteraction(),layoutRetention:new ctx.DrawnLayoutRetention(),mediaFrameCache:new ctx.DrawnMediaFrames(),nativeAnchors:new ctx.DrawnMediaAnchorPool(),canvasAttributes:new ctx.DrawnCanvasAttributes()});
 row.kind='text';row.group=links;row.data=data;row.env={gestureScheme:0,screenWidthVp:400};row.dragGesture=new ctx.MessageDragGesture();
@@ -150,8 +153,8 @@ const beforeSend=gate.plan;const beforeWork=layoutCounters();
 for(let i=0;i<1000;i++){gate.sendState=i%2?'sending':'sent';assert.equal(gate.plan,beforeSend);}
 assert.deepEqual(layoutCounters(),beforeWork);gate.sendState='sent';
 const staticAvatarPlan=gate.plan;gate.avatarAnimated=true;assert.equal(gate.plan,staticAvatarPlan);gate.avatarAnimated=false;
-gate.translation='pending';assert.equal(gate.plan,null);gate.translation=null;
-gate.env.linkNavBusy='https://two.test';assert.equal(gate.plan,beforeSend);
+gate.translation={phase:'loading',error:''};assert.ok(gate.plan);assert.ok(gate.plan.caption.source.blocks);gate.translation=null;
+const restoredPlan=gate.plan;assert.equal(restoredPlan.caption,beforeSend.caption);gate.env.linkNavBusy='https://two.test';assert.equal(gate.plan,restoredPlan);
 assert.equal(gate.plan.caption.hitsByUrl.get('https://two.test').length,gate.plan.caption.hits.filter(h=>h.link.url==='https://two.test').length);gate.env.linkNavBusy='';assert.ok(gate.plan);
 // Reply and avatar hit paths stay distinct from links and menu gestures.
 row.group=g;row.data={...data,isGroup:true};p=layouts.prepare(ui,g,row.data,style);

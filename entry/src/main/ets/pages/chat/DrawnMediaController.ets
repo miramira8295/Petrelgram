@@ -219,6 +219,8 @@ export class DrawnMediaController {
     try {
       if (contextChanged || this.boundTiles !== plan.tiles || this.boundDensity !== plan.density || this.staged !== staged) {
         const count = plan.tiles.length;
+        const stableBinding = !contextChanged && this.boundDensity === plan.density && this.staged === staged;
+
         while (this.slots.length > count) {
           const removed = this.slots.pop();
           if (removed !== undefined) { this.dirtySlots.delete(removed); removed.dispose(); }
@@ -230,6 +232,9 @@ export class DrawnMediaController {
             }, this.pixelsChanged);
             this.slots.push(slot);
           }
+          // Immutable tile identity is retained through grid and placement.
+          // A play target change rebinds only the old/new slot, not every image.
+          if (stableBinding && this.boundTiles?.[i] === plan.tiles[i]) { continue; }
           this.slots[i].bind(ui, plan.tiles[i], plan.density, staged && !plan.tiles[i].cell.isPlaySlot && !plan.tiles[i].cell.uploading);
           if (staged && this.visible !== null) { this.slots[i].setVisible(this.visible); }
         }

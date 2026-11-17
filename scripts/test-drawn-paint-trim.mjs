@@ -109,3 +109,18 @@ r.trace.length=0;assert.throws(()=>f.drawBehind({canvas:{save(){throw Error('pai
 m.setEnabled(false);const summary=m.summary();for(let i=0;i<1000;i++){m.invalidated(ctx.DrawnInvalidation.AvatarImage);f.drawBehind(frame);}
 assert.equal(m.summary(),summary);m.reset();assert.equal(m.summary(),'');
 console.log('PASS: 6000 warm paint callbacks perform zero AA/width setters or native allocations; density/status isolation, null reuse, O(1) disabled diagnostics, balanced paint traces and coalesced press invalidation.');
+
+// The OS glass background owns fill/shadow; the same foreground row remains.
+{
+ const r=runtime(),p=plan(),background=new r.ctx.DrawnBubblePainter();
+ background.bind(p,true,true);background.drawBehind({canvas:r.canvas});
+ const solidCommands=r.commands.length;assert.ok(solidCommands>0);
+ background.bind(p,false,false);background.drawBehind({canvas:r.canvas});
+ assert.equal(r.commands.length,solidCommands,'glass mode must not cover its compositor with opaque canvas fill');
+ const allocations=r.counts.objects,invalidations=r.counts.invalidations;
+ for(let i=0;i<1000;i++)background.bind(p,false,false);
+ assert.equal(r.counts.objects,allocations);assert.equal(r.counts.invalidations,invalidations);
+ background.bind(p,false,true);background.drawBehind({canvas:r.canvas});
+ assert.ok(r.commands.length>solidCommands,'power-saving/disabled glass restores solid paint on the same owner');
+ console.log('PASS: same-row glass/solid background switching, no opaque overpaint, 1000 stable binds allocate/invalidate nothing.');
+}

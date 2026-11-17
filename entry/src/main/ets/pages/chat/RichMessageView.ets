@@ -66,6 +66,7 @@ export struct RichMessageView {
     inner['blocks'] = this.rawBlocks;
     wrapper['message'] = inner;
     const parsed: RichBlock[] = parseRichMessage(wrapper);
+    this.clearMathSubscriptions();
     this.blockSource = this.rawBlocks;
     this.blockCache = parsed;
     return parsed;
@@ -74,6 +75,11 @@ export struct RichMessageView {
   // 公式排好之后要重绘，而位图存在模块级缓存里、组件订阅不了它。
   // 每排好一条就 +1，build 里读它一次就建立了依赖。
   @Local private mathEpoch: number = 0;
+  private mathSubscriptions: Map<string, () => void> = new Map<string, () => void>();
+  private clearMathSubscriptions(): void {
+    this.mathSubscriptions.forEach((off: () => void): void => off()); this.mathSubscriptions.clear();
+  }
+  aboutToDisappear(): void { this.clearMathSubscriptions(); }
 
   // 超采样倍率：按 3 倍字号排版、按 1/3 显示，否则高分屏上公式发糊。
   private mathImageOf(expr: string, size: number): MathImage | undefined {
@@ -85,8 +91,14 @@ export struct RichMessageView {
       return hit;
     }
     // 读一下纪元，让这个节点订阅"又排好了一条"。
-    if (this.mathEpoch >= 0) {
-      ensureMathImage(expr, rendered, color, (): void => { this.mathEpoch++; });
+    const revision = this.mathEpoch; // register the image-arrival dependency
+    if (!this.mathSubscriptions.has(key)) {
+      const owner = this.rawBlocks;
+      const off = ensureMathImage(expr, rendered, color, (): void => {
+        this.mathSubscriptions.delete(key);
+        if (owner === this.rawBlocks) { this.mathEpoch = Math.max(this.mathEpoch, revision) + 1; }
+      });
+      this.mathSubscriptions.set(key, off);
     }
     return undefined;
   }
@@ -115,41 +127,29 @@ export struct RichMessageView {
               : (s.underline || s.url !== '' ? TextDecorationType.Underline
                 : TextDecorationType.None)
           })
-          .fontFamily(s.code ? 'monospace' : undefined);
+          .fontFamily(s.code ? 'monospace' : undefined)
+          .onClick(s.url !== '' ? (): void => { this.onOpenUrl(s.url); } : undefined);
         }
       }, (s: RichSpan, i: number) => `sp_${i}_${s.text.length}_${s.url}_${s.math ? 1 : 0}`);
     }
     .lineHeight(size * LINE_RATIO)
-    .constraintSize({ maxWidth: this.maxWidth })
-    .onClick((): void => {
-      // 整段里只要有链接就打开第一个。逐 Span 的点击 ArkUI 不给，做不到
-      // "点哪个词开哪个链接"——退而求其次好过完全不能点。
-      for (const s of spans) {
-        if (s.url !== '') {
-          this.onOpenUrl(s.url);
-          return;
-        }
-      }
-    });
+    .constraintSize({ maxWidth: this.maxWidth });
   }
 
-  // 一次 build 内的列宽缓存。blocks() 每次 build 都重新解析、产出新的块对象，
-  // 所以**按对象身份**缓存正好：同一帧里每个格子都拿到同一份，跨帧自然失效。
-  // 不缓存的话 4x3 的表要把列宽算 13 遍（每格一遍 + 判要不要可滚一遍）。
-  private widthsFor: RichBlock | null = null;
-  private widthsCache: number[] = [];
+  // Parsed blocks retain identity. Each table keeps its own widths; alternating
+  // tables cannot evict one another. Weak keys release with the source document.
+  private widthsCache: WeakMap<RichBlock, number[]> = new WeakMap<RichBlock, number[]>();
 
   // 表格每列多宽。判据是纯函数（util/tableLayout），这里只把每格的**纯文本**
   // 摊出来喂给它。
   private tableWidths(b: RichBlock): number[] {
-    if (this.widthsFor === b) {
-      return this.widthsCache;
-    }
+    const cached = this.widthsCache.get(b);
+    if (cached !== undefined) { return cached; }
     const text: string[][] = b.rows.map((row: RichCell[]): string[] =>
       row.map((c: RichCell): string => c.spans.map((s: RichSpan): string => s.text).join('')));
-    this.widthsCache = tableColumnWidths(text, CELL_SIZE);
-    this.widthsFor = b;
-    return this.widthsCache;
+    const widths = tableColumnWidths(text, CELL_SIZE);
+    this.widthsCache.set(b, widths);
+    return widths;
   }
 
   // 表格够宽才让它可滚；不超宽却挂着横向 Scroll，会白白和整行的左滑回复抢手势。
@@ -192,7 +192,8 @@ export struct RichMessageView {
               : (s.underline || s.url !== '' ? TextDecorationType.Underline
                 : TextDecorationType.None)
           })
-          .fontFamily(s.code ? 'monospace' : undefined);
+          .fontFamily(s.code ? 'monospace' : undefined)
+          .onClick(s.url !== '' ? (): void => { this.onOpenUrl(s.url); } : undefined);
       }, (s: RichSpan, i: number) => `tc_${i}_${s.text.length}_${s.url}`);
     }
     .width('100%')

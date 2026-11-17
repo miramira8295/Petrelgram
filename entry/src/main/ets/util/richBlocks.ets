@@ -1,3 +1,4 @@
+import { DrawnInlineIcon, drawnInlineIcon } from './drawnInlineIcon';
 import { TdObject } from '../tdkit/TdTypes';
 
 // messageRichMessage（富文本长帖）的页面块 → 有类型的块模型。
@@ -29,6 +30,11 @@ export interface RichCell {
 
 // 一段行内文字及其样式。url 非空表示可点。
 export interface RichSpan {
+  anchor?: string;
+  icon?: DrawnInlineIcon;
+  script?: number;
+  marked?: boolean;
+  unsupported?: string;
   text: string;
   bold: boolean;
   italic: boolean;
@@ -77,62 +83,74 @@ function styled(base: RichSpan, type: string, url: string): RichSpan {
     text: base.text,
     bold: base.bold || type === 'richTextBold',
     italic: base.italic || type === 'richTextItalic',
-    underline: base.underline || type === 'richTextUnderline' || type === 'richTextMarked',
+    underline: base.underline || type === 'richTextUnderline',
+    marked: base.marked === true || type === 'richTextMarked',
     strike: base.strike || type === 'richTextStrikethrough',
     code: base.code || type === 'richTextFixed',
     url: url !== '' ? url : base.url,
-    math: base.math
+    icon: base.icon, math: base.math, unsupported: base.unsupported,
+    script: type === 'richTextSubscript' ? -1 : type === 'richTextSuperscript' ? 1 : base.script
   };
 }
 
-// richText 树 → 扁平的 span 列表。认不出的包装节点递归它的 text，不吞文字。
-function spansOf(node: TdObject | undefined, url: string): RichSpan[] {
-  if (node === undefined) {
-    return [];
-  }
-  const type: string = (node['@type'] as string | undefined) ?? '';
-  if (type === 'richTextPlain') {
-    const t: string = (node['text'] as string | undefined) ?? '';
-    if (t === '') {
-      return [];
-    }
-    const s: RichSpan = emptySpan(t);
-    return [url !== '' ? styled(s, '', url) : s];
-  }
-  // 数学公式。真机字段：`keys=[@type,expression]`，expression 是 LaTeX 原文。
-  //
-  // 【为什么按代码体显示原文，而不是渲染成公式】真渲染要一个 LaTeX 排版引擎，
-  // 和"在聊天气泡里显示一条公式"完全不成比例。而这个节点**没有 text 字段**，
-  // 下面那条"认不出就递归 node['text']"的兜底对它返回空——于是公式整段凭空
-  // 消失，用户只看到"行内公式:"后面什么都没有（2026-09-22 实报）。
-  // 显示原文至少让内容不丢，也看得出这里本来是个公式。
-  if (type === 'richTextMathematicalExpression') {
-    const expr: string = (node['expression'] as string | undefined) ?? '';
-    if (expr === '') {
-      return [];
-    }
-    const span: RichSpan = styled(emptySpan(expr), 'richTextFixed', url);
-    return [{
-      text: span.text, bold: span.bold, italic: span.italic, underline: span.underline,
-      strike: span.strike, code: span.code, url: span.url, math: true
-    }];
-  }
-  if (type === 'richTexts') {
-    const parts = (node['texts'] as TdObject[] | undefined) ?? [];
-    const out: RichSpan[] = [];
-    for (const part of parts) {
-      for (const s of spansOf(part, url)) {
-        out.push(s);
-      }
-    }
-    return out;
-  }
-  const nextUrl: string = type === 'richTextUrl'
-    ? ((node['url'] as string | undefined) ?? url) : url;
-  const inner: RichSpan[] = spansOf(node['text'] as TdObject | undefined, nextUrl);
+interface RichSpanFrame {
+  node: TdObject;
+  style: RichSpan;
+}
+
+// One visit per richText node. Carry inherited flags down to leaves instead of
+// mapping/copying every descendant array at every wrapper (O(nodes × depth)).
+// An explicit stack also handles deeply nested style wrappers without JS stack overflow.
+export function richSpansOf(node: TdObject | undefined, url: string = '', internalAnchors: boolean = false): RichSpan[] {
+  if (node === undefined) { return []; }
   const out: RichSpan[] = [];
-  for (const s of inner) {
-    out.push(styled(s, type, nextUrl));
+  const initial = emptySpan(''); initial.url = url;
+  const pending: RichSpanFrame[] = [{ node, style: initial }];
+  while (pending.length > 0) {
+    const frame = pending.pop()!;
+    const current = frame.node;
+    const type = (current['@type'] as string | undefined) ?? '';
+    if (type === 'richTexts') {
+      const children = (current['texts'] as TdObject[] | undefined) ?? [];
+      for (let i: number = children.length - 1; i >= 0; i--) {
+        pending.push({ node: children[i], style: frame.style });
+      }
+      continue;
+    }
+    if (internalAnchors && type === 'richTextAnchor') {
+      const marker = emptySpan(''); marker.anchor = ((current['name'] as string | undefined) ?? '').toLowerCase();
+      out.push(marker);
+      const child = current['text'] as TdObject | undefined;
+      if (child !== undefined) { pending.push({ node: child, style: frame.style }); }
+      continue;
+    }
+    if (type === 'richTextIcon') {
+      const leaf = styled(frame.style, '', ''); leaf.text = '\uFFFC'; leaf.icon = drawnInlineIcon(current);
+      if (leaf.icon === undefined) { leaf.unsupported = type; }
+      out.push(leaf); continue;
+    }
+    if (type === 'richTextPlain' || type === 'richTextMathematicalExpression') {
+      const value = (current[type === 'richTextPlain' ? 'text' : 'expression'] as string | undefined) ?? '';
+      if (value !== '') {
+        const leaf = styled(frame.style, type === 'richTextMathematicalExpression' ? 'richTextFixed' : '', '');
+        leaf.text = value; leaf.math = type === 'richTextMathematicalExpression'; out.push(leaf);
+      }
+      continue;
+    }
+    let target: string = '';
+    if (type === 'richTextUrl' || type === 'richTextReference' || type === 'richTextAnchorLink') {
+      target = internalAnchors && type !== 'richTextUrl'
+        ? `#${encodeURIComponent((current['anchor_name'] as string | undefined) ?? '')}`
+        : (current['url'] as string | undefined) ?? '';
+    } else if (type === 'richTextEmailAddress') {
+      const address = (current['email_address'] as string | undefined) ?? '';
+      if (address !== '') { target = `mailto:${address}`; }
+    } else if (type === 'richTextPhoneNumber') {
+      const phone = (current['phone_number'] as string | undefined) ?? '';
+      if (phone !== '') { target = `tel:${phone}`; }
+    }
+    const child = current['text'] as TdObject | undefined;
+    if (child !== undefined) { pending.push({ node: child, style: styled(frame.style, type, target) }); }
   }
   return out;
 }
@@ -194,7 +212,7 @@ function parseOne(node: TdObject): RichBlock[] {
 
   const level: number | undefined = HEADING_LEVEL.get(type);
   if (level !== undefined) {
-    const spans: RichSpan[] = spansOf(node['text'] as TdObject | undefined, '');
+    const spans: RichSpan[] = richSpansOf((node['text'] ?? node[type.substring(9).toLowerCase()]) as TdObject | undefined, '');
     return spans.length > 0 ? [block(RB_HEADING, level, spans, [], false, '')] : [];
   }
 
@@ -207,7 +225,7 @@ function parseOne(node: TdObject): RichBlock[] {
   }
 
   if (type === 'pageBlockPreformatted') {
-    const spans: RichSpan[] = spansOf(node['text'] as TdObject | undefined, '');
+    const spans: RichSpan[] = richSpansOf(node['text'] as TdObject | undefined, '');
     // language 是可选的，源里常常是空串——渲染侧据此决定表头写 "code" 还是
     // "code: python"。
     const language: string = (node['language'] as string | undefined) ?? '';
@@ -253,7 +271,7 @@ function parseOne(node: TdObject): RichBlock[] {
       for (const cell of row) {
         // 空格子照样 push：列靠位置对齐，丢一个后面整行就错位。
         out.push({
-          spans: spansOf(cell['text'] as TdObject | undefined, ''),
+          spans: richSpansOf(cell['text'] as TdObject | undefined, ''),
           header: (cell['is_header'] as boolean | undefined) ?? false,
           align: cellAlign(cell['align'] as TdObject | undefined)
         });
@@ -265,7 +283,7 @@ function parseOne(node: TdObject): RichBlock[] {
     if (rows.length === 0) {
       return [];
     }
-    const caption: RichSpan[] = spansOf(node['caption'] as TdObject | undefined, '');
+    const caption: RichSpan[] = richSpansOf(node['caption'] as TdObject | undefined, '');
     return [block(RB_TABLE, 0, caption, [], false, '', false, false, rows,
       (node['is_bordered'] as boolean | undefined) ?? false,
       (node['is_striped'] as boolean | undefined) ?? false)];
@@ -277,7 +295,7 @@ function parseOne(node: TdObject): RichBlock[] {
 // 兜底：只要这个块带 text，就当普通段落收下。认不出的块类型（图片、嵌入等）
 // 没有 text，返回空数组直接跳过，而不是留个空段落撑出一行空白。
 function parseTextOnly(node: TdObject): RichBlock[] {
-  const spans: RichSpan[] = spansOf(node['text'] as TdObject | undefined, '');
+  const spans: RichSpan[] = richSpansOf(node['text'] as TdObject | undefined, '');
   return spans.length > 0 ? [block(RB_PARAGRAPH, 0, spans, [], false, '')] : [];
 }
 

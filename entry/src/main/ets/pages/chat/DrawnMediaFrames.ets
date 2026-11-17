@@ -1,3 +1,4 @@
+import { cornerPx } from '../../util/bubbleCornerInset';
 import { DrawnBubbleTile } from './DrawnBubblePlan';
 import { thumbBackdropColor } from '../../util/thumbBackdrop';
 import { DrawnStage, drawnStageMetrics } from '../../util/drawnStageMetrics';
@@ -9,7 +10,7 @@ export interface DrawnMediaFrame {
   height: number;
   position: Position;
   backdrop: string;
-  radius: number;
+  radius: number | BorderRadiuses;
   transition: string;
   messageId: number;
   chatId: number;
@@ -28,9 +29,10 @@ export class DrawnMediaFrames {
     const traced = drawnStageMetrics.begin(DrawnStage.TileFrames);
     try {
       let next: DrawnMediaFrame[] | null = this.frames.length === tiles.length ? null : [];
-      const radius = single ? 0 : 6;
+
       for (let i = 0; i < tiles.length; i++) {
         const tile = tiles[i], old = this.frames[i];
+        const radius: number | BorderRadiuses = single ? 0 : tile.corners ?? 4;
         const backdrop = thumbBackdropColor(tile.cell.isVideo);
         const transitionEnabled = !tile.cell.isVideo || single;
         const same = old !== undefined && old.width === tile.width && old.height === tile.height &&
@@ -50,4 +52,20 @@ export class DrawnMediaFrames {
       return this.frames;
     } finally { drawnStageMetrics.end(traced); }
   }
+}
+
+// Only the clicked image leaves the parent grid clip during a shared-element
+// transition. Bake its effective outer corners into this one transient frame.
+export function drawnAlbumTransitionFrame(frame: DrawnMediaFrame, tile: DrawnBubbleTile,
+  outer: BorderRadiuses): DrawnMediaFrame {
+  const mask = tile.edgeMask ?? 0;
+  const cap = Math.min(tile.width, tile.height) / 2;
+  const corners: BorderRadiuses = {
+    topLeft: Math.min(cap, (mask & 3) === 3 ? cornerPx(outer.topLeft) : tile.corners?.topLeft ?? 4),
+    topRight: Math.min(cap, (mask & 6) === 6 ? cornerPx(outer.topRight) : tile.corners?.topRight ?? 4),
+    bottomLeft: Math.min(cap, (mask & 9) === 9 ? cornerPx(outer.bottomLeft) : tile.corners?.bottomLeft ?? 4),
+    bottomRight: Math.min(cap, (mask & 12) === 12 ? cornerPx(outer.bottomRight) : tile.corners?.bottomRight ?? 4)
+  };
+  return { width: frame.width, height: frame.height, position: frame.position, backdrop: frame.backdrop,
+    radius: corners, transition: frame.transition, messageId: frame.messageId, chatId: frame.chatId };
 }
