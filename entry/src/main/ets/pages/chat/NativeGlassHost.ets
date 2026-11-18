@@ -12,7 +12,7 @@
 //      所以出来的就是菜单那块玻璃。材质不可用时退回 backgroundEffect 自绘。
 //
 // 尺寸一律用调用方量出来的绝对 vp，不用 '100%'（百分比在这一层解析不可靠，实测会偏）。
-import { immersiveMaterialAvailable, OverlaySurface } from '../../util/overlayMaterial';
+import { immersiveMaterialAvailable, materialOff, OverlaySurface } from '../../util/overlayMaterial';
 import { materialModifierWhen } from '../../util/materialModifier';
 
 @ComponentV2
@@ -33,8 +33,14 @@ export struct NativeGlassHost {
   @Event onHostTap: () => void = (): void => {};
 
   // 材质可用：走 Toggle 承载层，参数与右上角功能菜单一致（'menu' 面）。
+  //
+  // **必须同时问「用户有没有把厚度调到关闭」**。只看设备能力是不够的：
+  // overlayMaterial() 在关闭时返回 undefined，修饰器会把 Toggle 的 systemMaterial
+  // 清掉，而这个 Toggle 自己的 backgroundColor 是 Transparent——整块玻璃就变成
+  // 一层空壳。调用方的内容又全是透明底（底色在这里给），于是浮层什么都不显示
+  // （用户 2026-11-19：「浮层材质厚度关闭之后，兜底的都没了」）。
   private materialOn(): boolean {
-    return immersiveMaterialAvailable();
+    return immersiveMaterialAvailable() && !materialOff();
   }
 
   private fill(): ResourceColor {
@@ -62,8 +68,19 @@ export struct NativeGlassHost {
           // 这一层「沿圆角糊出去的白光」正是菜单面板边缘那圈光晕，用户认的 19:13 版就带着它；
           // 之前用 flat=true 去掉后整体变成一块扁平塑料片，才被判定为「搞回去了」。
           .attributeModifier(materialModifierWhen(this.surface, true, false));
+      } else if (materialOff()) {
+        // 用户把厚度调到「关闭」：按 materialTuning 文件头的约定，不挂材质、不模糊、
+        // **纯色兜底**。这一层就是那个兜底——上面的内容全是透明底，没有它就什么都不显示。
+        // 用主题 surface（不透明，深浅色各一份），和平滑过渡/自绘玻璃关闭时同一档观感。
+        Row()
+          .width(this.hostWidth)
+          .height(this.hostHeight)
+          .borderRadius(this.hostRadius)
+          .backgroundColor($r('app.color.surface'))
+          .hitTestBehavior(HitTestMode.None)
+          .accessibilityLevel('no-hide-descendants');
       } else {
-        // 降级：材质不可用（API < 26 / 设备不支持 / 用户把厚度调到关闭）时自绘。
+        // 降级：材质不可用（API < 26 / 设备不支持）时自绘玻璃（半透明底 + 模糊）。
         Row()
           .width(this.hostWidth)
           .height(this.hostHeight)
