@@ -1,3 +1,4 @@
+import { pollVoteIds, pollVoteOptions } from '../util/pollVoteOptions';
 import { DrawnStage, drawnStageMetrics } from '../util/drawnStageMetrics';
 import { customEmojiNeedsRepainting, inlineEmojiUpdate, InlineEmojiUpdate } from '../util/inlineCustomEmojiPaint';
 import { rememberOpenedChat } from '../services/RecentChatHistoryService';
@@ -3518,6 +3519,9 @@ export class MessageStore {
       c.venueType = rebuilt.venueType;
       c.pollId = rebuilt.pollId;
       c.pollQuestion = rebuilt.pollQuestion;
+      c.pollQuestionEntities = rebuilt.pollQuestionEntities;
+      c.pollDescription = rebuilt.pollDescription;
+      c.pollDescriptionEntities = rebuilt.pollDescriptionEntities;
       c.pollOptions = rebuilt.pollOptions;
       c.pollTotalVoterCount = rebuilt.pollTotalVoterCount;
       c.pollIsAnonymous = rebuilt.pollIsAnonymous;
@@ -3525,6 +3529,7 @@ export class MessageStore {
       c.pollAllowMultiple = rebuilt.pollAllowMultiple;
       c.pollCorrectOptionId = rebuilt.pollCorrectOptionId;
       c.pollExplanation = rebuilt.pollExplanation;
+      c.pollExplanationEntities = rebuilt.pollExplanationEntities;
       c.pollOpenPeriod = rebuilt.pollOpenPeriod;
       c.pollCloseDate = rebuilt.pollCloseDate;
       c.pollIsClosed = rebuilt.pollIsClosed;
@@ -3541,10 +3546,12 @@ export class MessageStore {
       c.gameTitle = rebuilt.gameTitle;
       c.gameDescription = rebuilt.gameDescription;
       c.gameText = rebuilt.gameText;
+      c.gameTextEntities = rebuilt.gameTextEntities;
       c.paidMediaLocked = rebuilt.paidMediaLocked;
       c.paidMediaStarCount = rebuilt.paidMediaStarCount;
       c.paidMediaCount = rebuilt.paidMediaCount;
       c.paidMediaKind = rebuilt.paidMediaKind;
+      c.paidMediaSet = rebuilt.paidMediaSet;
       c.giftKind = rebuilt.giftKind;
       c.giftTitle = rebuilt.giftTitle;
       c.giftValue = rebuilt.giftValue;
@@ -3593,6 +3600,9 @@ export class MessageStore {
       changed = true;
       const next = cloneMessage(message);
       next.pollQuestion = rebuilt.pollQuestion;
+      next.pollQuestionEntities = rebuilt.pollQuestionEntities;
+      // updatePoll contains only the poll, not messagePoll.description.
+      // cloneMessage preserves the existing description and its entities.
       next.pollOptions = rebuilt.pollOptions;
       next.pollTotalVoterCount = rebuilt.pollTotalVoterCount;
       next.pollIsAnonymous = rebuilt.pollIsAnonymous;
@@ -3600,6 +3610,7 @@ export class MessageStore {
       next.pollAllowMultiple = rebuilt.pollAllowMultiple;
       next.pollCorrectOptionId = rebuilt.pollCorrectOptionId;
       next.pollExplanation = rebuilt.pollExplanation;
+      next.pollExplanationEntities = rebuilt.pollExplanationEntities;
       next.pollOpenPeriod = rebuilt.pollOpenPeriod;
       next.pollCloseDate = rebuilt.pollCloseDate;
       next.pollIsClosed = rebuilt.pollIsClosed;
@@ -6492,7 +6503,7 @@ export class MessageStore {
     const expired = entry.pollCloseDate > 0 &&
       Math.floor(Date.now() / 1000) >= entry.pollCloseDate;
     if (entry.contentType !== 'poll' || entry.pollQuestion.trim() === '' ||
-      entry.pollOptions.length < 2) {
+      entry.pollOptions.length === 0) {
       onFinished(false, str('poll_unavailable'));
       return;
     }
@@ -6508,38 +6519,19 @@ export class MessageStore {
       onFinished(false, str('ms_quiz_once'));
       return;
     }
-    const unique: number[] = [];
-    for (const optionId of optionIds) {
-      if (optionId >= 0 && optionId < entry.pollOptions.length &&
-        unique.indexOf(optionId) < 0) {
-        unique.push(optionId);
-      }
-    }
+    const unique: number[] = pollVoteIds(optionIds, entry.pollOptions.length);
+    const selected: ReadonlySet<number> = new Set<number>(unique);
     if (!entry.pollAllowMultiple && unique.length > 1) {
       onFinished(false, str('ms_single_choice'));
       return;
     }
-    const previousOptions: PollOptionInfo[] =
-      entry.pollOptions.map((option: PollOptionInfo): PollOptionInfo => ({
-      text: option.text,
-      voterCount: option.voterCount,
-      votePercentage: option.votePercentage,
-      isChosen: option.isChosen,
-      isBeingChosen: option.isBeingChosen
-    }));
+    // All vote transitions replace options; this snapshot retains entities and
+    // does not duplicate every option merely to support a possible rollback.
+    const previousOptions: PollOptionInfo[] = entry.pollOptions;
     this.patch(messageId, (message: MessageEntry): void => {
       message.pollVotePending = true;
       message.pollVoteError = '';
-      message.pollOptions = message.pollOptions.map((
-        option: PollOptionInfo,
-        optionId: number
-      ): PollOptionInfo => ({
-        text: option.text,
-        voterCount: option.voterCount,
-        votePercentage: option.votePercentage,
-        isChosen: option.isChosen,
-        isBeingChosen: unique.indexOf(optionId) >= 0
-      }));
+      message.pollOptions = pollVoteOptions(message.pollOptions, selected, true);
     });
     const req: TdRequest = { '@type': 'setPollAnswer' };
     req['chat_id'] = this.chatId;
@@ -6549,16 +6541,7 @@ export class MessageStore {
       this.patch(messageId, (message: MessageEntry): void => {
         message.pollVotePending = false;
         message.pollVoteError = '';
-        message.pollOptions = message.pollOptions.map((
-          option: PollOptionInfo,
-          optionId: number
-        ): PollOptionInfo => ({
-          text: option.text,
-          voterCount: option.voterCount,
-          votePercentage: option.votePercentage,
-          isChosen: unique.indexOf(optionId) >= 0,
-          isBeingChosen: false
-        }));
+        message.pollOptions = pollVoteOptions(message.pollOptions, selected, false);
       });
       onFinished(true, '');
     }).catch((error: TdError): void => {

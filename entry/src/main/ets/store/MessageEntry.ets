@@ -10,6 +10,7 @@ import { monthDayTime } from '../util/intlFormat';
 import { logW } from '../util/log';
 import { publishViewCount, viewCountOf } from '../util/viewCountChannel';
 import { VideoVariant } from '../util/videoVariants';
+import { PaidMediaSet } from '../util/paidMediaModel';
 
 export interface MessageEntry {
   id: number;
@@ -174,8 +175,10 @@ export interface MessageEntry {
   venueType: string;
   pollId: string;
   pollQuestion: string;
+  pollQuestionEntities?: TdObject[];
   // 投票说明（messagePoll.description），可为空。
   pollDescription: string;
+  pollDescriptionEntities?: TdObject[];
   pollOptions: PollOptionInfo[];
   pollTotalVoterCount: number;
   pollIsAnonymous: boolean;
@@ -183,6 +186,7 @@ export interface MessageEntry {
   pollAllowMultiple: boolean;
   pollCorrectOptionId: number;
   pollExplanation: string;
+  pollExplanationEntities?: TdObject[];
   pollOpenPeriod: number;
   pollCloseDate: number;
   pollIsClosed: boolean;
@@ -200,10 +204,12 @@ export interface MessageEntry {
   gameTitle: string;
   gameDescription: string;
   gameText: string;
+  gameTextEntities?: TdObject[];
   paidMediaLocked: boolean;
   paidMediaStarCount: number;
   paidMediaCount: number;
   paidMediaKind: string;
+  paidMediaSet?: PaidMediaSet;
   giftKind: string;
   giftTitle: string;
   giftValue: string;
@@ -335,9 +341,9 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     locationHeading: m.locationHeading, locationProximityRadius: m.locationProximityRadius,
     venueTitle: m.venueTitle, venueAddress: m.venueAddress, venueProvider: m.venueProvider,
     venueId: m.venueId, venueType: m.venueType,
-    pollId: m.pollId, pollQuestion: m.pollQuestion, pollDescription: m.pollDescription,
+    pollId: m.pollId, pollQuestion: m.pollQuestion, pollQuestionEntities: m.pollQuestionEntities, pollDescription: m.pollDescription, pollDescriptionEntities: m.pollDescriptionEntities,
     pollOptions: m.pollOptions.map((option: PollOptionInfo): PollOptionInfo => ({
-      text: option.text,
+      text: option.text, entities: option.entities,
       voterCount: option.voterCount,
       votePercentage: option.votePercentage,
       isChosen: option.isChosen,
@@ -346,16 +352,16 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     pollTotalVoterCount: m.pollTotalVoterCount,
     pollIsAnonymous: m.pollIsAnonymous, pollIsQuiz: m.pollIsQuiz,
     pollAllowMultiple: m.pollAllowMultiple, pollCorrectOptionId: m.pollCorrectOptionId,
-    pollExplanation: m.pollExplanation, pollOpenPeriod: m.pollOpenPeriod,
+    pollExplanation: m.pollExplanation, pollExplanationEntities: m.pollExplanationEntities, pollOpenPeriod: m.pollOpenPeriod,
     pollCloseDate: m.pollCloseDate, pollIsClosed: m.pollIsClosed,
     pollVotePending: m.pollVotePending, pollVoteError: m.pollVoteError,
     diceEmoji: m.diceEmoji, diceValue: m.diceValue,
     diceSuccessFrame: m.diceSuccessFrame, diceHasFinalState: m.diceHasFinalState,
     diceLayerFileIds: [...m.diceLayerFileIds], diceLayerPaths: [...m.diceLayerPaths],
     gameId: m.gameId, gameShortName: m.gameShortName, gameTitle: m.gameTitle,
-    gameDescription: m.gameDescription, gameText: m.gameText,
+    gameDescription: m.gameDescription, gameText: m.gameText, gameTextEntities: m.gameTextEntities,
     paidMediaLocked: m.paidMediaLocked, paidMediaStarCount: m.paidMediaStarCount,
-    paidMediaCount: m.paidMediaCount, paidMediaKind: m.paidMediaKind,
+    paidMediaCount: m.paidMediaCount, paidMediaKind: m.paidMediaKind, paidMediaSet: m.paidMediaSet,
     giftKind: m.giftKind, giftTitle: m.giftTitle, giftValue: m.giftValue,
     giftStatus: m.giftStatus, giftCode: m.giftCode, giftRefunded: m.giftRefunded,
     giveawayState: m.giveawayState, giveawayWinnerCount: m.giveawayWinnerCount,
@@ -1199,7 +1205,9 @@ export function buildMessageEntry(message: TdObject, users: UserStore, publishVi
     venueType: c.venueType ?? '',
     pollId: c.pollId ?? '',
     pollQuestion: c.pollQuestion ?? '',
+    pollQuestionEntities: c.pollQuestionEntities ?? [],
     pollDescription: c.pollDescription ?? '',
+    pollDescriptionEntities: c.pollDescriptionEntities ?? [],
     pollOptions: c.pollOptions ?? [],
     pollTotalVoterCount: c.pollTotalVoterCount ?? 0,
     pollIsAnonymous: c.pollIsAnonymous ?? true,
@@ -1207,6 +1215,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore, publishVi
     pollAllowMultiple: c.pollAllowMultiple ?? false,
     pollCorrectOptionId: c.pollCorrectOptionId ?? -1,
     pollExplanation: c.pollExplanation ?? '',
+    pollExplanationEntities: c.pollExplanationEntities ?? [],
     pollOpenPeriod: c.pollOpenPeriod ?? 0,
     pollCloseDate: c.pollCloseDate ?? 0,
     pollIsClosed: c.pollIsClosed ?? false,
@@ -1223,10 +1232,12 @@ export function buildMessageEntry(message: TdObject, users: UserStore, publishVi
     gameTitle: c.gameTitle ?? '',
     gameDescription: c.gameDescription ?? '',
     gameText: c.gameText ?? '',
+    gameTextEntities: c.gameTextEntities ?? [],
     paidMediaLocked: c.paidMediaLocked ?? false,
     paidMediaStarCount: c.paidMediaStarCount ?? 0,
     paidMediaCount: c.paidMediaCount ?? 0,
     paidMediaKind: c.paidMediaKind ?? '',
+    paidMediaSet: c.paidMediaSet,
     giftKind: c.giftKind ?? '',
     giftTitle: c.giftTitle ?? '',
     giftValue: c.giftValue ?? '',

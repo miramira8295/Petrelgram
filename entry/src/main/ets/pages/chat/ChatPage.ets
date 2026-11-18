@@ -60,6 +60,9 @@ import { TdClient } from '../../tdkit/TdClient';
 import { MessageStore, MediaSendItem, MESSAGE_WINDOW_CAP
 } from '../../store/MessageStore';
 import { MessageEntry, buildMessageEntry } from '../../store/MessageEntry';
+import { paidMediaViewerTarget } from '../../util/paidMediaModel';
+import { DocumentMediaSession } from '../../util/documentMediaViewer';
+import { stackOf } from '../../util/navStacks';
 import { allocateChatPageReuseScope } from '../../util/rowReuseId';
 import {
   MIN_MESSAGE_ROW_HEIGHT_VP, capReuseBuckets, globalReusePoolAvailable,
@@ -4673,6 +4676,15 @@ export struct ChatPage {
   private onPaidMediaOpen(messageId: number): void {
     const entry = this.entryById(messageId);
     if (entry === null || entry.contentType !== 'paidMedia' || entry.paidMediaLocked) {
+      return;
+    }
+    if (entry.paidMediaSet !== undefined) {
+      const target = paidMediaViewerTarget(entry.paidMediaSet, 0);
+      if (target === null) { return; }
+      const session: DocumentMediaSession = { media: target.media, chatId: this.chatId,
+        messageId: entry.id, date: entry.date, senderName: entry.senderName };
+      const params: Record<string, Object> = { 'documentMedia': session, 'startIndex': target.index };
+      stackOf('chat')?.pushPath({ name: 'DownloadPreviewPage', param: params });
       return;
     }
     this.openViewer(messageId);

@@ -10,6 +10,7 @@ import { DrawnTextLine } from './DrawnTextLine';
 import { DrawnBubbleChrome } from './DrawnBubbleChrome';
 
 export interface DrawnBubbleStyle {
+  pollExpired?: boolean;
   mathRevision?: number;
   translationStatus?: TranslationStatus | null;
   replaceTranslation?: boolean;

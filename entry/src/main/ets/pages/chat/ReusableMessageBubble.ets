@@ -459,13 +459,7 @@ export struct ReusableMessageBubble {
         data: this.data, actions: this.actions,
         nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
         .opacity(this.translationFade);
-    } else if (this.shownGroup.head.contentType === 'sticker' ||
-      this.shownGroup.head.contentType === 'emoji' || this.shownGroup.head.contentType === 'customEmoji') {
-      StickerMessageBubble({ msg: this.shownGroup.head, group: this.shownGroup,
-        data: this.data, actions: this.actions,
-        nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
-        .opacity(this.translationFade);
-    } else if (this.shownGroup.head.contentType === 'text' || this.shownGroup.head.contentType === 'richMessage') {
+    } else if (this.shownGroup.head.contentType === 'text' || this.shownGroup.head.contentType === 'richMessage' || this.shownGroup.head.contentType === 'file' || this.shownGroup.head.contentType === 'audio' || this.shownGroup.head.contentType === 'voice' || this.shownGroup.head.contentType === 'contact' || this.shownGroup.head.contentType === 'location' || this.shownGroup.head.contentType === 'venue' || this.shownGroup.head.contentType === 'poll' || this.shownGroup.head.contentType === 'videoNote' || this.shownGroup.head.contentType === 'dice' || this.shownGroup.head.contentType === 'game' || this.shownGroup.head.contentType === 'paidMedia' || this.shownGroup.head.contentType === 'gift' || this.shownGroup.head.contentType === 'giveaway' || this.shownGroup.head.contentType === 'sticker' || this.shownGroup.head.contentType === 'emoji' || this.shownGroup.head.contentType === 'customEmoji') {
       DrawnMessageRow({ kind: 'text', group: this.shownGroup,
         data: this.data, actions: this.actions,
         nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })

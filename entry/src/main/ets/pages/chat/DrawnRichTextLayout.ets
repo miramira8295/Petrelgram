@@ -230,9 +230,9 @@ export class DrawnRichTextLayouts {
       }
       if (block.widget !== undefined) {
         const widget = block.widget;
-        const height = (widget.kind === 'html-embed' || widget.kind === 'video-embed') ? documentEmbedHeight(widget, spec.maxWidthVp) : widget.kind === 'map' ? Math.max(80, Math.min(300, spec.maxWidthVp * widget.height / widget.width)) : (widget.kind === 'post-author' || widget.kind === 'chat-link') ? 56 : 72;
-        widgets.push({ widget, x: 0, y, width: spec.maxWidthVp, height });
-        y += height + 6; width = spec.maxWidthVp;
+        const height = widget.kind === 'message-sticker' ? widget.height * Math.min(1, spec.maxWidthVp / widget.width) : widget.kind === 'message-dice' ? Math.min(150, spec.maxWidthVp) : widget.kind === 'message-video-note' ? Math.min(180, spec.maxWidthVp) : widget.kind === 'message-location' ? widget.height : (widget.kind === 'message-contact' || widget.kind === 'message-poll' || widget.kind === 'message-game' || widget.kind === 'message-gift' || widget.kind === 'message-paid-media' || widget.kind === 'message-giveaway') ? widget.height : widget.kind === 'message-voice' ? 60 : widget.kind === 'message-audio' ? 148 : widget.kind === 'message-file' ? 80 : (widget.kind === 'html-embed' || widget.kind === 'video-embed') ? documentEmbedHeight(widget, spec.maxWidthVp) : widget.kind === 'map' ? Math.max(80, Math.min(300, spec.maxWidthVp * widget.height / widget.width)) : (widget.kind === 'post-author' || widget.kind === 'chat-link') ? 56 : 72;
+        widgets.push({ widget, x: 0, y, width: widget.kind === 'message-contact' ? widget.width : widget.kind === 'message-sticker' ? Math.min(widget.width, spec.maxWidthVp) : (widget.kind === 'message-video-note' || widget.kind === 'message-dice') ? height : spec.maxWidthVp, height });
+        y += height + 6; width = widget.kind === 'message-contact' ? widget.width : widget.kind === 'message-sticker' ? Math.min(widget.width, spec.maxWidthVp) : (widget.kind === 'message-video-note' || widget.kind === 'message-dice') ? height : spec.maxWidthVp;
         document.lastLine = { left: 0, width: width * density, baseline: y * density, ascent: 0 };
         continue;
       }

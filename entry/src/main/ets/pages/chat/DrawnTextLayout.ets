@@ -1,3 +1,15 @@
+import { DrawnStickerSource } from './DrawnStickerSource';
+import { DrawnGiveawaySource } from './DrawnGiveawaySource';
+import { DrawnGiftSource } from './DrawnGiftSource';
+import { DrawnPaidMediaSource } from './DrawnPaidMediaSource';
+import { DrawnGameSource } from './DrawnGameSource';
+import { DrawnDiceSource } from './DrawnDiceSource';
+import { DrawnVideoNoteSource } from './DrawnVideoNoteSource';
+import { DrawnPollMessageSource } from './DrawnPollMessageSource';
+import { DrawnLocationMessageSource } from './DrawnLocationMessageSource';
+import { DrawnContactMessageSource } from './DrawnContactMessageSource';
+import { DrawnVoiceMessageSource } from './DrawnVoiceMessageSource';
+import { DrawnFileMessageSource } from './DrawnFileMessageSource';
 import { DrawnRichSource } from '../../util/drawnRichTextPolicy';
 import { DrawnStructuredSource } from './DrawnStructuredSource';
 import { DrawnWebPreviewSource } from './DrawnWebPreviewSource';
@@ -37,6 +49,19 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
   private outlines: DrawnBubbleOutlineCache = new DrawnBubbleOutlineCache();
   private quoteShapes: DrawnRoundRectCache = new DrawnRoundRectCache();
   private previews: DrawnWebPreviewSource = new DrawnWebPreviewSource();
+  private stickerSource: DrawnStickerSource | null = null;
+  private giveawaySource: DrawnGiveawaySource | null = null;
+  private giftSource: DrawnGiftSource | null = null;
+  private paidMediaSource: DrawnPaidMediaSource | null = null;
+  private gameSource: DrawnGameSource | null = null;
+  private diceSource: DrawnDiceSource | null = null;
+  private videoNoteSource: DrawnVideoNoteSource | null = null;
+  private pollSource: DrawnPollMessageSource | null = null;
+  private locationSource: DrawnLocationMessageSource | null = null;
+  private contactSource: DrawnContactMessageSource | null = null;
+  private voiceSource: DrawnVoiceMessageSource | null = null;
+  private audioSource: DrawnFileMessageSource | null = null;
+  private fileSource: DrawnFileMessageSource | null = null;
   private structured: DrawnStructuredSource | null = null;
   private sources: DrawnTranslatedSource = new DrawnTranslatedSource();
   private bodies: DrawnRichTextLayouts = new DrawnRichTextLayouts();
@@ -71,7 +96,61 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
     }
     const translatedSource = this.sources.prepare(m.text, m.textEntities, m, style.translationStatus ?? null, style.replaceTranslation === true, structuredSource);
     if (m.text !== '' && translatedSource === null) { this.failureReason = drawnSourceRouteReason(this.sources.reason); return null; }
-    const source = this.previews.prepare(translatedSource, m, style.environment);
+    let source = this.previews.prepare(translatedSource, m, style.environment);
+    if (m.contentType === 'sticker' || m.contentType === 'emoji' || m.contentType === 'customEmoji') {
+      if (this.stickerSource === null) { this.stickerSource = new DrawnStickerSource(); }
+      source = this.stickerSource.prepare(null, m.photoWidth, m.photoHeight,
+        m.contentType !== 'sticker' ? 'emoji' : m.isEmojiSticker ? 'animated-emoji' : 'sticker');
+    }
+    if (m.contentType === 'giveaway') {
+      if (this.giveawaySource === null) { this.giveawaySource = new DrawnGiveawaySource(); }
+      source = this.giveawaySource.prepare(ui, source, m, maxPx / d, style.environment, data.chatId);
+    }
+    if (m.contentType === 'gift') {
+      if (this.giftSource === null) { this.giftSource = new DrawnGiftSource(); }
+      source = this.giftSource.prepare(ui, source, m, maxPx / d, style.environment, data.chatId);
+    }
+    if (m.contentType === 'paidMedia') {
+      if (this.paidMediaSource === null) { this.paidMediaSource = new DrawnPaidMediaSource(); }
+      source = this.paidMediaSource.prepare(ui, source, m, maxPx / d, style.environment, data.chatId);
+    }
+    if (m.contentType === 'game') {
+      if (this.gameSource === null) { this.gameSource = new DrawnGameSource(); }
+      source = this.gameSource.prepare(ui, source, m, maxPx / d, style.environment, data.chatId);
+    }
+    if (m.contentType === 'dice') {
+      if (this.diceSource === null) { this.diceSource = new DrawnDiceSource(); }
+      source = this.diceSource.prepare(source);
+    }
+    if (m.contentType === 'videoNote') {
+      if (this.videoNoteSource === null) { this.videoNoteSource = new DrawnVideoNoteSource(); }
+      source = this.videoNoteSource.prepare(source);
+    }
+    if (m.contentType === 'poll') {
+      if (this.pollSource === null) { this.pollSource = new DrawnPollMessageSource(); }
+      source = this.pollSource.prepare(ui, source, m, maxPx / d, style.environment,
+        style.pollExpired ?? (m.pollCloseDate > 0 && Math.floor(Date.now() / 1000) >= m.pollCloseDate), data.chatId);
+    }
+    if (m.contentType === 'location' || m.contentType === 'venue') {
+      if (this.locationSource === null) { this.locationSource = new DrawnLocationMessageSource(); }
+      source = this.locationSource.prepare(source, data.liveSharingId !== 0 && data.liveSharingId === m.id);
+    }
+    if (m.contentType === 'contact') {
+      if (this.contactSource === null) { this.contactSource = new DrawnContactMessageSource(); }
+      source = this.contactSource.prepare(ui, source, m, maxPx / d, style.environment, data.chatId);
+    }
+    if (m.contentType === 'voice') {
+      if (this.voiceSource === null) { this.voiceSource = new DrawnVoiceMessageSource(); }
+      source = this.voiceSource.prepare(source, m.speechState, m.speechText, style.textEnvironment);
+    }
+    if (m.contentType === 'audio') {
+      if (this.audioSource === null) { this.audioSource = new DrawnFileMessageSource(true); }
+      source = this.audioSource.prepare(source);
+    }
+    if (m.contentType === 'file') {
+      if (this.fileSource === null) { this.fileSource = new DrawnFileMessageSource(); }
+      source = this.fileSource.prepare(source);
+    }
     if (source === null) { this.failureReason = drawnSourceRouteReason(this.sources.reason); return null; }
     const body = this.bodies.prepare(ui, { source, mathRevision: style.mathRevision, maxWidthVp: maxPx / d, minWidthVp: 0,
       spoilersRevealed: style.spoilersRevealed, expandedBlocks: style.expandedBlocks, fontSize: style.fontSize, reserve: '', foreground: bubbleTextFor(m.isOutgoing),

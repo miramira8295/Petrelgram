@@ -58,13 +58,18 @@ const ctx=vm.createContext({ViewV2:class{},ViewPU:class{},Color:{White:'white'},
   tableScrollTouched:()=>false,isEdgeSwipeStart:x=>x<36,SWIPE_REPLY_MAX:-70,SWIPE_REPLY_TRIGGER:-40,SWIPE_SELECT_MAX:70,SWIPE_SELECT_TRIGGER:40,
   Curve:{EaseOut:1},Date:{now:()=>1000},messageDragType:()=> 'general.plain-text'});
 function load(path,names=[]){const s=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/@(?:Require|Param|Local|Computed|Event|ObservedV2|Trace)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'').replace(/\bexport /g,'');vm.runInContext(ts.transpileModule(s+names.map(n=>`\nglobalThis.${n}=${n};`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx,{filename:path});}
+ctx.DrawModifier=class { invalidate(){} };
+ctx.COLOR_TEXT_PRIMARY='black';
 load(root+'util/drawnTextUnits.ets');
+load(root+'util/contactVcardSummary.ets');
 load(root+'pages/chat/DrawnMediaColors.ets');
 for(const file of ['drawnTextDirection','mediaBox','messageBubblePresentation','bubbleCornerInset','bubbleGlassPath','drawnPlainTextPolicy','drawnFooterPlacement','richText','messageLinkAction','translationMode','drawnInlineIcon','richBlocks','tableLayout','drawnTableGrid','drawnPageButton','drawnDocumentMedia','documentEmbedNavigation','drawnDocumentWidget','documentEmbedMetrics','androidSmallAlbumGeometry','packAlbumRows'])load(root+'util/'+file+'.ets');
+load(root+'util/paidMediaModel.ets',['parsePaidMediaSet','paidMediaViewerTarget']);
 vm.runInContext('globalThis.actualParser=parseFormattedText',ctx);ctx.countParse=(...a)=>{parseCalls++;return ctx.actualParser(...a);};
 vm.runInContext('parseFormattedText=countParse',ctx);
 for(const file of ['drawnSourcePool','drawnRichHitIndex','drawnRichTextPolicy','drawnDocumentAnchors','drawnAlbumPolicy','drawnTextRowPolicy','drawnContentPolicy','messageDragGesture'])load(root+'util/'+file+'.ets',[file==='messageDragGesture'?'MessageDragGesture':file==='drawnTextRowPolicy'?'drawnTextRowEligible':file==='drawnRichTextPolicy'?'DrawnRichSourceCache':'drawnTailGutter']);
-for(const file of ['DrawnStructuredSource','DrawnTranslatedSource','DrawnWebPreviewSource','DrawnTextLine','DrawnRichCompositeParagraph','DrawnRichTextLayout','DrawnSenderHeader','DrawnReplyQuote','DrawnReactionLayout','DrawnBubbleChrome','DrawnBubbleGeometry','DrawnBubblePlan','DrawnTextFooter','DrawnTextLayout'])load(root+'pages/chat/'+file+'.ets',file==='DrawnTextLayout'?['DrawnTextLayouts']:[]);
+load(root+'util/pollRichSource.ets');
+for(const file of ['DrawnGiveawayLayout','DrawnPaidMediaLayout','DrawnGiftLayout','DrawnGameLayout','DrawnPollLayout','DrawnContactLayout','DrawnStickerSource','DrawnGiveawaySource','DrawnGiftSource','DrawnPaidMediaSource','DrawnGameSource','DrawnDiceSource','DrawnVideoNoteSource','DrawnPollMessageSource','DrawnLocationMessageSource','DrawnContactMessageSource','DrawnVoiceMessageSource','DrawnFileMessageSource','DrawnStructuredSource','DrawnTranslatedSource','DrawnWebPreviewSource','DrawnTextLine','DrawnRichCompositeParagraph','DrawnRichTextLayout','DrawnSenderHeader','DrawnReplyQuote','DrawnReactionLayout','DrawnBubbleChrome','DrawnBubbleGeometry','DrawnBubblePlan','DrawnTextFooter','DrawnTextLayout'])load(root+'pages/chat/'+file+'.ets',file==='DrawnTextLayout'?['DrawnTextLayouts']:[]);
 load(root+'util/drawnMediaSlot.ets',['DrawnMediaSlots']);
 load(root+'util/drawnRouteMetrics.ets',['DrawnRouteReason','DrawnRouteTracker','drawnRouteMetrics']);
 load(root+'util/drawnStageMetrics.ets',['drawnStageMetrics','DrawnStage']);

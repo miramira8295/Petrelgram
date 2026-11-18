@@ -1,3 +1,5 @@
+import { DrawnDocumentMap } from './DrawnDocumentMap';
+import { DrawnDocumentWidget } from '../../util/drawnDocumentWidget';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 
@@ -17,6 +19,16 @@ export struct LocationBubble {
   @Param venueProvider: string = '';
   @Param proximityRadius: number = 0;
   @Param maxWidth: number = 250;
+  @Param fitAvailableWidth: boolean = false;
+  @Param realMap: boolean = false;
+  @Param chatId: number = 0;
+
+  // Only coordinates invalidate this object, never the countdown or live status.
+  @Computed private get mapWidget(): DrawnDocumentWidget {
+    return { key: 'location-map', kind: 'map', name: '', mimeType: '', size: 0,
+      latitude: this.latitude, longitude: this.longitude, zoom: 15, width: 262, height: 104 };
+  }
+
   // 本机正在共享的就是这一条。停止入口必须长在气泡上——之前只放在会话页顶部
   // 的「⋯」菜单里，用户盯着气泡根本找不到。
   @Param sharing: boolean = false;
@@ -113,30 +125,36 @@ export struct LocationBubble {
   @Builder
   private mapPreview(): void {
     Stack() {
-      Column()
-        .width('100%').height('100%')
-        .backgroundColor(this.valid ? '#DCE9DF' : '#E4E7EA');
-      if (this.valid) {
-        Divider().width(290).strokeWidth(5).color('#C5D7C9')
-          .rotate({ angle: 14 }).position({ x: -20, y: 25 });
-        Divider().width(290).strokeWidth(2).color('#F8FAF7')
-          .rotate({ angle: -18 }).position({ x: -18, y: 65 });
-        Divider().width(210).strokeWidth(3).color('#CCDCCF')
-          .rotate({ angle: 70 }).position({ x: 38, y: 44 });
-        Divider().width(180).strokeWidth(1).color('#F7FAF6')
-          .rotate({ angle: 42 }).position({ x: 50, y: 10 });
-        Stack() {
-          Circle({ width: 38, height: 38 }).fill('#203390EC');
-          Circle({ width: 28, height: 28 }).fill(COLOR_PRIMARY)
-            .shadow({ radius: 6, color: '#4A1F78B4', offsetX: 0, offsetY: 2 });
-          SymbolGlyph($r('sys.symbol.mappin_and_rectangle'))
-            .fontSize(15).fontColor([Color.White]);
-        }.width(42).height(42);
+      if (this.realMap && this.valid) {
+        DrawnDocumentMap({ widget: this.mapWidget, chatId: this.chatId,
+          boxWidth: Math.max(1, Math.min(270, this.maxWidth)), boxHeight: 104,
+          onOpen: (): void => this.onOpen() });
       } else {
-        Column({ space: 5 }) {
-          SymbolGlyph($r('sys.symbol.map')).fontSize(24).fontColor(['#8E969F']);
-          Text($r('app.string.loc_coords_missing')).fontSize(11).fontColor('#737B84');
-        }.justifyContent(FlexAlign.Center);
+        Column()
+          .width('100%').height('100%')
+          .backgroundColor(this.valid ? '#DCE9DF' : '#E4E7EA');
+        if (this.valid) {
+          Divider().width(290).strokeWidth(5).color('#C5D7C9')
+            .rotate({ angle: 14 }).position({ x: -20, y: 25 });
+          Divider().width(290).strokeWidth(2).color('#F8FAF7')
+            .rotate({ angle: -18 }).position({ x: -18, y: 65 });
+          Divider().width(210).strokeWidth(3).color('#CCDCCF')
+            .rotate({ angle: 70 }).position({ x: 38, y: 44 });
+          Divider().width(180).strokeWidth(1).color('#F7FAF6')
+            .rotate({ angle: 42 }).position({ x: 50, y: 10 });
+          Stack() {
+            Circle({ width: 38, height: 38 }).fill('#203390EC');
+            Circle({ width: 28, height: 28 }).fill(COLOR_PRIMARY)
+              .shadow({ radius: 6, color: '#4A1F78B4', offsetX: 0, offsetY: 2 });
+            SymbolGlyph($r('sys.symbol.mappin_and_rectangle'))
+              .fontSize(15).fontColor([Color.White]);
+          }.width(42).height(42);
+        } else {
+          Column({ space: 5 }) {
+            SymbolGlyph($r('sys.symbol.map')).fontSize(24).fontColor(['#8E969F']);
+            Text($r('app.string.loc_coords_missing')).fontSize(11).fontColor('#737B84');
+          }.justifyContent(FlexAlign.Center);
+        }
       }
       if (this.livePeriod > 0) {
         Row({ space: 5 }) {
@@ -175,7 +193,8 @@ export struct LocationBubble {
             .fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
         }
       }
-      .padding({ left: 2, right: 30, bottom: this.sharing ? 4 : 10 });
+      .padding({ left: 2, right: 30, bottom: this.sharing ? 4 : 10 })
+      .height(this.fitAvailableWidth ? 60 : undefined);
       if (this.sharing) {
         Row({ space: 6 }) {
           SymbolGlyph($r('sys.symbol.stop_circle')).fontSize(16).fontColor(['#D95B57']);
@@ -192,7 +211,7 @@ export struct LocationBubble {
         .onClick((): void => { this.onStopLive(); });
       }
     }
-    .width(Math.max(210, Math.min(270, this.maxWidth)))
+    .width(this.fitAvailableWidth ? Math.max(1, Math.min(270, this.maxWidth)) : Math.max(210, Math.min(270, this.maxWidth)))
     .stateStyles({
       normal: this.cardNormalStyle,
       pressed: this.cardPressedStyle

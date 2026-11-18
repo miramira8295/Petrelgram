@@ -1,3 +1,7 @@
+import { MessageEntry } from '../../store/MessageEntry';
+import { TdObject } from '../../tdkit/TdTypes';
+import { DrawnPollText } from './DrawnPollText';
+import { DrawnGameLayout } from './DrawnGameLayout';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 
@@ -11,6 +15,10 @@ function gamePressedStyle() { .scale({ x: 0.985, y: 0.985 }).opacity(0.8) }
 // P4 批 6a：迁 @ComponentV2（@Prop/回调 → @Param 引用语义）。
 @ComponentV2
 export struct GameBubble {
+  @Param richMessage: MessageEntry | null = null;
+  @Param prepared: DrawnGameLayout | null = null;
+  @Event onLink: (url: string, hidesUrl: boolean) => void = (): void => {};
+  private emptyEntities: TdObject[] = [];
   @Param messageId: number = 0;
   @Param title: string = '';
   @Param shortName: string = '';
@@ -21,6 +29,8 @@ export struct GameBubble {
   @Param photoProgress: number = 0;
   @Param photoFailed: boolean = false;
   @Param maxWidth: number = 260;
+  @Param fitAvailableWidth: boolean = false;
+  @Event onBeforeAction: () => boolean = (): boolean => true;
   @Local opening: boolean = false;
   private photoActionAtMs: number = 0;
   private openingTimer: number = -1;
@@ -28,10 +38,12 @@ export struct GameBubble {
   @Param onRetryPhoto: (messageId: number) => void = (_messageId: number): void => {};
 
   private gameAvailable(): boolean {
+    if (this.prepared !== null) { return this.prepared.available; }
     return this.title.trim() !== '' || this.shortName.trim() !== '';
   }
 
   private displayTitle(): string {
+    if (this.prepared !== null) { return this.prepared.titleText; }
     if (this.title.trim() !== '') {
       return this.title.trim();
     }
@@ -42,6 +54,7 @@ export struct GameBubble {
   }
 
   private detailText(): string {
+    if (this.prepared !== null) { return this.prepared.detailText; }
     if (this.description.trim() !== '') {
       return this.description.trim();
     }
@@ -53,7 +66,7 @@ export struct GameBubble {
 
   private openGame(): void {
     if (!this.gameAvailable() || this.opening ||
-      Date.now() - this.photoActionAtMs < 300) {
+      Date.now() - this.photoActionAtMs < 300 || !this.onBeforeAction()) {
       return;
     }
     this.opening = true;
@@ -95,7 +108,19 @@ export struct GameBubble {
     this.resetTransientState();
   }
 
+  private claimTextLink(): boolean {
+    if (!this.onBeforeAction()) { return false; }
+    this.photoActionAtMs = Date.now();
+    return true;
+  }
+
+  private richWidth(inset: number = 0): number {
+    const width = this.fitAvailableWidth ? this.maxWidth : Math.max(220, Math.min(278, this.maxWidth));
+    return Math.max(1, width - inset);
+  }
+
   private retryCover(): void {
+    if (!this.onBeforeAction()) { return; }
     this.photoActionAtMs = Date.now();
     this.onRetryPhoto(this.messageId);
   }
@@ -105,7 +130,7 @@ export struct GameBubble {
     Stack() {
       if (this.photoPath !== '') {
         Image(this.photoPath.startsWith('/') ? `file://${this.photoPath}` : this.photoPath).draggable(false)
-          .width('100%').height(116)
+          .width('100%').height(this.prepared?.coverHeight ?? 116)
           .objectFit(ImageFit.Cover)
           .transition(TransitionEffect.OPACITY.animation({
             duration: 180, curve: Curve.EaseOut
@@ -118,7 +143,7 @@ export struct GameBubble {
               .fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
           }
         }
-        .width('100%').height(116)
+        .width('100%').height(this.prepared?.coverHeight ?? 116)
         .justifyContent(FlexAlign.Center)
         .backgroundColor('#E7EDF5');
       }
@@ -148,7 +173,7 @@ export struct GameBubble {
         }
       }
     }
-    .width('100%').height(116)
+    .width('100%').height(this.prepared?.coverHeight ?? 116)
     .borderRadius(10)
     .clip(true);
   }
@@ -156,22 +181,49 @@ export struct GameBubble {
   build() {
     Column({ space: 8 }) {
       this.cover();
-      Text(this.displayTitle())
-        .fontSize(15).fontWeight(FontWeight.Medium)
-        .fontColor(this.gameAvailable() ? COLOR_TEXT_PRIMARY : '#B05D58')
-        .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%');
-      Text(this.detailText())
-        .fontSize(11.5).lineHeight(16).fontColor(COLOR_TEXT_SECONDARY)
-        .maxLines(4).textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%');
-      if (this.gameText.trim() !== '' && this.description.trim() !== '') {
-        Text(this.gameText)
-          .fontSize(11.5).lineHeight(16).fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(4).textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-          .padding({ left: 8, right: 8, top: 6, bottom: 6 })
-          .backgroundColor('#0B000000').borderRadius(8);
+      if (this.prepared !== null && this.richMessage !== null) {
+        DrawnPollText({ msg: this.richMessage, content: this.prepared.titleText,
+          preparedLayout: this.prepared.title, boxWidth: this.richWidth(), textSize: 15, bold: true,
+          textColor: this.prepared.available ? COLOR_TEXT_PRIMARY : '#B05D58' });
+      } else {
+        Text(this.displayTitle())
+          .fontSize(15).fontWeight(FontWeight.Medium)
+          .fontColor(this.gameAvailable() ? COLOR_TEXT_PRIMARY : '#B05D58')
+          .maxLines(this.richMessage !== null ? undefined : 2).textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%');
+      }
+      if (this.richMessage !== null) {
+        if (this.prepared ? this.prepared.description !== null : this.description.trim() !== '') {
+          DrawnPollText({ msg: this.richMessage, content: this.description, boxWidth: this.richWidth(), textSize: 11.5,
+            preparedLayout: this.prepared?.description ?? null,
+            onBeforeLink: (): boolean => this.claimTextLink(),
+            onLink: (url: string, hidesUrl: boolean): void => this.onLink(url, hidesUrl) });
+        }
+        if (this.prepared ? this.prepared.body !== null : this.gameText.trim() !== '') {
+          DrawnPollText({ msg: this.richMessage, content: this.gameText,
+            preparedLayout: this.prepared?.body ?? null,
+            entities: this.richMessage.gameTextEntities ?? this.emptyEntities,
+            boxWidth: this.richWidth(this.prepared === null && this.description.trim() !== '' ? 16 : 0), textSize: 11.5,
+            textColor: COLOR_TEXT_PRIMARY,
+            onBeforeLink: (): boolean => this.claimTextLink(),
+            onLink: (url: string, hidesUrl: boolean): void => this.onLink(url, hidesUrl) })
+            .padding((this.prepared === null && this.description.trim() !== '') ?
+              { left: 8, right: 8, top: 6, bottom: 6 } : 0);
+        } else if (this.prepared !== null && this.prepared.fallback !== null) {
+          DrawnPollText({ msg: this.richMessage, content: this.prepared.detailText,
+            preparedLayout: this.prepared.fallback, boxWidth: this.richWidth(), textSize: 11.5 });
+        } else if (this.prepared === null && this.description.trim() === '') {
+          Text(this.detailText()).fontSize(11.5).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+        }
+      } else {
+        Text(this.detailText())
+          .fontSize(11.5).lineHeight(16).fontColor(COLOR_TEXT_SECONDARY)
+          .maxLines(4).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%');
+        if (this.gameText.trim() !== '' && this.description.trim() !== '') {
+          Text(this.gameText).fontSize(11.5).lineHeight(16).fontColor(COLOR_TEXT_PRIMARY)
+            .maxLines(4).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
+            .padding({ left: 8, right: 8, top: 6, bottom: 6 }).backgroundColor('#0B000000').borderRadius(8);
+        }
       }
       Row({ space: 7 }) {
         if (this.opening) {
@@ -179,20 +231,22 @@ export struct GameBubble {
         } else {
           SymbolGlyph($r('sys.symbol.play_fill')).fontSize(14).fontColor([Color.White]);
           Text(this.gameAvailable() ? $r('app.string.game_play') : $r('app.string.game_not_available'))
-            .fontSize(13).fontWeight(FontWeight.Medium).fontColor(Color.White);
+            .fontSize(13).fontWeight(FontWeight.Medium).fontColor(Color.White)
+            .maxLines(this.prepared ? 1 : undefined);
         }
       }
-      .width('100%').height(36)
+      .width('100%').height(this.prepared?.buttonHeight ?? 36)
       .justifyContent(FlexAlign.Center)
       .backgroundColor(this.gameAvailable() ? COLOR_PRIMARY : '#A7AFB8')
       .borderRadius(9);
       Row() {
-        Text(this.shortName.trim() !== '' ? `@${this.shortName.trim()}` : $r('app.string.game_title'))
+        Text(this.prepared?.footerText ?? (this.shortName.trim() !== '' ? `@${this.shortName.trim()}` : str('game_title')))
           .fontSize(10.5).fontColor(COLOR_TEXT_SECONDARY)
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-      }.width('100%').padding({ right: 64, bottom: 9 });
+      }.width('100%').height(this.prepared?.footerHeight).padding({ right: 64, bottom: 9 });
     }
-    .width(Math.max(220, Math.min(278, this.maxWidth)))
+    .width(this.fitAvailableWidth ? Math.max(1, this.maxWidth) : Math.max(220, Math.min(278, this.maxWidth)))
+    .height(this.prepared?.height)
     .alignItems(HorizontalAlign.Start)
     .stateStyles({
       normal: gameNormalStyle,

@@ -62,6 +62,7 @@ export struct MusicBubble {
   @Param onToggle: () => void = (): void => {};
   @Param onPrevious: () => void = (): void => {};
   @Param onNext: () => void = (): void => {};
+  @Event onBeforeSeek: () => boolean = (): boolean => true;
   @Param onSeek: (fraction: number) => void = (): void => {};
   // 2026-09-18 改版：卡片自带「下载保存」「添加到收藏夹」两枚状态胶囊。
   @Param chatId: number = 0;
@@ -294,9 +295,11 @@ export struct MusicBubble {
   // 波形。音乐消息**没有** TDLib 波形（那是语音条独有的），所以按文件 id 生成
   // 一份稳定的形状——同一首歌每次进来长得一样，靠的是 voiceWaveformBars 的
   // 种子回退分支，不是随机数。
-  private waveBars(): number[] {
+  @Computed private get cachedWaveBars(): number[] {
     return voiceWaveformBars('', WAVE_BARS, this.audioFileId !== 0 ? this.audioFileId : this.msgId);
   }
+
+  private waveBars(): number[] { return this.cachedWaveBars; }
 
   private shownProgress(): number {
     return this.dragging ? this.dragProgress : this.progress;
@@ -508,7 +511,12 @@ export struct MusicBubble {
     if (!this.currentTrack() || this.resolvedDuration() <= 0) {
       return;
     }
-    const fraction: number = Math.max(0, Math.min(1, event.touches[0].x / this.waveWidth));
+    if (event.type === TouchType.Cancel) { this.dragging = false; return; }
+    if (event.type === TouchType.Down && !this.onBeforeSeek()) { this.dragging = false; return; }
+    if (event.type !== TouchType.Down && !this.dragging) { return; }
+    const touch = event.touches[0] ?? event.changedTouches[0];
+    if (touch === undefined) { this.dragging = false; return; }
+    const fraction: number = Math.max(0, Math.min(1, touch.x / this.waveWidth));
     if (event.type === TouchType.Down || event.type === TouchType.Move) {
       this.dragging = true;
       this.dragProgress = fraction;

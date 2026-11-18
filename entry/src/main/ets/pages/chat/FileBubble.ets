@@ -18,6 +18,7 @@ export struct FileBubble {
   // 出站发送中：图块画上传环，点击不打开也不暂停，右侧箭头朝上。
   @Param uploading: boolean = false;
   @Param maxWidth: number = 250;
+  @Param fitAvailableWidth: boolean = false;
   @Param onOpen: () => void = (): void => {};
   @Param onSave: () => void = (): void => {};
   // 下载中点一下 = 暂停（issue #93）。已下的那部分留着，再点继续断点续传。
@@ -218,7 +219,7 @@ export struct FileBubble {
       });
     }
   }
-  .width(Math.max(190, Math.min(262, this.maxWidth)))
+  .width(this.fitAvailableWidth ? Math.max(0, this.maxWidth) : Math.max(190, Math.min(262, this.maxWidth)))
   .alignItems(VerticalAlign.Center)
   // 右侧给动作按钮留位（28vp + 间距），其余交给时间浮层。
   .padding({ top: 1, bottom: 10, right: this.uploading || this.downloadActive ? 12 : 4 });

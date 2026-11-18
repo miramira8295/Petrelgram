@@ -174,10 +174,10 @@ for(const name of ['menuShown','swipeX','capturedDeleteKey','allowBodyDrag','ava
  assert.doesNotMatch(resetBody,new RegExp('this\\.'+name+'\\s*='),'generated reuse must not reset '+name);
 for(const name of ['sendState','views','role','translation','avatarAnimated'])
  assert.match(resetBody,new RegExp('this\\.'+name+'\\s*='),'metadata still seeded before computed plan: '+name);
-for(const name of ['plan','nativeTiles','mediaFrames','mediaSlots','useAlbumCanvas']) {
+for(const name of ['plan','nativeTiles','mediaFrames','mediaSlots','useAlbumCanvas','pollGeometryExpired']) {
  assert.ok(resetBody.includes(`this.resetComputed("${name}")`),'retain geometry/visual equality boundary: '+name);
 }
-assert.equal((resetBody.match(/this.resetComputed\(/g)||[]).length,14,'nine visual boundaries, three publication projections, host activation and sending-only boundary');
+assert.equal((resetBody.match(/this.resetComputed\(/g)||[]).length,15,'nine visual boundaries, three publication projections, host activation, sending-only and poll deadline boundaries');
 console.log('PASS: compiled reuse retains one interaction owner, 1000 clean cycles write zero UI fields, dirty recycle/reuse clears exactly four, avatar revision remains live, metadata stays pre-plan, rows and stale deletion callbacks stay isolated.');
 
 // Retained staged children receive parameter updates WITHOUT Local reset. The

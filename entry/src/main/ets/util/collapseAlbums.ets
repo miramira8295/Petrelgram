@@ -180,6 +180,7 @@ function computeMutableSig(m: MessageEntry): string {
     `_${m.diceLayerPaths.filter((p: string): boolean => p !== '').length}` +
     `_${m.gameId}_${m.gameTitle}_${m.gameDescription}_${m.gameText}` +
     `_${m.paidMediaLocked}_${m.paidMediaStarCount}_${m.paidMediaCount}_${m.paidMediaKind}` +
+    `_${m.paidMediaSet?.signature ?? ''}` +
     `_${m.giftKind}_${m.giftTitle}_${m.giftValue}_${m.giftStatus}_${m.giftRefunded}` +
     `_${m.giveawayState}_${m.giveawayWinnerCount}_${m.giveawayPrize}` +
     `_${m.giveawayDescription}_${m.giveawaySelectionDate}_${m.giveawayUnclaimedCount}` +

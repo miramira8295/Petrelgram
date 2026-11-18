@@ -36,6 +36,13 @@ const paints=redraws;update({file:file(10,'',30)});assert.equal(redraws,paints,'
 viewer.activate(1);update({file:file(10,'/old-A')});assert.equal(viewer.entries[1].photoPath,'/thumb-B');
 update({file:file(20,'/full-B')});assert.equal(viewer.entries[1].photoFullPath,'/full-B');assert.equal(viewer.items[1].messageId,77);
 viewer.dispose();assert.equal(subscriptions,0);
+const videoViewer=new ctx.DocumentMediaViewer({media:[{...media(0,'video',file(60),file(61,'/video-thumb')),duration:65}],chatId:9,messageId:78,date:1,senderName:'sender'},()=>{});
+assert.equal(videoViewer.entries[0].videoFileId,60);assert.equal(videoViewer.entries[0].videoDuration,65);
+videoViewer.dispose();
+const posterless=new ctx.DocumentMediaViewer({media:[{...media(0,'video',file(62,'/local.mp4'),undefined),duration:90}],chatId:9,messageId:79,date:1,senderName:'sender'},()=>{});
+assert.equal(posterless.entries[0].photoPath,'','a local MP4 is not an image poster');
+assert.equal(posterless.entries[0].videoPath,'/local.mp4');assert.equal(posterless.entries[0].videoDuration,90);
+posterless.dispose();
 console.log('PASS: O(1) file routing, independent progress, request dedup/generation, account ownership, selected-only viewer downloads and distinct temporary media IDs.');
 
 // Exercise the compiled component lifecycle, including late native callbacks.

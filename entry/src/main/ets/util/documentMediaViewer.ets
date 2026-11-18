@@ -35,7 +35,10 @@ export class DocumentMediaViewer {
     if (media.kind === 'photo') {
       entry.photoPath = full.path || thumb.path; entry.photoProgress = full.path !== '' ? 100 : thumb.progress;
       entry.photoFullPath = full.path; entry.photoFullProgress = full.progress; entry.photoFullFailed = full.failed;
-    } else { entry.photoPath = thumb.path; }
+    } else {
+      entry.photoPath = media.thumbnail !== undefined ? thumb.path : '';
+      entry.videoDuration = media.duration ?? 0;
+    }
     this.items[index] = item; this.entries[index] = entry;
   }
   activate(index: number, retry: boolean = false): void {

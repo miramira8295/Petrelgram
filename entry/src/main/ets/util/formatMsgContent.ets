@@ -8,9 +8,11 @@ import { logI } from './log';
 // 封面小图的取法 messageAudio 与机器人内联结果共用，放在 musicTrackModel。
 import { audioCoverMiniUrl } from './musicTrackModel';
 import { VideoVariant } from './videoVariants';
+import { PaidMediaSet, parsePaidMediaSet } from './paidMediaModel';
 
 export interface PollOptionInfo {
   text: string;
+  entities?: TdObject[];
   voterCount: number;
   votePercentage: number;
   isChosen: boolean;
@@ -106,9 +108,11 @@ export interface MsgContent {
   venueType?: string;
   pollId?: string;
   pollQuestion?: string;
+  pollQuestionEntities?: TdObject[];
   // messagePoll.description（投票说明，含换行与链接实体）。
   // 注意它挂在 messagePoll 这一层，**不在 poll 里面**——只查 poll 构造器会漏掉。
   pollDescription?: string;
+  pollDescriptionEntities?: TdObject[];
   pollOptions?: PollOptionInfo[];
   pollTotalVoterCount?: number;
   pollIsAnonymous?: boolean;
@@ -116,6 +120,7 @@ export interface MsgContent {
   pollAllowMultiple?: boolean;
   pollCorrectOptionId?: number;
   pollExplanation?: string;
+  pollExplanationEntities?: TdObject[];
   pollOpenPeriod?: number;
   pollCloseDate?: number;
   pollIsClosed?: boolean;
@@ -130,10 +135,12 @@ export interface MsgContent {
   gameTitle?: string;
   gameDescription?: string;
   gameText?: string;
+  gameTextEntities?: TdObject[];
   paidMediaLocked?: boolean;
   paidMediaStarCount?: number;
   paidMediaCount?: number;
   paidMediaKind?: string;
+  paidMediaSet?: PaidMediaSet;
   giftKind?: string;
   giftTitle?: string;
   giftValue?: string;
@@ -575,7 +582,7 @@ function stickerPreview(sticker: TdObject | undefined): MsgContent | null {
 }
 
 function giftBase(kind: string, title: string, value: string, status: string,
-  text: string, sticker: TdObject | undefined): MsgContent {
+  text: string, sticker: TdObject | undefined, giftEntities: TdObject[] = []): MsgContent {
   const media = stickerPreview(sticker);
   return {
     contentType: 'gift',
@@ -587,7 +594,7 @@ function giftBase(kind: string, title: string, value: string, status: string,
     photoInitialProgress: media !== null ? media.photoInitialProgress : 0,
     photoInitialActive: media !== null ? media.photoInitialActive : false,
     placeholderLabel: '',
-    entities: [],
+    entities: giftEntities,
     linkSiteName: '', linkTitle: '', linkDescription: '', linkDescriptionEntities: [],
     linkPhotoFileId: 0, linkUrl: '',
     videoDuration: 0, videoFileId: 0, videoFileSize: 0, videoMimeType: '',
@@ -940,8 +947,7 @@ export function formatMsgContent(message: TdObject): MsgContent {
     const first = media.length > 0 ? media[0] : undefined;
     const firstType = first !== undefined
       ? ((first['@type'] as string | undefined) ?? '') : '';
-    const locked = media.length === 0 ||
-      media.some((item: TdObject): boolean => item['@type'] === 'paidMediaPreview');
+    const paidMediaSet = parsePaidMediaSet(media);
     let size: PhotoSize = { fileId: 0, width: 0, height: 0 };
     let full: PhotoSize = { fileId: 0, width: 0, height: 0 };
     let videoFileId = 0;
@@ -994,11 +1000,12 @@ export function formatMsgContent(message: TdObject): MsgContent {
       videoMimeType,
       videoFileName,
       photoFullFileId: full.fileId !== size.fileId ? full.fileId : 0,
-      paidMediaLocked: locked,
+      paidMediaLocked: paidMediaSet.locked,
       paidMediaStarCount: Math.max(0,
         (content!['star_count'] as number | undefined) ?? 0),
       paidMediaCount: media.length,
-      paidMediaKind: kind
+      paidMediaKind: kind,
+      paidMediaSet
     };
   }
   if (type === 'messageGiftedPremium') {
@@ -1009,7 +1016,8 @@ export function formatMsgContent(message: TdObject): MsgContent {
     return giftBase(
       'premium', str('gift_premium_title'), duration, str('gift_status_gifted'),
       formattedTextValue(content!['text'] as TdObject | undefined),
-      content!['sticker'] as TdObject | undefined
+      content!['sticker'] as TdObject | undefined,
+      textEntities(content!['text'] as TdObject | undefined)
     );
   }
   if (type === 'messageGiftedStars') {
@@ -1037,7 +1045,8 @@ export function formatMsgContent(message: TdObject): MsgContent {
       'code', str('gift_code_title'), duration,
       unclaimed ? str('gift_status_unclaimed') : str('gift_status_code_available'),
       formattedTextValue(content!['text'] as TdObject | undefined),
-      content!['sticker'] as TdObject | undefined
+      content!['sticker'] as TdObject | undefined,
+      textEntities(content!['text'] as TdObject | undefined)
     );
     result.giftCode = (content!['code'] as string | undefined) ?? '';
     return result;
@@ -1070,7 +1079,8 @@ export function formatMsgContent(message: TdObject): MsgContent {
       starCount > 0 ? plural('gift_worth_stars', starCount, starCount) : str('gift_special'),
       status,
       formattedTextValue(content!['text'] as TdObject | undefined),
-      gift !== undefined ? (gift['sticker'] as TdObject | undefined) : undefined
+      gift !== undefined ? (gift['sticker'] as TdObject | undefined) : undefined,
+      textEntities(content!['text'] as TdObject | undefined)
     );
     result.giftRefunded = refunded;
     return result;
@@ -1246,6 +1256,7 @@ export function formatMsgContent(message: TdObject): MsgContent {
       const optionText = option['text'] as TdObject | undefined;
       return {
         text: optionText !== undefined ? ((optionText['text'] as string | undefined) ?? '') : '',
+        entities: textEntities(optionText),
         voterCount: Math.max(0, (option['voter_count'] as number | undefined) ?? 0),
         votePercentage: Math.max(0, Math.min(100,
           (option['vote_percentage'] as number | undefined) ?? 0)),
@@ -1274,10 +1285,13 @@ export function formatMsgContent(message: TdObject): MsgContent {
       videoFileName: '', photoFullFileId: 0,
       pollId: poll !== undefined ? `${poll['id'] ?? ''}` : '',
       pollQuestion: question !== undefined ? ((question['text'] as string | undefined) ?? '') : '',
+      pollQuestionEntities: textEntities(question),
       pollDescription: ((): string => {
         const desc = content!['description'] as TdObject | undefined;
         return desc !== undefined ? ((desc['text'] as string | undefined) ?? '') : '';
       })(),
+      pollDescriptionEntities: textEntities(content!['description'] as TdObject | undefined),
+      pollExplanationEntities: textEntities(explanation),
       pollOptions: options,
       pollTotalVoterCount: poll !== undefined
         ? Math.max(0, (poll['total_voter_count'] as number | undefined) ?? 0) : 0,
@@ -1387,7 +1401,8 @@ export function formatMsgContent(message: TdObject): MsgContent {
       gameTitle: game !== undefined ? ((game['title'] as string | undefined) ?? '') : '',
       gameDescription: game !== undefined
         ? ((game['description'] as string | undefined) ?? '') : '',
-      gameText: gameText !== undefined ? ((gameText['text'] as string | undefined) ?? '') : ''
+      gameText: gameText !== undefined ? ((gameText['text'] as string | undefined) ?? '') : '',
+      gameTextEntities: textEntities(gameText)
     };
   }
   if (type === 'messageSticker') {

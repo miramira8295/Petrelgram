@@ -1,0 +1,83 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import {ctx,load,root,compiled,ui,data,style,group,layoutCounters} from './test-drawn-text-row.mjs';
+vm.runInContext('globalThis.paidMediaLayoutFor=paidMediaLayoutFor;globalThis.drawnPaidArtworkHeight=drawnPaidArtworkHeight;globalThis.DrawnPaidMediaTextPainter=DrawnPaidMediaTextPainter',ctx);
+const g=group('paid caption https://example.org');Object.assign(g.head,{contentType:'paidMedia',rowId:41,paidMediaLocked:true,paidMediaCount:1,paidMediaStarCount:10,paidMediaKind:'photo',photoFileId:23,photoWidth:800,photoHeight:600,photoProgress:0,photoPath:''});
+const engine=new ctx.DrawnTextLayouts(),plan=engine.prepare(ui,g,data,style),slot=plan.caption.widgets[0],counts=layoutCounters();
+assert.equal(slot.widget.kind,'message-paid-media');assert.equal(plan.caption.source.blocks[1].source.content,g.head.text);
+const geometry=ctx.paidMediaLayoutFor(slot.widget);
+assert.equal(slot.height,geometry.height);assert.equal(geometry.artworkHeight,ctx.drawnPaidArtworkHeight(geometry.width,800,600,1));
+assert.equal(geometry.height,geometry.artworkHeight+geometry.textHeight+geometry.buttonHeight+36);
+for(let i=0;i<1000;i++)assert.equal(engine.prepare(ui,{...g,head:{...g.head,paidMediaStarCount:i+1,paidMediaKind:i%2?'photo':'video',paidMediaLocked:!!(i%2),photoProgress:i%100,photoPath:i%2?'/cover':''}},{...data,paidMediaPending:!!(i%2)},style),plan);
+assert.deepEqual(layoutCounters(),counts);
+assert.equal(engine.prepare(ui,g,data,{...style,mathRevision:999}),plan,'no native height feedback needed');
+assert.equal(engine.prepare(ui,{...g,head:{...g.head,photoWidth:1600,photoHeight:1200}},data,style),plan,'equivalent aspect ratios keep exact geometry');
+const tall=engine.prepare(ui,{...g,head:{...g.head,photoWidth:600,photoHeight:800}},data,style);
+assert.ok(tall.caption.widgets[0].height>slot.height,'changed media ratio updates the first prepared height');
+const ratioCounts=layoutCounters();
+assert.equal(ratioCounts.parseCalls,counts.parseCalls);assert.equal(ratioCounts.totalLayouts,counts.totalLayouts,'aspect-only updates retain label and caption paragraphs');
+const multi={...g,head:{...g.head,paidMediaCount:3}};
+const lockedMulti=engine.prepare(ui,multi,data,style),unlockedMulti=engine.prepare(ui,{...multi,head:{...multi.head,paidMediaLocked:false}},data,style);
+const lockedGeometry=ctx.paidMediaLayoutFor(lockedMulti.caption.widgets[0].widget),unlockedGeometry=ctx.paidMediaLayoutFor(unlockedMulti.caption.widgets[0].widget);
+assert.equal(lockedGeometry.note,null);assert.ok(unlockedGeometry.note);assert.ok(unlockedGeometry.height>lockedGeometry.height);
+assert.equal(lockedGeometry.lockedTitle,unlockedGeometry.lockedTitle);assert.equal(lockedGeometry.unlockedTitle,unlockedGeometry.unlockedTitle);
+const warmCounts=layoutCounters();
+for(let i=0;i<1000;i++) {
+ const locked=!!(i%2),p=engine.prepare(ui,{...multi,head:{...multi.head,paidMediaCount:3+i,paidMediaLocked:locked}},data,style);
+ const layout=ctx.paidMediaLayoutFor(p.caption.widgets[0].widget);
+ assert.equal(layout,locked?lockedGeometry:unlockedGeometry,'both note geometries are retained');
+ assert.equal(p.caption.source.blocks[1].source.content,g.head.text);
+}
+// A visible note changes the outer bubble height/path, but existing text must
+// not be parsed or laid out again when that known geometry is switched.
+const afterUnlocks=layoutCounters();
+for(const key of ['parseCalls','bodyLayouts','totalLayouts'])assert.equal(afterUnlocks[key],warmCounts[key],key);
+for(const contentWidth of [100,160,240,400]) {
+ const p=engine.prepare(ui,g,{...data,contentWidth},style),layout=ctx.paidMediaLayoutFor(p.caption.widgets[0].widget);
+ assert.equal(layout.height,layout.artworkHeight+layout.textHeight+layout.buttonHeight+36);
+ assert.ok(layout.headingY>=layout.artworkHeight);assert.ok(layout.artworkHeight<=Math.min(360,layout.width*1.2));
+}
+assert.equal(ctx.drawnPaidArtworkHeight(240,0,0,1),156);
+assert.equal(ctx.drawnPaidArtworkHeight(240,NaN,100,1),156);
+assert.equal(ctx.drawnPaidArtworkHeight(240,100,200,4),156);
+assert.equal(ctx.drawnPaidArtworkHeight(240,10000,1,1),96);
+assert.equal(ctx.drawnPaidArtworkHeight(240,1,10000,1),288);
+const scaled=engine.prepare({vp2px:n=>n*2,fp2px:n=>n*4},g,data,{...style,environment:'font-scale-2',textEnvironment:'font-scale-2'});
+const scaledLayout=ctx.paidMediaLayoutFor(scaled.caption.widgets[0].widget);
+assert.ok(scaledLayout.height>geometry.height);assert.ok(scaledLayout.buttonHeight>geometry.buttonHeight);
+const next=engine.prepare(ui,{...g,head:{...g.head,rowId:42}},data,style);assert.notEqual(next.caption.widgets[0].widget,slot.widget);
+const crossChat=engine.prepare(ui,g,{...data,chatId:99},style);assert.notEqual(crossChat.caption.widgets[0].widget,slot.widget);
+const wrapper=fs.readFileSync(root+'pages/chat/DrawnPaidMediaMessage.ets','utf8');
+assert.doesNotMatch(wrapper,/onAreaChange|setPollWidgetHeight|onMetricsChanged|measuredReady/);
+const painter=new ctx.DrawnPaidMediaTextPainter();let invalidations=0;const paints=[];
+painter.invalidate=()=>invalidations++;
+geometry.lockedTitle.paint=(_canvas,x,y)=>paints.push(['locked',x,y]);
+geometry.unlockedTitle.paint=(_canvas,x,y)=>paints.push(['unlocked',x,y]);
+const paintCounts=layoutCounters();
+for(let i=0;i<1000;i++){painter.bind(geometry,true);painter.drawBehind({canvas:{}});}
+assert.equal(invalidations,1);assert.deepEqual(layoutCounters(),paintCounts);
+assert.deepEqual(paints[0],['locked',0,geometry.headingY*geometry.density]);
+painter.bind(geometry,false);painter.drawBehind({canvas:{}});assert.equal(invalidations,2);assert.equal(paints.at(-1)[0],'unlocked');
+painter.bind(null,false);const priorPaints=paints.length;painter.drawBehind({canvas:{}});assert.equal(paints.length,priorPaints);
+const callbacks=new Map();let offs=0;
+ctx.progressForOr=(_id,fallback)=>fallback;ctx.subscribeProgress=(id,fn)=>{callbacks.set(id,fn);return()=>offs++;};
+load(compiled+'pages/chat/DrawnPaidMediaMessage.ts',['DrawnPaidMediaMessage']);
+const local=Object.assign(Object.create(ctx.DrawnPaidMediaMessage.prototype),{msg:g.head,active:true,generation:0,off:null,progress:0});
+local.bind();const old=callbacks.get(23);old(40);assert.equal(local.progress,40);
+local.msg={...g.head,rowId:42,photoFileId:24,photoProgress:7};local.bind();old(99);assert.equal(local.progress,7);
+local.aboutToRecycle();callbacks.get(24)(99);assert.equal(local.progress,7);assert.equal(offs,2);
+load(compiled+'pages/chat/PaidMediaBubble.ts',['PaidMediaBubble']);
+const unlocked=[],opened=[];
+const card=Object.assign(Object.create(ctx.PaidMediaBubble.prototype),{messageId:1,locked:true,starCount:10,pending:false,photoFileId:23,photoPath:'',mediaKind:'photo',onBeforeAction:()=>false,onUnlock:id=>unlocked.push(id),onOpen:id=>opened.push(id)});
+card.trigger();assert.equal(unlocked.length,0);
+card.onBeforeAction=()=>true;card.trigger();assert.deepEqual(unlocked,[1]);
+card.pending=true;card.trigger();assert.equal(unlocked.length,1);
+card.pending=false;card.locked=false;card.messageId=2;card.trigger();assert.deepEqual(opened,[2]);
+card.mediaKind='unknown';card.trigger();assert.equal(opened.length,1);
+Object.assign(card,{mediaKind:'video',photoFileId:0,photoPath:'',mediaReady:true});
+card.trigger();assert.equal(opened.length,2,'full video remains openable without a poster file');
+Object.assign(card,{mediaReady:false,photoFileId:23});card.trigger();
+assert.equal(opened.length,2,'invalid normalized media cannot fall through to a thumbnail-only open');
+Object.assign(card,{locked:true,starCount:0,mediaReady:true});card.trigger();assert.equal(unlocked.length,1,'media readiness cannot bypass the locked payment gate');
+console.log('PASS: paid complete first geometry, 1000 single unlock/progress/price updates retain plan, cached multi unlock note preserves text, aspect/font/narrow geometry, zero-shape painter, ownership/stale covers and locked/unlocked/pending/selection actions.');

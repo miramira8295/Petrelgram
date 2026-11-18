@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {ctx,load,compiled,ui,data,style,group,layoutCounters} from './test-drawn-text-row.mjs';
+const g=group('🙂');Object.assign(g.head,{contentType:'customEmoji',rowId:81,customEmojiId:'99',photoFailed:false,photoWidth:0,photoHeight:0});
+const engine=new ctx.DrawnTextLayouts(),plan=engine.prepare(ui,g,data,style),slot=plan.caption.widgets[0],counts=layoutCounters();
+assert.equal(slot.widget.kind,'message-sticker');assert.equal(slot.width,72);assert.equal(slot.height,68);assert.equal(plan.caption.source.blocks.length,1);
+for(let i=0;i<1000;i++)assert.equal(engine.prepare(ui,{...g,head:{...g.head,photoFailed:!!(i%2),photoProgress:i%100}},data,style),plan);
+assert.deepEqual(layoutCounters(),counts);
+const plain=engine.prepare(ui,{...g,head:{...g.head,contentType:'emoji'}},data,style);assert.equal(plain,plan);
+const resolved=engine.prepare(ui,{...g,head:{...g.head,contentType:'sticker',isEmojiSticker:true,photoWidth:100,photoHeight:100,stickerFormat:'tgs',stickerPath:'/ready'}},data,style);
+assert.equal(resolved.caption.widgets[0].width,72);assert.equal(resolved.caption.widgets[0].height,72);
+assert.notEqual(resolved,plan);assert.equal(slot.height,68,'pending source snapshot unchanged after resolution');
+const regular=engine.prepare(ui,{...g,head:{...g.head,contentType:'sticker',isEmojiSticker:false,photoWidth:100,photoHeight:100}},data,style);
+assert.equal(regular.caption.widgets[0].width,160,'ordinary sticker remains independently sized');
+ctx.MessageBubbleContext=class{};ctx.chatEnv={};
+load(compiled+'pages/chat/StickerMessageBubble.ts',['StickerMessageBubble']);
+const native=Object.assign(Object.create(ctx.StickerMessageBubble.prototype),{msg:{...g.head,isEmojiSticker:true,photoWidth:100,photoHeight:100},contentOnly:true,contentMax:72});
+assert.equal(native.stickerW(),72);assert.equal(native.stickerH(),72);native.contentMax=36;assert.equal(native.emojiScale(),.5);assert.equal(native.stickerW(),36);
+console.log('PASS: emoji/custom emoji share unified slot, 1000 status updates reuse layout, resolved animation size, immutable pending source and native narrow scaling.');

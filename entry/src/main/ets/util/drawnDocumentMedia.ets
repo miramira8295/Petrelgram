@@ -12,6 +12,7 @@ export interface DrawnDocumentMedia {
   mimeType: string;
   name: string;
   autoplay: boolean;
+  duration?: number;
 }
 export function documentFileId(file: TdObject | undefined): number { return (file?.['id'] as number | undefined) ?? 0; }
 export function documentFilePath(file: TdObject | undefined): string {
@@ -51,5 +52,6 @@ export function drawnDocumentMedia(node: TdObject, key: string, index: number): 
   return { key, index, kind, file, thumbnail, width: width > 0 ? width : 320, height: height > 0 ? height : 180,
     size: ((file['size'] ?? file['expected_size']) as number | undefined) ?? 0,
     mimeType: (media['mime_type'] as string | undefined) ?? '', name: (media['file_name'] as string | undefined) ?? '',
-    autoplay: node['need_autoplay'] === true || kind === 'animation' };
+    autoplay: node['need_autoplay'] === true || kind === 'animation',
+    duration: Math.max(0, (media['duration'] as number | undefined) ?? 0) };
 }

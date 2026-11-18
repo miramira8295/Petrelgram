@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {ctx,load,root,compiled} from './test-drawn-text-row.mjs';
+load(root+'util/pollDraftState.ets',['PollDraftSync','summarizePollOptions']);
+load(root+'util/pollOptionState.ets',['pollOptionState']);
+load(compiled+'pages/chat/PollBubble.ts',['PollBubble']);
+const option=(text,chosen=false,pending=false)=>({text,isChosen:chosen,isBeingChosen:pending,votePercentage:0,voterCount:0});
+const options=Array.from({length:12},(_,i)=>option(`option ${i}`));
+let reads=0;
+const proxy=new Proxy(options,{get(target,key){if(/^\d+$/.test(String(key)))reads++;return target[key];}});
+ctx.summarizePollOptions(proxy);assert.equal(reads,12,'one pass, no nested options scan');
+const msg={id:1,rowId:1,pollId:'p1',pollQuestion:'question',pollOptions:options,pollVotePending:false,pollVoteError:'',pollIsClosed:false,pollCloseDate:0,pollAllowMultiple:true,pollIsQuiz:false};
+const votes=[];
+const poll=Object.assign(Object.create(ctx.PollBubble.prototype),{msg,context:{gestureClaimed:false},actions:{onPollVote:(...a)=>votes.push(a)},richLinkClaimed:false,richLinkTimer:-1,onBeforeAction:()=>true,decorations:[],nowSec:0,draftIds:[],draftChanged:false});
+poll.aboutToAppear();poll.toggleOption(11);assert.deepEqual([...poll.draftIds],[11]);
+assert.deepEqual([...poll.extraOptionIndices],[10,11]);
+for(let i=0;i<1000;i++) {
+ poll.msg={...msg,pollTotalVoterCount:i,pollOptions:options.map(o=>({...o,voterCount:i,votePercentage:i%100}))};
+ poll.onMsgChanged();assert.equal(poll.draftChanged,true);assert.equal(poll.selected(11),true);
+}
+poll.submitDraft();assert.equal(votes.length,1);assert.equal(votes[0][0],1);assert.deepEqual([...votes[0][1]],[11]);
+poll.msg={...poll.msg,pollVotePending:true};poll.onMsgChanged();assert.equal(poll.selected(11),true);
+poll.msg={...poll.msg,pollVotePending:false,pollVoteError:'network'};poll.onMsgChanged();
+assert.equal(poll.draftChanged,false);assert.equal(poll.draftIds.length,0);
+poll.msg={...msg,pollOptions:options.map((o,i)=>({...o,isChosen:i===2}))};poll.onMsgChanged();assert.deepEqual([...poll.draftIds],[2]);
+poll.toggleOption(3);assert.equal(poll.selected(3),true);
+poll.msg={...poll.msg,pollOptions:[...poll.msg.pollOptions].reverse()};poll.onMsgChanged();assert.equal(poll.draftChanged,false,'option identity change resets draft');
+poll.msg={...msg,id:2,rowId:2,pollId:'p2'};poll.onMsgChanged();assert.equal(poll.draftIds.length,0);
+poll.context.gestureClaimed=true;poll.toggleOption(0);assert.equal(poll.draftChanged,false);assert.equal(votes.length,1);
+poll.context.gestureClaimed=false;poll.toggleOption(0);poll.aboutToReuse();assert.equal(poll.draftIds.length,0);
+const source=fs.readFileSync(root+'pages/chat/PollBubble.ets','utf8');
+assert.doesNotMatch(source,/maxHeight:\s*58/,'long option text must not be clipped');
+assert.match(source,/ForEach\(this.extraOptionIndices/,'render options beyond first ten');
+console.log('PASS: poll linear summary, 1000 count updates preserve multi-choice draft, completion/error/server/reorder/reuse reset, gesture guard, extra options and unclipped text.');

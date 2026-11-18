@@ -1,14 +1,19 @@
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
+import { DrawnPaidMediaLayout, DrawnPaidMediaTextPainter } from './DrawnPaidMediaLayout';
 
 // P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
 @ComponentV2
 export struct PaidMediaBubble {
+  @Param prepared: DrawnPaidMediaLayout | null = null;
+  private textPainter: DrawnPaidMediaTextPainter = new DrawnPaidMediaTextPainter();
   @Param messageId: number = 0;
   @Param locked: boolean = true;
   @Param starCount: number = 0;
   @Param mediaCount: number = 0;
   @Param mediaKind: string = '';
+  @Param mediaReady: boolean | undefined = undefined;
+  @Param completeSet: boolean = false;
   @Param caption: string = '';
   @Param photoPath: string = '';
   @Param photoFileId: number = 0;
@@ -16,6 +21,8 @@ export struct PaidMediaBubble {
   @Param photoFailed: boolean = false;
   @Param pending: boolean = false;
   @Param maxWidth: number = 260;
+  @Param fitAvailableWidth: boolean = false;
+  @Event onBeforeAction: () => boolean = (): boolean => true;
   @Param onUnlock: (messageId: number) => void = (_messageId: number): void => {};
   @Param onOpen: (messageId: number) => void = (_messageId: number): void => {};
   @Param onRetryPhoto: (messageId: number) => void = (_messageId: number): void => {};
@@ -41,6 +48,7 @@ export struct PaidMediaBubble {
     if (this.locked) {
       return this.starCount > 0;
     }
+    if (this.mediaReady !== undefined) { return this.mediaReady; }
     return (this.mediaKind === 'photo' || this.mediaKind === 'video') &&
       (this.photoFileId !== 0 || this.photoPath !== '');
   }
@@ -56,7 +64,7 @@ export struct PaidMediaBubble {
   }
 
   private trigger(): void {
-    if (!this.available() || this.pending) {
+    if (!this.available() || this.pending || !this.onBeforeAction()) {
       return;
     }
     if (this.locked) {
@@ -94,10 +102,12 @@ export struct PaidMediaBubble {
         }
         Text(this.countText())
           .fontSize(13).fontWeight(FontWeight.Medium).fontColor(Color.White)
+          .maxLines(this.prepared ? 1 : undefined)
+          .constraintSize({ maxWidth: this.prepared ? Math.max(1, this.maxWidth - 16) : undefined })
           .textShadow({ radius: 5, color: '#66000000', offsetX: 0, offsetY: 1 });
       }
     }
-    .width('100%').height(156)
+    .width('100%').height(this.prepared?.artworkHeight ?? 156)
     .borderRadius(12).clip(true);
   }
 
@@ -106,7 +116,7 @@ export struct PaidMediaBubble {
     Stack() {
       if (this.photoPath !== '') {
         Image(this.photoPath.startsWith('/') ? `file://${this.photoPath}` : this.photoPath).draggable(false)
-          .width('100%').height(156).objectFit(ImageFit.Cover)
+          .width('100%').height(this.prepared?.artworkHeight ?? 156).objectFit(ImageFit.Cover)
           .transition(TransitionEffect.OPACITY.animation({
             duration: 180, curve: Curve.EaseOut
           }));
@@ -118,7 +128,7 @@ export struct PaidMediaBubble {
           Text(this.photoFileId === 0 ? $r('app.string.paid_media_unavailable') : $r('app.string.paid_loading_unlocked'))
             .fontSize(11.5).fontColor(COLOR_TEXT_SECONDARY);
         }
-        .width('100%').height(156)
+        .width('100%').height(this.prepared?.artworkHeight ?? 156)
         .justifyContent(FlexAlign.Center)
         .backgroundColor('#E9EDF2');
       }
@@ -131,7 +141,7 @@ export struct PaidMediaBubble {
           }
           .padding({ left: 12, right: 12, top: 8, bottom: 8 })
           .backgroundColor('#85000000').borderRadius(12)
-          .onClick((): void => { this.onRetryPhoto(this.messageId); });
+          .onClick((): void => { if (this.onBeforeAction()) { this.onRetryPhoto(this.messageId); } });
         } else if (this.photoProgress > 0) {
           Stack() {
             Progress({ value: this.photoProgress, total: 100, type: ProgressType.Ring })
@@ -152,13 +162,15 @@ export struct PaidMediaBubble {
       }
       Row({ space: 5 }) {
         SymbolGlyph($r('sys.symbol.lock_open_fill')).fontSize(11).fontColor([Color.White]);
-        Text(this.countText()).fontSize(10.5).fontColor(Color.White);
+        Text(this.countText()).fontSize(10.5).fontColor(Color.White).maxLines(this.prepared ? 1 : undefined)
+          .constraintSize({ maxWidth: this.prepared ? Math.max(1, this.maxWidth - 27 - this.prepared.badgeHeight) : undefined });
       }
       .padding({ left: 7, right: 7, top: 4, bottom: 4 })
+      .height(this.prepared?.badgeHeight)
       .backgroundColor('#85000000').borderRadius(9)
-      .position({ x: 8, y: 124 });
+      .position({ x: 8, y: this.prepared ? Math.max(0, this.prepared.artworkHeight - this.prepared.badgeHeight - 8) : 124 });
     }
-    .width('100%').height(156)
+    .width('100%').height(this.prepared?.artworkHeight ?? 156)
     .borderRadius(12).clip(true);
   }
 
@@ -169,31 +181,39 @@ export struct PaidMediaBubble {
       } else {
         this.unlockedArtwork();
       }
-      Row() {
-        Column({ space: 2 }) {
-          Text(this.locked ? $r('app.string.paid_media') : $r('app.string.paid_media_unlocked'))
-            .fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
-          if (this.caption.trim() !== '') {
-            Text(this.caption).fontSize(11.5).fontColor(COLOR_TEXT_SECONDARY)
-              .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis });
-          }
-          if (!this.locked && this.mediaCount > 1) {
-            Text($r('app.string.paid_viewer_note'))
-              .fontSize(10.5).fontColor(COLOR_TEXT_SECONDARY)
-              .maxLines(2);
-          }
-        }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-      }.width('100%');
+      if (this.prepared !== null) {
+        Row().width('100%').height(this.prepared.textHeight);
+      } else {
+        Row() {
+          Column({ space: 2 }) {
+            Text(this.locked ? $r('app.string.paid_media') : $r('app.string.paid_media_unlocked'))
+              .fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
+            if (this.caption.trim() !== '') {
+              Text(this.caption).fontSize(11.5).fontColor(COLOR_TEXT_SECONDARY)
+                .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis });
+            }
+            if (!this.locked && this.mediaCount > 1 && !this.completeSet) {
+              Text($r('app.string.paid_viewer_note'))
+                .fontSize(10.5).fontColor(COLOR_TEXT_SECONDARY)
+                .maxLines(2);
+            }
+          }.alignItems(HorizontalAlign.Start).layoutWeight(1);
+        }.width('100%');
+      }
       Row({ space: 6 }) {
         if (this.pending) {
           LoadingProgress().width(16).height(16).color(Color.White);
-          Text($r('app.string.paid_checking')).fontSize(12.5).fontColor(Color.White);
+          Text($r('app.string.paid_checking')).fontSize(12.5).fontColor(Color.White)
+            .maxLines(this.prepared ? 1 : undefined).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .constraintSize({ maxWidth: this.prepared ? Math.max(1, this.maxWidth - 38) : undefined });
         } else {
           Text(this.actionText())
-            .fontSize(12.5).fontWeight(FontWeight.Medium).fontColor(Color.White);
+            .fontSize(12.5).fontWeight(FontWeight.Medium).fontColor(Color.White)
+            .maxLines(this.prepared ? 1 : undefined).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .constraintSize({ maxWidth: this.prepared ? Math.max(1, this.maxWidth - 16) : undefined });
         }
       }
-      .width('100%').height(36)
+      .width('100%').height(this.prepared?.buttonHeight ?? 36)
       .justifyContent(FlexAlign.Center)
       .backgroundColor(this.available() ? COLOR_PRIMARY : '#A7AFB8')
       .borderRadius(10)
@@ -205,7 +225,9 @@ export struct PaidMediaBubble {
       .onClick((): void => { this.trigger(); });
       Row().height(9).width('100%');
     }
-    .width(Math.max(224, Math.min(280, this.maxWidth)))
+    .width(this.fitAvailableWidth ? Math.max(1, this.maxWidth) : Math.max(224, Math.min(280, this.maxWidth)))
+    .height(this.prepared?.height)
+    .drawModifier(this.textPainter.bind(this.prepared, this.locked))
     .alignItems(HorizontalAlign.Start)
     .accessibilityText(`${this.countText()}，${this.actionText()}`);
   }

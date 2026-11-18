@@ -11,7 +11,7 @@ import { DrawnSourcePool } from './drawnSourcePool';
 
 export interface DrawnRichLink {
   button?: DrawnPageButtonAction;
-  action?: 'page-button' | 'copy' | 'quote' | 'spoiler' | 'translation-toggle' | 'translation-retry' | 'web-preview';
+  action?: 'page-button' | 'copy' | 'quote' | 'spoiler' | 'voice-transcribe' | 'translation-toggle' | 'translation-retry' | 'web-preview';
   blockOffset?: number;
   start: number;
   end: number;
@@ -42,7 +42,7 @@ export interface DrawnRichBlock {
   imageRatio?: number;
   fontSize?: number;
   lineLimit?: number;
-  action?: 'translation-toggle' | 'translation-retry' | 'web-preview';
+  action?: 'voice-transcribe' | 'translation-toggle' | 'translation-retry' | 'web-preview';
   source: DrawnRichSource;
   kind: string;
   offset: number;

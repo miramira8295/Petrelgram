@@ -20,6 +20,9 @@ export struct StickerMessageBubble {
   @Require @Param group: AlbumGroup;
   @Require @Param data: MessageBubbleRenderData;
   @Require @Param actions: MessageBubbleActions;
+  @Param contentMax: number = 160;
+  @Param contentOnly: boolean = false;
+  @Event onClaim: () => boolean = (): boolean => true;
   @Param nowSec: number = 0;
   @Param jumpFocus: number = 0;
   @Param leaving: number = 0;
@@ -49,6 +52,7 @@ export struct StickerMessageBubble {
     this.detachMessageChannels();
   }
 
+  private channelGeneration: number = 0;
   private attachedRowId: number = 0;
   private attachedPhotoFileId: number = 0;
   @Local private livePhotoProgress: number = 0;
@@ -61,13 +65,14 @@ export struct StickerMessageBubble {
     this.syncContentIdentity();
     this.detachMessageChannels();
     this.seedProgress(message);
+    const generation = this.channelGeneration;
     if (message.photoFileId !== 0) {
       this.unsubPhotoProgress = subscribeProgress(message.photoFileId,
-        (percent: number): void => { this.livePhotoProgress = percent; });
+        (percent: number): void => { if (generation === this.channelGeneration) { this.livePhotoProgress = percent; } });
     }
     if (message.stickerFileId !== 0) {
       this.unsubStickerProgress = subscribeProgress(message.stickerFileId,
-        (percent: number): void => { this.liveStickerProgress = percent; });
+        (percent: number): void => { if (generation === this.channelGeneration) { this.liveStickerProgress = percent; } });
     }
     // 原地替换媒体可能只换 fileId；保留精确的通道身份，普通正文/状态更新不重挂。
     this.attachedRowId = message.rowId;
@@ -81,6 +86,7 @@ export struct StickerMessageBubble {
   }
 
   private detachMessageChannels(): void {
+    this.channelGeneration++;
     if (this.unsubPhotoProgress !== null) {
       this.unsubPhotoProgress();
       this.unsubPhotoProgress = null;
@@ -108,6 +114,18 @@ export struct StickerMessageBubble {
   aboutToReuse(): void { this.attachMessageChannels(this.msg); }
   aboutToDisappear(): void { this.releaseContent(); }
   aboutToRecycle(): void { this.releaseContent(); }
+
+  private claimContent(): boolean {
+    return !this.context.gestureClaimed && (!this.contentOnly || this.onClaim());
+  }
+  private playbackFailure(): () => void {
+    const rowId = this.msg.rowId, fileId = this.msg.stickerFileId, path = this.msg.stickerPath;
+    const generation = this.channelGeneration;
+    return (): void => {
+      if (generation === this.channelGeneration && rowId === this.msg.rowId &&
+        fileId === this.msg.stickerFileId && path === this.msg.stickerPath) { this.stickerPlaybackFailed = true; }
+    };
+  }
 
   private accent(): ResourceColor {
     return this.env.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
@@ -168,16 +186,22 @@ export struct StickerMessageBubble {
     }
   }
 
+  private emojiScale(): number {
+    return this.contentOnly ? Math.min(1, Math.max(1, this.contentMax) / 72) : 1;
+  }
+
   private stickerW(): number {
     const w = this.msg.photoWidth > 0 ? this.msg.photoWidth : 512;
     const h = this.msg.photoHeight > 0 ? this.msg.photoHeight : 512;
-    return w >= h ? STICKER_MAX : Math.round(STICKER_MAX * (w / h));
+    const side = this.contentOnly ? Math.max(1, Math.min(this.msg.isEmojiSticker ? 72 : STICKER_MAX, this.contentMax)) : STICKER_MAX;
+    return w >= h ? side : Math.round(side * (w / h));
   }
 
   private stickerH(): number {
     const w = this.msg.photoWidth > 0 ? this.msg.photoWidth : 512;
     const h = this.msg.photoHeight > 0 ? this.msg.photoHeight : 512;
-    return h >= w ? STICKER_MAX : Math.round(STICKER_MAX * (h / w));
+    const side = this.contentOnly ? Math.max(1, Math.min(this.msg.isEmojiSticker ? 72 : STICKER_MAX, this.contentMax)) : STICKER_MAX;
+    return h >= w ? side : Math.round(side * (h / w));
   }
 
   private webmFramesCached(): boolean {
@@ -206,7 +230,7 @@ export struct StickerMessageBubble {
       Stack() {
         if (this.msg.text !== '') {
           Text(this.msg.text)
-            .fontSize(this.msg.contentType === 'customEmoji' ? 52 : 56)
+            .fontSize((this.msg.contentType === 'customEmoji' ? 52 : 56) * this.emojiScale())
             .textAlign(TextAlign.Center);
         } else {
           Text($r('app.string.mb_emoji_unavailable'))
@@ -227,10 +251,10 @@ export struct StickerMessageBubble {
           .alignItems(HorizontalAlign.End);
         }
       }
-      .width(72).height(68)
+      .width(72 * this.emojiScale()).height(68 * this.emojiScale())
       .alignContent(Alignment.Center)
       .onClick(() => {
-        if (this.context.gestureClaimed) { return; }
+        if (!this.claimContent()) { return; }
         if (this.msg.contentType === 'customEmoji' && this.msg.photoFailed) {
           this.actions.onStickerRetry(this.msg.id);
         }
@@ -254,7 +278,7 @@ export struct StickerMessageBubble {
             boxWidth: this.stickerW(), boxHeight: this.stickerH(),
             powerCategory: this.msg.isEmojiSticker ? 'emojiChat' : 'sticker',
             chatTimeline: true,
-            onFailed: (): void => { this.stickerPlaybackFailed = true; } })
+            onFailed: this.playbackFailure() })
             .hitTestBehavior(HitTestMode.None);
         } else if (!this.stickerPlaybackFailed &&
           this.msg.stickerFormat === 'webm' && (this.msg.stickerPath !== '' || this.webmFramesCached())) {
@@ -266,7 +290,7 @@ export struct StickerMessageBubble {
             // ijkplayer（独立 surface，不占 UI 线程），而现在走帧序列，一屏
             // 十几张同时往 Canvas 上画，滑动必卡。
             scrollGated: true,
-            onPlaybackFailed: (): void => { this.stickerPlaybackFailed = true; } })
+            onPlaybackFailed: this.playbackFailure() })
             .hitTestBehavior(HitTestMode.None);
         } else if (this.msg.photoPath !== '') {
           Image(this.msg.photoPath.startsWith('/') ? `file://${this.msg.photoPath}` : this.msg.photoPath).draggable(false)
@@ -310,7 +334,7 @@ export struct StickerMessageBubble {
       }
       .width(this.stickerW()).height(this.stickerH())
       .onClick(() => {
-        if (this.context.gestureClaimed) { return; }
+        if (!this.claimContent()) { return; }
         if (this.stickerPlaybackFailed) {
           this.stickerPlaybackFailed = false;
           return;
@@ -332,9 +356,13 @@ export struct StickerMessageBubble {
   }
 
   build() {
-    MessageBubbleShell({ msg: this.msg, group: this.group, data: this.data, actions: this.actions,
-      nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving, context: this.context }) {
+    if (this.contentOnly) {
       this.content();
+    } else {
+      MessageBubbleShell({ msg: this.msg, group: this.group, data: this.data, actions: this.actions,
+        nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving, context: this.context }) {
+        this.content();
+      }
     }
   }
 }

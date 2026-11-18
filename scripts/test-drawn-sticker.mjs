@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {ctx,load,compiled,ui,data,style,group,layoutCounters} from './test-drawn-text-row.mjs';
+const g=group('🙂');Object.assign(g.head,{contentType:'sticker',rowId:71,photoWidth:512,photoHeight:256,photoFileId:22,stickerFileId:23,photoProgress:0,stickerProgress:0,stickerFormat:'tgs',stickerPath:'',photoPath:''});
+const engine=new ctx.DrawnTextLayouts(),plan=engine.prepare(ui,g,data,style),slot=plan.caption.widgets[0],counts=layoutCounters();
+assert.equal(slot.widget.kind,'message-sticker');assert.equal(slot.width,160);assert.equal(slot.height,80);assert.equal(plan.caption.source.blocks.length,1,'emoji alternative is not duplicated as caption');
+for(let i=0;i<1000;i++)assert.equal(engine.prepare(ui,{...g,head:{...g.head,stickerPath:i%2?'/anim':'',photoPath:i%2?'/poster':'',stickerProgress:i%100}},data,style),plan);
+assert.deepEqual(layoutCounters(),counts);
+const narrow=engine.prepare(ui,g,{...data,contentWidth:130},style).caption.widgets[0];assert.ok(narrow.width<160);assert.equal(narrow.width/narrow.height,2);
+ctx.MessageBubbleContext=class{};ctx.chatEnv={};
+ctx.progressForOr=(_id,fallback)=>fallback;const callbacks=new Map();ctx.subscribeProgress=(id,fn)=>{callbacks.set(id,fn);return()=>{};};
+load(compiled+'pages/chat/StickerMessageBubble.ts',['StickerMessageBubble']);
+const local=Object.assign(Object.create(ctx.StickerMessageBubble.prototype),{msg:g.head,channelGeneration:0,unsubPhotoProgress:null,unsubStickerProgress:null,contentRowId:0,stickerPlaybackFailed:false,context:{gestureClaimed:false},contentOnly:true,onClaim:()=>true});
+local.attachMessageChannels(g.head);const oldProgress=callbacks.get(23),oldFailure=local.playbackFailure();oldProgress(40);assert.equal(local.liveStickerProgress,40);
+local.msg={...g.head,rowId:72,stickerFileId:24,stickerPath:'/new',stickerProgress:7};local.attachMessageChannels(local.msg);oldProgress(99);oldFailure();assert.equal(local.liveStickerProgress,7);assert.equal(local.stickerPlaybackFailed,false);
+local.playbackFailure()();assert.equal(local.stickerPlaybackFailed,true);local.stickerPlaybackFailed=false;const detached=local.playbackFailure();local.aboutToRecycle();detached();assert.equal(local.stickerPlaybackFailed,false);
+local.onClaim=()=>false;assert.equal(local.claimContent(),false);
+console.log('PASS: sticker source/ratio/narrow geometry, 1000 media updates reuse layout, stale progress/playback failure and recycle/selection guards.');

@@ -459,6 +459,8 @@ export struct MessageBubble {
         starCount: this.msg.paidMediaStarCount,
         mediaCount: this.msg.paidMediaCount,
         mediaKind: this.msg.paidMediaKind,
+        mediaReady: this.msg.paidMediaSet === undefined ? undefined : (this.msg.paidMediaSet.viewerIndices[0] ?? -1) >= 0,
+        completeSet: this.msg.paidMediaSet?.complete ?? false,
         caption: this.displayedMessageText(this.msg.text),
         photoPath: this.msg.photoPath,
         photoFileId: this.msg.photoFileId,

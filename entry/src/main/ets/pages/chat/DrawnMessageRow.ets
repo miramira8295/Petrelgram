@@ -1,3 +1,17 @@
+import { StickerMessageBubble } from './StickerMessageBubble';
+import { DrawnGiveawayMessage } from './DrawnGiveawayMessage';
+import { DrawnGiftMessage } from './DrawnGiftMessage';
+import { DrawnPaidMediaMessage } from './DrawnPaidMediaMessage';
+import { DrawnGameMessage } from './DrawnGameMessage';
+import { DrawnDiceMessage } from './DrawnDiceMessage';
+import { DrawnVideoNoteMessage } from './DrawnVideoNoteMessage';
+import { DrawnPollMessage } from './DrawnPollMessage';
+import { DrawnLocationMessage } from './DrawnLocationMessage';
+import { DrawnContactMessage } from './DrawnContactMessage';
+import { DrawnVoiceMessage } from './DrawnVoiceMessage';
+import { DrawnAudioMessage } from './DrawnAudioMessage';
+import { MessageBubble } from './MessageBubble';
+import { DrawnFileMessage } from './DrawnFileMessage';
 import { DrawnAlbumTransition } from './DrawnAlbumTransition';
 import { OneShotFrameCallback } from '../../util/oneShotFrameCallback';
 import { DrawnDocumentVideo } from './DrawnDocumentVideo';
@@ -353,7 +367,7 @@ export struct DrawnMessageRow {
     // Match the former caption gate without building a paragraph just to discard
     // it. Empty media rows remain eligible when a body renderer is disabled.
     const bodyText = this.kind === 'album' ? this.rowGroup.caption : this.rowGroup.head.text;
-    const structuredBody = this.kind === 'text' && this.rowGroup.head.contentType === 'richMessage';
+    const structuredBody = this.kind === 'text' && (this.rowGroup.head.contentType === 'richMessage' || this.rowGroup.head.contentType === 'file' || this.rowGroup.head.contentType === 'audio' || this.rowGroup.head.contentType === 'voice' || this.rowGroup.head.contentType === 'contact' || this.rowGroup.head.contentType === 'location' || this.rowGroup.head.contentType === 'venue' || this.rowGroup.head.contentType === 'poll' || this.rowGroup.head.contentType === 'videoNote' || this.rowGroup.head.contentType === 'dice' || this.rowGroup.head.contentType === 'game' || this.rowGroup.head.contentType === 'paidMedia' || this.rowGroup.head.contentType === 'gift' || this.rowGroup.head.contentType === 'giveaway' || this.rowGroup.head.contentType === 'sticker' || this.rowGroup.head.contentType === 'emoji' || this.rowGroup.head.contentType === 'customEmoji');
     if ((bodyText !== '' || structuredBody) && (!structuredBody && this.rowData.lightweightPlainText ? this.env.drawnPlain === false : this.env.drawnRich === false)) { return this.rejectRoute(DrawnRouteReason.BodyDisabled); }
     if (!eligible) { return this.rejectRoute(DrawnRouteReason.Policy); }
     // Read Local values even during handoff to retain async dependencies.
@@ -407,7 +421,7 @@ export struct DrawnMessageRow {
       if (layouts !== null) { this.layoutRetention.remember(this.rowGroup, this.rowData, this.kind, layouts); }
       const p = layouts?.prepare(ui, this.rowGroup, this.rowData, {
         radius: this.env.bubbleRadius, fontSize: this.env.msgTextSize, environment, textEnvironment,
-        mathRevision: this.mathRevision, translationStatus: translation, replaceTranslation: this.env.translateReplaceOriginal, spoilersRevealed: this.rowSpoilersRevealed(), expandedBlocks: this.rowExpandedBlocks(), role: m.senderTag || role, views
+        pollExpired: this.pollGeometryExpired, mathRevision: this.mathRevision, translationStatus: translation, replaceTranslation: this.env.translateReplaceOriginal, spoilersRevealed: this.rowSpoilersRevealed(), expandedBlocks: this.rowExpandedBlocks(), role: m.senderTag || role, views
       }) ?? null;
       this.recordRoute(p === null ? (layouts?.failureReason === undefined || layouts.failureReason === DrawnRouteReason.Drawn
         ? DrawnRouteReason.LayoutNull : layouts.failureReason) : DrawnRouteReason.Drawn);
@@ -645,6 +659,9 @@ export struct DrawnMessageRow {
           else if (button.kind === 'profile' && button.userId > 0) { this.actions.onAvatarTap(button.userId); }
           else if (button.kind === 'game') { this.actions.onGameOpen(m.id); }
           else if (button.kind !== 'disabled') { showToast($r('app.string.miniapp_button_unsupported')); }
+        }
+        else if (link.link.action === 'voice-transcribe') {
+          if (m.speechState !== 'pending' && m.speechState !== 'done' && this.sendState !== 'sending') { this.actions.onRecognizeSpeech(m.id); }
         }
         else if (link.link.action === 'translation-toggle') { this.actions.onToggleTranslation(m.id, !m.translationHidden); }
         else if (link.link.action === 'translation-retry') { this.actions.onRetryTranslation(m.id); }
@@ -971,7 +988,17 @@ export struct DrawnMessageRow {
     return this.presentationActive === false ? this.retainedCanvasMode : this.albumCanvas.state.ready;
   }
 
-  private glassLive(): boolean { return this.env.bubbleMaterialOn && !this.env.powerSaving; }
+  @Computed private get pollGeometryExpired(): boolean {
+    const message = this.rowGroup.head;
+    if (message.contentType !== 'poll' || message.pollIsClosed || message.pollCloseDate <= 0) { return false; }
+    return Math.floor(Date.now() / 1000) >= message.pollCloseDate || this.nowSec >= message.pollCloseDate;
+  }
+
+  private transparentSticker(): boolean {
+    const type = this.rowGroup.head.contentType;
+    return type === 'sticker' || type === 'emoji' || type === 'customEmoji';
+  }
+  private glassLive(): boolean { return !this.transparentSticker() && this.env.bubbleMaterialOn && !this.env.powerSaving; }
 
   @Builder
   canvasContent() {
@@ -1035,7 +1062,7 @@ export struct DrawnMessageRow {
       this.rowGroup.head.isOutgoing ? '100%' : (this.plan?.bubbleX ?? 0),
       1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS, this.canDragMessage() && this.allowBodyDrag,
       this.deleteCaptureSupported && (this.plan?.caption?.source.links.length ?? 0) === 0))
-    .drawModifier(this.painter.bind(this.plan, !this.env.scrollActive && !this.glassLive(), !this.glassLive()))
+    .drawModifier(this.painter.bind(this.plan, !this.transparentSticker() && !this.env.scrollActive && !this.glassLive(), !this.transparentSticker() && !this.glassLive()))
     .onTouch((e: TouchEvent): void => { this.touch(e); })
     .onClick((e: ClickEvent): void => { this.click(e); })
     .onDragStart((event: DragEvent): DragItemInfo => {
@@ -1061,7 +1088,13 @@ export struct DrawnMessageRow {
 
   build() {
     if (this.plan === null) {
-      if (this.kind === 'text') {
+      if (this.rowGroup.head.contentType === 'sticker' || this.rowGroup.head.contentType === 'emoji' || this.rowGroup.head.contentType === 'customEmoji') {
+        StickerMessageBubble({ msg: this.rowGroup.head, group: this.rowGroup, data: this.rowData, actions: this.actions,
+          nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving });
+      } else if (this.rowGroup.head.contentType === 'file' || this.rowGroup.head.contentType === 'audio' || this.rowGroup.head.contentType === 'voice' || this.rowGroup.head.contentType === 'contact' || this.rowGroup.head.contentType === 'location' || this.rowGroup.head.contentType === 'venue' || this.rowGroup.head.contentType === 'poll' || this.rowGroup.head.contentType === 'videoNote' || this.rowGroup.head.contentType === 'dice' || this.rowGroup.head.contentType === 'game' || this.rowGroup.head.contentType === 'paidMedia' || this.rowGroup.head.contentType === 'gift' || this.rowGroup.head.contentType === 'giveaway') {
+        MessageBubble({ msg: this.rowGroup.head, group: this.rowGroup, data: this.rowData, actions: this.actions,
+          nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving });
+      } else if (this.kind === 'text') {
         LegacyTextRow({ group: this.rowGroup, data: this.rowData, actions: this.actions,
           nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving });
       } else if (this.kind === 'single') {
@@ -1127,7 +1160,91 @@ export struct DrawnMessageRow {
             }
             if ((this.plan?.caption?.widgets.length ?? 0) > 0) {
               ForEach(this.plan?.caption?.widgets ?? this.emptyWidgets, (item: DrawnDocumentWidgetPlacement) => {
-                if (item.widget.kind === 'video-embed') {
+                if (item.widget.kind === 'message-sticker') {
+                  StickerMessageBubble({ msg: this.rowGroup.head, group: this.rowGroup, data: this.rowData,
+                    actions: this.actions, contentOnly: true, contentMax: Math.max(item.width, item.height),
+                    onClaim: (): boolean => {
+                      if (this.claimed) { return false; }
+                      return this.claimDocumentWidget(item.widget);
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'message-giveaway') {
+                  DrawnGiveawayMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
+                    onClaim: (): boolean => {
+                      if (this.claimed) { return false; }
+                      return this.claimDocumentWidget(item.widget);
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'message-gift') {
+                  DrawnGiftMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
+                    onClaim: (): boolean => {
+                      if (this.claimed) { return false; }
+                      return this.claimDocumentWidget(item.widget);
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'message-paid-media') {
+                  DrawnPaidMediaMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget,
+                    boxWidth: item.width, pending: this.rowData.paidMediaPending,
+                    onClaim: (): boolean => {
+                      if (this.claimed) { return false; }
+                      return this.claimDocumentWidget(item.widget);
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'message-game') {
+                  DrawnGameMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
+                    onClaim: (): boolean => {
+                      if (this.claimed) { return false; }
+                      return this.claimDocumentWidget(item.widget);
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'message-dice') {
+                  DrawnDiceMessage({ msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width,
+                    chatId: this.rowData.chatId, selectionActive: this.rowData.selectionActive,
+                    onClaim: (): boolean => {
+                      if (this.claimed) { return false; }
+                      return this.claimDocumentWidget(item.widget);
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'message-video-note') {
+                  DrawnVideoNoteMessage({ msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width, sendState: this.sendState,
+                    onClaim: (): boolean => {
+                      if (this.claimed) { return false; }
+                      return this.claimDocumentWidget(item.widget);
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'message-poll') {
+                  DrawnPollMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget,
+                    boxWidth: item.width, nowSec: this.nowSec,
+                    onClaim: (): boolean => {
+                      if (this.claimed) { return false; }
+                      return this.claimDocumentWidget(item.widget);
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'message-location') {
+                  DrawnLocationMessage({ msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width,
+                    chatId: this.rowData.chatId, nowSec: this.nowSec,
+                    sharing: this.rowData.liveSharingId !== 0 && this.rowData.liveSharingId === this.rowGroup.head.id,
+                    onClaim: (): boolean => {
+                      if (this.claimed) { return false; }
+                      return this.claimDocumentWidget(item.widget);
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'message-contact') {
+                  DrawnContactMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
+                    onClaim: (): boolean => {
+                      if (this.claimed) { return false; }
+                      return this.claimDocumentWidget(item.widget);
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'message-voice') {
+                  DrawnVoiceMessage({ msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width, sendState: this.sendState,
+                    onClaim: (): boolean => {
+                      if (this.claimed) { return false; }
+                      return this.claimDocumentWidget(item.widget);
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'message-audio') {
+                  DrawnAudioMessage({ msg: this.rowGroup.head, data: this.rowData, actions: this.actions, boxWidth: item.width,
+                    onClaim: (): boolean => {
+                      if (this.claimed) { return false; }
+                      return this.claimDocumentWidget(item.widget);
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'message-file') {
+                  DrawnFileMessage({ msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width, sendState: this.sendState,
+                    onClaim: (): boolean => {
+                      if (this.claimed) { return false; }
+                      return this.claimDocumentWidget(item.widget);
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'video-embed') {
                   DrawnDocumentVideo({ widget: item.widget, boxWidth: item.width, boxHeight: item.height,
                     onClaim: (): boolean => this.claimDocumentWidget(item.widget),
                     onOpen: (url: string): void => { this.actions.onLinkTap(url, true); } })

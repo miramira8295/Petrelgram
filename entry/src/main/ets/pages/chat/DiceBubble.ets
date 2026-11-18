@@ -18,6 +18,9 @@ export struct DiceBubble {
   @Param layerPaths: string[] = [];
   // 这条骰子消息的身份（会话:消息 id）。结果动画只摇一次，见 util/stickerPlayedOnce。
   @Param playKey: string = '';
+  @Param compact: boolean = false;
+  @Param animationSide: number = 150;
+  @Event onBeforeOpen: () => boolean = (): boolean => true;
   @Event canInteract: () => boolean = (): boolean => true;
   @Event onSendSame: (emoji: string) => void = (_emoji: string): void => {};
   @Local private replayToken: number = 0;
@@ -35,7 +38,7 @@ export struct DiceBubble {
   }
 
   private async showActions(): Promise<void> {
-    if (!this.canInteract() || this.menuOpen) { return; }
+    if (!this.canInteract() || this.menuOpen || !this.onBeforeOpen()) { return; }
     const identity = this.playKey;
     const emoji = this.safeEmoji();
     const generation = ++this.menuGeneration;
@@ -85,8 +88,8 @@ export struct DiceBubble {
           layerPaths: this.layerPaths,
           replayToken: this.replayToken,
           playKey: this.resultPlayKey(this.layerPaths.join('|')),
-          boxWidth: 150,
-          boxHeight: 150,
+          boxWidth: this.animationSide,
+          boxHeight: this.animationSide,
           powerCategory: 'sticker',
           chatTimeline: true,
           playOnce: true
@@ -96,25 +99,25 @@ export struct DiceBubble {
           tgsPath: this.stickerPath,
           replayToken: this.replayToken,
           playKey: this.resultPlayKey(this.stickerPath),
-          boxWidth: 150,
-          boxHeight: 150,
+          boxWidth: this.animationSide,
+          boxHeight: this.animationSide,
           powerCategory: 'sticker',
           chatTimeline: true,
           playOnce: true
         });
       } else {
         Stack() {
-          Text(this.safeEmoji()).fontSize(96);
+          Text(this.safeEmoji()).fontSize(this.animationSide * 0.64);
           if (!this.hasFinalState || this.value <= 0) {
             LoadingProgress().width(20).height(20)
-              .position({ x: 118, y: 118 });
+              .position({ x: this.animationSide - 32, y: this.animationSide - 32 });
           }
         }
-        .width(150).height(150);
+        .width(this.animationSide).height(this.animationSide);
       }
     }
     .onClick((): void => { this.showActions(); })
-    .padding({ right: 24, bottom: 8 })
+    .padding({ right: this.compact ? 0 : 24, bottom: this.compact ? 0 : 8 })
     .alignItems(HorizontalAlign.Start)
     .accessibilityText(this.value > 0
       ? str('dice_result', this.safeEmoji(), this.value) : str('dice_waiting', this.safeEmoji()));

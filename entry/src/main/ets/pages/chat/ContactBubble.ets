@@ -1,3 +1,4 @@
+import { ContactVcardSummary, contactVcardSummary } from '../../util/contactVcardSummary';
 import { AvatarView } from '../chatlist/AvatarView';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
@@ -12,6 +13,8 @@ export struct ContactBubble {
   @Param userId: number = 0;
   @Param avatarPath: string = '';
   @Param maxWidth: number = 250;
+  @Param showVcardSummary: boolean = false;
+  @Param fitAvailableWidth: boolean = false;
   @Param onOpen: () => void = (): void => {};
   @Param onCall: () => void = (): void => {};
 
@@ -60,6 +63,14 @@ export struct ContactBubble {
       this.firstName.trim() !== '' || this.lastName.trim() !== '' || this.vcard.trim() !== '';
   }
 
+  @Computed private get cardSummary(): ContactVcardSummary { return contactVcardSummary(this.vcard, this.phone); }
+  @Computed private get subtitleText(): string {
+    return this.showVcardSummary && this.cardSummary.lines.length > 0 ? this.cardSummary.lines.join('\n') : this.subtitle();
+  }
+  private hasPhone(): boolean {
+    return this.showVcardSummary ? this.cardSummary.phones.length > 0 : this.phone.trim() !== '';
+  }
+
   private subtitle(): string {
     if (this.phone.trim() !== '') {
       return this.phone.trim();
@@ -90,10 +101,10 @@ export struct ContactBubble {
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%');
-          Text(this.subtitle())
+          Text(this.subtitleText)
             .fontSize(11.5)
             .fontColor(this.available() ? COLOR_TEXT_SECONDARY : '#D95B57')
-            .maxLines(1)
+            .maxLines(this.showVcardSummary ? undefined : 1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%');
         }
@@ -114,7 +125,7 @@ export struct ContactBubble {
         }
       });
 
-      if (this.phone.trim() !== '') {
+      if (this.hasPhone()) {
         Stack() {
           Circle({ width: 34, height: 34 }).fill('#123390EC');
           SymbolGlyph($r('sys.symbol.phone_fill'))
@@ -126,7 +137,7 @@ export struct ContactBubble {
           pressed: this.actionPressedStyle
         })
         .animation({ duration: 100, curve: Curve.EaseOut })
-        .accessibilityText(str('cb_call_number', this.phone.trim()))
+        .accessibilityText(str('cb_call_number', this.showVcardSummary ? this.cardSummary.phones[0] ?? '' : this.phone.trim()))
         .onClick((): void => { this.onCall(); });
       } else {
         SymbolGlyph($r(this.userId > 0 ? 'sys.symbol.chevron_right' : 'sys.symbol.person'))
@@ -135,7 +146,7 @@ export struct ContactBubble {
           .opacity(this.available() ? 1 : 0.55);
       }
     }
-    .width(Math.max(190, Math.min(264, this.maxWidth)))
+    .width(this.fitAvailableWidth ? Math.max(1, Math.min(264, this.maxWidth)) : Math.max(190, Math.min(264, this.maxWidth)))
     .alignItems(VerticalAlign.Center)
     .padding({ top: 2, bottom: 11, right: 30 });
   }
