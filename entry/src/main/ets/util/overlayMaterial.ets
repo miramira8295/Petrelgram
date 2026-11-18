@@ -554,11 +554,14 @@ export function overlayGlassFill(surface: OverlaySurface, solid: ResourceColor):
 // 新条目，旧条目留着——档位调回去时还能命中，不必失效重建。
 const cache: Map<string, uiMaterial.Material> = new Map<string, uiMaterial.Material>();
 
-function cacheKey(surface: OverlaySurface): string {
-  return `${surface}_${thicknessOffset()}_${lightLevel()}_${powerSavingNow() ? 'p' : 'n'}`;
+// flat=true 只去掉材质自带的**外投阴影**，滤镜/底色/圆角/交互全保留。
+// 用在「材质画布贴在内容底下、外面还要套自己的描边和裁剪」的位置（输入栏）：
+// 那种位置材质那层阴影会沿节点矩形糊出一圈白光，把内容边缘吃掉。
+function cacheKey(surface: OverlaySurface, flat: boolean): string {
+  return `${surface}_${thicknessOffset()}_${lightLevel()}_${powerSavingNow() ? 'p' : 'n'}${flat ? '_f' : ''}`;
 }
 
-function buildMaterial(surface: OverlaySurface): uiMaterial.Material {
+function buildMaterial(surface: OverlaySurface, flat: boolean = false): uiMaterial.Material {
   return new uiMaterial.ImmersiveMaterial({
     style: styleOf(surface),
     // **材质退化时唯一还看得见的东西**（用户报：升到 HarmonyOS 7.0.0.105 后顶栏、
@@ -588,7 +591,7 @@ function buildMaterial(surface: OverlaySurface): uiMaterial.Material {
     // ImmersiveMaterial 的 applyShadow 就是那个开关：保留材质滤镜、底色、圆角、
     // 交互，只让它不再往外投这层底板。control 面全是浮在纯色背景上的小胶囊，
     // 阴影本来就不显眼，关掉之后观感更干净。bar/bubble 早就自己画边缘，一并沿用。
-    applyShadow: !usesOwnShadow(surface) && surface !== 'control',
+    applyShadow: !flat && !usesOwnShadow(surface) && surface !== 'control',
     // 这两个和材质本体不同：官方注明它们「takes effect for devices with all
     // levels of computing power」，低算力设备上不会被降级掉。
     interactive: usesInteraction(surface),
@@ -600,16 +603,16 @@ function buildMaterial(surface: OverlaySurface): uiMaterial.Material {
 
 // The material for a surface, or undefined on systems without it — at which
 // point that surface's own fallback getter is what takes effect.
-export function overlayMaterial(surface: OverlaySurface): uiMaterial.Material | undefined {
+export function overlayMaterial(surface: OverlaySurface, flat: boolean = false): uiMaterial.Material | undefined {
   if (materialOff() || !materialAvailable() || !usesImmersiveMaterial(surface)) {
     return undefined;
   }
-  const key: string = cacheKey(surface);
+  const key: string = cacheKey(surface, flat);
   const hit = cache.get(key);
   if (hit !== undefined) {
     return hit;
   }
-  const built = buildMaterial(surface);
+  const built = buildMaterial(surface, flat);
   cache.set(key, built);
   return built;
 }

@@ -1,6 +1,7 @@
 import { MusicCollection, collectionContains } from '../../util/musicCollectionModel';
 import { musicDurationLabel, MusicTrack, musicTrackKey, trackKeyOf } from '../../util/musicTrackModel';
 import { musicGlassBlur, musicGlassFill, musicKeyGradient } from '../../util/musicCenterStyle';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { MUSIC_ROW_PLAIN, MusicTrackRow, musicRowKey } from './MusicTrackRow';
 import { MusicSheetShell } from './MusicSheetShell';
 import { COLOR_ON_PRIMARY, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
@@ -158,6 +159,9 @@ export struct MusicCreateDialog {
   }
 
   build() {
+    // 卡片面板：系统沉浸材质（Toggle 承载层），2026-11-18 全应用统一。
+    Stack() {
+      SystemGlassSurface({ radius: 28, fill: true }) {
     Column({ space: 4 }) {
       Text($r('app.string.mc_new_collection'))
         .fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY).width('100%');
@@ -191,9 +195,10 @@ export struct MusicCreateDialog {
       .width('100%').margin({ top: 16 });
     }
     .width('100%').padding({ left: 20, right: 20, top: 22, bottom: 18 })
-    .borderRadius(28)
-    .backgroundColor(musicGlassFill()).backdropBlur(musicGlassBlur())
-    .border({ width: 0.5, color: $r('app.color.divider') })
     .alignItems(HorizontalAlign.Start);
+      }
+    }
+    .width('100%')
+    .borderRadius(28);
   }
 }

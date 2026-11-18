@@ -3,7 +3,8 @@ import { MusicPlaybackSnapshot } from '../../store/MusicPlayerController';
 import {
   musicBitrateLabel, musicDurationLabel, musicFormatLabel, musicSampleLabel, musicSizeLabel, MusicTrack
 } from '../../util/musicTrackModel';
-import { musicCoverGradient, musicGlassBlur, musicGlassFill } from '../../util/musicCenterStyle';
+import { musicCoverGradient } from '../../util/musicCenterStyle';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { COLOR_ON_PRIMARY, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 import { musicCoverSource } from '../../services/MusicCoverCache';
@@ -124,25 +125,31 @@ export struct MusicPlayerView {
         }
         .layoutWeight(1).alignItems(HorizontalAlign.Start);
         // 音源徽标点一下回到那条消息——迷你条原来的「点信息区回消息」搬到了这里。
-        Row({ space: 5 }) {
-          Column()
-            .width(6).height(6).borderRadius(3)
-            .backgroundColor((this.track?.localPath ?? '') !== '' ? '#7CFF9A' : '#5DB8FF');
-          Text((this.track?.localPath ?? '') !== '' ? $r('app.string.mc_source_local') : $r('app.string.mc_source_cloud'))
-            .fontSize(11).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
+        Stack() {
+          SystemGlassSurface({ radius: 13, fixedHeight: 26 }) {
+            Row({ space: 5 }) {
+              Column()
+                .width(6).height(6).borderRadius(3)
+                .backgroundColor((this.track?.localPath ?? '') !== '' ? '#7CFF9A' : '#5DB8FF');
+              Text((this.track?.localPath ?? '') !== '' ? $r('app.string.mc_source_local') : $r('app.string.mc_source_cloud'))
+                .fontSize(11).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
+            }
+            .height('100%').padding({ left: 10, right: 10 });
+          }
         }
-        .height(26).padding({ left: 10, right: 10 }).borderRadius(13)
-        .backgroundColor(musicGlassFill()).backdropBlur(musicGlassBlur())
-        .border({ width: 0.5, color: $r('app.color.divider') })
+        .height(26)
         .enabled(this.track !== null)
         .onClick((): void => { this.onOpenInChat(); });
-        Row({ space: 5 }) {
-          SymbolGlyph($r('sys.symbol.superdevice')).fontSize(13).fontColor([COLOR_TEXT_PRIMARY]);
-          Text(this.castLabel).fontSize(11).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
+        Stack() {
+          SystemGlassSurface({ radius: 13, fixedHeight: 26 }) {
+            Row({ space: 5 }) {
+              SymbolGlyph($r('sys.symbol.superdevice')).fontSize(13).fontColor([COLOR_TEXT_PRIMARY]);
+              Text(this.castLabel).fontSize(11).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
+            }
+            .height('100%').padding({ left: 10, right: 10 });
+          }
         }
-        .height(26).padding({ left: 10, right: 10 }).borderRadius(13)
-        .backgroundColor(musicGlassFill()).backdropBlur(musicGlassBlur())
-        .border({ width: 0.5, color: $r('app.color.divider') })
+        .height(26)
         .onClick((): void => { this.onOpenCast(); });
       }
       .width('100%').alignItems(VerticalAlign.Bottom);

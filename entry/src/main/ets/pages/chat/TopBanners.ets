@@ -1,5 +1,5 @@
-import { chromeOutline } from '../../util/chromeOutline';
 import { ChatActionBarView } from './ChatActionBarView';
+import { SystemGlassSurface } from './SystemGlassSurface';
 // 【自绘玻璃，不走组件级系统材质】系统已经把**组件级**的 systemMaterial 收回，
 // 只有 HDS 导航级的栏（HdsNavigation 的 titleBar、HdsTabs 的 barFloatingStyle）
 // 还拿得到。继续用 overlayGlassFill + overlayBackdropBlur 的面会两头落空——
@@ -12,8 +12,6 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SEC
 import {
   KEY_POWER_PARTICLES, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
 } from '../../store/AppSettings';
-import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
-import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { pinnedActiveSeg, pinnedSegIndices, pinnedShownIndex } from '../../util/pinnedSegments';
 import { plural, str } from '../../util/strings';
 import {
@@ -103,6 +101,14 @@ export struct TopBanners {
   @Event onActionBarAction: (id: string) => void = (_id: string): void => {};
   @Event onActionBarDismiss: () => void = (): void => {};
 
+  // 置顶条与音乐条共用一套跟手位移（同一时刻只可能按一条）：槽位 0=置顶 1=音乐。
+  // 位移挂在外层 Stack 上，玻璃（SystemGlassSurface）才会跟着动。
+  @Local private grabSlot: number = -1;
+  @Local private grabDX: number = 0;
+  @Local private grabDY: number = 0;
+  private grabStartX: number = 0;
+  private grabStartY: number = 0;
+
   @Styles
   rowNormalStyle() {
     .backgroundColor(Color.Transparent)
@@ -129,6 +135,34 @@ export struct TopBanners {
     .backgroundColor(LIVE_ACCENT_PRESSED)
     .opacity(0.82)
     .scale({ x: 0.94, y: 0.94 })
+  }
+
+
+  // 按住拖动跟手：按下记原点，Move 算增量 ×0.18 夹 ±3vp，松手归零。
+  private trackGrab(event: TouchEvent, slot: number): void {
+    if (event.type === TouchType.Down) {
+      this.grabSlot = slot;
+      this.grabDX = 0;
+      this.grabDY = 0;
+      if (event.touches.length > 0) {
+        this.grabStartX = event.touches[0].x;
+        this.grabStartY = event.touches[0].y;
+      }
+      return;
+    }
+    if (event.type === TouchType.Move) {
+      if (this.grabSlot !== slot || event.touches.length === 0) {
+        return;
+      }
+      const dx: number = (event.touches[0].x - this.grabStartX) * 0.18;
+      const dy: number = (event.touches[0].y - this.grabStartY) * 0.18;
+      this.grabDX = dx > 3 ? 3 : (dx < -3 ? -3 : dx);
+      this.grabDY = dy > 3 ? 3 : (dy < -3 ? -3 : dy);
+      return;
+    }
+    this.grabSlot = -1;
+    this.grabDX = 0;
+    this.grabDY = 0;
   }
 
   private hasContent(): boolean {
@@ -196,7 +230,8 @@ export struct TopBanners {
         .onClick((): void => { this.topCard.stopMusic(); });
     }
     .width('100%').height(CHAT_TOP_BANNER_ROW_HEIGHT)
-    .padding({ left: 14, right: 10, top: 8, bottom: 8 }).alignItems(VerticalAlign.Center);
+    .padding({ left: 14, right: 10, top: 8, bottom: 8 }).alignItems(VerticalAlign.Center)
+    .onTouch((event: TouchEvent): void => { this.trackGrab(event, 1); });
   }
 
   // 【为什么"定位"和"查看全部"是两个互不重叠的命中区，而不是一层套一层】
@@ -254,6 +289,7 @@ export struct TopBanners {
       })
       .enabled(!this.topCard.pinnedJumpBusy)
       .accessibilityText(str('cp_pinned_a11y', this.topCard.pinnedPreview))
+      .onTouch((event: TouchEvent): void => { this.trackGrab(event, 0); })
       .onClick((): void => { this.onPinnedTap(); });
       // 查看全部置顶。定位跳转跳的是"当前这一条"，看全量得另有入口。
       Row() {
@@ -335,6 +371,10 @@ export struct TopBanners {
   }
 
   build() {
+    // 这张浮卡是"整块面板"级：玻璃交给 SystemGlassSurface 垫的系统材质，
+    // 外层 Stack 只负责定位（宽度 calc、高度、外边距、进出场动画）。
+    Stack() {
+    SystemGlassSurface({ radius: 14, fill: true, dark: this.appDark }) {
     Column() {
       if (this.hasContent()) {
         if (this.actionBarKind !== '') {
@@ -385,20 +425,15 @@ export struct TopBanners {
         }
       }
     }
+    .width('100%')
+    .height('100%');
+    }
+    }
     .width('calc(100% - 24vp)')
     .height(this.containerHeight())
-    // 置顶消息条和直播状态条共用这一张卡，它浮在消息列表之上、消息从下面
-    // 滚过去——和顶栏胶囊、dock 是同一种角色，所以走同一档 'bar' 玻璃。
-    // 自绘玻璃的两半要一起上：半透明底 + backdropBlur（不透明底会把模糊盖死）。
-    .backgroundColor(plainGlassFill($r('app.color.surface')))
-    .backdropBlur(plainBackdropBlur('bar'))
-    .borderRadius(14)
     .margin({ left: 12, right: 12, bottom: 2 })
-    // 'bar' 档自带阴影关闭，这条浮卡的阴影保持自己的。
-    .shadow({ radius: this.appDark ? 0 : 5, color: this.appDark ? '#00000000' : '#12000000', offsetX: 0, offsetY: this.appDark ? 0 : 1 })
-    .clip(true)
-    .visualEffect(hdsVisualEffect('bar', !this.appDark))
-    .border(chromeOutline(this.appDark))
+    // 按压跟手位移放在卡片级：垫在下面的系统玻璃才会一起动。
+    .translate({ x: this.grabSlot >= 0 ? this.grabDX : 0, y: this.grabSlot >= 0 ? this.grabDY : 0 })
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: -6 }))
       .animation({

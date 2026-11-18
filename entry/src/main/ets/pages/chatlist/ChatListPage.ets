@@ -41,10 +41,10 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WID
 } from '../../store/AppSettings';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import {
-  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH, plainBackdropBlur, plainGlassFill
-} from '../../util/overlayMaterial';
-import { materialModifierWhen } from '../../util/materialModifier';
+import { MATERIAL_EPOCH, overlayMaterial } from '../../util/overlayMaterial';
+import { NativeGlassHost } from '../chat/NativeGlassHost';
+import { TopGlassAction } from './TopGlassAction';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
 import { nextTabPreloadIndex, pruneBuiltKeys } from '../../util/tabPreload';
@@ -471,6 +471,9 @@ export struct ChatListPage {
   // 滑到哪就停在哪。所以：手指碰过横条之后，布局变化一律原地恢复到用户的位置；
   // 只有真正切换了分组，才自动滚到新选中的那个（revealTab）。
   private stripUserMoved: boolean = false;
+  // 按住文件夹轨道（含按住后滑动）时的轻微形变。玻璃由 SystemGlassSurface 承载，
+  // 只有把变换挂在包住它的那层 Stack 上，玻璃才会跟着一起动。
+  @State private railPressed: boolean = false;
   private stripOffsetX: number = 0;
 
   // 切换了分组：滚到新选中的那个，忘掉用户之前滑到的位置。
@@ -1072,67 +1075,34 @@ export struct ChatListPage {
 
   @Builder
   topAction(icon: string, label: Resource, onTap: () => void) {
-    Row() {
-      SymbolGlyph($r(icon)).fontSize(23).fontColor([COLOR_ICON_SECONDARY]);
-    }
-    .width(TOP_ACTION_SIZE).height(TOP_ACTION_SIZE)
-    .borderRadius(TOP_ACTION_SIZE / 2)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(plainGlassFill($r('app.color.surface')))
-    .backdropBlur(plainBackdropBlur('bar'))
-    .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
-    .clip(true)
-    .stateStyles({
-      normal: this.actionNormalStyle,
-      pressed: this.actionPressedStyle
+    // 圆钮与三套按压/跟手状态都收进 TopGlassAction：页面级 @State 每帧更新会
+    // 触发整页重渲染（交接文档实测峰值 14.8ms），必须关在小里。
+    TopGlassAction({
+      actionSize: TOP_ACTION_SIZE,
+      icon: icon,
+      dark: this.appDark,
+      iconColor: COLOR_ICON_SECONDARY,
+      accentColor: this.accent(),
+      label: label,
+      onTap: onTap
     })
-    .accessibilityText(label)
-    .onClick((): void => { onTap(); });
   }
 
   @Builder
   searchAction() {
-    Row() {
-      if (this.searchOpening) {
-        LoadingProgress()
-          .width(20)
-          .height(20)
-          .color(this.accent())
-          .transition(TransitionEffect.OPACITY
-            .combine(TransitionEffect.scale({ x: 0.72, y: 0.72 }))
-            .animation({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
-              curve: Curve.EaseOut
-            }));
-      } else {
-        SymbolGlyph($r('sys.symbol.magnifyingglass'))
-          .fontSize(23)
-          .fontColor([COLOR_ICON_SECONDARY])
-          .transition(TransitionEffect.OPACITY
-            .combine(TransitionEffect.scale({ x: 0.84, y: 0.84 }))
-            .animation({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
-              curve: Curve.EaseOut
-            }));
+    TopGlassAction({
+      actionSize: TOP_ACTION_SIZE,
+      icon: 'sys.symbol.magnifyingglass',
+      busy: this.searchOpening,
+      dark: this.appDark,
+      interactive: !this.searchOpening,
+      iconColor: COLOR_ICON_SECONDARY,
+      accentColor: this.accent(),
+      label: this.searchOpening ? $r('app.string.cl_opening_search') : $r('app.string.cl_global_search'),
+      onTap: (): void => {
+        this.openGlobalSearch();
       }
-    }
-    .width(TOP_ACTION_SIZE)
-    .height(TOP_ACTION_SIZE)
-    .borderRadius(TOP_ACTION_SIZE / 2)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(plainGlassFill($r('app.color.surface')))
-    .backdropBlur(plainBackdropBlur('bar'))
-    .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
-    .clip(true)
-    .stateStyles({
-      normal: this.actionNormalStyle,
-      pressed: this.actionPressedStyle
     })
-    .enabled(!this.searchOpening)
-    .accessibilityText(this.searchOpening ? $r('app.string.cl_opening_search') : $r('app.string.cl_global_search'))
-    .onClick((): void => {
-      this.openGlobalSearch();
-    });
   }
 
   // HDS's built-in menu node composites each icon independently. With the
@@ -1598,48 +1568,63 @@ export struct ChatListPage {
   @Builder
   tabBar() {
     Column() {
-      Scroll(this.tabScroller) {
-        Stack({ alignContent: Alignment.TopStart }) {
-          // Sliding selection pill behind the labels — follows the finger
-          // during Tabs content swipes. 独立组件 + AppStorage 旁路，拖动每帧
-          // 只脏它自己（见 FOLDER_PILL_X 的说明）。
-          FolderPill({ accent: this.accent() });
-          // 间距只放在标签之间，末项不留尾部空白，居中与滚动终点才对称。
-          Row({ space: 6 }) {
-            ForEach(this.tabs(), (spec: TabSpec, index: number) => {
-              this.pill(spec, index);
-            }, (spec: TabSpec) => spec.key);
-          }.padding({ left: 0, right: 0 }).height(FOLDER_BAR_HEIGHT);
+      // 轨道胶囊（2026-11-16 22:45 用户：整排一条玻璃、两侧留边）。外壳负责玻璃与
+      // 圆角裁切，内层 Scroll 只负责滚动与几何回写；两条边距由 Column 的 padding 给，
+      // 所以比整屏窄一圈。
+      Stack() {
+        SystemGlassSurface({ radius: FOLDER_BAR_HEIGHT / 2, fill: true }) {
+          Scroll(this.tabScroller) {
+            Stack({ alignContent: Alignment.TopStart }) {
+              // Sliding selection pill behind the labels — follows the finger
+              // during Tabs content swipes. 独立组件 + AppStorage 旁路，拖动每帧
+              // 只脏它自己（见 FOLDER_PILL_X 的说明）。
+              FolderPill({ accent: this.accent() });
+              // 间距只放在标签之间，末项不留尾部空白，居中与滚动终点才对称。
+              Row({ space: 6 }) {
+                ForEach(this.tabs(), (spec: TabSpec, index: number) => {
+                  this.pill(spec, index);
+                }, (spec: TabSpec) => spec.key);
+              }.padding({ left: 0, right: 0 }).height(FOLDER_BAR_HEIGHT);
+            }
+          }
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
+          // 装得下就居中（#156）；超宽时 Scroll 从左起排、照常横向滚动。指示胶囊
+          // 与文字在同一个 Stack 里，坐标随内容一起平移，不用另算偏移。
+          .align(Alignment.Top)
+          .width('100%')
+          .height('100%')
+          .padding({ left: 6, right: 6 })
+          .onTouch((event: TouchEvent): void => {
+            if (event.type === TouchType.Down) {
+              this.stripUserMoved = true;
+              this.railPressed = true;
+            } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+              this.railPressed = false;
+            }
+          })
+          .onDidScroll((): void => {
+            const cur: OffsetResult | undefined = this.tabScroller.currentOffset();
+            if (cur !== undefined) {
+              this.stripOffsetX = cur.xOffset;
+            }
+          })
+          .onAreaChange((_old: Area, area: Area) => {
+            this.tabViewW = area.width as number;
+            this.keepOrRevealStrip();
+          });
         }
       }
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      // 装得下就居中（#156）；超宽时 Scroll 从左起排、照常横向滚动。指示胶囊
-      // 与文字在同一个 Stack 里，坐标随内容一起平移，不用另算偏移。
-      .align(Alignment.Top)
       .width('100%')
-      // 轨道胶囊（2026-11-16 22:45 用户：整排一条玻璃、两侧留边）。挂在内层 Scroll 上，
-      // 天然处在 Column 的水平内边距里，比整屏窄一圈。
-      .backgroundColor('#1FFFFFFF')
-      .backdropBlur(plainBackdropBlur('card'))
-      .attributeModifier(materialModifierWhen('control', true))
+      .height(FOLDER_BAR_HEIGHT)
       .borderRadius(FOLDER_BAR_HEIGHT / 2)
-      .padding({ left: 6, right: 6 })
       .clip(true)
-      .onTouch((event: TouchEvent): void => {
-        if (event.type === TouchType.Down) {
-          this.stripUserMoved = true;
-        }
-      })
-      .onDidScroll((): void => {
-        const cur: OffsetResult | undefined = this.tabScroller.currentOffset();
-        if (cur !== undefined) {
-          this.stripOffsetX = cur.xOffset;
-        }
-      })
-      .onAreaChange((_old: Area, area: Area) => {
-        this.tabViewW = area.width as number;
-        this.keepOrRevealStrip();
+      // 按住（含按住后横向滑动）时整条轨道连玻璃一起轻微收紧、松手弹回。
+      .scale({ x: this.railPressed ? 0.985 : 1, y: this.railPressed ? 0.985 : 1 })
+      .opacity(this.railPressed ? 0.92 : 1)
+      .animation({
+        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
+        curve: Curve.EaseOut
       });
     }
     // 横条无独立外框，直接融入标题栏的统一玻璃背板；只有当前项保留胶囊。
@@ -2002,9 +1987,17 @@ struct FolderPill {
   // 不是 ChatListPage：胶囊有自己的旁路脏区（见 FOLDER_PILL_X），别为了它把整页
   // 拉进重绘。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
 
   build() {
     Stack() {
+      // 玻璃垫层：尺寸跟着 pillW/FOLDER_CHIP_HEIGHT 走，拖动时逐帧更新。
+      NativeGlassHost({
+        hostWidth: this.pillW,
+        hostHeight: FOLDER_CHIP_HEIGHT,
+        hostRadius: FOLDER_CHIP_HEIGHT / 2,
+        dark: this.appDark
+      });
       // 2026-11-17 00:22 用户要"选中要有淡强调色"：材质在时底色会被系统吃掉，
       // 所以单独盖一层 26% 的强调色。这一层不参与材质，只是玻璃上的一层薄色。
       Row()
@@ -2034,18 +2027,9 @@ struct FolderPill {
           curve: Curve.EaseOut
         }
         : { duration: 0 })
-      // 选中胶囊挂 'control' 材质三件套，和顶栏搜索/⋮ 同一套（2026-10-30 用户选定）。
-      // 三档退路和别处一致：材质可用 → 底色透明、观感整个交给材质；设备不支持 →
-      // dock_glass + backdropBlur 自绘玻璃；用户把厚度调到「关闭」→ 强调色实底，
-      // 也就是今天这个样子。
-      //
-      // 注意第一档的副作用：材质在时底色是**透明**的，选中态不再有那层强调色药丸，
-      // 只剩玻璃块 + 强调色文字。这是官方 FAQ「材质的视觉层级在 backgroundColor
-      // 之下」的必然结果——想在材质上保住蓝色，只能在玻璃**上面**再盖一层半透明
-      // 强调色，官方把那种叠法列为「发实」的典型，别这么干。
-      .backgroundColor(overlayGlassFill('control', COLOR_TAB_PILL_BG))
-      .backdropBlur(plainBackdropBlur('bar'))
-      .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0));
+      // 材质已由上面的 NativeGlassHost 承载（2026-11-18 全应用统一为系统沉浸材质），
+      // 这里不再链自绘玻璃三件套；accent 薄色层留在材质之上，保住选中态的可辨识度。
+      ;
   }
 }
 

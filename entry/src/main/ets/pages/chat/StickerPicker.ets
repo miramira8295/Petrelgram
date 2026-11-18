@@ -28,6 +28,7 @@ import {
   overlayGlassFill, overlayBackdropBlur, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
+import { NativeGlassHost } from './NativeGlassHost';
 import { logE, logI } from '../../util/log';
 import { stickerFramesCached, warmStickerFrameIndex } from '../../services/stickerFrameIndex';
 import { remoteUniqueIdOf } from '../../util/stickerSetItems';
@@ -1571,16 +1572,17 @@ export struct StickerPicker {
           // 所以不用垫底色去挡——包滑到它下面时，两层玻璃叠着反而分得清。
           if (this.allowSearch) {
             Row() {
-              Column() {
-                SymbolGlyph(this.searchOpen ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'))
-                  .fontSize(17)
-                  .fontColor([this.searchOpen ? COLOR_PRIMARY : COLOR_ICON_SECONDARY]);
+              Stack() {
+                NativeGlassHost({ hostWidth: 32, hostHeight: 32, hostRadius: 16 });
+                Column() {
+                  SymbolGlyph(this.searchOpen ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'))
+                    .fontSize(17)
+                    .fontColor([this.searchOpen ? COLOR_PRIMARY : COLOR_ICON_SECONDARY]);
+                }
+                .width(32).height(32)
+                .justifyContent(FlexAlign.Center);
               }
-              .width(32).height(32).borderRadius(16).clip(true)
-              .justifyContent(FlexAlign.Center)
-              .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
-              .backdropBlur(overlayBackdropBlur('control'))
-              .attributeModifier(materialModifier('control'))
+              .width(32).height(32)
               .onClick(() => { this.toggleSearch(); });
             }
             .width(48).height(44)

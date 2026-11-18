@@ -6,8 +6,7 @@ import {
 } from '../../util/searchPaging';
 import { logW } from '../../util/log';
 import { CHAT_SEARCH_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
-import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
-import { hdsVisualEffect } from '../../util/hdsPointLight';
+import { SystemGlassSurface } from './SystemGlassSurface';
 import {
   BOTTOM_PILL_GAP, BOTTOM_PILL_HEIGHT, BOTTOM_PILL_PADDING, bottomPillRadius
 } from '../../util/bottomPill';
@@ -124,6 +123,10 @@ export struct SearchHeader {
   }
 
   build() {
+    // 玻璃交给系统沉浸材质：外层 Stack 管宽度/高度/外边距/进出场，材质层由
+    // SystemGlassSurface 按量到的像素铺，内容再画在最上面。
+    Stack() {
+    SystemGlassSurface({ radius: 23, fill: true }) {
     Row({ space: 4 }) {
       Row() {
         SymbolGlyph($r('sys.symbol.chevron_left'))
@@ -168,9 +171,9 @@ export struct SearchHeader {
         .accessibilityText($r('app.string.clear_search'));
       }
     }
-    .width('calc(100% - 24vp)').height(CHAT_SEARCH_HEADER_BASE_HEIGHT - 16)
+    .width('100%')
+    .height('100%')
     .padding({ left: 3, right: 6 })
-    .margin({ left: 12, right: 12, top: this.topSafe + 8, bottom: 8 })
     // 【和下面那条控制条同一副材质】上一轮只迁了 SearchBottomBar，这条顶栏
     // 还留着实心底色——真机上底下透、上面不透，一眼就看得出不是一路
     // （用户 2026-09-08：「搜索的顶部搜索条还是标准的，不是 HDS 的光感」）。
@@ -179,13 +182,12 @@ export struct SearchHeader {
     // ⚠️ **border 必须写在 borderRadius 之前**：`.border({width,color})` 不带
     // radius 时会把先前设过的 borderRadius 重置成 0（ScrollFab 那次真机事故就
     // 是这条），顺序反了整条会变成直角方块。
-    .border({ width: 0.5, color: $r('app.color.divider') })
-    .backgroundColor(plainGlassFill($r('app.color.surface')))
-    .borderRadius(23)
-    .backdropBlur(plainBackdropBlur('card'))
-    .visualEffect(hdsVisualEffect('card'))
-    .shadow({ radius: 5, color: '#16000000', offsetX: 0, offsetY: 1 })
-    .alignItems(VerticalAlign.Center)
+    .alignItems(VerticalAlign.Center);
+    }
+    }
+    .width('calc(100% - 24vp)')
+    .height(CHAT_SEARCH_HEADER_BASE_HEIGHT - 16)
+    .margin({ left: 12, right: 12, top: this.topSafe + 8, bottom: 8 })
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: -5 }))
       .animation({
@@ -266,20 +268,26 @@ export struct SearchBottomBar {
   // 一颗圆钮。两个翻页键长得一样，只有图标/可用性/回调不同。
   @Builder
   stepButton(icon: Resource, enabled: boolean, bounce: boolean, action: () => void) {
-    Row() {
-      if (bounce) {
-        SymbolGlyph(icon).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
-          .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
-      } else {
-        SymbolGlyph(icon).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+    // 固定尺寸的圆钮：材质层尺寸已知，直接给，省掉一帧测量。
+    // 外壳 Stack 承接透明度与点击（自定义组件带尾随闭包后不能再链通用属性）。
+    Stack() {
+    SystemGlassSurface({
+      radius: bottomPillRadius(),
+      fixedWidth: BOTTOM_PILL_HEIGHT,
+      fixedHeight: BOTTOM_PILL_HEIGHT
+    }) {
+      Row() {
+        if (bounce) {
+          SymbolGlyph(icon).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
+            .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
+        } else {
+          SymbolGlyph(icon).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+        }
       }
+      .width(BOTTOM_PILL_HEIGHT).height(BOTTOM_PILL_HEIGHT)
+      .justifyContent(FlexAlign.Center);
     }
-    .width(BOTTOM_PILL_HEIGHT).height(BOTTOM_PILL_HEIGHT)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(plainGlassFill($r('app.color.surface')))
-    .borderRadius(bottomPillRadius())
-    .backdropBlur(plainBackdropBlur('card'))
-    .visualEffect(hdsVisualEffect('card'))
+    }
     .opacity(enabled ? 1 : 0.4)
     .onClick((): void => { action(); });
   }
@@ -288,30 +296,30 @@ export struct SearchBottomBar {
     Column({ space: BOTTOM_PILL_GAP }) {
       // 标签搜索那一行仍然是整条——它是一句可点的话，切成胶囊会很怪。
       if (hashtagQueryOf(this.search.keywords()) !== '') {
-        Row() {
-          this.publicPostsRow(hashtagQueryOf(this.search.keywords()));
+        Stack() {
+          SystemGlassSurface({ radius: 22, fill: true }) {
+            Row() {
+              this.publicPostsRow(hashtagQueryOf(this.search.keywords()));
+            }
+            .width('100%')
+            .height('100%');
+          }
         }
         .width('100%')
-        .backgroundColor(plainGlassFill($r('app.color.surface')))
-        .borderRadius(22)
-        .backdropBlur(plainBackdropBlur('card'))
-        .visualEffect(hdsVisualEffect('card'))
-        .clip(true);
+        .height(40);
       }
       // 【为什么不再是一整条平板】原来计数和两个箭头共处一条铺满的控制栏里，
       // 视觉上是块"板"。改成**内容宽的计数胶囊 + 两颗独立圆钮**：胶囊只占它
       // 需要的宽度，右边两颗圆钮各自成形，中间留空让壁纸透出来
       // （用户 2026-09-08：「显示总结果数量和定位，右侧两个圆形按钮上下跳转」）。
       Row({ space: BOTTOM_PILL_GAP }) {
+        // 计数胶囊：内容宽的胶囊，材质层由外壳自量（高度已知，先给上）。
+        SystemGlassSurface({ radius: bottomPillRadius(), fixedHeight: BOTTOM_PILL_HEIGHT }) {
         Row() {
           this.label();
         }
         .height(BOTTOM_PILL_HEIGHT)
         .padding({ left: BOTTOM_PILL_PADDING, right: BOTTOM_PILL_PADDING })
-        .backgroundColor(plainGlassFill($r('app.color.surface')))
-        .borderRadius(bottomPillRadius())
-        .backdropBlur(plainBackdropBlur('card'))
-        .visualEffect(hdsVisualEffect('card'))
         .alignItems(VerticalAlign.Center)
         .accessibilityText(this.search.results.length > 0 ? str('cp_search_results') : '')
         .onClick((): void => {
@@ -319,6 +327,7 @@ export struct SearchBottomBar {
           this.getUIContext().getFocusController().clearFocus();
           this.search.openResults();
         });
+        }
 
         Blank().layoutWeight(1);
 

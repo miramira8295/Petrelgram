@@ -622,7 +622,9 @@ struct NewGroupPage {
       });
     }
     .width('100%').height(58).padding({ left: 6, right: 8 })
-    .alignItems(VerticalAlign.Center).backgroundColor(PAGE_BG);
+    // 标题栏不铺底色：内容滚到它底下时由列表自己的 linearGradientBlur 糊掉，
+    // 铺一层实底就把糊带彻底挡住了（联系人页的标题栏同样不铺底）。
+    .alignItems(VerticalAlign.Center);
   }
 
   // 选人那一屏的卡片（搜索框 / 联系人列表 / 空态）宽度上限。
@@ -819,16 +821,58 @@ struct NewGroupPage {
 
   @Builder
   contactList() {
+    // 结构照抄联系人页（ContactsPage.build）：整屏只有一条 List，List 上沿直接贴
+    // 屏幕最上沿，搜索框是它的第一行，每个联系人是一张**独立卡片**（原来是
+    // 「List 自己就是那张大卡」）。
+    //
+    // 为什么必须这么改：旧写法把卡片背景挂在 List 上、又为了顶部糊带挂了
+    // clip(false)，列表行于是画到 List 上沿之外，正好压住固定不动的搜索框
+    // （真机布局树：ListItem 上沿 319 越过了 List 上沿 528）。改成"内容自己滚、
+    // 标题栏盖在上面"之后，搜索框跟着列表一起滚进标题栏底下，这个覆盖问题
+    // 从结构上就不存在了。
     List() {
+      ListItem() {
+        this.searchBox();
+      }
+      .width('100%');
+
+      if (this.addToChatId !== 0 && this.createError !== '') {
+        ListItem() {
+          Column({ space: 6 }) {
+            Text(this.createError).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
+              .width('100%').textAlign(TextAlign.Center);
+            if (!this.inviteReady) {
+              Button($r('app.string.settings_retry')).onClick((): void => { this.loadInviteTarget(); });
+            }
+          }
+          .width('calc(100% - 24vp)')
+          .margin({ left: 12, right: 12, top: 2, bottom: 6 });
+        }
+        .width('100%');
+      }
+
+      if (this.selectedIds.length > 0) {
+        ListItem() {
+          this.selectedSummary();
+        }
+        .width('100%');
+      }
+
       // LazyForEach + 复用行（NewGroupContactRow）：候选是全部联系人，几千个时只建可视区
       // 附近的行，其余滚动时逐帧补建。点击挂在 ListItem 上，闭包随行 key 重建。
       LazyForEach(this.contactsData, (contact: ContactItem) => {
         ListItem() {
           Column() {
             NewGroupContactRow({ contact: contact, selected: this.selected(contact.id) });
-            Divider().strokeWidth(0.5).color($r('app.color.divider')).margin({ left: 73 });
           }
+          .width('calc(100% - 24vp)')
+          .margin({ left: 12, right: 12, top: 3, bottom: 3 })
+          .borderRadius(CARD_RADIUS)
+          .backgroundColor(CARD_BG)
+          .clip(true);
         }
+        // 限宽照旧跟着卡片走：ListItem 本身铺满，卡片宽度自己扣掉两侧 12vp。
+        .constraintSize({ maxWidth: this.pickerCardMaxWidth() + CARD_SIDE_MARGIN * 2 })
         .accessibilityText(str('a11y_labeled_state', contact.name,
           this.selected(contact.id) ? str('ng_selected') : str('ng_not_selected')))
         .onClick((): void => this.toggle(contact.id))
@@ -837,21 +881,19 @@ struct NewGroupPage {
         guardKey(this.contactsData.keyTableId, index,
           `${contact.id}_${contact.avatarPath}_${contact.name}_${contact.statusText}_${contact.online ? 1 : 0}`)
       );
+
       if (this.remoteState === 'loading' || this.shouldShowRemoteError()) {
         ListItem() { this.searchStatusRow(); }
       }
     }
-    .layoutWeight(1).width('calc(100% - 24vp)')
-    // 这张卡片本身就是滚动容器（List 既是卡片又是滚动体），限宽后两侧留白
-    // 不在它的命中区里、滑不动列表——这一点跟改动前的 12vp 边距同性质，只是
-    // 平板上更宽。要让留白也能滑，得把卡片背景从 List 挪到 ListItem 上，那是
-    // 另一回事，不在限宽这一轮里做。
-    .constraintSize({ maxWidth: this.pickerCardMaxWidth() })
-    .margin({ left: 12, right: 12, top: 4 })
-    .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
+    .width('100%').height('100%')
+    .alignListItem(ListItemAlign.Center)
+    // 内容区不避让标题栏：首行（搜索框）靠 contentStartOffset 让开标题，滚动时
+    // 整段内容穿到标题底下被 linearGradientBlur 糊掉——联系人页同一套。
+    .contentStartOffset(this.topSafe + 56)
+    .contentEndOffset(this.bottomSafe + 12)
     .scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
     .cachedCount(4)
-    .contentEndOffset(this.bottomSafe + 12)
     .linearGradientBlur(BLUR_MAX_VP, {
       fractionStops: topEdgeBlurStops(this.listViewH),
       direction: GradientDirection.Bottom
@@ -867,8 +909,6 @@ struct NewGroupPage {
   memberContent() {
     if (this.loading && this.contacts.length === 0 && this.query.trim() === '') {
       this.loadingState();
-    } else if (this.filteredContacts().length > 0) {
-      this.contactList();
     } else if (this.query.trim() === '' && this.loadError !== '') {
       this.centeredState(
         $r('sys.symbol.exclamationmark_circle'), $r('app.string.contacts_load_failed'),
@@ -901,28 +941,34 @@ struct NewGroupPage {
 
   @Builder
   memberPicker() {
-    Column() {
-      this.searchBox();
-      if (this.addToChatId !== 0 && this.createError !== '') {
-        Text(this.createError).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-          .padding({ left: 16, right: 16, bottom: 8 });
-        if (!this.inviteReady) {
-          Button($r('app.string.settings_retry')).onClick((): void => { this.loadInviteTarget(); });
+    if (this.filteredContacts().length > 0) {
+      // 有联系人：整屏只有一条 List（搜索框是它的第一行），结构同联系人页。
+      this.contactList();
+    } else {
+      // 没有联系人要列的时候（加载中/空态/搜不到/搜索失败）保持固定布局，
+      // 搜索框留在标题下面不动——这些状态没有可滚的内容，跟列表滚不滚无关。
+      Column() {
+        this.searchBox();
+        if (this.addToChatId !== 0 && this.createError !== '') {
+          Text(this.createError).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
+            .padding({ left: 16, right: 16, bottom: 8 });
+          if (!this.inviteReady) {
+            Button($r('app.string.settings_retry')).onClick((): void => { this.loadInviteTarget(); });
+          }
         }
+        this.selectedSummary();
+        this.memberContent();
       }
-      this.selectedSummary();
-      this.memberContent();
+      .width('100%').height('100%')
+      // 这一支的搜索框不是滚动内容，得自己让开 header；否则会钻到状态栏下面。
+      .padding({ top: this.topSafe + 56 })
+      // 限了宽不居中就是把卡片全堆在屏幕左边，比不限还难看。手机上卡片宽度
+      // 加左右 margin 正好铺满，居中与否没有区别。
+      .alignItems(HorizontalAlign.Center)
+      .transition(TransitionEffect.OPACITY.combine(
+        TransitionEffect.translate({ x: -18 })
+      ).animation({ duration: this.animationDuration(210), curve: Curve.EaseOut }));
     }
-    .width('100%').height('100%')
-    // 选人页顶部是搜索框（不是滚动内容），所以要自己让开 header；否则搜索框会
-    // 钻到状态栏下面、压在标题上方。
-    .padding({ top: this.topSafe + 56 })
-    // 限了宽不居中就是把卡片全堆在屏幕左边，比不限还难看。手机上卡片宽度
-    // 加左右 margin 正好铺满，居中与否没有区别。
-    .alignItems(HorizontalAlign.Center)
-    .transition(TransitionEffect.OPACITY.combine(
-      TransitionEffect.translate({ x: -18 })
-    ).animation({ duration: this.animationDuration(210), curve: Curve.EaseOut }));
   }
 
   @Builder

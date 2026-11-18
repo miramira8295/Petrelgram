@@ -26,10 +26,13 @@ import { MATERIAL_EPOCH, OverlaySurface, immersiveMaterialAvailable, overlayMate
 export class SurfaceMaterialModifier implements AttributeModifier<CommonAttribute> {
   private readonly surface: OverlaySurface;
   private readonly enabled: boolean;
+  // flat：材质只留滤镜/底色/圆角，去掉外投阴影（输入栏那种「贴在内容底下」的画布用）。
+  private readonly flat: boolean;
 
-  constructor(surface: OverlaySurface, enabled: boolean = true) {
+  constructor(surface: OverlaySurface, enabled: boolean = true, flat: boolean = false) {
     this.surface = surface;
     this.enabled = enabled;
+    this.flat = flat;
   }
 
   applyNormalAttribute(instance: CommonAttribute): void {
@@ -44,7 +47,7 @@ export class SurfaceMaterialModifier implements AttributeModifier<CommonAttribut
     // 没有材质（厚度调到「关闭」、省电、这个面不参与材质）时必须显式清掉：
     // 修饰器会在同一个节点上反复跑，不清的话上一次挂上的材质就一直留在那儿
     // ——用户把厚度关掉后 dock 还是玻璃，就是这个原因。
-    instance.systemMaterial(overlayMaterial(this.surface));
+    instance.systemMaterial(overlayMaterial(this.surface, this.flat));
   }
 }
 
@@ -61,18 +64,18 @@ export function materialModifier(surface: OverlaySurface): SurfaceMaterialModifi
 // 实例不一定重新 apply，用户改了厚度/关闭材质时 dock 就是这样卡在旧材质上的。
 let cachedEpoch: number = -1;
 
-export function materialModifierWhen(surface: OverlaySurface, enabled: boolean): SurfaceMaterialModifier {
+export function materialModifierWhen(surface: OverlaySurface, enabled: boolean, flat: boolean = false): SurfaceMaterialModifier {
   const epoch: number = AppStorage.get<number>(MATERIAL_EPOCH) ?? 0;
   if (epoch !== cachedEpoch) {
     cache.clear();
     cachedEpoch = epoch;
   }
-  const key: string = `${surface}:${enabled ? 'on' : 'off'}`;
+  const key: string = `${surface}:${enabled ? 'on' : 'off'}:${flat ? 'flat' : 'full'}`;
   const hit = cache.get(key);
   if (hit !== undefined) {
     return hit;
   }
-  const built = new SurfaceMaterialModifier(surface, enabled);
+  const built = new SurfaceMaterialModifier(surface, enabled, flat);
   cache.set(key, built);
   return built;
 }

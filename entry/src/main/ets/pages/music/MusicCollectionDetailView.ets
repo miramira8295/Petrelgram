@@ -1,6 +1,7 @@
 import { MusicCollection } from '../../util/musicCollectionModel';
 import { musicDurationLabel, MusicTrack, musicTrackKey, trackKeyOf } from '../../util/musicTrackModel';
-import { musicEmptyTileFill, musicGlassBlur, musicGlassFill, musicKeyGradient } from '../../util/musicCenterStyle';
+import { musicEmptyTileFill, musicKeyGradient } from '../../util/musicCenterStyle';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { MUSIC_ROW_REMOVE, MusicTrackRow, musicRowKey } from './MusicTrackRow';
 import { COLOR_ON_PRIMARY, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
@@ -51,17 +52,24 @@ export struct MusicCollectionDetailView {
 
   @Builder
   actionButton(icon: string, label: ResourceStr, filled: boolean, action: () => void) {
-    Row({ space: 8 }) {
-      SymbolGlyph($r(icon)).fontSize(18)
-        .fontColor([filled ? COLOR_ON_PRIMARY : COLOR_TEXT_PRIMARY]);
-      Text(label).fontSize(14).fontWeight(FontWeight.Bold)
-        .fontColor(filled ? COLOR_ON_PRIMARY : COLOR_TEXT_PRIMARY);
+    Stack() {
+      if (!filled) {
+        SystemGlassSurface({ radius: 22, fill: true }) {
+          Row().width('100%').height('100%');
+        }
+      }
+      Row({ space: 8 }) {
+        SymbolGlyph($r(icon)).fontSize(18)
+          .fontColor([filled ? COLOR_ON_PRIMARY : COLOR_TEXT_PRIMARY]);
+        Text(label).fontSize(14).fontWeight(FontWeight.Bold)
+          .fontColor(filled ? COLOR_ON_PRIMARY : COLOR_TEXT_PRIMARY);
+      }
+      .width('100%').height('100%')
+      .borderRadius(22)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor(filled ? COLOR_PRIMARY : Color.Transparent);
     }
     .layoutWeight(1).height(44).borderRadius(22)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(filled ? COLOR_PRIMARY : musicGlassFill())
-    .backdropBlur(filled ? 0 : musicGlassBlur())
-    .border({ width: filled ? 0 : 0.5, color: $r('app.color.divider') })
     .opacity(this.empty() ? 0.4 : 1)
     .enabled(!this.empty())
     .onClick((): void => { action(); });
@@ -80,20 +88,22 @@ export struct MusicCollectionDetailView {
 
   @Builder
   coverMosaic() {
-    Column({ space: TILE_GAP }) {
-      Row({ space: TILE_GAP }) {
-        this.tile(0);
-        this.tile(1);
-      }
-      Row({ space: TILE_GAP }) {
-        this.tile(2);
-        this.tile(3);
+    Stack() {
+      SystemGlassSurface({ radius: 24, fixedWidth: COVER, fixedHeight: COVER }) {
+        Column({ space: TILE_GAP }) {
+          Row({ space: TILE_GAP }) {
+            this.tile(0);
+            this.tile(1);
+          }
+          Row({ space: TILE_GAP }) {
+            this.tile(2);
+            this.tile(3);
+          }
+        }
+        .width('100%').height('100%').padding(8);
       }
     }
-    .width(COVER).height(COVER).padding(8)
-    .borderRadius(24)
-    .backgroundColor(musicGlassFill()).backdropBlur(musicGlassBlur())
-    .border({ width: 0.5, color: $r('app.color.divider') });
+    .width(COVER).height(COVER);
   }
 
   build() {
@@ -120,6 +130,8 @@ export struct MusicCollectionDetailView {
       }
       .width('100%').margin({ top: 18 });
 
+      Stack() {
+        SystemGlassSurface({ radius: 20 }) {
       Column() {
         if (this.empty()) {
           Text($r('app.string.mc_collection_empty'))
@@ -144,11 +156,12 @@ export struct MusicCollectionDetailView {
           }, musicRowKey);
         }
       }
+      .width('100%')
+      .padding({ left: 4, right: 4, top: 4, bottom: 4 });
+        }
+      }
       .width('100%').margin({ top: 18 })
-      .padding({ left: 4, right: 4, top: 4, bottom: 4 })
-      .borderRadius(20)
-      .backgroundColor(musicGlassFill()).backdropBlur(musicGlassBlur())
-      .border({ width: 0.5, color: $r('app.color.divider') });
+      .borderRadius(20);
 
       Text($r('app.string.mc_delete_collection'))
         .fontSize(14).fontWeight(FontWeight.Medium).fontColor(DANGER_COLOR)

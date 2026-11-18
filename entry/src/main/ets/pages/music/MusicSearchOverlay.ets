@@ -1,7 +1,5 @@
 import { MusicTrack, musicTrackKey, trackKeyOf } from '../../util/musicTrackModel';
-import {
-  musicGlassBlur, musicGlassFill, musicSheetBlur
-} from '../../util/musicCenterStyle';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { MUSIC_ROW_FORMAT, MusicTrackRow, musicRowKey } from './MusicTrackRow';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
@@ -115,8 +113,13 @@ export struct MusicSearchOverlay {
   }
 
   build() {
+    Stack() {
+      // 整页搜索层：系统沉浸材质铺满（2026-11-18 全应用统一）。
+      SystemGlassSurface({ radius: 0, fill: true }) {
     Column() {
       Row({ space: 10 }) {
+        Stack() {
+          SystemGlassSurface({ radius: 22, fill: true }) {
         Row({ space: 8 }) {
           SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(18)
             .fontColor([COLOR_TEXT_SECONDARY]);
@@ -130,10 +133,10 @@ export struct MusicSearchOverlay {
             .defaultFocus(true)
             .onChange((value: string): void => { this.onQueryChange(value); });
         }
-        .layoutWeight(1).height(44).padding({ left: 14, right: 14 })
-        .borderRadius(22)
-        .backgroundColor(musicGlassFill()).backdropBlur(musicGlassBlur())
-        .border({ width: 0.5, color: $r('app.color.divider') });
+        .width('100%').height('100%').padding({ left: 14, right: 14 });
+          }
+        }
+        .layoutWeight(1).height(44);
         Text($r('app.string.cancel'))
           .fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
           .padding({ left: 4, right: 4, top: 8, bottom: 8 })
@@ -225,10 +228,9 @@ export struct MusicSearchOverlay {
       .onReachEnd((): void => { this.onLoadMore(); });
     }
     .width('100%').height('100%')
-    .padding({ left: 16, right: 16, top: this.topInset + 12, bottom: this.bottomInset })
-    // 搜索层盖满整页，底色必须**不透明够**才挡得住底下的曲目列表；
-    // page_bg 那档在自绘玻璃下太淡，用和浮层同一份 surface 玻璃。
-    .backgroundColor(musicGlassFill())
-    .backdropBlur(musicSheetBlur());
+    .padding({ left: 16, right: 16, top: this.topInset + 12, bottom: this.bottomInset });
+      }
+    }
+    .width('100%').height('100%');
   }
 }

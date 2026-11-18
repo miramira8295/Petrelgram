@@ -1,4 +1,4 @@
-import { musicGlassEffect, musicGlassFill, musicSheetBlur } from '../../util/musicCenterStyle';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 
 // 音乐中心几张底部浮层共用的壳：顶上一条小横杠、标题、副标题，内容由调用方给。
@@ -18,6 +18,9 @@ export struct MusicSheetShell {
   @BuilderParam content: () => void;
 
   build() {
+    Stack() {
+      // 面板玻璃：系统沉浸材质（Toggle 承载层），2026-11-18 全应用统一。
+      SystemGlassSurface({ radius: MUSIC_SHEET_RADIUS }) {
     Column() {
       Column()
         .width(40).height(5).borderRadius(3)
@@ -36,13 +39,12 @@ export struct MusicSheetShell {
       this.content();
     }
     .width('100%')
+    .padding({ bottom: this.bottomInset + 16 });
+      }
+    }
+    .width('100%')
     .constraintSize({ maxHeight: '78%' })
-    .padding({ bottom: this.bottomInset + 16 })
     .borderRadius({ topLeft: MUSIC_SHEET_RADIUS, topRight: MUSIC_SHEET_RADIUS })
-    .clip(true)
-    .backgroundColor(musicGlassFill())
-    .backdropBlur(musicSheetBlur())
-    .visualEffect(musicGlassEffect())
-    .border({ width: 0.5, color: $r('app.color.divider') });
+    .clip(true);
   }
 }

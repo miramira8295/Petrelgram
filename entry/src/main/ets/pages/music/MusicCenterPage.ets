@@ -22,9 +22,9 @@ import { AudioOutputDevice, buildCastRows, MusicCastRow, castChipName } from '..
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { currentNowPlaying, NowPlaying, subscribeNowPlaying } from '../../util/nowPlayingChannel';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { COLOR_ON_PRIMARY, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_ON_PRIMARY, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, KEY_APP_DARK } from '../../util/theme';
 import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
-import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { str } from '../../util/strings';
 import { MusicPlayerView } from './MusicPlayerView';
 import { MusicCollectionsView } from './MusicCollectionsView';
@@ -85,6 +85,7 @@ export function MusicCenterPageBuilder(): void {
 @Component
 export struct MusicCenterPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
+  @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @StorageLink(KEY_MUSIC_CENTER_ON) centerOn: boolean = true;
@@ -774,6 +775,9 @@ export struct MusicCenterPage {
             bottom: this.bottomSafe + PAGE_BOTTOM_GAP
           });
 
+          // 悬浮标题层：系统沉浸材质垫底（2026-11-18 全应用统一）。
+          Stack() {
+          SystemGlassSurface({ radius: 0, dark: this.appDark }) {
           Column() {
             MusicCenterTopBar({
               centerOn: this.centerOn,
@@ -791,9 +795,10 @@ export struct MusicCenterPage {
             this.tabsBar();
           }
           .width('100%')
-          .padding({ left: PAGE_INSET, right: PAGE_INSET, top: this.topSafe })
-          .backgroundColor(plainGlassFill($r('app.color.surface')))
-          .backdropBlur(plainBackdropBlur('bar'))
+          .padding({ left: PAGE_INSET, right: PAGE_INSET, top: this.topSafe });
+          }
+          }
+          .width('100%')
           .hitTestBehavior(HitTestMode.Transparent);
         }
         .width('100%').height('100%');

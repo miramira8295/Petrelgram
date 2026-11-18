@@ -17,7 +17,8 @@ import { openWebUrl } from '../../util/webBrowserNav';
 import { str } from '../../util/strings';
 import { relativeLuminance } from '../../util/colorMath';
 import { MATERIAL_EPOCH, materialOff, plainGlassFill, plainBackdropBlur } from '../../util/overlayMaterial';
-import { hdsVisualEffect } from '../../util/hdsPointLight';
+import { NativeGlassHost } from '../chat/NativeGlassHost';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_SURFACE,
   COLOR_PAGE_BG, KEY_APP_DARK } from '../../util/theme';
 
@@ -104,14 +105,8 @@ struct MiniAppPage {
     return materialOff() ? this.headerColor : '#8C' + this.headerColor.substring(1);
   }
 
-  @Styles
-  headerGlass() {
-    .backgroundColor(this.headerGlassFill())
-    .backdropBlur(plainBackdropBlur('bar'))
-    .visualEffect(hdsVisualEffect('bar'))
-    .border({ width: 0.5, color: this.appDark ? '#24FFFFFF' : '#40FFFFFF' })
-    .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
-  }
+  // 头部的三块自绘玻璃已改为系统沉浸材质承载（2026-11-18 全应用统一），
+  // 原来的 @Styles headerGlass() 一并撤掉。
 
   private async start(): Promise<void> {
     if (this.launch === null || this.disposed) { return; }
@@ -327,17 +322,30 @@ struct MiniAppPage {
   header() {
     Row({ space: 10 }) {
       if (this.backVisible) {
-        Button() { SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(20).fontColor([this.headerInk()]); }
-          .width(40).height(40).borderRadius(20).headerGlass().onClick((): void => this.back());
+        Stack() {
+          NativeGlassHost({ hostWidth: 40, hostHeight: 40, hostRadius: 20, dark: this.appDark });
+          Button() { SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(20).fontColor([this.headerInk()]); }
+            .width(40).height(40).borderRadius(20)
+            .backgroundColor(Color.Transparent)
+            .onClick((): void => this.back());
+        }
+        .width(40).height(40);
       }
-      Column({ space: 2 }) {
-        Text(this.title || $r('app.string.gs_mini_app')).fontSize(16).fontWeight(FontWeight.Medium)
-          .fontColor(this.headerInk()).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-        Text(this.origin === '' ? $r('app.string.gs_mini_app') : this.origin.substring(8))
-          .fontSize(11).fontColor(this.headerInk()).opacity(0.65).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-      }.layoutWeight(1).height(42).padding({ left: 14, right: 14 })
-        .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Start)
-        .borderRadius(21).headerGlass();
+      Stack() {
+        SystemGlassSurface({ radius: 21, fill: true, dark: this.appDark }) {
+          Column({ space: 2 }) {
+            Text(this.title || $r('app.string.gs_mini_app')).fontSize(16).fontWeight(FontWeight.Medium)
+              .fontColor(this.headerInk()).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+            Text(this.origin === '' ? $r('app.string.gs_mini_app') : this.origin.substring(8))
+              .fontSize(11).fontColor(this.headerInk()).opacity(0.65).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+          }
+          .width('100%').height('100%').padding({ left: 14, right: 14 })
+          .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Start);
+        }
+      }
+      .layoutWeight(1).height(42);
+      Stack() {
+        SystemGlassSurface({ radius: 20, dark: this.appDark }) {
       Row() {
         Button() { SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(18).fontColor([this.headerInk()]); }
           .width(42).height(40).backgroundColor(Color.Transparent)
@@ -346,7 +354,10 @@ struct MiniAppPage {
         Button() { SymbolGlyph($r('sys.symbol.xmark')).fontSize(18).fontColor([this.headerInk()]); }
           .width(42).height(40).backgroundColor(Color.Transparent)
           .accessibilityText(str('tglink_close')).onClick((): void => { this.close(); });
-      }.height(40).borderRadius(20).headerGlass();
+      }.height(40);
+        }
+      }
+      .height(40);
     }.height(54 + this.topSafe).padding({ top: this.topSafe, left: 16, right: 12 }).width('100%')
       .backgroundColor(this.headerColor || COLOR_SURFACE);
   }

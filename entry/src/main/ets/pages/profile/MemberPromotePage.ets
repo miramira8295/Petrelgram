@@ -1,7 +1,7 @@
 import { showToast } from '../../util/toast';
 import { promptAction, router } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
-import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import {
@@ -19,7 +19,8 @@ import {
   MemberHeaderCard, PANEL_CARD_RADIUS, PanelGroupRow, PanelSectionTitle, PanelSwitchRow
 } from './MemberPanelParts';
 import {
-  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
+  KEY_APP_DARK
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -62,6 +63,7 @@ function storyRows(): RightRow[] {
 @Component
 struct MemberPromotePage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
+  @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
@@ -370,14 +372,18 @@ struct MemberPromotePage {
           if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
         });
       }
-      // 悬浮标题层：带材质，否则滚动内容会从标题两侧透出来。
-      Column() {
-        this.header();
+      // 悬浮标题层：系统沉浸材质垫底（2026-11-18 全应用统一），否则滚动内容会从
+      // 标题两侧透出来。
+      Stack() {
+        SystemGlassSurface({ radius: 0, dark: this.appDark }) {
+          Column() {
+            this.header();
+          }
+          .width('100%')
+          .padding({ top: this.topSafe });
+        }
       }
       .width('100%')
-      .padding({ top: this.topSafe })
-      .backgroundColor(plainGlassFill($r('app.color.surface')))
-      .backdropBlur(plainBackdropBlur('bar'))
       .hitTestBehavior(HitTestMode.Transparent);
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)

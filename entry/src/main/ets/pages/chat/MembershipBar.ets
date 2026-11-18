@@ -17,8 +17,7 @@ import {
 } from '../../util/secretChat';
 import { str } from '../../util/strings';
 import { fullDateTime } from '../../util/intlFormat';
-import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
-import { hdsVisualEffect } from '../../util/hdsPointLight';
+import { SystemGlassSurface } from './SystemGlassSurface';
 import {
   BOTTOM_PILL_GAP, BOTTOM_PILL_HEIGHT, BOTTOM_PILL_PADDING, bottomPillRadius
 } from '../../util/bottomPill';
@@ -81,11 +80,10 @@ export struct MembershipBar {
   //
   // 点击层仍然占满底栏（见 build()），胶囊变窄不牺牲可点范围。
   //
-  // 玻璃走 plainGlassFill / plainBackdropBlur / hdsVisualEffect 这三件套，
-  // 它们本来就吃设置里的「样式强度 / 关闭」：关掉时回落实色 + 模糊 0，厚度
-  // 走 thicknessOffset()。所以这里不需要自己判断开关。
+  // 玻璃交给系统沉浸材质：SystemGlassSurface 垫一层 Toggle 材质，内容再画上面。
   @Builder
   private surface() {
+    SystemGlassSurface({ radius: bottomPillRadius() }) {
     Row({ space: 8 }) {
       if (this.state === MEMBERSHIP_READONLY) {
         SymbolGlyph($r(this.isMuted ? 'sys.symbol.bell' : 'sys.symbol.bell_slash'))
@@ -139,6 +137,7 @@ export struct MembershipBar {
     .pillSurface()
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center);
+    }
   }
 
   // 几何来自 util/bottomPill，底部各条共用同一副（见那个文件的说明）。
@@ -146,11 +145,7 @@ export struct MembershipBar {
   @Styles
   private pillSurface() {
     .constraintSize({ minHeight: BOTTOM_PILL_HEIGHT, maxWidth: '100%' })
-    .padding({ left: BOTTOM_PILL_PADDING, right: BOTTOM_PILL_PADDING, top: 4, bottom: 4 })
-    .backgroundColor(plainGlassFill($r('app.color.surface')))
-    .borderRadius(bottomPillRadius())
-    .backdropBlur(plainBackdropBlur('card'))
-    .visualEffect(hdsVisualEffect('card'));
+    .padding({ left: BOTTOM_PILL_PADDING, right: BOTTOM_PILL_PADDING, top: 4, bottom: 4 });
   }
 
   // 可加入且没在加入中：「加入」「加入并添加到文件夹」两颗胶囊，各自可点。
@@ -158,18 +153,22 @@ export struct MembershipBar {
   // 两颗都按内容收紧；长语言放不下时一起收缩、文字省略，不换行。
   @Builder
   private joinPill(label: Resource, anchorId: string, onTap: () => void) {
-    Row() {
-      Text(label)
-        .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
-        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-        .flexShrink(1);
+    Stack() {
+      SystemGlassSurface({ radius: bottomPillRadius() }) {
+        Row() {
+          Text(label)
+            .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .flexShrink(1);
+        }
+        .pillSurface()
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .id(anchorId)
+        .onClick((): void => { onTap(); });
+      }
     }
-    .pillSurface()
-    .flexShrink(1)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .id(anchorId)
-    .onClick((): void => { onTap(); });
+    .flexShrink(1);
   }
 
   build() {

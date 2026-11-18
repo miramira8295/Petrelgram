@@ -1,5 +1,6 @@
 import { MusicCollection, MusicLibrarySummary, musicCollectionsSummary } from '../../util/musicCollectionModel';
 import { musicEmptyTileFill, musicGlassBlur, musicGlassFill, musicKeyGradient } from '../../util/musicCenterStyle';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { musicCoverColors, MusicCoverColors } from '../../util/musicTrackModel';
 import { COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
@@ -130,14 +131,17 @@ export struct MusicCollectionsView {
           Text(this.summaryLabel()).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
         }
         .layoutWeight(1).alignItems(HorizontalAlign.Start);
-        Row({ space: 6 }) {
-          SymbolGlyph($r('sys.symbol.plus')).fontSize(16).fontColor([COLOR_TEXT_PRIMARY]);
-          Text($r('app.string.mc_new_collection'))
-            .fontSize(13).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
+        Stack() {
+          SystemGlassSurface({ radius: 18, fixedHeight: 36 }) {
+            Row({ space: 6 }) {
+              SymbolGlyph($r('sys.symbol.plus')).fontSize(16).fontColor([COLOR_TEXT_PRIMARY]);
+              Text($r('app.string.mc_new_collection'))
+                .fontSize(13).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
+            }
+            .height('100%').padding({ left: 10, right: 14 });
+          }
         }
-        .height(36).padding({ left: 10, right: 14 }).borderRadius(18)
-        .backgroundColor(musicGlassFill()).backdropBlur(musicGlassBlur())
-        .border({ width: 0.5, color: $r('app.color.divider') })
+        .height(36)
         .onClick((): void => { this.onCreate(); });
       }
       .width('100%').alignItems(VerticalAlign.Bottom);

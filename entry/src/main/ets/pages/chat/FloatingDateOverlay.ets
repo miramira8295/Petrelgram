@@ -3,6 +3,7 @@ import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { COLOR_TEXT_PRIMARY } from '../../util/theme';
 import { FLOAT_DATE_HIDE_MS, floatDateShouldRearm } from '../../util/floatDateGate';
 import { TimelineStatePill } from './MessageListState';
+import { SystemGlassSurface } from './SystemGlassSurface';
 
 // 视口顶上那枚浮动日期条，连同它的显隐节奏。
 //
@@ -135,29 +136,17 @@ export struct FloatingDateOverlay {
     // instead of constructing its subtree. Hidden state already disables blur,
     // effects and hit testing; the overlay does not size the message List.
     Row() {
-      Row() {
-        Text(this.state.label)
-          .fontSize(12)
-          .fontColor(COLOR_TEXT_PRIMARY)
-          .fontWeight(FontWeight.Medium);
+      // 系统沉浸材质玻璃（Toggle 承载层）：与输入栏、右上角功能菜单同一套材质参数。
+      SystemGlassSurface({ radius: 14, fixedHeight: 28 }) {
+        Row() {
+          Text(this.state.label)
+            .fontSize(12)
+            .fontColor(COLOR_TEXT_PRIMARY)
+            .fontWeight(FontWeight.Medium);
+        }
+        .height(28)
+        .padding({ left: 12, right: 12 });
       }
-      .height(28)
-      .padding({ left: 12, right: 12 })
-      // 【自绘玻璃，不走组件级系统材质】和顶部那张浮卡（TopBanners）同一笔账：
-      // 系统已经把**组件级** systemMaterial 收回，只有 HDS 导航级的栏还拿得到。
-      // 继续用 overlayGlassFill + overlayBackdropBlur 会两头落空——前者按"底下
-      // 还有材质在画"返回 25% 的淡色，后者按"把观感让给材质"返回 0 半径，结果
-      // 既没有材质也没有自己的玻璃，看上去就是一块近乎透明的平板（用户
-      // 2026-09-22：「日期好像纯透明底色呢，应该和 hds 的顶部 bar 样式一样」）。
-      // 迁到输入框/顶部浮卡那一套：plainGlassFill + plainBackdropBlur +
-      // hdsVisualEffect，档位仍用它原来的 'bar'，厚度偏移照旧生效。
-      .backgroundColor(plainGlassFill($r('app.color.surface')))
-      .backdropBlur(this.state.shown ? this.glassBlur() : 0)
-      .visualEffect(hdsVisualEffect('bar', this.state.shown))
-      .border({ width: 0.5, color: $r('app.color.divider') })
-      .borderRadius(14)
-      .shadow({ radius: 5, color: '#22000000', offsetX: 0, offsetY: 2 })
-      .clip(true);
     }
     .width('100%')
     .justifyContent(FlexAlign.Center)

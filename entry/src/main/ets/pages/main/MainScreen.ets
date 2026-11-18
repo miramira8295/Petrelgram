@@ -1,5 +1,6 @@
 import { KEY_IMMERSIVE_BARS_HIDDEN } from '../../util/immersiveBars';
 import { DrawnHomeWarmup } from './DrawnHomeWarmup';
+import { PressFollowBox } from './PressFollowBox';
 import { KEY_DEBUG_DRAWN_HOME_WARMUP } from '../../util/debugDrawnRenderer';
 import { stackOf } from '../../util/navStacks';
 import { chatEnv } from '../../util/chatEnvMirror';
@@ -65,6 +66,8 @@ import { DOCK_SIDE_PADDING, dockSidePadding } from '../../util/mainTabsWidth';
 import { publishTabReTap } from '../../util/tabReTap';
 import { KEY_SHOW_CONTACTS_TAB } from '../../store/AppSettings';
 import { materialModifier, materialModifierWhen } from '../../util/materialModifier';
+import { NativeGlassHost } from '../chat/NativeGlassHost';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { logE, logW } from '../../util/log';
 import { TD_ACCOUNT_SWITCHING, TdAccountSummary, accountRegistry } from '../../tdkit/AccountRegistry';
 import { PopupRect, accountPopupRect, accountRowAt } from '../../util/accountSwitchLayout';
@@ -180,6 +183,7 @@ export struct MainScreen {
   // KEY_APP_BG_ON，其余组件只读那一个键（见 store/AppSettings 的说明）。
   @StorageProp(KEY_APP_BG_STATE_LIGHT) @Watch('syncWallpaperFlag') private appBgLight: string = '';
   @StorageProp(KEY_APP_BG_STATE_DARK) @Watch('syncWallpaperFlag') private appBgDark: string = '';
+  @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
   @StorageProp(KEY_APP_DARK) @Watch('syncWallpaperFlag') private wallpaperDark: boolean = false;
   @StorageProp(KEY_BG_BLUR) bgBlur: number = BG_BLUR_DEFAULT;
   @StorageProp(STORAGE_UPDATE_AVAILABLE) updateAvailable: boolean = false;
@@ -715,15 +719,8 @@ export struct MainScreen {
   // 普通函数，订阅不了设置变化；用户改厚度或光感后，只有读过这个纪元的子树才会
   // 重新渲染、重新取修饰器实例（修饰器缓存也按 epoch 分代）。dock 的 dockBlur()
   // 早就是这么写的，新加的这几个控件漏了——表现就是"厚度调了没反应"。
-  private controlFill(): ResourceColor {
-    return this.materialEpoch < 0
-      ? $r('app.color.surface_alt')
-      : overlayGlassFill('control', $r('app.color.surface_alt'));
-  }
-
-  private controlBlur(): number {
-    return this.materialEpoch < 0 ? 0 : overlayBackdropBlur('control');
-  }
+  // 2026-11-18：控制类圆钮改由 NativeGlassHost 承载系统材质，
+  // controlFill()/controlBlur()（自绘玻璃两件套）随之移除。
 
   // 音乐中心开着时那颗专辑球常驻（用户 2026-09-18），它同时是音乐中心的入口。
   @StorageProp(KEY_MUSIC_CENTER_ON) private musicCenterOn: boolean = true;
@@ -780,7 +777,22 @@ export struct MainScreen {
   // 折叠态右侧那颗专辑球：点一下摊开成播放条。
   @Builder
   albumBall() {
+    // 按下+跟手：位移挂在包住玻璃的 Stack 上，玻璃（NativeGlassHost）才跟着动。
+    PressFollowBox() {
+      this.albumBallBody()
+    }
+  }
+
+  @Builder
+  albumBallBody() {
     Stack() {
+      // 玻璃垫层：内容区拿不到系统材质，靠 Toggle 承载层（2026-11-18 全应用统一）。
+      NativeGlassHost({
+        hostWidth: MINI_BALL,
+        hostHeight: MINI_BALL,
+        hostRadius: MINI_BALL / 2,
+        dark: this.appDark
+      });
       if (this.nowPlaying !== null && this.nowPlaying.coverPath !== '') {
         Image(this.nowPlaying.coverPath.startsWith('/')
           ? `file://${this.nowPlaying.coverPath}` : this.nowPlaying.coverPath)
@@ -794,9 +806,6 @@ export struct MainScreen {
     // （触点流光）的面，也就是"光感"的来源——见 overlayMaterial 的
     // interactionBase / lightEffectBase。写死 surface_alt 是一块不透明实心片，
     // 材质和光感都挂不上（首页 ChatListPage.topAction 就是这一档的范本）。
-    .backgroundColor(this.controlFill())
-    .backdropBlur(this.controlBlur())
-    .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
     .clip(true)
     .margin({ left: 6 })
     .accessibilityText(str('mc_title'))
@@ -824,8 +833,26 @@ export struct MainScreen {
 
   @Builder
   miniPlayer() {
+    // 按下+跟手：整条播放条连玻璃一起动。
+    // 外面这层 Row 只用来承接 layoutWeight（尾随闭包后面不能直接挂属性）。
+    Row() {
+      PressFollowBox() {
+        this.miniPlayerBody()
+      }
+    }
+    .layoutWeight(1).height('100%')
+  }
+
+  @Builder
+  miniPlayerBody() {
     Row({ space: 8 }) {
       Stack() {
+        NativeGlassHost({
+          hostWidth: MINI_COVER,
+          hostHeight: MINI_COVER,
+          hostRadius: MINI_COVER / 2,
+          dark: this.appDark
+        });
         if (this.nowPlaying !== null && this.nowPlaying.coverPath !== '') {
           Image(this.nowPlaying.coverPath.startsWith('/')
             ? `file://${this.nowPlaying.coverPath}` : this.nowPlaying.coverPath)
@@ -835,9 +862,6 @@ export struct MainScreen {
         }
       }
       .width(MINI_COVER).height(MINI_COVER).borderRadius(MINI_COVER / 2)
-      .backgroundColor(this.controlFill())
-      .backdropBlur(this.controlBlur())
-      .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
       .clip(true);
       // 没曲目时这条是音乐中心的常驻入口，不能写「正在播放」（见 DockMiniBar 同处）。
       Column() {
@@ -865,24 +889,24 @@ export struct MainScreen {
       });
       // 没曲目时没东西可控，收起来（见 DockMiniBar 同处）。
       if (this.nowPlaying !== null) {
-      Row() {
-        SymbolGlyph($r(this.musicPaused ? 'sys.symbol.play_fill' : 'sys.symbol.pause_fill'))
-          .fontSize(18).fontColor([COLOR_TEXT_PRIMARY]);
+      Stack() {
+        NativeGlassHost({ hostWidth: 32, hostHeight: 32, hostRadius: 16, dark: this.appDark });
+        Row() {
+          SymbolGlyph($r(this.musicPaused ? 'sys.symbol.play_fill' : 'sys.symbol.pause_fill'))
+            .fontSize(18).fontColor([COLOR_TEXT_PRIMARY]);
+        }
+        .width(32).height(32).justifyContent(FlexAlign.Center);
       }
-      .width(32).height(32).borderRadius(16).justifyContent(FlexAlign.Center)
-      .backgroundColor(this.controlFill())
-      .backdropBlur(this.controlBlur())
-      .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
-      .clip(true)
+      .width(32).height(32)
       .onClick((): void => { this.toggleMiniPlayback(); });
-      Row() {
-        SymbolGlyph($r('sys.symbol.xmark')).fontSize(15).fontColor([COLOR_TAB_UNSELECTED]);
+      Stack() {
+        NativeGlassHost({ hostWidth: 30, hostHeight: 30, hostRadius: 15, dark: this.appDark });
+        Row() {
+          SymbolGlyph($r('sys.symbol.xmark')).fontSize(15).fontColor([COLOR_TAB_UNSELECTED]);
+        }
+        .width(30).height(30).justifyContent(FlexAlign.Center);
       }
-      .width(30).height(30).borderRadius(15).justifyContent(FlexAlign.Center)
-      .backgroundColor(this.controlFill())
-      .backdropBlur(this.controlBlur())
-      .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
-      .clip(true)
+      .width(30).height(30)
       .margin({ right: 4 })
       .onClick((): void => { this.stopMiniPlayback(); });
       } else {
@@ -890,7 +914,7 @@ export struct MainScreen {
           .margin({ right: 8 });
       }
     }
-    .layoutWeight(1).height('100%')
+    .width('100%').height('100%')
     .alignItems(VerticalAlign.Center);
   }
 
@@ -931,6 +955,9 @@ export struct MainScreen {
       // 选中不再画底。原先是一块跟着 tab 滑的药丸，在玻璃胶囊上等于第二层
       // 不透明底色，正好压在材质上面。现在靠主色 + 图标自己的弹跳表示选中，
       // 外面那层 Stack（唯一作用是给药丸定位）也一并去掉了。
+      // 胶囊玻璃：内容区拿不到系统材质，走 Toggle 承载层（2026-11-18 全应用统一）。
+      Stack() {
+        SystemGlassSurface({ radius: DOCK_H / 2, fill: true, dark: this.appDark }) {
       Row() {
         // 三态：无播放=四格；在播放未展开=四格 + 专辑球；已展开=头像 + 播放条。
         // 判据是纯函数，见 util/dockMiniBar。
@@ -952,23 +979,12 @@ export struct MainScreen {
         }
       }
       .alignItems(VerticalAlign.Center)
+      .width('100%').height('100%');
+        }
+      }
       .width('100%').height(DOCK_H)
-      .backgroundColor(this.dockBg())
-      // 自绘玻璃：dock_glass 底色 + 自己画的背景模糊。COMPONENT_* 材质档自带
-      // 不透明底板，会把自绘面压成一块死灰，所以用 backdropBlur 而不是
-      // backgroundBlurStyle。半径由 dockBlur() 给（见该函数的说明）。
-      .backdropBlur(this.dockBlur())
       .borderRadius(DOCK_H / 2)
       .clip(true)
-      .border({ width: 0.5, color: COLOR_DIVIDER })
-      // **胶囊不挂 systemMaterial。**
-      //
-      // 这里是内容区的 Row，系统沉浸材质不在此渲染（官方日志原文：Material
-      // inactive: out of scope. Use component in navigation title bar or Tabbar.
-      // 见 util/overlayMaterial 里 overlayBlur 上方那段与 pages/chat/ChatHeader
-      // 文件头）。以前挂了两层：这里挂材质、dockBlur() 又把模糊让给它，结果
-      // 两层都落空。现在玻璃完全收回自绘，材质属性一并去掉——留着既是死代码，
-      // 一旦哪天它真生效还会和自绘模糊叠成"双份 GPU"。
       .shadow({ radius: 14, color: '#24000000', offsetX: 0, offsetY: 4 });
     }
     .width(this.dockWidth())
@@ -1011,29 +1027,6 @@ export struct MainScreen {
 
   private accent(): ResourceColor {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
-  }
-
-  private dockBg(): ResourceColor {
-    if (this.materialEpoch < 0) {
-      return Color.Transparent;
-    }
-    return materialOff() ? $r('app.color.surface') : DOCK_BG;
-  }
-
-  private dockBlur(): number {
-    // **自绘面必须自己画模糊，不能把观感让给材质。**
-    //
-    // 原来这里走 overlayBackdropBlur('bar')：它在 materialAvailable()==true 时
-    // 恒返回 0，把观感整个让给组件级 systemMaterial。但系统沉浸材质只在
-    // 导航标题栏 / TabBar / 弹窗这些白名单宿主上渲染，本 dock 是**内容区的 Row**
-    // （平板分栏才构建，见 leftFloatingDock()），材质根本不会画——于是模糊 0 与
-    // 材质缺失同时成立，只剩 dockBg() 那层 55% 白，平板端看上去就是"材质丢失"
-    // （2026-11-06 真机：MatePad Pro 分栏，胶囊背后会话文字清晰透出）。
-    //
-    // plainBackdropBlur 是项目给自绘面准备的另一套（2026-09 已迁移 20+ 处，
-    // ChatHeader / BottomDrawerShell / ChatTopicBar 等），只吃"厚度关闭"，与
-    // 材质探测结果无关，按面分档给半径。手机端不执行 dock()，不受影响。
-    return this.materialEpoch < 0 ? 0 : plainBackdropBlur('bar');
   }
 
   build() {

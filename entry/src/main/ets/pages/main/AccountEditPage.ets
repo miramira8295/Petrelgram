@@ -12,6 +12,7 @@ import {
   overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
 import { BLUR_MAX_VP, EDGE_OVERLAY_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
@@ -845,6 +846,10 @@ struct UsernameDialog {
   }
 
   build() {
+    // 弹窗面板：系统沉浸材质（Toggle 承载层）。原来走 overlayGlassFill('dialog')
+    // 拿材质淡色当背板，而这台机器组件级材质不渲染，结果是一块透明窟窿。
+    Stack() {
+      SystemGlassSurface({ radius: 16, fill: true }) {
     Column({ space: 16 }) {
       Text($r('app.string.ae_change_username')).fontSize(17).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
       Row({ space: 4 }) {
@@ -873,10 +878,10 @@ struct UsernameDialog {
       }.width('100%');
     }
     .padding(22)
-    .backgroundColor(overlayGlassFill('dialog', $r('app.color.surface')))
-    .borderRadius(16)
+    .width('100%');
+      }
+    }
     .width('86%')
-    .backdropBlur(overlayBackdropBlur('dialog'))
-    .attributeModifier(materialModifier('dialog'));
+    .borderRadius(16);
   }
 }

@@ -24,14 +24,15 @@ import {
   COLOR_PRIMARY,
   COLOR_TEXT_PRIMARY,
   COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
-  mainCardFill, mainPageFill, COLOR_ON_PRIMARY
+  mainCardFill, mainPageFill, COLOR_ON_PRIMARY, KEY_APP_DARK
 } from '../../util/theme';
 import {
   KEY_APP_BG_ON, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_FORCE_SINGLE_COLUMN
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { MATERIAL_EPOCH, plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import {
@@ -160,6 +161,7 @@ export struct GlobalSearchPage {
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
+  @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
   @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   // 窗口宽（不是屏幕宽），限宽用。平板上把结果列拉满 2880px，头像贴最左、时间
@@ -3029,7 +3031,9 @@ export struct GlobalSearchPage {
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
 
     // 悬浮搜索栏 + 页签：玻璃底压最上层，滚上来的内容在它后面雾化。
-    Column() {
+    Stack() {
+      SystemGlassSurface({ radius: 0, dark: this.appDark }) {
+      Column() {
       Column() {
         this.searchBar();
         // Rebuild the strip only when Recent enters/leaves, resetting its scroll to the selected tab.
@@ -3045,9 +3049,10 @@ export struct GlobalSearchPage {
       .padding({ left: SEARCH_PAGE_INSET, right: SEARCH_PAGE_INSET, top: this.topSafe + 10 });
     }
     .width('100%')
-    .alignItems(HorizontalAlign.Center)
-    .backgroundColor(plainGlassFill($r('app.color.surface')))
-    .backdropBlur(plainBackdropBlur('bar'))
+    .alignItems(HorizontalAlign.Center);
+      }
+    }
+    .width('100%')
     .hitTestBehavior(HitTestMode.Transparent);
 
     }

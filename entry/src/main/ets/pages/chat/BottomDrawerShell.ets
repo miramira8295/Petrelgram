@@ -1,8 +1,6 @@
 import { BOTTOM_DRAWER_HEIGHT, drawerBottomInset } from '../../util/drawerMetrics';
-import {
-  plainBackdropBlur, plainGlassFill, MATERIAL_EPOCH
-} from '../../util/overlayMaterial';
-import { hdsVisualEffect } from '../../util/hdsPointLight';
+import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { SystemGlassSurface } from './SystemGlassSurface';
 
 // 底部抽屉（附件 / 表情贴纸）共用的那身外壳。
 //
@@ -35,36 +33,23 @@ export struct BottomDrawerShell {
     return Math.max(0, full * (1 - ratio));
   }
 
-  @Styles
-  drawerCard() {
-    // 毛玻璃走 'card' 档（和输入框胶囊同档）。这里有东西可透——抽屉底下铺着
-    // 自己画的那份聊天背景，模糊的正是它。自绘玻璃的两半必须一起上：半透明底
-    // + backdropBlur，不透明底会把模糊完全盖住。
-    //
-    // **改用 plain* 那一对**：原来是 overlayGlassFill / overlayBackdropBlur，
-    // 它们在"材质可用"时会把模糊归 0、底色退成 25% 淡色，把观感让给材质——而
-    // 系统已经把**组件级**的沉浸材质收回了（只剩 HDS 导航级的栏还有），于是这块
-    // 面既没材质也没自己的玻璃。plain* 不看材质在不在，无条件自绘。
-    .backgroundColor(plainGlassFill($r('app.color.surface')))
-    .backdropBlur(plainBackdropBlur('card'))
-    .border({ width: { top: 0.7 }, color: $r('app.color.divider') })
-    // 四角都圆：卡片四周都有空当，浮在壁纸上。
-    .borderRadius(18)
-    .clip(true)
-    .shadow({ radius: 8, color: '#1A000000', offsetX: 0, offsetY: -2 })
-    // 光感走 hdsEffect 的另一条通道（visualEffect，6.0.0(20) 起，不受材质收回
-    // 影响）。'card' 档只给点光源、不给按压阴影——整块面板跟着手指变形很怪。
-    .visualEffect(hdsVisualEffect('card'))
-  }
-
   build() {
     // 卡片贴着 Stack 顶，整条 drawerBottomInset 都落在卡片**下面**。原来是默认
     // 的居中对齐：卡片 + 8 的外边距被摆在 260 + inset 的中间，留出来的那一截
     // 一半跑到卡片上面去了，卡片下沿实际只离屏幕底 inset/2 + 4，「表情 / 贴纸
     // / GIF」那一条整个躺在系统手势带里（issue #154）。
     Stack({ alignContent: Alignment.Top }) {
-      Column() {
-        this.content();
+      // 卡片的玻璃交给系统沉浸材质（SystemGlassSurface 垫一层 Toggle 材质）。
+      // 这是"整块面板"级的面：材质自带模糊与 25% 淡底，所以原来那三件
+      // （半透明底 / backdropBlur / visualEffect）全部撤掉，否则底色会把材质盖死。
+      Stack() {
+        SystemGlassSurface({ radius: 18, fixedHeight: this.drawerHeight }) {
+          Column() {
+            this.content();
+          }
+          .width('100%')
+          .height('100%');
+        }
       }
       // calc 而不是 width('100%') + margin：后者是"满宽再往外推"，多出来的
       // 部分被 Stack 裁掉，看着仍然齐边——实测取色，左边缘 60px 全是卡片底色。
@@ -74,7 +59,7 @@ export struct BottomDrawerShell {
       .height(this.drawerHeight)
       .translate({ y: this.cardOffsetY })
       .opacity(this.cardOpacity)
-      .drawerCard();
+      .shadow({ radius: 8, color: '#1A000000', offsetX: 0, offsetY: -2 });
     }
     .width('100%')
     .height(this.visibleShellHeight())

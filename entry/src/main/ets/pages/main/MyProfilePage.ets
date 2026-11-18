@@ -41,6 +41,7 @@ import {
   overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { logE } from '../../util/log';
 import { registerStack, NavStackLike, snapshotOf, stackOf } from '../../util/navStacks';
 import { decidePush, StackAction, StackFrame } from '../../util/splitRouting';
@@ -2223,19 +2224,22 @@ struct StickerAvatarDialog {
   onPick: (s: StickerItem) => void = (): void => {};
 
   build() {
-    Column() {
-      // Avatar builder mode: custom-emoji library + trending packs (official-style).
-      StickerPicker({
-        stickerType: 'custom_emoji',
-        includeTrending: true,
-        onPick: (s: StickerItem): void => { this.onPick(s); }
-      });
+    // 面板玻璃：系统沉浸材质（Toggle 承载层），2026-11-18 全应用统一。
+    Stack() {
+      SystemGlassSurface({ radius: 16, fill: true }) {
+        Column() {
+          // Avatar builder mode: custom-emoji library + trending packs (official-style).
+          StickerPicker({
+            stickerType: 'custom_emoji',
+            includeTrending: true,
+            onPick: (s: StickerItem): void => { this.onPick(s); }
+          });
+        }
+        .width('100%').height('100%');
+      }
     }
     .width('100%').height(400)
-    .backgroundColor(overlayGlassFill('dialog', $r('app.color.surface')))
     .borderRadius({ topLeft: 16, topRight: 16 })
-    .clip(true)
-    .backdropBlur(overlayBackdropBlur('dialog'))
-    .attributeModifier(materialModifier('dialog'));
+    .clip(true);
   }
 }

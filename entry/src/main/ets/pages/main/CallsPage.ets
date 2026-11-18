@@ -2,7 +2,7 @@ import { showToast } from '../../util/toast';
 import { promptAction, router } from '@kit.ArkUI';
 import { BLUR_MAX_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
 import { getTdClient, getCallSession } from '../../tdkit/Globals';
-import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import {
   CallItem, CallsLoadState, CallsMode, CallsPageState, CallsStore
 } from '../../store/CallsStore';
@@ -13,7 +13,8 @@ import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY,
+  KEY_APP_DARK
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
@@ -72,6 +73,7 @@ struct CallsPage {
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
+  @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
   @StorageProp('screenWidthVp') screenW: number = 360;
@@ -660,20 +662,22 @@ struct CallsPage {
     // 这样顶部虚化带盖住的是真正滚进来的内容，而不是一片空白。
     Stack({ alignContent: Alignment.TopStart }) {
       this.body();
-      Column() {
-        this.topBar();
-        this.segmentBar();
-        // 同步失败提示条也放在悬浮层：它出现时不该把列表整体顶下去，
-        // 否则列表顶部的虚化带会变成一条空白。
-        this.syncWarningBar();
+      // 悬浮标题层：系统沉浸材质垫底（2026-11-18 全应用统一），否则列表行会从
+      // 标题、分段条两侧透出来（分段条的胶囊是透明的）。
+      Stack() {
+        SystemGlassSurface({ radius: 0, dark: this.appDark }) {
+          Column() {
+            this.topBar();
+            this.segmentBar();
+            // 同步失败提示条也放在悬浮层：它出现时不该把列表整体顶下去，
+            // 否则列表顶部的虚化带会变成一条空白。
+            this.syncWarningBar();
+          }
+          .width('100%')
+          .padding({ top: this.topSafe });
+        }
       }
       .width('100%')
-      .padding({ top: this.topSafe })
-      // 悬浮层要有一层材质：否则列表行会从标题、分段条两侧透出来（分段条的
-      // 胶囊是透明的，后面真实滚动的内容看得一清二楚）。材质关掉时退化成
-      // 纯色 surface，仍然不会漏内容。
-      .backgroundColor(plainGlassFill($r('app.color.surface')))
-      .backdropBlur(plainBackdropBlur('bar'))
       // 悬浮层只让按钮可点，空白处把触摸漏给下面的列表。
       .hitTestBehavior(HitTestMode.Transparent)
     }

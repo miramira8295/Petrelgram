@@ -1,6 +1,7 @@
 import { AVCastPicker } from '@kit.AVSessionKit';
 import { MusicCastRow } from '../../util/musicCastDevices';
-import { musicGlassBlur, musicGlassFill } from '../../util/musicCenterStyle';
+import { musicGlassFill } from '../../util/musicCenterStyle';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { MusicSheetShell } from './MusicSheetShell';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
@@ -22,6 +23,8 @@ export struct MusicCastSheet {
 
   @Builder
   deviceRow(row: MusicCastRow) {
+    Stack() {
+      SystemGlassSurface({ radius: 16 }) {
     Row({ space: 12 }) {
       Text(str(row.tagKey))
         .fontSize(11).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
@@ -43,9 +46,10 @@ export struct MusicCastSheet {
         .backgroundColor(row.active ? COLOR_PRIMARY : $r('app.color.divider'));
     }
     .width('100%').padding({ left: 12, right: 12, top: 10, bottom: 10 })
-    .borderRadius(16)
-    .backgroundColor(musicGlassFill()).backdropBlur(musicGlassBlur())
     .border({ width: 0.5, color: row.active ? COLOR_PRIMARY : $r('app.color.divider') });
+      }
+    }
+    .width('100%');
   }
 
   // 系统流转选择器的外观。AVCastPicker 只借它的点击与弹窗，长相完全由这里定。

@@ -4,6 +4,7 @@ import { guardKey } from '../../util/keyGuard';
 import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
 import { hdsVisualEffect } from '../../util/hdsPointLight';
+import { SystemGlassSurface } from './SystemGlassSurface';
 import { unreadBadgeText } from '../../util/unreadBadge';
 
 // 聊天详情页顶栏里的话题横条（2026-09-16）。
@@ -128,7 +129,11 @@ export struct ChatTopicBar {
   }
 
   build() {
-    List({ space: 6, scroller: this.scroller }) {
+    // 外层 Stack 只负责定位：自定义组件带尾随闭包时不能再链 .margin()。
+    Stack() {
+      // 系统沉浸材质玻璃外壳：材质层要绝对尺寸，卡片自己只负责排版。
+      SystemGlassSurface({ radius: 14, fixedHeight: CARD_HEIGHT }) {
+        List({ space: 6, scroller: this.scroller }) {
       LazyForEach(this.source, (row: ForumTopicRow) => {
         ListItem() {
           TopicPill({
@@ -174,13 +179,8 @@ export struct ChatTopicBar {
     .alignListItem(ListItemAlign.Center)
     .scrollBar(BarState.Off)
     .cachedCount(4)
-    // 与置顶条那张浮卡同一档 'bar' 玻璃：半透明底 + backdropBlur 必须一起上。
-    .backgroundColor(plainGlassFill($r('app.color.surface')))
-    .backdropBlur(plainBackdropBlur('bar'))
-    .borderRadius(14)
-    .margin({ left: 12, right: 12, bottom: BAR_HEIGHT - CARD_HEIGHT })
-    .shadow({ radius: 5, color: '#12000000', offsetX: 0, offsetY: 1 })
-    .clip(true)
-    .visualEffect(hdsVisualEffect('bar'));
+      }
+    }
+    .margin({ left: 12, right: 12, bottom: BAR_HEIGHT - CARD_HEIGHT });
   }
 }

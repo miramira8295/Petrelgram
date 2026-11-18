@@ -3,6 +3,7 @@ import { CHAT_HEADER_ACTION_SIZE, CHAT_HEADER_RADIUS } from './ChatHeader';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
+import { SystemGlassSurface } from './SystemGlassSurface';
 import { str } from '../../util/strings';
 import { CHAT_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
 import { SelectionSession } from './SelectionSession';
@@ -63,38 +64,48 @@ export struct SelectionHeader {
   @Event onCopy: () => void = (): void => {};
   @Event onDelete: () => void = (): void => {};
 
+  // 底色交给系统材质层，按压只叠一层很淡的暗色 + 缩放（2026-11-18 统一改造）。
   @Styles
   actionNormalStyle() {
-    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
+    .backgroundColor(Color.Transparent)
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
 
   @Styles
   actionPressedStyle() {
-    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface_alt')))
+    .backgroundColor('#1F000000')
     .opacity(0.72)
     .scale({ x: 0.9, y: 0.9 })
   }
 
   @Builder
   capsule(symbol: string, tint: ResourceColor, onTap: () => void) {
-    Row() {
-      SymbolGlyph($r(symbol)).fontSize(22).fontColor([tint]);
+    Stack() {
+      // 玻璃由系统沉浸材质承载（Toggle 承载层），内容只画图标。
+      SystemGlassSurface({
+        radius: CHAT_HEADER_RADIUS,
+        fixedWidth: CHAT_HEADER_ACTION_SIZE,
+        fixedHeight: CHAT_HEADER_ACTION_SIZE
+      }) {
+        Row() {
+          SymbolGlyph($r(symbol)).fontSize(22).fontColor([tint]);
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .borderRadius(CHAT_HEADER_RADIUS)
+        .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
+        .animation({
+          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
+          curve: Curve.EaseOut
+        });
+      }
     }
     .width(CHAT_HEADER_ACTION_SIZE)
     .height(CHAT_HEADER_ACTION_SIZE)
     .borderRadius(CHAT_HEADER_RADIUS)
-    .justifyContent(FlexAlign.Center)
     .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
-    .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
-    // 顶栏胶囊统一走 'bar' 档材质；低于 API 26 由 backdropBlur + 半透明底自绘。
-    .backdropBlur(overlayBackdropBlur('bar'))
-    .attributeModifier(materialModifier('bar'))
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
-      curve: Curve.EaseOut
-    })
     .onClick((): void => { onTap(); });
   }
 

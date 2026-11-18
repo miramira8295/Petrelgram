@@ -9,6 +9,7 @@ import { BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP } fro
 import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
 import { bubbleGlassBlurStyle, bubbleGlassFill } from '../../util/surfaceGlass';
 import { str } from '../../util/strings';
+import { SystemGlassSurface } from './SystemGlassSurface';
 
 interface SkeletonBubbleSpec {
   id: string;
@@ -266,20 +267,22 @@ export struct InitialLoadingHint {
 
   @Builder
   private dateChipSkeleton() {
-    Row() {
-      Row()
-        .width(56)
-        .height(9)
-        .borderRadius(4.5)
-        .backgroundColor(COLOR_TEXT_SECONDARY)
-        .opacity(0.22);
+    // 骨架胶囊：宽度随内容、高度固定，走系统沉浸材质（外壳自量宽度）。
+    // 外层 Stack 只承载外边距——带尾随闭包的组件后面不能再链通用属性。
+    Stack() {
+      SystemGlassSurface({ radius: 13, fixedHeight: 26 }) {
+        Row() {
+          Row()
+            .width(56)
+            .height(9)
+            .borderRadius(4.5)
+            .backgroundColor(COLOR_TEXT_SECONDARY)
+            .opacity(0.22);
+        }
+        .height(26)
+        .padding({ left: 12, right: 12 });
+      }
     }
-    .height(26)
-    .padding({ left: 12, right: 12 })
-    .backgroundColor(plainGlassFill($r('app.color.surface')))
-    .backdropBlur(this.materialEpoch >= 0 ? plainBackdropBlur('bar') : 0)
-    .border({ width: 0.5, color: $r('app.color.divider') })
-    .borderRadius(13)
     .margin({ top: 4, bottom: 4 });
   }
 
@@ -435,18 +438,16 @@ export struct InitialLoadingHint {
 
       if (this.statusHintShown && initialHintLabelKey(this.connectionState) !== '') {
         Row() {
-          Row({ space: 6 }) {
-            Text(str(initialHintLabelKey(this.connectionState)))
-              .fontSize(12.5)
-              .fontColor(COLOR_TEXT_PRIMARY)
-              .fontWeight(FontWeight.Medium);
+          SystemGlassSurface({ radius: 15, fixedHeight: 30 }) {
+            Row({ space: 6 }) {
+              Text(str(initialHintLabelKey(this.connectionState)))
+                .fontSize(12.5)
+                .fontColor(COLOR_TEXT_PRIMARY)
+                .fontWeight(FontWeight.Medium);
+            }
+            .height(30)
+            .padding({ left: 12, right: 12 });
           }
-          .height(30)
-          .padding({ left: 12, right: 12 })
-          .backgroundColor(plainGlassFill($r('app.color.surface')))
-          .backdropBlur(this.materialEpoch >= 0 ? plainBackdropBlur('bar') : 0)
-          .border({ width: 0.5, color: $r('app.color.divider') })
-          .borderRadius(15);
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
