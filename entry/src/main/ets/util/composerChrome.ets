@@ -15,6 +15,22 @@ import { str } from './strings';
 export const COMPOSER_GAP_TIGHT: number = 6;
 export const COMPOSER_GAP_MIN: number = 8;
 
+// 悬浮导航栏（MainScreen 的 HdsTabsFloatingModifier）贴底的距离：
+// max(DOCK_GAP=6, round(bottomSafe * 0.85))。输入栏要和它落在同一条基线上，
+// 否则收起底栏时输入栏会比导航栏高出一截。
+//
+// 0.7 → 0.85 → 0.95（2026-11-18）：用户对照畅连，觉得输入栏和悬浮导航栏都还偏低。
+// 0.7 是当年「半个 bottomSafe 太低、整条 bottomSafe 又太远」之间的折中。0.85 之后
+// 用 dumpLayout 量过真机（1320×2848，bottomSafe=32vp）：畅连聊天页输入胶囊下沿
+// y=2754，我们输入胶囊下沿 y=2764，还低 10px(≈3.3vp)；0.95 → gap 30vp=90px，输入
+// 胶囊下沿落到 y≈2755，与畅连基本重合。**两处必须同步改**：MainScreen 里四处
+// Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.95)) 是同一个数的另一份写法。
+export const COMPOSER_DOCK_GAP_RATIO: number = 0.95;
+
+export function composerDockBottomGap(bottomSafe: number): number {
+  return Math.max(COMPOSER_GAP_MIN, Math.round(bottomSafe * COMPOSER_DOCK_GAP_RATIO));
+}
+
 export function composerBottomGap(
   keyboardHeight: number, bottomPanelOpen: boolean, bottomSafe: number
 ): number {

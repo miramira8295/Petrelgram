@@ -141,7 +141,7 @@ import {
 } from '../../util/appendAnchor';
 import { PREPEND_ANCHOR_ENABLED, shouldCapturePrependAnchor, shouldPrimePrependAnchor } from '../../util/anchorRestore';
 import {
-  composerBottomGap as bottomGapOf, composerPlaceholder as placeholderOf,
+  COMPOSER_GAP_TIGHT, composerDockBottomGap, composerPlaceholder as placeholderOf,
   replyKeyboardVisible
 } from '../../util/composerChrome';
 import {
@@ -2190,6 +2190,12 @@ export struct ChatPage {
       this.consumeSharedContent();
     }
     this.search.scheduleEntrySearch();
+    // 命令键（输入栏里那颗「方框斜杠」）只在有可用 Bot 命令的会话显示，
+    // 而目录原本只在用户手打 "/" 时才按需加载——那样键永远不会出现（自己把自己
+    // 藏成了不可达）。所以进会话就把目录探一次：拿到就点亮，拿不到就保持隐藏。
+    // 这里时机是安全的：bind() 已在 aboutToAppear 里做过（clear 会把
+    // botMenuAvailable 归 false），此刻 chatId/store 都已就绪。
+    this.command.ensureCommandsLoaded();
   }
 
   // 阶段 A（前半）：路由解析、会话重置、头部/草稿/进入即搜索的初始状态。
@@ -5237,11 +5243,13 @@ export struct ChatPage {
   private composerBottomGap(): number {
     const tightForIme: boolean = (this.keyboardH > 0 && this.emojiDrawer.activeSlot === '') ||
       this.drawerClosingToIme;
-    return bottomGapOf(
-      tightForIme ? Math.max(1, this.keyboardH) : 0,
-      tightForIme,
-      this.bottomSafe
-    );
+    if (tightForIme) {
+      // 键盘/抽屉起来时贴住它们，不留安全区（原因见 util/composerChrome 的注释）。
+      return COMPOSER_GAP_TIGHT;
+    }
+    // 和悬浮导航栏贴底的距离对齐：dock 用的是 max(DOCK_GAP=6, round(bottomSafe*0.7))，
+    // 输入栏原来吃整条 bottomSafe，会比导航栏高约 8vp，收起底栏时看着就不在一条线上。
+    return composerDockBottomGap(this.bottomSafe);
   }
 
   private syncComposerBottomGap(): void {

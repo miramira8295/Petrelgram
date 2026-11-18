@@ -1,10 +1,10 @@
-import { COLOR_PRIMARY } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 
 // 输入区最右那颗圆钮：草稿为空时是麦克风，一有字就换成纸飞机。
 //
-// 从 ChatPage 搬出来。两颗按钮除了图标、禁用条件和入场转场之外完全一样，
-// 原来是两段几乎逐行重复的代码；这里合成一个 shell，差异用参数表达。
+// 外观口径（2026-11-18 用户指定）：**与输入栏左边的回形针附件键一致** —— 自己
+// 不画底色，只出图标；玻璃底由外层 ChatComposerInput 的 NativeGlassHost/自绘
+// 兜底提供。原来这里是实心主题色圆钮（白图标），和附件键放一起明显不是一套。
 //
 // 送出去的转场比麦克风多一个 -45° 的回正：纸飞机是"甩出去"的手感，麦克风
 // 只是淡入。这处不对称是原样保留的。
@@ -20,6 +20,10 @@ export struct ComposerSendButton {
   @Prop recordingStarting: boolean;
   // 发送在途，此时纸飞机转圈且不可点。
   @Prop sending: boolean;
+  // 麦克风/转圈的图标色，跟附件键同一个色。
+  @Prop iconColor: ResourceColor = Color.Transparent;
+  // 纸飞机会主动作，用主题色。
+  @Prop accentColor: ResourceColor = Color.Transparent;
 
   onRecord: () => void = (): void => {};
   onSend: () => void = (): void => {};
@@ -27,17 +31,17 @@ export struct ComposerSendButton {
   onSendOptions: () => void = (): void => {};
 
   @Styles
-  primaryNormalStyle() {
-    .backgroundColor(COLOR_PRIMARY)
+  iconNormalStyle() {
+    .backgroundColor(Color.Transparent)
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
 
   @Styles
-  primaryPressedStyle() {
-    .backgroundColor('#287BC8')
-    .opacity(0.84)
-    .scale({ x: 0.92, y: 0.92 })
+  iconPressedStyle() {
+    .backgroundColor(Color.Transparent)
+    .opacity(0.72)
+    .scale({ x: 0.9, y: 0.9 })
   }
 
   build() {
@@ -46,13 +50,14 @@ export struct ComposerSendButton {
       if (!this.hasDraft) {
         Button() {
           if (this.recordingStarting) {
-            LoadingProgress().width(18).height(18).color(Color.White);
+            LoadingProgress().width(20).height(20).color(this.iconColor);
           } else {
-            SymbolGlyph($r('sys.symbol.mic')).fontSize(20).fontColor([Color.White]);
+            SymbolGlyph($r('sys.symbol.mic')).fontSize(22).fontColor([this.iconColor]);
           }
         }
-        .width(40).height(40).borderRadius(20)
-        .stateStyles({ normal: this.primaryNormalStyle, pressed: this.primaryPressedStyle })
+        .width(46).height(46).borderRadius(23)
+        .backgroundColor(Color.Transparent)
+        .stateStyles({ normal: this.iconNormalStyle, pressed: this.iconPressedStyle })
         .animation({
           duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, PRESS_MS),
           curve: Curve.EaseOut
@@ -68,16 +73,17 @@ export struct ComposerSendButton {
       } else {
         Button() {
           if (this.sending) {
-            LoadingProgress().width(18).height(18).color(Color.White);
+            LoadingProgress().width(20).height(20).color(this.accentColor);
           } else {
             // 草稿从空变非空时这颗才挂载，isActive=true 让它出现即弹一下，
             // 和外层已有的 opacity+scale 转场叠在一起。
-            SymbolGlyph($r('sys.symbol.paperplane')).fontSize(20).fontColor([Color.White])
+            SymbolGlyph($r('sys.symbol.paperplane')).fontSize(22).fontColor([this.accentColor])
               .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.UP), true);
           }
         }
-        .width(40).height(40).borderRadius(20)
-        .stateStyles({ normal: this.primaryNormalStyle, pressed: this.primaryPressedStyle })
+        .width(46).height(46).borderRadius(23)
+        .backgroundColor(Color.Transparent)
+        .stateStyles({ normal: this.iconNormalStyle, pressed: this.iconPressedStyle })
         .animation({
           duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, PRESS_MS),
           curve: Curve.EaseOut
@@ -93,6 +99,6 @@ export struct ComposerSendButton {
         .onClick((): void => { this.onSend(); })
         .gesture(LongPressGesture().onAction((): void => { this.onSendOptions(); }));
       }
-    }.width(40).height(40);
+    }.width(46).height(46);
   }
 }
