@@ -270,12 +270,11 @@ export struct TopBanners {
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
         }
         .alignItems(HorizontalAlign.Start).layoutWeight(1);
+        // 右侧那颗"朝右的箭头"已去掉（用户 2026-11-18 要求）：置顶条整块本来就
+        // 是可点区、定位跳转由外层 Row 的 onClick 负责，箭头只是视觉提示，删掉
+        // 后点击行为一字不变。跳转中仍然只留转圈。
         if (this.topCard.pinnedJumpBusy) {
           LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
-        } else {
-          SymbolGlyph($r('sys.symbol.chevron_right'))
-            .fontSize(15)
-            .fontColor([COLOR_ICON_SECONDARY]);
         }
       }
       .layoutWeight(1)

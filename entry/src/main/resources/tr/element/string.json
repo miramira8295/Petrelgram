@@ -13290,11 +13290,11 @@
     },
     {
       "name": "chat_settings_hide_pinned",
-      "value": "Sabitlenmiş mesajları varsayılan olarak gizle"
+      "value": "Sabitlenmiş mesajları gizle"
     },
     {
       "name": "chat_settings_hide_pinned_sub",
-      "value": "Her sohbetin menüsünden ayrı ayrı gösterin veya gizleyin"
+      "value": "Sohbetin üstündeki oktan veya menüden istediğiniz zaman değiştirin"
     },
     {
       "name": "mi_added",

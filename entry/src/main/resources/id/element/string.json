@@ -13290,11 +13290,11 @@
     },
     {
       "name": "chat_settings_hide_pinned",
-      "value": "Sembunyikan pesan tersemat secara default"
+      "value": "Sembunyikan pesan tersemat"
     },
     {
       "name": "chat_settings_hide_pinned_sub",
-      "value": "Tampilkan atau sembunyikan lewat menu setiap obrolan"
+      "value": "Ubah kapan saja lewat panah di atas obrolan atau menunya"
     },
     {
       "name": "mi_added",

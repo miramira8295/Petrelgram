@@ -13290,11 +13290,11 @@
     },
     {
       "name": "chat_settings_hide_pinned",
-      "value": "Nascondi i messaggi fissati per impostazione predefinita"
+      "value": "Nascondi i messaggi fissati"
     },
     {
       "name": "chat_settings_hide_pinned_sub",
-      "value": "Mostrali o nascondili dal menu di ogni chat"
+      "value": "Attivalo quando vuoi dalla freccia in alto nella chat o dal menu"
     },
     {
       "name": "mi_added",

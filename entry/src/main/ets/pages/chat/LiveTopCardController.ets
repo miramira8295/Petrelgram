@@ -1,7 +1,8 @@
 import { pushUrl, showDialog } from '../../util/uiContext';
 import { showToast } from '../../util/toast';
 import { pinnedVisibilityFor } from '../../services/PinnedVisibility';
-import { PinnedVisibility } from '../../util/pinnedVisibilityState';
+import { KEY_HIDE_PINNED_DEFAULT, PinnedVisibility } from '../../util/pinnedVisibilityState';
+import { setBoolean } from '../../store/AppSettings';
 import { NowPlaying, subscribeNowPlaying, clearNowPlaying } from '../../util/nowPlayingChannel';
 import { getVoicePlayback, VoiceState } from '../../services/VoicePlayback';
 // 顶栏下挂那张浮卡（置顶消息条 + 直播/群通话条）的状态机。
@@ -314,8 +315,16 @@ export class LiveTopCardController {
 
   // 搬之前叫 topCardShouldShow()。名字里的 topCard 前缀在控制器上是重复的，
   // 按 B5 约定改叫 shouldShow()；判据一字未动。
+  // 三个入口（设置页开关 / 菜单项 / 顶栏箭头）共用这一个写点：写的是**全局**
+  // 开关——setBoolean 里一次做完 AppStorage、@Trace 镜像与磁盘持久化，所以点完
+  // 箭头，设置页那一行、每个会话的置顶条都在同一帧翻面。
+  // 不再有按会话覆写，理由见 util/pinnedVisibilityState 的注释。
   togglePinnedVisibility(): void {
-    try { this.pinnedVisibility.toggle(); } catch (_) { logE('PinnedVisibility write failed'); }
+    try {
+      setBoolean(KEY_HIDE_PINNED_DEFAULT, !this.pinnedVisibility.hidden);
+    } catch (_) {
+      logE('PinnedVisibility write failed');
+    }
   }
 
   pinnedVisible(): boolean {

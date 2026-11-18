@@ -13290,11 +13290,11 @@
     },
     {
       "name": "chat_settings_hide_pinned",
-      "value": "Angeheftete Nachrichten standardmäßig ausblenden"
+      "value": "Angeheftete Nachrichten ausblenden"
     },
     {
       "name": "chat_settings_hide_pinned_sub",
-      "value": "Im Menü jedes Chats einzeln ein- oder ausblenden"
+      "value": "Jederzeit über den Pfeil oben im Chat oder das Menü umschaltbar"
     },
     {
       "name": "mi_added",

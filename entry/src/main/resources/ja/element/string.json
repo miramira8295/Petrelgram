@@ -13290,11 +13290,11 @@
     },
     {
       "name": "chat_settings_hide_pinned",
-      "value": "ピン留めメッセージを標準で非表示"
+      "value": "ピン留めメッセージを非表示"
     },
     {
       "name": "chat_settings_hide_pinned_sub",
-      "value": "各チャットのメニューで個別に表示・非表示を設定"
+      "value": "チャット上部の矢印またはメニューからいつでも切り替え"
     },
     {
       "name": "mi_added",

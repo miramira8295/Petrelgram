@@ -13290,11 +13290,11 @@
     },
     {
       "name": "chat_settings_hide_pinned",
-      "value": "पिन किए गए संदेश डिफ़ॉल्ट रूप से छिपाएँ"
+      "value": "पिन किए गए संदेश छिपाएँ"
     },
     {
       "name": "chat_settings_hide_pinned_sub",
-      "value": "हर चैट के मेनू से अलग से दिखाएँ या छिपाएँ"
+      "value": "चैट के ऊपर तीर या मेनू से कभी भी बदलें"
     },
     {
       "name": "mi_added",

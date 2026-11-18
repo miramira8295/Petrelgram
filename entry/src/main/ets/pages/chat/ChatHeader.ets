@@ -13,9 +13,9 @@ import { WebmStickerView } from './WebmStickerView';
 import { COLOR_PRIMARY } from '../../util/theme';
 import { chromeIconColorOf, chromeTextColorOf } from '../../util/chatChrome';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
-import { plainBackdropBlur, plainGlassFill, overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
-import { materialModifierWhen } from '../../util/materialModifier';
-import { hdsVisualEffect } from '../../util/hdsPointLight';
+import { plainGlassFill } from '../../util/overlayMaterial';
+import { NativeGlassHost } from './NativeGlassHost';
+import { SystemGlassSurface } from './SystemGlassSurface';
 import { str } from '../../util/strings';
 import { HeaderIdentitySession } from './HeaderIdentitySession';
 import { TypingIndicatorState } from './TypingIndicatorState';
@@ -100,7 +100,16 @@ export struct ChatHeader {
   @Param menuShow: boolean = false;
   // 菜单浮层的锚点。promptAction.openMenu 按组件 id 定位，所以这颗键要挂上它。
   @Param menuAnchorId: string = '';
-  // 四个回调一律 @Event：调用点传的是内联箭头函数，页面每重建一次都是新闭包，
+  // 顶栏最右的「置顶显隐」箭头（2026-11-18 用户要求）。
+  //
+  // pinnedAvailable 决定这颗键存不存在：会话里一条置顶都没有时，隐藏/展示
+  // 置顶条没有任何作用对象，摆一个按了没反应的箭头只会让人以为坏了。
+  // pinnedBarShown 是箭头方向的唯一依据——置顶条正在显示就朝上（点=收起），
+  // 已经收起就朝下（点=展开）。两者都从 TopCard 控制器的 @Trace 现取，页面
+  // 那侧不做第二份状态，避免三处入口（设置开关 / 菜单项 / 这颗箭头）各记一份。
+  @Param pinnedAvailable: boolean = false;
+  @Param pinnedBarShown: boolean = false;
+  // 五个回调一律 @Event：调用点传的是内联箭头函数，页面每重建一次都是新闭包，
   // 若用 @Param，那个 `!==` 恒不相等会让本层跟着页面的每一次重建白刷一遍；
   // @Event 不具备观测能力，正好复现迁移前「普通字段只在构造时赋值一次」的行为。
   // 空实现默认值是仓库惯例（让组件能脱离父组件独立预览）。（B2 迁移）
@@ -108,6 +117,8 @@ export struct ChatHeader {
   @Event onMenuTap: () => void = (): void => {};
   @Event onOpenProfile: () => void = (): void => {};
   @Event onResolveIdentity: () => void = (): void => {};
+  // 置顶条显隐。页面那边包了 animateTo，本组件只负责把点击抛上去。
+  @Event onTogglePinned: () => void = (): void => {};
 
   // 返回 / 菜单两颗键的按压态、菜单图标的展开态，全部显式驱动（2026-09-15）。
   //
@@ -123,6 +134,18 @@ export struct ChatHeader {
   @Local private backPressed: boolean = false;
   @Local private menuPressed: boolean = false;
   @Local private menuIconOpen: boolean = false;
+  @Local private pinnedPressed: boolean = false;
+  // 身份胶囊的按压态：变换必须作用在**带玻璃的那一层**（外层 Stack），
+  // 否则只有文字/头像在缩，系统材质那块玻璃纹丝不动——观感就是「没有按压」。
+  @Local private identityPressed: boolean = false;
+  // 「按住拖动时跟着手指走」：三颗胶囊同一时刻只可能按一颗，所以共用一套位移量。
+  // 位移 = 手指相对按下点的偏移 × 0.18，夹在 ±3vp；松手归零。槽位 0=返回 1=身份 2=菜单。
+  // 放在 @Local 而不是 AppStorage：本组件很小，重渲染只涉及这几十个节点。
+  @Local private grabSlot: number = -1;
+  @Local private grabDX: number = 0;
+  @Local private grabDY: number = 0;
+  private grabStartX: number = 0;
+  private grabStartY: number = 0;
   @Local private typingDotPhase: number = 0;
   private typingAnimTimer: number = -1;
 
@@ -222,6 +245,34 @@ export struct ChatHeader {
     return -1;
   }
 
+  // 按住后手指移动的跟随量。按下的那一刻记原点，之后每次 Move 只算偏移，
+  // 不复位——这样手指来回拖时胶囊是「黏在手指上」的，不是每帧从零抖一下。
+  private trackGrab(event: TouchEvent, slot: number): void {
+    if (event.type === TouchType.Down) {
+      this.grabSlot = slot;
+      this.grabDX = 0;
+      this.grabDY = 0;
+      if (event.touches.length > 0) {
+        this.grabStartX = event.touches[0].x;
+        this.grabStartY = event.touches[0].y;
+      }
+      return;
+    }
+    if (event.type === TouchType.Move) {
+      if (this.grabSlot !== slot || event.touches.length === 0) {
+        return;
+      }
+      const dx: number = (event.touches[0].x - this.grabStartX) * 0.18;
+      const dy: number = (event.touches[0].y - this.grabStartY) * 0.18;
+      this.grabDX = dx > 3 ? 3 : (dx < -3 ? -3 : dx);
+      this.grabDY = dy > 3 ? 3 : (dy < -3 ? -3 : dy);
+      return;
+    }
+    this.grabSlot = -1;
+    this.grabDX = 0;
+    this.grabDY = 0;
+  }
+
   private animatePress(apply: () => void): void {
     this.getUIContext().animateTo({
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
@@ -229,25 +280,8 @@ export struct ChatHeader {
     }, apply);
   }
 
-  private actionFill(pressed: boolean): ResourceColor {
-    // 统一走 plainGlassFill：它统一返回 app.color.dock_glass（#2EFFFFFF 半透明白），
-    // 52 处自绘玻璃因此共用同一个底色来源；按下态单独加深一档。
-    return pressed ? '#3DFFFFFF' : plainGlassFill($r('app.color.surface'));
-  }
-
-  @Styles
-  identityNormalStyle() {
-    .backgroundColor(Color.Transparent)
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
-
-  @Styles
-  identityPressedStyle() {
-    .backgroundColor(Color.Transparent)
-    .opacity(0.78)
-    .scale({ x: 0.985, y: 0.96 })
-  }
+  // 身份胶囊的按压数值（0.78 / 0.985×0.96）直接写在外层 Stack 的属性链上，
+  // 不再放 @Styles：stateStyles 只能作用于被打的那个节点，而玻璃在它外一层。
 
   @Builder
   titleAccessory() {
@@ -307,38 +341,67 @@ export struct ChatHeader {
 
   @Builder
   backButton() {
-    Row() {
-      SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(22)
-        .fontColor([chromeTextColorOf(this.onLightBg, this.onDarkBg)]);
+    // 玻璃交给系统沉浸材质（Toggle 承载层）：原来那身自绘玻璃——半透明底 +
+    // backdropBlur + materialModifier + visualEffect + chromeOutline 描边——在
+    // 内容区一件都画不出来，只剩一圈白描边，正是用户说的"白色轮廓线很怪"。
+    Stack() {
+      NativeGlassHost({
+        hostWidth: CHAT_HEADER_ACTION_SIZE,
+        hostHeight: CHAT_HEADER_ACTION_SIZE,
+        hostRadius: CHAT_HEADER_RADIUS,
+        dark: this.appDark,
+        surface: 'control'
+      });
+      Row() {
+        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(22)
+          .fontColor([chromeTextColorOf(this.onLightBg, this.onDarkBg)]);
+      }
+      .width(CHAT_HEADER_ACTION_SIZE)
+      .height(CHAT_HEADER_ACTION_SIZE)
+      .justifyContent(FlexAlign.Center)
+      .hitTestBehavior(HitTestMode.None)
+      .accessibilityText($r('app.string.cp_back_to_chat'));
+      // 命中层：材质承载层是 enabled(false) 的 Toggle，收不到触摸，这里用一颗透明
+      // Button 接管点击。它自己的 stateEffect 关掉——真机上那颗系统按压态只让玻璃
+      // 变暗、不改变外框，看着像闪了一下；按压反馈统一交给外层 Stack 做位移，
+      // 和已提交版本（PR #21：按下 0.9 缩放 + 78% 不透明）同一个观感。
+      Button({ type: ButtonType.Circle })
+        .width(CHAT_HEADER_ACTION_SIZE)
+        .height(CHAT_HEADER_ACTION_SIZE)
+        .backgroundColor(Color.Transparent)
+        .stateEffect(false)
+        .onTouch((event: TouchEvent): void => {
+          this.trackGrab(event, 0);
+          const edge: number = this.pressEdge(event);
+          if (edge >= 0 && (edge === 1) !== this.backPressed) {
+            this.animatePress((): void => {
+              this.backPressed = edge === 1;
+            });
+          }
+        })
+        .accessibilityText($r('app.string.cp_back_to_chat'))
+        .onClick((): void => { this.onBack(); });
     }
     .width(CHAT_HEADER_ACTION_SIZE)
     .height(CHAT_HEADER_ACTION_SIZE)
-    .borderRadius(CHAT_HEADER_RADIUS)
-    .justifyContent(FlexAlign.Center)
-    .shadow({ radius: this.appDark ? 0 : 4, color: this.appDark ? '#00000000' : '#12000000', offsetX: 0, offsetY: this.appDark ? 0 : 1 })
-    .backgroundColor(Color.Transparent)
     .opacity(this.backPressed ? 0.72 : 1)
     .scale({ x: this.backPressed ? 0.9 : 1, y: this.backPressed ? 0.9 : 1 })
-    .backdropBlur(overlayBackdropBlur('bar'))
-    .attributeModifier(materialModifierWhen('bar', true))
-    .visualEffect(hdsVisualEffect('bar', !this.appDark))
-    .border(chromeOutline(this.appDark))
-    .clip(this.appDark)
-    .accessibilityText($r('app.string.cp_back_to_chat'))
-    .onTouch((event: TouchEvent): void => {
-      const edge: number = this.pressEdge(event);
-      if (edge >= 0 && (edge === 1) !== this.backPressed) {
-        this.animatePress((): void => {
-          this.backPressed = edge === 1;
-        });
-      }
-    })
-    .onClick((): void => { this.onBack(); });
+    // 按住拖动时整颗胶囊轻微跟着手指走（幅度夹在 ±3vp）。写在 .animation() 之外，
+    // 位移必须即时跟手，不能带缓动，否则会拖一条尾巴。
+    .translate({ x: this.grabSlot === 0 ? this.grabDX : 0, y: this.grabSlot === 0 ? this.grabDY : 0 });
   }
 
   @Builder
   menuButton() {
-    Row() {
+    // 与返回键同一副：材质垫底，图标行只管点击与按压反馈。
+    Stack() {
+      NativeGlassHost({
+        hostWidth: CHAT_HEADER_ACTION_SIZE,
+        hostHeight: CHAT_HEADER_ACTION_SIZE,
+        hostRadius: CHAT_HEADER_RADIUS,
+        dark: this.appDark
+      });
+      Row() {
       // 菜单展开时汉堡变叉。两个图标叠着做交叉淡入淡出 + 反向旋转，比直接
       // 替换更像"同一个东西转过去了"。SVG 是位图路径、没法真正形变，这是
       // 视觉上最接近的做法。
@@ -363,22 +426,10 @@ export struct ChatHeader {
     }
     .width(CHAT_HEADER_ACTION_SIZE)
     .height(CHAT_HEADER_ACTION_SIZE)
-    .borderRadius(CHAT_HEADER_RADIUS)
     .justifyContent(FlexAlign.Center)
-    .shadow({ radius: this.appDark ? 0 : 4, color: this.appDark ? '#00000000' : '#12000000', offsetX: 0, offsetY: this.appDark ? 0 : 1 })
-    .backgroundColor(Color.Transparent)
-    .opacity(this.menuPressed ? 0.72 : 1)
-    .scale({ x: this.menuPressed ? 0.9 : 1, y: this.menuPressed ? 0.9 : 1 })
-    // 和身份胶囊同一档：半透明底 + backdropBlur 自绘玻璃，API 26 上让位给材质。
-    .backdropBlur(overlayBackdropBlur('bar'))
-    .attributeModifier(materialModifierWhen('bar', true))
-    .visualEffect(hdsVisualEffect('bar', !this.appDark))
-    .border(chromeOutline(this.appDark))
-    .clip(this.appDark)
-    // 菜单浮层按这个 id 定位（ChatHeaderMenuController.open 的 targetId）。
-    .id(this.menuAnchorId)
     .enabled(this.chatId !== 0)
     .onTouch((event: TouchEvent): void => {
+      this.trackGrab(event, 2);
       const edge: number = this.pressEdge(event);
       if (edge >= 0 && (edge === 1) !== this.menuPressed) {
         this.animatePress((): void => {
@@ -388,12 +439,27 @@ export struct ChatHeader {
     })
     .accessibilityText($r('app.string.cp_more_actions'))
     .onClick((): void => { this.onMenuTap(); });
+    }
+    .width(CHAT_HEADER_ACTION_SIZE)
+    .height(CHAT_HEADER_ACTION_SIZE)
+    // 缩放/透明度放在外层：玻璃层是独立子节点，只缩里面的图标行会让玻璃纹丝不动，
+    // 看着像"图标自己在抖"。整颗一起缩才和提交版本一致。
+    .opacity(this.menuPressed ? 0.72 : 1)
+    .scale({ x: this.menuPressed ? 0.9 : 1, y: this.menuPressed ? 0.9 : 1 })
+    // 同返回键：位移即时跟手。
+    .translate({ x: this.grabSlot === 2 ? this.grabDX : 0, y: this.grabSlot === 2 ? this.grabDY : 0 })
+    // 菜单浮层按这个 id 定位（ChatHeaderMenuController.open 的 targetId）。
+    .id(this.menuAnchorId);
   }
 
   build() {
     Row({ space: 8 }) {
       this.backButton();
-      Row({ space: 10 }) {
+      // 身份胶囊：宽度自适应（layoutWeight 1），所以用铺满模式让外壳跟住父容器，
+      // 材质层再由外壳自己量到的像素铺。
+      Stack() {
+        SystemGlassSurface({ radius: CHAT_HEADER_RADIUS, fill: true, dark: this.appDark }) {
+          Row({ space: 10 }) {
       AvatarView({
         avatarPath: this.header.avatarPath,
         // 顶栏身份胶囊自身带 backdropBlur('bar')，内部若挂载 30fps XComponent 视频纹理
@@ -477,27 +543,73 @@ export struct ChatHeader {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start);
+            // 置顶条的显隐键（2026-11-18 用户口径）：不单独占一颗胶囊，直接挂在
+            // 身份胶囊内部的最右端——胶囊本身就是「群组名称信息展示的顶栏」，
+            // 箭头属于它的附属操作。方向语义：置顶条正在显示 → 朝上，点一下收起；
+            // 已经收起 → 朝下，点一下展开。
+            //
+            // 点击不会连带触发胶囊的资料页跳转：ArkUI 的 onClick 不向祖先冒泡，
+            // 子节点消费掉就到此为止。
+            if (this.pinnedAvailable) {
+              Row() {
+                SymbolGlyph($r(this.pinnedBarShown ? 'sys.symbol.chevron_up' : 'sys.symbol.chevron_down'))
+                  .fontSize(18)
+                  .fontColor([chromeTextColorOf(this.onLightBg, this.onDarkBg)]);
+              }
+              .width(30)
+              .height('100%')
+              .justifyContent(FlexAlign.Center)
+              .opacity(this.pinnedPressed ? 0.72 : 1)
+              .accessibilityText(this.pinnedBarShown ? $r('app.string.cp_hide_pinned') : $r('app.string.cp_show_pinned'))
+              .onTouch((event: TouchEvent): void => {
+                const edge: number = this.pressEdge(event);
+                if (edge >= 0 && (edge === 1) !== this.pinnedPressed) {
+                  this.animatePress((): void => {
+                    this.pinnedPressed = edge === 1;
+                  });
+                }
+              })
+              .onClick((): void => { this.onTogglePinned(); });
+            }
+          }
+          .width('100%')
+          .height('100%')
+          // 有箭头时右内边距收窄：箭头自己占了 30vp 的命中区，再留 12 会把图标
+          // 顶到离胶囊边缘太远的地方，视觉上像浮在半空。
+          .padding({ left: 7, right: this.pinnedAvailable ? 4 : 12 })
+          // 按压态不再用 stateStyles（那只作用于本 Row，玻璃在外层 Stack 上）。
+          // 改为驱动 identityPressed，由外层 Stack 连同系统材质一起缩放/变暗。
+          .onTouch((event: TouchEvent): void => {
+            this.trackGrab(event, 1);
+            const edge: number = this.pressEdge(event);
+            if (edge >= 0 && (edge === 1) !== this.identityPressed) {
+              // 过渡由外层 Stack 的 .animation() 负责，这里直接赋值，
+              // 免得 animateTo 与隐式动画两层叠加。
+              this.identityPressed = edge === 1;
+            }
+          })
+          .accessibilityText(str('cp_header_a11y', this.header.titleTextOf(), this.activeSubtitleText()))
+          .onClick((): void => {
+            if (this.header.state === 'error') {
+              this.onResolveIdentity();
+            } else {
+              this.onOpenProfile();
+            }
+          });
+        }
       }
       .layoutWeight(1)
       .height(CHAT_HEADER_ACTION_SIZE)
-      .padding({ left: 7, right: 12 })
-      .borderRadius(CHAT_HEADER_RADIUS)
-      .shadow({ radius: this.appDark ? 0 : 4, color: this.appDark ? '#00000000' : '#12000000', offsetX: 0, offsetY: this.appDark ? 0 : 1 })
-      .stateStyles({ normal: this.identityNormalStyle, pressed: this.identityPressedStyle })
-      // 暗色模式与输入栏统一：关闭光晕和阴影，使用标准描边及圆角裁剪。
-      .backdropBlur(overlayBackdropBlur('bar'))
-    .attributeModifier(materialModifierWhen('bar', true))
-      .visualEffect(hdsVisualEffect('bar', !this.appDark))
-      .border(chromeOutline(this.appDark))
-      .clip(this.appDark)
-      .accessibilityText(str('cp_header_a11y', this.header.titleTextOf(), this.activeSubtitleText()))
-      .onClick((): void => {
-        if (this.header.state === 'error') {
-          this.onResolveIdentity();
-        } else {
-          this.onOpenProfile();
-        }
-      });
+      // 玻璃层（SystemGlassSurface 的材质承载）跟着一起缩，才是整颗胶囊的按压反馈。
+      .opacity(this.identityPressed ? 0.78 : 1)
+      .scale({ x: this.identityPressed ? 0.985 : 1, y: this.identityPressed ? 0.96 : 1 })
+      .animation({
+        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
+        curve: Curve.EaseOut
+      })
+      // 位移放在 .animation() 之后：上面的缩放/透明度走 120ms 缓动，
+      // 下面的跟手位移必须逐帧直达，不能被隐式动画拖慢。
+      .translate({ x: this.grabSlot === 1 ? this.grabDX : 0, y: this.grabSlot === 1 ? this.grabDY : 0 });
       this.menuButton();
     }
     .width('100%')

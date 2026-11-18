@@ -13318,11 +13318,11 @@
     },
     {
       "name": "chat_settings_hide_pinned",
-      "value": "默认隐藏置顶消息"
+      "value": "隐藏置顶消息"
     },
     {
       "name": "chat_settings_hide_pinned_sub",
-      "value": "可在聊天菜单中单独显示或隐藏"
+      "value": "聊天顶部箭头或菜单中可随时切换"
     },
     {
       "name": "mi_added",

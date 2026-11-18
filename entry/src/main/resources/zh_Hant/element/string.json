@@ -13290,11 +13290,11 @@
     },
     {
       "name": "chat_settings_hide_pinned",
-      "value": "預設隱藏置頂訊息"
+      "value": "隱藏置頂訊息"
     },
     {
       "name": "chat_settings_hide_pinned_sub",
-      "value": "可在聊天選單中個別顯示或隱藏"
+      "value": "聊天頂端箭頭或選單中可隨時切換"
     },
     {
       "name": "mi_added",

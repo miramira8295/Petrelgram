@@ -13318,11 +13318,11 @@
     },
     {
       "name": "chat_settings_hide_pinned",
-      "value": "Hide pinned messages by default"
+      "value": "Hide pinned messages"
     },
     {
       "name": "chat_settings_hide_pinned_sub",
-      "value": "Show or hide them separately in each chat menu"
+      "value": "Switch it anytime from the arrow at the top of the chat or its menu"
     },
     {
       "name": "mi_added",

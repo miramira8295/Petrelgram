@@ -5038,7 +5038,7 @@ export struct ChatPage {
       liveLocationActive: this.liveLocationActive,
       translationActive: this.translation.active(this.translateChatsEnabled),
       pinnedHidden: this.topCard.pinnedVisibility.hidden,
-      onTogglePinned: (): void => { this.topCard.togglePinnedVisibility(); },
+      onTogglePinned: (): void => { this.togglePinnedBar(); },
       canClearHistory: this.clearHistoryChoice() !== undefined,
       canLeaveChat: this.isGroup && this.membershipState === 'writable',
       onSearch: (): void => { this.search.enter(); },
@@ -6597,6 +6597,26 @@ export struct ChatPage {
     });
   }
 
+  // 置顶条的显隐只有一个真相源（TopCard 控制器的 PinnedVisibility，背后是
+  // AppSettings 的全局开关），三个入口——外观设置那一行、聊天页菜单项、顶栏那颗
+  // 箭头——都走这里，状态因此天然同步。
+  //
+  // 动画统一包在这一层：置顶条高度、标题栏槽高（slotHeight）、消息区起点都是这次
+  // 状态写入的下游，包进同一个动画上下文才能一起过渡，否则是"高度跳变 + 内容
+  // 瞬间消失"。设置页那一行不用这套，它是整页跳转，没有同屏过渡。
+  private togglePinnedBar(): void {
+    try {
+      this.getUIContext().animateTo({
+        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220),
+        curve: Curve.EaseOut
+      }, (): void => {
+        this.topCard.togglePinnedVisibility();
+      });
+    } catch (_e) {
+      this.topCard.togglePinnedVisibility();
+    }
+  }
+
   @Builder
   chatTitleBar() {
     Column() {
@@ -6631,7 +6651,12 @@ export struct ChatPage {
           onBack: (): void => { this.goBack(); },
           onMenuTap: (): void => { this.openHeaderMenu(); },
           onOpenProfile: (): void => { this.header.openProfile(); },
-          onResolveIdentity: (): void => { this.header.resolveIdentity(); }
+          onResolveIdentity: (): void => { this.header.resolveIdentity(); },
+          // 顶栏置顶显隐箭头（2026-11-18）：只在真的存在置顶消息时出现，
+          // 方向跟置顶条当前是否显示走同一个真相源。
+          pinnedAvailable: this.topCard.pinnedCount > 0,
+          pinnedBarShown: this.topCard.pinnedVisible(),
+          onTogglePinned: (): void => { this.togglePinnedBar(); }
         });
       }
     }

@@ -13290,11 +13290,11 @@
     },
     {
       "name": "chat_settings_hide_pinned",
-      "value": "Masquer les messages épinglés par défaut"
+      "value": "Masquer les messages épinglés"
     },
     {
       "name": "chat_settings_hide_pinned_sub",
-      "value": "Affichez ou masquez-les dans le menu de chaque discussion"
+      "value": "Basculez à tout moment via la flèche en haut du chat ou son menu"
     },
     {
       "name": "mi_added",

@@ -13290,11 +13290,11 @@
     },
     {
       "name": "chat_settings_hide_pinned",
-      "value": "Ocultar mensagens fixadas por padrão"
+      "value": "Ocultar mensagens fixadas"
     },
     {
       "name": "chat_settings_hide_pinned_sub",
-      "value": "Mostre ou oculte pelo menu de cada conversa"
+      "value": "Alterne a qualquer momento pela seta no topo da conversa ou pelo menu"
     },
     {
       "name": "mi_added",

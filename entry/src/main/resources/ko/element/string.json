@@ -13290,11 +13290,11 @@
     },
     {
       "name": "chat_settings_hide_pinned",
-      "value": "고정 메시지 기본 숨김"
+      "value": "고정 메시지 숨김"
     },
     {
       "name": "chat_settings_hide_pinned_sub",
-      "value": "각 채팅 메뉴에서 개별적으로 표시하거나 숨길 수 있습니다"
+      "value": "채팅 상단 화살표나 메뉴에서 언제든 전환"
     },
     {
       "name": "mi_added",

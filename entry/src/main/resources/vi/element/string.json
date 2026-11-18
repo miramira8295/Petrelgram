@@ -13290,11 +13290,11 @@
     },
     {
       "name": "chat_settings_hide_pinned",
-      "value": "Mặc định ẩn tin nhắn đã ghim"
+      "value": "Ẩn tin nhắn đã ghim"
     },
     {
       "name": "chat_settings_hide_pinned_sub",
-      "value": "Hiện hoặc ẩn riêng trong menu của từng cuộc trò chuyện"
+      "value": "Chuyển bất cứ lúc nào bằng mũi tên trên cùng cuộc trò chuyện hoặc menu"
     },
     {
       "name": "mi_added",
