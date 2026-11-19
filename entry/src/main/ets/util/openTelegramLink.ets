@@ -464,6 +464,14 @@ function handleInternalLinkType(context: common.UIAbilityContext, type: TdObject
       original, allowBrowser);
     return;
   }
+  // 带未知查询参数的 t.me 链接（用户 2026-11-19 报「当前版本暂不支持该类型 链接」，
+  // 实际是群简介里的 https://t.me/guyushijie666?direct）：TDLib 把它归到
+  // UnknownDeepLink，但主体仍是公开用户名——按用户名解析，不要弹「不支持」。
+  const bareName: string = bareUsernameOf(original);
+  if (bareName !== '') {
+    resolvePublicChat(context, bareName, '', false, original, allowBrowser);
+    return;
+  }
   showToast(str('tglink_kind_unsupported', unsupportedLinkLabel(typeName)), 2100);
 }
 
