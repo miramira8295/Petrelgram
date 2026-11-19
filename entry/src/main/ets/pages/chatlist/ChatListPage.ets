@@ -1636,7 +1636,9 @@ export struct ChatListPage {
     // 在观感：文件夹条和它上面那块 HDS 标题栏成了两截玻璃，加上大标题底下的空白，
     // 首页顶部被切成了三段。维持「无独立外框、只留选中胶囊」这一版，别再给这里加底。
     .width('100%')
-    .padding({ left: homeCardMarginVp(this.widthBp) + 8, right: homeCardMarginVp(this.widthBp) + 8 })
+    // 与首页会话卡片同一条边线：卡片是 width calc(100% - gutter*2) + 左右 margin gutter，
+    // 这里就只留 gutter。之前多给了 8vp，轨道比卡片每侧窄 8vp（用户 2026-11-19 反馈「长度不对齐」）。
+    .padding({ left: homeCardMarginVp(this.widthBp), right: homeCardMarginVp(this.widthBp) })
     .margin({ bottom: 2 })
     .transition(
       TransitionEffect.OPACITY
