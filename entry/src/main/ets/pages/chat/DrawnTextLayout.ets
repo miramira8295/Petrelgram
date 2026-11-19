@@ -1,3 +1,4 @@
+import { systemFontWeightScale } from '../../util/systemFontWeight';
 import { DrawnStickerSource } from './DrawnStickerSource';
 import { DrawnGiveawaySource } from './DrawnGiveawaySource';
 import { DrawnGiftSource } from './DrawnGiftSource';
@@ -15,6 +16,7 @@ import { DrawnStructuredSource } from './DrawnStructuredSource';
 import { DrawnWebPreviewSource } from './DrawnWebPreviewSource';
 import { DrawnTranslatedSource } from './DrawnTranslatedSource';
 import { DrawnRouteReason, drawnSourceRouteReason } from '../../util/drawnRouteMetrics';
+import { TranslationStatus } from '../../util/translationChannel';
 import { DrawnRowLayoutEngine } from './DrawnLayoutWarmCache';
 import { DrawnBubbleOutlineCache, DrawnRoundRectCache } from './DrawnBubbleGeometry';
 import { DrawnTextUnits } from '../../util/drawnTextUnits';
@@ -79,11 +81,33 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
   private quoteFill: ResourceColor = '';
   private paletteEnvironment: string = '';
   private key: string = '';
+  // Memo of the last finished plan. Re-entering the viewport with the same
+  // immutable message snapshot / geometry / environment must not re-lay out.
+  private cachedUi: UIContext | null = null;
+  private cachedGroup: AlbumGroup | null = null;
+  private cachedSelection: number[] | null = null;
+  private cachedViews: string = '';
+  private cachedMathRevision: number | undefined = undefined;
+  private cachedTranslation: TranslationStatus | null = null;
+  private cachedReplace: boolean = false;
+  private cachedSpoilers: boolean | undefined = undefined;
+  private cachedExpanded: ReadonlyArray<number> | undefined = undefined;
+  private cachedGeometry: string = '';
 
   prepare(ui: UIContext, group: AlbumGroup, data: MessageBubbleRenderData, style: DrawnBubbleStyle): DrawnBubblePlan | null {
     this.failureReason = DrawnRouteReason.Drawn;
     this.units.prepare(ui, style.textEnvironment);
     const m = group.head, d = this.units.density;
+    const geometry = `${d}:${data.contentWidth}:${data.isGroup}:${data.isChannel}:${data.themeBubbleOut}:${data.chatId}:` +
+      `${style.radius}:${style.fontSize}:${style.environment}:${style.textEnvironment}:${style.role}:` +
+      `${systemFontWeightScale()}`;
+    if (this.current !== null && this.cachedUi === ui && this.cachedGroup === group &&
+      this.cachedSelection === data.selectedMemberIds && this.cachedTranslation === (style.translationStatus ?? null) &&
+      this.cachedReplace === (style.replaceTranslation === true) && this.cachedGeometry === geometry &&
+      this.cachedViews === style.views && this.cachedMathRevision === style.mathRevision &&
+      this.cachedExpanded === style.expandedBlocks && (this.cachedSpoilers === true) === (style.spoilersRevealed === true)) {
+      return this.current;
+    }
     const avatarSpace = data.isGroup && !m.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0;
     const maxPx = Math.floor((bubbleMaxWidth(data.contentWidth, avatarSpace) - 16) * d);
     if (!(d > 0) || !(maxPx > 0)) { this.failureReason = DrawnRouteReason.InvalidGeometry; return null; }
@@ -243,7 +267,13 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
       p.avatar = { x: 0, y: p.height - 38, width: 38, height: 38 };
       p.initials = this.initials.prepare(m.senderInitials, 38 * d, this.units.fp2px(38 * .4), drawnColor(Color.White), style.textEnvironment, true);
     }
-    this.current = p; this.key = key; return p;
+    this.current = p; this.key = key;
+    this.cachedUi = ui; this.cachedGroup = group; this.cachedSelection = data.selectedMemberIds;
+    this.cachedViews = style.views; this.cachedMathRevision = style.mathRevision;
+    this.cachedTranslation = style.translationStatus ?? null; this.cachedReplace = style.replaceTranslation === true;
+    this.cachedSpoilers = style.spoilersRevealed; this.cachedExpanded = style.expandedBlocks;
+    this.cachedGeometry = geometry;
+    return p;
   }
   // Keep the native 38vp row and original short bubble height. Shift the fixed
   // row coordinates once; do not widen/reflow text or pad the bubble itself.
