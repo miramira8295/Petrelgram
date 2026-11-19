@@ -6736,9 +6736,10 @@ export struct ChatPage {
       avoidLayoutSafeArea: true,
       // 消息 List 自己用 contentStartOffset 保留稳定锚点；这里不重复挤内容区。
       enableComponentSafeArea: false,
-      // 第三个参数 false = 静态栏：滑动时不变；第四个参数 false = 不挂 HDS 整条栏系统材质与
-      // BlurStrategy.ENABLE（顶栏三颗胶囊已在 ChatHeader 里自绘毛玻璃，避免再挂整页滤镜节点）。
-      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false, false),
+      // 第三个参数 false = 静态栏：滑动时不变；第四个参数 true = 挂 HDS 整条栏系统材质与
+      // BlurStrategy.ENABLE——聊天页最顶部那条玻璃就是它（上游 58d272ef 曾把它改回 false，
+      // 用户看到的就是「最顶部的模糊没了」）。顶栏三颗胶囊/输入栏另有各自的材质承载，不冲突。
+      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false, true),
       content: content
     };
     this.titleBarOptionsCache = options;
