@@ -20,6 +20,6 @@ const next=engine.prepare(ui,edited,data,style);assert.notEqual(next.caption,fir
 assert.ok(next.caption.accessibilityText.includes('changed title'));
 const empty={...message,head:{...message.head,text:'',textEntities:[]}};
 assert.ok(ctx.drawnTextRowEligible(empty,data,false,false));assert.ok(engine.prepare(ui,empty,data,style));
-const invalid={...message,head:{...message.head,text:'x'.repeat(16385)}};
-assert.equal(engine.prepare(ui,invalid,data,style),null,'a preview must never conceal an unsupported original body');
+const oversized={...message,head:{...message.head,text:'x'.repeat(16385)}};
+const oversizedPlan=engine.prepare(ui,oversized,data,style);assert.ok(oversizedPlan);assert.ok(oversizedPlan.caption.accessibilityText.includes(oversized.head.text),'preview preserves complete oversized original body');
 console.log('PASS: drawn preview title/description/image geometry, unified card actions, photo arrival keeps paragraph/row plan, edits and preview-only messages.');

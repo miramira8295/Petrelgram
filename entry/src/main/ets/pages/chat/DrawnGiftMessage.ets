@@ -7,6 +7,7 @@ import { DrawnGiftLayout, giftLayoutFor } from './DrawnGiftLayout';
 
 @ComponentV2
 export struct DrawnGiftMessage {
+  @Param chatId: number = 0;
   @Require @Param msg: MessageEntry;
   @Require @Param actions: MessageBubbleActions;
   @Require @Param widget: DrawnDocumentWidget;
@@ -35,7 +36,7 @@ export struct DrawnGiftMessage {
   aboutToDisappear(): void { this.aboutToRecycle(); }
 
   build() {
-    GiftBubble({ prepared: this.layout, messageId: this.msg.id, kind: this.msg.giftKind, title: this.msg.giftTitle,
+    GiftBubble({ chatId: this.chatId, prepared: this.layout, messageId: this.msg.id, kind: this.msg.giftKind, title: this.msg.giftTitle,
       value: this.msg.giftValue, status: this.msg.giftStatus, text: '', code: this.msg.giftCode,
       refunded: this.msg.giftRefunded, photoPath: this.msg.photoPath,
       photoFileId: this.msg.photoFileId, photoProgress: this.progress, photoFailed: this.msg.photoFailed,

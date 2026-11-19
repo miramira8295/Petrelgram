@@ -1,3 +1,9 @@
+import { RichMessageFullLoader } from '../util/richMessageFullLoader';
+import { createRichTaskEditContent, updateRichTaskChecked } from '../util/richMessageTaskEdit';
+import { parseComposeMarkdown, composeFormattedText, markdownForEditing } from '../util/composeMarkdown';
+import { ChecklistOperations } from '../util/checklistOperations';
+import { inputChecklist } from '../util/checklistRequest';
+import { getTdClient } from '../tdkit/Globals';
 import { pollVoteIds, pollVoteOptions } from '../util/pollVoteOptions';
 import { DrawnStage, drawnStageMetrics } from '../util/drawnStageMetrics';
 import { customEmojiNeedsRepainting, inlineEmojiUpdate, InlineEmojiUpdate } from '../util/inlineCustomEmojiPaint';
@@ -176,6 +182,10 @@ export interface MediaSendItem {
 }
 
 export class MessageStore {
+  private checklistOps: ChecklistOperations | null = null;
+  private checklistClosed: boolean = false;
+  private fullRichLoader: RichMessageFullLoader | null = null;
+  private richTaskRequests: Map<number, Promise<void>> = new Map();
   private client: TdClient;
   private users: UserStore;
   private chatId: number;
@@ -490,6 +500,7 @@ export class MessageStore {
 
   open(aroundMessageId?: number, passive: boolean = false,
     aroundIsResume: boolean = false): void {
+    this.checklistClosed = false;
     // Embedded consumers such as the livestream interaction panel need chat
     // history and updates without changing TDLib's open-chat lifecycle for the
     // full ChatPage underneath them.
@@ -580,6 +591,10 @@ export class MessageStore {
   }
 
   close(): void {
+    this.checklistClosed = true;
+    this.checklistOps?.close(); this.checklistOps = null;
+    this.richTaskRequests.clear();
+    this.fullRichLoader?.close(); this.fullRichLoader = null;
     this.viewedMentions.clear();
     this.clearOlderPrefetch();
     if (this.coalesceTimer !== -1) {
@@ -1810,14 +1825,10 @@ export class MessageStore {
 
   // entities 目前只用于按 user_id 提及没有用户名的成员（见 mentionEntities）。
   // 其余实体仍由服务器扫文本自行识别，这里不接管。
-  sendAsync(text: string, replyToId: number = 0, entities: TdObject[] = []): Promise<void> {
+  async sendAsync(text: string, replyToId: number = 0, entities: TdObject[] = [], parseMarkdown: boolean = false): Promise<void> {
     // 记一笔"我主动发过"，系统分享的目标名单按它排（util/recentOutgoing）。
     noteOutgoingChat(this.chatId);
-    const ft: TdObject = { '@type': 'formattedText' };
-    ft['text'] = text;
-    if (entities.length > 0) {
-      ft['entities'] = entities;
-    }
+    const ft = parseMarkdown ? await parseComposeMarkdown(this.client, text, entities) : composeFormattedText(text, entities);
     const content: TdObject = { '@type': 'inputMessageText' };
     content['text'] = ft;
     const req: TdRequest = { '@type': 'sendMessage' };
@@ -1852,9 +1863,8 @@ export class MessageStore {
   // Replace a text message's content in place. TDLib returns the edited
   // message; upsert applies it (updateMessageContent also mirrors the change
   // on other devices).
-  editTextAsync(messageId: number, text: string): Promise<void> {
-    const ft: TdObject = { '@type': 'formattedText' };
-    ft['text'] = text;
+  async editTextAsync(messageId: number, text: string, entities: TdObject[] = [], parseMarkdown: boolean = true): Promise<void> {
+    const ft = parseMarkdown ? await parseComposeMarkdown(this.client, text, entities) : composeFormattedText(text, entities);
     const content: TdObject = { '@type': 'inputMessageText' };
     content['text'] = ft;
     const req: TdRequest = { '@type': 'editMessageText' };
@@ -1866,6 +1876,13 @@ export class MessageStore {
       this.resolveReplies();
       this.notifySoon();
     });
+  }
+
+  prepareMarkdownEdit(messageId: number): Promise<TdObject> {
+    const index = this.indexOf(messageId);
+    if (index < 0) { return Promise.reject(new TdError(404, str('compose_content_changed'))); }
+    const entry = this.messages[index];
+    return markdownForEditing(this.client, entry.text, entry.textEntities);
   }
 
   private lastTypingAtMs: number = 0;
@@ -2079,9 +2096,8 @@ export class MessageStore {
   }
 
   // Replace a media message's caption (photo/video/file/audio/voice).
-  editCaptionAsync(messageId: number, caption: string): Promise<void> {
-    const ft: TdObject = { '@type': 'formattedText' };
-    ft['text'] = caption;
+  async editCaptionAsync(messageId: number, caption: string, entities: TdObject[] = [], parseMarkdown: boolean = true): Promise<void> {
+    const ft = parseMarkdown ? await parseComposeMarkdown(this.client, caption, entities) : composeFormattedText(caption, entities);
     const req: TdRequest = { '@type': 'editMessageCaption' };
     req['chat_id'] = this.chatId;
     req['message_id'] = messageId;
@@ -2098,6 +2114,11 @@ export class MessageStore {
   // 会通过 updateMessageInteractionInfo 推回新的计数，onInteraction() 已处理。
   setReaction(messageId: number, reactionKey: string, isChosen: boolean): Promise<void> {
     const rt: TdObject = reactionTypeOf(reactionKey);
+    // Paid reactions require an explicit Stars flow, never the ordinary toggle.
+    if (rt['@type'] === 'reactionTypePaid') {
+      const error: TdError = new TdError(400, 'PAID_REACTION_REQUIRES_CONFIRMATION');
+      return Promise.reject(error);
+    }
     if (isChosen) {
       const req: TdRequest = { '@type': 'removeMessageReaction' };
       req['chat_id'] = this.chatId;
@@ -2208,6 +2229,98 @@ export class MessageStore {
 
   // 投票：options 为选项文本；isQuiz 时 correctOptionId 指向正确选项下标。
   // TDLib 1.8.15+ 的 question/options 是 formattedText（纯字符串会被拒）。
+  sendRichMarkdownContentAsync(content: TdObject, replyToId: number = 0): Promise<number> {
+    if (content['@type'] !== 'inputMessageRichMessage') { return Promise.reject(new Error('Invalid rich message content')); }
+    return this.sendContent(content, 'sendMarkdown', replyToId, true);
+  }
+  retainMarkdownMediaForRetry(messageId: number): boolean {
+    const index = this.indexOf(messageId);
+    // Deferred outgoing rows may not be in the visible window yet.
+    return index < 0 || this.messages[index].sendState === 'sending' || this.messages[index].sendState === 'failed';
+  }
+
+  sendChecklistAsync(title: string, tasks: string[], allowAdd: boolean, allowMark: boolean,
+    replyToId: number = 0): Promise<void> {
+    let list: TdObject;
+    try { list = inputChecklist(title, tasks, allowAdd, allowMark); }
+    catch (error) { return Promise.reject(error); }
+    const content: TdObject = { '@type': 'inputMessageChecklist' }; content['checklist'] = list;
+    return this.sendContent(content, 'sendChecklist', replyToId, true).then((): void => {});
+  }
+
+  private contentRequest(type: string, messageId: number): TdRequest {
+    const result: TdRequest = { '@type': type }; result['chat_id'] = this.chatId; result['message_id'] = messageId; return result;
+  }
+  private applyContentSnapshot(messageId: number, content: Object): void {
+    const update: TdObject = { '@type': 'updateMessageContent' };
+    update['chat_id'] = this.chatId; update['message_id'] = messageId; update['new_content'] = content; this.onContent(update);
+  }
+
+  async loadFullRichMessage(messageId: number): Promise<void> {
+    const index = this.indexOf(messageId);
+    if (this.checklistClosed || index < 0) { return; }
+    const entry = this.messages[index];
+    if (entry.contentType !== 'richMessage' || entry.richIsFull !== false) { return; }
+    const source = entry.richBlocks;
+    if (this.fullRichLoader === null) { this.fullRichLoader = new RichMessageFullLoader(this.client, this.chatId); }
+    const loader = this.fullRichLoader, full = await loader.load(messageId);
+    const current = this.indexOf(messageId);
+    if (this.checklistClosed || loader !== this.fullRichLoader || this.client !== getTdClient() || current < 0) { return; }
+    if (this.messages[current].richBlocks !== source || full['is_full'] !== true) { return; }
+    const content: TdObject = { '@type': 'messageRichMessage' }; content['message'] = full;
+    this.applyContentSnapshot(messageId, content);
+  }
+
+  toggleRichTask(messageId: number, taskId: number, done: boolean): Promise<void> {
+    const busy = this.richTaskRequests.get(messageId); if (busy !== undefined) { return busy; }
+    const index = this.indexOf(messageId), entry = index < 0 ? null : this.messages[index];
+    if (this.checklistClosed || entry === null || !entry.isOutgoing || entry.richBlocks === undefined ||
+      entry.richIsFull === false || entry.contentType !== 'richMessage') {
+      return Promise.reject(new TdError(403, str('checklist_readonly')));
+    }
+    const original = entry.richBlocks;
+    let optimistic: TdObject[] | null = null;
+    const current = (): MessageEntry | null => { const i = this.indexOf(messageId); return i < 0 ? null : this.messages[i]; };
+    const active = (): boolean => !this.checklistClosed && this.client === getTdClient() && this.richTaskRequests.get(messageId) === work;
+    const work: Promise<void> = Promise.resolve().then(async (): Promise<void> => {
+      if (!active()) { return; }
+      const request = this.contentRequest('getMessageProperties', messageId);
+      const properties = await this.client.send(request);
+      if (!active()) { return; }
+      if (properties['can_be_edited'] !== true) { throw new TdError(403, str('checklist_readonly')); }
+      if (current()?.richBlocks !== original) { throw new TdError(409, str('compose_content_changed')); }
+      const content = createRichTaskEditContent(original, taskId, done, entry.richIsRtl === true);
+      optimistic = updateRichTaskChecked(original, taskId, done);
+      if (content === null || optimistic === null) { throw new TdError(400, str('checklist_readonly')); }
+      this.patch(messageId, (message: MessageEntry): void => { message.richBlocks = optimistic!; }); this.notifySoon();
+      const edit = this.contentRequest('editMessageText', messageId); edit['input_message_content'] = content;
+      const raw = await this.client.send(edit);
+      if (active() && current()?.richBlocks === optimistic && raw['content'] !== undefined) {
+        this.applyContentSnapshot(messageId, raw['content']);
+      }
+    }).catch((error: Error): void => {
+      if (active() && optimistic !== null && current()?.richBlocks === optimistic) {
+        this.patch(messageId, (message: MessageEntry): void => { message.richBlocks = original; }); this.notifySoon();
+      }
+      throw error;
+    }).finally((): void => { if (this.richTaskRequests.get(messageId) === work) { this.richTaskRequests.delete(messageId); } });
+    this.richTaskRequests.set(messageId, work); return work;
+  }
+
+  toggleChecklistTask(messageId: number, taskId: number, done: boolean): Promise<void> {
+    if (this.checklistClosed) { return Promise.resolve(); }
+    if (this.checklistOps === null) {
+      this.checklistOps = new ChecklistOperations(this.client, this.chatId,
+        (id: number) => { const index = this.indexOf(id); return index < 0 ? null : this.messages[index].checklist ?? null; },
+        async (id: number): Promise<void> => {
+          const raw = await this.client.send(this.contentRequest('getMessage', id));
+          if (this.checklistClosed || this.client !== getTdClient() || this.indexOf(id) < 0) { return; }
+          this.applyContentSnapshot(id, raw['content']);
+        }, (): boolean => !this.checklistClosed && this.client === getTdClient());
+    }
+    return this.checklistOps.toggle(messageId, taskId, done);
+  }
+
   sendPoll(question: string, options: string[], isAnonymous: boolean,
     isQuiz: boolean, correctOptionId: number): void {
     const toFormatted = (text: string): TdObject => {
@@ -3392,7 +3505,7 @@ export class MessageStore {
     // rebuild content by wrapping the new content into a message-like object
     const fake: TdObject = { '@type': 'message' };
     fake['content'] = u['new_content'];
-    const rebuilt = this.hydrateFromFileCache(buildMessageEntry(fake, this.users));
+    const rebuilt = this.hydrateFromFileCache(buildMessageEntry(fake, this.users, true, this.messages[idx].checklist));
     this.patch(id, (c: MessageEntry) => {
       const sameVideoFile: boolean = c.videoFileId !== 0 && c.videoFileId === rebuilt.videoFileId;
       const samePhotoFile: boolean = c.photoFileId !== 0 && c.photoFileId === rebuilt.photoFileId;
@@ -3424,6 +3537,9 @@ export class MessageStore {
       const fallbackLocalPhoto: string = previousPhotoFullPath !== ''
         ? previousPhotoFullPath : previousPhotoPath;
       c.contentType = rebuilt.contentType;
+      c.richBlocks = rebuilt.richBlocks;
+      c.richIsFull = rebuilt.richIsFull; c.richIsRtl = rebuilt.richIsRtl;
+      c.checklist = rebuilt.checklist;
       c.text = rebuilt.text;
       c.textEntities = rebuilt.textEntities;
       c.inlineCustomEmojiIds = rebuilt.inlineCustomEmojiIds;
@@ -3558,6 +3674,7 @@ export class MessageStore {
       c.giftStatus = rebuilt.giftStatus;
       c.giftCode = rebuilt.giftCode;
       c.giftRefunded = rebuilt.giftRefunded;
+      c.giveawayAudience = rebuilt.giveawayAudience;
       c.giveawayState = rebuilt.giveawayState;
       c.giveawayWinnerCount = rebuilt.giveawayWinnerCount;
       c.giveawayPrize = rebuilt.giveawayPrize;
@@ -4193,7 +4310,8 @@ export class MessageStore {
       differs = true;
       return {
         emoji: r.emoji, count: r.count, isChosen: r.isChosen,
-        customEmojiId: r.customEmojiId, customEmojiPath: path
+        customEmojiId: r.customEmojiId, customEmojiPath: path,
+        recentSenders: r.recentSenders, recentSenderKey: r.recentSenderKey, areTags: r.areTags, isPaid: r.isPaid
       };
     });
     return differs ? next : null;
@@ -4486,7 +4604,7 @@ export class MessageStore {
     for (const e of this.messages) {
       if ((e.contentType === 'photo' || e.contentType === 'video' ||
         e.contentType === 'videoNote' ||
-        e.contentType === 'sticker' || e.contentType === 'audio' ||
+        e.contentType === 'sticker' || e.contentType === 'audio' || e.contentType === 'file' ||
         e.contentType === 'game' || e.contentType === 'paidMedia' ||
         e.contentType === 'gift' || e.contentType === 'giveaway')
         && e.photoFileId !== 0 && e.photoPath === '') {

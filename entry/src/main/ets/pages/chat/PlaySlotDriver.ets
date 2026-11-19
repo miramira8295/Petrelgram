@@ -1,39 +1,5 @@
-// 播放位竞选簇（第二轮第 7 项，R2-C）：滚动停下后选出唯一播放/下载的视频
-// 气泡，并在气泡与全屏查看器之间交接播放进度。从 ChatPage 搬出**机件与时序
-// 契约**，不搬状态。
-//
-// 【这一批搬的是什么，为什么不是"算法"】
-// 算法早就搬完了：PlaySlotRegistry.ets（246 行，24 条单测钉着）、
-// playSlot.ets（98 行）、util/messageBubblePrepare.ets 都已经是独立文件。
-// ChatPage 里剩下的一百多行**全部是闸门、定时器与顺序契约**——正是最容易在
-// "看起来等价"的改写里悄悄坏掉、又最没有本地手段能发现的那一类。所以本批的
-// 目标不是行数，是把三条契约结构性地封死：
-//   1. 起播位置必须在 playSlotKey 之前落下（applySlot 做成**一个动作**）；
-//   2. 取进度必须在 suspend() 之前（handoffToViewer 内部化）；
-//   3. clearSlotTick 与 suspend/reset 的先后（收进 clearTick/suspend/dispose）。
-//
-// 【重渲染半径：0 变化，两个 @Local 原地不动】
-// playSlotKey / playSlotStartMs 的读点在 albumReuseShape() 与 rowPlaySlotKey()，
-// 经 prepareMessageBubble() 落到 build() 的行 builder 里。不变量 1 冻结了
-// prepareMessageBubble 及其 cacheKey，只允许 this.x → this.ctrl.x 的等价替换，
-// 依赖粒度不变——就算把两个 @Local 变成本类的 @Trace，读点还在同一个节点，
-// ArkUI V2 在同一处登记依赖，半径一模一样。而且有反向代价：
-// messageBubblePrepare.ets 文件头写明那两个包装"每行每帧各调一次，是消息行
-// 的热路径"，换成跨对象属性访问是在热路径上加一跳，只有坏处。
-// **所以两个 @Local 留在页面**，本类不持有任何响应式字段，是普通类，
-// 不加 @ObservedV2（与 AttachActions / MediaSaveState / ScrollAnchorController 一致）。
-//
-// 【这一簇是 MediaViewer 那批的前置，不是它的并列项】
-// bubblePositionMs 与 playSlots.pin() 这两个真源今天被 MediaViewer 簇跨域直写。
-// 先搬播放位，MediaViewer 的 3 条跨域写通道就能少 1 条。反过来先搬 MediaViewer
-// 是错的。
-//
-// 【[PlaySlot] 打点是本批的前置条件，不是附带品】
-// 这一簇在此前的 hilog 黄金样本里**一个标签都没有**——改坏了没有任何自动
-// 手段能发现。所以 applySlot 落位、两处查看器交接、suspend/resume/reset 三个
-// 分支都各打一条，capture-hilog-golden.sh 的 TAGS 同步加了 PlaySlot。
-// 没有这些打点，下面所有搬迁的验收答案都是"没有"。
-
+// 页面级播放候选、滚动起播门控与查看器进度交接。
+// 播放状态由宿主原子发布到媒体局部通道，不再驱动消息行准备/布局。
 import { PlaySlotRegistry } from './PlaySlotRegistry';
 import { slotKeyMessageId } from './playSlot';
 import { logW } from '../../util/log';
@@ -55,13 +21,7 @@ export interface PlaySlotHost {
   // 这条视频的大小在不在「自动播放大小上限」之内（#226）。超了就不参加竞选，
   // 点开照常看。只读查询，页面拿消息的 videoFileSize 对设置项算。
   sizeAllowed: (messageId: number) => boolean;
-  // **唯一的跨域写通道**：写页面的 @Local playSlotStartMs 与 @Local playSlotKey。
-  //
-  // 做成**一个动作**而不是两个 setter，是为了把"起播位置必须在 playSlotKey
-  // 之前落下"这条顺序契约，结构性地封死在页面那一侧的一个函数体里。原注释：
-  // 「气泡是靠 playSlotKey 的变化才挂载 VideoBubbleSurface 的，晚一步这条
-  // 播放器就已经从 0 开始了」。拆回两个 setter，或者把顺序写反，故障是静默的
-  // ——不崩不报，只是每次从全屏查看器退回来的那条视频都从头播。
+  // key 与续播位置在同一个不可变快照里发布，避免起播时读到旧进度。
   applySlot: (key: string, startMs: number) => void;
 }
 
@@ -69,6 +29,43 @@ export class PlaySlotDriver {
   // 候选表与当选逻辑（算法本体在 PlaySlotRegistry.ets，已有 24 条单测）。
   private playSlots: PlaySlotRegistry = new PlaySlotRegistry();
   private slotTickTimer: number = -1;
+  private scrollMoving: boolean = false;
+  private scrollSettleTimer: number = -1;
+  private scrollGeneration: number = 0;
+
+  // 只拦新起播，不清候选/不停仍可见的现任。停滚后必须连续稳定400ms，避免把
+  // Surface创建挤在ScrollStop的布局/缓存整理帧；新手势会取消这一轮。
+  setScrolling(moving: boolean): void {
+    if (moving) {
+      this.scrollMoving = true;
+      this.clearScrollSettle();
+      this.clearTick();
+      this.playSlots.setScrollBlocked(true);
+      return;
+    }
+    if (!this.scrollMoving) { return; }
+    this.scrollMoving = false;
+    this.clearScrollSettle();
+    const generation = this.scrollGeneration;
+    this.scrollSettleTimer = setTimeout((): void => {
+      if (generation !== this.scrollGeneration) { return; }
+      this.scrollSettleTimer = -1;
+      this.playSlots.setScrollBlocked(false);
+      this.armSettle();
+    }, 400);
+  }
+
+  private clearScrollSettle(): void {
+    this.scrollGeneration++;
+    if (this.scrollSettleTimer !== -1) {
+      clearTimeout(this.scrollSettleTimer); this.scrollSettleTimer = -1;
+    }
+  }
+
+  private resetScrollGate(): void {
+    this.clearScrollSettle(); this.scrollMoving = false;
+    this.playSlots.setScrollBlocked(false);
+  }
   // 气泡播放位的播放进度，按 messageId 记录。onPlaySlotPositionChanged 是
   // 350ms 一次的高频回调，故意用普通 Map 而不是 @Local/AppStorage——
   // 写状态会让消息列表每 350ms 重建一次。打开全屏查看器时读它作为
@@ -185,6 +182,7 @@ export class PlaySlotDriver {
   // closeViewer()/onPageShow() 这两条恢复路径都是先把状态改回"已关闭/
   // 可见"再调这个方法，守卫在它们那次调用里天然放行。
   armSettle(): void {
+    if (this.scrollMoving || this.scrollSettleTimer !== -1) { return; }
     if (this.host.viewerMsgId() !== 0 || !this.host.pageVisible() || !this.host.competeEnabled()) {
       return;
     }
@@ -199,20 +197,23 @@ export class PlaySlotDriver {
     this.maybeScheduleNextSlotCheck(now);
   }
 
-  // 总闸门关掉：立刻把正在播的那条停掉。reset() 会把播放位置空，订阅者把
-  // playSlotKey 清成 ''，气泡的 VideoBubbleSurface 随之卸载 →
+  // 总闸门关掉：立刻把正在播的那条停掉。reset() 会把播放位置空，订阅者向媒体通道发布空播放位，气泡的 VideoBubbleSurface 随之卸载 →
   // StreamingVideoPlayer.aboutToDisappear → release() → session.close()，
   // 播放和下载一起停。
   onPolicyDisabled(): void {
     logW('[PlaySlot] reset reason=policy-off');
     this.clearTick();
     this.playSlots.reset();
+    // A policy may toggle while the list is still moving (e.g. power saving).
+    // Retain the real scroll phase so re-enabling cannot bypass stop + 400ms.
+    this.playSlots.setScrollBlocked(this.scrollMoving || this.scrollSettleTimer !== -1);
   }
 
   // 页面隐藏/将要隐藏：候选表要留着，只停计时与播放。用 suspend() 而不是
   // reset()，理由见 handoffToViewer。
   suspend(): void {
     logW('[PlaySlot] suspend');
+    this.clearTick(); this.resetScrollGate();
     this.playSlots.suspend();
   }
 
@@ -235,6 +236,7 @@ export class PlaySlotDriver {
   handoffToViewer(messageId: number): number {
     const startPositionMs: number = this.bubblePositionMs.get(messageId) ?? 0;
     this.clearTick();
+    this.resetScrollGate();
     this.playSlots.suspend();
     return startPositionMs;
   }
@@ -260,6 +262,7 @@ export class PlaySlotDriver {
   dispose(): void {
     logW('[PlaySlot] reset reason=dispose');
     this.clearTick();
+    this.resetScrollGate();
     this.playSlots.reset();
     this.bubblePositionMs.clear();
   }

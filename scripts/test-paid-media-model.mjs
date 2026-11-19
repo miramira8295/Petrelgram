@@ -59,6 +59,7 @@ function extract(path,name,method=false) {
 }
 function evaluate(code){vm.runInContext(ts.transpileModule(code,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);}
 evaluate(extract(root+'store/MessageEntry.ets','cloneMessage')+'\nglobalThis.clonePaidMessage=cloneMessage;');
+evaluate(fs.readFileSync(root+'util/richBlockRevision.ets','utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/\bexport /g,''));
 evaluate(extract(root+'util/collapseAlbums.ets','computeMutableSig')+'\nglobalThis.paidMutableSig=computeMutableSig;');
 const entry=new Proxy({...g.head,paidMediaSet:set},{get(t,k){return k in t?t[k]:[];}});
 assert.equal(ctx.clonePaidMessage(entry).paidMediaSet,set,'snapshot cloning preserves the immutable normalized set');
@@ -70,7 +71,10 @@ const page=Object.assign(Object.create(ctx.PaidRouteHarness.prototype),{chatId:7
 page.onPaidMediaOpen(10);assert.equal(opened.length,1);assert.equal(opened[0].name,'DownloadPreviewPage');
 assert.equal(opened[0].param.documentMedia.media,set.media);assert.equal(opened[0].param.documentMedia.messageId,entry.id);
 assert.equal(opened[0].param.startIndex,0);
-page.entryById=()=>({...entry,paidMediaLocked:true});page.onPaidMediaOpen(10);assert.equal(opened.length,1);
-page.entryById=()=>({...entry,paidMediaSet:locked,paidMediaLocked:false});page.onPaidMediaOpen(10);assert.equal(opened.length,1);
+page.onPaidMediaOpen(10,2);assert.equal(opened[1].param.startIndex,2,'tile index reaches the actual compiled page route');
+page.onPaidMediaOpen(10,-1);assert.equal(opened.length,2);
+page.entryById=()=>({...entry,paidMediaLocked:true});page.onPaidMediaOpen(10);assert.equal(opened.length,2);
+page.entryById=()=>({...entry,paidMediaSet:locked,paidMediaLocked:false});page.onPaidMediaOpen(10);assert.equal(opened.length,2);
 page.entryById=()=>({...entry,paidMediaSet:undefined,paidMediaLocked:false});page.onPaidMediaOpen(10);assert.deepEqual(legacy,[10]);
+page.onPaidMediaOpen(10,2);assert.deepEqual(legacy,[10],'legacy content cannot silently open a different tile');
 console.log('PASS: all paid items survive parsing/cloning/content fingerprints; mixed preview and unsupported indices are safe; 4000 size reads for 1000×4 variants, constant-index selection, complete viewer routing and 1000 progress updates retain geometry.');

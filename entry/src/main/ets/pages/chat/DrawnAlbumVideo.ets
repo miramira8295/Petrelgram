@@ -1,3 +1,5 @@
+import { EMPTY_PLAY_SLOT, PlaySlotBinding, PlaySlotSnapshot } from './PlaySlotChannel';
+import { str } from '../../util/strings';
 import { DrawnMediaPosition } from './DrawnMediaPosition';
 import { subscribeThumbPath, thumbPathFor } from '../../util/mediaThumbChannel';
 import { DrawnStage, drawnStageMetrics } from '../../util/drawnStageMetrics';
@@ -5,7 +7,7 @@ import { DrawnSlotContent } from './DrawnSlotContent';
 import { AlbumCellRenderData } from '../../util/albumCellRenderData';
 import { MessageBubbleActions } from './ReusableMessageBubble';
 import { VideoBubbleSurface } from './VideoBubbleSurface';
-import { PLAY_SLOT_ENTER_RATIO, PLAY_SLOT_KEEP_RATIO } from './playSlot';
+import { PLAY_SLOT_ENTER_RATIO, PLAY_SLOT_KEEP_RATIO, slotKey } from './playSlot';
 import { DrawnVideoMetaMemo } from './DrawnVideoMeta';
 import { chatEnv } from '../../util/chatEnvMirror';
 import { textMeasureEnvironment } from '../../util/textMeasureCache';
@@ -46,6 +48,25 @@ export struct DrawnAlbumVideo {
   private metaMemo: DrawnVideoMetaMemo = new DrawnVideoMetaMemo();
   private a11y = a11yRuntimeState;
   private active: boolean = false;
+  @Local private playbackState: PlaySlotSnapshot = EMPTY_PLAY_SLOT;
+  private playbackBinding: PlaySlotBinding = new PlaySlotBinding();
+  private syncPlayback(c: AlbumCellRenderData | undefined): void {
+    const key = c !== undefined && c.isVideo && !this.uploading() ? slotKey(c.messageId, c.idx) : '';
+    this.playbackBinding.bind(this.actions.playback, key, (value: PlaySlotSnapshot): void => {
+      if (this.active && this.playbackState !== value) { this.playbackState = value; }
+    });
+  }
+  private localPlayback(): PlaySlotSnapshot {
+    const c = this.currentCell;
+    return this.playbackBinding.read(this.actions.playback, c === undefined ? '' : slotKey(c.messageId, c.idx), this.playbackState);
+  }
+  private playing(): boolean {
+    return this.actions.playback !== undefined ? this.localPlayback().key !== '' : this.currentCell?.isPlaySlot === true;
+  }
+  private startPosition(): number {
+    return this.actions.playback !== undefined ? this.localPlayback().startMs : this.currentCell?.playSlotStartMs ?? 0;
+  }
+
   @Local private posterPath: string = '';
   private posterFileId: number = -1;
   private posterChatId: number = 0;
@@ -89,6 +110,7 @@ export struct DrawnAlbumVideo {
   private generationCell: AlbumCellRenderData | undefined = undefined;
   private generationUploading: boolean = false;
   private generationValid: boolean = false;
+  private generationPlayback: number = -1;
 
   private release(): void {
     if (this.attachedId !== 0) { this.actions.onMediaGone(this.attachedId, this.attachedIndex); }
@@ -96,6 +118,7 @@ export struct DrawnAlbumVideo {
   }
   private attach(): void {
     const c = this.currentCell;
+    if (this.active) { this.syncPlayback(c); }
     this.syncPoster(c);
     // Empty staged channels and duplicate monitor/lifecycle calls are common
     // during recursive reuse. Invalidate old callbacks before taking any hit.
@@ -114,12 +137,13 @@ export struct DrawnAlbumVideo {
   // guards still read currentCell synchronously, before Monitor delivery.
   @Computed
   private get observedCell(): AlbumCellRenderData | undefined { return this.currentCell; }
-  @Monitor('observedCell', 'sendState')
+  @Monitor('observedCell', 'sendState', 'actions')
   private changed(): void { this.attach(); }
   aboutToAppear(): void { this.active = true; this.attach(); }
   aboutToReuse(): void { this.active = true; this.attach(); }
   aboutToRecycle(): void {
-    this.active = false; this.generation++; this.bindingIdentity = '';
+    this.active = false; this.playbackBinding.clear(); this.playbackState = EMPTY_PLAY_SLOT;
+    this.generation++; this.bindingIdentity = '';
     this.generationCell = undefined; this.generationValid = false; this.releasePoster(); this.release();
   }
   aboutToDisappear(): void { this.aboutToRecycle(); }
@@ -128,18 +152,19 @@ export struct DrawnAlbumVideo {
     const uploading = this.uploading();
     // AlbumCellRenderData is immutable. Repeated callbacks for its current
     // snapshot need neither string construction nor a new retained object.
-    if (this.generationValid && this.generationCell === c && this.generationUploading === uploading) {
+    if (this.generationValid && this.generationCell === c && this.generationUploading === uploading && this.generationPlayback === this.playbackBinding.revision) {
       return this.generation;
     }
     const key = c === undefined ? '' : `${c.chatId}:${c.messageId}:${c.idx}:${c.width}:${c.height}:` +
-      `${c.videoFileId}:${c.inlineFileId}:${c.isPlaySlot}:${uploading}`;
+      `${c.videoFileId}:${c.inlineFileId}:${this.playing()}:${uploading}:${this.playbackBinding.revision}`;
     if (key !== this.bindingIdentity) { this.bindingIdentity = key; this.generation++; }
     this.generationCell = c; this.generationUploading = uploading; this.generationValid = true;
+    this.generationPlayback = this.playbackBinding.revision;
     return this.generation;
   }
   private accepts(c: AlbumCellRenderData | undefined, generation: number): boolean {
     const now = this.currentCell;
-    return this.active && !this.uploading() && generation === this.generation && c !== undefined && now !== undefined && now.isVideo &&
+    return this.active && !this.uploading() && generation === this.observationGeneration(now) && c !== undefined && now !== undefined && now.isVideo &&
       now.chatId === c.chatId && now.messageId === c.messageId && now.idx === c.idx &&
       now.width === c.width && now.height === c.height && now.videoFileId === c.videoFileId &&
       now.inlineFileId === c.inlineFileId && now.isPlaySlot === c.isPlaySlot;
@@ -158,7 +183,7 @@ export struct DrawnAlbumVideo {
   private positionCallback(c: AlbumCellRenderData | undefined): (ms: number) => void {
     const generation = this.observationGeneration(c);
     return (ms: number): void => {
-      if (this.accepts(c, generation) && c !== undefined && this.currentCell?.isPlaySlot) {
+      if (this.accepts(c, generation) && c !== undefined && this.playing()) {
         this.actions.onPlaySlotPositionChanged(c.messageId, c.idx, ms);
       }
     };
@@ -166,7 +191,7 @@ export struct DrawnAlbumVideo {
   private endedCallback(c: AlbumCellRenderData | undefined): () => void {
     const generation = this.observationGeneration(c);
     return (): void => {
-      if (this.accepts(c, generation) && c !== undefined && this.currentCell?.isPlaySlot) { this.actions.onPlaySlotEnded(c.messageId, c.idx); }
+      if (this.accepts(c, generation) && c !== undefined && this.playing()) { this.actions.onPlaySlotEnded(c.messageId, c.idx); }
     };
   }
   // Keep observedCell as the nullable Monitor anchor. Label rendering reads
@@ -178,46 +203,44 @@ export struct DrawnAlbumVideo {
     return this.metaMemo.prepare(c.videoFileSize, c.videoDuration, c.width >= 112, epoch);
   }
 
+  private wantsPlay(): boolean {
+    return this.currentCell !== undefined && !this.uploading() && !this.currentCell.isLive && this.slotThumbReady &&
+      !(this.playing() && this.currentCell.videoFileId !== 0);
+  }
+  private decorationForPaint(): DrawnVideoDecoration {
+    return this.decoration.bind(this.getUIContext(), this.slotWidth, this.slotHeight, this.meta, this.wantsPlay(),
+      `${chatEnv.langEpoch}:${textMeasureEnvironment.epoch}`, this.currentCell?.isLive ? str('cp_live_photo') : '');
+  }
+
   build() {
     // Keep the physical island and its fixed-size shell during staged reuse.
     // Undefined input means no old decoration/player/visibility registration.
     Stack() {
-      if (!this.uploading() && this.currentCell?.isPlaySlot && (this.currentCell?.videoFileId ?? 0) !== 0) {
+      if (!this.uploading() && this.playing() && (this.currentCell?.videoFileId ?? 0) !== 0) {
         VideoBubbleSurface({ fileId: this.currentCell?.inlineFileId || this.currentCell?.videoFileId || 0,
           fileSize: this.currentCell?.inlineFileId ? this.currentCell?.inlineFileSize ?? 0 : this.currentCell?.videoFileSize ?? 0,
           mimeType: this.currentCell?.videoMimeType ?? '', posterPath: this.posterPath,
-          muted: this.currentCell?.autoplayMuted ?? false, startPositionMs: this.currentCell?.playSlotStartMs ?? 0,
+          muted: this.actions.playback !== undefined ? this.localPlayback().muted : this.currentCell?.autoplayMuted ?? false, startPositionMs: this.startPosition(),
           onPositionChanged: this.positionCallback(this.currentCell), onEnded: this.endedCallback(this.currentCell) })
           .width(this.currentCell?.width ?? 0).height(this.currentCell?.height ?? 0).borderRadius(6).clip(true)
           .hitTestBehavior(HitTestMode.None);
       }
-      if (this.currentCell !== undefined && this.a11y.active && !this.uploading() && !this.currentCell?.isLive && this.slotThumbReady &&
-        !(this.currentCell?.isPlaySlot && (this.currentCell?.videoFileId ?? 0) !== 0)) {
-        Stack() {
-          Circle({ width: Math.min(40, Math.min(this.currentCell?.width ?? 0, this.currentCell?.height ?? 0) * .46),
-            height: Math.min(40, Math.min(this.currentCell?.width ?? 0, this.currentCell?.height ?? 0) * .46) })
-            .fill('#73000000').stroke('#24FFFFFF').strokeWidth(1);
-          SymbolGlyph($r('sys.symbol.play_fill')).fontSize(Math.min(40,
-            Math.min(this.currentCell?.width ?? 0, this.currentCell?.height ?? 0) * .46) * .42).fontColor([Color.White]).margin({ left: 2 });
-        }
+      if (this.a11y.active && this.wantsPlay()) {
+        Row().width(Math.min(40, Math.min(this.slotWidth, this.slotHeight) * .46))
+          .height(Math.min(40, Math.min(this.slotWidth, this.slotHeight) * .46))
+          .accessibilityLevel('yes').accessibilityText(str('lvp_play'));
       }
-      if (this.currentCell?.isLive) {
-        Row({ space: 3 }) {
-          SymbolGlyph($r('sys.symbol.livephoto')).fontSize(12).fontColor([Color.White]);
-          Text($r('app.string.cp_live_photo')).fontSize(10).fontColor(Color.White).fontWeight(FontWeight.Medium);
-        }.height(18).padding({ left: 5, right: 6 }).backgroundColor('#66000000').borderRadius(9).position({ x: 6, y: 6 });
+      if (this.a11y.active && this.currentCell?.isLive) {
+        Row().width(this.decorationForPaint().liveWidthVp).height(this.decorationForPaint().liveHeightVp)
+          .position({ x: 6, y: 6 }).accessibilityLevel('yes').accessibilityText(str('cp_live_photo'));
       }
       if (this.a11y.active && this.meta !== '') {
-        Text(this.meta).fontSize(10.5).fontColor(Color.White).backgroundColor('#66000000').borderRadius(6)
-          .padding({ left: 5, right: 5, top: 1, bottom: 1 }).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-          .constraintSize({ maxWidth: Math.max(24, (this.currentCell?.width ?? 0) - 12) })
-          .position({ x: 6, y: Math.max(6, (this.currentCell?.height ?? 0) - 23) });
+        Row().width(this.decorationForPaint().metaWidthVp).height(this.decorationForPaint().metaHeightVp)
+          .position({ x: 6, y: Math.max(6, (this.currentCell?.height ?? 0) - 23) })
+          .accessibilityLevel('yes').accessibilityText(this.meta);
       }
     }.width(this.slotWidth).height(this.slotHeight).hitTestBehavior(HitTestMode.None)
-    .drawModifier(this.decoration.bind(this.getUIContext(), this.slotWidth, this.slotHeight, this.a11y.active ? '' : this.meta,
-      this.currentCell !== undefined && !this.a11y.active && !this.uploading() && !this.currentCell?.isLive && this.slotThumbReady &&
-        !(this.currentCell?.isPlaySlot && (this.currentCell?.videoFileId ?? 0) !== 0),
-      `${chatEnv.langEpoch}:${textMeasureEnvironment.epoch}`))
+    .drawModifier(this.decorationForPaint())
     .onVisibleAreaApproximateChange({ ratios: [0, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, .9], expectedUpdateInterval: 200 },
       this.ratioCallback(this.currentCell)).id(this.mediaPosition.nodeId);
   }

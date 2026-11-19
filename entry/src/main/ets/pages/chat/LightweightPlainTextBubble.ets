@@ -76,7 +76,7 @@ import { logW } from '../../util/log';
 import { menuPreviewCompact } from '../../util/menuPreview';
 // 气泡玻璃自绘：明确不指望 systemMaterial（系统已收回组件级材质），
 // 和输入栏同一对函数，受「界面模糊质感」开关与档位控制。
-import { bubbleGlassBlurStyle, bubbleGlassFill } from '../../util/surfaceGlass';
+import { bubbleGlassFill } from '../../util/surfaceGlass';
 import { firstFinger } from '../../util/firstFinger';
 import { linkifyRuns, PlainTextLinkPresenceCache } from '../../util/linkify';
 import { RichRun } from '../../util/richText';
@@ -159,9 +159,6 @@ const TAIL_GUTTER_RIGHT: Padding = { right: 7 };
 // 群聊来信不显示头像时给头像留的 44vp 位（头像 38 + 右边距 6），见 avatarGutterPadding。
 const AVATAR_GUTTER: Padding = { left: BUBBLE_AVATAR_GUTTER_VP };
 const NO_GUTTER: Padding = {};
-const SOLID_BUBBLE_SHADOW: ShadowOptions = {
-  radius: 2, color: '#14000000', offsetX: 0, offsetY: 1
-};
 
 @ComponentV2
 struct LightweightSenderAvatar {
@@ -374,7 +371,7 @@ export struct LightweightPlainTextBubble {
   private drawnLinkPresence: PlainTextLinkPresenceCache = new PlainTextLinkPresenceCache();
 
   // A cached drawing plan, not another observed message copy. Status icons and
-  // scroll shadows are paint-only inputs and never invalidate text layout.
+  // Paint-only state never invalidates text layout.
   @Computed
   private get drawnLayout(): DrawnPlainTextLayout | null {
     if (this.env.drawnEnabled === false || this.env.drawnPlain === false) { return null; }
@@ -455,7 +452,7 @@ export struct LightweightPlainTextBubble {
 
   private currentDrawnPainter(): DrawnPlainTextPainter {
     if (this.drawnPainter === null) { this.drawnPainter = new DrawnPlainTextPainter(); }
-    return this.drawnPainter.bind(this.drawnLayout, this.liveSendState, !this.env.scrollActive);
+    return this.drawnPainter.bind(this.drawnLayout, this.liveSendState, false);
   }
 
   private drawnAccessibilityText(): string {
@@ -608,32 +605,12 @@ export struct LightweightPlainTextBubble {
       ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
   }
 
-  // 【不要再给气泡本体挂 backgroundBlurStyle】(2026-11-06)
-  //
-  // 本体的模糊只在"还没量到尺寸"的首帧用，量到之后本体会变成 Transparent。
-  // 但 backgroundBlurStyle(undefined) **不会撤掉已经挂上的模糊**——那一层会留在
-  // 节点上，叠在容器的玻璃下面，看起来就是"气泡多叠了一层/厚一层"。滑出去再
-  // 复用回来的行因为一开始就有尺寸、从没挂过本体模糊，所以看起来是正常的，
-  // 正好对应用户报的"刚进会话厚，滑动后正常"。
-  //
-  // 现在本体只承担填充色（见 bubbleBg），模糊一律由容器负责。首帧的差别只剩
-  // "模糊晚一帧出现"，不再有残留层。
-
+  // Only the unified outline is filled after measurement; never blur the body.
   private containerGlassBg(): ResourceColor {
     return this.glassReady() ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
   }
 
-  private containerGlassBlurStyle(): BlurStyle | undefined {
-    // 滚动期不上模糊：真机 GPU 采集里，聊天页滚动 85–91% 满载，
-    // 两个材质开关都关只掉 5–6 点——模糊就是这 5–6 点，滚动时省掉它。
-    // 填充色与轮廓保留，所以只是"模糊晚一点出现"，不是换档。
-    if (this.env.scrollActive) {
-      return undefined;
-    }
-    return this.glassReady() ? bubbleGlassBlurStyle() : undefined;
-  }
 
-  // 材质本体按节点的 borderRadius 画圆角，裁剪路径只管尾巴那一侧：尾巴侧的底角设 0。
   private glassRadius(): BorderRadiuses {
     const r = this.bubbleCorners();
     if (!this.hasTail()) {
@@ -644,31 +621,9 @@ export struct LightweightPlainTextBubble {
       : { topLeft: r.topLeft, topRight: r.topRight, bottomRight: r.bottomRight, bottomLeft: 0 };
   }
 
-  private solidBodyShadow(): ShadowOptions | undefined {
-    // 滚动期不画投影：每条消息一次阴影模糊，逐行叠加就是按行计的填充成本。
-    if (this.env.scrollActive || this.bubbleMaterialLive() || this.hasTail()) {
-      return undefined;
-    }
-    return SOLID_BUBBLE_SHADOW;
-  }
 
   // 见 MessageBubble.glassOutline()：材质的边框只沿节点 border-box 画，尾巴那一侧
   // 补不上，自己沿整条轮廓描一圈；画在 .background() 里，不参与命中测试。
-  @Builder
-  solidShellShadow() {
-    // 滚动期整块不建（同 MessageBubbleShell：clipShape + shadow 都是离屏开销）。
-    if (!this.env.scrollActive && this.hasTail() && this.geo.w > TAIL_W - 1 && this.geo.h > 0) {
-      // 有尾角时在尾巴（zIndex 0）与主体（zIndex 1）正下方垫与主体同尺寸的标准圆角矩形投影：
-      // 尾角根部投影被上方不透明的尾巴 Path 盖死（无竖向暗缝），同时避开 PathShape 裁剪与 fill:false 离屏遮罩。
-      Column() {}
-        .width(this.geo.w - (TAIL_W - 2)).height(this.geo.h)
-        .position({ x: this.msg.isOutgoing ? 0 : TAIL_W - 2, y: 0 })
-        .backgroundColor(this.bubbleFillColor())
-        .borderRadius(this.bubbleCorners())
-        .shadow(SOLID_BUBBLE_SHADOW)
-        .hitTestBehavior(HitTestMode.None).accessibilityLevel('no');
-    }
-  }
 
   @Builder
   glassOutline() {
@@ -682,7 +637,6 @@ export struct LightweightPlainTextBubble {
         .stroke(GLASS_OUTLINE_COLOR)
         .strokeWidth(GLASS_OUTLINE_WIDTH);
     } else if (!this.glassBodyOn()) {
-      this.solidShellShadow();
     }
   }
 
@@ -1350,7 +1304,6 @@ export struct LightweightPlainTextBubble {
     .constraintSize({ maxWidth: this.bubbleMaxW() })
     .backgroundColor(this.bubbleBg())
     .borderRadius(this.bubbleCorners()).padding(8)
-    .shadow(this.solidBodyShadow())
     // 与富气泡一致：内容层高于尾巴，避免尾巴伸入主体的部分盖住文字。
     .zIndex(1)
     // 主体不能单独投影到尾角上，避免连接处出现竖向暗缝（与富气泡壳一致）。
@@ -1425,7 +1378,6 @@ export struct LightweightPlainTextBubble {
                 .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
                   y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
                   centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
-                .backgroundBlurStyle(this.containerGlassBlurStyle())
                 // 见 MessageBubble 同一处：材质的边框沿本节点 border-box 画、吃 borderRadius，
                 // 不设圆角就是个直角框，裁剪之后剩下半条亮线。
                 .borderRadius(this.glassRadius())
@@ -1452,7 +1404,6 @@ export struct LightweightPlainTextBubble {
               } else {
                 Row() {
                   // Absolute live decoration cannot grow the flow layout.
-                  this.solidShellShadow();
                   Row() { this.bubbleCluster(); }
                     .alignItems(VerticalAlign.Bottom)
                     .padding(this.tailGutterPadding());
@@ -1465,7 +1416,6 @@ export struct LightweightPlainTextBubble {
                   }
                   this.measuredGlassW = w as number;
                   this.measuredGlassH = h as number;
-                  // 无尾巴实心行在 solidShellShadow() 首条件 hasTail() 短路，不订阅 geo.w/h（0 重绘开销），
                   // 但仍写入 geo 以供长按空白区菜单锚点与删消息后原地补尾巴使用。
                   this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
                 })

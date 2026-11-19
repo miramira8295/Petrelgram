@@ -1,4 +1,6 @@
-import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+// Overlay shadow disabled for the scroll comparison; keep geometry, fill and interactions.
+// Background blur is disabled by chatOverlayBackdropBlur for the scroll comparison; translucent fills remain.
+import { chatOverlayBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
 import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { COLOR_TEXT_PRIMARY } from '../../util/theme';
 import { FLOAT_DATE_HIDE_MS, floatDateShouldRearm } from '../../util/floatDateGate';
@@ -128,7 +130,7 @@ export struct FloatingDateOverlay {
   // 在 build 里读了纪元，依赖是它顺手建立的；换成自绘玻璃之后修饰器没了，
   // 不在 build 里读一次纪元，用户调厚度这个组件就不会重建，玻璃停在旧值上。
   private glassBlur(): number {
-    return this.materialEpoch >= 0 ? plainBackdropBlur('bar') : 0;
+    return this.materialEpoch >= 0 ? chatOverlayBackdropBlur('bar') : 0;
   }
 
   build() {

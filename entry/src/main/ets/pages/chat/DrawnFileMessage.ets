@@ -1,3 +1,5 @@
+import { DrawnDocumentWidget } from '../../util/drawnDocumentWidget';
+import { fileCardFor } from './DrawnFileCardLayout';
 import { MessageEntry } from '../../store/MessageEntry';
 import { MessageBubbleActions } from './ReusableMessageBubble';
 import { FileBubble } from './FileBubble';
@@ -9,6 +11,7 @@ import { progressForOr, subscribeProgress } from '../../util/mediaProgressChanne
 export struct DrawnFileMessage {
   @Require @Param msg: MessageEntry;
   @Require @Param actions: MessageBubbleActions;
+  @Param widget: DrawnDocumentWidget | undefined = undefined;
   @Param boxWidth: number = 262;
   @Param sendState: string = '';
   @Event onClaim: () => boolean = (): boolean => false;
@@ -39,7 +42,8 @@ export struct DrawnFileMessage {
       mimeType: this.msg.videoMimeType, fileSize: this.msg.videoFileSize, filePath: this.msg.videoPath,
       downloadProgress: this.progress, downloadFailed: this.msg.videoFailed,
       downloadActive: this.msg.mediaDownloadActive, uploading: this.sendState === 'sending',
-      maxWidth: this.boxWidth, fitAvailableWidth: true,
+      thumbnailId: this.msg.photoFileId, thumbnailPath: this.msg.photoPath, mini: this.msg.photoMini,
+      preparedCard: fileCardFor(this.widget), maxWidth: this.boxWidth, fitAvailableWidth: true,
       onOpen: (): void => { if (this.onClaim()) { this.actions.onFileTap(this.msg.id); } },
       onSave: (): void => { if (this.onClaim()) { this.actions.onFileSave(this.msg.id); } },
       onPause: (): void => { if (this.onClaim()) { this.actions.onFilePause(this.msg.id); } }

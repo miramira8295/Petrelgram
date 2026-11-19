@@ -1,8 +1,10 @@
+// Overlay shadow disabled for the scroll comparison; keep geometry, fill and interactions.
+// Background blur is disabled by chatOverlayBackdropBlur for the scroll comparison; translucent fills remain.
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { ForumTopicRow } from '../../util/forumTopicModel';
 import { guardKey } from '../../util/keyGuard';
 import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
-import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { chatOverlayBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
 import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { SystemGlassSurface } from './SystemGlassSurface';
 import { unreadBadgeText } from '../../util/unreadBadge';

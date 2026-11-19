@@ -1,3 +1,9 @@
+import { PlaySlotChannel } from './PlaySlotChannel';
+import { taskpool } from '@kit.ArkTS';
+import { requestOutcomeUncertain } from '../../util/tdRequestTimeout';
+import { MarkdownRichDraft, resolveMarkdownRichMedia } from '../../util/markdownRichInput';
+import { parseMarkdownRichWorker } from '../../util/markdownRichWorker';
+import { MarkdownMediaResolver, MarkdownMediaSendLease } from '../../services/MarkdownMediaResolver';
 import { MessageRowClock } from '../../util/messageRowClock';
 import { closeContextMenu } from '../../util/uiContext';
 import { showToast, showToastOptions } from '../../util/toast';
@@ -212,7 +218,7 @@ import {
   reachedLatest
 } from '../../util/readingReturn';
 import {
-  glassTintHex, containerBlur, overlayMaterial, overlayGlassFill
+  chatOverlayFillHex, containerBlur, overlayMaterial, overlayGlassFill
 } from '../../util/overlayMaterial';
 import { BOT_START_COMMAND, composerSlotState } from '../../util/botStart';
 import { getAdministrators, AdminRow } from '../../store/ChatAdminApi';
@@ -411,13 +417,7 @@ export struct ChatPage {
   // 本机自选壁纸的代次。V2 组件用不了 @StorageProp，照既有分工由 ChatPageChrome
   // 订阅后作为 @Param 传下来（materialEpoch / appDark 都是这么走的）。
   @Require @Param localBgEpoch: number = 0;
-  // 聊天壁纸的三根滑杆。由 ChatPageChrome 订阅后传下来（V2 用不了 @StorageProp）。
-  //
-  // 模糊度这一根（KEY_BG_BLUR）拖动时要立即重算离屏合成图，否则拖完滑块背景看
-  // 起来没反应（命中旧签名的缓存图）。这句原本是 366df3e 写在字段上方的两行注释，
-  // 字段搬去 ChatPageChrome 时上半句跟着走了、下半句被落在 autoplayVideo 后面成了
-  // 没有上文的「否则…」，2026-09-05 瘦身批 B3 归位。
-  @Require @Param chatBgBlur: number = 0;
+  // 聊天壁纸的纹理与遮罩由入口订阅后传入（V2 不使用 @StorageProp）。
   @Require @Param chatBgPattern: number = 0;
   @Require @Param chatBgDim: number = 0;
   @Param unifiedBackground: boolean = false;
@@ -509,6 +509,7 @@ export struct ChatPage {
             if (this.chatId === chat) { focusControl.requestFocus('chat_composer'); }
           }, 0);
         },
+        playback: this.playback,
         bubbleFocus: this.flash.focus,
         rowLeave: this.rowLeave,
         onStopLiveLocation: (): void => { confirmStopLiveLocation(); },
@@ -556,18 +557,31 @@ export struct ChatPage {
           valid: boolean): void => {
           this.openSharedLocation(latitude, longitude, label, valid);
         },
+        onChecklistToggle: (messageId: number, taskId: number, done: boolean): void => {
+          this.messageActionsState.onChecklistToggle(messageId, taskId, done);
+        },
+        onRichMessageLoadFull: (messageId: number): void => {
+          const store = this.store;
+          if (store !== null) { store.loadFullRichMessage(messageId).catch((error: Error): void => {
+            if (this.store === store) { showToast(error.message, 1500); }
+          }); }
+        },
+        onRichTaskToggle: (messageId: number, taskId: number, done: boolean): void => {
+          this.messageActionsState.onRichTaskToggle(messageId, taskId, done);
+        },
         onPollVote: (messageId: number, optionIds: number[]): void => {
           this.messageActionsState.onPollVote(messageId, optionIds);
         },
         onGameOpen: (messageId: number): void => { this.messageActionsState.onGameOpen(messageId); },
         onGamePhotoRetry: (messageId: number): void => { this.store?.retryPhoto(messageId); },
         onPaidMediaUnlock: (messageId: number): void => { this.messageActionsState.onPaidMediaUnlock(messageId); },
-        onPaidMediaOpen: (messageId: number): void => { this.onPaidMediaOpen(messageId); },
+        onPaidMediaOpen: (messageId: number, index: number = 0): void => { this.onPaidMediaOpen(messageId, index); },
         onSpecialPhotoRetry: (messageId: number): void => { this.store?.retryPhoto(messageId); },
         onVideoRetry: (messageId: number): void => {
           this.store?.requestVideoDownload(messageId, true);
         },
         onGiftCodeCopy: (code: string): void => { this.onGiftCodeCopy(code); },
+        onGiveawayChannelOpen: (chatId: number): void => { if (chatId !== 0) { navigateToChatProfile({ 'chatId': chatId }); } },
         onGiveawayOpen: (chatId: number, messageId: number): void => {
           this.onGiveawayOpen(chatId, messageId);
         },
@@ -799,10 +813,9 @@ export struct ChatPage {
   //
   // 判据、叠加公式与真机对比度数字全部住在 util/chatChrome.ets，由
   // entry/src/test/ChatChrome.test.ets 钉住；这里只剩「读字段 → 调纯函数」的
-  // 薄包装。glassTintHex(true) 留在页面侧：玻璃厚度是设备态（依赖
-  // immersiveMaterialAvailable()），不能进纯函数。
+  // 薄包装。chatOverlayFillHex(true) 留在页面侧：聊天浮层使用固定80%底色，必须与实际绘制保持一致。
   private chromeOnLightBg(): boolean {
-    return chromeOnLightBgOf(this.appDark, this.chromeBackground().colors, glassTintHex(true),
+    return chromeOnLightBgOf(this.appDark, this.chromeBackground().colors, chatOverlayFillHex(true),
       this.chromeDarkMask());
   }
 
@@ -817,7 +830,7 @@ export struct ChatPage {
   // 浅色模式 + 暗壁纸的那一半（用户 2026-09-18：黑壁纸上按钮图标还是黑的）。
   // tint 要传**浅色**那档的玻璃色——合成的是浅色模式下那层玻璃。
   private chromeOnDarkBg(): boolean {
-    return chromeOnDarkBgOf(this.appDark, this.chromeBackground().colors, glassTintHex(false),
+    return chromeOnDarkBgOf(this.appDark, this.chromeBackground().colors, chatOverlayFillHex(false),
       this.chromeDarkMask());
   }
 
@@ -935,19 +948,13 @@ export struct ChatPage {
   // 横条上给不给「新建话题」/长按删除（Bot 私聊话题模式，issue #206）。
   @Local private topicCreateAllowed: boolean = false;
 
-  // 播放位竞选簇整簇搬进了 PlaySlotDriver（第二轮 R2-C）：候选表、定时器闭环、
-  // 气泡进度表与两处查看器交接都在那边，页面只留下面两个 @Local（它们的读点在
-  // prepareMessageBubble 的热路径上，搬走没有半径收益、只有一跳开销）。
+  // 普通控制器/旁路通道，不把播放位写进页面或行的响应式输入。
   private playSlot: PlaySlotDriver = new PlaySlotDriver();
-  // 视频气泡出现即预取第一块、划走即暂停（见 services/VideoHeadPrefetcher）。
-  // 信号与播放位共用 onMediaRatio / onMediaGone，各取所需。
   private videoPrefetch: VideoHeadPrefetcher = new VideoHeadPrefetcher();
-  @Local playSlotKey: string = '';
-  // 新上位的播放位从哪一毫秒起播。换届时从 bubblePositionMs 查一次（见
-  // subscribe 回调），随 playSlotKey 一起下发给气泡——查看器交还的进度就是
-  // 靠这条路真正接到 VideoBubbleSurface.startPositionMs 上的。
-  @Local playSlotStartMs: number = 0;
-  // 缓存设置 → 自动播放静音开关，唯一消费点：下发给气泡播放器的 muted。
+  private playback: PlaySlotChannel = new PlaySlotChannel();
+  @Monitor('autoplayMuted')
+  private onPlaybackMutedChanged(): void { this.playback.setMuted(this.autoplayMuted); }
+
   @Require @Param autoplayMuted: boolean = true;
   private lastMaxId: number = 0;
 
@@ -1231,8 +1238,8 @@ export struct ChatPage {
   // 每行只读这一个，依赖不再逐行逐个登记；四个 id 数组也在这里转成普通 Set，每行不再
   // 在代理数组上跑 indexOf。只在其中某个状态变了时重算。
   // 【只收"状态 + 每行无条件读"的】普通字段（firstUnreadId / chatId / messageListRevision
-  // …）变了不会让它重算；只有部分行才读的（nowSec、playSlotStartMs）放进来会把所有行
-  // 一起拖着重跑。两类都留在 prepareMessageBubble 里逐行读。
+  // …）变了不会让它重算；只有部分行才读的（nowSec）放进来会把所有行
+  // 一起拖着重跑。播放位/续播位置则只通过媒体局部通道交付。
   // 【声明在它用到的状态与控制器之后】@Computed 在组件创建时就计算一次。
   @Computed
   get rowPageInputs(): RowPageInputs {
@@ -1244,14 +1251,14 @@ export struct ChatPage {
       liveCallActive: this.topCard.liveCallIsActive,
       liveGroupCallId: this.topCard.liveCallIsActive ? this.topCard.liveGroupCallId : 0,
       liveLocationMessageId: this.liveLocationMessageId,
-      autoplayMuted: this.autoplayMuted,
+      autoplayMuted: true, // Actual muted state belongs to the media playback channel.
       appearanceEpoch: this.appearanceEpoch,
       materialEpoch: this.materialEpoch,
       appDark: this.appDark,
       selectionActive: this.selection.active,
       chatContentWidth: this.chatContentWidth,
       canReply: !membershipLosesComposer(this.membershipState),
-      playSlotKey: this.playSlotKey,
+      playSlotKey: '',
       freshSinceId: this.freshSinceId,
       pausedAnimationIds: this.viewer.pausedAnimationIds,
       forcedAnimationIds: this.viewer.forcedAnimationIds,
@@ -1639,8 +1646,8 @@ export struct ChatPage {
       screenW: (): number => this.screenW,
       langEpoch: (): number => this.langEpoch,
       pendingJumpId: (): number => this.pendingJumpId,
-      playSlotKey: (): string => this.playSlotKey,
-      playSlotStartMs: (): number => this.playSlotStartMs,
+      playSlotKey: (): string => '',
+      playSlotStartMs: (): number => 0,
       nowSec: (): number => this.nowSec,
       chatBg: (): ChatBackgroundState => this.chatBg,
       header: (): HeaderIdentitySession => this.header,
@@ -1902,6 +1909,7 @@ export struct ChatPage {
       },
       composerSending: (): boolean => this.composerSending,
       draftText: (): string => this.draft,
+      sendMarkdown: (): void => this.sendMarkdownPost(),
       clearDraft: (): void => { this.draft = ''; },
       setAtBottom: (value: boolean): void => { this.timeline.atBottom = value; },
       closeAttachPanel: (): void => { this.closeAttachPanel(); },
@@ -2125,12 +2133,9 @@ export struct ChatPage {
       pageVisible: (): boolean => this.timeline.pageVisible,
       competeEnabled: (): boolean => this.playSlotsEnabled(),
       applySlot: (key: string, startMs: number): void => {
-        // 起播位置必须在 playSlotKey 之前落下：气泡是靠 playSlotKey 的变化才
-        // 挂载 VideoBubbleSurface 的，晚一步这条播放器就已经从 0 开始了。
-        // 这两句是这条顺序契约的**唯一**落点，PlaySlotHost.applySlot 之所以
-        // 是一个动作而不是两个 setter，就是为了把它封在这里。
-        this.playSlotStartMs = startMs;
-        this.playSlotKey = key;
+        // Atomic snapshot goes only to the previous/new media hosts. No page
+        // @Local write, row preparation, paragraph rebuild or album relayout.
+        this.playback.publish(key, startMs, this.autoplayMuted);
       }
     });
     this.subscriptions.set('playSlot', this.playSlot.subscribe());
@@ -3320,7 +3325,7 @@ export struct ChatPage {
   }
 
   // 三个开关任一变化：关掉就立刻把正在播的那条停掉（reset() 会把播放位置空，
-  // 订阅者把 playSlotKey 清成 ''，气泡的 VideoBubbleSurface 随之卸载 →
+  // 订阅者向媒体通道发布空播放位，气泡的 VideoBubbleSurface 随之卸载 →
   // StreamingVideoPlayer.aboutToDisappear → release() → session.close()，
   // 播放和下载一起停）；重新打开则补一次判定让它自然重新选出来。
   @Monitor('powerSaving', 'reduceAnimations', 'autoplayVideo')
@@ -3490,6 +3495,8 @@ export struct ChatPage {
   }
 
   private disposeTimersAndSeqGuards(): void {
+    const markdown = this.markdownResolver; this.markdownResolver = null;
+    if (markdown !== null) { markdown.cancel().catch((error: Error): void => { logE(`Markdown cleanup failed: ${error.message}`); }); }
     this.inputSwitch.dispose();
     this.clearViewportResizeSettleTimer();
     this.clearImeBridge(false);
@@ -4535,6 +4542,8 @@ export struct ChatPage {
     this.prepareUserJump();
     this.beginJumpLanding();
     const gidx = groupIndexOf(this.timeline.groups, messageId);
+    logW(`[MsgLink] jump chat=${this.chatId} msg=${messageId} inGroups=${gidx >= 0}` +
+      ` rows=${this.timeline.groups.length}`);
     if (gidx >= 0) {
       this.timeline.scrollToJumpTarget(gidx);
       this.flash.flashAtIndex(gidx, messageId);
@@ -4544,6 +4553,7 @@ export struct ChatPage {
         const targetId: number = messageId;
         this.store.loadAround(targetId, (found: boolean): void => {
           if (!found && this.pendingJumpId === targetId) {
+            logW(`[MsgLink] loadAround miss chat=${this.chatId} msg=${targetId}`);
             this.pendingJumpId = 0;
             showToast($r('app.string.cp_cannot_locate'), 1500);
           }
@@ -4679,13 +4689,13 @@ export struct ChatPage {
     return idx >= 0 ? this.timeline.messages[idx] : null;
   }
 
-  private onPaidMediaOpen(messageId: number): void {
+  private onPaidMediaOpen(messageId: number, index: number = 0): void {
     const entry = this.entryById(messageId);
     if (entry === null || entry.contentType !== 'paidMedia' || entry.paidMediaLocked) {
       return;
     }
     if (entry.paidMediaSet !== undefined) {
-      const target = paidMediaViewerTarget(entry.paidMediaSet, 0);
+      const target = paidMediaViewerTarget(entry.paidMediaSet, index);
       if (target === null) { return; }
       const session: DocumentMediaSession = { media: target.media, chatId: this.chatId,
         messageId: entry.id, date: entry.date, senderName: entry.senderName };
@@ -4693,7 +4703,7 @@ export struct ChatPage {
       stackOf('chat')?.pushPath({ name: 'DownloadPreviewPage', param: params });
       return;
     }
-    this.openViewer(messageId);
+    if (index === 0) { this.openViewer(messageId); }
   }
 
   private onGiftCodeCopy(code: string): void {
@@ -5557,6 +5567,47 @@ export struct ChatPage {
   // sendMedia 一次请求带全部文件，失败了得把用户挑好的九张还回去，而那些
   // 只存在于这个数组里（文本失败还有 draftSnapshot 兜底）。所以清空放在
   // 成功回调里，期间由 withSendLock 挡住重复点击。
+  private markdownResolver: MarkdownMediaResolver | null = null;
+  private sendMarkdownPost(): void {
+    const store = this.store, chatId = this.chatId, draft = this.draft, replyId = this.composer.replyToId;
+    if (store === null || !this.sendAccess.check('sendMessages')) { return; }
+    if (draft.trim() === '') { showToast(str('compose_markdown_empty'), 1800); return; }
+    if (this.composer.editingId !== 0 || hasPendingMedia(this.pendingMedia)) {
+      showToast(str('compose_markdown_finish_edit'), 1800); return;
+    }
+    const client = getTdClient();
+    this.withSendLock(async (): Promise<void> => {
+      const resolver = new MarkdownMediaResolver(this.getUIContext().getHostContext() as common.UIAbilityContext,
+        { isCurrent: (): boolean => this.store === store && this.chatId === chatId && getTdClient() === client });
+      this.markdownResolver = resolver;
+      let lease: MarkdownMediaSendLease | null = null;
+      let submitted = false;
+      try {
+        const parsed = await taskpool.execute(parseMarkdownRichWorker, draft) as MarkdownRichDraft;
+        if (parsed.media.length > 0 && !this.sendAccess.check('sendPhotos')) { return; }
+        const content = await resolveMarkdownRichMedia(parsed, resolver);
+        lease = resolver.beginSend(client);
+        const id = await store.sendRichMarkdownContentAsync(content, replyId);
+        lease.adopt(id); submitted = true;
+        if (!store.retainMarkdownMediaForRetry(id)) { await lease.release(); }
+        if (this.store === store && this.chatId === chatId) {
+          if (this.draft === draft) { this.draft = ''; this.mention.clearPendingNameMentions(); }
+          if (this.composer.replyToId === replyId) { this.composer.clearReply(); }
+          this.timeline.atBottom = true;
+        }
+      } catch (error) {
+        if (!submitted && lease !== null) {
+          if (requestOutcomeUncertain((error as Error).message)) { lease.abandon(); }
+          else { await lease.release(); }
+        }
+        if (this.store === store && this.chatId === chatId) { showToast((error as Error).message, 2200); }
+      } finally {
+        if (this.markdownResolver === resolver) { this.markdownResolver = null; }
+        await resolver.dispose();
+      }
+    });
+  }
+
   private sendPendingMedia(): void {
     const store: MessageStore | null = this.store;
     if (store === null || !hasPendingMedia(this.pendingMedia)) {
@@ -5649,7 +5700,7 @@ export struct ChatPage {
     }
     this.mention.clear();
     this.command.clearItems();
-    store.sendAsync(text, replyId, entities).then((): void => {
+    store.sendAsync(text, replyId, entities, true).then((): void => {
       // The local outgoing row is now present. Replace the around-unread
       // window with the real latest page so the gap below it becomes ordinary
       // older history that can be loaded while scrolling upward.
@@ -6086,8 +6137,9 @@ export struct ChatPage {
       return;
     }
     const editKind: string = this.composer.editingKind;
+    const payload = this.composer.editPayload(text);
     this.withSendLock((): Promise<void> => (editKind === 'caption'
-      ? store.editCaptionAsync(editId, text) : store.editTextAsync(editId, text)
+      ? store.editCaptionAsync(editId, payload.text, payload.entities, payload.parseMarkdown) : store.editTextAsync(editId, payload.text, payload.entities, payload.parseMarkdown)
     ).then((): void => {
       if (this.composer.editingId === editId) {
         const restored: string = draftToRestore(this.composer.mode);
@@ -6384,6 +6436,7 @@ export struct ChatPage {
       },
       onDraftChange: (value: string): void => {
         const prev = this.draft;
+        this.composer.draftChanged(value);
         this.draft = value;
         this.updateSuggestions(value);
         if (!this.composerFocused || value === prev || this.composer.editingId !== 0) {
@@ -6897,6 +6950,16 @@ export struct ChatPage {
           this.selection.exit();
         }
       },
+      onChecklistSubmit: (title: string, tasks: string[], allowAdd: boolean, allowMark: boolean): Promise<void> => {
+        const store = this.store, chatId = this.chatId, replyId = this.composer.replyToId;
+        if (store === null || !this.sendAccess.check('sendMessages')) { return Promise.reject(new Error(str('checklist_readonly'))); }
+        return store.sendChecklistAsync(title, tasks, allowAdd, allowMark, replyId).then((): void => {
+          if (this.store !== store || this.chatId !== chatId) { return; }
+          this.overlayState.showChecklistSheet = false; this.timeline.atBottom = true;
+          if (this.composer.replyToId === replyId) { this.composer.clearReply(); }
+        });
+      },
+      onChecklistClose: (): void => { this.overlayState.showChecklistSheet = false; },
       onPollSubmit: (question: string, options: string[], isAnonymous: boolean,
         quizMode: boolean, correctOptionId: number): void => {
         if (!this.sendAccess.check('sendPolls')) { return; }
@@ -6949,7 +7012,6 @@ export struct ChatPage {
         screenW: this.screenW,
         screenH: this.screenH,
         surfaceActive: this.surfaceActive,
-        chatBgBlur: this.chatBgBlur,
         chatBgPattern: this.chatBgPattern,
         chatBgDim: this.chatBgDim,
         timelineContent: (): void => { this.surfaceTimeline(); },

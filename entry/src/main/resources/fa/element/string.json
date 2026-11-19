@@ -11065,10 +11065,6 @@
       "value": "پخش خودکار"
     },
     {
-      "name": "cb_blur_amount",
-      "value": "میزان تاری"
-    },
-    {
       "name": "meow_mode_custom",
       "value": "WebPush سفارشی"
     },
@@ -11877,24 +11873,8 @@
       "value": "%1$d ثانیه"
     },
     {
-      "name": "chat_settings_surface_glass",
-      "value": "محو رابط کاربری"
-    },
-    {
-      "name": "chat_settings_surface_glass_sub",
-      "value": "شیشه مات در مخاطبین، تنظیمات و نمایه، هم‌سان با نوار نوشتن. در هر فریم رسم می‌شود؛ اگر کند شد خاموشش کنید."
-    },
-    {
-      "name": "chat_settings_surface_glass_level",
-      "value": "شدت محو"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "ویدیوی با دامنه دینامیکی بالا"
-    },
-    {
-      "name": "material_level_veil",
-      "value": "حجاب"
     },
     {
       "name": "chat_settings_surface_glass_ui",
@@ -11907,22 +11887,6 @@
     {
       "name": "chat_settings_bubble_glass",
       "value": "حباب‌ها"
-    },
-    {
-      "name": "chat_settings_bubble_glass_sub",
-      "value": "حباب پیام‌ها — پرشمارترین و پرهزینه‌ترین"
-    },
-    {
-      "name": "glass_warn_title",
-      "value": "مصرف باتری بیشتر"
-    },
-    {
-      "name": "glass_warn_body",
-      "value": "محو در هر فریم رندر می‌شود: مصرف باتری و گرما به‌طور محسوس بیشتر می‌شود و ممکن است هنگام پیمایش فریم بیفتد. اگر دستگاه داغ یا کند شد، برگردید و «خاموش» را انتخاب کنید."
-    },
-    {
-      "name": "glass_warn_enable",
-      "value": "با این حال فعال کن"
     },
     {
       "name": "cp_secret_pending_out",

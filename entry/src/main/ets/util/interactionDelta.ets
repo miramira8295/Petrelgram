@@ -26,7 +26,9 @@ export function interactionChanged(
     const a: ReactionInfo = prevReactions[i];
     const b: ReactionInfo = nextReactions[i];
     if (a.emoji !== b.emoji || a.customEmojiId !== b.customEmojiId ||
-      a.count !== b.count || a.isChosen !== b.isChosen) {
+      a.count !== b.count || a.isChosen !== b.isChosen ||
+      (a.recentSenderKey ?? '') !== (b.recentSenderKey ?? '') ||
+      (a.areTags === true) !== (b.areTags === true) || (a.isPaid === true) !== (b.isPaid === true)) {
       return true;
     }
   }

@@ -1,8 +1,10 @@
+// Overlay shadow disabled for the scroll comparison; keep geometry, fill and interactions.
+// Background blur is disabled by chatOverlayBackdropBlur for the scroll comparison; translucent fills remain.
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
-  plainBackdropBlur, plainGlassFill, MATERIAL_EPOCH
+  chatOverlayBackdropBlur, plainGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { hdsVisualEffect } from '../../util/hdsPointLight';
 import {

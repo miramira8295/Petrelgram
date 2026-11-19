@@ -206,8 +206,8 @@ export struct SuggestionPanel {
     }
     .width('calc(100% - 28vp)')
     .backgroundColor($r('app.color.surface'))
+    .border({ width: 0.5, color: $r('app.color.divider') })
     .borderRadius(16).clip(true)
-    .shadow({ radius: 8, color: '#1A000000', offsetX: 0, offsetY: 2 })
     .margin({ left: 14, right: 14, bottom: 2 })
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: 8 }))

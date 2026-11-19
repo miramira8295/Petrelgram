@@ -1,3 +1,4 @@
+import { richBlockRevision } from './richBlockRevision';
 import { isLivePhotoVideo } from './livePhoto';
 import { MessageEntry, cloneMessage } from '../store/MessageEntry';
 import { TdObject } from '../tdkit/TdTypes';
@@ -180,8 +181,11 @@ function computeMutableSig(m: MessageEntry): string {
     `_${m.diceLayerPaths.filter((p: string): boolean => p !== '').length}` +
     `_${m.gameId}_${m.gameTitle}_${m.gameDescription}_${m.gameText}` +
     `_${m.paidMediaLocked}_${m.paidMediaStarCount}_${m.paidMediaCount}_${m.paidMediaKind}` +
+    `_${richBlockRevision(m.richBlocks)}_${m.richIsFull}_${m.richIsRtl}` +
+    `_${m.checklist?.signature ?? ''}` +
     `_${m.paidMediaSet?.signature ?? ''}` +
     `_${m.giftKind}_${m.giftTitle}_${m.giftValue}_${m.giftStatus}_${m.giftRefunded}` +
+    `_${m.giveawayAudience?.signature ?? ''}` +
     `_${m.giveawayState}_${m.giveawayWinnerCount}_${m.giveawayPrize}` +
     `_${m.giveawayDescription}_${m.giveawaySelectionDate}_${m.giveawayUnclaimedCount}` +
     `_${m.giveawayMessageId}_${m.giveawayRefunded}_${m.giveawayOnlyNewMembers}`;
@@ -191,7 +195,7 @@ function computeMutableSig(m: MessageEntry): string {
   }
   for (const r of m.reactions) {
     // 自定义 emoji 的位图路径要进指纹，否则下载完成后气泡不会重建。
-    s += `|${r.emoji}${r.customEmojiId}${r.customEmojiPath}${r.count}${r.isChosen ? 'c' : ''}`;
+    s += `|${r.emoji}${r.customEmojiId}${r.customEmojiPath}${r.count}${r.isChosen ? 'c' : ''}:${r.recentSenderKey ?? ''}:${r.areTags === true}:${r.isPaid === true}`;
   }
   for (const row of m.inlineButtons) {
     for (const b of row) {

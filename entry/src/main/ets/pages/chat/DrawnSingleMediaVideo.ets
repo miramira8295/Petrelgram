@@ -1,3 +1,8 @@
+import { EMPTY_PLAY_SLOT, PlaySlotBinding, PlaySlotSnapshot } from './PlaySlotChannel';
+import { DrawnSingleVideoBadge } from './DrawnSingleVideoBadge';
+import { DrawnVideoDecoration } from './DrawnVideoDecoration';
+import { DrawnLoadingSpinner } from './DrawnLoadingSpinner';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
 import { DrawnMediaPosition } from './DrawnMediaPosition';
 import { SmartLoopVideo } from '../common/SmartLoopVideo';
 import { drawnAnimationPlaying, drawnAnimationDownloadExpected } from '../../util/drawnAnimationPolicy';
@@ -20,6 +25,20 @@ import { str } from '../../util/strings';
 // and native playback never enter body parsing or the row layout cache.
 @ComponentV2
 export struct DrawnSingleMediaVideo {
+  private badgePainter: DrawnSingleVideoBadge = new DrawnSingleVideoBadge();
+  private decoration: DrawnVideoDecoration = new DrawnVideoDecoration();
+  @Computed private get paintEnvironment(): string {
+    return `${this.env.appearanceEpoch}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
+  }
+  private badgeState(): string {
+    return this.downloading() ? 'download' : this.downloadExpected ? 'wait'
+      : this.msg.videoFailed || this.data.animationPlaybackFailed ? 'retry'
+      : this.msg.videoFileId === 0 && this.msg.videoPath === '' ? 'warning' : 'play';
+  }
+  private decorationForPaint(): DrawnVideoDecoration {
+    return this.decoration.bind(this.getUIContext(), this.mediaWidth, this.mediaHeight,
+      this.meta, false, this.paintEnvironment, this.live() ? str('cp_live_photo') : '');
+  }
   @Require @Param msg: MessageEntry;
   @Require @Param data: MessageBubbleRenderData;
   @Require @Param actions: MessageBubbleActions;
@@ -37,6 +56,21 @@ export struct DrawnSingleMediaVideo {
   @Local private poster: string = '';
   private files: DrawnSingleInlineFile = new DrawnSingleInlineFile();
   private active: boolean = false;
+  @Local private playbackState: PlaySlotSnapshot = EMPTY_PLAY_SLOT;
+  private playbackBinding: PlaySlotBinding = new PlaySlotBinding();
+  private syncPlayback(): void {
+    const key = !this.msg.isAnimation && this.sendState !== 'sending' ? slotKey(this.msg.id, -1) : '';
+    this.playbackBinding.bind(this.actions.playback, key, (value: PlaySlotSnapshot): void => {
+      if (this.active && this.playbackState !== value) { this.playbackState = value; }
+    });
+  }
+  private localPlayback(): PlaySlotSnapshot {
+    return this.playbackBinding.read(this.actions.playback, slotKey(this.msg.id, -1), this.playbackState);
+  }
+  private startPosition(): number {
+    return this.actions.playback !== undefined ? this.localPlayback().startMs : this.data.playSlotStartMs;
+  }
+
   private binding: string = '';
   private generation: number = 0;
   private observationKey: string = '';
@@ -63,6 +97,7 @@ export struct DrawnSingleMediaVideo {
   }
   private attach(): void {
     if (!this.active) { return; }
+    this.syncPlayback();
     this.observationGeneration();
     const key = this.inputKey();
     if (this.binding === key) {
@@ -71,7 +106,10 @@ export struct DrawnSingleMediaVideo {
       this.syncCandidate(); this.requestDownload();
       return;
     }
-    this.detach(); this.binding = key; this.boundSlot = this.slot;
+    // initialRender can install visibility before aboutToAppear. With no old
+    // source to release, keep that callback generation valid.
+    if (this.binding !== '') { this.detach(); }
+    this.binding = key; this.boundSlot = this.slot;
     const generation = this.generation;
     this.syncCandidate();
     this.mediaVisible = true; this.requestedDownload = false;
@@ -104,14 +142,17 @@ export struct DrawnSingleMediaVideo {
     if (this.candidateId !== 0) { this.actions.onMediaGone(this.candidateId, -1); }
     this.candidateId = 0; this.binding = ''; this.boundSlot = undefined;
   }
-  @Monitor('msg', 'data', 'slot', 'mediaWidth', 'mediaHeight', 'sendState')
+  @Monitor('msg', 'data', 'slot', 'mediaWidth', 'mediaHeight', 'sendState', 'actions')
   private changed(): void { this.attach(); }
   aboutToAppear(): void { this.active = true; this.attach(); }
   aboutToReuse(): void { this.active = true; this.attach(); }
-  aboutToRecycle(): void { this.active = false; this.detach(); }
+  aboutToRecycle(): void { this.active = false; this.playbackBinding.clear(); this.playbackState = EMPTY_PLAY_SLOT; this.detach(); }
   aboutToDisappear(): void { this.aboutToRecycle(); }
 
-  private playing(): boolean { return !this.msg.isAnimation && this.sendState !== 'sending' && this.data.playSlotKey === slotKey(this.msg.id, -1); }
+  private playing(): boolean {
+    return !this.msg.isAnimation && this.sendState !== 'sending' && (this.actions.playback !== undefined
+      ? this.localPlayback().key !== '' : this.data.playSlotKey === slotKey(this.msg.id, -1));
+  }
   @Computed
   private get animationPlaying(): boolean { return this.sendState !== 'sending' && drawnAnimationPlaying(this.msg, this.data, this.env, this.mediaVisible); }
   @Computed
@@ -136,7 +177,7 @@ export struct DrawnSingleMediaVideo {
   }
   private observationGeneration(): number {
     const fileId = this.msg.isAnimation ? this.msg.videoFileId : this.files.prepare(this.msg).fileId;
-    const key = `${this.inputKey()}:${this.mediaWidth}:${this.mediaHeight}:${this.playing()}:${fileId}:${this.animationPlaying}:${this.sendState === 'sending'}`;
+    const key = `${this.inputKey()}:${this.mediaWidth}:${this.mediaHeight}:${this.playing()}:${fileId}:${this.animationPlaying}:${this.sendState === 'sending'}:${this.playbackBinding.revision}`;
     if (this.observationKey !== key) { this.observationKey = key; this.observationEpoch++; }
     return this.observationEpoch;
   }
@@ -206,20 +247,12 @@ export struct DrawnSingleMediaVideo {
   @Builder
   badge(size: number) {
     Stack() {
-      Circle({ width: size, height: size }).fill('#78000000').stroke('#24FFFFFF').strokeWidth(1);
-      if (this.downloading()) {
-        Progress({ value: this.progress, total: 100, type: ProgressType.Ring }).width(size).height(size).color(Color.White);
-        SymbolGlyph($r('sys.symbol.play_fill')).fontSize(size * .34).fontColor([Color.White]).margin({ left: 2 });
-      } else if (this.downloadExpected) {
-        LoadingProgress().width(size * .62).height(size * .62).color(Color.White);
-      } else if (this.msg.videoFailed || this.data.animationPlaybackFailed) {
-        SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(size * .4).fontColor([Color.White]);
-      } else if (this.msg.videoFileId === 0 && this.msg.videoPath === '') {
-        SymbolGlyph($r('sys.symbol.exclamationmark_circle')).fontSize(size * .4).fontColor([Color.White]);
-      } else {
-        SymbolGlyph($r('sys.symbol.play_fill')).fontSize(size * .42).fontColor([Color.White]).margin({ left: 2 });
+      if (this.downloadExpected && !this.downloading()) {
+        DrawnLoadingSpinner({ ringSize: size * .62, ringColor: '#FFFFFF' });
       }
-    }.width(size).height(size);
+    }.width(size).height(size)
+      .drawModifier(this.badgePainter.bind(this.getUIContext(), this.paintEnvironment,
+        size, this.badgeState(), this.progress));
   }
   build() {
     Stack() {
@@ -227,7 +260,7 @@ export struct DrawnSingleMediaVideo {
         VideoBubbleSurface({ fileId: this.files.prepare(this.msg).fileId, fileSize: this.files.prepare(this.msg).fileSize,
           mimeType: this.msg.videoMimeType, sourceWidth: this.msg.photoWidth, sourceHeight: this.msg.photoHeight,
           posterPath: this.poster || this.msg.photoPath || thumbPathFor(this.msg.photoFileId),
-          muted: this.data.autoplayMuted, startPositionMs: this.data.playSlotStartMs,
+          muted: this.actions.playback !== undefined ? this.localPlayback().muted : this.data.autoplayMuted, startPositionMs: this.startPosition(),
           onPositionChanged: this.positionCallback(), onEnded: this.endedCallback() })
           .width(this.mediaWidth).height(this.mediaHeight).clip(true).hitTestBehavior(HitTestMode.None);
       } else if (this.animationPlaying) {
@@ -238,19 +271,9 @@ export struct DrawnSingleMediaVideo {
       } else if (!this.live() && this.sendState !== 'sending' && (this.thumbReady || this.poster !== '')) {
         this.badge(Math.min(56, Math.min(this.mediaWidth, this.mediaHeight) * .34));
       }
-      if (this.live()) {
-        Row({ space: 3 }) {
-          SymbolGlyph($r('sys.symbol.livephoto')).fontSize(12).fontColor([Color.White]);
-          Text($r('app.string.cp_live_photo')).fontSize(10).fontColor(Color.White).fontWeight(FontWeight.Medium);
-        }.height(18).padding({ left: 5, right: 6 }).backgroundColor('#66000000').borderRadius(9).position({ x: 6, y: 6 });
-      }
-      if (this.meta !== '') {
-        Text(this.meta).fontSize(11).fontColor(Color.White).backgroundColor('#66000000').borderRadius(8)
-          .padding({ left: 6, right: 6, top: 2, bottom: 2 }).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-          .constraintSize({ maxWidth: Math.max(24, this.mediaWidth - 12) })
-          .position({ x: 6, y: Math.max(6, this.mediaHeight - 24) });
-      }
+
     }.width(this.mediaWidth).height(this.mediaHeight).hitTestBehavior(HitTestMode.None)
+    .drawModifier(this.decorationForPaint())
     .onVisibleAreaApproximateChange({ ratios: [0, .08, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, .9],
       expectedUpdateInterval: 200 }, this.ratioCallback()).id(this.mediaPosition.nodeId);
   }

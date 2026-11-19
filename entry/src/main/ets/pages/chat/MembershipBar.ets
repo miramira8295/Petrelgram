@@ -1,3 +1,4 @@
+// Background blur is disabled by chatOverlayBackdropBlur for the scroll comparison; translucent fills remain.
 // 【自绘玻璃，不走组件级系统材质】系统已经把**组件级**的 systemMaterial 收回，
 // 只有 HDS 导航级的栏（HdsNavigation 的 titleBar、HdsTabs 的 barFloatingStyle）
 // 还拿得到。继续用 overlayGlassFill + overlayBackdropBlur 的面会两头落空——

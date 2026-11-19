@@ -11,8 +11,10 @@ import { DrawnSourcePool } from './drawnSourcePool';
 
 export interface DrawnRichLink {
   button?: DrawnPageButtonAction;
-  action?: 'page-button' | 'copy' | 'quote' | 'spoiler' | 'voice-transcribe' | 'translation-toggle' | 'translation-retry' | 'web-preview';
+  action?: 'page-button' | 'copy' | 'quote' | 'spoiler' | 'voice-transcribe' | 'translation-toggle' | 'translation-retry' | 'web-preview' | 'rich-task-toggle';
   blockOffset?: number;
+  taskId?: number;
+  taskChecked?: boolean;
   start: number;
   end: number;
   label: string;
@@ -26,7 +28,10 @@ export interface DrawnRichLink {
 
 export interface DrawnRichButton { source: DrawnRichSource; action: DrawnPageButtonAction; style: string; }
 
+export interface DrawnRichTaskState { id: number; checked: boolean; }
+
 export interface DrawnRichBlock {
+  task?: DrawnRichTaskState;
   article?: DrawnDocumentWidget;
   divider?: boolean;
   anchorName?: string;
@@ -50,6 +55,14 @@ export interface DrawnRichBlock {
   language: string;
 }
 
+// Preserve one physical text column when logical indentation exhausts a narrow
+// viewport. Deep lists/quotes retain their content and controls without growing
+// the measured paragraph outside its allocated bubble width.
+export function drawnRichBlockPadding(block: DrawnRichBlock, width: number): number {
+  const requested = block.kind === 'pre' || block.kind === 'quote' || block.preview ? 9 : block.kind === 'list-item' ? 24 : 0;
+  return Math.min(requested, Math.max(0, (width - 1) / 2));
+}
+
 export interface DrawnRichTableCell {
   source: DrawnRichSource;
   header: boolean;
@@ -67,6 +80,7 @@ export interface DrawnRichTable {
 
 export interface DrawnAnchorBranch { offset: number; initiallyOpen: boolean; parent: DrawnAnchorBranch | null; }
 export interface DrawnRichSource {
+  nestingDepth?: number;
   hasEmbed?: boolean;
   anchorNames?: string[];
   anchorPaths?: Map<string, DrawnAnchorBranch | null>;
@@ -154,8 +168,6 @@ export class DrawnRichSourceCache {
 
   private prepareSource(content: string, entities: TdObject[]): DrawnRichSource | null {
     if (content.length === 0) { return this.reject('empty'); }
-    if (content.length > 16384) { return this.reject('text-limit'); }
-    if (entities.length > 1024) { return this.reject('entity-limit'); }
     const segments = this.parser(content, entities);
     if (segments.length !== 1 || segments[0].kind !== 'text') {
       const blocks: DrawnRichBlock[] = [];
@@ -173,7 +185,7 @@ export class DrawnRichSourceCache {
     }
     if (segments[0].offset !== 0) { return this.reject('segment-offset'); }
     const runs = segments[0].runs;
-    if (runs.length === 0 || runs.length > 512) { return this.reject('run-limit'); }
+    if (runs.length === 0) { return this.reject('run-limit'); }
     return buildDrawnRichSource(content, runs, this.reject);
   }
 }
@@ -221,7 +233,6 @@ export function buildDrawnRichSource(content: string, runs: RichRun[],
     spokenFirst.accessibilityLabel = content.substring(spokenStart, previousLink.end);
   }
   if (position !== content.length) { return reject('text-coverage'); }
-  if (links.length > 256) { return reject('link-limit'); }
   return { content, runs, links, targets, rtl: drawnFirstStrongRtl(content) };
 }
 
@@ -242,20 +253,20 @@ export function drawnRichBlockSource(segment: RichSegment): DrawnRichSource | nu
       bold: false, italic: false, underline: false, strike: false,
       customEmojiId: '', link: false, url: '' };
     result = buildDrawnRichSource(segment.text, [run]);
-  } else if ((segment.kind === 'text' || segment.kind === 'quote') && segment.runs.length > 0 && segment.runs.length <= 512) {
+  } else if ((segment.kind === 'text' || segment.kind === 'quote') && segment.runs.length > 0) {
     const parts: string[] = [];
     const runs: RichRun[] = [];
     let position: number = 0;
     let supported: boolean = true;
     for (const run of segment.runs) {
-      if (run.text.length === 0 ||
-        position + run.text.length > 16384) { supported = false; break; }
+      if (run.text.length === 0) { supported = false; break; }
       parts.push(run.text);
       // Block separators may have been trimmed. Local offsets belong to the
       // displayed paragraph, never to the message's original entity ranges.
       runs.push({ offset: position, text: run.text, bold: run.bold, italic: run.italic,
         underline: run.underline, strike: run.strike, code: run.code, spoiler: run.spoiler,
-        customEmojiId: run.customEmojiId, link: run.link, url: run.url });
+        customEmojiId: run.customEmojiId, link: run.link, url: run.url,
+        icon: run.icon, script: run.script, marked: run.marked, math: run.math });
       position += run.text.length;
     }
     if (supported) {
@@ -303,7 +314,6 @@ export function appendDrawnRichHits(hits: DrawnRichHit[], boxes: DrawnRichRect[]
     hits.push({ key: `${generation}:${link.start}:${hits.length}`, link,
       x: left / density, y: top / density, widthVp: (right - left) / density,
       heightVp: (bottom - top) / density, accessible: link.accessibilityFirst && hits.length === before });
-    if (hits.length > 1024) { return false; }
   }
   return hits.length > before;
 }

@@ -1,3 +1,6 @@
+import { ReactionSender, parseReactionSenders } from '../util/reactionSenders';
+import { ChecklistModel } from '../util/checklistModel';
+import { GiveawayAudience } from '../util/giveawayAudience';
 import { webAppUrlOf } from '../util/webAppUrl';
 import { linkNamesInLabel, NamedUser, SystemPillLink } from '../util/systemPillLinks';
 import { TdObject } from '../tdkit/TdTypes';
@@ -45,6 +48,9 @@ export interface MessageEntry {
   // 富文本长帖的原始页面块。可选：只有 contentType === 'richMessage' 才有，
   // 其余构造点不用改。
   richBlocks?: TdObject[];
+  richIsFull?: boolean;
+  richIsRtl?: boolean;
+  checklist?: ChecklistModel;
   // Semantic category used only to decorate centered service-message pills.
   // The message keeps the same timeline position regardless of category.
   systemKind: string;
@@ -216,6 +222,7 @@ export interface MessageEntry {
   giftStatus: string;
   giftCode: string;
   giftRefunded: boolean;
+  giveawayAudience?: GiveawayAudience;
   giveawayState: string;
   giveawayWinnerCount: number;
   giveawayPrize: string;
@@ -229,6 +236,10 @@ export interface MessageEntry {
 }
 
 export interface ReactionInfo {
+  recentSenders?: ReactionSender[]; // Bounded server-provided identities, no per-row member lookup.
+  recentSenderKey?: string;
+  areTags?: boolean;
+  isPaid?: boolean;
   emoji: string;           // 标准 emoji（自定义 emoji 反应为 ''）
   count: number;
   isChosen: boolean;
@@ -285,7 +296,7 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     contentType: m.contentType, text: m.text, photoFileId: m.photoFileId, photoPath: m.photoPath,
     photoProgress: m.photoProgress, photoFailed: m.photoFailed,
     photoWidth: m.photoWidth, photoHeight: m.photoHeight,
-    placeholderLabel: m.placeholderLabel, richBlocks: m.richBlocks, systemKind: m.systemKind,
+    placeholderLabel: m.placeholderLabel, richBlocks: m.richBlocks, richIsFull: m.richIsFull, richIsRtl: m.richIsRtl, checklist: m.checklist, systemKind: m.systemKind,
     systemType: m.systemType, systemUserIds: m.systemUserIds.slice(),
     systemLinks: m.systemLinks.slice(),
     isUnsupportedMessage: m.isUnsupportedMessage,
@@ -364,6 +375,7 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     paidMediaCount: m.paidMediaCount, paidMediaKind: m.paidMediaKind, paidMediaSet: m.paidMediaSet,
     giftKind: m.giftKind, giftTitle: m.giftTitle, giftValue: m.giftValue,
     giftStatus: m.giftStatus, giftCode: m.giftCode, giftRefunded: m.giftRefunded,
+    giveawayAudience: m.giveawayAudience,
     giveawayState: m.giveawayState, giveawayWinnerCount: m.giveawayWinnerCount,
     giveawayPrize: m.giveawayPrize, giveawayDescription: m.giveawayDescription,
     giveawaySelectionDate: m.giveawaySelectionDate,
@@ -938,7 +950,10 @@ export function reactionsFromInteraction(ii: TdObject | undefined): ReactionInfo
     } else {
       continue; // 未知反应类型（未来的 TDLib 扩展）静默跳过
     }
+    const recentSenders = parseReactionSenders(r['recent_sender_ids'] as TdObject[] | undefined);
     out.push({
+      recentSenders, recentSenderKey: recentSenders.map((sender: ReactionSender): string => sender.key).join(','),
+      areTags: rx?.['are_tags'] === true, isPaid: tt === 'reactionTypePaid',
       emoji,
       count: (r['total_count'] as number | undefined) ?? 0,
       isChosen: (r['is_chosen'] as boolean | undefined) ?? false,
@@ -1026,20 +1041,21 @@ function replyQuoteText(message: TdObject): string {
 
 function inlineCustomEmojiIds(entities: TdObject[]): string[] {
   const ids: string[] = [];
+  const seen: Set<string> = new Set<string>();
   for (const entity of entities) {
     const type = entity['type'] as TdObject | undefined;
     if (type === undefined || type['@type'] !== 'textEntityTypeCustomEmoji') {
       continue;
     }
     const id = `${type['custom_emoji_id'] ?? ''}`;
-    if (id !== '' && ids.indexOf(id) < 0) {
-      ids.push(id);
+    if (id !== '' && !seen.has(id)) {
+      seen.add(id); ids.push(id);
     }
   }
   return ids;
 }
 
-export function buildMessageEntry(message: TdObject, users: UserStore, publishViews: boolean = true): MessageEntry {
+export function buildMessageEntry(message: TdObject, users: UserStore, publishViews: boolean = true, previousChecklist?: ChecklistModel): MessageEntry {
   // 浏览数不进条目，直接灌进旁路通道（见 util/viewCountChannel）。放在这里而
   // 不是各个加载点：消息有二十多条建条目的路径（历史页、跳转、推送、发送回执……），
   // 挑调用点必然漏。通道只增不减、标签不变不通知，重复灌是免费的。
@@ -1048,7 +1064,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore, publishVi
     publishViewCount((message['chat_id'] as number | undefined) ?? 0,
       (message['id'] as number | undefined) ?? 0, viewCountOf(message));
   }
-  const c: MsgContent = formatMsgContent(message);
+  const c: MsgContent = formatMsgContent(message, previousChecklist);
   const isOutgoing = (message['is_outgoing'] as boolean | undefined) ?? false;
   const name = senderName(message, users);
   const fwd: FwdOrigin = forwardOrigin(message, users);
@@ -1099,7 +1115,8 @@ export function buildMessageEntry(message: TdObject, users: UserStore, publishVi
     photoWidth: c.photoWidth,
     photoHeight: c.photoHeight,
     placeholderLabel: sys.label !== '' ? sys.label : c.placeholderLabel,
-    richBlocks: c.richBlocks,
+    richBlocks: c.richBlocks, richIsFull: c.richIsFull, richIsRtl: c.richIsRtl,
+    checklist: c.checklist,
     systemKind: sys.kind,
     systemType: sys.label !== '' ? rawType : '',
     systemUserIds: sys.label !== '' ? systemUserIdsOf(rawContent, rawType) : [],
@@ -1244,6 +1261,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore, publishVi
     giftStatus: c.giftStatus ?? '',
     giftCode: c.giftCode ?? '',
     giftRefunded: c.giftRefunded ?? false,
+    giveawayAudience: c.giveawayAudience,
     giveawayState: c.giveawayState ?? '',
     giveawayWinnerCount: c.giveawayWinnerCount ?? 0,
     giveawayPrize: c.giveawayPrize ?? '',

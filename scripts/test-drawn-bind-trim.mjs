@@ -57,7 +57,7 @@ assert.equal(trace.filter(t=>t[0]==='start').length,3);
 assert.match(metrics.summary(),/stage=PG\/background-bind calls=1 skips=1000/);
 fg.bind(plan,'read');assert.equal(trace.filter(t=>t[0]==='start').length,4);
 metrics.reset();trace.length=0;
-bg.invalidate=()=>{throw Error('test painter failure');};assert.throws(()=>bg.bind(plan,false));
+bg.invalidate=()=>{throw Error('test painter failure');};assert.throws(()=>bg.bind({...plan},false));
 assert.deepEqual(trace.map(t=>t[0]),['start','end'],'finally closes a failed business stage');
 
 const shared=await import('./test-drawn-text-row.mjs');

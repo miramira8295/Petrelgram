@@ -57,7 +57,6 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { BG_PATTERN_DEFAULT, patternStrengthKey } from '../../store/AppSettings';
 import { ChatBackgroundState, preloadDefaultChatBackground } from '../../store/ChatBackgroundStore';
 import { rasterizeBackground, patternOpacity } from '../../util/chatBackgroundRaster';
-import { KEY_BG_BLUR, BG_BLUR_DEFAULT } from '../../store/AppSettings';
 import {
   overlayBackdropBlur, overlayGlassFill, materialOff, plainBackdropBlur, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
@@ -191,7 +190,6 @@ export struct MainScreen {
   @StorageProp(KEY_APP_BG_STATE_DARK) @Watch('syncWallpaperFlag') private appBgDark: string = '';
   @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
   @StorageProp(KEY_APP_DARK) @Watch('syncWallpaperFlag') private wallpaperDark: boolean = false;
-  @StorageProp(KEY_BG_BLUR) bgBlur: number = BG_BLUR_DEFAULT;
   @StorageProp(STORAGE_UPDATE_AVAILABLE) updateAvailable: boolean = false;
   // 回前台补偿：后台期间的来电 push 可能被系统拒绝，前台一刻重查一次。
   @StorageProp('appIsForeground') @Watch('onAppForegroundChanged') appIsForeground: boolean = true;
@@ -312,7 +310,7 @@ export struct MainScreen {
             AppStorage.get<number>(patternStrengthKey(
               darkResourceMode(this.getUIContext().getHostContext() as common.UIAbilityContext)
             )) ?? BG_PATTERN_DEFAULT),
-          dimming: state.dimming, blurred: state.blurred, userBlur: this.bgBlur,
+          dimming: state.dimming,
           width: this.screenW, height: this.screenH
         }, (this.getUIContext().getHostContext() as common.UIAbilityContext).cacheDir);
       });

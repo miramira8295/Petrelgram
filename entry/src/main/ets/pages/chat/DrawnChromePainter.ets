@@ -1,3 +1,4 @@
+import { REACTION_ICON_VP, REACTION_PADDING_VP } from '../../util/reactionPresentation';
 import { common2D, drawing } from '@kit.ArkGraphics2D';
 import { DrawnBubbleChrome } from './DrawnBubbleChrome';
 import { DrawnReactionChip } from './DrawnReactionLayout';
@@ -22,7 +23,7 @@ export class DrawnChromePainter {
     if (p.content.forward !== null) {
       p.content.forward.paragraph.paint(c, p.forwardRect.x * d, p.forwardRect.y * d);
     }
-    if (p.reactions !== null) {
+    if (p.reactions !== null && !p.reactions.external) {
       c.save(); c.translate(p.reactionsX * d, p.reactionsY * d);
       for (const chip of p.reactions.chips) {
         c.save(); c.translate(chip.x * d, chip.y * d);
@@ -30,15 +31,15 @@ export class DrawnChromePainter {
           this.brush.setColor(chip.fill); c.attachBrush(this.brush);
           c.drawRoundRect(chip.background); c.detachBrush();
           if (chip.emoji !== null) {
-            chip.emoji.paragraph.paint(c, 9 * d, (chip.height * d - chip.emoji.heightPx) / 2);
+            chip.emoji.paragraph.paint(c, REACTION_PADDING_VP * d, (chip.height * d - chip.emoji.heightPx) / 2);
           } else if (chip.reaction.customEmojiPath === '') {
-            this.placeholder.left = 9 * d; this.placeholder.top = (chip.height - 15) * d / 2;
-            this.placeholder.right = 24 * d; this.placeholder.bottom = this.placeholder.top + 15 * d;
+            this.placeholder.left = REACTION_PADDING_VP * d; this.placeholder.top = (chip.height - REACTION_ICON_VP) * d / 2;
+            this.placeholder.right = (REACTION_PADDING_VP + REACTION_ICON_VP) * d; this.placeholder.bottom = this.placeholder.top + REACTION_ICON_VP * d;
             this.brush.setColor(this.missingFill); c.attachBrush(this.brush);
             c.drawRect(this.placeholder); c.detachBrush();
           }
           if (chip.count !== null) {
-            chip.count.paragraph.paint(c, (13 + chip.iconWidth) * d, (chip.height * d - chip.count.heightPx) / 2);
+            chip.count.paragraph.paint(c, chip.countX * d, (chip.height * d - chip.count.heightPx) / 2);
           }
           if (chip === pressed) {
             this.brush.setColor(this.pressedFill); c.attachBrush(this.brush);

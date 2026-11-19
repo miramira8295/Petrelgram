@@ -1,7 +1,7 @@
+import { StaticMiniThumbnail } from '../common/StaticMiniThumbnail';
 import { image } from '@kit.ImageKit';
 import { DrawnImageReceiver } from '../common/DrawnImageReceiver';
 import { CachedImageSession } from '../../util/CachedImageSession';
-import { MINI_PLACEHOLDER_BLUR } from '../../util/miniThumbPlaceholder';
 import { scrollPlaceholderState } from '../../util/scrollEffects';
 import { CachedImageSpec } from '../../util/cachedImageSpec';
 import { subscribeThumbPath, thumbPathFor } from '../../util/mediaThumbChannel';
@@ -325,12 +325,8 @@ export struct LiveThumbImage {
   imageContent() {
     Stack() {
       if (this.showMiniPlaceholder()) {
-        Image(this.spec.mini)
-          .draggable(false)
-          .width(this.spec.boxWidth).height(this.spec.boxHeight)
-          .borderRadius(this.effectiveRadii()).clip(true)
-          .objectFit(this.spec.fit)
-          .blur(MINI_PLACEHOLDER_BLUR);
+        StaticMiniThumbnail({ source: this.spec.mini, boxW: this.spec.boxWidth, boxH: this.spec.boxHeight, imageFit: this.spec.fit })
+          .borderRadius(this.effectiveRadii()).clip(true);
       }
       if (!this.useDrawnImage()) {
         Image(this.pixelMap)

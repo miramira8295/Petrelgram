@@ -49,6 +49,8 @@ export const MOVING_PHOTO_MAX_SECONDS: number = 10;
 export async function extractFirstFrame(videoPath: string, destJpg: string): Promise<boolean> {
   let src: fileIo.File | null = null;
   let dest: fileIo.File | null = null;
+  let frame: image.PixelMap | null = null;
+  let packer: image.ImagePacker | null = null;
   let generator: media.AVImageGenerator | null = null;
   try {
     src = await fileIo.open(videoPath, fileIo.OpenMode.READ_ONLY);
@@ -56,21 +58,21 @@ export async function extractFirstFrame(videoPath: string, destJpg: string): Pro
     generator.fdSrc = { fd: src.fd };
     // NEXT_SYNC：取 0 之后最近的一个**关键帧**。实况的第一帧必是关键帧，而
     // CLOSEST 会去解码非关键帧，慢且没必要。
-    const frame: image.PixelMap = await generator.fetchFrameByTime(
+    frame = await generator.fetchFrameByTime(
       0, media.AVImageQueryOptions.AV_IMAGE_QUERY_NEXT_SYNC,
       // -1/-1 = 原生尺寸（见函数头那段）。
       { width: -1, height: -1 });
     dest = await fileIo.open(destJpg,
       fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
-    const packer: image.ImagePacker = image.createImagePacker();
+    packer = image.createImagePacker();
     await packer.packToFile(frame, dest.fd, { format: 'image/jpeg', quality: 95 });
-    await packer.release();
-    await frame.release();
     return true;
   } catch (error) {
     logE(`extractFirstFrame(${videoPath}) failed: ${error}`);
     return false;
   } finally {
+    if (packer !== null) { try { await packer.release(); } catch (error) { logE(`extractFirstFrame packer release failed: ${error}`); } }
+    if (frame !== null) { try { await frame.release(); } catch (error) { logE(`extractFirstFrame frame release failed: ${error}`); } }
     if (generator !== null) {
       try {
         await generator.release();

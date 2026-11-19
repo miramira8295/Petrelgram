@@ -17,7 +17,7 @@
 // 首页对每行多一个节点敏感）。上机不理想就把这里改 false，不用回滚代码。
 export const MINI_THUMB_PLACEHOLDER_ENABLED: boolean = true;
 
-// 小图的模糊半径（vp）。
+// 小图的模糊半径（px，与 ArkUI blur / EffectKit 的单位一致）。
 //
 // 40px 拉到几百 px 必然是马赛克。叠一层模糊让它读起来像"正在变清晰"而不是
 // "画糊了"——官方客户端也是这个做法。太小盖不住方块，太大就成一团色雾、

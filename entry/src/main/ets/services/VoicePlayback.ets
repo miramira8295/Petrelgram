@@ -98,7 +98,9 @@ class VoicePlayback {
     const client = getTdClient();
     if (this.documentPlaylist === tracks && this.documentClient === client) { return; }
     this.documentDownloadSerial++; this.documentDownloading = false;
-    this.documentPlaylist = tracks.length <= 2048 ? tracks : [];
+    // One retained immutable source playlist; index once per identity/account.
+    // Long valid documents must not silently lose next/previous after 2048.
+    this.documentPlaylist = tracks;
     this.documentClient = client; this.documentIndices.clear();
     for (let i: number = 0; i < this.documentPlaylist.length; i++) {
       this.documentIndices.set(this.documentPlaylist[i].messageId, i);
