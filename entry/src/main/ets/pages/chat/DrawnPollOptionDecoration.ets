@@ -32,6 +32,7 @@ export class DrawnPollPercentLabels {
 export class DrawnPollOptionDecoration extends DrawModifier {
   private brush: drawing.Brush = new drawing.Brush();
   private pen: drawing.Pen = new drawing.Pen();
+  private outlinePen: drawing.Pen = new drawing.Pen();
   private density: number = 0;
   private colorKey: string = '';
   private accent: common2D.Color = { alpha: 0, red: 0, green: 0, blue: 0 };
@@ -42,22 +43,33 @@ export class DrawnPollOptionDecoration extends DrawModifier {
   private marked: boolean = false;
   private percentage: number = 0;
   private label: DrawnTextLine | null = null;
+  private fillKey: ResourceColor = '';
+  private fill: common2D.Color = { alpha: 0, red: 0, green: 0, blue: 0 };
+  private outline: common2D.Color = drawnColor('#16000000');
+  private background: drawing.RoundRect | null = null;
+  private shapeWidth: number = -1;
+  private shapeHeight: number = -1;
 
   constructor() {
     super();
     this.brush.setAntiAlias(true);
     this.pen.setAntiAlias(true);
+    this.outlinePen.setAntiAlias(true);
     this.pen.setCapStyle(drawing.CapStyle.ROUND_CAP);
   }
 
-  bind(density: number, accent: string, state: string, marked: boolean, percentage: number, label: DrawnTextLine | null = null): DrawnPollOptionDecoration {
+  bind(density: number, accent: string, state: string, marked: boolean, percentage: number,
+    label: DrawnTextLine | null = null, fill: ResourceColor = '#00000000'): DrawnPollOptionDecoration {
     const next = Number.isFinite(percentage) ? Math.max(0, Math.min(100, percentage)) : 0;
     let dirty = false;
     if (this.density !== density) {
       this.density = density;
       this.pen.setStrokeWidth(1.5 * density);
+      this.outlinePen.setStrokeWidth(density);
+      this.shapeWidth = -1;
       dirty = true;
     }
+    if (this.fillKey !== fill) { this.fillKey = fill; this.fill = drawnColor(fill); dirty = true; }
     if (this.colorKey !== accent) {
       this.colorKey = accent;
       this.accent = drawnColor(accent);
@@ -79,6 +91,18 @@ export class DrawnPollOptionDecoration extends DrawModifier {
     if (!(density > 0)) { return; }
     const size = context.sizeInPixel;
     const canvas = context.canvas;
+    if (this.shapeWidth !== size.width || this.shapeHeight !== size.height) {
+      this.shapeWidth = size.width; this.shapeHeight = size.height;
+      this.background = new drawing.RoundRect({ left: density / 2, top: density / 2,
+        right: Math.max(density / 2, size.width - density / 2), bottom: Math.max(density / 2, size.height - density / 2) },
+        10 * density, 10 * density);
+    }
+    if (this.background !== null) {
+      this.brush.setColor(this.fill);
+      canvas.attachBrush(this.brush); canvas.drawRoundRect(this.background); canvas.detachBrush();
+      this.outlinePen.setColor(this.marked ? this.accent : this.outline);
+      canvas.attachPen(this.outlinePen); canvas.drawRoundRect(this.background); canvas.detachPen();
+    }
     const x = 19 * density, y = size.height / 2;
     if (this.label !== null) {
       this.label.paragraph.paint(canvas, Math.max(0, size.width - 49 * density),

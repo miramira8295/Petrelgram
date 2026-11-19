@@ -1021,6 +1021,7 @@ export class ChatTimelineSession {
 
   handleTimelineScrollStart(): void {
     this.timelineScrollActive = true;
+    this.bindings!.playSlot.setScrolling(true);
     setScrollActive(true);
     // 滑动期间停掉贴纸解码/帧缓存线程，理由见 AlphaStickerStore.setStickerDecodePaused。
     setStickerDecodePaused(true);
@@ -1125,6 +1126,7 @@ export class ChatTimelineSession {
       } finally { drawnStageMetrics.end(visible); }
       const play = drawnStageMetrics.begin(DrawnStage.ScrollStopPlay);
       try {
+        this.bindings!.playSlot.setScrolling(false);
         this.bindings!.playSlot.armSettle();
       } finally { drawnStageMetrics.end(play); }
       const cache = drawnStageMetrics.begin(DrawnStage.ScrollStopCache);

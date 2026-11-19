@@ -1,5 +1,5 @@
 import {
-  BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, KEY_APP_BG_BLUR, KEY_APP_BG_BLUR_DARK,
+  BG_PATTERN_DEFAULT,
   KEY_APP_BG_DIM, KEY_APP_BG_DIM_LIGHT, KEY_APP_BG_PATTERN_DARK, KEY_APP_BG_PATTERN_LIGHT,
   KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT
 } from '../../store/AppSettings';
@@ -12,7 +12,7 @@ import { ChatBackdrop } from '../chat/ChatBackdrop';
 
 // APP 背景图：铺在**主界面**（会话列表等）背后的壁纸。
 //
-// 【为什么直接复用 ChatBackdrop】它已经会画渐变、图案、整图、暗化、模糊，还带
+// 【为什么直接复用 ChatBackdrop】它已经会画渐变、图案、整图、暗化，还带
 // 栅格缓存和快照防闪——那是一堆真机趟出来的东西。APP 槽位把壁纸存成**序列化的
 // ChatBackgroundState**（与聊天壁纸同一种数据），于是「原生壁纸也能给 APP 用」
 // 不需要任何新代码：把状态传进去就画得出来。上一版自己贴 Image 的实现只支持本机
@@ -30,8 +30,6 @@ export struct AppBackdrop {
   @StorageProp(KEY_APP_DARK) appDark: boolean = false;
   @StorageProp(KEY_APP_BG_STATE_LIGHT) stateLight: string = '';
   @StorageProp(KEY_APP_BG_STATE_DARK) stateDark: string = '';
-  @StorageProp(KEY_APP_BG_BLUR) blurLight: number = BG_BLUR_DEFAULT;
-  @StorageProp(KEY_APP_BG_BLUR_DARK) blurDark: number = BG_BLUR_DEFAULT;
   @StorageProp(KEY_APP_BG_DIM_LIGHT) dimLight: number = 0;
   @StorageProp(KEY_APP_BG_DIM) dimDark: number = 0;
   @StorageProp(KEY_APP_BG_PATTERN_LIGHT) patternLight: number = BG_PATTERN_DEFAULT;
@@ -58,10 +56,6 @@ export struct AppBackdrop {
     return this.appDark ? this.patternDark : this.patternLight;
   }
 
-  private blurNow(): number {
-    return this.appDark ? this.blurDark : this.blurLight;
-  }
-
   private dimNow(): number {
     return this.appDark ? this.dimDark : this.dimLight;
   }
@@ -73,7 +67,6 @@ export struct AppBackdrop {
           chatBg: this.slotState(),
           screenW: this.screenW,
           screenH: this.screenH,
-          bgBlur: this.blurNow(),
           bgPattern: this.patternNow(),
           chatDim: this.dimNow()
         });

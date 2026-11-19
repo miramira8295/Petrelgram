@@ -1,7 +1,7 @@
+import { DrawnReactionsSurface } from './DrawnReactionsSurface';
 import { DiceEndFrame } from './DiceEndFrame';
 import { replyThumbSrc } from '../../util/replyThumb';
 import { DrawnBubblePlan } from './DrawnBubblePlan';
-import { DrawnReactionChip } from './DrawnReactionLayout';
 import { MessageEntry } from '../../store/MessageEntry';
 import { SenderAvatarSpec, SenderAvatarSpecCache } from '../../util/messageBubblePresentation';
 import { COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT } from '../../util/theme';
@@ -9,8 +9,8 @@ import { MessageSenderAvatar } from './MessageSenderAvatar';
 
 const COMMENT_AVATAR_SLOTS: number[] = [0, 1, 2];
 
-// Only image resources and the reactors popup's geometry anchor remain native.
-// Ordinary emoji/count/comment/forward labels never create Text/Row subtrees.
+// One local reaction canvas plus reply/comment resources and the popup anchor.
+// Counter animations and resource delivery never redraw the message body.
 @ComponentV2
 export struct DrawnChromeIslands {
   @Param plan: DrawnBubblePlan | null = null;
@@ -40,13 +40,10 @@ export struct DrawnChromeIslands {
             .position({ x: (this.plan?.quoteRect.x ?? 0) + 10, y: (this.plan?.quoteRect.y ?? 0) + 3 });
         }
       }
-      ForEach(this.plan?.chrome?.reactions?.images ?? [], (chip: DrawnReactionChip) => {
-        if ((chip.reaction?.customEmojiPath ?? '') !== '') {
-          Image(this.source(chip.reaction?.customEmojiPath ?? '')).width(15).height(15).objectFit(ImageFit.Contain)
-            .draggable(false).position({ x: (this.plan?.chrome?.reactionsX ?? 0) + chip.x + 9,
-              y: (this.plan?.chrome?.reactionsY ?? 0) + chip.y + (chip.height - 15) / 2 });
-        }
-      }, (chip: DrawnReactionChip): string => `${chip.key}:${chip.reaction?.customEmojiPath}:${chip.x}:${chip.y}:${chip.height}`);
+      if (this.plan?.chrome?.reactions !== null && this.plan?.chrome?.reactions !== undefined) {
+        DrawnReactionsSurface({ plan: this.plan?.chrome?.reactions, ownerKey: `${this.chatId}:${this.msg.id}`, density: this.plan?.density ?? 1 })
+          .position({ x: this.plan?.chrome?.reactionsX ?? 0, y: this.plan?.chrome?.reactionsY ?? 0 });
+      }
       ForEach(COMMENT_AVATAR_SLOTS, (index: number) => {
         if (index < (this.plan?.chrome?.content.avatarCount ?? 0)) {
           MessageSenderAvatar({ spec: this.avatarAt(index) })

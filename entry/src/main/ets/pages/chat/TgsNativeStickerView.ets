@@ -103,6 +103,8 @@ export struct TgsNativeStickerView {
   @Param loop: boolean = true;
   // 原生这条路走不通（没编进来 / 文件解析失败）时通知调用方退回 lottie。
   @Param onFailed: () => void = (): void => {};
+  // Notify only after the first successful Canvas draw of this source/replay.
+  @Param onWorking: () => void = (): void => {};
 
   @Local private failed: boolean = false;
   @Local private painted: boolean = false;
@@ -185,6 +187,7 @@ export struct TgsNativeStickerView {
   private parkTimer: number = -1;
 
   aboutToDisappear(): void {
+    this.seq++;
     this.disposed = true;
     this.visible = false;
     if (this.parkTimer !== -1) {
@@ -242,6 +245,7 @@ export struct TgsNativeStickerView {
   // 一次可见性结算，框架不会再报一次 true（只有节点销毁才强制报消失）——手动置
   // false 会让复用后的贴纸一直停在缩略图上。
   aboutToRecycle(): void {
+    this.disposed = true;
     this.seq++;
     this.stopPump();
     this.cancelOpen();
@@ -255,6 +259,7 @@ export struct TgsNativeStickerView {
   }
 
   aboutToReuse(): void {
+    this.disposed = false;
     this.resetForNewSource();
   }
 
@@ -651,13 +656,17 @@ export struct TgsNativeStickerView {
   }
 
   private drawBitmap(frame: image.PixelMap): void {
+    if (this.disposed || this.failed) { return; }
+    const first: boolean = !this.painted;
     try {
       this.ctx.clearRect(0, 0, this.boxWidth, this.boxHeight);
       this.ctx.drawImage(frame, 0, 0, this.boxWidth, this.boxHeight);
       this.painted = true;
     } catch (e) {
       logE(`TgsNativeStickerView draw failed: ${e}`);
+      return;
     }
+    if (first) { this.onWorking(); }
   }
 
   private clearFrameCache(): void {

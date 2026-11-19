@@ -25,6 +25,10 @@
       "value": "#232E3C"
     },
     {
+      "name": "chat_overlay",
+      "value": "#CC232E3C"
+    },
+    {
       "name": "dock_glass",
       "value": "#8C2F3F52"
     },
@@ -159,6 +163,30 @@
     {
       "name": "list_preview_text",
       "value": "#B8C4D0"
+    },
+    {
+      "name": "reaction_in",
+      "value": "#2871BAFA"
+    },
+    {
+      "name": "reaction_in_selected",
+      "value": "#FF3D86BF"
+    },
+    {
+      "name": "reaction_in_text",
+      "value": "#FF71BAFA"
+    },
+    {
+      "name": "reaction_out",
+      "value": "#2876C18C"
+    },
+    {
+      "name": "reaction_out_selected",
+      "value": "#FF438B5B"
+    },
+    {
+      "name": "reaction_out_text",
+      "value": "#FF76C18C"
     }
   ]
 }

@@ -1,16 +1,17 @@
+import { FileBubble } from './FileBubble';
+import { DrawnDocumentCardLayout } from './DrawnDocumentCardLayout';
+import { documentFilePath } from '../../util/drawnDocumentMedia';
+import { subscribeProgress, progressForOr } from '../../util/mediaProgressChannel';
+import { THUMBNAIL_PRIORITY } from '../../util/downloadPriority';
 import { common } from '@kit.AbilityKit';
 import { DrawnDocumentWidget } from '../../util/drawnDocumentWidget';
 import { documentFileId } from '../../util/drawnDocumentMedia';
 import { documentFileState, watchDocumentFile, requestDocumentFile, cancelDocumentFile, DocumentFileState } from '../../util/documentFileChannel';
 import { MEDIA_USER_PRIORITY } from '../../util/downloadPriority';
-import { fileOpenMimeType, displayFileName } from '../../util/fileMessage';
-import { formatFileSize } from '../../util/formatFileSize';
+import { fileOpenMimeType } from '../../util/fileMessage';
 import { openLocalFile } from '../../util/openLocalFile';
 import { downloadSaveService } from '../../services/DownloadSaveNotification';
 import { showToast } from '../../util/toast';
-import { str } from '../../util/strings';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
-import { LiveProgressRing } from './LiveProgressRing';
 
 @ComponentV2
 export struct DrawnDocumentFile {
@@ -19,6 +20,11 @@ export struct DrawnDocumentFile {
   @Param messageId: number = 0;
   @Param boxWidth: number = 0;
   @Event onClaim: () => boolean = (): boolean => true;
+  @Param preparedCard: DrawnDocumentCardLayout | undefined = undefined;
+  @Local private progress: number = 0;
+  @Local private thumbnailPath: string = '';
+  private offThumb: (() => void) | null = null;
+  private offProgress: (() => void) | null = null;
   @Local private path: string = '';
   @Local private failed: boolean = false;
   @Local private downloading: boolean = false;
@@ -27,13 +33,25 @@ export struct DrawnDocumentFile {
   private pending: string = '';
   private opening: boolean = false;
   private visible: boolean = false;
-  private detach(): void { this.generation++; this.off?.(); this.off = null; this.pending = ''; this.opening = false; }
+  private detach(): void { this.generation++; this.off?.(); this.off = null; this.offProgress?.(); this.offProgress = null; this.offThumb?.(); this.offThumb = null; this.pending = ''; this.opening = false; }
   private bind(): void {
-    this.detach(); this.path = ''; this.failed = false; this.downloading = false;
+    this.detach(); this.thumbnailPath = documentFilePath(this.widget.thumbnailFile); this.path = ''; this.failed = false; this.downloading = false;
     const file = this.widget.file; if (file === undefined) { return; }
     const state = documentFileState(file); this.path = state.path; this.failed = state.failed; this.downloading = state.active === true;
+    this.progress = progressForOr(documentFileId(file), state.progress);
     if (!this.visible) { return; }
     const owner = this.generation;
+    this.offProgress = subscribeProgress(documentFileId(file), (value: number): void => {
+      if (owner === this.generation && this.progress !== value) { this.progress = value; }
+    });
+    // Covers use their own request/receiver; never download the original here.
+    if (this.widget.thumbnailFile !== undefined) {
+      this.thumbnailPath = documentFileState(this.widget.thumbnailFile).path;
+      this.offThumb = watchDocumentFile(this.widget.thumbnailFile, (next: DocumentFileState): void => {
+        if (owner === this.generation && this.thumbnailPath !== next.path) { this.thumbnailPath = next.path; }
+      });
+      requestDocumentFile(this.widget.thumbnailFile, THUMBNAIL_PRIORITY);
+    }
     this.off = watchDocumentFile(file, (next: DocumentFileState): void => {
       if (owner !== this.generation) { return; }
       this.path = next.path; this.failed = next.failed; this.downloading = next.active === true;
@@ -71,22 +89,13 @@ export struct DrawnDocumentFile {
     requestDocumentFile(this.widget.file, MEDIA_USER_PRIORITY, true);
   }
   build() {
-    Row({ space: 10 }) {
-      Stack() {
-        if (this.downloading) { LiveProgressRing({ fileId: documentFileId(this.widget.file), ringSize: 38 }); }
-        else { SymbolGlyph(this.failed ? $r('sys.symbol.arrow_clockwise') : this.path !== '' ? $r('sys.symbol.doc') : $r('sys.symbol.arrow_down'))
-          .fontSize(26).fontColor([COLOR_PRIMARY]); }
-      }.width(44).height(44);
-      Column({ space: 4 }) {
-        Text(displayFileName(this.widget.name)).fontSize(14).fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%');
-        Text(this.failed ? str('download_failed_tap') : formatFileSize(this.widget.size)).fontSize(11)
-          .fontColor(COLOR_TEXT_SECONDARY).maxLines(1).width('100%');
-      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-      Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.square_and_arrow_down')).fontSize(18); }
-        .width(32).height(32).accessibilityText(str('file_save_as')).onClick((): void => this.tap(true));
-    }.width(this.boxWidth).height(72).padding(8).borderRadius(8)
-      .onClick((): void => this.tap(false))
+    FileBubble({ fileId: documentFileId(this.widget.file), fileName: this.widget.name,
+      mimeType: this.widget.mimeType, fileSize: this.widget.size, filePath: this.path,
+      thumbnailId: documentFileId(this.widget.thumbnailFile), thumbnailPath: this.thumbnailPath,
+      mini: this.widget.thumbnailMini ?? '', preparedCard: this.preparedCard?.file,
+      downloadProgress: this.progress, downloadFailed: this.failed, downloadActive: this.downloading,
+      maxWidth: this.boxWidth, fitAvailableWidth: true,
+      onOpen: (): void => this.tap(false), onPause: (): void => this.tap(false), onSave: (): void => this.tap(true) })
       .onVisibleAreaChange([0], (visible: boolean): void => { if (this.visible !== visible) { this.visible = visible; this.bind(); } });
   }
 }

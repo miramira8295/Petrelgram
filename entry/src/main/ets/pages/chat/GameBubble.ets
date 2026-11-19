@@ -1,3 +1,10 @@
+import { DrawnLoadingSpinner } from './DrawnLoadingSpinner';
+import { DrawnCardBar } from './DrawnCardBar';
+import { DrawnMediaControl } from './DrawnMediaControl';
+import { CachedImage } from '../common/CachedImage';
+import { CachedImageSpec, CachedImageSpecCache } from '../../util/cachedImageSpec';
+import { chatEnv } from '../../util/chatEnvMirror';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
 import { MessageEntry } from '../../store/MessageEntry';
 import { TdObject } from '../../tdkit/TdTypes';
 import { DrawnPollText } from './DrawnPollText';
@@ -15,9 +22,24 @@ function gamePressedStyle() { .scale({ x: 0.985, y: 0.985 }).opacity(0.8) }
 // P4 批 6a：迁 @ComponentV2（@Prop/回调 → @Param 引用语义）。
 @ComponentV2
 export struct GameBubble {
+  @Param chatId: number = 0;
   @Param richMessage: MessageEntry | null = null;
   @Param prepared: DrawnGameLayout | null = null;
   @Event onLink: (url: string, hidesUrl: boolean) => void = (): void => {};
+  private env = chatEnv;
+  private coverPainter: DrawnCardBar = new DrawnCardBar();
+  private coverStatusPainter: DrawnCardBar = new DrawnCardBar();
+  private retryPainter: DrawnCardBar = new DrawnCardBar();
+  private buttonPainter: DrawnCardBar = new DrawnCardBar();
+  private footerPainter: DrawnCardBar = new DrawnCardBar();
+  private progressPainter: DrawnMediaControl = new DrawnMediaControl();
+  private coverSpecs: CachedImageSpecCache = new CachedImageSpecCache();
+  @Computed private get environment(): string { return `${this.env.appearanceEpoch}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`; }
+  @Computed private get coverSpec(): CachedImageSpec {
+    return this.coverSpecs.prepare({ path: this.photoPath, boxWidth: this.richWidth(),
+      boxHeight: this.prepared?.coverHeight ?? 116, fit: ImageFit.Cover, drawOnCanvas: true,
+      sourceKey: `${this.chatId}:${this.richMessage?.rowId ?? this.messageId}:${this.photoFileId}` });
+  }
   private emptyEntities: TdObject[] = [];
   @Param messageId: number = 0;
   @Param title: string = '';
@@ -128,52 +150,39 @@ export struct GameBubble {
   @Builder
   private cover() {
     Stack() {
-      if (this.photoPath !== '') {
-        Image(this.photoPath.startsWith('/') ? `file://${this.photoPath}` : this.photoPath).draggable(false)
-          .width('100%').height(this.prepared?.coverHeight ?? 116)
-          .objectFit(ImageFit.Cover)
-          .transition(TransitionEffect.OPACITY.animation({
-            duration: 180, curve: Curve.EaseOut
-          }));
-      } else {
-        Column({ space: 7 }) {
-          Text('🎮').fontSize(34);
-          if (this.photoFileId === 0) {
-            Text(this.gameAvailable() ? $r('app.string.game_no_cover') : $r('app.string.game_unavailable'))
-              .fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
-          }
-        }
-        .width('100%').height(this.prepared?.coverHeight ?? 116)
-        .justifyContent(FlexAlign.Center)
-        .backgroundColor('#E7EDF5');
+      CachedImage({ spec: this.coverSpec });
+      if (this.photoPath === '' && this.photoFileId === 0) {
+        Row().width('100%').height(24)
+          .drawModifier(this.coverStatusPainter.bind(this.getUIContext(), {
+            width: this.richWidth(), height: 24, environment: this.environment,
+            center: str(this.gameAvailable() ? 'game_no_cover' : 'game_unavailable'), centerFont: 11, centerColor: COLOR_TEXT_SECONDARY
+          })).position({ x: 0, y: (this.prepared?.coverHeight ?? 116) - 28 });
       }
 
       if (this.photoPath === '' && this.photoFileId !== 0) {
         if (this.photoFailed) {
-          Column({ space: 4 }) {
-            SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-              .fontSize(20).fontColor([Color.White]);
-            Text($r('app.string.game_retry_cover')).fontSize(10.5).fontColor(Color.White);
-          }
-          .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-          .backgroundColor('#80000000')
-          .borderRadius(12)
+          Row().width(Math.min(150, this.richWidth())).height(40)
+          .drawModifier(this.retryPainter.bind(this.getUIContext(), {
+            width: Math.min(150, this.richWidth()), height: 40, environment: this.environment,
+            center: `↻ ${str('game_retry_cover')}`, centerFont: 11, centerColor: '#FFFFFF', background: '#80000000', radius: 12
+          }))
           .onClick((): void => { this.retryCover(); });
         } else {
           Stack() {
-            if (this.photoProgress > 0) {
-              Progress({ value: this.photoProgress, total: 100, type: ProgressType.Ring })
-                .width(30).height(30).color(Color.White);
-              Text(`${this.photoProgress}%`).fontSize(9).fontColor(Color.White);
-            } else {
-              LoadingProgress().width(24).height(24).color(Color.White);
-            }
+            if (this.photoProgress <= 0) { DrawnLoadingSpinner({ ringSize: 24, ringColor: Color.White }); }
           }
-          .padding(7).backgroundColor('#68000000').borderRadius(22);
+          .width(44).height(44)
+          .drawModifier(this.progressPainter.bind(this.getUIContext(), this.environment, 44,
+            '#68000000', '#FFFFFF', 'percent', this.photoProgress, false,
+            this.photoProgress > 0 ? `${this.photoProgress}%` : ''));
         }
       }
     }
     .width('100%').height(this.prepared?.coverHeight ?? 116)
+    .drawModifier(this.coverPainter.bind(this.getUIContext(), {
+      width: this.richWidth(), height: this.prepared?.coverHeight ?? 116, environment: this.environment,
+      background: '#E7EDF5', center: this.photoPath === '' ? '🎮' : '', centerFont: 34, centerColor: COLOR_PRIMARY
+    }))
     .borderRadius(10)
     .clip(true);
   }
@@ -227,23 +236,22 @@ export struct GameBubble {
       }
       Row({ space: 7 }) {
         if (this.opening) {
-          LoadingProgress().width(16).height(16).color(Color.White);
-        } else {
-          SymbolGlyph($r('sys.symbol.play_fill')).fontSize(14).fontColor([Color.White]);
-          Text(this.gameAvailable() ? $r('app.string.game_play') : $r('app.string.game_not_available'))
-            .fontSize(13).fontWeight(FontWeight.Medium).fontColor(Color.White)
-            .maxLines(this.prepared ? 1 : undefined);
+          DrawnLoadingSpinner({ ringSize: 16, ringColor: Color.White });
         }
       }
       .width('100%').height(this.prepared?.buttonHeight ?? 36)
       .justifyContent(FlexAlign.Center)
-      .backgroundColor(this.gameAvailable() ? COLOR_PRIMARY : '#A7AFB8')
-      .borderRadius(9);
-      Row() {
-        Text(this.prepared?.footerText ?? (this.shortName.trim() !== '' ? `@${this.shortName.trim()}` : str('game_title')))
-          .fontSize(10.5).fontColor(COLOR_TEXT_SECONDARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-      }.width('100%').height(this.prepared?.footerHeight).padding({ right: 64, bottom: 9 });
+      .drawModifier(this.buttonPainter.bind(this.getUIContext(), {
+        width: this.richWidth(), height: this.prepared?.buttonHeight ?? 36, environment: this.environment,
+        center: this.opening ? '' : `▶ ${str(this.gameAvailable() ? 'game_play' : 'game_not_available')}`,
+        centerFont: 13, centerColor: '#FFFFFF', background: this.gameAvailable() ? COLOR_PRIMARY : '#A7AFB8', radius: 9
+      }));
+      Row().width('100%').height(this.prepared?.footerHeight ?? 24)
+        .drawModifier(this.footerPainter.bind(this.getUIContext(), {
+          width: this.richWidth(), height: this.prepared?.footerHeight ?? 24, environment: this.environment,
+          left: this.prepared?.footerText ?? (this.shortName.trim() !== '' ? `@${this.shortName.trim()}` : str('game_title')),
+          leftFont: 10.5, leftColor: COLOR_TEXT_SECONDARY, paddingRight: 64, paddingBottom: 9
+        }));
     }
     .width(this.fitAvailableWidth ? Math.max(1, this.maxWidth) : Math.max(220, Math.min(278, this.maxWidth)))
     .height(this.prepared?.height)

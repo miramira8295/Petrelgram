@@ -1,13 +1,13 @@
 import {
-  KEY_APP_BG_BLUR, KEY_APP_BG_BLUR_DARK, KEY_APP_BG_DIM, KEY_APP_BG_DIM_LIGHT,
+  KEY_APP_BG_DIM, KEY_APP_BG_DIM_LIGHT,
   KEY_APP_BG_PATTERN_DARK, KEY_APP_BG_PATTERN_LIGHT, KEY_APP_BG_STATE_DARK,
-  KEY_APP_BG_STATE_LIGHT, KEY_BG_BLUR, KEY_BG_BLUR_DARK, KEY_BG_PATTERN,
+  KEY_APP_BG_STATE_LIGHT, KEY_BG_PATTERN,
   KEY_BG_PATTERN_DARK, KEY_CHAT_DIM, KEY_CHAT_DIM_LIGHT
 } from '../store/AppSettings';
 
 // 壁纸的四个槽位：APP 浅色 / APP 深色 / 聊天浅色 / 聊天深色。
 //
-// 每个槽位有自己的壁纸和三根滑杆（纹理 / 深色遮罩 / 模糊）。把「槽位 → 该读写
+// 每个槽位有自己的壁纸和两根滑杆（纹理 / 深色遮罩）。把「槽位 → 该读写
 // 哪几个键」收成一处纯函数，是因为这条映射会被四条路径各用一遍（渲染、设置页的
 // 缩略图、编辑页的读、编辑页的写）；散着写必然有一处对不上，而那种错在界面上
 // 表现为"调了浅色的滑杆、深色跟着变"，极难查。
@@ -24,7 +24,6 @@ export interface WallpaperSlotKeys {
   // 下发（账号级同步），本地不存一份，否则两边会打架。
   state: string;
   pattern: string;
-  blur: string;
   dim: string;
 }
 
@@ -48,22 +47,22 @@ export function wallpaperSlotKeys(slot: string): WallpaperSlotKeys {
   if (slot === SLOT_APP_LIGHT) {
     return {
       state: KEY_APP_BG_STATE_LIGHT, pattern: KEY_APP_BG_PATTERN_LIGHT,
-      blur: KEY_APP_BG_BLUR, dim: KEY_APP_BG_DIM_LIGHT
+      dim: KEY_APP_BG_DIM_LIGHT
     };
   }
   if (slot === SLOT_APP_DARK) {
     return {
       state: KEY_APP_BG_STATE_DARK, pattern: KEY_APP_BG_PATTERN_DARK,
-      blur: KEY_APP_BG_BLUR_DARK, dim: KEY_APP_BG_DIM
+      dim: KEY_APP_BG_DIM
     };
   }
   if (slot === SLOT_CHAT_DARK) {
     return {
-      state: '', pattern: KEY_BG_PATTERN_DARK, blur: KEY_BG_BLUR_DARK, dim: KEY_CHAT_DIM
+      state: '', pattern: KEY_BG_PATTERN_DARK, dim: KEY_CHAT_DIM
     };
   }
   // 聊天浅色，也是未知槽位的兜底：读到默认值总好过读到 undefined。
   return {
-    state: '', pattern: KEY_BG_PATTERN, blur: KEY_BG_BLUR, dim: KEY_CHAT_DIM_LIGHT
+    state: '', pattern: KEY_BG_PATTERN, dim: KEY_CHAT_DIM_LIGHT
   };
 }

@@ -30,6 +30,8 @@ export interface RichCell {
 
 // 一段行内文字及其样式。url 非空表示可点。
 export interface RichSpan {
+  spoiler?: boolean;
+  customEmojiId?: string;
   anchor?: string;
   icon?: DrawnInlineIcon;
   script?: number;
@@ -87,6 +89,7 @@ function styled(base: RichSpan, type: string, url: string): RichSpan {
     marked: base.marked === true || type === 'richTextMarked',
     strike: base.strike || type === 'richTextStrikethrough',
     code: base.code || type === 'richTextFixed',
+    spoiler: base.spoiler === true || type === 'richTextSpoiler', customEmojiId: base.customEmojiId,
     url: url !== '' ? url : base.url,
     icon: base.icon, math: base.math, unsupported: base.unsupported,
     script: type === 'richTextSubscript' ? -1 : type === 'richTextSuperscript' ? 1 : base.script
@@ -123,6 +126,13 @@ export function richSpansOf(node: TdObject | undefined, url: string = '', intern
       const child = current['text'] as TdObject | undefined;
       if (child !== undefined) { pending.push({ node: child, style: frame.style }); }
       continue;
+    }
+    if (type === 'richTextCustomEmoji') {
+      const leaf = styled(frame.style, '', '');
+      leaf.text = (current['alternative_text'] as string | undefined) ?? '';
+      leaf.customEmojiId = `${current['custom_emoji_id'] ?? ''}`;
+      if (leaf.customEmojiId === '' || leaf.customEmojiId === '0' || leaf.text === '') { leaf.unsupported = type; }
+      out.push(leaf); continue;
     }
     if (type === 'richTextIcon') {
       const leaf = styled(frame.style, '', ''); leaf.text = '\uFFFC'; leaf.icon = drawnInlineIcon(current);

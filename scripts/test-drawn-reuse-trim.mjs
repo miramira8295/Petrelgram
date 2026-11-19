@@ -22,9 +22,10 @@ for(let i=1;i<=1000;i++)units.fp2px(i);assert.ok(units.fonts.size<=32);
 let fail=true;const flaky={vp2px:()=>fail?NaN:2,fp2px:()=>fail?NaN:24};
 assert.throws(()=>units.prepare(flaky,'d'));fail=false;units.prepare(flaky,'d');fail=true;assert.throws(()=>units.fp2px(12));fail=false;assert.equal(units.fp2px(12),24);
 load(root+'util/drawnPlainTextPolicy.ets',['DrawnPlainLayoutCache']);
+load(root+'util/drawnRichFlow.ets',[]);
 load(root+'pages/chat/DrawnRichTextLayout.ets',['DrawnRichTextLayouts']);
 const rich=new ctx.DrawnRichTextLayouts();let builds=0;rich.build=()=>{builds++;return {};};
-const spec={source:{},maxWidthVp:200,minWidthVp:0,fontSize:16,reserve:'',foreground:'black',accent:'blue',environment:'a'};
+const spec={source:{content:''},maxWidthVp:200,minWidthVp:0,fontSize:16,reserve:'',foreground:'black',accent:'blue',environment:'a'};
 const first=rich.prepare(ui,spec),after=conversions;for(let i=0;i<1000;i++)assert.equal(rich.prepare(ui,spec),first);
 assert.equal(builds,1);assert.equal(conversions,after,'1000 warm production rich prepares do zero additional native unit conversions');
 rich.prepare(ui,{...spec,fontSize:20});assert.equal(builds,2);assert.equal(conversions,after+2,'new actual sizes measured once');
@@ -46,7 +47,7 @@ for(const name of ['Stack','If','Image','Column','Text','SymbolGlyph'])ctx[name]
  if(k==='create')callbacks.get(current).args=args;
  if(k!=='create'&&k!=='pop')calls++;
 }});
-for(const name of ['DrawnAlbumVideo','DrawnSingleMediaVideo','LiveProgressRing'])ctx[name]=class{constructor(_owner,params){callbacks.get(current).params=params;}};
+for(const name of ['StaticMiniThumbnail','DrawnAlbumVideo','DrawnSingleMediaVideo','LiveProgressRing','DrawnMediaRetry'])ctx[name]=class{constructor(_owner,params){callbacks.get(current).params=params;}};
 ctx.ViewV2.create=()=>{};
 function execute(id,initial=false){const old=current;current=id;const c=callbacks.get(id);if(!c)return;reads=c.reads=new Set();c.fn(id,initial);current=old;reads=callbacks.get(old)?.reads;}
 function descendants(id){for(const [child,c]of [...callbacks])if(c.parent===id){descendants(child);callbacks.delete(child);branches.delete(child);}}
@@ -69,16 +70,16 @@ for(const count of [1,3,6,9]){const {slots}=render(count);assert.equal(callbacks
  for(const c of callbacks.values())if(c.type.name==='Stack'){assert.ok(c.reads.has('frames'));assert.ok(!c.reads.has('tiles'),'geometry callback cannot depend on media-cell updates');}
  const before=callbacks.size;for(const id of [...callbacks.keys()])execute(id);assert.equal(callbacks.size,before);
  assert.equal(updateSlot(0),1,'loaded photo completion updates only its overlay predicate');
- slots[0].pixels=undefined;updateSlot(0);assert.equal(countType('Image'),1,'mini appears only in changed slot');
+ slots[0].pixels=undefined;updateSlot(0);assert.equal(countType('StaticMiniThumbnail'),1,'mini appears only in changed slot');
  assert.equal([...callbacks.values()].filter(c=>c.reads.has(1)).length,count>1?1:0,'siblings do not gain dependencies');
- slots[0].pixels={};updateSlot(0);assert.equal(countType('Image'),0);assert.equal(callbacks.size,before,'loaded image drops all placeholder child callbacks');
+ slots[0].pixels={};updateSlot(0);assert.equal(countType('StaticMiniThumbnail'),0);assert.equal(countType('Image'),0);assert.equal(callbacks.size,before,'loaded image drops all placeholder child callbacks');
 }
 // Mini can stay underneath upload progress; native fallback can coexist with progress.
 let {row,slots,tiles}=render(1);slots[0].pixels=undefined;row.sendState='sending';updateSlot(0);
-assert.equal(countType('Image'),1);assert.equal(countType('LiveProgressRing'),1);
+assert.equal(countType('StaticMiniThumbnail'),1);assert.equal(countType('LiveProgressRing'),1);
 slots[0].pixels={native:true};slots[0].receiver.canDraw=()=>false;updateSlot(0);assert.equal(countType('Image'),1);assert.equal(countType('LiveProgressRing'),1);
-row.sendState='sent';slots[0].pixels=undefined;slots[0].path='';updateSlot(0);assert.equal(countType('Image'),0);assert.equal(countType('LiveProgressRing'),1);
-tiles[0].cell.failed=true;for(const id of [...callbacks.keys()])if(callbacks.has(id))execute(id);assert.equal(countType('LiveProgressRing'),0);assert.equal(countType('SymbolGlyph'),1);
+row.sendState='sent';slots[0].pixels=undefined;slots[0].path='';updateSlot(0);assert.equal(countType('StaticMiniThumbnail'),0);assert.equal(countType('Image'),0);assert.equal(countType('LiveProgressRing'),1);
+tiles[0].cell.failed=true;for(const id of [...callbacks.keys()])if(callbacks.has(id))execute(id);assert.equal(countType('LiveProgressRing'),0);assert.equal(countType('DrawnMediaRetry'),1);assert.equal(countType('SymbolGlyph'),0);
 // Video island remains outside the overlay predicate across poster availability.
 ({row,slots,tiles}=render(1));tiles[0].cell.isVideo=true;slots[0].content.hostReady=true;for(const id of [...callbacks.keys()])if(callbacks.has(id))execute(id);assert.equal(countType('DrawnAlbumVideo'),1);
 slots[0].path='';slots[0].pixels=undefined;updateSlot(0);assert.equal(countType('DrawnAlbumVideo'),1);assert.equal([...callbacks.values()].find(c=>c.type.name==='DrawnAlbumVideo').params.thumbReady,undefined);

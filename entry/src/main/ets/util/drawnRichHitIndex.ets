@@ -1,44 +1,68 @@
 import { DrawnRichHit } from './drawnRichTextPolicy';
 
-interface DrawnRichIndexedHit { hit: DrawnRichHit; order: number; bottom: number; }
+interface DrawnRichIndexedHit { hit: DrawnRichHit; order: number; top: number; bottom: number; }
+class DrawnRichIntervalNode {
+  center: number;
+  byTop: DrawnRichIndexedHit[];
+  byBottom: DrawnRichIndexedHit[];
+  left: DrawnRichIntervalNode | null = null;
+  right: DrawnRichIntervalNode | null = null;
+  constructor(center: number, crossing: DrawnRichIndexedHit[]) {
+    this.center = center; this.byTop = crossing;
+    this.byBottom = crossing.slice().sort((a: DrawnRichIndexedHit, b: DrawnRichIndexedHit): number => b.bottom - a.bottom);
+  }
+}
 
-// Built once with the paragraph, never while painting. O(H log H) preparation,
-// O(H) space. Lookup skips preceding non-overlapping lines with a prefix bound;
-// pathological overlapping rectangles remain bounded by the policy's 1024 cap.
+// Centered interval tree: O(H log H) preparation, O(H) retained space and
+// O(log H + K) lookup for K rectangles intersecting the queried horizontal line.
+// A single tall rectangle cannot force a scan of every preceding glyph line.
+// Original paint order remains the overlap tie-breaker. No text-size cap needed.
 export class DrawnRichHitIndex {
   readonly regions: Rectangle[] = [];
-  private sorted: DrawnRichIndexedHit[] = [];
-  private bottoms: number[] = [];
+  private root: DrawnRichIntervalNode | null = null;
 
   constructor(hits: DrawnRichHit[]) {
+    const sorted: DrawnRichIndexedHit[] = [];
     for (let i: number = 0; i < hits.length; i++) {
       const hit = hits[i];
+      if (!Number.isFinite(hit.x) || !Number.isFinite(hit.y) || !Number.isFinite(hit.widthVp) ||
+        !Number.isFinite(hit.heightVp) || !Number.isFinite(hit.x + hit.widthVp) ||
+        !Number.isFinite(hit.y + hit.heightVp) || !(hit.widthVp > 0 && hit.heightVp > 0)) { continue; }
       this.regions.push({ x: hit.x, y: hit.y, width: hit.widthVp, height: hit.heightVp });
-      this.sorted.push({ hit, order: i, bottom: hit.y + hit.heightVp });
+      sorted.push({ hit, order: i, top: hit.y, bottom: hit.y + hit.heightVp });
     }
-    this.sorted.sort((a: DrawnRichIndexedHit, b: DrawnRichIndexedHit): number => a.hit.y - b.hit.y);
-    let bottom: number = 0;
-    for (const item of this.sorted) {
-      bottom = Math.max(bottom, item.bottom);
-      this.bottoms.push(bottom);
+    sorted.sort((a: DrawnRichIndexedHit, b: DrawnRichIndexedHit): number => a.top - b.top);
+    this.root = this.build(sorted);
+  }
+
+  private build(sorted: DrawnRichIndexedHit[]): DrawnRichIntervalNode | null {
+    if (sorted.length === 0) { return null; }
+    const center = sorted[sorted.length >>> 1].top;
+    const left: DrawnRichIndexedHit[] = [], right: DrawnRichIndexedHit[] = [], crossing: DrawnRichIndexedHit[] = [];
+    for (const item of sorted) {
+      if (item.bottom <= center) { left.push(item); }
+      else if (item.top > center) { right.push(item); }
+      else { crossing.push(item); }
     }
+    const node = new DrawnRichIntervalNode(center, crossing);
+    node.left = this.build(left); node.right = this.build(right);
+    return node;
   }
 
   find(x: number, y: number): DrawnRichHit | null {
     if (!Number.isFinite(x) || !Number.isFinite(y)) { return null; }
-    let low: number = 0, high: number = this.sorted.length;
-    while (low < high) {
-      const mid: number = (low + high) >>> 1;
-      if (this.sorted[mid].hit.y <= y) { low = mid + 1; } else { high = mid; }
-    }
+    let node = this.root;
     let found: DrawnRichHit | null = null;
     let order: number = -1;
-    for (let i: number = low - 1; i >= 0 && this.bottoms[i] > y; i--) {
-      const item = this.sorted[i], hit = item.hit;
-      // Later child wins if glyph rectangles overlap, like the former Stack.
-      if (item.order > order && y < item.bottom && x >= hit.x && x < hit.x + hit.widthVp) {
-        found = hit; order = item.order;
+    while (node !== null) {
+      const upper = y < node.center;
+      const candidates = upper ? node.byTop : node.byBottom;
+      for (const item of candidates) {
+        if (upper ? item.top > y : item.bottom <= y) { break; }
+        const hit = item.hit;
+        if (item.order > order && x >= hit.x && x < hit.x + hit.widthVp) { found = hit; order = item.order; }
       }
+      node = upper ? node.left : node.right;
     }
     return found;
   }

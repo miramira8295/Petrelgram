@@ -19,7 +19,7 @@ const ctx=vm.createContext({ViewV2:View,ViewPU:View,
       layoutSync(width){this.width=width;},getHeight(){return style.textStyle.fontSize*1.2;},getLongestLine(){return Math.min(this.width,text.length*6);},
       paint(_canvas,x,y){paints.push({text,x,y});},updateColor(){}};}}},
   chatEnv:{langEpoch:1},textMeasureEnvironment:{epoch:1},a11yRuntimeState:{active:false},
-  formatFileSize:n=>n+'B',formatMediaDuration:n=>n+'s', $r:x=>x,Color:{White:'#fff'},
+  str:key=>key,formatFileSize:n=>n+'B',formatMediaDuration:n=>n+'s', $r:x=>x,Color:{White:'#fff'},
   PLAY_SLOT_KEEP_RATIO:.2,PLAY_SLOT_ENTER_RATIO:.7
 });
 function load(path,names){
@@ -72,14 +72,27 @@ const geometryPaths=paths;pendingPainter.bind(ui,200,120,'',false,'1');assert.eq
 pendingPainter.bind(ui,200,120,'new size',true,'1');assert.equal(paths,geometryPaths+1,'publication consumes the latest delayed geometry');
 console.log('PASS: 1000 stable draws and 1000 playback changes reuse paragraph/path/metrics; resize/ellipsis/clear/environment refresh correctly.');
 
+const livePainter = new ctx.DrawnVideoDecoration();
+livePainter.bind(ui,150,100,'2s',false,'live','Live');
+assert.ok(livePainter.liveWidthVp>26);assert.ok(livePainter.liveHeightVp>=18);
+const liveCounts={shapes,paths,conversions,invalidations};
+for(let i=0;i<1000;i++){livePainter.bind(ui,150,100,'2s',false,'live','Live');livePainter.drawForeground({canvas});}
+assert.deepEqual({shapes,paths,conversions,invalidations},liveCounts,'warm Live Photo does not reshape/query/invalidate');
+const livePaints=paints.length;livePainter.bind(ui,150,100,'',false,'live','');livePainter.drawForeground({canvas});
+assert.equal(paints.length,livePaints,'reused non-live slot cannot retain Live Photo label');
+assert.equal(livePainter.liveWidthVp,0);assert.equal(livePainter.liveHeightVp,0);
+const beforeNewUI=conversions;livePainter.bind({...ui},150,100,'2s',false,'live','Live');
+assert.equal(conversions,beforeNewUI+3,'new UI context refreshes density and both font metrics');
+
 // Actual compiled video tree: inactive video has only its lifecycle Stack;
 // player and accessible labels still use native children on demand.
 load(root+'pages/chat/DrawnVideoMeta.ets',['drawnVideoMetaCache']);
 load(root+'util/drawnStageMetrics.ets',['drawnStageMetrics','DrawnStage']);
 load(root+'pages/chat/DrawnMediaPosition.ets',['DrawnMediaPosition']);
+load(root+'pages/chat/PlaySlotChannel.ets',['PlaySlotChannel','PlaySlotBinding','EMPTY_PLAY_SLOT']);
 load(compiled+'pages/chat/DrawnAlbumVideo.ts',['DrawnAlbumVideo']);
-const created=[],native=[];let eid=0;
-for(const name of ['If','Stack','Row','Circle','SymbolGlyph','Text','__Common__'])ctx[name]=new Proxy({}, {get:(_t,k)=>(...args)=>{if(k==='create')created.push(name);}});
+const created=[],native=[],semantic=[];let eid=0;
+for(const name of ['If','Stack','Row','Circle','SymbolGlyph','Text','__Common__'])ctx[name]=new Proxy({}, {get:(_t,k)=>(...args)=>{if(k==='create')created.push(name);if(k==='accessibilityText')semantic.push(args[0]);}});
 for(const name of ['FontWeight','TextOverflow','HitTestMode'])ctx[name]=new Proxy({}, {get:(_t,k)=>k});
 ctx.VideoBubbleSurface=class {constructor(_owner,params){native.push(params);}};ctx.ViewV2.create=()=>{};
 const cell={chatId:1,messageId:10,idx:0,width:150,height:100,isVideo:true,isLive:false,isPlaySlot:false,videoFileId:8,inlineFileId:9,videoFileSize:30,videoDuration:2};
@@ -88,8 +101,8 @@ video.getUIContext=()=>ui;video.observeComponentCreation2=fn=>fn(++eid,true);vid
 video.initialRender();assert.equal(created.filter(n=>n==='Stack').length,1);assert.equal(created.filter(n=>['Text','Circle','SymbolGlyph'].includes(n)).length,0);
 video.cell={...cell,isPlaySlot:true};video.initialRender();assert.equal(native.length,1);assert.equal(native[0].fileId,9);assert.equal(video.decoration.play,false);
 video.sendState='sending';video.initialRender();assert.equal(native.length,1);assert.equal(video.decoration.play,false);
-video.sendState='sent';video.cell={...cell,isLive:true};video.initialRender();assert.equal(video.decoration.play,false);assert.ok(created.includes('Text'),'Live Photo label preserved');
-ctx.a11yRuntimeState.active=true;video.cell=cell;created.length=0;video.initialRender();assert.ok(created.includes('Text'));assert.ok(created.includes('Circle'));assert.equal(video.decoration.label,null);
+video.sendState='sent';video.cell={...cell,isLive:true};video.initialRender();assert.equal(video.decoration.play,false);assert.ok(video.decoration.liveLabel,'Live Photo label is painted');assert.equal(created.filter(n=>['Text','SymbolGlyph','Circle'].includes(n)).length,0);
+ctx.a11yRuntimeState.active=true;video.cell=cell;created.length=0;video.initialRender();assert.ok(created.filter(n=>n==='Row').length>=2,'play and metadata keep semantic nodes');assert.ok(semantic.includes('lvp_play'));assert.ok(semantic.includes('2s · 30B'));assert.equal(created.filter(n=>['Text','SymbolGlyph','Circle'].includes(n)).length,0);assert.ok(video.decoration.label,'screen reading preserves the same painted appearance');
 ctx.a11yRuntimeState.active=false;video.cell=undefined;video.mediaWidth=150;video.mediaHeight=100;created.length=0;
 const pendingNativeCount=native.length;video.initialRender();assert.equal(native.length,pendingNativeCount);
 assert.equal(created.filter(n=>n==='Stack').length,1,'pending input keeps one fixed shell');

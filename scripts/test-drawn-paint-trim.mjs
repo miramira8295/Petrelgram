@@ -37,6 +37,7 @@ function runtime(baseline='') {
   const src=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/\bexport /g,'');
   vm.runInContext(ts.transpileModule(src+names.map(n=>`\nglobalThis.${n}=${n};`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx,{filename:path});
  }
+ load('util/reactionPresentation.ets',[]);
  load('util/drawnStageMetrics.ets',['drawnStageMetrics','DrawnInvalidation','DrawnStage']);
  for(const name of ['DrawnChromePainter','DrawnBubblePainter','DrawnAlbumGridSelection','DrawnPlainTextPainter','DrawnContentOutline'])
   load('pages/chat/'+name+'.ets',name==='DrawnBubblePainter'?['DrawnBubblePainter','DrawnBubbleForeground','DrawnBubbleAvatar']:[name]);
@@ -51,8 +52,8 @@ function plan(d=2,size=13,outgoing=true){return {density:d,statusSize:size,statu
  caption:text,captionX:8,captionY:24,footer:text,footerX:80,footerY:70,footerTextOffset:10,footerBackdrop:'backdrop',views:'12',footerEye:'eye',
  tiles:[{x:0,y:0,width:120,cell:{selectionActive:true,selected:true}},{x:120,y:0,width:120,cell:{selectionActive:true,selected:false}}],
  chrome:{content:{forward:text,comments:text},forwardRect:{x:1,y:2},reactionsX:2,reactionsY:100,
- reactions:{chips:[{x:0,y:0,width:30,height:24,reaction:{customEmojiPath:''},fill:ink,background:'chip',emoji:null,count:text,iconWidth:15},
- {x:50,y:0,height:24,reaction:null}]},commentsRect:{x:0,y:150,width:200,height:30},commentsTextX:8}};}
+ reactions:{chips:[{x:0,y:0,width:50,height:26,reaction:{customEmojiPath:''},fill:ink,background:'chip',emoji:null,count:text,iconWidth:20,countX:32},
+ {x:54,y:0,height:26,reaction:null}]},commentsRect:{x:0,y:150,width:200,height:30},commentsTextX:8}};}
 function replay(rt){
  const {ctx,commands,canvas}=rt,bg=new ctx.DrawnBubblePainter(),fg=new ctx.DrawnBubbleForeground(),av=new ctx.DrawnBubbleAvatar();
  const media={avatarHasPath:false,avatar:{drawFront(){canvas.image();}}},draw={canvas};
@@ -78,6 +79,10 @@ const lp={density:2,iconPx:26,outline:'outline',fill:ink,accent:ink,secondary:in
  header:null,quote:null,body:{paint(){}},footer:{paint(){}},bodyX:2,bodyY:4,footerX:50,footerY:80,statusX:120,statusY:80};
 plain.bind(lp,'read',true);outline.bind(true,true,{},ink,'1',true,2);
 const painters=[fg,bg,av,grid,plain,outline];for(const v of painters)v.drawBehind(frame);
+assert.ok(r.commands.every(command=>!command.brush?.filter),'bubble paint must not submit a blurred shadow');
+const stable=counts.invalidations;
+for(let i=0;i<1000;i++){bg.bind(p,i%2===0);plain.bind(lp,'read',i%2===0);outline.bind(true,true,{},ink,'1',i%2===0,2);}
+assert.equal(counts.invalidations,stable,'obsolete shadow toggles must not invalidate bubble painters');
 const warm={...counts};r.commands.length=0;
 for(let i=0;i<1000;i++)for(const v of painters)v.drawBehind(frame);
 assert.equal(counts.aa,warm.aa);assert.equal(counts.width,warm.width);assert.equal(counts.objects,warm.objects);
@@ -100,9 +105,9 @@ assert.equal(counts.invalidations,n+1,'clear body and reaction highlights invali
 assert.match(m.summary(),/reason=foreground\/plan calls=1/);assert.match(m.summary(),/reason=foreground\/status calls=1/);
 assert.match(m.summary(),/reason=foreground\/footer calls=1/);assert.match(m.summary(),/reason=foreground\/press calls=3/);
 assert.match(m.summary(),/stage=PG\/foreground-paint calls=100/);
-const b=new ctx.DrawnBubblePainter(),a=new ctx.DrawnBubbleAvatar();b.bind(p,false);b.bind(p,true);a.bind(p,media);
+const b=new ctx.DrawnBubblePainter(),a=new ctx.DrawnBubbleAvatar();b.bind(p,false);const unchanged=counts.invalidations;b.bind(p,true);assert.equal(counts.invalidations,unchanged);a.bind(p,media);
 b.drawBehind(frame);a.drawBehind(frame);
-assert.match(m.summary(),/reason=background\/plan calls=1/);assert.match(m.summary(),/reason=background\/shadow calls=1/);
+assert.match(m.summary(),/reason=background\/plan calls=1/);assert.doesNotMatch(m.summary(),/reason=background\/shadow/,'legacy shadow input must not invalidate the fill');
 assert.match(m.summary(),/reason=avatar\/plan calls=1/);
 const starts=r.trace.filter(x=>x!=='end').length;assert.equal(r.trace.filter(x=>x==='end').length,starts);
 r.trace.length=0;assert.throws(()=>f.drawBehind({canvas:{save(){throw Error('paint failure');}}}));assert.equal(r.trace.at(-1),'end');

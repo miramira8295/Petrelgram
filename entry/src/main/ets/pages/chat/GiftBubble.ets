@@ -1,10 +1,34 @@
+import { DrawnLoadingSpinner } from './DrawnLoadingSpinner';
+import { DrawnCardBar } from './DrawnCardBar';
+import { DrawnMediaControl } from './DrawnMediaControl';
+import { CachedImage } from '../common/CachedImage';
+import { CachedImageSpec, CachedImageSpecCache } from '../../util/cachedImageSpec';
+import { chatEnv } from '../../util/chatEnvMirror';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
+import { str } from '../../util/strings';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { DrawnGiftLayout, DrawnGiftTextPainter } from './DrawnGiftLayout';
 
 // P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
 @ComponentV2
 export struct GiftBubble {
+  @Param chatId: number = 0;
   @Param prepared: DrawnGiftLayout | null = null;
+  private env = chatEnv;
+  private artworkPainter: DrawnCardBar = new DrawnCardBar();
+  private retryPainter: DrawnCardBar = new DrawnCardBar();
+  private badgePainter: DrawnCardBar = new DrawnCardBar();
+  private statusPainter: DrawnCardBar = new DrawnCardBar();
+  private copyPainter: DrawnCardBar = new DrawnCardBar();
+  private dotPainter: DrawnMediaControl = new DrawnMediaControl();
+  private progressPainter: DrawnMediaControl = new DrawnMediaControl();
+  private photoSpecs: CachedImageSpecCache = new CachedImageSpecCache();
+  @Computed private get environment(): string { return `${this.env.appearanceEpoch}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`; }
+  @Computed private get photoSpec(): CachedImageSpec {
+    return this.photoSpecs.prepare({ path: this.photoPath, boxWidth: 112, boxHeight: 112, fit: ImageFit.Contain,
+      drawOnCanvas: true, sourceKey: `${this.chatId}:${this.messageId}:${this.photoFileId}` });
+  }
+  private cardWidth(): number { return this.fitAvailableWidth ? Math.max(1, this.maxWidth) : Math.max(220, Math.min(278, this.maxWidth)); }
   private textPainter: DrawnGiftTextPainter = new DrawnGiftTextPainter();
   @Param messageId: number = 0;
   @Param kind: string = '';
@@ -68,51 +92,35 @@ export struct GiftBubble {
   @Builder
   private artwork() {
     Stack() {
-      Column()
-        .width('100%').height('100%')
-        .linearGradient({
-          angle: 140,
-          colors: [[`${this.accent()}22`, 0], ['#F7F9FC', 1]]
-        });
-      if (this.photoPath !== '') {
-        Image(this.photoPath.startsWith('/') ? `file://${this.photoPath}` : this.photoPath).draggable(false)
-          .width(112).height(112).objectFit(ImageFit.Contain)
-          .transition(TransitionEffect.OPACITY
-            .combine(TransitionEffect.scale({ x: 0.92, y: 0.92 }))
-            .animation({ duration: 220, curve: Curve.EaseOut }));
-      } else {
-        Text(this.fallbackEmoji()).fontSize(54)
-          .opacity(this.refunded ? 0.5 : 1);
-      }
+      CachedImage({ spec: this.photoSpec });
       if (this.photoPath === '' && this.photoFileId !== 0) {
         if (this.photoFailed) {
-          Row({ space: 4 }) {
-            SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(13).fontColor([Color.White]);
-            Text($r('app.string.gift_retry_image')).fontSize(10).fontColor(Color.White);
-          }
-          .padding({ left: 8, right: 8, top: 5, bottom: 5 })
-          .backgroundColor('#78000000').borderRadius(10)
+          Row().width(128).height(25)
+          .drawModifier(this.retryPainter.bind(this.getUIContext(), {
+            width: 128, height: 25, environment: this.environment, center: `↻ ${str('gift_retry_image')}`,
+            centerFont: 10, centerColor: '#FFFFFF', background: '#78000000', radius: 10
+          }))
           .position({ x: 8, y: 92 })
           .onClick((): void => this.retryPhoto());
         } else {
           Stack() {
-            if (this.photoProgress > 0) {
-              Progress({ value: this.photoProgress, total: 100, type: ProgressType.Ring })
-                .width(26).height(26).color(this.accent());
-            } else {
-              LoadingProgress().width(23).height(23).color(this.accent());
-            }
-          }.position({ x: 10, y: 91 });
+            if (this.photoProgress <= 0) { DrawnLoadingSpinner({ ringSize: 23, ringColor: this.accent() }); }
+          }.width(26).height(26).position({ x: 10, y: 91 })
+            .drawModifier(this.progressPainter.bind(this.getUIContext(), this.environment, 26,
+              '#00000000', this.accent(), '', this.photoProgress));
         }
       }
-      Row({ space: 5 }) {
-        SymbolGlyph($r('sys.symbol.gift')).fontSize(11).fontColor([this.accent()]);
-        Text('GIFT').fontSize(9.5).fontWeight(FontWeight.Medium)
-          .fontColor(this.accent());
-      }
-      .position({ x: 10, y: 9 });
+      Row().width(64).height(18).position({ x: 10, y: 9 })
+        .drawModifier(this.badgePainter.bind(this.getUIContext(), {
+          width: 64, height: 18, environment: this.environment, left: '🎁 GIFT', leftFont: 9.5, leftColor: this.accent()
+        }));
     }
     .width('100%').height(this.prepared?.artworkHeight ?? 124)
+    .drawModifier(this.artworkPainter.bind(this.getUIContext(), {
+      width: this.cardWidth(), height: this.prepared?.artworkHeight ?? 124, environment: this.environment,
+      center: this.photoPath === '' ? this.fallbackEmoji() : '', centerFont: 54, centerColor: this.accent(),
+      background: `#1A${this.accent().substring(1)}`, radius: 12
+    }))
     .borderRadius(12).clip(true);
   }
 
@@ -139,23 +147,24 @@ export struct GiftBubble {
         }
       }
       Row({ space: 5 }) {
-        Circle({ width: 6, height: 6 }).fill(this.refunded ? '#8C96A1' : '#39A96B');
-        Text(this.status.trim() !== '' ? this.status : $r('app.string.gift_status_unknown'))
-          .fontSize(11).fontColor(COLOR_TEXT_SECONDARY)
-          .maxLines(this.prepared ? 1 : undefined)
-          .lineHeight(this.prepared?.statusHeight).height(this.prepared?.statusHeight)
-          .layoutWeight(this.prepared ? 1 : 0);
-        if (!this.prepared) { Blank(); }
+        Row().width(6).height(6)
+          .drawModifier(this.dotPainter.bind(this.getUIContext(), this.environment, 6,
+            this.refunded ? '#8C96A1' : '#39A96B', '#00000000', ''));
+        Row().width(Math.max(1, this.cardWidth() - 11 - (this.code !== '' ? (this.prepared?.copyWidth ?? 112) + 5 : 0)))
+          .height(this.prepared?.statusHeight ?? 18)
+          .drawModifier(this.statusPainter.bind(this.getUIContext(), {
+            width: Math.max(1, this.cardWidth() - 11 - (this.code !== '' ? (this.prepared?.copyWidth ?? 112) + 5 : 0)),
+            height: this.prepared?.statusHeight ?? 18, environment: this.environment,
+            left: this.status.trim() !== '' ? this.status : str('gift_status_unknown'), leftFont: 11, leftColor: COLOR_TEXT_SECONDARY
+          }));
         if (this.code !== '') {
-          Row({ space: 4 }) {
-            SymbolGlyph($r('sys.symbol.doc_text')).fontSize(12).fontColor([COLOR_PRIMARY]);
-            Text($r('app.string.gift_copy_code')).fontSize(11).fontColor(COLOR_PRIMARY)
-              .maxLines(this.prepared ? 1 : undefined).layoutWeight(this.prepared ? 1 : 0);
-          }
-          .padding({ left: 8, right: 8, top: 5, bottom: 5 })
-          .width(this.prepared?.copyWidth).height(this.prepared?.copyHeight)
-          .clip(this.prepared !== null)
-          .backgroundColor('#123390EC').borderRadius(9)
+          Row()
+          .width(this.prepared?.copyWidth ?? 112).height(this.prepared?.copyHeight ?? 28)
+          .drawModifier(this.copyPainter.bind(this.getUIContext(), {
+            width: this.prepared?.copyWidth ?? 112, height: this.prepared?.copyHeight ?? 28, environment: this.environment,
+            center: `▤ ${str('gift_copy_code')}`, centerFont: 11, centerColor: COLOR_PRIMARY, background: '#123390EC', radius: 9
+          }))
+          .accessibilityText(str('gift_copy_code'))
           .stateStyles({
             normal: this.normalStyle,
             pressed: this.pressedStyle

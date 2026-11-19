@@ -8,6 +8,7 @@ interface DrawnSemanticTarget extends DrawnAlbumRect {
   key: string;
   label: string;
   menu: boolean;
+  selected?: boolean;
 }
 
 // Equivalent to Android's virtual descendants: accessibility targets accompany
@@ -54,7 +55,7 @@ export struct DrawnRowAccessibility {
         x: chrome.forwardRect.x, y: chrome.forwardRect.y, width: chrome.forwardRect.width, height: chrome.forwardRect.height });
     }
     for (const chip of chrome?.reactions?.chips ?? []) {
-      targets.push({ key: 'reaction:' + chip.key,
+      targets.push({ key: 'reaction:' + chip.key, selected: chip.reaction?.isChosen === true,
         label: chip.reaction !== null ? `${chip.reaction.emoji || str('reactions_custom_emoji')} ${chip.reaction.count}` : str('a11y_message_reactions'), menu: false,
         x: (chrome?.reactionsX ?? 0) + chip.x, y: (chrome?.reactionsY ?? 0) + chip.y, width: chip.width, height: chip.height });
     }
@@ -75,10 +76,10 @@ export struct DrawnRowAccessibility {
     Stack({ alignContent: Alignment.TopStart }) {
       ForEach(this.targets, (target: DrawnSemanticTarget) => {
         Row().width(target.width).height(target.height).position({ x: target.x, y: target.y })
-          .accessibilityText(target.label).accessibilityLevel('yes')
+          .accessibilityText(target.label).accessibilitySelected(target.selected === true).accessibilityLevel('yes')
           .accessibilityRole(AccessibilityRoleType.BUTTON)
           .onClick((event: ClickEvent): void => { this.activate(target, event); });
-      }, (target: DrawnSemanticTarget): string => `${this.msg.rowId}:${target.key}`);
+      }, (target: DrawnSemanticTarget): string => `${this.msg.rowId}:${target.key}` + (target.key.startsWith('reaction:') ? `:${target.label}:${target.selected}:${target.x}:${target.y}:${target.width}:${target.height}` : ''));
     }.width(this.plan?.width ?? 0).height(this.plan?.height ?? 0).accessibilityGroup(false);
   }
 }

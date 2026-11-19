@@ -101,31 +101,38 @@ down(cr.x+1,cr.y+1);const old=row.group;row.group={...old,head:{...old.head,rowI
 const count=events.length;row.click({x:cr.x+1,y:cr.y+1,source:1});assert.equal(events.length,count);
 console.log('PASS: compiled reaction toggle/hold/list anchor, forward origin, comments, selection suppression, mid-touch layout change and A/B/A input guards.');
 
-// Compiled resource islands keep custom emoji + commenter avatars, but no
-// text/count/chip components. Replay old params after the group is emptied.
+// Compiled islands bind one shared reaction canvas and commenter avatars;
+// reaction image/count/emoji resources live inside that canvas. Replay empty reuse.
 ctx.ViewV2.prototype.initParam=function(k,v){this[k]=v;};ctx.ViewV2.prototype.finalizeConstruction=function(){};
 ctx.ViewV2.create=()=>{};
-const created=[],callbacks=[],avatarParams=[],updates=[],ids=[];
+const created=[],callbacks=[],avatarParams=[],surfaceParams=[],updates=[],ids=[];
 for(const type of ['Stack','Row','Image','If','ForEach','Column','Text','__Common__'])ctx[type]=new Proxy({}, {get:(_t,k)=>(...args)=>{
  if(k==='create')created.push(type);if(k==='id')ids.push(args[0]);}});
 ctx.OutlineStyle={SOLID:1};ctx.ImageFit={Contain:1};
 ctx.MessageSenderAvatar=class{constructor(_parent,params){avatarParams.push(params);}};
+ctx.DrawnReactionsSurface=class{constructor(_parent,params){surfaceParams.push(params);}};
 load(compiled+'pages/chat/DrawnChromeIslands.ts',['DrawnChromeIslands']);
 const ig=message(6),ip=new ctx.DrawnTextLayouts().prepare(ui,ig,{...data,isChannel:true},style);
 const island=new ctx.DrawnChromeIslands(null,{plan:ip,msg:ig.head,chatId:9,themeBubbleOut:''});
 island.observeComponentCreation2=fn=>{callbacks.push(fn);fn(1,true);};
 island.ifElseBranchUpdateFunction=(_id,fn)=>fn();island.forEachUpdateFunction=(_id,items,fn)=>items.forEach(fn);
 island.updateStateVarsOfChildByElmtId=(_id,params)=>updates.push(params);
-island.initialRender();assert.equal(avatarParams.length,3);assert.equal(created.filter(n=>n==='Image').length,1);
+island.initialRender();assert.equal(avatarParams.length,3);assert.equal(created.filter(n=>n==='Image').length,0);
+assert.equal(surfaceParams.length,1);assert.equal(surfaceParams[0].plan,ip.chrome.reactions);
+assert.equal(surfaceParams[0].ownerKey,`9:${ig.head.id}`);assert.equal(surfaceParams[0].density,ip.density);
 assert.equal(created.filter(n=>n==='Text').length,0);
 const beforeBindings=[...callbacks];island.msg={...ig.head,commentReplierIds:[7],commentReplierAvatarPaths:['/new']};
 for(const fn of beforeBindings)fn(1,false);
-assert.equal(updates[0].spec.senderId,7);assert.equal(updates[0].spec.initialPath,'/new');assert.equal(updates[1].spec.senderId,0);
+const avatarUpdates=updates.filter(params=>params.spec!==undefined);
+assert.equal(avatarUpdates[0].spec.senderId,7);assert.equal(avatarUpdates[0].spec.initialPath,'/new');assert.equal(avatarUpdates[1].spec.senderId,0);
+const surfaceUpdates=updates.filter(params=>Object.hasOwn(params,'ownerKey'));assert.ok(surfaceUpdates.length>0);assert.equal(surfaceUpdates.at(-1).plan,ip.chrome.reactions);
 island.plan=null;island.msg={...ig.head,commentReplierIds:[],commentReplierAvatarPaths:[]};
-for(const fn of beforeBindings)fn(1,false);
+updates.length=0;for(const fn of beforeBindings)fn(1,false);
+assert.equal(updates.find(params=>Object.hasOwn(params,'ownerKey')).plan,undefined,'empty recycled plan clears reaction surface');
+assert.ok(updates.filter(params=>params.spec!==undefined).every(params=>params.spec.senderId===0),'empty reuse clears all avatar slots');
 island.plan=new ctx.DrawnTextLayouts().prepare(ui,ig,data,style);island.msg=ig.head;island.initialRender();
 assert.equal(ids.at(-1),'reactors_anchor_9_10');
-console.log('PASS: compiled islands retain one loaded custom image, three avatars, no Text children; live avatar paths/empty reuse and popup anchor preserved.');
+console.log('PASS: compiled islands bind one reaction surface with plan/owner/density, three comment avatars, zero custom Image/Text children; live updates, empty reuse and popup anchor preserved.');
 
 let nativeObjects=0,paints=0;
 const native=class{constructor(){nativeObjects++;return new Proxy({}, {get:()=>()=>{}});}};
@@ -136,6 +143,10 @@ const canvas=new Proxy({}, {get:()=>()=>paints++});
 painter.bind(2);
 for(let i=0;i<100;i++)painter.paint(canvas,ip.chrome,2,{}, {},ip.chrome.reactions.chips[0]);
 assert.equal(nativeObjects,allocated);assert.deepEqual(layoutCounters(),paintWarm);assert.ok(paints>0);
+const reactionOnly={...ip.chrome,content:{...ip.chrome.content,forward:null,comments:null}};
+assert.equal(reactionOnly.reactions.external,true);const beforeExternalPaints=paints;
+painter.paint(canvas,reactionOnly,2,{}, {},null);assert.equal(paints,beforeExternalPaints,'main chrome must not draw externally owned reactions');
+reactionOnly.reactions.external=false;painter.paint(canvas,reactionOnly,2,{}, {},null);assert.ok(paints>beforeExternalPaints,'legacy nonexternal chrome remains paintable');reactionOnly.reactions.external=true;
 const cache=layouts.chrome.reactions;cache.measure(ui,reactions(1000),250,true,'1');cache.flow(250);
 cache.measure(ui,reactions(2),250,true,'1');cache.flow(250);
 assert.equal(cache.emojis.length,2);assert.equal(cache.counts.length,2);assert.equal(cache.metrics.length,3);
@@ -165,3 +176,57 @@ emptyLayout.prepare(ui,message(10),{...data,isChannel:true},style);
 emptyLayout.prepare(ui,group(),data,style);
 assert.equal(emptyLayout.chrome.reactions,null);assert.equal(emptyLayout.chrome.forward,null);assert.equal(emptyLayout.chrome.comments,null);
 console.log('PASS: plain rows allocate no label/reaction caches; reuse into a plain row drops old chrome caches.');
+
+// Android normal-chip geometry, custom-emoji spacing and separate in/out colors.
+const reactionOwner = new ctx.DrawnTextLayouts();
+const normalReactions = message(3);
+normalReactions.head.reactions = [
+  {emoji:'👍',count:1,isChosen:false,customEmojiId:'',customEmojiPath:''},
+  {emoji:'',count:12,isChosen:true,customEmojiId:'77',customEmojiPath:'/custom'},
+  {emoji:'❤',count:100,isChosen:false,customEmojiId:'',customEmojiPath:''}
+];
+const reactionPlan = reactionOwner.prepare(ui, normalReactions, {...data,isChannel:true}, style);
+for (const chip of reactionPlan.chrome.reactions.chips) {
+  assert.equal(chip.height,26);
+  assert.equal(chip.iconWidth,20);
+  assert.equal(chip.countX,chip.reaction.customEmojiId ? 34 : 32);
+  assert.equal(chip.count.paragraph.parts[0].style.fontWeight,'W500');
+}
+assert.notDeepEqual(ctx.reactionFill(false,true),ctx.reactionFill(true,true));
+assert.notDeepEqual(ctx.reactionForeground(false,false),ctx.reactionForeground(true,false));
+const selectedOnly={...normalReactions,head:{...normalReactions.head,reactions:normalReactions.head.reactions.map(r=>({...r,isChosen:!r.isChosen}))}};
+const selectedPlan=reactionOwner.prepare(ui,selectedOnly,{...data,isChannel:true},style);
+assert.equal(selectedPlan.caption,reactionPlan.caption,'selection keeps the body paragraph');
+for(let i=0;i<selectedPlan.chrome.reactions.chips.length;i++)assert.equal(selectedPlan.chrome.reactions.chips[i].background,reactionPlan.chrome.reactions.chips[i].background,'selection reuses native chip shape');
+assert.deepEqual(selectedPlan.chrome.reactions.chips.map(c=>[c.x,c.y,c.width,c.height]),
+  reactionPlan.chrome.reactions.chips.map(c=>[c.x,c.y,c.width,c.height]),'selection keeps chip geometry');
+console.log('PASS: Android 26/20/8 reaction geometry, custom gap, medium counters, in/out palette and selection-only layout stability.');
+
+load(root+'pages/chat/DrawnSingleMediaLayout.ets',['DrawnSingleMediaLayouts']);
+let insetCases=0;
+for (const kind of ['single','album']) for (const outgoing of [false,true])
+for (const isGroup of [false,true]) for (const radius of [0,20,40])
+for (const width of [180,280,400]) for (const name of [false,true]) {
+  let g=group('caption with a link https://example.org and text '.repeat(3));
+  Object.assign(g.head,{contentType:'photo',isOutgoing:outgoing,photoWidth:200,photoHeight:900,
+    photoFileId:5,photoPath:'/photo',photoMini:'',photoProgress:100,photoFailed:false,
+    replyToMessageId:7,replySenderName:'Sender with a very long name '.repeat(4),
+    replyText:'Reply excerpt '.repeat(20),replyThumbPath:'/reply',replyDiceLayers:[],reactions:[]});
+  g.showSenderName=name;
+  if(kind==='album')g=album(g);
+  const engine=kind==='single'?new ctx.DrawnSingleMediaLayouts():new ctx.DrawnAlbumLayouts();
+  const p=engine.prepare(ui,g,{...data,isGroup,isChannel:true,contentWidth:width},{...style,radius});
+  assert.ok(p && p.quote && p.caption);
+  const left=p.bubbleX+(outgoing?0:7),right=p.bubbleX+p.shellWidth-(outgoing?7:0);
+  assert.ok(p.quoteRect.x>=left+8 && p.quoteRect.x+p.quoteRect.width<=right-8+.001,'reply side inset');
+  const arc=Math.max(ctx.cornerArcInset(p.shellRadii.topLeft,p.quoteRect.y),ctx.cornerArcInset(p.shellRadii.topRight,p.quoteRect.y));
+  assert.ok(p.quoteRect.x-left>=arc-.001,'reply remains inside the top rounded silhouette');
+  assert.ok(p.quoteRect.y>=8,'quote-only bubbles also have a top inset');
+  assert.ok(p.quoteRect.y+p.quoteRect.height+4<=p.grid.y+.001);
+  assert.ok(p.captionY>=p.grid.y+p.grid.height+8-.001,'caption separates from image');
+  assert.ok(p.captionX>=left+8 && p.captionX+p.caption.widthVp<=right-8+.001);
+  const warm=layoutCounters();assert.equal(engine.prepare(ui,g,{...data,isGroup,isChannel:true,contentWidth:width},{...style,radius}),p);
+  assert.deepEqual(layoutCounters(),warm);
+  insetCases++;
+}
+console.log(`PASS: ${insetCases} single/album reply and caption inset cases across width, direction, avatar/name and corner radius; warm hits do no re-layout.`);

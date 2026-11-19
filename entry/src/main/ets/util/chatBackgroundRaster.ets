@@ -8,7 +8,7 @@ import { logE, logI } from './log';
 //
 // The live version is a stack: a linear-gradient Column, an Image on top of it
 // (for a pattern that Image is a full-screen SVG, which is a lot of paths to
-// rasterise), an opacity, an optional blur with an overscan scale, and a
+// rasterise), an opacity, and a
 // dimming Column. Every chat that opens builds that stack again, and it stays
 // in the compositor underneath a scrolling List for as long as the chat is on
 // screen.
@@ -25,28 +25,10 @@ export interface BackgroundRasterParams {
   isPattern: boolean;
   imageOpacity: number;
   dimming: number;
-  blurred: boolean;
-  userBlur: number;      // vp, user's blur-amount setting (KEY_BG_BLUR)
   width: number;         // vp
   height: number;        // vp
 }
 
-// Blur radii. A tiled pattern always gets softened; a real photo wallpaper
-// keeps the pre-existing behaviour: sharp unless the account (or the user,
-// synced from the official client) marked it `is_blurred`. A pure gradient
-// has no texture to blur so there's nothing to do there. How much softening
-// "should blur" actually applies is now the user's own call — the Chat
-// Background page's slider (KEY_BG_BLUR in AppSettings.ets, default 8) — so
-// the radius itself is a caller-supplied parameter, not a fixed constant.
-export const NO_BLUR_RADIUS: number = 0;
-// Both the single-image wallpaper and the composited pattern grid need the
-// same overscan when blurred, so the edges softened by the blur don't expose
-// a rim of the layer underneath.
-export const BLUR_OVERSCAN_SCALE: number = 1.08;
-
-// Pure function: given the shape of the background and the user's blur
-// setting, decide how much blur (if any) the composited image should get.
-// Returns a new value only — no mutation of the caller's params.
 // 图案的实际不透明度 = 壁纸自带的 intensity × 用户设的浓度。
 // 只作用于图案；整图壁纸的 imageOpacity 恒为 1，压低它会让整张图发灰。
 export function patternOpacity(
@@ -66,34 +48,9 @@ export function combineDimming(base: number, overlay: number): number {
   return 1 - (1 - a) * (1 - b);
 }
 
-// 纯色 / 跟随系统（2026-09-27 用户定）：没有模糊和深色遮罩这两个选项。
-// 纯色没有可模糊的内容；遮罩对纯色只是"换一个更深的颜色"，直接挑更深的色即可。
-// 渐变保留遮罩（多色渐变压暗后观感不同于换色），图案 / 整图壁纸两者都保留。
-export function wallpaperTakesBlur(path: string): boolean {
-  return path !== '';
-}
-
+// 纯色 / 跟随系统不叠加用户遮罩；渐变、图案和整图壁纸保留遮罩。
 export function wallpaperTakesUserDim(colors: string[], path: string): boolean {
   return path !== '' || colors.length > 1;
-}
-
-export function backgroundBlurRadius(
-  path: string, isPattern: boolean, blurred: boolean, userBlur: number
-): number {
-  if (path === '') {
-    return NO_BLUR_RADIUS;
-  }
-  if (isPattern) {
-    return userBlur;
-  }
-  return blurred ? userBlur : NO_BLUR_RADIUS;
-}
-
-// Whether the image needs the overscan that hides the soft edge a blur
-// leaves behind. Tied to the same rule as the radius — any nonzero radius
-// needs it.
-function backgroundOverscan(p: BackgroundRasterParams): boolean {
-  return backgroundBlurRadius(p.path, p.isPattern, p.blurred, p.userBlur) > NO_BLUR_RADIUS;
 }
 
 // Pattern tile geometry --------------------------------------------------
@@ -151,22 +108,12 @@ export function tileIndices(count: number): number[] {
   return result;
 }
 
-// Blur is applied once, to the whole composited grid below — never to the
-// individual tile Images. Blurring each tile on its own would soften every
-// tile's own edges independently, and adjacent tiles' independently-blurred
-// edges don't line back up into a continuous motif: the seam between tiles
-// would show as a faint blurred line. Blurring the assembled grid as a
-// single layer instead treats the seams as interior pixels of one continuous
-// image, so neighbouring tiles blur into each other exactly like the source
-// artwork does — only the outer boundary of the whole grid (already handled
-// by the existing overrun + Stack.clip(true) in backgroundLayer) needs the
-// overscan.
 // 只给离屏光栅用。它是多参数的全局 @Builder，建完就不跟随参数变化了（官方
 // 《自定义构建函数》：多个参数时不支持 @Builder 函数内 UI 组件刷新），而快照
 // 是一次性的，这里正好无所谓。实时绘制那一路必须用 PatternTileLayer 组件。
 @Builder
 export function patternTileGridLayer(
-  path: string, opacity: number, grid: PatternTileGrid, blurRadius: number
+  path: string, opacity: number, grid: PatternTileGrid
 ) {
   Column() {
     ForEach(tileIndices(grid.rows), (r: number) => {
@@ -185,47 +132,25 @@ export function patternTileGridLayer(
   }
   .width(grid.cols * grid.tileWidth)
   .height(grid.rows * grid.tileHeight)
-  .opacity(opacity)
-  .scale(blurRadius > NO_BLUR_RADIUS
-    ? { x: BLUR_OVERSCAN_SCALE, y: BLUR_OVERSCAN_SCALE } : { x: 1, y: 1 })
-  .blur(blurRadius);
+  .opacity(opacity);
 }
 
 // sig -> file path. The file also survives on disk, but the map is what keeps
 // the common case (every chat resolving to the account default) off the disk
 // entirely.
 const rasterCache: Map<string, string> = new Map();
-const inFlight: Set<string> = new Set();
+const inFlight: Map<string, Promise<string>> = new Map();
 // Offline components are not on the tree, so nothing drives their build/layout
 // and resource loading; the capture has to be given time for it. The guide's
 // own example uses this order of magnitude.
 const SNAPSHOT_DELAY_MS: number = 320;
 
 export function rasterSignature(p: BackgroundRasterParams): string {
-  // v7: dimming may now be the composition of the wallpaper's server value
-  // and the user's dark-mode mask. Keep four decimal places so neighbouring
-  // slider steps cannot alias to the same cached bitmap.
-  //
-  // v6: the blur radius that PATTERN_BLUR_RADIUS/WALLPAPER_BLURRED_RADIUS used
-  // to hardcode is now the user's own KEY_BG_BLUR setting (ChatBackgroundPage's
-  // slider) — the same colors/path/etc. can now composite to a different bitmap
-  // purely because the user dragged the slider, so the version token has to
-  // retire every raster the v5 pipeline ever cached, or dragging the slider
-  // would keep serving the old blur from the map/disk cache.
-  //
-  // v5: pattern tiles are now full-canvas-height (one row, columns only)
-  // instead of a fixed 340vp tile height, and patterns now carry a fixed
-  // blur of their own (8) instead of always being sharp; photo wallpapers
-  // are back to their original blurred-flag-only rule (0 or 12) instead of
-  // the v3 always-8/16 baseline.
-  //
-  // v4: patterns are tiled instead of a single ImageFit.Contain instance.
-  // v3: photo wallpapers always carried some blur instead of only the
-  // blurred ones (superseded by v5 above).
-  const radius: number = backgroundBlurRadius(p.path, p.isPattern, p.blurred, p.userBlur);
-  return `v7_${p.colors.join('-')}_${p.angle}_${p.path}_${p.isPattern ? 'p' : 'w'}` +
+  // v8: wallpaper rendering no longer contains a blur filter or overscan.
+  // Retire every older raster, including blurred images already stored on disk.
+  return `v8_sharp_${p.colors.join('-')}_${p.angle}_${p.path}_${p.isPattern ? 'p' : 'w'}` +
     `_${Math.round(p.imageOpacity * 100)}_dim${Math.round(p.dimming * 10000)}` +
-    `_blur${radius}_${Math.round(p.width)}x${Math.round(p.height)}`;
+    `_${Math.round(p.width)}x${Math.round(p.height)}`;
 }
 
 // 光栅图的文件名完全由签名决定（见 rasterizeBackground 里的 dest），所以上一次
@@ -274,23 +199,12 @@ function backgroundLayer(p: BackgroundRasterParams) {
       Column().width(p.width).height(p.height).backgroundColor($r('app.color.chat_bg'));
     }
     if (p.path !== '' && p.isPattern) {
-      // Tiled, not a single Contain instance — see the comment above
-      // patternTileGrid(). Blur (and its overscan) is applied inside
-      // patternTileGridLayer to the whole assembled grid, not per tile —
-      // see the comment on that function for why.
-      patternTileGridLayer(
-        p.path, p.imageOpacity, patternTileGrid(p.width, p.height),
-        backgroundBlurRadius(p.path, p.isPattern, p.blurred, p.userBlur));
+      patternTileGridLayer(p.path, p.imageOpacity, patternTileGrid(p.width, p.height));
     } else if (p.path !== '') {
-      // Blur softens the edges into the layer underneath, so anything blurred
-      // needs the overscan or a faint rim of the gradient/dimming shows through.
       Image(p.path.startsWith('/') ? `file://${p.path}` : p.path).draggable(false)
         .width(p.width).height(p.height)
         .objectFit(ImageFit.Cover)
         .opacity(p.imageOpacity)
-        .scale(backgroundOverscan(p)
-          ? { x: BLUR_OVERSCAN_SCALE, y: BLUR_OVERSCAN_SCALE } : { x: 1, y: 1 })
-        .blur(backgroundBlurRadius(p.path, p.isPattern, p.blurred, p.userBlur))
         // 关闭降采样解码：offline 树里 autoResize 会按布局估算把 1157×2560 的
         // 源图解到约一半（实测 652×1443），快照再放大回全屏——用户看到的
         // "背景比实时版糊"就是这个。全分辨率解码 + 高质量插值。
@@ -314,8 +228,8 @@ function backgroundLayer(p: BackgroundRasterParams) {
 }
 
 // Returns the cached path immediately when there is one, otherwise renders,
-// encodes and caches. Returns '' on any failure so the caller keeps the live
-// layered rendering — this is an optimisation, never a requirement.
+// encodes and caches. Same-signature callers share one job; on failure the
+// caller keeps its static color/gradient placeholder, without live filters.
 export async function rasterizeBackground(
   ui: UIContext, p: BackgroundRasterParams, cacheDir: string
 ): Promise<string> {
@@ -324,10 +238,25 @@ export async function rasterizeBackground(
   if (hit !== undefined) {
     return hit;
   }
-  if (p.width <= 0 || p.height <= 0 || inFlight.has(sig)) {
+  if (p.width <= 0 || p.height <= 0) {
     return '';
   }
-  inFlight.add(sig);
+  const pending: Promise<string> | undefined = inFlight.get(sig);
+  if (pending !== undefined) {
+    return pending;
+  }
+  const job: Promise<string> = createBackgroundRaster(ui, p, cacheDir, sig);
+  inFlight.set(sig, job);
+  try {
+    return await job;
+  } finally {
+    inFlight.delete(sig);
+  }
+}
+
+async function createBackgroundRaster(
+  ui: UIContext, p: BackgroundRasterParams, cacheDir: string, sig: string
+): Promise<string> {
   let pixelMap: image.PixelMap | undefined = undefined;
   let packer: image.ImagePacker | undefined = undefined;
   try {
@@ -377,7 +306,6 @@ export async function rasterizeBackground(
     logE(`rasterizeBackground failed: ${e}`);
     return '';
   } finally {
-    inFlight.delete(sig);
     if (packer !== undefined) {
       packer.release();
     }
@@ -391,7 +319,7 @@ export async function rasterizeBackground(
 // ── 图案预览的离屏光栅（设置页 WallpaperPreview 专用） ──────────────────────
 //
 // 和上面 rasterizeBackground 不是重复实现，两者的烘焙范围与失效条件都不一样：
-//   · 这张只烘「图案本体」，不烘渐变、不烘蒙层 → 透明底 PNG，滑杆调浓度/模糊/
+//   · 这张只烘「图案本体」，不烘渐变、不烘蒙层 → 透明底 PNG，滑杆调浓度/
 //     遮罩时位图不用重建，也就不会在拖动时反复重烘；
 //   · 签名只含 path 与预览尺寸：图案本身没有深浅色，深浅两个槽位可以共享同一张；
 //   · 用 PNG 无损：图案是矢量线稿 + 细星点，JPEG 的量化噪声会在边缘糊出一圈。
@@ -469,7 +397,7 @@ export function cachedPatternRaster(sig: string, cacheDir: string = ''): string 
 @Builder
 function patternOnlyLayer(p: PatternRasterParams) {
   Stack() {
-    patternTileGridLayer(p.path, 1, patternTileGrid(p.width, p.height), NO_BLUR_RADIUS);
+    patternTileGridLayer(p.path, 1, patternTileGrid(p.width, p.height));
   }
   .width(p.width).height(p.height)
   .clip(true);

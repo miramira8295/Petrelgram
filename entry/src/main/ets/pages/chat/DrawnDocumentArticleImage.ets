@@ -1,3 +1,6 @@
+import { CachedImage } from '../common/CachedImage';
+import { CachedImageSpec, CachedImageSpecCache } from '../../util/cachedImageSpec';
+import { documentFileId } from '../../util/drawnDocumentMedia';
 import { DrawnDocumentWidget } from '../../util/drawnDocumentWidget';
 import { documentFileState, watchDocumentFile, requestDocumentFile, DocumentFileState } from '../../util/documentFileChannel';
 import { THUMBNAIL_PRIORITY } from '../../util/downloadPriority';
@@ -10,6 +13,12 @@ export struct DrawnDocumentArticleImage {
   @Param boxWidth: number = 44;
   @Param boxHeight: number = 44;
   @Local private path: string = '';
+  private specs: CachedImageSpecCache = new CachedImageSpecCache();
+  @Computed private get imageSpec(): CachedImageSpec {
+    return this.specs.prepare({ path: this.path !== '' ? this.path : (this.widget.avatarMini ?? ''),
+      boxWidth: this.boxWidth, boxHeight: this.boxHeight, radius: 6, fit: ImageFit.Cover,
+      drawOnCanvas: true, sourceKey: `article:${this.widget.key}:${documentFileId(this.widget.avatar)}` });
+  }
   private off: (() => void) | null = null;
   private generation: number = 0;
   private visible: boolean = false;
@@ -32,8 +41,7 @@ export struct DrawnDocumentArticleImage {
   build() {
     Stack() {
       if (this.path !== '' || (this.widget.avatarMini ?? '') !== '') {
-        Image(this.path !== '' ? (this.path.startsWith('/') ? `file://${this.path}` : this.path) : this.widget.avatarMini)
-          .width(this.boxWidth).height(this.boxHeight).objectFit(ImageFit.Cover).draggable(false);
+        CachedImage({ spec: this.imageSpec });
       }
     }.width(this.boxWidth).height(this.boxHeight).borderRadius(6).clip(true).backgroundColor($r('app.color.surface_alt'))
       .hitTestBehavior(HitTestMode.None).accessibilityLevel('no')

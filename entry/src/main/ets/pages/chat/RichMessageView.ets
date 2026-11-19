@@ -41,6 +41,7 @@ const TABLE_HEADER_BG: string = '#22808A96';
 // P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
 @ComponentV2
 export struct RichMessageView {
+  @Local private spoilersRevealed: boolean = false;
   // 原始 blocks（TdObject），在这里解析一次。放原始数据而不是解析结果，是为了
   // 让 MessageEntry 只多带一个字段，不必为块模型再引一套类型。
   @Param rawBlocks: TdObject[] = [];
@@ -56,6 +57,8 @@ export struct RichMessageView {
   // 同样的记忆化；Markdown 这条之前漏了，这里是补上。
   private blockSource: TdObject[] | null = null;
   private blockCache: RichBlock[] = [];
+
+  @Monitor('rawBlocks') private onRawBlocksChanged(): void { this.spoilersRevealed = false; }
 
   private blocks(): RichBlock[] {
     if (this.blockSource === this.rawBlocks) {
@@ -110,14 +113,14 @@ export struct RichMessageView {
       ForEach(spans, (s: RichSpan) => {
         // 公式排好了就贴图（ImageSpan 能嵌在 Text 里，行内公式要的正是这个）；
         // 还没排好、或者公式本身有语法错，退回等宽显示 LaTeX 原文——比空着强。
-        if (s.math && this.mathImageOf(s.text, size) !== undefined) {
+        if (!(s.spoiler === true && !this.spoilersRevealed) && s.math && this.mathImageOf(s.text, size) !== undefined) {
           ImageSpan(this.mathImageOf(s.text, size)!.pixel)
             .width(this.mathImageOf(s.text, size)!.width / MATH_SUPERSAMPLE)
             .height(this.mathImageOf(s.text, size)!.height / MATH_SUPERSAMPLE)
             .verticalAlign(ImageSpanAlignment.CENTER)
             .objectFit(ImageFit.Contain);
         } else {
-        Span(s.text)
+        Span(s.spoiler === true && !this.spoilersRevealed ? str('mb_spoiler') : s.text)
           .fontSize(s.code ? size - 1 : size)
           .fontWeight(s.bold ? FontWeight.Bold : weight)
           .fontStyle(s.italic ? FontStyle.Italic : FontStyle.Normal)
@@ -128,7 +131,9 @@ export struct RichMessageView {
                 : TextDecorationType.None)
           })
           .fontFamily(s.code ? 'monospace' : undefined)
-          .onClick(s.url !== '' ? (): void => { this.onOpenUrl(s.url); } : undefined);
+          .onClick(s.spoiler === true && !this.spoilersRevealed
+            ? (): void => { this.spoilersRevealed = true; }
+            : s.url !== '' ? (): void => { this.onOpenUrl(s.url); } : undefined);
         }
       }, (s: RichSpan, i: number) => `sp_${i}_${s.text.length}_${s.url}_${s.math ? 1 : 0}`);
     }
@@ -182,7 +187,7 @@ export struct RichMessageView {
     Column() {
     Text() {
       ForEach(cell.spans, (s: RichSpan) => {
-        Span(s.text)
+        Span(s.spoiler === true && !this.spoilersRevealed ? str('mb_spoiler') : s.text)
           .fontSize(s.code ? CELL_SIZE - 1 : CELL_SIZE)
           .fontWeight(cell.header || s.bold ? FontWeight.Bold : FontWeight.Normal)
           .fontStyle(s.italic ? FontStyle.Italic : FontStyle.Normal)
@@ -193,7 +198,9 @@ export struct RichMessageView {
                 : TextDecorationType.None)
           })
           .fontFamily(s.code ? 'monospace' : undefined)
-          .onClick(s.url !== '' ? (): void => { this.onOpenUrl(s.url); } : undefined);
+          .onClick(s.spoiler === true && !this.spoilersRevealed
+            ? (): void => { this.spoilersRevealed = true; }
+            : s.url !== '' ? (): void => { this.onOpenUrl(s.url); } : undefined);
       }, (s: RichSpan, i: number) => `tc_${i}_${s.text.length}_${s.url}`);
     }
     .width('100%')

@@ -1,3 +1,4 @@
+// Bubble shadows are disabled, including blur resources and scroll-triggered invalidation.
 import { DrawContext } from '@kit.ArkUI';
 import { common2D, drawing } from '@kit.ArkGraphics2D';
 import { glassBubbleCommands } from '../../util/bubbleGlassPath';
@@ -10,7 +11,6 @@ import { drawnColor } from './DrawnTextLine';
 export class DrawnContentOutline extends DrawModifier {
   private path: drawing.Path | null = null;
   private brush: drawing.Brush = new drawing.Brush();
-  private shadow: drawing.Brush = new drawing.Brush();
   private fill: common2D.Color = { alpha: 0, red: 0, green: 0, blue: 0 };
   private width: number = -1;
   private height: number = -1;
@@ -22,15 +22,13 @@ export class DrawnContentOutline extends DrawModifier {
   private outgoing: boolean = false;
   private tail: boolean = false;
   private corners: BorderRadiuses = {};
-  private shadowOn: boolean = false;
 
   constructor() {
-    super(); this.brush.setAntiAlias(true); this.shadow.setAntiAlias(true);
-    this.shadow.setColor({ alpha: 20, red: 0, green: 0, blue: 0 });
+    super(); this.brush.setAntiAlias(true);
   }
 
   bind(outgoing: boolean, tail: boolean, corners: BorderRadiuses, fill: ResourceColor,
-    environment: string, shadowOn: boolean, density: number): DrawnContentOutline {
+    environment: string, _shadowOn: boolean, density: number): DrawnContentOutline {
     const geometry = `${outgoing}:${tail}:${cornerPx(corners.topLeft)}:${cornerPx(corners.topRight)}:` +
       `${cornerPx(corners.bottomRight)}:${cornerPx(corners.bottomLeft)}`;
     let dirty = false;
@@ -42,7 +40,6 @@ export class DrawnContentOutline extends DrawModifier {
     if (environment !== this.appearance || fill !== this.sourceFill) {
       this.fill = drawnColor(fill); this.appearance = environment; this.sourceFill = fill; dirty = true;
     }
-    if (this.shadowOn !== shadowOn) { this.shadowOn = shadowOn; dirty = true; }
     if (dirty) { this.invalidate(); }
     return this;
   }
@@ -58,16 +55,9 @@ export class DrawnContentOutline extends DrawModifier {
         return;
       }
       this.path = path; this.width = width; this.height = height;
-      if (this.density !== d) {
-        this.shadow.setMaskFilter(drawing.MaskFilter.createBlurMaskFilter(drawing.BlurType.NORMAL, (2 * .57735 + .5) * d));
-      }
       this.density = d;
     }
     const canvas = context.canvas;
-    if (this.shadowOn) {
-      canvas.save(); canvas.translate(0, d); canvas.attachBrush(this.shadow);
-      canvas.drawPath(this.path); canvas.detachBrush(); canvas.restore();
-    }
     this.brush.setColor(this.fill);
     canvas.attachBrush(this.brush); canvas.drawPath(this.path); canvas.detachBrush();
   }

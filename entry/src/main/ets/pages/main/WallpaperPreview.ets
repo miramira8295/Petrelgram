@@ -2,7 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { ChatBackgroundState } from '../../store/ChatBackgroundStore';
 import { gradientStops } from '../../util/backgroundPresentation';
 import {
-  backgroundBlurRadius, BLUR_OVERSCAN_SCALE, cachedPatternRaster, NO_BLUR_RADIUS,
+  cachedPatternRaster,
   patternOpacity, PatternRasterParams, patternRasterSignature, rasterizePattern, wallpaperTakesUserDim
 } from '../../util/chatBackgroundRaster';
 import { CHAT_DIM_MAX } from '../../store/AppSettings';
@@ -14,11 +14,10 @@ const PATTERN_RASTER_DELAY_MS: number = 360;
 //
 // 这里故意不用 ChatBackdrop：聊天背景组件还带离屏光栅，适合长时间停留的聊天页，
 // 却会让一根正在拖动的 Slider 不断重建整屏缓存。预览只画
-// 与三根滑杆有关的几层，规则仍复用生产渲染的纯函数，避免“预览一套、实际一套”。
+// 与浓度和遮罩滑杆有关的几层，规则仍复用生产渲染的纯函数，避免“预览一套、实际一套”。
 @Component
 export struct WallpaperPreview {
   @Prop @Watch('onSourceChanged') wallpaper: ChatBackgroundState;
-  @Prop blurAmount: number;
   @Prop patternStrength: number;
   @Prop dimAmount: number;
   @Prop dark: boolean;
@@ -112,12 +111,6 @@ export struct WallpaperPreview {
     }, PATTERN_RASTER_DELAY_MS);
   }
 
-  private blurRadius(): number {
-    return backgroundBlurRadius(
-      this.wallpaper.path, this.wallpaper.isPattern,
-      this.wallpaper.blurred, this.blurAmount);
-  }
-
   private imageOpacity(): number {
     return patternOpacity(
       this.wallpaper.isPattern, this.wallpaper.imageOpacity, this.patternStrength);
@@ -144,22 +137,18 @@ export struct WallpaperPreview {
       }
       if (this.wallpaper.path !== '' && this.wallpaper.isPattern) {
         if (this.rasterPath !== '') {
-          // 位图里只有图案本体（透明底），渐变还在下面那层，所以浓度/模糊/遮罩
-          // 继续由这三条实时属性乘上去——拖滑杆不会重烘，也就不会闪。
+          // 位图里只有图案本体（透明底），渐变还在下面那层，所以浓度/遮罩
+          // 继续由实时属性叠加——拖滑杆不会重烘，也就不会闪。
           Image(`file://${this.rasterPath}`).draggable(false)
             .autoResize(true)
             .width('100%').height('100%')
             .objectFit(ImageFit.Fill)
-            .opacity(this.imageOpacity())
-            .scale(this.blurRadius() > NO_BLUR_RADIUS
-              ? { x: BLUR_OVERSCAN_SCALE, y: BLUR_OVERSCAN_SCALE } : { x: 1, y: 1 })
-            .blur(this.blurRadius());
+            .opacity(this.imageOpacity());
         } else if (!this.deferTiles) {
           // 没有缓存、也没在烘：老路（10 张 SVG 实时平铺）。
           PatternTileLayer({
             path: this.wallpaper.path,
             tileOpacity: this.imageOpacity(),
-            blurRadius: this.blurRadius(),
             screenW: this.previewW,
             screenH: this.previewH
           });
@@ -172,10 +161,7 @@ export struct WallpaperPreview {
           .sourceSize({ width: this.previewW * 2, height: this.previewH * 2 })
           .width('100%').height('100%')
           .objectFit(ImageFit.Cover)
-          .opacity(this.imageOpacity())
-          .scale(this.blurRadius() > NO_BLUR_RADIUS
-            ? { x: BLUR_OVERSCAN_SCALE, y: BLUR_OVERSCAN_SCALE } : { x: 1, y: 1 })
-          .blur(this.blurRadius());
+          .opacity(this.imageOpacity());
       }
       if (this.wallpaper.dimming > 0) {
         Column().width('100%').height('100%')

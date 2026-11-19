@@ -139,13 +139,6 @@ export const KEY_ROW_SWIPE_ACTIONS: string = 'rowSwipeActions';
 // 光感等级（触摸流光与按压形变）。两条通道都读它：API 26 的 systemMaterial（interactive / lightEffect）
 // 和 API 20 起的 hdsEffect 点光 / 按压阴影（util/hdsPointLight），所以设置页在任何 API 上都显示这一行。
 export const KEY_MATERIAL_LIGHT: string = 'materialLight';
-// 聊天背景模糊半径（vp）。用户可调，见 chatBackgroundRaster.ets 的
-// backgroundBlurRadius —— pattern 与"需要模糊"的照片壁纸都用这一个值。
-export const KEY_BG_BLUR: string = 'bgBlur';
-export const BG_BLUR_DEFAULT: number = 8;
-export const BG_BLUR_MIN: number = 0;
-export const BG_BLUR_MAX: number = 20;
-
 // 图案壁纸的线条浓度，作为 TDLib 给的 intensity 的**乘数**（0.2~1，默认 1 =
 // 原样）。服务端那个值是壁纸作者定的，不少图案在小屏上线条压得很重；这里
 // 让用户自己压一档，而不是去改壁纸本身。
@@ -313,32 +306,25 @@ export const KEY_LOCAL_BG_EPOCH: string = 'localChatBgEpoch';
 // 它们更难读。深浅色各一张，理由同 util/localWallpaper。
 export const KEY_APP_BG_LIGHT: string = 'appBgLight';
 export const KEY_APP_BG_DARK: string = 'appBgDark';
-// 旧键继续分别作为 APP 浅色模糊、APP 深色暗度使用，避免升级后丢掉现有观感。
-// 另一主题的对应参数在下面的四槽位区域补独立键。
-export const KEY_APP_BG_BLUR: string = 'appBgBlur';
+// APP 深色暗度保留原键，另一主题在四槽位区域使用独立键。
 export const KEY_APP_BG_DIM: string = 'appBgDim';
 // 「APP 壁纸此刻生效中」。由 MainScreen 算一次写进来（它同时知道分栏和路径），
 // 其余组件只读这一个键——否则每个要变透明的容器都得自己拿窗口尺寸重算一遍分栏。
 export const KEY_APP_BG_ON: string = 'appBgOn';
 
 // ── 壁纸四槽位 ────────────────────────────────────────────────────────────
-// APP 浅色 / APP 深色 / 聊天浅色 / 聊天深色，各有自己的壁纸和三根滑杆。
+// APP 浅色 / APP 深色 / 聊天浅色 / 聊天深色，各有自己的壁纸、纹理和遮罩。
 //
 // APP 槽位存的是**序列化的 ChatBackgroundState**（见 ChatBackgroundStore 的
 // serialiseSnapshot）——这样原生壁纸（渐变/图案/整图）对 APP 背景是白送的：
 // AppBackdrop 直接复用 ChatBackdrop 画它，不必再写一套渲染。
 export const KEY_APP_BG_STATE_LIGHT: string = 'appBgStateLight';
 export const KEY_APP_BG_STATE_DARK: string = 'appBgStateDark';
-// APP 模糊原来浅深共用 KEY_APP_BG_BLUR；旧键留给浅色，深色首次启动时复制旧值。
-export const KEY_APP_BG_BLUR_DARK: string = 'appBgBlurDark';
 // APP 暗度过去只在深色生效，因此 KEY_APP_BG_DIM 继续归深色；浅色键只用于保持
 // 四槽位读写闭环，当前不会参与浅色渲染。
 export const KEY_APP_BG_DIM_LIGHT: string = 'appBgDimLight';
 export const KEY_APP_BG_PATTERN_LIGHT: string = 'appBgPatternLight';
 export const KEY_APP_BG_PATTERN_DARK: string = 'appBgPatternDark';
-// 聊天槽位的模糊此前是**浅深共用一个键**（KEY_BG_BLUR），四槽位下必须拆开。
-// 旧键继续当浅色那份用，深色新开一个——这样已有用户的设置不会被清掉。
-export const KEY_BG_BLUR_DARK: string = 'bgBlurDark';
 // 聊天浅色的遮罩。KEY_CHAT_DIM 是深色那份（遮罩本来就只在深色下起作用），
 // 浅色这份留着是为了四个槽位的读写路径一致，读到的值不参与渲染。
 export const KEY_CHAT_DIM_LIGHT: string = 'chatDimLight';
@@ -352,14 +338,10 @@ export interface WallpaperNumberSetting {
 }
 
 export const WALLPAPER_NUMBER_SETTINGS: WallpaperNumberSetting[] = [
-  { key: KEY_BG_BLUR, defaultValue: BG_BLUR_DEFAULT },
-  { key: KEY_BG_BLUR_DARK, defaultValue: BG_BLUR_DEFAULT },
   { key: KEY_BG_PATTERN, defaultValue: BG_PATTERN_DEFAULT },
   { key: KEY_BG_PATTERN_DARK, defaultValue: BG_PATTERN_DEFAULT },
   { key: KEY_CHAT_DIM, defaultValue: 0 },
   { key: KEY_CHAT_DIM_LIGHT, defaultValue: 0 },
-  { key: KEY_APP_BG_BLUR, defaultValue: BG_BLUR_DEFAULT },
-  { key: KEY_APP_BG_BLUR_DARK, defaultValue: BG_BLUR_DEFAULT },
   { key: KEY_APP_BG_DIM, defaultValue: 0 },
   { key: KEY_APP_BG_DIM_LIGHT, defaultValue: 0 },
   { key: KEY_APP_BG_PATTERN_LIGHT, defaultValue: BG_PATTERN_DEFAULT },
@@ -626,22 +608,6 @@ export async function initSettings(context: common.Context): Promise<void> {
     AppStorage.setOrCreate(KEY_BUBBLE_MATERIAL_ON, await s.get(KEY_BUBBLE_MATERIAL_ON, false) as boolean);
     for (const key of APPEARANCE_HEX_KEYS) {
       AppStorage.setOrCreate(key, await s.get(key, '') as string);
-    }
-    // 旧版本的聊天与 APP 模糊都是浅深共用。新深色键只在不存在时从旧键播种，
-    // 已经单独调整过的深色值必须原样保留。
-    let migratedWallpaperBlur: boolean = false;
-    if (!s.hasSync(KEY_BG_BLUR_DARK)) {
-      await s.put(KEY_BG_BLUR_DARK,
-        await s.get(KEY_BG_BLUR, BG_BLUR_DEFAULT) as number);
-      migratedWallpaperBlur = true;
-    }
-    if (!s.hasSync(KEY_APP_BG_BLUR_DARK)) {
-      await s.put(KEY_APP_BG_BLUR_DARK,
-        await s.get(KEY_APP_BG_BLUR, BG_BLUR_DEFAULT) as number);
-      migratedWallpaperBlur = true;
-    }
-    if (migratedWallpaperBlur) {
-      await s.flush();
     }
     for (const setting of WALLPAPER_NUMBER_SETTINGS) {
       AppStorage.setOrCreate(setting.key,

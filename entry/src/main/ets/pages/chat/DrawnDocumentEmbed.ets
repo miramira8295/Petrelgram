@@ -4,7 +4,8 @@ import { DrawnDocumentArticleImage } from './DrawnDocumentArticleImage';
 import { webview } from '@kit.ArkWeb';
 import { DrawnDocumentWidget } from '../../util/drawnDocumentWidget';
 import { documentEmbedPool } from '../../util/documentEmbedLease';
-import { COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { DrawnLoadingSpinner } from './DrawnLoadingSpinner';
+import { DrawnMediaPlaceholder } from './DrawnMediaPlaceholder';
 
 // Fixed-size ArticleViewer HTML/URL embed. No MiniApp bridge or bot authorization.
 // Dwell avoids creating WebViews for cells traversed during a fling. At most two
@@ -142,10 +143,11 @@ export struct DrawnDocumentEmbed {
         if (this.widget.avatar !== undefined || (this.widget.avatarMini ?? '') !== '') {
           DrawnDocumentArticleImage({ widget: this.widget, boxWidth: this.boxWidth, boxHeight: this.boxHeight });
         }
-        if (!this.failed) { LoadingProgress().width(24).height(24).hitTestBehavior(HitTestMode.None); }
+        if (!this.failed) { DrawnLoadingSpinner({ ringSize: 24 }).hitTestBehavior(HitTestMode.None); }
       }
       if (this.failed) {
-        Text($r('app.string.mb_web_link')).fontColor(COLOR_TEXT_SECONDARY)
+        DrawnMediaPlaceholder({ primaryKey: 'mb_web_link', primarySize: 14,
+          boxWidth: this.boxWidth, boxHeight: this.boxHeight })
           .onClick((): void => {
             if (this.onClaim() && documentEmbedUrl(this.widget.url ?? '')) { this.onOpen(this.widget.url ?? ''); }
           });

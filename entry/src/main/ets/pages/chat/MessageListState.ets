@@ -99,7 +99,6 @@ export struct MessageListStateCard {
     .backgroundColor($r('app.color.surface'))
     .border({ width: 0.5, color: $r('app.color.divider') })
     .borderRadius(20)
-    .shadow({ radius: 8, color: '#18000000', offsetX: 0, offsetY: 3 })
     .alignItems(HorizontalAlign.Center)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: 8 }))
@@ -159,7 +158,6 @@ export struct TimelineStatePill {
       .backgroundColor($r('app.color.surface'))
       .border({ width: 0.5, color: $r('app.color.divider') })
       .borderRadius(16)
-      .shadow({ radius: 5, color: '#1A000000', offsetX: 0, offsetY: 2 })
       .stateStyles({ normal: this.pillNormalStyle, pressed: this.pillPressedStyle })
       .animation({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110),

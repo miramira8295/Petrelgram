@@ -4,7 +4,7 @@ import { documentFileId } from './drawnDocumentMedia';
 export interface DrawnDocumentWidget {
   html?: string; allowScrolling?: boolean;
   url?: string; date?: number; avatar?: TdObject; avatarMini?: string;
-  coverFileId?: number; coverMini?: string;
+  coverFileId?: number; coverMini?: string; thumbnailFile?: TdObject; thumbnailMini?: string;
   duration?: number; waveform?: string; performer?: string; title?: string;
   key: string; kind: string; file?: TdObject; name: string; mimeType: string; size: number;
   latitude: number; longitude: number; zoom: number; width: number; height: number;
@@ -82,6 +82,13 @@ export function drawnDocumentWidget(node: TdObject, key: string): DrawnDocumentW
     const file = doc?.[voice ? 'voice' : music ? 'audio' : 'document'] as TdObject | undefined;
     if (file === undefined || !Number.isSafeInteger(documentFileId(file)) || documentFileId(file) <= 0) { return null; }
     result.kind = voice ? 'voice' : music ? 'audio' : 'file'; result.file = file;
+    if (!voice && !music) {
+      const thumb = doc?.['thumbnail'] as TdObject | undefined;
+      result.thumbnailFile = thumb?.['file'] as TdObject | undefined;
+      const mini = doc?.['minithumbnail'] as TdObject | undefined;
+      const data = (mini?.['data'] as string | undefined) ?? '';
+      result.thumbnailMini = data !== '' ? `data:image/jpeg;base64,${data}` : '';
+    }
     const cover = doc?.['album_cover_thumbnail'] as TdObject | undefined;
     result.coverFileId = documentFileId(cover?.['file'] as TdObject | undefined);
     const mini = doc?.['album_cover_minithumbnail'] as TdObject | undefined;
