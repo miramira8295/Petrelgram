@@ -23,12 +23,13 @@
 // 【为什么量的是外层 Stack】量内容自己是拿不到「含内边距的完整盒子」的（输入栏
 // 第一版就吃过这个 6px 的亏）。外层 Stack 的尺寸 = 内容的尺寸，直接量它即可。
 
-import { immersiveMaterialAvailable, OverlaySurface } from '../../util/overlayMaterial';
+import { OverlaySurface } from '../../util/overlayMaterial';
 import { NativeGlassHost } from './NativeGlassHost';
 
 @ComponentV2
 export struct SystemGlassSurface {
   // 圆角：照抄调用方原来的 borderRadius（材质层要圆角才不会露出方角）。
+  @Param effectsEnabled: boolean = true;
   @Param radius: number = 14;
   // 已知固定尺寸时直接给，省掉一帧测量；0 = 自己量（全宽卡片用这个）。
   @Param fixedWidth: number = 0;
@@ -48,7 +49,7 @@ export struct SystemGlassSurface {
   @BuilderParam content: () => void;
 
   private glassOn(): boolean {
-    return immersiveMaterialAvailable() && this.w() > 0.5 && this.h() > 0.5;
+    return this.w() > 0.5 && this.h() > 0.5;
   }
 
   private w(): number {
@@ -63,6 +64,7 @@ export struct SystemGlassSurface {
     Stack({ alignContent: Alignment.TopStart }) {
       if (this.glassOn()) {
         NativeGlassHost({
+          effectsEnabled: this.effectsEnabled,
           hostWidth: this.w(),
           hostHeight: this.h(),
           hostRadius: this.radius,

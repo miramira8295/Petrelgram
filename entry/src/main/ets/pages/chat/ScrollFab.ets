@@ -65,7 +65,7 @@ export struct ScrollFab {
       // 提交版（PR #21 前）玻璃就画在按钮自身，这两者天然同层；拆成 NativeGlassHost
       // 之后玻璃变成了兄弟节点，所以要把变换上提到这层包壳。
       Stack() {
-      NativeGlassHost({ hostWidth: 46, hostHeight: 46, hostRadius: 23 });
+      NativeGlassHost({ effectsEnabled: false, hostWidth: 46, hostHeight: 46, hostRadius: 23 });
       Button({ type: ButtonType.Circle }) {
         if (this.busy) {
           LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
@@ -108,7 +108,6 @@ export struct ScrollFab {
       // 同样的白。要不要一起改由用户定，别顺手动。
       // 阴影保留：那颗附件键坐在已经是玻璃的输入栏里，这颗是浮在照片上的，
       // 没有一点投影在浅色图上会糊掉。
-      .shadow({ radius: 7, color: '#26000000', offsetX: 0, offsetY: 2 })
       .enabled(this.active && !this.busy)
       .accessibilityText(this.mention ? $r('app.string.cp_jump_unread_mention') : (this.busy
         ? $r('app.string.cp_returning_latest') : $r('app.string.cp_return_latest')))
@@ -162,7 +161,6 @@ export struct ScrollFab {
         .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
         .backgroundColor(COLOR_PRIMARY).borderRadius(11)
         .border({ width: 1.5, color: $r('app.color.surface') })
-        .shadow({ radius: 3, color: '#24000000', offsetX: 0, offsetY: 1 })
         .position({ x: unreadBadgeOffsetX(this.unreadCount), y: 0 })
         // The badge is updated during scrolling; a resident transition pulls
         // the message List into the same layout flush.

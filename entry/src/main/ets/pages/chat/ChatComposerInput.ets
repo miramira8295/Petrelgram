@@ -600,7 +600,7 @@ export struct ChatComposerInput {
       if (!this.recording.isRecording) {
         Stack({ alignContent: Alignment.Top }) {
           if (this.glassHostOn()) {
-            NativeGlassHost({ hostWidth: 46, hostHeight: 46, hostRadius: 23, dark: this.appDark })
+            NativeGlassHost({ effectsEnabled: false, hostWidth: 46, hostHeight: 46, hostRadius: 23, dark: this.appDark })
           }
           Stack() {
           SymbolGlyph($r('sys.symbol.paperclip'))
@@ -634,7 +634,7 @@ export struct ChatComposerInput {
         .alignSelf(ItemAlign.End)
         .margin({ bottom: 1 })
         .backgroundColor(this.glassHostOn() ? Color.Transparent : plainGlassFill($r('app.color.surface')))
-        .backdropBlur(this.glassHostOn() ? 0 : plainBackdropBlur('control'))
+        .backdropBlur(0)
         .visualEffect(hdsVisualEffect('control', !this.appDark))
         // 玻璃模式去掉自绘描边：画布比内容小几像素，这圈 1px 白线会露在玻璃下面变成一条横线。
         .border(this.glassHostOn() ? { width: 0 } : chromeOutline(this.appDark))
@@ -646,7 +646,7 @@ export struct ChatComposerInput {
       // 悬浮玻璃：底层画布 + 上层内容。内容自己不再画底色/模糊/描边，全部交给画布上的系统材质。
       Stack({ alignContent: Alignment.TopStart }) {
         if (this.glassHostOn()) {
-          NativeGlassHost({
+          NativeGlassHost({ effectsEnabled: false,
             hostWidth: this.glassSurfaceW, hostHeight: this.glassSurfaceH, hostRadius: 24, dark: this.appDark
           })
         }
@@ -963,7 +963,7 @@ export struct ChatComposerInput {
       .layoutWeight(1)
       .backgroundColor(this.glassHostOn() ? Color.Transparent : plainGlassFill($r('app.color.surface')))
       .borderRadius(24)
-      .backdropBlur(this.glassHostOn() ? 0 : plainBackdropBlur('card'))
+      .backdropBlur(0)
       // 'card' 档：给点光源、不给按压阴影——整块面板跟着手指变形很怪，
       // 这条判据在 overlayMaterial.interactionBase 里，和材质那条路共用。
       .visualEffect(hdsVisualEffect('card', !this.appDark))
@@ -978,7 +978,7 @@ export struct ChatComposerInput {
         Stack() {
           // 与左侧附件键同一套玻璃：玻璃落在这层 Stack 上，图标由子组件出。
           if (this.glassHostOn()) {
-            NativeGlassHost({ hostWidth: 46, hostHeight: 46, hostRadius: 23, dark: this.appDark })
+            NativeGlassHost({ effectsEnabled: false, hostWidth: 46, hostHeight: 46, hostRadius: 23, dark: this.appDark })
           }
           ComposerSendButton({
             hasDraft: this.canSendText(),
@@ -997,7 +997,7 @@ export struct ChatComposerInput {
         .alignSelf(ItemAlign.End)
         .margin({ bottom: 1 })
         .backgroundColor(this.glassHostOn() ? Color.Transparent : plainGlassFill($r('app.color.surface')))
-        .backdropBlur(this.glassHostOn() ? 0 : plainBackdropBlur('control'))
+        .backdropBlur(0)
         .visualEffect(hdsVisualEffect('control', !this.appDark))
         .border(this.glassHostOn() ? { width: 0 } : chromeOutline(this.appDark))
         .clip(true)

@@ -1,4 +1,4 @@
-import { PinnedVisibility, PinnedVisibilityDefaults } from '../main/ets/util/pinnedVisibilityState';
+import { PinnedVisibility, pinnedVisibilityDefaults } from '../main/ets/util/pinnedVisibilityState';
 import { describe, expect, it } from '@ohos/hypium';
 import {
   LiveTopCardController, LiveTopCardHost
@@ -128,9 +128,9 @@ function trackOf(): NowPlaying {
 // "两张卡同时存在"的状态：一条看得见的置顶 + 一首正在放的歌。pinnedVisibility
 // 显式给一份 hidden=false 的默认值，免得别的用例改过全局默认后这里跟着漂。
 function armBothBanners(controller: LiveTopCardController): void {
-  const defaults: PinnedVisibilityDefaults = new PinnedVisibilityDefaults();
+  const defaults = pinnedVisibilityDefaults;
   defaults.hidden = false;
-  controller.pinnedVisibility = new PinnedVisibility('', null, defaults);
+  controller.pinnedVisibility = new PinnedVisibility();
   controller.applyPinned('置顶内容', 1, 'ready');
   controller.musicTrack = trackOf();
   controller.applyMusicVoiceState('music', 'playing', 0, 180000);
@@ -163,8 +163,8 @@ export default function liveTopCardControllerTest() {
   describe('LiveTopCardController', () => {
     it('hidden pins stay hidden after updates without hiding live call', 0, (): void => {
       const controller = controllerOn(new FakeHost());
-      const defaults = new PinnedVisibilityDefaults(); defaults.hidden = true;
-      controller.pinnedVisibility = new PinnedVisibility('', null, defaults);
+      const defaults = pinnedVisibilityDefaults; defaults.hidden = true;
+      controller.pinnedVisibility = new PinnedVisibility();
       controller.applyPinned('new pin', 1, 'ready');
       expect(controller.pinnedVisible()).assertFalse();
       expect(controller.shouldShow()).assertFalse();

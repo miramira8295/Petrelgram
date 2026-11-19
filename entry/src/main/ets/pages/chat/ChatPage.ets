@@ -6738,7 +6738,7 @@ export struct ChatPage {
       enableComponentSafeArea: false,
       // 第三个参数 false = 静态栏：滑动时不变；第四个参数 false = 不挂 HDS 整条栏系统材质与
       // BlurStrategy.ENABLE（顶栏三颗胶囊已在 ChatHeader 里自绘毛玻璃，避免再挂整页滤镜节点）。
-      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false, true),
+      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false, false),
       content: content
     };
     this.titleBarOptionsCache = options;

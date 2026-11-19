@@ -12,11 +12,13 @@
 //      所以出来的就是菜单那块玻璃。材质不可用时退回 backgroundEffect 自绘。
 //
 // 尺寸一律用调用方量出来的绝对 vp，不用 '100%'（百分比在这一层解析不可靠，实测会偏）。
-import { immersiveMaterialAvailable, materialOff, OverlaySurface } from '../../util/overlayMaterial';
+import { immersiveMaterialAvailable, materialOff, OverlaySurface, plainGlassFill } from '../../util/overlayMaterial';
 import { materialModifierWhen } from '../../util/materialModifier';
 
 @ComponentV2
 export struct NativeGlassHost {
+  // Chat surfaces can keep the shared host without re-enabling costly filters/shadows.
+  @Param effectsEnabled: boolean = true;
   @Param hostWidth: number = 100;
   @Param hostHeight: number = 46;
   @Param hostRadius: number = 23;
@@ -49,7 +51,15 @@ export struct NativeGlassHost {
 
   build() {
     Stack() {
-      if (this.materialOn()) {
+      if (!this.effectsEnabled) {
+        Row()
+          .width(this.hostWidth).height(this.hostHeight).borderRadius(this.hostRadius)
+          .backgroundColor(plainGlassFill($r('app.color.surface')))
+          .focusable(false)
+          .hitTestBehavior(this.tapHost ? HitTestMode.Default : HitTestMode.None)
+          .onClick((): void => { if (this.tapHost) { this.onHostTap(); } })
+          .accessibilityLevel('no-hide-descendants');
+      } else if (this.materialOn()) {
         // 为什么是 Toggle：内容区唯一「既在材质白名单里、又能任意定尺寸」的组件。
         // 三条硬性条件缺一不画（踩过）：① 显式 width/height；② 走 attributeModifier
         // 的 applyNormalAttribute 回调，不在 @Builder 里链式调用；③ 自己 enabled(false)

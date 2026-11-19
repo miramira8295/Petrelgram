@@ -1,80 +1,56 @@
-import { describe, expect, it } from '@ohos/hypium';
-import { PinnedVisibility, PinnedVisibilityDefaults, PinnedVisibilityStorage, pinnedVisibilityKey } from '../main/ets/util/pinnedVisibilityState';
+import { describe, expect, it, beforeEach, afterEach } from '@ohos/hypium';
+import { PinnedVisibility, pinnedVisibilityDefaults, KEY_HIDE_PINNED_DEFAULT } from '../main/ets/util/pinnedVisibilityState';
+import { pinnedVisibilityFor } from '../main/ets/services/PinnedVisibility';
+import { setBoolean } from '../main/ets/store/AppSettings';
 
-class MemoryVisibility implements PinnedVisibilityStorage {
-  values: Map<string, boolean> = new Map<string, boolean>();
-  read(key: string): boolean | undefined { return this.values.get(key); }
-  write(key: string, hidden: boolean): void { this.values.set(key, hidden); }
-}
 export default function pinnedVisibilityTest() {
   describe('PinnedVisibility', (): void => {
-    it('hide_and_show_survive_new_session', 0, (): void => {
-      const storage = new MemoryVisibility();
-      const key = pinnedVisibilityKey('a', -100);
-      const state = new PinnedVisibility(key, storage);
-      expect(state.hidden).assertFalse(); state.toggle();
-      const reopened = new PinnedVisibility(key, storage);
-      expect(reopened.hidden).assertTrue(); reopened.toggle();
-      expect(new PinnedVisibility(key, storage).hidden).assertFalse();
+    let saved: boolean = false;
+    beforeEach((): void => {
+      saved = pinnedVisibilityDefaults.hidden;
+      setBoolean(KEY_HIDE_PINNED_DEFAULT, false);
     });
-    it('accounts_and_chats_are_isolated', 0, (): void => {
-      const storage = new MemoryVisibility();
-      new PinnedVisibility(pinnedVisibilityKey('a', -100), storage).toggle();
-      expect(new PinnedVisibility(pinnedVisibilityKey('b', -100), storage).hidden).assertFalse();
-      expect(new PinnedVisibility(pinnedVisibilityKey('a', -200), storage).hidden).assertFalse();
-    });
-    it('unconfigured_chats_follow_global_changes', 0, (): void => {
-      const defaults = new PinnedVisibilityDefaults();
-      const state = new PinnedVisibility('a:1', new MemoryVisibility(), defaults);
-      expect(state.hidden).assertFalse();
-      defaults.hidden = true;
+    afterEach((): void => { setBoolean(KEY_HIDE_PINNED_DEFAULT, saved); });
+    it('settings_hide_updates_existing_reader', 0, (): void => {
+      const state = new PinnedVisibility();
+      setBoolean(KEY_HIDE_PINNED_DEFAULT, true);
       expect(state.hidden).assertTrue();
-      defaults.hidden = false;
+    });
+    it('settings_show_updates_existing_reader', 0, (): void => {
+      const state = new PinnedVisibility();
+      setBoolean(KEY_HIDE_PINNED_DEFAULT, true);
+      setBoolean(KEY_HIDE_PINNED_DEFAULT, false);
       expect(state.hidden).assertFalse();
     });
-    it('explicit_show_survives_global_hide_and_reopen', 0, (): void => {
-      const defaults = new PinnedVisibilityDefaults(); defaults.hidden = true;
-      const storage = new MemoryVisibility();
-      const state = new PinnedVisibility('a:1', storage, defaults);
-      state.toggle();
+    it('reopened_chat_reads_current_global_choice', 0, (): void => {
+      setBoolean(KEY_HIDE_PINNED_DEFAULT, true);
+      expect(new PinnedVisibility().hidden).assertTrue();
+    });
+    it('different_chats_share_one_reader', 0, (): void => {
+      expect(pinnedVisibilityFor(-100) === pinnedVisibilityFor(-200)).assertTrue();
+    });
+    it('global_change_reaches_all_open_chats', 0, (): void => {
+      const first = pinnedVisibilityFor(-100);
+      const second = pinnedVisibilityFor(-200);
+      setBoolean(KEY_HIDE_PINNED_DEFAULT, true);
+      expect(first.hidden).assertTrue(); expect(second.hidden).assertTrue();
+    });
+    it('unresolved_chat_uses_global_choice_without_account_lookup', 0, (): void => {
+      setBoolean(KEY_HIDE_PINNED_DEFAULT, true);
+      expect(pinnedVisibilityFor(0).hidden).assertTrue();
+    });
+    it('settings_storage_and_reader_remain_in_sync', 0, (): void => {
+      setBoolean(KEY_HIDE_PINNED_DEFAULT, true);
+      expect(AppStorage.get<boolean>(KEY_HIDE_PINNED_DEFAULT)).assertTrue();
+      expect(pinnedVisibilityFor(7).hidden).assertTrue();
+    });
+    it('repeated_writes_do_not_create_chat_overrides', 0, (): void => {
+      const state = pinnedVisibilityFor(9);
+      setBoolean(KEY_HIDE_PINNED_DEFAULT, true);
+      setBoolean(KEY_HIDE_PINNED_DEFAULT, true);
+      setBoolean(KEY_HIDE_PINNED_DEFAULT, false);
       expect(state.hidden).assertFalse();
-      defaults.hidden = false; defaults.hidden = true;
-      expect(new PinnedVisibility('a:1', storage, defaults).hidden).assertFalse();
-    });
-    it('explicit_hide_survives_global_show', 0, (): void => {
-      const defaults = new PinnedVisibilityDefaults();
-      const storage = new MemoryVisibility();
-      const state = new PinnedVisibility('a:1', storage, defaults);
-      state.toggle(); defaults.hidden = true; defaults.hidden = false;
-      expect(new PinnedVisibility('a:1', storage, defaults).hidden).assertTrue();
-    });
-    it('legacy_boolean_choices_take_priority', 0, (): void => {
-      const defaults = new PinnedVisibilityDefaults(); defaults.hidden = true;
-      const storage = new MemoryVisibility();
-      storage.values.set('a:1', false); storage.values.set('a:2', true);
-      expect(new PinnedVisibility('a:1', storage, defaults).hidden).assertFalse();
-      defaults.hidden = false;
-      expect(new PinnedVisibility('a:2', storage, defaults).hidden).assertTrue();
-      expect(new PinnedVisibility('b:1', storage, defaults).hidden).assertFalse();
-    });
-    it('failed_write_does_not_replace_inherited_value', 0, (): void => {
-      const defaults = new PinnedVisibilityDefaults(); defaults.hidden = true;
-      const storage: PinnedVisibilityStorage = {
-        read: (_key: string): boolean | undefined => undefined,
-        write: (_key: string, _hidden: boolean): void => { throw new Error('write failed'); }
-      };
-      const state = new PinnedVisibility('a:1', storage, defaults);
-      try { state.toggle(); } catch (_) {}
-      expect(state.hidden).assertTrue();
-      defaults.hidden = false;
-      expect(state.hidden).assertFalse();
-    });
-    it('unresolved_identity_does_not_persist', 0, (): void => {
-      const storage = new MemoryVisibility();
-      expect(pinnedVisibilityKey('', -100)).assertEqual('');
-      expect(pinnedVisibilityKey('a', 0)).assertEqual('');
-      new PinnedVisibility('', storage).toggle();
-      expect(storage.values.size).assertEqual(0);
+      expect(pinnedVisibilityFor(10).hidden).assertFalse();
     });
   });
 }
