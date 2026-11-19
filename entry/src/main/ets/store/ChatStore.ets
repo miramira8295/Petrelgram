@@ -130,6 +130,10 @@ export class ChatStore {
   private unreadBadgeListeners: Array<(keys: string[]) => void> = [];
   private dirtyUnreadBadgeKeys: Set<string> = new Set();
   private unreadBadgeCache: Map<string, UnreadBadgeCounts> = new Map();
+  // 未读数指纹：用来发现「实体里的 unreadCount 变了」这件事。文件夹角标按
+  // listKey 缓存，原先只在列表成员变化时作废，读到底清零后没人通知它重算。
+  private unreadSeen: Map<number, number> = new Map();
+  private unreadBadgeAllDirty: boolean = false;
   private unreadBadgeScopeEpoch: number = -1;
   private activeLoads: Map<string, Promise<boolean>> = new Map();
   private initializedLists: Set<string> = new Set();
@@ -450,6 +454,16 @@ export class ChatStore {
     }
     for (const id of changed) {
       const mirrored = this.mirror.get(id);
+      // 未读数一变就把所有分组的角标标脏：一个会话可以同时出现在多个文件夹里，
+      // 不做「哪个分组受影响」的推断，统一重算一次（用户 2026-11-19 报：会话
+      // 读到底、未读清零后文件夹页签上的数字不降）。首次见到不算变化。
+      if (mirrored !== undefined) {
+        const seen: number | undefined = this.unreadSeen.get(id);
+        if (seen !== mirrored.unreadCount) {
+          this.unreadSeen.set(id, mirrored.unreadCount);
+          if (seen !== undefined) { this.unreadBadgeAllDirty = true; }
+        }
+      }
       // 头像链靠这里：**任何**实体变化都把 id 标脏（含"头像被移除"，photo→0
       // 时要让 FileService 去 detach 并取消重试——V1 的 setChatEntry 就是这个口径）。
       this.dirtyAvatarChatIds.add(id);
@@ -1053,6 +1067,11 @@ export class ChatStore {
     this.dirtyAvatarChatIds = new Set();
     const all = this.dirtyAllLists;
     const dirty = this.dirtyChatIds;
+    if (this.unreadBadgeAllDirty) {
+      this.unreadBadgeAllDirty = false;
+      this.unreadBadgeCache.clear();
+      for (const key of this.workerLists.keys()) { this.dirtyUnreadBadgeKeys.add(key); }
+    }
     const badgeKeys: string[] = Array.from(this.dirtyUnreadBadgeKeys);
     this.dirtyUnreadBadgeKeys = new Set();
     this.dirtyAllLists = false;
@@ -1061,6 +1080,8 @@ export class ChatStore {
     // cached tab is transitioning). Materialize that list once and fan out the
     // same immutable-by-convention snapshot instead of mapping it repeatedly.
     const snapshots: Map<string, ChatEntry[]> = new Map();
+    // 每个订阅者单独隔离：这里已经先把 dirty 集合清空，任何一次抛错若冒出
+    // 循环，同一轮其余订阅者就永久收不到这次快照（只能等下一次无关变更）。
     for (const s of this.subs) {
       if (all || this.listContainsAny(s.listKey, dirty)) {
         let snapshot = snapshots.get(s.listKey);
@@ -1068,23 +1089,47 @@ export class ChatStore {
           snapshot = this.getChats(s.listKey);
           snapshots.set(s.listKey, snapshot);
         }
-        s.listener(snapshot);
+        try {
+          s.listener(snapshot);
+        } catch (e) {
+          logE(`ChatStore.flushNotify list listener failed: ${e}`);
+        }
       }
     }
     for (const s of this.chatSubs) {
       if (all || dirty.has(s.chatId)) {
-        s.listener();
+        try {
+          s.listener();
+        } catch (e) {
+          logE(`ChatStore.flushNotify chat listener failed: ${e}`);
+        }
       }
     }
     for (const listener of this.changeListeners) {
-      listener();
+      try {
+        listener();
+      } catch (e) {
+        logE(`ChatStore.flushNotify change listener failed: ${e}`);
+      }
     }
     if (avatarIds.size > 0 && this.avatarListeners.length > 0) {
       const ids = Array.from(avatarIds);
-      for (const listener of this.avatarListeners) { listener(ids); }
+      for (const listener of this.avatarListeners) {
+        try {
+          listener(ids);
+        } catch (e) {
+          logE(`ChatStore.flushNotify avatar listener failed: ${e}`);
+        }
+      }
     }
     if (badgeKeys.length > 0) {
-      for (const listener of this.unreadBadgeListeners) { listener(badgeKeys); }
+      for (const listener of this.unreadBadgeListeners) {
+        try {
+          listener(badgeKeys);
+        } catch (e) {
+          logE(`ChatStore.flushNotify badge listener failed: ${e}`);
+        }
+      }
     }
   }
 
