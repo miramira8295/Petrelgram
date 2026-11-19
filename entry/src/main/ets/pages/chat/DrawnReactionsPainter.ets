@@ -45,9 +45,13 @@ export class DrawnReactionsPainter extends DrawModifier {
     }
     this.active = active; this.animate = animate; this.plan = plan;
     const selected = this.motion.bind(plan, owner, Date.now(), active && animate, environment);
-    if (!active) { this.releaseImages(); this.stopOverlay(); this.motion.finish(); this.frames.cancel(); this.invalidate(); return; }
-    if (!animate) { this.stopOverlay(); this.motion.finish(); }
+    // Static content belongs to the attached row, not the asynchronous visible
+    // area callback. Avatar-mode chips have no counter: dropping their assets
+    // here leaves only the emoji and pill until visibility is reported again.
+    // Owner changes/recycle/disappear still release everything in dispose().
     this.prepareImages();
+    if (!active) { this.stopOverlay(); this.motion.finish(); this.frames.cancel(); this.invalidate(); return; }
+    if (!animate) { this.stopOverlay(); this.motion.finish(); }
     if (this.overlayKey !== '' && plan.byKey.get(this.overlayKey)?.reaction?.isChosen !== true) { this.stopOverlay(); }
     if (selected !== '') { this.play(selected); }
     this.requestFrame();
@@ -79,10 +83,12 @@ export class DrawnReactionsPainter extends DrawModifier {
   }
   private requestFrame(): void {
     const ui = this.ui;
-    if (ui === null || !this.active) { return; }
+    if (ui === null) { return; }
     this.frames.request((task: () => void): void => ui.postFrameCallback(new OneShotFrameCallback(task)), (): void => {
-      const running = this.motion.sample(Date.now()); this.invalidate();
-      if (running && this.animate) { this.requestFrame(); }
+      // A pending/offscreen visibility result must not suppress the one paint
+      // needed for static pixels. Only a visible animation schedules another.
+      const running = this.active && this.animate && this.motion.sample(Date.now()); this.invalidate();
+      if (running) { this.requestFrame(); }
       else { this.pruneExits(); }
     });
   }
