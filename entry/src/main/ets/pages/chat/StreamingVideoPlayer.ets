@@ -299,6 +299,17 @@ export struct StreamingVideoPlayer {
       this.isPlaying && !this.embedded && this.appIsForeground);
   }
 
+  // 自己持有的后台播放保活令牌：内嵌实例从不申请，退出时也就不会误撤别人的。
+  private keepAliveToken: string | null = null;
+
+  private releaseKeepAlive(): void {
+    if (this.keepAliveToken === null) {
+      return;
+    }
+    mediaPlaybackKeepAlive.release(this.keepAliveToken);
+    this.keepAliveToken = null;
+  }
+
   private deactivate(): void {
     if (!this.active) { return; }
     if (this.unsubGate !== null) {
@@ -311,7 +322,7 @@ export struct StreamingVideoPlayer {
     this.isPlaying = false;
     this.syncScreenAwake();
     this.syncAudioFocus();
-    mediaPlaybackKeepAlive.release('video');
+    this.releaseKeepAlive();
     this.release();
   }
 
@@ -388,17 +399,17 @@ export struct StreamingVideoPlayer {
     this.syncAudioFocus();
     this.syncAutoHideControls();
     if (this.embedded) {
-      mediaPlaybackKeepAlive.release('video');
+      this.releaseKeepAlive();
       return;
     }
     if (this.isPlaying && !this.appOnly && (AppStorage.get<boolean>(KEY_BG_PLAY_VIDEO) ?? false)) {
       const context = getUiAbilityContext();
-      if (context !== null) {
-        mediaPlaybackKeepAlive.acquire(context, 'video');
+      if (context !== null && this.keepAliveToken === null) {
+        this.keepAliveToken = mediaPlaybackKeepAlive.acquire(context, 'video');
       }
       return;
     }
-    mediaPlaybackKeepAlive.release('video');
+    this.releaseKeepAlive();
   }
 
   private clearAutoHideControls(): void {
@@ -510,8 +521,9 @@ export struct StreamingVideoPlayer {
       if (rangeServer !== null) { closeSources.push((): void => { rangeServer.close(); }); }
       if (tdSource !== null) { closeSources.push((): void => { tdSource.close(); }); }
       if (session !== null) { closeSources.push((): void => { session.close(); }); }
-      // Avoid the plugin's native async-work release path. The shared queue
-      // keeps teardown ordered and closes these detached sources only on success.
+      // 2026-11-09：改用**同步** release（插件 releaseAsync 的线程池回调会在实例
+      // 销毁之后才执行，IjkMediaPlayer_release() 里对 id_ 的 std::string 拷贝读到
+      // 已释放内存 —— 真机栈：memcpy ← IjkMediaPlayer_release+148 ← AsyncWorkCallback）。
       this.pendingRelease = enqueueNativeReleaseSync(
         player === null ? null : (): void => { player.release(); }, closeSources)
         .catch((error: Error): void => {

@@ -11,7 +11,10 @@ import { currentNowPlaying, NowPlaying, subscribeNowPlaying } from '../util/nowP
 // 多路并存时共享一个任务。直播有自己的 LiveStreamBackgroundTask，不走这里。
 class MediaPlaybackKeepAlive {
   private context: common.UIAbilityContext | null = null;
-  private activeKinds: Set<string> = new Set();
+  // token -> kind。「按 kind 计数」表达不了同一 kind 的两路实例：列表里的
+  // 内嵌视频退出时若撤掉 'video'，会连全屏/悬浮窗那份的保活一起撤掉。
+  private holds: Map<string, string> = new Map();
+  private sequence: number = 0;
   private started: boolean = false;
   private session: avSession.AVSession | null = null;
   private operation: Promise<void> = Promise.resolve();
@@ -20,11 +23,13 @@ class MediaPlaybackKeepAlive {
   // 现在跟着 nowPlayingChannel 走，换歌就刷新。
   private unsubNowPlaying: (() => void) | null = null;
 
-  acquire(context: common.UIAbilityContext, kind: string): void {
+  acquire(context: common.UIAbilityContext, kind: string): string {
     this.context = context;
-    this.activeKinds.add(kind);
+    this.sequence++;
+    const token: string = `${kind}#${this.sequence}`;
+    this.holds.set(token, kind);
     this.enqueue(async (): Promise<void> => {
-      if (this.started || this.activeKinds.size === 0 || this.context === null) {
+      if (this.started || this.holds.size === 0 || this.context === null) {
         return;
       }
       const current = this.context;
@@ -41,17 +46,21 @@ class MediaPlaybackKeepAlive {
       await backgroundTaskManager.startBackgroundRunning(current, ['audioPlayback'], agent);
       this.started = true;
       await this.ensureSession(current);
-      logI(`[MediaPlaybackKeepAlive] started kinds=${Array.from(this.activeKinds).join(',')}`);
-      if (this.activeKinds.size === 0) {
+      logI(`[MediaPlaybackKeepAlive] started kinds=${Array.from(this.holds.values()).join(',')}`);
+      if (this.holds.size === 0) {
         await this.stopCurrent();
       }
     });
+    return token;
   }
 
-  release(kind: string): void {
-    this.activeKinds.delete(kind);
+  // 只释放 acquire 返回的那个令牌（自己那一份）；null 是 no-op。
+  release(token: string | null): void {
+    if (token === null || !this.holds.delete(token)) {
+      return;
+    }
     this.enqueue(async (): Promise<void> => {
-      if (this.activeKinds.size === 0) {
+      if (this.holds.size === 0) {
         await this.stopCurrent();
       }
     });
