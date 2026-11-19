@@ -1625,6 +1625,8 @@ export struct ChatListPage {
     }
     // 与会话卡片共用断点边距，不再叠加额外的 8vp；上下不留外部间距。
     .width('100%')
+    // 与首页会话卡片同一条边线：卡片是 width calc(100% - gutter*2) + 左右 margin gutter，
+    // 这里就只留 gutter。之前多给了 8vp，轨道比卡片每侧窄 8vp（用户 2026-11-19 反馈「长度不对齐」）。
     .padding({ left: homeCardMarginVp(this.widthBp), right: homeCardMarginVp(this.widthBp) })
     .transition(
       TransitionEffect.OPACITY
