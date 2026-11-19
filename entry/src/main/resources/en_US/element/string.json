@@ -11093,10 +11093,6 @@
       "value": "Autoplay"
     },
     {
-      "name": "cb_blur_amount",
-      "value": "Blur amount"
-    },
-    {
       "name": "meow_mode_custom",
       "value": "Custom WebPush"
     },
@@ -11905,24 +11901,8 @@
       "value": "%1$d s"
     },
     {
-      "name": "chat_settings_surface_glass",
-      "value": "Interface blur"
-    },
-    {
-      "name": "chat_settings_surface_glass_sub",
-      "value": "Frosted glass on Contacts, Settings and Profile, matching the composer. Rendered every frame — turn it off if scrolling stutters."
-    },
-    {
-      "name": "chat_settings_surface_glass_level",
-      "value": "Blur level"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "High dynamic range video"
-    },
-    {
-      "name": "material_level_veil",
-      "value": "Veil"
     },
     {
       "name": "chat_settings_surface_glass_ui",
@@ -11930,27 +11910,11 @@
     },
     {
       "name": "chat_settings_surface_glass_ui_sub",
-      "value": "Chat list, contacts and settings"
+      "value": "Chat list, contacts, settings and profiles: tint opacity only, without live blur"
     },
     {
       "name": "chat_settings_bubble_glass",
       "value": "Bubbles"
-    },
-    {
-      "name": "chat_settings_bubble_glass_sub",
-      "value": "Message bubbles in chats — the most numerous and costly"
-    },
-    {
-      "name": "glass_warn_title",
-      "value": "Higher battery use"
-    },
-    {
-      "name": "glass_warn_body",
-      "value": "The blur is rendered every frame. It noticeably increases battery drain and heat, and may cause dropped frames while scrolling. If the device gets hot or stutters, come back and choose Off."
-    },
-    {
-      "name": "glass_warn_enable",
-      "value": "Enable anyway"
     },
     {
       "name": "cp_secret_pending_out",
@@ -13471,6 +13435,94 @@
     {
       "name": "document_login_write",
       "value": "Log in and allow bot messages"
+    },
+    {
+      "name": "checklist_title",
+      "value": "Checklist"
+    },
+    {
+      "name": "checklist_progress",
+      "value": "%1$s of %2$s completed"
+    },
+    {
+      "name": "checklist_task_done",
+      "value": "Completed"
+    },
+    {
+      "name": "checklist_task_open",
+      "value": "Not completed"
+    },
+    {
+      "name": "checklist_task_mark_done",
+      "value": "Mark as completed"
+    },
+    {
+      "name": "checklist_task_mark_open",
+      "value": "Mark as not completed"
+    },
+    {
+      "name": "checklist_mark_done",
+      "value": "Mark as completed"
+    },
+    {
+      "name": "checklist_mark_not_done",
+      "value": "Mark as not completed"
+    },
+    {
+      "name": "checklist_task_missing",
+      "value": "This task has changed. Please try again."
+    },
+    {
+      "name": "checklist_readonly",
+      "value": "You cannot modify this checklist."
+    },
+    {
+      "name": "checklist_draft_required",
+      "value": "Enter a title and at least one task."
+    },
+    {
+      "name": "checklist_name",
+      "value": "Checklist title"
+    },
+    {
+      "name": "checklist_tasks_hint",
+      "value": "Enter one task per line"
+    },
+    {
+      "name": "checklist_allow_add",
+      "value": "Allow others to add tasks"
+    },
+    {
+      "name": "checklist_allow_mark",
+      "value": "Allow others to mark tasks"
+    },
+    {
+      "name": "checklist_premium_hint",
+      "value": "Creating or modifying checklists requires Telegram Premium and the appropriate chat permissions."
+    },
+    {
+      "name": "compose_markdown_rich",
+      "value": "Send Markdown post"
+    },
+    {
+      "name": "compose_markdown_empty",
+      "value": "Enter Markdown in the message field first."
+    },
+    {
+      "name": "compose_content_changed",
+      "value": "This message has changed. Please try again."
+    },
+    {
+      "name": "preview_rich_message",
+      "value": "Rich post"
+    },
+    {
+      "name": "compose_markdown_finish_edit",
+      "value": "Finish editing or sending the selected media first."
+    },
+    {
+      "name": "chat_settings_bubble_tint_sub",
+      "value": "Adjust fill opacity, without background blur"
     }
   ]
 }

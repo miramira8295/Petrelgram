@@ -40,7 +40,7 @@ export class DrawnChromeLayouts {
   private reactionSource: ReactionInfo[] | null = null;
 
   prepare(ui: UIContext, msg: MessageEntry, isChannel: boolean, maxWidth: number,
-    environment: string): DrawnChromeContent {
+    environment: string, privateChat: boolean = false): DrawnChromeContent {
     const commentCount = isChannel ? msg.commentCount : 0;
     if (msg.forwardFrom === '' && commentCount === 0 && msg.reactions.length === 0) {
       // Do not allocate per-label caches/arrays for the common plain row.
@@ -54,7 +54,7 @@ export class DrawnChromeLayouts {
     this.units.prepare(ui, environment);
     const d = this.units.density;
     const avatars = commentCount > 0 ? Math.min(3, msg.commentReplierIds.length) : 0;
-    const key = `${d}:${this.units.fp2px(13)}:${maxWidth}:${environment}:${isChannel}:` +
+    const key = `${d}:${this.units.fp2px(13)}:${maxWidth}:${environment}:${isChannel}:${msg.isOutgoing}:${privateChat}:` +
       `${msg.forwardFrom}:${commentCount}:${avatars}`;
     if (this.previous !== null && this.key === key && this.reactionSource === msg.reactions) { return this.previous; }
     const p = new DrawnChromeContent();
@@ -68,7 +68,7 @@ export class DrawnChromeLayouts {
       Math.max(1, (maxWidth - avatarWidth - 19) * d), this.units.fp2px(13), drawnColor(COLOR_PRIMARY), environment, true) : null;
     if (msg.reactions.length > 0 && this.reactions === null) { this.reactions = new DrawnReactionLayouts(); }
     if (msg.reactions.length === 0) { this.reactions = null; }
-    const reactionWidth = this.reactions !== null ? this.reactions.measure(ui, msg.reactions, maxWidth, !isChannel, environment) : 0;
+    const reactionWidth = this.reactions !== null ? this.reactions.measure(ui, msg.reactions, maxWidth, !isChannel, environment, msg.isOutgoing, privateChat) : 0;
     p.reactionWidth = reactionWidth;
     p.hasReactions = msg.reactions.length > 0;
     p.width = Math.min(maxWidth, Math.max(p.forward !== null ? p.forward.widthPx / d : 0,
@@ -87,6 +87,7 @@ export class DrawnChromeLayouts {
 export interface DrawnChromeFooter { bottom: number; footerY: number; }
 export function placeChromeReactions(chrome: DrawnBubbleChrome, reactions: DrawnReactionPlan,
   x: number, y: number, width: number, footerWidth: number, footerHeight: number): DrawnChromeFooter {
+  reactions.external = true;
   chrome.reactions = reactions; chrome.reactionsX = x; chrome.reactionsY = y + 8;
   const bottom = chrome.reactionsY + reactions.height;
   const fits = reactions.lastRight + 6 + footerWidth <= width;

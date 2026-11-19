@@ -1,3 +1,4 @@
+import { PlaySlotChannel } from './PlaySlotChannel';
 import { DrawnStagedAlbumRow } from './DrawnStagedAlbumRow';
 import { DrawnStage, drawnStageMetrics } from '../../util/drawnStageMetrics';
 import { DrawnMessageRow } from './DrawnMessageRow';
@@ -25,6 +26,8 @@ import { MessageBubble } from './MessageBubble';
 // One stable controller belongs to the ChatPage. The wrapper only forwards
 // ids/current arrays, so no callback retains the AlbumGroup that created a row.
 export interface MessageBubbleActions {
+  // Stable per-page side channel; only media children subscribe.
+  playback?: PlaySlotChannel;
   onSwitchInlineCurrent?: (text: string) => void;
   onDocumentAnchor?: (windowY: number) => void;
   bubbleFocus: BubbleFocusChannel;
@@ -49,14 +52,18 @@ export interface MessageBubbleActions {
   onContactOpen: (userId: number, phone: string, vcard: string) => void;
   onPhoneOpen: (phone: string) => void;
   onLocationOpen: (latitude: number, longitude: number, label: string, valid: boolean) => void;
+  onChecklistToggle: (messageId: number, taskId: number, done: boolean) => void;
+  onRichMessageLoadFull: (messageId: number) => void;
+  onRichTaskToggle: (messageId: number, taskId: number, done: boolean) => void;
   onPollVote: (messageId: number, optionIds: number[]) => void;
   onGameOpen: (messageId: number) => void;
   onGamePhotoRetry: (messageId: number) => void;
   onPaidMediaUnlock: (messageId: number) => void;
-  onPaidMediaOpen: (messageId: number) => void;
+  onPaidMediaOpen: (messageId: number, index?: number) => void;
   onSpecialPhotoRetry: (messageId: number) => void;
   onVideoRetry: (messageId: number) => void;
   onGiftCodeCopy: (code: string) => void;
+  onGiveawayChannelOpen: (chatId: number) => void;
   onGiveawayOpen: (chatId: number, messageId: number) => void;
   onVoiceTap: (messageId: number) => void;
   onVoicePlaybackStarted: (messageId: number) => void;
@@ -171,11 +178,15 @@ const EMPTY_ACTIONS: MessageBubbleActions = {
   onContactOpen: (_id: number, _phone: string, _vcard: string): void => {},
   onPhoneOpen: (_phone: string): void => {},
   onLocationOpen: (_lat: number, _lon: number, _label: string, _valid: boolean): void => {},
+  onChecklistToggle: (_id: number, _task: number, _done: boolean): void => {},
+  onRichMessageLoadFull: (_id: number): void => {},
+  onRichTaskToggle: (_id: number, _task: number, _done: boolean): void => {},
   onPollVote: (_id: number, _options: number[]): void => {},
   onGameOpen: (_id: number): void => {}, onGamePhotoRetry: (_id: number): void => {},
   onPaidMediaUnlock: (_id: number): void => {}, onPaidMediaOpen: (_id: number): void => {},
   onSpecialPhotoRetry: (_id: number): void => {}, onVideoRetry: (_id: number): void => {},
   onGiftCodeCopy: (_code: string): void => {},
+  onGiveawayChannelOpen: (_chatId: number): void => {},
   onGiveawayOpen: (_chatId: number, _id: number): void => {},
   onVoiceTap: (_id: number): void => {}, onVoicePlaybackStarted: (_id: number): void => {},
   onAudioTap: (_id: number): void => {}, onAudioPrevious: (_id: number): void => {},
@@ -459,7 +470,7 @@ export struct ReusableMessageBubble {
         data: this.data, actions: this.actions,
         nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })
         .opacity(this.translationFade);
-    } else if (this.shownGroup.head.contentType === 'text' || this.shownGroup.head.contentType === 'richMessage' || this.shownGroup.head.contentType === 'file' || this.shownGroup.head.contentType === 'audio' || this.shownGroup.head.contentType === 'voice' || this.shownGroup.head.contentType === 'contact' || this.shownGroup.head.contentType === 'location' || this.shownGroup.head.contentType === 'venue' || this.shownGroup.head.contentType === 'poll' || this.shownGroup.head.contentType === 'videoNote' || this.shownGroup.head.contentType === 'dice' || this.shownGroup.head.contentType === 'game' || this.shownGroup.head.contentType === 'paidMedia' || this.shownGroup.head.contentType === 'gift' || this.shownGroup.head.contentType === 'giveaway' || this.shownGroup.head.contentType === 'sticker' || this.shownGroup.head.contentType === 'emoji' || this.shownGroup.head.contentType === 'customEmoji') {
+    } else if (this.shownGroup.head.contentType === 'text' || this.shownGroup.head.contentType === 'richMessage' || this.shownGroup.head.contentType === 'file' || this.shownGroup.head.contentType === 'audio' || this.shownGroup.head.contentType === 'voice' || this.shownGroup.head.contentType === 'contact' || this.shownGroup.head.contentType === 'location' || this.shownGroup.head.contentType === 'venue' || this.shownGroup.head.contentType === 'checklist' || this.shownGroup.head.contentType === 'poll' || this.shownGroup.head.contentType === 'videoNote' || this.shownGroup.head.contentType === 'dice' || this.shownGroup.head.contentType === 'game' || this.shownGroup.head.contentType === 'paidMedia' || this.shownGroup.head.contentType === 'gift' || this.shownGroup.head.contentType === 'giveaway' || this.shownGroup.head.contentType === 'sticker' || this.shownGroup.head.contentType === 'emoji' || this.shownGroup.head.contentType === 'customEmoji') {
       DrawnMessageRow({ kind: 'text', group: this.shownGroup,
         data: this.data, actions: this.actions,
         nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving })

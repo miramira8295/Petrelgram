@@ -116,7 +116,7 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
     if (captionText !== '' && translatedSource === null) { this.failureReason = drawnSourceRouteReason(this.sources.reason); return null; }
     const source = this.previews.prepare(translatedSource, m, style.environment);
     if (captionText !== '' && source === null) { this.failureReason = drawnSourceRouteReason(this.sources.reason); return null; }
-    const chrome = this.chrome.prepare(ui, m, data.isChannel, gridWidth - 16, style.environment);
+    const chrome = this.chrome.prepare(ui, m, data.isChannel, gridWidth - 16, style.environment, !data.isGroup && !data.isChannel);
     const shownName = data.isGroup && !m.isOutgoing && group.showSenderName && m.senderName !== '';
     const pure = source === null && captionText === '' && m.text === '' && !shownName && m.replyToMessageId === 0 && m.forwardFrom === '' &&
       !chrome.hasReactions && chrome.comments === null;
@@ -132,7 +132,7 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
     }
     const header = shownName ? this.headers.prepare(ui, m.senderName, style.role, (maxWidth - 16) * d,
       senderColor, this.tagText, this.tagFill, style.textEnvironment, style.environment) : null;
-    const quote = m.replyToMessageId !== 0 ? this.quotes.prepare(ui, m.replySenderName, m.replyText, maxWidth * d,
+    const quote = m.replyToMessageId !== 0 ? this.quotes.prepare(ui, m.replySenderName, m.replyText, (maxWidth - 16) * d,
       COLOR_PRIMARY, this.quoteText, this.quoteFill, style.textEnvironment, style.environment, m.replyThumbPath !== '' || m.replyDiceLayers.length > 0) : null;
     const caption = source !== null ? this.captions.prepare(ui, { source, mathRevision: style.mathRevision, maxWidthVp: maxWidth - 16, minWidthVp: 0,
       spoilersRevealed: style.spoilersRevealed, expandedBlocks: style.expandedBlocks, fontSize: style.fontSize, reserve: '', foreground: bubbleTextFor(m.isOutgoing),
@@ -171,14 +171,16 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
     p.avatarColor = this.colors.resolve(AVATAR_PALETTE[Math.abs(m.senderId) % AVATAR_PALETTE.length], style.environment);
     if (this.single) {
       gridWidth = Math.min(maxWidth, Math.max(grid.width, (header?.widthPx ?? 0) / d + 16,
-        (quote?.widthPx ?? 0) / d, chrome.width + 16, (caption?.widthVp ?? 0) + 16, footer.widthPx / d + 16));
+        (quote?.widthPx ?? 0) / d + 16, chrome.width + 16, (caption?.widthVp ?? 0) + 16, footer.widthPx / d + 16));
     }
     p.bubbleX = avatarSpace;
     const left = avatarSpace + (m.isOutgoing ? 0 : 7);
     const shellWidth = gridWidth + 4 + 7;
     p.width = avatarSpace + shellWidth;
-    let y = 2;
-    if (shownName || chrome.forward !== null) { y += senderLeadInset(cornerPx(c.topLeft), 2); }
+    // Quote-only media also needs a top inset. At large corner radii, reserve
+    // enough depth for the whole inner rectangle instead of clipping its text.
+    const topContent = shownName || chrome.forward !== null || quote !== null;
+    let y = topContent ? 8 + senderLeadInset(Math.max(cornerPx(c.topLeft), cornerPx(c.topRight)), 8) : 2;
     if (chrome.forward !== null) {
       p.chrome.forwardRect = { x: left + 10, y, width: gridWidth - 16, height: chrome.forward.heightPx / d };
       y += chrome.forward.heightPx / d + 2;
@@ -190,10 +192,10 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
     }
     if (quote !== null) {
       p.quote = quote;
-      p.quoteRect = { x: left + 2, y, width: gridWidth, height: p.quote.heightPx / d };
-      p.quoteBackground = this.quoteShapes.prepare(0, 0, gridWidth * d, p.quote.heightPx, 4 * d);
+      p.quoteRect = { x: left + 10, y, width: gridWidth - 16, height: p.quote.heightPx / d };
+      p.quoteBackground = this.quoteShapes.prepare(0, 0, (gridWidth - 16) * d, p.quote.heightPx, 4 * d);
       p.quoteStripe = { left: 0, top: 0, right: 4 * d, bottom: p.quote.heightPx };
-      p.quoteClip = { left: 10 * d, top: 3 * d, right: (gridWidth - 6) * d, bottom: 35 * d };
+      p.quoteClip = { left: 10 * d, top: 3 * d, right: (gridWidth - 22) * d, bottom: 35 * d };
       y += p.quote.heightPx / d + 4;
     }
     const gridX = left + 2 + (gridWidth - grid.width) / 2;
@@ -210,6 +212,7 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
     }
     let captionFooterY = 0;
     if (caption !== null) {
+      y += 8; // Keep caption glyphs clear of the image edge.
       p.caption = caption;
       p.captionX = left + 10; p.captionY = y;
       let last = this.lastLines.get(p.caption);
@@ -246,8 +249,9 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
       p.footerBackdrop = this.footerShapes.prepare((p.footerX - 4) * d, (p.footerY - 2) * d,
         (p.footerX + p.footerWidth + 4) * d, (y - 2) * d, 5 * d);
     }
-    p.height = placeChromeComments(p.chrome, left + 10, y, gridWidth - 16, d) + 2 +
-      (source !== null || chrome.hasReactions ? 6 : 0);
+    const bottomInset = source !== null || chrome.hasReactions || chrome.comments !== null
+      ? 8 + senderLeadInset(Math.max(cornerPx(c.bottomLeft), cornerPx(c.bottomRight)), 8) : 2;
+    p.height = placeChromeComments(p.chrome, left + 10, y, gridWidth - 16, d) + bottomInset;
     if (avatarSpace > 0 && group.showAvatar) { p.height = Math.max(38, p.height); }
     p.outline = this.outlines.prepare(shellWidth, p.height, m.isOutgoing, tail,
       cornerPx(c.topLeft), cornerPx(c.topRight), cornerPx(c.bottomRight), cornerPx(c.bottomLeft), d, 7);

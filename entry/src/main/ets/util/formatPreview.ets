@@ -1,3 +1,4 @@
+import { parseChecklist } from './checklistModel';
 import { str } from './strings';
 import { flattenRichMessage } from './richMessage';
 import { TdObject } from '../tdkit/TdTypes';
@@ -113,7 +114,7 @@ const defaultLabel: LabelResolver = (key: string, arg?: string | number): string
 
 // 预览路径会用到哪些 key：worker 启动时按这份清单同步译文。
 export const PREVIEW_LABEL_KEYS: string[] = [
-  'preview_photo', 'preview_video', 'preview_voice', 'preview_file', 'preview_sticker',
+  'checklist_title', 'preview_rich_message', 'preview_photo', 'preview_video', 'preview_voice', 'preview_file', 'preview_sticker',
   'preview_sticker_emoji', 'preview_music', 'preview_location', 'preview_live_location',
   'preview_venue', 'preview_contact', 'preview_poll', 'preview_poll_question',
   'preview_video_note', 'preview_call', 'preview_photo_expired', 'preview_video_expired',
@@ -140,6 +141,9 @@ export function formatPreview(message: TdObject | null, label: LabelResolver = d
   }
   const content = rawContent as TdObject;
   const type = content['@type'] as string;
+  if (type === 'messageChecklist') {
+    return parseChecklist(content['list'] as TdObject | undefined)?.preview ?? label('checklist_title');
+  }
   if (type === 'messageText') {
     const text = content['text'] as TdObject | undefined;
     if (text === undefined) {
@@ -217,6 +221,7 @@ export function formatPreview(message: TdObject | null, label: LabelResolver = d
     if (flat.text !== '') {
       return flat.text.replace(/\n+/g, ' ');
     }
+    return label('preview_rich_message');
   }
   if (type === 'messageUnsupported') {
     return label('preview_unsupported');

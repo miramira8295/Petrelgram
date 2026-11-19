@@ -1,3 +1,4 @@
+// Background blur is disabled by chatOverlayBackdropBlur for the scroll comparison; translucent fills remain.
 import {
   caretAfterExternalEdit, pasteFitsLimit
 } from '../../util/composerText';
@@ -15,7 +16,7 @@ import { ReplyKeyboard } from '../../store/ReplyKeyboard';
 import { logE } from '../../util/log';
 import { PendingMediaItem, hasPendingMedia } from '../../util/pendingMedia';
 import { COLOR_ICON_SECONDARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
-import { containerBlur, immersiveMaterialAvailable, overlayMaterial, plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { containerBlur, immersiveMaterialAvailable, overlayMaterial, plainBackdropBlur } from '../../util/overlayMaterial';
 import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { EditStrip, ReplyStrip } from './ComposerStrip';
 import { MediaStrip } from './MediaStrip';
@@ -633,7 +634,7 @@ export struct ChatComposerInput {
         .borderRadius(23)
         .alignSelf(ItemAlign.End)
         .margin({ bottom: 1 })
-        .backgroundColor(this.glassHostOn() ? Color.Transparent : plainGlassFill($r('app.color.surface')))
+        .backgroundColor(this.glassHostOn() ? Color.Transparent : $r('app.color.chat_overlay'))
         .backdropBlur(0)
         .visualEffect(hdsVisualEffect('control', !this.appDark))
         // 玻璃模式去掉自绘描边：画布比内容小几像素，这圈 1px 白线会露在玻璃下面变成一条横线。
@@ -961,7 +962,7 @@ export struct ChatComposerInput {
         }
       }
       .layoutWeight(1)
-      .backgroundColor(this.glassHostOn() ? Color.Transparent : plainGlassFill($r('app.color.surface')))
+      .backgroundColor(this.glassHostOn() ? Color.Transparent : $r('app.color.chat_overlay'))
       .borderRadius(24)
       .backdropBlur(0)
       // 'card' 档：给点光源、不给按压阴影——整块面板跟着手指变形很怪，
@@ -996,7 +997,7 @@ export struct ChatComposerInput {
         .borderRadius(23)
         .alignSelf(ItemAlign.End)
         .margin({ bottom: 1 })
-        .backgroundColor(this.glassHostOn() ? Color.Transparent : plainGlassFill($r('app.color.surface')))
+        .backgroundColor(this.glassHostOn() ? Color.Transparent : $r('app.color.chat_overlay'))
         .backdropBlur(0)
         .visualEffect(hdsVisualEffect('control', !this.appDark))
         .border(this.glassHostOn() ? { width: 0 } : chromeOutline(this.appDark))

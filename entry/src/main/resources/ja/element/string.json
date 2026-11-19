@@ -11065,10 +11065,6 @@
       "value": "自動再生"
     },
     {
-      "name": "cb_blur_amount",
-      "value": "ぼかしの強さ"
-    },
-    {
       "name": "meow_mode_custom",
       "value": "カスタム WebPush"
     },
@@ -11877,24 +11873,8 @@
       "value": "%1$d秒"
     },
     {
-      "name": "chat_settings_surface_glass",
-      "value": "画面のぼかし"
-    },
-    {
-      "name": "chat_settings_surface_glass_sub",
-      "value": "連絡先・設定・プロフィールにすりガラスを適用します（入力欄と同じ質感）。毎フレーム描画するため、動作が重い場合はオフにしてください。"
-    },
-    {
-      "name": "chat_settings_surface_glass_level",
-      "value": "ぼかしの強さ"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "ハイダイナミックレンジ動画"
-    },
-    {
-      "name": "material_level_veil",
-      "value": "ベール"
     },
     {
       "name": "chat_settings_surface_glass_ui",
@@ -11907,22 +11887,6 @@
     {
       "name": "chat_settings_bubble_glass",
       "value": "吹き出し"
-    },
-    {
-      "name": "chat_settings_bubble_glass_sub",
-      "value": "チャット内の吹き出し。数が最も多く負荷も大きい"
-    },
-    {
-      "name": "glass_warn_title",
-      "value": "電池消費が増えます"
-    },
-    {
-      "name": "glass_warn_body",
-      "value": "ぼかしは毎フレーム描画されます。電池消費と発熱が明確に増え、スクロール時にコマ落ちすることがあります。熱くなったり重くなったら、ここで「オフ」を選んでください。"
-    },
-    {
-      "name": "glass_warn_enable",
-      "value": "それでも有効にする"
     },
     {
       "name": "cp_secret_pending_out",

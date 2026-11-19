@@ -28,6 +28,7 @@ load(cacheCtx,root+'pages/chat/DrawnVideoMeta.ets',['DrawnVideoMetaCache','drawn
 load(cacheCtx,root+'pages/chat/DrawnTextLine.ets',['drawnColor']);
 load(cacheCtx,root+'pages/chat/DrawnMediaColors.ets',['DrawnMediaColors']);
 load(cacheCtx,root+'pages/chat/DrawnMediaPosition.ets',['DrawnMediaPosition']);
+load(cacheCtx,root+'pages/chat/PlaySlotChannel.ets',['PlaySlotChannel','PlaySlotBinding','EMPTY_PLAY_SLOT']);
 load(cacheCtx,compiled+'pages/chat/DrawnAlbumVideo.ts',['DrawnAlbumVideo']);
 const meta=new cacheCtx.DrawnVideoMetaCache();
 // Independent old-expression oracle, including zero/one-sided values and width threshold.

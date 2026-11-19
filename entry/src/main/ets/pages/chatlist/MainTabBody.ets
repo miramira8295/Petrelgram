@@ -28,10 +28,9 @@ import { KEY_FORCE_SINGLE_COLUMN } from '../../store/AppSettings';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import {
-  KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT, surfaceGlassBlurStyle, surfaceGlassFill
+  KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT, surfaceGlassFill
 } from '../../util/surfaceGlass';
 import { GLASS_OUTLINE_COLOR } from '../../util/bubbleTail';
-import { materialModifierWhen } from '../../util/materialModifier';
 import { mainCardFill } from '../../util/theme';
 import { formatTime } from '../../util/formatTime';
 import { ChatListDataSource } from './ChatListDataSource';
@@ -647,11 +646,8 @@ export struct MainTabBody {
     this.refreshArchiveTop();
   }
 
-  // 归档卡片与会话卡片（ChatRow）**同一套规则**：玻璃不玻璃看「界面模糊质感」
-  // 开关，不看有没有壁纸。原来这里按「壁纸开着就上 overlay 材质 + backdropBlur」
-  // 另起一套，用户关了模糊质感之后会话卡片都是实底，唯独归档这张还是半透明发灰、
-  // 描边颜色也不一样（用户：「已归档聊天和其他的显示不符」）。
-  // 两个纪元都读：档位、材质开关一变就重绘（@StorageProp 要在 build 链路里被读到）。
+  // 归档与会话卡片共用整体材质开关和颜色透明度。
+  // 读取纪元以便切换档位后立即刷新复用卡片。
   private archiveGlassOn(): boolean {
     return this.surfaceGlass && this.surfaceGlassEpoch >= 0 && this.materialEpoch >= 0;
   }
@@ -661,14 +657,6 @@ export struct MainTabBody {
       return pressed ? $r('app.color.surface_alt') : $r('app.color.surface');
     }
     return surfaceGlassFill(mainCardFill(this.appWallpaperOn, pressed));
-  }
-
-  // 同 ChatRow.rowBlurStyle：背后没有壁纸就不挂模糊（模糊纯色还是那个纯色）。
-  private archiveBlurStyle(): BlurStyle | undefined {
-    if (!this.archiveGlassOn() || !this.liveEffects() || !this.appWallpaperOn) {
-      return undefined;
-    }
-    return surfaceGlassBlurStyle();
   }
 
   @Styles
@@ -748,9 +736,6 @@ export struct MainTabBody {
       width: this.archiveGlassOn() ? 0.5 : 0,
       color: GLASS_OUTLINE_COLOR
     })
-    .backgroundBlurStyle(this.archiveBlurStyle())
-    .attributeModifier(materialModifierWhen('card', this.archiveGlassOn() &&
-      (!this.appWallpaperOn || this.liveEffects())))
     .clip(true)
     .stateStyles({ normal: this.archiveNormalStyle, pressed: this.archivePressedStyle })
     .alignItems(VerticalAlign.Center)

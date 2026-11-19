@@ -51,7 +51,7 @@ import {
 } from '../../util/overlayMaterial';
 import {
   KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT,
-  surfaceGlassBlurStyle, surfaceGlassFill
+  surfaceGlassFill
 } from '../../util/surfaceGlass';
 import { AvatarView } from '../chatlist/AvatarView';
 import { AvatarViewer } from '../common/AvatarViewer';
@@ -985,36 +985,19 @@ export struct ChatProfilePage {
     return this.glassOn() ? surfaceGlassFill($r('app.color.surface')) : $r('app.color.surface');
   }
 
-  // 框架容器材质，不是 backdropBlur——后者在节点边缘有采样衰减，四角最明显。
-  private cardBlurStyle(): BlurStyle | undefined {
-    return this.glassOn() ? surfaceGlassBlurStyle() : undefined;
-  }
-
-  // 玻璃面。三档只差圆角，其余一致。
-  //
-  // 【改用联系人页那套（2026-09-18 用户：「改成使用系统选择的材质，和联系人页面一样」）】
-  // 原来走的是 overlayGlassFill + materialModifier：它在"设备自报材质可用"时把底色
-  // 返回**透明**，把观感整个让给组件级 systemMaterial——而系统早已把组件级材质收回，
-  // 于是这些卡片就是一个个透明框。
-  // 联系人页那套（util/surfaceGlass）明确不指望材质：开关**关着**时是不透明实色，
-  // 开着时才叠薄纱 + 框架容器材质（backgroundBlurStyle，不是 backdropBlur——后者在
-  // 节点边缘有采样衰减，四角最明显）。默认关，所以默认就是一张看得见的卡片。
+  // 卡片、网格和条目仅圆角不同；填充与气泡共用透明度档位，关闭时为实色。
   @Styles
   glassCard() {
     .backgroundColor(this.cardFill())
-    .backgroundBlurStyle(this.cardBlurStyle())
     .borderRadius(GLASS_RADIUS_CARD)
     .border({ width: 0.7, color: $r('app.color.divider') })
-    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
   }
 
   @Styles
   glassTile() {
     .backgroundColor(this.cardFill())
-    .backgroundBlurStyle(this.cardBlurStyle())
     .borderRadius(GLASS_RADIUS_TILE)
     .border({ width: 0.7, color: $r('app.color.divider') })
-    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
   }
 
   @Builder
@@ -1025,9 +1008,7 @@ export struct ChatProfilePage {
     .width(44).height(44).borderRadius(22)
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.cardFill())
-    .backgroundBlurStyle(this.cardBlurStyle())
     .border({ width: 0.7, color: $r('app.color.divider') })
-    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
     .onClick(onTap);
   }
 
@@ -1149,7 +1130,6 @@ export struct ChatProfilePage {
       .width(130).height(130).padding(7).borderRadius(65)
       .justifyContent(FlexAlign.Center)
       .backgroundColor(this.cardFill())
-      .backgroundBlurStyle(this.cardBlurStyle())
       .border({ width: 0.7, color: $r('app.color.divider') })
       .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
         // 记下点击处的屏幕坐标，查看器据此决定放大/缩回的中心点。
@@ -1607,10 +1587,8 @@ export struct ChatProfilePage {
     .width(this.detailTabBarWidth())
     // 药丸形的玻璃条。clip 必须在圆角之后，否则里面的指示器会溢出圆角。
     .backgroundColor(this.cardFill())
-    .backgroundBlurStyle(this.cardBlurStyle())
     .borderRadius(DETAIL_TAB_BAR_HEIGHT / 2)
     .border({ width: 0.7, color: $r('app.color.divider') })
-    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
     .clip(true)
     .alignSelf(ItemAlign.Center)
     .margin({ left: this.pageMargin(), right: this.pageMargin(), bottom: 6 });

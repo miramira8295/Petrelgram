@@ -1,10 +1,21 @@
+import { DrawnMusicCardLayout, DrawnMusicCardLayouts } from './DrawnMusicCardLayout';
+import { DrawnLoadingSpinner } from './DrawnLoadingSpinner';
+import { DrawnTextUnits } from '../../util/drawnTextUnits';
+import { DrawnCardBar } from './DrawnCardBar';
+import { CachedImage } from '../common/CachedImage';
+import { CachedImageSpec, CachedImageSpecCache } from '../../util/cachedImageSpec';
+import { DrawnMediaTextPlan, DrawnMediaTexts, DrawnMediaTextPainter } from './DrawnMediaText';
+import { DrawnMediaControl } from './DrawnMediaControl';
+import { chatEnv } from '../../util/chatEnvMirror';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
+import { DrawnAudioWaveform } from './DrawnAudioWaveform';
 import { AudioClock, IDLE_AUDIO_CLOCK } from '../../util/audioClock';
 import { getVoicePlayback, VoiceState } from '../../services/VoicePlayback';
 import { formatFileSize } from '../../util/formatFileSize';
 import { formatVoiceDuration } from '../../util/voiceWaveform';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
-import { musicFormatLabel, musicTrackKey } from '../../util/musicTrackModel';
+import { musicTrackKey } from '../../util/musicTrackModel';
 import { subscribeMusicCollections, trackInAnyCollection } from '../../store/MusicCollectionStore';
 import { voiceWaveformBars } from '../../util/voiceWaveform';
 
@@ -16,13 +27,12 @@ import { voiceWaveformBars } from '../../util/voiceWaveform';
 const COVER: number = 44;
 const PLAY_BTN: number = 42;
 const WAVE_BARS: number = 34;
-const WAVE_BAR_W: number = 2.5;
-const WAVE_GAP: number = 2;
 const WAVE_H: number = 24;
 
 // 一枚状态胶囊的全部内容。做成结构是为了让 @Builder 只收**一个**参数——
 // 多参 @Builder 不会随状态刷新（见 [[arkui-silent-reactivity-traps]]）。
 interface MusicChipSpec {
+  painter: DrawnCardBar;
   icon: string;
   label: string;
   color: ResourceColor;
@@ -38,6 +48,29 @@ function musicControlPressedStyle() { .scale({ x: 0.92, y: 0.92 }).opacity(0.82)
 
 @ComponentV2
 export struct MusicBubble {
+  @Param preparedCard: DrawnMusicCardLayout | undefined = undefined;
+  private cardLayouts: DrawnMusicCardLayouts = new DrawnMusicCardLayouts();
+  private backgroundPainter: DrawnCardBar = new DrawnCardBar();
+  @Computed private get cardLayout(): DrawnMusicCardLayout {
+    return this.preparedCard ?? this.cardLayouts.prepare(this.getUIContext(), this.title, this.performer,
+      this.fileName, this.mimeType, this.fileSize, this.maxWidth, this.paintEnvironment);
+  }
+  private labelPainter: DrawnMediaTextPainter = new DrawnMediaTextPainter();
+  private coverPainter: DrawnCardBar = new DrawnCardBar();
+  private dividerPainter: DrawnCardBar = new DrawnCardBar();
+  private downloadPainter: DrawnCardBar = new DrawnCardBar();
+  private favoritePainter: DrawnCardBar = new DrawnCardBar();
+  private coverSpecs: CachedImageSpecCache = new CachedImageSpecCache();
+  @Computed private get coverSpec(): CachedImageSpec {
+    return this.coverSpecs.prepare({ path: this.coverPath, boxWidth: COVER, boxHeight: COVER, radius: 12,
+      fit: ImageFit.Cover, drawOnCanvas: true, sourceKey: `${this.chatId}:${this.msgId}:${this.audioFileId}`,
+      backdropImage: this.coverMini });
+  }
+  private controlPainter: DrawnMediaControl = new DrawnMediaControl();
+  private paintEnv = chatEnv;
+  @Computed private get paintEnvironment(): string {
+    return `${this.paintEnv.appearanceEpoch}:${this.paintEnv.langEpoch}:${textMeasureEnvironment.epoch}`;
+  }
   @Param msgId: number = 0;
   @Param durationSec: number = 0;
   @Param isOutgoing: boolean = false;
@@ -94,7 +127,13 @@ export struct MusicBubble {
   @Local favorited: boolean = false;
   private unsub: (() => void) | null = null;
   private unsubFavorites: (() => void) | null = null;
-  private waveWidth: number = 1;
+  private durationLayouts: DrawnMediaTexts = new DrawnMediaTexts();
+  private durationPainter: DrawnMediaTextPainter = new DrawnMediaTextPainter();
+  @Computed private get durationPlan(): DrawnMediaTextPlan {
+    return this.durationLayouts.prepare(this.getUIContext(), this.paintEnvironment, Math.max(1, (this.maxWidth - 28) / 2),
+      this.durationLabel(), 11, COLOR_TEXT_SECONDARY, '', 11, COLOR_TEXT_SECONDARY, 1, false, 0, this.cardLayout.waveHeight, true);
+  }
+  private get waveWidth(): number { return Math.max(1, this.maxWidth - 28 - this.durationPlan.width); }
 
   private attachPlayback(targetId: number, durationSec: number): void {
     this.detachPlayback();
@@ -207,23 +246,7 @@ export struct MusicBubble {
     return this.playbackStatus !== 'idle';
   }
 
-  private displayTitle(): string {
-    const named: string = this.title.trim();
-    if (named !== '') {
-      return named;
-    }
-    const file: string = this.fileName.trim();
-    if (file === '') {
-      return str('music_audio');
-    }
-    const dot: number = file.lastIndexOf('.');
-    return dot > 0 ? file.substring(0, dot) : file;
-  }
-
-  private displayPerformer(): string {
-    const artist: string = this.performer.trim();
-    return artist !== '' ? artist : str('music_unknown_artist');
-  }
+  private displayTitle(): string { return this.cardLayout.title; }
 
   private totalLabel(): string {
     const duration: number = this.resolvedDuration();
@@ -280,17 +303,7 @@ export struct MusicBubble {
 
   // 副标题：演唱者 · 格式 · 大小。格式用 util/musicTrackModel 那套映射，
   // 和音乐中心的信息格是同一份判据。
-  private subtitleLabel(): string {
-    const parts: string[] = [this.displayPerformer()];
-    const format: string = musicFormatLabel(this.mimeType, this.fileName);
-    if (format !== '') {
-      parts.push(format);
-    }
-    if (this.fileSize > 0) {
-      parts.push(formatFileSize(this.fileSize));
-    }
-    return parts.join(' · ');
-  }
+  private subtitleLabel(): string { return this.cardLayout.subtitle; }
 
   // 波形。音乐消息**没有** TDLib 波形（那是语音条独有的），所以按文件 id 生成
   // 一份稳定的形状——同一首歌每次进来长得一样，靠的是 voiceWaveformBars 的
@@ -299,7 +312,8 @@ export struct MusicBubble {
     return voiceWaveformBars('', WAVE_BARS, this.audioFileId !== 0 ? this.audioFileId : this.msgId);
   }
 
-  private waveBars(): number[] { return this.cachedWaveBars; }
+  private waveUnits: DrawnTextUnits = new DrawnTextUnits();
+  private wavePainter: DrawnAudioWaveform = new DrawnAudioWaveform();
 
   private shownProgress(): number {
     return this.dragging ? this.dragProgress : this.progress;
@@ -318,49 +332,30 @@ export struct MusicBubble {
   @Builder
   private coverArt(): void {
     Stack() {
-      Column()
-        .width(COVER).height(COVER).borderRadius(12)
-        // 比卡片底色重一档，封面块才分得出来（卡片是 #20/#1A 那一档）。
-        .backgroundColor(this.isOutgoing ? '#4755A24D' : '#3D3390EC');
-      if (this.coverPath === '' && this.coverMini === '') {
-        SymbolGlyph($r('sys.symbol.music_note_list'))
-          .fontSize(20).fontColor([this.accent()])
-          .opacity(this.coverFailed ? 0.5 : 1);
-      }
-      if (this.coverMini !== '') {
-        Image(this.coverMini).draggable(false)
-          .width(COVER).height(COVER).borderRadius(12).objectFit(ImageFit.Cover);
-      }
-      if (this.coverPath !== '') {
-        Image(this.coverPath.startsWith('/') ? `file://${this.coverPath}` : this.coverPath)
-          .draggable(false)
-          .width(COVER).height(COVER).borderRadius(12).objectFit(ImageFit.Cover);
-      }
+      CachedImage({ spec: this.coverSpec });
     }
-    .width(COVER).height(COVER);
+    .width(COVER).height(COVER)
+    .drawModifier(this.coverPainter.bind(this.getUIContext(), {
+      width: COVER, height: COVER, environment: this.paintEnvironment, radius: 12,
+      background: this.isOutgoing ? '#4755A24D' : '#3D3390EC',
+      center: this.coverPath === '' && this.coverMini === '' ? '♫' : '', centerFont: 20,
+      centerColor: this.coverFailed ? COLOR_TEXT_SECONDARY : this.accent()
+    }));
   }
 
   // 右侧那颗主按钮：播放 / 暂停 / 下载 / 转圈 / 重试，一个位置管全部状态。
   @Builder
   private playControl(): void {
     Stack() {
-      Circle({ width: PLAY_BTN, height: PLAY_BTN }).fill(this.accent());
-      if (this.downloadActive || this.loadingPlayback()) {
-        if (this.downloadActive && this.downloadProgress > 0) {
-          Progress({ value: this.downloadProgress, total: 100, type: ProgressType.Ring })
-            .width(PLAY_BTN - 14).height(PLAY_BTN - 14)
-            .color(Color.White).style({ strokeWidth: 2 });
-        } else {
-          LoadingProgress().width(21).height(21).color(Color.White);
-        }
-      } else {
-        SymbolGlyph($r(this.playing() ? 'sys.symbol.pause_fill'
-          : ((this.downloadFailed || this.playbackFailed)
-            ? 'sys.symbol.arrow_counterclockwise' : 'sys.symbol.play_fill')))
-          .fontSize(19).fontColor([Color.White]);
+      if ((this.downloadActive && this.downloadProgress <= 0) || (!this.downloadActive && this.loadingPlayback())) {
+        DrawnLoadingSpinner({ ringSize: 21, ringColor: Color.White });
       }
     }
     .width(PLAY_BTN).height(PLAY_BTN)
+    .drawModifier(this.controlPainter.bind(this.getUIContext(), this.paintEnvironment, PLAY_BTN,
+      this.accent(), '#FFFFFF', this.downloadActive || this.loadingPlayback() ? '' : this.playing() ? 'pause'
+        : (this.downloadFailed || this.playbackFailed) ? 'retry' : 'play',
+      this.downloadActive ? this.downloadProgress : 0))
     .stateStyles({ normal: musicControlNormalStyle, pressed: musicControlPressedStyle })
     .animation({ duration: 110, curve: Curve.EaseOut })
     .accessibilityText(this.statusLabel())
@@ -374,23 +369,28 @@ export struct MusicBubble {
   // 一枚状态胶囊。已完成态是"陈述"（勾/心 + 完成时的文案），未完成态是"动作"。
   @Builder
   private chip(spec: MusicChipSpec): void {
-    Row({ space: 4 }) {
-      SymbolGlyph($r(spec.icon)).fontSize(12).fontColor([spec.color]);
-      Text(spec.label).fontSize(11).fontWeight(FontWeight.Medium).fontColor(spec.color)
-        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-    }
-    .height(20)
-    .alignItems(VerticalAlign.Center)
+    Row()
+    .width(Math.max(1, (this.maxWidth - 60) / 2)).height(this.cardLayout.chipHeight)
+    .drawModifier(spec.painter.bind(this.getUIContext(), {
+      width: Math.max(1, (this.maxWidth - 60) / 2), height: this.cardLayout.chipHeight, environment: this.paintEnvironment,
+      left: this.chipLabel(spec), leftFont: 11, leftColor: spec.color
+    }))
     .opacity(spec.enabled ? 1 : 0.45)
     .enabled(spec.enabled)
     .accessibilityText(spec.label)
     .onClick((): void => { spec.action(); });
   }
 
+  private chipLabel(spec: MusicChipSpec): string {
+    const icon = spec.icon === 'sys.symbol.checkmark' ? '✓' : spec.icon === 'sys.symbol.heart_fill' ? '♥'
+      : spec.icon === 'sys.symbol.heart' ? '♡' : spec.icon === 'sys.symbol.exclamationmark_circle' ? '!' : '↓';
+    return `${icon} ${spec.label}`;
+  }
+
   private downloadChip(): MusicChipSpec {
     if (this.downloadActive) {
       return {
-        icon: 'sys.symbol.arrow_down', color: COLOR_TEXT_SECONDARY,
+        painter: this.downloadPainter, icon: 'sys.symbol.arrow_down', color: COLOR_TEXT_SECONDARY,
         label: this.downloadProgress > 0
           ? str('downloading_pct', this.downloadProgress) : str('downloading'),
         enabled: false, action: (): void => {}
@@ -398,18 +398,18 @@ export struct MusicBubble {
     }
     if (this.downloadFailed) {
       return {
-        icon: 'sys.symbol.exclamationmark_circle', color: '#D95B57',
+        painter: this.downloadPainter, icon: 'sys.symbol.exclamationmark_circle', color: '#D95B57',
         label: str('download_failed_tap'), enabled: true, action: (): void => { this.onToggle(); }
       };
     }
     // 已在本地：陈述，点一下仍可另存到设备（下载中心之外的那份副本）。
     return this.localReady()
       ? {
-        icon: 'sys.symbol.checkmark', color: '#3FA96A',
+        painter: this.downloadPainter, icon: 'sys.symbol.checkmark', color: '#3FA96A',
         label: str('music_downloaded'), enabled: true, action: (): void => { this.onSave(); }
       }
       : {
-        icon: 'sys.symbol.arrow_down_circle', color: COLOR_TEXT_SECONDARY,
+        painter: this.downloadPainter, icon: 'sys.symbol.arrow_down_circle', color: COLOR_TEXT_SECONDARY,
         label: str('music_save'), enabled: true, action: (): void => { this.onSave(); }
       };
   }
@@ -417,55 +417,41 @@ export struct MusicBubble {
   private favoriteChip(): MusicChipSpec {
     return this.favorited
       ? {
-        icon: 'sys.symbol.heart_fill', color: '#E8619D',
+        painter: this.favoritePainter, icon: 'sys.symbol.heart_fill', color: '#E8619D',
         label: str('music_favorited'), enabled: true, action: (): void => { this.onFavorite(); }
       }
       : {
-        icon: 'sys.symbol.heart', color: COLOR_TEXT_SECONDARY,
+        painter: this.favoritePainter, icon: 'sys.symbol.heart', color: COLOR_TEXT_SECONDARY,
         label: str('music_favorite'), enabled: true, action: (): void => { this.onFavorite(); }
       };
   }
+
+  @Computed private get labelPlan(): DrawnMediaTextPlan { return this.cardLayout.label; }
 
   build() {
     Column({ space: 0 }) {
       // 一行：封面 · 曲名/副标题 · 播放键
       Row({ space: 10 }) {
         this.coverArt();
-        Column({ space: 2 }) {
-          Text(this.displayTitle())
-            .fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%');
-          Text(this.subtitleLabel())
-            .fontSize(11.5).fontColor(COLOR_TEXT_SECONDARY)
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%');
-        }
-        .layoutWeight(1).alignItems(HorizontalAlign.Start);
+        Row()
+          .width(this.labelPlan.width).height(this.labelPlan.height)
+          .drawModifier(this.labelPainter.bind(this.labelPlan))
+          .accessibilityText(`${this.displayTitle()}. ${this.subtitleLabel()}`);
         this.playControl();
       }
       .width('100%').alignItems(VerticalAlign.Center);
 
       // 二行：波形 + 时长。波形按下即定位，和音乐中心的进度条同一套手感。
       Row({ space: 8 }) {
-        Row({ space: WAVE_GAP }) {
-          ForEach(this.waveBars(), (height: number, index: number): void => {
-            Column()
-              .width(WAVE_BAR_W)
-              .height(Math.max(3, height))
-              .borderRadius(WAVE_BAR_W / 2)
-              .backgroundColor(index / WAVE_BARS <= this.shownProgress()
-                ? this.accent()
-                : (this.isOutgoing ? '#4D9FCB98' : '#4DB7CDE3'));
-          }, (height: number, index: number): string => `${index}`);
-        }
+        Row()
         .layoutWeight(1)
-        .height(WAVE_H)
-        .alignItems(VerticalAlign.Center)
-        .onAreaChange((_old: Area, area: Area): void => {
-          this.waveWidth = Math.max(1, Number(area.width));
-        })
+        .height(this.cardLayout.waveHeight)
+        .drawModifier(this.wavePainter.bind(this.cachedWaveBars, this.shownProgress(),
+          this.waveUnits.prepare(this.getUIContext(), this.paintEnvironment).density, this.accent(), this.isOutgoing ? '#4D9FCB98' : '#4DB7CDE3', false, this.paintEnvironment))
         .onTouch((event: TouchEvent): void => { this.onWaveTouch(event); });
-        Text(this.durationLabel())
-          .fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+        Row().width(this.durationPlan.width).height(this.durationPlan.height)
+          .drawModifier(this.durationPainter.bind(this.durationPlan))
+          .accessibilityText(this.durationLabel());
       }
       .width('100%').margin({ top: 8 })
       .alignItems(VerticalAlign.Center);
@@ -473,10 +459,11 @@ export struct MusicBubble {
       // 分割线：把「保存 / 收藏」这排动作和上面的曲目信息分开（用户 2026-09-18）。
       // 颜色跟着强调色走而不是用 divider 资源——卡片本身已经是一层强调色叠加，
       // 灰线压上去会发脏。
-      Divider()
-        .color(this.isOutgoing ? '#3355A24D' : '#2E3390EC')
-        .strokeWidth(0.8)
-        .margin({ top: 9 });
+      Row().width('100%').height(0.8).margin({ top: 9 })
+        .drawModifier(this.dividerPainter.bind(this.getUIContext(), {
+          width: Math.max(1, this.maxWidth - 20), height: 0.8, environment: this.paintEnvironment,
+          background: this.isOutgoing ? '#3355A24D' : '#2E3390EC'
+        }));
 
       // 三行：两枚胶囊。时间戳压在气泡右下角，所以这一行右边留空。
       Row({ space: 14 }) {
@@ -496,7 +483,11 @@ export struct MusicBubble {
     .borderRadius(14)
     // 底色：把音频区和下面的配文分开。用强调色的低透明度叠加，深浅两种模式下
     // 都是"比气泡稍重一档"，不必各配一套实色。
-    .backgroundColor(this.isOutgoing ? '#2055A24D' : '#1A3390EC');
+    .height(this.cardLayout.height)
+    .drawModifier(this.backgroundPainter.bind(this.getUIContext(), {
+      width: this.maxWidth, height: this.cardLayout.height, environment: this.paintEnvironment, radius: 14,
+      background: this.isOutgoing ? '#2055A24D' : '#1A3390EC'
+    }));
   }
 
   // 播放中显示"已播/总长"，其余显示总长——和设计稿右侧那个 04:12 一致。

@@ -1,3 +1,4 @@
+// Bubble shadows are disabled, including blur resources and scroll-triggered invalidation.
 import { DrawnInvalidation, DrawnStage, drawnStageMetrics } from '../../util/drawnStageMetrics';
 import { DrawContext } from '@kit.ArkUI';
 import { common2D, drawing } from '@kit.ArkGraphics2D';
@@ -12,26 +13,19 @@ import { DrawnReactionChip } from './DrawnReactionLayout';
 export class DrawnBubblePainter extends DrawModifier {
   private plan: DrawnBubblePlan | null = null;
   private brush: drawing.Brush = new drawing.Brush();
-  private shadow: drawing.Brush = new drawing.Brush();
-  private shadowOn: boolean = false;
   private solid: boolean = true;
 
   constructor() {
     super();
-    this.brush.setAntiAlias(true); this.shadow.setAntiAlias(true);
-    this.shadow.setColor({ alpha: 20, red: 0, green: 0, blue: 0 });
+    this.brush.setAntiAlias(true);
   }
 
-  bind(plan: DrawnBubblePlan | null, shadowOn: boolean, solid: boolean = true): DrawnBubblePainter {
-    if (plan === this.plan && this.shadowOn === shadowOn && this.solid === solid) { drawnStageMetrics.skip(DrawnStage.Background); return this; }
+  bind(plan: DrawnBubblePlan | null, _shadowOn: boolean, solid: boolean = true): DrawnBubblePainter {
+    if (plan === this.plan && this.solid === solid) { drawnStageMetrics.skip(DrawnStage.Background); return this; }
     const traced = drawnStageMetrics.begin(DrawnStage.Background);
     try {
-      if (plan !== null && plan.density !== this.plan?.density) {
-        this.shadow.setMaskFilter(drawing.MaskFilter.createBlurMaskFilter(drawing.BlurType.NORMAL,
-          (2 * .57735 + .5) * plan.density));
-      }
       drawnStageMetrics.invalidated(plan !== this.plan ? DrawnInvalidation.BackgroundPlan : DrawnInvalidation.Shadow);
-      this.plan = plan; this.shadowOn = shadowOn; this.solid = solid;
+      this.plan = plan; this.solid = solid;
       this.invalidate(); return this;
     } finally { drawnStageMetrics.end(traced); }
   }
@@ -43,10 +37,6 @@ export class DrawnBubblePainter extends DrawModifier {
     try {
       const c = context.canvas, d = p.density;
       c.save(); c.translate(p.bubbleX * d, p.bubbleY * d);
-      if (this.shadowOn) {
-        c.save(); c.translate(0, d); c.attachBrush(this.shadow);
-        c.drawPath(p.outline); c.detachBrush(); c.restore();
-      }
       this.brush.setColor(p.fill); c.attachBrush(this.brush);
       c.drawPath(p.outline); c.detachBrush(); c.restore();
     } finally { drawnStageMetrics.end(traced); }
@@ -142,12 +132,15 @@ export class DrawnBubbleForeground extends DrawModifier {
         if (plan !== null) { this.preparePens(plan); }
         drawnStageMetrics.invalidated(this.plan !== plan ? DrawnInvalidation.ForegroundPlan
           : this.sendState !== state ? DrawnInvalidation.Status : DrawnInvalidation.Footer);
+        this.plan?.chrome?.reactions?.setPressed?.('');
         this.plan = plan; this.sendState = state; this.footerPaintKey = footerPaintKey; this.pressed = null; this.pressedReaction = null; this.invalidate();
       } finally { drawnStageMetrics.end(traced); }
     } else { drawnStageMetrics.skip(DrawnStage.Foreground); }
     return this;
   }
   press(hit: DrawnRichHit | null): void {
+    const external = this.plan?.chrome?.reactions;
+    if (hit === null && external?.external) { external.setPressed(''); }
     const clearReaction = hit === null && this.pressedReaction !== null;
     if (clearReaction || hit !== this.pressed) {
       if (clearReaction) { this.pressedReaction = null; }
@@ -155,6 +148,8 @@ export class DrawnBubbleForeground extends DrawModifier {
     }
   }
   pressReaction(chip: DrawnReactionChip | null): void {
+    const external = this.plan?.chrome?.reactions;
+    if (external?.external) { external.setPressed(chip?.key ?? ''); return; }
     if (chip !== this.pressedReaction) { this.pressedReaction = chip; drawnStageMetrics.invalidated(DrawnInvalidation.Press); this.invalidate(); }
   }
   drawBehind(context: DrawContext): void {

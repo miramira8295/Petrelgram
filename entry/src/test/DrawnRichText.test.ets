@@ -201,11 +201,11 @@ export default function drawnRichTextTest(): void {
         expect(cache.prepare('text', [richEntity(kind, 0, 4)])?.blocks?.length).assertEqual(1);
       }
     });
-    it('preserves bidi tabs and caps empty or oversized input', 0, (): void => {
+    it('rejects empty input and preserves a complete oversized paragraph', 0, (): void => {
       const cache = new DrawnRichSourceCache();
-      for (const s of ['', 'x'.repeat(16385)]) {
-        expect(cache.prepare(s, []) === null).assertTrue();
-      }
+      expect(cache.prepare('', []) === null).assertTrue();
+      const long = 'x'.repeat(16385);
+      expect(cache.prepare(long, [])?.content).assertEqual(long);
     });
     it('121 runs are supported without changing parser boundaries', 0, (): void => {
       const body = 'x '.repeat(121); const entities: TdObject[] = [];

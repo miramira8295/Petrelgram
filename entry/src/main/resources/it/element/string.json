@@ -11065,10 +11065,6 @@
       "value": "Riproduzione automatica"
     },
     {
-      "name": "cb_blur_amount",
-      "value": "Intensità sfocatura"
-    },
-    {
       "name": "meow_mode_custom",
       "value": "WebPush personalizzato"
     },
@@ -11877,24 +11873,8 @@
       "value": "%1$d s"
     },
     {
-      "name": "chat_settings_surface_glass",
-      "value": "Sfocatura interfaccia"
-    },
-    {
-      "name": "chat_settings_surface_glass_sub",
-      "value": "Vetro smerigliato su Contatti, Impostazioni e Profilo, come la barra di invio. Disegnato a ogni fotogramma: disattivalo se scatta."
-    },
-    {
-      "name": "chat_settings_surface_glass_level",
-      "value": "Livello di sfocatura"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Video ad alta gamma dinamica"
-    },
-    {
-      "name": "material_level_veil",
-      "value": "Velo"
     },
     {
       "name": "chat_settings_surface_glass_ui",
@@ -11907,22 +11887,6 @@
     {
       "name": "chat_settings_bubble_glass",
       "value": "Fumetti"
-    },
-    {
-      "name": "chat_settings_bubble_glass_sub",
-      "value": "Fumetti dei messaggi: i più numerosi e costosi"
-    },
-    {
-      "name": "glass_warn_title",
-      "value": "Maggiore consumo"
-    },
-    {
-      "name": "glass_warn_body",
-      "value": "La sfocatura viene resa a ogni frame: più consumo e calore, possibili scatti nello scorrimento. Se il dispositivo si scalda o rallenta, torna qui e scegli «Disattivato»."
-    },
-    {
-      "name": "glass_warn_enable",
-      "value": "Attiva comunque"
     },
     {
       "name": "cp_secret_pending_out",

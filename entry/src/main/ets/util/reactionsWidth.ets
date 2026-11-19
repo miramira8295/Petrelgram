@@ -7,21 +7,21 @@
 // 给 Flex 一个明确宽度，wrap 才有意义：一行放不下时正好等于上限。
 //
 // 数字必须和 MessageBubble.reactionsRow 里 chip 的样式逐个对应，改一处要改两处：
-//   padding({ left: 9, right: 9 })  →  CHIP_PAD_H
+//   padding({ left: 8, right: 8 })  →  CHIP_PAD_H
 //   Row({ space: 4 })               →  CHIP_GAP
 //   margin({ right: 4 })            →  CHIP_MARGIN_R
-//   图标 15×15（自定义表情位图或占位）→ CHIP_ICON_VP；unicode 表情是 Text，要测
-export const CHIP_PAD_H: number = 9;
+//   图标统一 20×20 → CHIP_ICON_VP；只需测量计数字宽
+export const CHIP_PAD_H: number = 8;
 export const CHIP_GAP: number = 4;
 export const CHIP_MARGIN_R: number = 4;
-export const CHIP_ICON_VP: number = 15;
+export const CHIP_ICON_VP: number = 20;
 // 测量与真实排版之间留一点余量：少算 1vp 最后一个 chip 就会掉到下一行，多算
 // 1vp 只是气泡右边多一根头发丝。
 const SLACK_VP: number = 2;
 
 // 单个 chip 的宽度（vp）。iconVp 是图标/表情的宽，countVp 是计数文本的宽。
-export function reactionChipWidth(iconVp: number, countVp: number): number {
-  return CHIP_PAD_H + iconVp + CHIP_GAP + countVp + CHIP_PAD_H + CHIP_MARGIN_R;
+export function reactionChipWidth(iconVp: number, countVp: number, custom: boolean = false): number {
+  return CHIP_PAD_H + iconVp + (custom ? 6 : CHIP_GAP) + countVp + CHIP_PAD_H + CHIP_MARGIN_R;
 }
 
 // 整条反应条该给 Flex 的宽度：所有 chip 一行排开的自然宽，封顶 maxVp。
@@ -56,7 +56,7 @@ const TIME_STATUS_ICON_VP: number = 12;
 // 反应条与时间戳之间那 6（Row({ space: 6 })）。
 export const REACTIONS_TIME_GAP: number = 6;
 // 扣到最后也要给反应条留下的宽度。低于这个数每个 chip 都会单独占一行，那比
-// 时间戳溢出更难看。取一个 chip 的典型宽度（图标 15 + 两侧 padding + 计数）。
+// 时间戳溢出更难看。取一个 chip 的典型宽度（图标 20 + 两侧 padding + 计数）。
 const REACTIONS_MIN_VP: number = 52;
 
 // 时间戳挂件的宽度（vp）。三部分与 MessageBubble.timeOverlay 逐项对应：

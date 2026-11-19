@@ -60,6 +60,8 @@ const ANIMATOR_RELEASE_DELAY_MS: number = 200;
 @ComponentV2
 export struct AlphaWebmStickerView {
   @Param webmPath: string = '';
+  @Param playOnce: boolean = false;
+  @Param replayToken: number = 0;
   // 贴纸文件的 remote.unique_id（2026-10-09）。帧序列那条路按它查磁盘缓存——命中了
   // 源文件可以没下载（路径为空）。
   @Param stickerUid: string = '';
@@ -109,7 +111,7 @@ export struct AlphaWebmStickerView {
   private loadSeq: number = 0;
 
   // 自愈：挂错时这一格播的是上一张贴纸。复用路径由 aboutToReuse 覆盖。
-  @Monitor('webmPath')
+  @Monitor('webmPath', 'replayToken')
   onWebmPathChanged(): void {
     this.disposePlayback();
     this.clearCanvas();
@@ -555,7 +557,7 @@ export struct AlphaWebmStickerView {
   }
 
   private loopEnabled(): boolean {
-    return this.powerCategory === 'sticker' ? this.env.stickerLoop : true;
+    return !this.playOnce && (this.powerCategory === 'sticker' ? this.env.stickerLoop : true);
   }
 
   build() {

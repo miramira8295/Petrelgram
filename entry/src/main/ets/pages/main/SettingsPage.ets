@@ -14,7 +14,7 @@ import { ComponentContent, router, promptAction } from '@kit.ArkUI';
 import { flushPendingNavs } from '../../util/pendingNavFlush';
 import {
   KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT,
-  surfaceGlassBlurStyle, surfaceGlassFill
+  surfaceGlassFill
 } from '../../util/surfaceGlass';
 import {
   HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
@@ -59,8 +59,7 @@ import { mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { emojiStatusVisible } from '../../util/emojiStatus';
 
-// 卡片底色 + 毛玻璃。开关关着时 surfaceGlassFill 原样返回实色、
-// cardBlurStyle 返回 undefined，和改动前逐字节等价（见 util/surfaceGlass）。
+// 卡片与消息气泡使用同档透明度的颜色填充；关闭整体材质时保持实色。
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
 const PAGE_BG: ResourceColor = $r('app.color.page_bg');
@@ -255,7 +254,7 @@ export struct SettingsPage {
   // filter on them, which means they do not re-resolve by themselves. Observing
   // the epoch is what rebuilds this list when the language changes.
   @StorageProp(LANGUAGE_EPOCH) languageEpoch: number = 0;
-  // 全局界面模糊：开关和档位都要能立刻重绘。开关本身是 AppStorage 键，
+  // 整体颜色材质：开关和档位都要能立刻重绘。开关本身是 AppStorage 键，
   // 档位走 epoch（surfaceGlass 是 util，订阅不了 AppStorage，同 MATERIAL_EPOCH 的做法）。
   @StorageProp(KEY_SURFACE_GLASS_ON) private surfaceGlassOn: boolean = SURFACE_GLASS_ON_DEFAULT;
   @StorageProp(SURFACE_GLASS_EPOCH) private surfaceGlassEpoch: number = 0;
@@ -268,12 +267,6 @@ export struct SettingsPage {
 
   private cardFill(): ResourceColor {
     return this.glassOn() ? surfaceGlassFill(CARD_BG) : CARD_BG;
-  }
-
-  // 框架容器材质，不是 backdropBlur——后者在节点边缘有采样衰减，四角最明显
-  // （见 util/surfaceGlass.surfaceGlassBlurStyle）。
-  private cardBlurStyle(): BlurStyle | undefined {
-    return this.glassOn() ? surfaceGlassBlurStyle() : undefined;
   }
 
   @StorageLink('tdAccountRegistryEpoch') @Watch('onAccountRegistryEpoch')
@@ -1276,7 +1269,6 @@ export struct SettingsPage {
       .width('calc(100% - 24vp)')
       .margin({ left: this.pageMargin(), right: this.pageMargin() })
       .backgroundColor(this.cardFill())
-    .backgroundBlurStyle(this.cardBlurStyle())
       .borderRadius(CARD_RADIUS)
       .clip(true);
 
@@ -1394,7 +1386,6 @@ export struct SettingsPage {
       }
       .width('100%')
       .backgroundColor(this.cardFill())
-    .backgroundBlurStyle(this.cardBlurStyle())
       .borderRadius(CARD_RADIUS)
       .clip(true);
     }
@@ -1451,7 +1442,6 @@ export struct SettingsPage {
         .margin({ left: this.pageMargin(), right: this.pageMargin(), top: 12 })
         .justifyContent(FlexAlign.Center)
         .backgroundColor(this.cardFill())
-    .backgroundBlurStyle(this.cardBlurStyle())
         .borderRadius(CARD_RADIUS)
         .transition(TransitionEffect.OPACITY
           .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))

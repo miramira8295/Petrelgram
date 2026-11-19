@@ -1,3 +1,6 @@
+import { ReactionChip } from './ReactionChip';
+import { reactionAvatarCount, reactionAvatarWidth, reactionTotal } from '../../util/reactionSenders';
+import { REACTION_HEIGHT_VP, reactionCountGap } from '../../util/reactionPresentation';
 import { drawnLiveSurface } from '../../util/drawnContentPolicy';
 import { MessageSenderAvatar } from './MessageSenderAvatar';
 import { showToast } from '../../util/toast';
@@ -60,7 +63,7 @@ import { deletableCached, ensureDeletable } from '../../util/messageDeletable';
 import { replyThumbSrc } from '../../util/replyThumb';
 import { DiceEndFrame } from './DiceEndFrame';
 import { menuPreviewCompact } from '../../util/menuPreview';
-import { bubbleGlassBlurStyle, bubbleGlassFill } from '../../util/surfaceGlass';
+import { bubbleGlassFill } from '../../util/surfaceGlass';
 import { firstFinger } from '../../util/firstFinger';
 
 // 气泡玻璃自绘：明确不指望 systemMaterial（系统已收回组件级材质），
@@ -148,9 +151,6 @@ const PURE_MEDIA_CORNER_RADIUS: BorderRadiuses = {
 };
 const MEDIA_TIME_PADDING: Padding = { left: 6, right: 6, top: 2, bottom: 2 };
 const PLAIN_TIME_PADDING: Padding = { left: 0 };
-const SOLID_BUBBLE_SHADOW: ShadowOptions = {
-  radius: 2, color: '#14000000', offsetX: 0, offsetY: 1
-};
 
 // 壳与类型内容之间稳定的状态桥。共用通道仅在壳订阅一次，内容按需读取。
 // 手势认领不参与绘制，保持普通字段，避免触摸事件触发整树更新。
@@ -243,6 +243,9 @@ export struct MessageBubbleShell {
 
   private textMeasureFailed: boolean = false;
   private textMeasureCache: TextMeasureCache = new TextMeasureCache();
+  private reactionTotalSource: ReactionInfo[] | null = null;
+  private reactionTotalValue: number = 0;
+  private reactionCountWidths: TextMeasureCache = new TextMeasureCache();
   private rxWidthSig: string = '';
   private rxSource: ReactionInfo[] | null = null;
   private linkBody: string = '';
@@ -827,7 +830,7 @@ export struct MessageBubbleShell {
     .justifyContent(this.msg.isOutgoing ? FlexAlign.End : FlexAlign.Start);
   }
 
-  private hasLiveVideoSurface(): boolean { return drawnLiveSurface(this.group, this.data); }
+  private hasLiveVideoSurface(): boolean { return drawnLiveSurface(this.group, this.data, this.actions.playback !== undefined); }
 
   private bubbleCornerRadius(): BorderRadiuses {
     // Read all reactive inputs before the cache lookup, including on hits.
@@ -840,51 +843,29 @@ export struct MessageBubbleShell {
     return base;
   }
 
+  private reactionAvatars(r: ReactionInfo): number {
+    if (this.reactionTotalSource !== this.msg.reactions) {
+      this.reactionTotalSource = this.msg.reactions; this.reactionTotalValue = reactionTotal(this.msg.reactions);
+    }
+    return reactionAvatarCount(r, this.reactionTotalValue, this.data.isChannel, !this.data.isGroup && !this.data.isChannel);
+  }
+
   @Builder
   reactionsRow() {
     Flex({ wrap: FlexWrap.Wrap }) {
-      ForEach(this.msg.reactions, (r: ReactionInfo) => {
-        Row({ space: 4 }) {
-          if (r.customEmojiId !== '') {
-            // 位图还没下载完时给一个同尺寸占位，chip 宽度不会跳动。
-            if (r.customEmojiPath !== '') {
-              Image(this.reactionImageSource(r.customEmojiPath))
-                .width(15).height(15).objectFit(ImageFit.Contain)
-                .draggable(false);
-            } else {
-              Row()
-                .width(15).height(15).borderRadius(4)
-                .backgroundColor(r.isChosen ? '#40FFFFFF' : '#1A000000');
-            }
-          } else {
-            Text(r.emoji).fontSize(13);
-          }
-          Text(`${r.count}`).fontSize(12).fontColor(r.isChosen ? Color.White : COLOR_TEXT_SECONDARY);
-        }
-        // 未选中态原来是写死的 '#00000010'（6% 的黑）：浅色气泡上几乎看不见，
-        // 深色气泡上黑叠黑更是没有。换成跟随主题的资源，深色那边用的是白色
-        // 透明度而不是黑色。
-        .backgroundColor(r.isChosen ? this.accent() : $r('app.color.reaction_chip'))
-        // 半径取高度的一半（15 的内容 + 上下各 4 = 23），两端才是正圆弧。
-        .borderRadius(12).padding({ left: 9, right: 9, top: 4, bottom: 4 })
-        .margin({ right: 4, top: 4 })
-        .stateStyles({ normal: msgMenuActionNormalStyle, pressed: msgMenuActionPressedStyle })
-        .animation({ duration: this.reactionDuration(120), curve: Curve.EaseOut })
-        .onClick(() => {
-          if (this.context.gestureClaimed) { return; }
-          this.actions.onSetReaction(this.msg.id, reactionKeyFrom(r.emoji, r.customEmojiId), r.isChosen);
-        })
-        // Long-press a chip to see who reacted with it.
-        .gesture(LongPressGesture().onAction(() => {
-          this.actions.onShowReactors(this.msg.id, reactionKeyFrom(r.emoji, r.customEmojiId));
-        }))
-        .transition(this.reactionTransitions.prepare(r, this.reactionDuration(180)));
-        // key 里带上路径，位图下载完成后 chip 才会重建并显示图片。
-      // count 与 isChosen 必须进键：它们是这枚 chip 上**唯一会变的两样**，而键不变
-      // 时 ForEach 不重跑子构建函数（同 albumGrid 上方那段推导）——点赞数会停在
-      // 上一条消息、或者停在自己点之前的那个数上。
-      }, (r: ReactionInfo) => `rx_${reactionKeyFrom(r.emoji, r.customEmojiId)}` +
-        `_${r.customEmojiPath}_${r.count}_${r.isChosen ? 'y' : 'n'}`);
+      ForEach(this.msg.reactions, (r: ReactionInfo, index: number) => {
+        // Capture the stable slot, not the old immutable item. Reading msg here
+        // lets V2 refresh the child Param without replacing its resource owner.
+        ReactionChip({ reaction: this.msg.reactions[index] ?? r, outgoing: this.msg.isOutgoing,
+          ownerKey: `${this.data.chatId}:${this.msg.id}:${reactionKeyFrom(r.emoji, r.customEmojiId, r.isPaid === true)}`,
+          avatarCount: this.reactionAvatars(this.msg.reactions[index] ?? r),
+          onToggle: (key: string, chosen: boolean): void => {
+            if (!this.context.gestureClaimed) { this.actions.onSetReaction(this.msg.id, key, chosen); }
+          },
+          onShow: (key: string): void => { this.actions.onShowReactors(this.msg.id, key); }
+        }).margin({ right: 4, top: 4 })
+          .transition(this.reactionTransitions.prepare(r, this.reactionDuration(180)));
+      }, (r: ReactionInfo, index: number): string => `rx_${reactionKeyFrom(r.emoji, r.customEmojiId, r.isPaid === true)}_${index}`);
       // 末尾的「>」：点开看谁回应了（按表情分组的名单，见 ReactorsMenu）。
       // 频道里 Telegram 不给查回应人，不挂。
       if (this.reactorsArrowShown()) {
@@ -895,7 +876,7 @@ export struct MessageBubbleShell {
         }
         // 不垫底色：它不是一个回应，只是「看名单」的入口，和表情胶囊长得一样会被
         // 读成又一个表情（用户：「箭头有个灰色的底色，能去掉吗」）。热区照旧。
-        .height(23)
+        .height(REACTION_HEIGHT_VP)
         .borderRadius(12).padding({ left: REACTORS_ARROW_PAD_H, right: REACTORS_ARROW_PAD_H })
         .margin({ right: 4, top: 4 })
         .justifyContent(FlexAlign.Center)
@@ -962,16 +943,18 @@ export struct MessageBubbleShell {
     const views: string = this.context.liveViews;
     // 签名里必须带上影响时间戳宽度的四样（时刻文本、已编辑、自己发的、浏览数），
     // 否则同一条消息被编辑过之后仍拿着旧的上限。
-    const sig = `${arrowShown}:${timeText}:${edited}:${outgoing}:${views}:${environment}:${availableWidth}`;
+    const sig = `${arrowShown}:${timeText}:${edited}:${outgoing}:${views}:${environment}:${availableWidth}:${this.data.isGroup}:${this.data.isChannel}`;
     if (reactions === this.rxSource && sig === this.rxWidthSig && this.rxWidthCache > 0) {
       return this.rxWidthCache;
     }
     this.textMeasureFailed = false;
     const chips: number[] = [];
     for (const r of reactions) {
-      // 自定义表情是 15×15 的位图（或同尺寸占位）；unicode 表情是 13fp 的 Text，得测。
-      const icon: number = r.customEmojiId !== '' ? CHIP_ICON_VP : this.measureTextVp(r.emoji, 13);
-      chips.push(reactionChipWidth(icon, this.measureTextVp(`${r.count}`, 12)));
+      // Both standard and custom reactions reserve the same 20vp icon slot.
+      const icon: number = CHIP_ICON_VP;
+      const avatarCount = this.reactionAvatars(r);
+      chips.push(avatarCount > 0 ? 8 + icon + reactionCountGap(r.customEmojiId !== '') + reactionAvatarWidth(avatarCount) :
+        reactionChipWidth(icon, this.measureReactionCount(`${r.count}`), r.customEmojiId !== ''));
     }
     if (arrowShown) {
       chips.push(REACTORS_ARROW_PAD_H * 2 + REACTORS_ARROW_ICON_VP + REACTORS_ARROW_MARGIN_R);
@@ -989,6 +972,22 @@ export struct MessageBubbleShell {
     this.rxWidthCache = reactionsRowWidth(chips,
       reactionsRowMaxWidth(availableWidth, timeVp));
     return this.rxWidthCache;
+  }
+
+  private measureReactionCount(label: string): number {
+    // Medium-weight counter metrics cannot share the regular timestamp cache.
+    this.reactionCountWidths.prepare(`${textMeasureEnvironment.epoch}:${this.env.langEpoch}:${this.env.appearanceEpoch}`);
+    try {
+      return this.reactionCountWidths.width(label, 12, (content: string, size: number): number => {
+        const ui = this.getUIContext();
+        const result = ui.getMeasureUtils().measureTextSize({ textContent: content,
+          fontSize: size, fontWeight: FontWeight.Medium });
+        return ui.px2vp(result.width as number);
+      });
+    } catch (error) {
+      this.textMeasureFailed = true;
+      return 12 * Math.max(1, label.length);
+    }
   }
 
   private measureTextVp(text: string, fontSize: number): number {
@@ -1035,13 +1034,10 @@ export struct MessageBubbleShell {
     return `reactors_anchor_${this.data.chatId}_${this.msg.id}`;
   }
 
-  private reactionImageSource(path: string): string {
-    return path.startsWith('/') ? `file://${path}` : path;
-  }
 
   private reactionChosen(reactionKey: string): boolean {
     for (const r of this.msg.reactions) {
-      if (reactionKeyFrom(r.emoji, r.customEmojiId) === reactionKey) {
+      if (reactionKeyFrom(r.emoji, r.customEmojiId, r.isPaid === true) === reactionKey) {
         return r.isChosen;
       }
     }
@@ -1420,13 +1416,6 @@ export struct MessageBubbleShell {
     return this.glassReady() ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
   }
 
-  private containerGlassBlurStyle(): BlurStyle | undefined {
-    // 滚动期不上模糊（理由见 LightweightPlainTextBubble 同名方法）。
-    if (this.env.scrollActive) {
-      return undefined;
-    }
-    return this.glassReady() ? bubbleGlassBlurStyle() : undefined;
-  }
 
   private glassRadius(): BorderRadiuses {
     const r = this.bubbleCornerRadius();
@@ -1438,34 +1427,7 @@ export struct MessageBubbleShell {
       : { topLeft: r.topLeft, topRight: r.topRight, bottomRight: r.bottomRight, bottomLeft: 0 };
   }
 
-  private solidBodyShadow(): ShadowOptions | undefined {
-    // 滚动期不画投影：每条消息一次阴影模糊，逐行叠加是按行计的填充成本
-    //（GPU 采集：聊天页滚动 85–91%，列表页 63%）。
-    if (this.env.scrollActive || this.bubbleMaterialLive() || this.isBareEmoji() ||
-      this.hasBubbleTail()) {
-      return undefined;
-    }
-    return SOLID_BUBBLE_SHADOW;
-  }
 
-  @Builder
-  solidShellShadow() {
-    // 滚动期整块不建：这个 Column 同时带 clipShape 与 shadow，都是离屏开销。
-    if (!this.env.scrollActive && this.hasBubbleTail() && this.geo.w > TAIL_W - 1 &&
-      this.geo.h > 0 && !this.isBareEmoji()) {
-      // 有尾角时在尾巴（zIndex 0）与主体（zIndex 1）正下方垫与主体同尺寸的标准圆角矩形投影：
-      // 尾角根部投影被上方不透明的尾巴 Path 盖死（无竖向暗缝），同时避开 PathShape 裁剪与 fill:false 离屏遮罩。
-      Column() {}
-        .width(this.geo.w - (TAIL_W - 1)).height(this.geo.h)
-        // Direct decorative child of the outer Row: absolute children do not
-        // contribute to Row measurement, including when a reused bubble shrinks.
-        .position({ x: this.msg.isOutgoing ? 0 : TAIL_W - 1, y: 0 })
-        .backgroundColor(this.bubbleFillColor())
-        .borderRadius(this.bubbleCornerRadius())
-        .shadow(SOLID_BUBBLE_SHADOW)
-        .hitTestBehavior(HitTestMode.None).accessibilityLevel('no');
-    }
-  }
 
   @Builder
   glassOutline() {
@@ -1479,7 +1441,6 @@ export struct MessageBubbleShell {
         .stroke(GLASS_OUTLINE_COLOR)
         .strokeWidth(GLASS_OUTLINE_WIDTH);
     } else if (!this.glassBodyOn()) {
-      this.solidShellShadow();
     }
   }
 
@@ -1860,7 +1821,6 @@ export struct MessageBubbleShell {
     // Adjacent rows share a restrained 7vp corner. Only the final row gets
     // the full bottom corner; a single-row run keeps the configured top arc.
     .borderRadius(this.bubbleCornerRadius())
-    .shadow(this.solidBodyShadow())
     // 主体与内容绘制在尾巴上方，防止发出消息的尾巴压住正文或时间角标。
     .zIndex(1)
     .padding(this.isBareEmoji() ? 0 : {
@@ -1872,7 +1832,6 @@ export struct MessageBubbleShell {
       bottom: this.contentBasePadding() + (this.captionInset() > 0 ? 6 : 0)
     })
     // 实心尾角与主体相邻绘制，主体独立投影会落到尾角根部，形成竖向暗缝。
-    // 阴影统一交给外壳的 solidShellShadow，玻璃档仍由外层整体绘制。
     // Controlled mode (mirrors ChatRow.ets bindContextMenu): a manual
     // LongPressGesture in parallelGesture keeps the chat List's pan
     // recognizer alive while held (movement still cancels the long press),
@@ -2002,7 +1961,6 @@ export struct MessageBubbleShell {
             .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
               y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE),
               centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
-            .backgroundBlurStyle(this.containerGlassBlurStyle())
             // 材质自带的边框沿**本节点的 border-box** 画，而且吃 borderRadius。不设圆角
             // 它就画一个直角矩形框，被轮廓裁掉左边/底边后只剩顶边一条直线拐到右边——
             // 真机上就是用户报的「气泡描边不对」。设成气泡自己的圆角，这条边框就和轮廓
@@ -2027,7 +1985,6 @@ export struct MessageBubbleShell {
             })
           } else {
             Row() {
-              this.solidShellShadow();
               Row() {
                 this.bubbleCluster();
               }
@@ -2035,7 +1992,6 @@ export struct MessageBubbleShell {
               .padding(this.tailGutterPadding());
             }
             // Decoration is absolute, behind content, and cannot grow this Row.
-            // The complete shell keeps the original single continuous shadow.
             .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
               const w: Length | undefined = size.width;
               const h: Length | undefined = size.height;
@@ -2044,7 +2000,6 @@ export struct MessageBubbleShell {
               }
               this.measuredGlassW = w as number;
               this.measuredGlassH = h as number;
-              // 无尾巴实心行在 solidShellShadow() 首条件 hasBubbleTail() 短路，不订阅 geo.w/h（0 重绘开销），
               // 但仍写入 geo 以确保删消息后原地补尾巴时已有实测尺寸。
               this.geo.setSize(this.measuredGlassW, this.measuredGlassH);
             })

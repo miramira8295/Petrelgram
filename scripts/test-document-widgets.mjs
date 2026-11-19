@@ -44,6 +44,7 @@ ctx.cancelDocumentFile(file(10));const cancel=requests.at(-1);cancel.resolve({})
 assert.equal(activity,2);assert.equal(pixels,0);oldRequest.resolve(file(10,'/too-late'));await Promise.resolve();assert.equal(ctx.documentFileState(file(10)).path,'');
 off();offPixels();
 let opened=[],saved=[];
+ctx.progressForOr=(_id,value)=>value;ctx.subscribeProgress=()=>()=>{};
 Object.assign(ctx,{fileOpenMimeType:(_name,mime)=>mime,openLocalFile:async(_context,path)=>{opened.push(path);return true;},
  downloadSaveService:{saveDownloadedFile:(_context,path)=>saved.push(path),saveRemoteFile:(_context,id,chat,message)=>saved.push([id,chat,message])},showToast(){},$r:x=>x});
 load(compiled+'pages/chat/DrawnDocumentFile.ts',['DrawnDocumentFile']);
@@ -92,3 +93,17 @@ update({file:file(200,'/stale-article')});assert.equal(articleImage.path,'');
 update({file:file(201,'/right-article')});assert.equal(articleImage.path,'/right-article');
 articleImage.aboutToDisappear();update({file:file(201,'/late-article')});assert.equal(articleImage.path,'/right-article');
 console.log('PASS: related thumbnail does no offscreen IO, clears old pixels and ignores stale/recycled/detached delivery.');
+
+// The long-post document now shares the ordinary file preview. Only its
+// thumbnail may be auto-requested, and reused owners reject stale thumb paths.
+const thumbCard=Object.create(ctx.DrawnDocumentFile.prototype);
+const thumbAttachment=(id,thumb)=>({...attachment(id),name:'clip.mp4',mimeType:'video/mp4',thumbnailFile:file(thumb),thumbnailMini:'mini'});
+Object.assign(thumbCard,{widget:thumbAttachment(300,301),chatId:3,messageId:45,visible:false,generation:0,off:null,offThumb:null,offProgress:null,path:'',thumbnailPath:'',failed:false,downloading:false,pending:'',opening:false,onClaim:()=>true,getUIContext:()=>({getHostContext:()=>({})})});
+const beforeThumb=requests.length;thumbCard.bind();assert.equal(requests.length,beforeThumb,'offscreen file cover performs no IO');
+thumbCard.visible=true;thumbCard.bind();assert.equal(requests.at(-1).request.file_id,301,'request thumbnail, never full video');
+update({file:file(301,'/thumb-a')});assert.equal(thumbCard.thumbnailPath,'/thumb-a');assert.equal(thumbCard.path,'');
+thumbCard.widget=thumbAttachment(302,303);thumbCard.onSourceChanged();assert.equal(thumbCard.thumbnailPath,'');
+update({file:file(301,'/stale-a')});assert.equal(thumbCard.thumbnailPath,'');
+update({file:file(303,'/thumb-b')});assert.equal(thumbCard.thumbnailPath,'/thumb-b');
+thumbCard.aboutToDisappear();update({file:file(303,'/late-b')});assert.equal(thumbCard.thumbnailPath,'/thumb-b');
+console.log('PASS: actual compiled long-post cover subscription, thumbnail-only visible IO, reused and detached thumbnail callback rejection.');

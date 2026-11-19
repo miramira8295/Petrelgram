@@ -157,7 +157,7 @@ console.log('PASS: generated V2 reuse preserves the child branch; generated pend
 // waits hidden for admission. Exercise the real generated getter and builder.
 const oldCanvasRow=Object.assign(Object.create(ctx.DrawnMessageRow.prototype),{interaction:new ctx.DrawnRowInteraction(),
  presentationActive:false,retainedCanvasMode:true,albumCanvas:{state:{ready:false}},kind:'album',
- env:{},data:{},group:{head:{isOutgoing:false,reactions:[]}},jumpFocus:0,allowBodyDrag:false,
+ actions:{},env:{},data:{},group:{head:{isOutgoing:false,reactions:[]}},jumpFocus:0,allowBodyDrag:false,
  nativeAnchors:{},canvasAttributes:{bind(){}},foreground:{bind(){}},painter:{bind(){}},menuFx:{preview(){},menu(){}},
  media:{slots:[]},menuShown:false,menuOffset:0,gridRadii:()=>({}),menu:()=>{},canDragMessage:()=>false
 });

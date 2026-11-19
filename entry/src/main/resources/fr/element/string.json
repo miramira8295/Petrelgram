@@ -11065,10 +11065,6 @@
       "value": "Lecture automatique"
     },
     {
-      "name": "cb_blur_amount",
-      "value": "Intensité du flou"
-    },
-    {
       "name": "meow_mode_custom",
       "value": "WebPush personnalisé"
     },
@@ -11877,24 +11873,8 @@
       "value": "%1$d s"
     },
     {
-      "name": "chat_settings_surface_glass",
-      "value": "Flou de l'interface"
-    },
-    {
-      "name": "chat_settings_surface_glass_sub",
-      "value": "Verre dépoli sur Contacts, Réglages et Profil, comme la barre de saisie. Rendu à chaque image : désactivez-le en cas de saccades."
-    },
-    {
-      "name": "chat_settings_surface_glass_level",
-      "value": "Niveau de flou"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Vidéo à plage dynamique élevée"
-    },
-    {
-      "name": "material_level_veil",
-      "value": "Voile"
     },
     {
       "name": "chat_settings_surface_glass_ui",
@@ -11907,22 +11887,6 @@
     {
       "name": "chat_settings_bubble_glass",
       "value": "Bulles"
-    },
-    {
-      "name": "chat_settings_bubble_glass_sub",
-      "value": "Bulles de messages : les plus nombreuses et les plus coûteuses"
-    },
-    {
-      "name": "glass_warn_title",
-      "value": "Consommation accrue"
-    },
-    {
-      "name": "glass_warn_body",
-      "value": "Le flou est rendu à chaque image : consommation et chauffe accrues, saccades possibles au défilement. Si l'appareil chauffe ou rame, revenez ici et choisissez « Désactivé »."
-    },
-    {
-      "name": "glass_warn_enable",
-      "value": "Activer quand même"
     },
     {
       "name": "cp_secret_pending_out",

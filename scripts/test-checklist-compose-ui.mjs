@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const imported=await import(process.env.TYPESCRIPT_MODULE||'typescript'),ts=imported.default||imported;
+const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return{promise,resolve,reject};};
+const flush=async()=>{for(let i=0;i<6;i++)await Promise.resolve();};
+let id=0,currentButton;const buttons=[],inputChanges=[],areaChanges=[],toggleChanges=[],backdrops=[];
+class View {initParam(k,v){this[k]=v;}finalizeConstruction(){}observeComponentCreation2(fn){fn(++id,true);}ifElseBranchUpdateFunction(_i,fn){fn();}}
+const ctx=vm.createContext({ViewV2:View,ViewPU:class{},str:key=>key,COLOR_PRIMARY:'primary',COLOR_SURFACE:'surface',COLOR_TEXT_PRIMARY:'text',COLOR_TEXT_SECONDARY:'secondary',Alignment:{Bottom:0},FontWeight:{Medium:500},ToggleType:{Switch:1}});
+for(const name of ['Stack','Row','Column','Text','Button','TextInput','TextArea','Toggle','If'])ctx[name]=new Proxy({}, {get:(_t,k)=>(...args)=>{if(name==='Button'){if(k.startsWith('create')){currentButton={label:args[0]};buttons.push(currentButton);}if(k==='enabled')currentButton.enabled=args[0];if(k==='onClick')currentButton.click=args[0];}if(k==='onClick'&&name==='Row')backdrops.push(args[0]);if(k==='onChange'){if(name==='TextInput')inputChanges.push(args[0]);if(name==='TextArea')areaChanges.push(args[0]);if(name==='Toggle')toggleChanges.push(args[0]);}}});
+const root='entry/build/default/cache/default/default@CompileArkTS/esmodule/debug/entry/src/main/ets/';
+const source=fs.readFileSync(root+'pages/chat/ChecklistComposeSheet.ts','utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/\bexport /g,'').replace(/@(?:Require|Param|Local|Computed|Event)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'');vm.runInContext(ts.transpileModule(source+'\nglobalThis.Compose=ChecklistComposeSheet;',{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);
+const submissions=[];let closeCount=0;const pending=deferred();const c=new ctx.Compose(null,{onSubmit:(...args)=>{submissions.push(args);return pending.promise;},onClose:()=>closeCount++});
+c.initialRender();assert.equal(buttons.length,2);const oldCancel=buttons.find(b=>b.label==='cancel').click,oldSend=buttons.find(b=>b.label==='send').click,oldBackdrop=backdrops[0];oldSend();assert.equal(c.error,'checklist_draft_required');assert.equal(submissions.length,0);
+inputChanges[0](' Project ');areaChanges[0](' first \r\n\n second  \n ');toggleChanges[0](true);toggleChanges[1](false);oldSend();oldSend();assert.equal(c.sending,true);toggleChanges[0](false);toggleChanges[1](true);await flush();assert.deepEqual(JSON.parse(JSON.stringify(submissions)),[['Project',['first','second'],true,false]]);
+buttons.length=0;c.initialRender();assert.ok(buttons.every(b=>b.enabled===false));oldCancel();oldBackdrop();assert.equal(closeCount,0,'queued cancel/backdrop callbacks cannot dismiss an in-flight send');
+pending.reject(new Error('PREMIUM_ACCOUNT_REQUIRED'));await flush();assert.equal(c.sending,false);assert.equal(c.error,'PREMIUM_ACCOUNT_REQUIRED');assert.equal(c.title,' Project ');assert.equal(c.tasks,' first \r\n\n second  \n ','failure must keep full editable draft');
+c.onSubmit=(...args)=>{submissions.push(args);return Promise.resolve();};c.submit();await flush();assert.equal(c.error,'');assert.equal(c.sending,false);assert.equal(submissions.length,2);
+const late=deferred();c.onSubmit=()=>late.promise;c.submit();await flush();c.aboutToDisappear();const error=c.error,sending=c.sending;late.reject(new Error('late failure'));await flush();assert.equal(c.error,error);assert.equal(c.sending,sending,'detached continuation cannot mutate sheet state');
+const sync=new ctx.Compose(null,{onSubmit:()=>{throw new Error('sync failure');},onClose:()=>{}});sync.title='Plan';sync.tasks='one';assert.doesNotThrow(()=>sync.submit());await flush();assert.equal(sync.sending,false);assert.equal(sync.error,'sync failure');
+console.log('PASS: compiled checklist composer validation, trim/CRLF/toggle request values, synchronous dedup/locked cancel, Premium error retains draft, retry, detached continuation and synchronous submit errors.');

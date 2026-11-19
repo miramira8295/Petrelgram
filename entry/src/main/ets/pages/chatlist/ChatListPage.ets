@@ -90,8 +90,8 @@ const TOP_BAR_HEIGHT: number = 56;
 const TOP_ACTION_SIZE: number = 40;
 const TAB_BADGE_MAX: number = 99;
 const FOLDER_BAR_HEIGHT: number = 36;
-// 文件夹条连同它自己的上下留白占的高度（列表让位用）。
-const FOLDER_BAR_SPACE: number = 42;
+// 外层不留白，标题栏槽位与列表让位直接使用文件夹条的实际高度。
+const FOLDER_BAR_SPACE: number = FOLDER_BAR_HEIGHT;
 // 文件夹项与选中指示器共用这一个高度。未选项不再各画一块玻璃，只让滑动
 // 指示器托住当前项，避免“外层横条 + 一排胶囊 + 会话卡片”叠出三层容器。
 const FOLDER_CHIP_HEIGHT: number = 28;
@@ -101,10 +101,8 @@ const FOLDER_SWITCH_DURATION: number = 250;
 // 收上去缩小"那一下。缩略块本身比展开态的 chip 再矮一点，免得看着像没动。
 // 2026-10-30 用户要求再缩一点（22 → 20，字号 12 → 11、左右内边距 6 → 5）。
 const FOLDER_COLLAPSED_CHIP_HEIGHT: number = 20;
-// 连同上下的留白，供 bottomBuilder 高度与列表让位使用。展开态 36+6=42，这里
-// 同样留 6 的余量。
 // 收起态横条整条让出去（缩略块画在标题栏外面，见 collapsedFolderChip），
-// 列表因此多出这一整段。展开态还是 42。
+// 列表因此多出这一整段。展开态使用文件夹条的实际高度。
 const FOLDER_COLLAPSED_SPACE: number = 0;
 // 收起态缩略块贴住主标题右下角的间距（vp）：横向离标题文字末端多远、纵向
 // 从文字底部往下压多少——压一点才会看着是"挂在字母右下边"而不是另起一行。
@@ -1586,9 +1584,7 @@ export struct ChatListPage {
   @Builder
   tabBar() {
     Column() {
-      // 轨道胶囊（2026-11-16 22:45 用户：整排一条玻璃、两侧留边）。外壳负责玻璃与
-      // 圆角裁切，内层 Scroll 只负责滚动与几何回写；两条边距由 Column 的 padding 给，
-      // 所以比整屏窄一圈。
+      // 轨道铺满可用宽度；外壳负责玻璃与圆角裁切，内层 Scroll 负责滚动与几何回写。
       Stack() {
         SystemGlassSurface({ radius: FOLDER_BAR_HEIGHT / 2, fill: true }) {
           Scroll(this.tabScroller) {
@@ -1645,17 +1641,9 @@ export struct ChatListPage {
         curve: Curve.EaseOut
       });
     }
-    // 横条无独立外框，直接融入标题栏的统一玻璃背板；只有当前项保留胶囊。
-    // 满宽外层用对称内边距约束 Scroll 视口，避免满宽内容叠加外边距挤出右侧。
-    // 两侧留白沿用首页卡片规则：手机 6vp、折叠屏 10vp、平板 14vp。
-    //
-    // **2026-10-30 试过给整条挂一层 'bar' 玻璃（外框胶囊 + 材质三件套），用户看过
-    // 真机后让改回去。** 那条路本身是通的（材质可用时整条会透出下面的列表），问题
-    // 在观感：文件夹条和它上面那块 HDS 标题栏成了两截玻璃，加上大标题底下的空白，
-    // 首页顶部被切成了三段。维持「无独立外框、只留选中胶囊」这一版，别再给这里加底。
+    // 与会话卡片共用断点边距，不再叠加额外的 8vp；上下不留外部间距。
     .width('100%')
-    .padding({ left: homeCardMarginVp(this.widthBp) + 8, right: homeCardMarginVp(this.widthBp) + 8 })
-    .margin({ bottom: 2 })
+    .padding({ left: homeCardMarginVp(this.widthBp), right: homeCardMarginVp(this.widthBp) })
     .transition(
       TransitionEffect.OPACITY
         .combine(TransitionEffect.translate({ y: -4 }))

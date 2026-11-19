@@ -11065,10 +11065,6 @@
       "value": "Автовоспроизведение"
     },
     {
-      "name": "cb_blur_amount",
-      "value": "Степень размытия"
-    },
-    {
       "name": "meow_mode_custom",
       "value": "Свой WebPush"
     },
@@ -11877,24 +11873,8 @@
       "value": "%1$d с"
     },
     {
-      "name": "chat_settings_surface_glass",
-      "value": "Размытие интерфейса"
-    },
-    {
-      "name": "chat_settings_surface_glass_sub",
-      "value": "Матовое стекло на вкладках «Контакты», «Настройки» и «Профиль» — как у поля ввода. Рисуется каждый кадр: отключите, если появляются подтормаживания."
-    },
-    {
-      "name": "chat_settings_surface_glass_level",
-      "value": "Степень размытия"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Видео с расширенным динамическим диапазоном"
-    },
-    {
-      "name": "material_level_veil",
-      "value": "Вуаль"
     },
     {
       "name": "chat_settings_surface_glass_ui",
@@ -11907,22 +11887,6 @@
     {
       "name": "chat_settings_bubble_glass",
       "value": "Пузыри"
-    },
-    {
-      "name": "chat_settings_bubble_glass_sub",
-      "value": "Пузыри сообщений — их больше всего, и они дороже всего"
-    },
-    {
-      "name": "glass_warn_title",
-      "value": "Выше расход батареи"
-    },
-    {
-      "name": "glass_warn_body",
-      "value": "Размытие отрисовывается каждый кадр: заметно растёт расход батареи и нагрев, возможны пропуски кадров при прокрутке. Если устройство греется или подтормаживает — вернитесь и выберите «Выкл»."
-    },
-    {
-      "name": "glass_warn_enable",
-      "value": "Всё равно включить"
     },
     {
       "name": "cp_secret_pending_out",

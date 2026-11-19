@@ -30,6 +30,7 @@ import { NativeGlassHost } from './NativeGlassHost';
 export struct SystemGlassSurface {
   // 圆角：照抄调用方原来的 borderRadius（材质层要圆角才不会露出方角）。
   @Param effectsEnabled: boolean = true;
+  @Param plainOutline: boolean = false;
   @Param radius: number = 14;
   // 已知固定尺寸时直接给，省掉一帧测量；0 = 自己量（全宽卡片用这个）。
   @Param fixedWidth: number = 0;
@@ -62,7 +63,7 @@ export struct SystemGlassSurface {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      if (this.glassOn()) {
+      if (this.effectsEnabled && this.glassOn()) {
         NativeGlassHost({
           effectsEnabled: this.effectsEnabled,
           hostWidth: this.w(),
@@ -77,7 +78,12 @@ export struct SystemGlassSurface {
     // fill：铺满父容器；否则按 fixed* / 自量尺寸（'auto' 与不写等价）。
     .width(this.fill ? '100%' : (this.fixedWidth > 0 ? this.fixedWidth : 'auto'))
     .height(this.fill ? '100%' : (this.fixedHeight > 0 ? this.fixedHeight : 'auto'))
+    .backgroundColor(this.effectsEnabled ? Color.Transparent : $r('app.color.chat_overlay'))
+    .borderRadius(this.radius)
+    .border({ width: !this.effectsEnabled && this.plainOutline ? 0.5 : 0, color: $r('app.color.divider') })
     .onAreaChange((_old: Area, area: Area): void => {
+      // Plain surfaces paint directly on this container: no second measurement publication or material child.
+      if (!this.effectsEnabled) { return; }
       const w: number = area.width as number;
       const h: number = area.height as number;
       // 差值小于半像素不写回，避免测量抖动引起的重建风暴。
