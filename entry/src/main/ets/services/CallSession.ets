@@ -445,14 +445,28 @@ export class CallSession {
   private publish(): void {
     const snap = this.snapshot();
     for (const l of this.subs) {
-      l(snap);
+      // 一个订阅者抛错不能连累其余订阅者（来电通知/保活收口都在这里）。
+      try {
+        l(snap);
+      } catch (e) {
+        logE(`CallSession.publish listener failed: ${e}`);
+      }
     }
   }
 
+  // 运行时销毁（切账号/退登）时的兜底关闭：只退订不动媒体的话，tgcalls
+  // 的原生会话还开着，麦克风/摄像头与 voip 长时任务会一起漏在系统里。
   close(): void {
+    if (this.mediaStarted) {
+      this.media.stop();
+      this.mediaStarted = false;
+    }
+    this.callId = 0;
+    this.phase = 'ended';
     for (const un of this.unsubs) {
       un();
     }
     this.unsubs = [];
+    this.subs = [];
   }
 }

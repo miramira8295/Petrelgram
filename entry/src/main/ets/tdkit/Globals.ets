@@ -213,6 +213,9 @@ function createRuntime(slotId: string): void {
   } catch (e) {
     logE('call versions parse failed, using fallback list');
   }
+  // 上一次运行时若没走 stopRuntime（异常路径），旧会话要先真正关掉，
+  // 否则直接覆盖会把它连同原生媒体一起丢在后台。
+  callSession?.close();
   callSession = new CallSession(client, users, new NativeCallMedia());
   // 系统来电界面上的接听/拒接/挂断/静音回传到通话会话。
   const session = callSession;
@@ -425,6 +428,9 @@ async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
   const currentReady = runtimeReady;
   runtimeReady = false;
   files?.close();
+  // 通话中切账号/退登：必须真正 stop 原生媒体（麦克风/摄像头）并解绑 callId。
+  callSession?.close();
+  callSession = undefined;
   if (currentClient !== undefined) {
     proxyAutoSwitchService.detach(currentClient);
     detachProxyMigration(currentClient);
