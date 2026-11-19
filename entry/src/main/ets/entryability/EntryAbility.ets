@@ -1,4 +1,5 @@
 import { invalidateTextMeasurements } from '../util/textMeasureCache';
+import { seedSystemFontWeightScale } from '../util/systemFontWeight';
 import { mediaThumbWidth } from '../util/mediaBox';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit';
@@ -87,6 +88,9 @@ export default class EntryAbility extends UIAbility {
     // 就已经在攒了），设好之后才开始轮转到文件。启动期恰好是最难查的一段，
     // 早一点设就多留住一点。
     initDiagLog(this.context.filesDir);
+    // 系统「字体大小和界面缩放 › 字体粗细」比例。自绘气泡的 paragraph 用的是绝对
+    // 字重，必须自己乘上它才能和其它页面一致（见 util/systemFontWeight）。
+    seedSystemFontWeightScale(this.context.config);
     // 崩溃观察者要在**业务逻辑之前**注册：应用没主动捕获时，崩溃事件是在下次
     // 启动才回调的，注册晚了那一次就漏了（官方《订阅崩溃事件》写明这一点）。
     startCrashWatch(this.context);
@@ -209,6 +213,8 @@ export default class EntryAbility extends UIAbility {
     // Density changes can also arrive via configuration without a size change.
     clearOutlineCache();
     refreshLocale();
+    // 系统「字体粗细」变化：自绘字重不会自己跟随，比例变了要重新算 plan。
+    if (seedSystemFontWeightScale(config)) { bumpLanguageEpoch(); }
     // Only on an actual language change. This fires for every configuration
     // change — dark mode, font scale, orientation — and the epoch is embedded
     // in list row keys, so bumping it renames every row in the app. Doing that

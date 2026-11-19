@@ -3,6 +3,7 @@ import { drawnExpandedBlockSet } from '../../util/drawnExpandedBlocks';
 import { buildDrawnDeepBlocks, DrawnDeepLayoutHost } from './DrawnRichDeepBlocks';
 import { DrawnTableColumnGeometry, DrawnTableRowGeometry } from '../../util/drawnTableGeometry';
 import { drawnRichFlowSource } from '../../util/drawnRichFlow';
+import { drawnWeightBold, drawnWeightNormal, systemFontWeightScale } from '../../util/systemFontWeight';
 import { documentEmbedHeight } from '../../util/documentEmbedMetrics';
 import { DrawnDocumentWidget, DrawnDocumentWidgetPlacement } from '../../util/drawnDocumentWidget';
 import { DrawnInlineIconPlacement, appendDrawnIcons } from '../../util/drawnInlineIcon';
@@ -141,7 +142,7 @@ export class DrawnRichTextLayouts {
     const fontPx: number = this.units.fp2px(spec.fontSize);
     const reservePx: number = this.units.fp2px(14);
     const linePx: number = this.units.fp2px(spec.fontSize * 1.34);
-    const environment: string = `${spec.environment}:${density}:${fontPx}:${reservePx}:${linePx}`;
+    const environment: string = `${spec.environment}:${density}:${fontPx}:${reservePx}:${linePx}:${systemFontWeightScale()}`;
     if (this.environment !== environment) { this.failedSpec = null; this.environment = environment; }
     this.cache.prepare(environment);
     const hit = this.cache.get(spec);
@@ -653,7 +654,7 @@ export class DrawnRichTextLayouts {
     let markedBackground: text.RectStyle | undefined = undefined;
     const paragraphBuilder = new text.ParagraphBuilder({
       textStyle: { fontSize: fontPx, color: foreground, heightOnly: true, heightScale: linePx / fontPx,
-        halfLeading: true },
+        halfLeading: true, fontWeight: drawnWeightNormal() },
       maxLines: spec.maxLines,
       wordBreak: text.WordBreak.BREAK_WORD, textDirection: rtl ? text.TextDirection.RTL : text.TextDirection.LTR,
       align: rtl ? text.TextAlign.RIGHT : text.TextAlign.LEFT
@@ -692,7 +693,7 @@ export class DrawnRichTextLayouts {
         heightOnly: true, heightScale: linePx / fontPx, halfLeading: true,
         badgeType: run.script === 1 ? text.TextBadgeType.TEXT_SUPERSCRIPT : run.script === -1 ? text.TextBadgeType.TEXT_SUBSCRIPT : undefined,
         fontFamilies: run.code ? ['monospace'] : undefined,
-        fontWeight: run.bold ? text.FontWeight.W700 : text.FontWeight.W400,
+        fontWeight: run.bold ? drawnWeightBold() : drawnWeightNormal(),
         fontStyle: run.italic ? text.FontStyle.ITALIC : text.FontStyle.NORMAL,
         decoration: { textDecoration: run.strike ? text.TextDecorationType.LINE_THROUGH :
           (run.underline ? text.TextDecorationType.UNDERLINE : text.TextDecorationType.NONE), color }
@@ -721,7 +722,8 @@ export class DrawnRichTextLayouts {
         const key = mathKeyOf(expression, renderSize, argb);
         const bitmap = mathMetricsFor(key);
         const fallbackBuilder = new text.ParagraphBuilder({ textStyle: { fontSize: fontPx,
-          fontFamilies: ['monospace'], color }, textDirection: text.TextDirection.LTR }, text.FontCollection.getGlobalInstance());
+          fontFamilies: ['monospace'], color, fontWeight: drawnWeightNormal() },
+          textDirection: text.TextDirection.LTR }, text.FontCollection.getGlobalInstance());
         fallbackBuilder.addText(run.text); const fallback = fallbackBuilder.build(); fallback.layoutSync(maxPx);
         let width = bitmap !== undefined ? bitmap.width / 2 : Math.max(1, fallback.getLongestLine());
         let height = bitmap !== undefined ? bitmap.height / 2 : fallback.getHeight();
@@ -740,7 +742,8 @@ export class DrawnRichTextLayouts {
         const fallbackKey: string = `${run.text}:${run.link || run.url !== ''}`;
         let fallback = fallbacks.get(fallbackKey);
         if (fallback === undefined) {
-          const builder = new text.ParagraphBuilder({ textStyle: { fontSize: fontPx, color },
+          const builder = new text.ParagraphBuilder({ textStyle: { fontSize: fontPx, color,
+            fontWeight: drawnWeightNormal() },
             maxLines: 1, align: text.TextAlign.CENTER, textDirection: text.TextDirection.LTR },
             text.FontCollection.getGlobalInstance());
           builder.addText(run.text); fallback = builder.build(); fallback.layoutSync(emojiPx);

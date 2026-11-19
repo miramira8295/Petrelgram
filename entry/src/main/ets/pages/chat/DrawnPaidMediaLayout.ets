@@ -1,3 +1,4 @@
+import { drawnWeightMedium, drawnWeightNormal } from '../../util/systemFontWeight';
 import { UIContext, DrawContext } from '@kit.ArkUI';
 import { text } from '@kit.ArkGraphics2D';
 import { MessageEntry } from '../../store/MessageEntry';
@@ -48,7 +49,7 @@ class DrawnPaidTextLayouts {
     // Each slot has a fixed weight/line policy; only its text/size/environment vary.
     const builder = new text.ParagraphBuilder({ textStyle: { fontSize: font,
       color: drawnColor(medium ? COLOR_TEXT_PRIMARY : COLOR_TEXT_SECONDARY),
-      fontWeight: medium ? text.FontWeight.W500 : text.FontWeight.W400, ellipsis: '\u2026' },
+      fontWeight: medium ? drawnWeightMedium() : drawnWeightNormal(), ellipsis: '\u2026' },
       maxLines, wordBreak: text.WordBreak.BREAK_WORD,
       textDirection: drawnFirstStrongRtl(content) ? text.TextDirection.RTL : text.TextDirection.LTR,
       align: text.TextAlign.LEFT }, text.FontCollection.getGlobalInstance());
