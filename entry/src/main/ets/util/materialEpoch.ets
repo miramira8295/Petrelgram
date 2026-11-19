@@ -9,8 +9,24 @@ import { mirrorChatEnvKey } from './chatEnvMirror';
 // （overlayMaterial 要读 AppSettings 的键）。这个文件除了 chatEnvMirror（无依赖）什么都不引。
 export const MATERIAL_EPOCH: string = 'materialEpoch';
 
+// V2 组件订阅不到 AppStorage：@StorageProp / @StorageLink 在 @ComponentV2 里是
+// 编译错误（装饰器归属表：V1 装饰器不能在 V2 组件里用），所以材质承载组件
+// （NativeGlassHost 等）原先只在「恰好被别的状态重建」时才换新材质——用户
+// 改完厚度/光感停在那页，浮层就还是旧档。
+//
+// 这里再挂一个 @ObservedV2 单例：V2 组件在 build 里读一次 source.epoch 就按
+// @Trace 依赖机制登记，bump 时立刻重绘。AppStorage 那条老路保留给 V1 组件
+// （@StorageProp(MATERIAL_EPOCH)）。
+@ObservedV2
+export class MaterialEpochSource {
+  @Trace epoch: number = 0;
+}
+
+export const materialEpochSource: MaterialEpochSource = new MaterialEpochSource();
+
 export function bumpMaterialEpoch(): void {
   const next: number = (AppStorage.get<number>(MATERIAL_EPOCH) ?? 0) + 1;
   AppStorage.setOrCreate(MATERIAL_EPOCH, next);
+  materialEpochSource.epoch = next;
   mirrorChatEnvKey(MATERIAL_EPOCH, next);
 }

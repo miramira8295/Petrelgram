@@ -14,6 +14,7 @@
 // 尺寸一律用调用方量出来的绝对 vp，不用 '100%'（百分比在这一层解析不可靠，实测会偏）。
 import { immersiveMaterialAvailable, materialOff, OverlaySurface, plainGlassFill } from '../../util/overlayMaterial';
 import { materialModifierWhen } from '../../util/materialModifier';
+import { MaterialEpochSource, materialEpochSource } from '../../util/materialEpoch';
 
 @ComponentV2
 export struct NativeGlassHost {
@@ -32,6 +33,9 @@ export struct NativeGlassHost {
   // ③ 点击交给 Toggle 调 onHostTap —— 调用方那一行图标必须 hitTestBehavior(None)，
   //    否则图标行先吃到触摸，材质层收不到按下。
   @Param tapHost: boolean = false;
+  // 材质纪元（V2 订阅方式）：build 链路里读一次，用户改厚度/光感后立即重绘。
+  // @StorageProp 在 @ComponentV2 里是编译错误，见 util/materialEpoch 的说明。
+  private epoch: MaterialEpochSource = materialEpochSource;
   @Event onHostTap: () => void = (): void => {};
 
   // 材质可用：走 Toggle 承载层，参数与右上角功能菜单一致（'menu' 面）。
@@ -42,7 +46,9 @@ export struct NativeGlassHost {
   // 一层空壳。调用方的内容又全是透明底（底色在这里给），于是浮层什么都不显示
   // （用户 2026-11-19：「浮层材质厚度关闭之后，兜底的都没了」）。
   private materialOn(): boolean {
-    return immersiveMaterialAvailable() && !materialOff();
+    // 读一次纪元：把「材质档位变了」登记成这个组件的依赖。不读的话，材质
+    // 参数只在组件因别的原因重建时才重新求值（改完厚度看不出变化）。
+    return this.epoch.epoch >= 0 && immersiveMaterialAvailable() && !materialOff();
   }
 
   private fill(): ResourceColor {
