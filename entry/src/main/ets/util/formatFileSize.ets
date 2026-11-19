@@ -7,7 +7,8 @@ import { str } from './strings';
 // "1,2 MB" in German) while the unit is a resource string, so a translator can
 // change the symbol or move it in front of the number without touching code.
 export function formatFileSize(bytes: number): string {
-  if (bytes <= 0) {
+  // NaN / Infinity 不满足任何 < 比较，会一路落到 GB 分支输出「NaN GB」。
+  if (!Number.isFinite(bytes) || bytes <= 0) {
     return '';
   }
   if (bytes < 1024) {

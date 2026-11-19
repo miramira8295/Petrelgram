@@ -200,8 +200,13 @@ export class VideoStreamSession {
         try {
           const buffer = new ArrayBuffer(wanted);
           const fd = fileIo.openSync(this.localPath, fileIo.OpenMode.READ_ONLY).fd;
-          const readBytes = fileIo.readSync(fd, buffer, { offset, length: wanted });
-          fileIo.closeSync(fd);
+          let readBytes: number = 0;
+          try {
+            readBytes = fileIo.readSync(fd, buffer, { offset, length: wanted });
+          } finally {
+            // readSync 抛错（文件被 TDLib 截断/重下）也必须关 fd，否则每次重试漏一个。
+            fileIo.closeSync(fd);
+          }
           if (readBytes === wanted) {
             this.keepAhead(offset + readBytes);
             return buffer;
@@ -245,8 +250,12 @@ export class VideoStreamSession {
     try {
       const fd = fileIo.openSync(this.localPath, fileIo.OpenMode.READ_ONLY).fd;
       const readable = Math.min(wanted, buffered);
-      const readBytes = fileIo.readSync(fd, buffer, { offset, length: readable });
-      fileIo.closeSync(fd);
+      let readBytes: number = 0;
+      try {
+        readBytes = fileIo.readSync(fd, buffer, { offset, length: readable });
+      } finally {
+        fileIo.closeSync(fd);
+      }
       this.keepAhead(offset + readBytes);
       return readBytes;
     } catch (e) {

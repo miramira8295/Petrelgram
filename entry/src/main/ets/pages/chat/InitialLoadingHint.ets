@@ -218,7 +218,7 @@ export struct InitialLoadingHint {
     }
     this.pulseTimer = setInterval((): void => {
       this.waveStep = (this.waveStep + 1) % 3;
-    }, PULSE_INTERVAL_MS);
+    }, dur);
   }
 
   private stopPulse(): void {
