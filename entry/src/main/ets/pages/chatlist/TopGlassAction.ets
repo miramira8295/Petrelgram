@@ -1,13 +1,13 @@
-import { NativeGlassHost } from '../chat/NativeGlassHost';
-
 // 聊天列表顶栏那两颗圆钮（搜索 / 更多）。
 //
 // 【为什么单独抽成组件】「按住拖动跟手」需要每帧写位移量；ChatListPage 是整页级
 // V1 组件，一次 @State 更新会让整页重渲染（交接文档里实测单次 >1ms、峰值 14.8ms）。
 // 把状态关进这个只包一颗圆钮的小组件，重渲染范围就只剩这几十个节点。
 //
-// 位移写在最外层 Stack 上：玻璃是 NativeGlassHost 子节点，写在图标行上就只有
-// 图标自己动、玻璃纹丝不动，观感等于没反应（与聊天页顶栏同一副）。
+// 按下缩放/透明度与跟手位移都写在最外层 Stack 上，这样整颗按钮（含命中区）
+// 一起反馈，不会出现只有图标动、外层纹丝不动。
+import { NativeGlassHost } from '../chat/NativeGlassHost';
+
 @Component
 export struct TopGlassAction {
   @Prop actionSize: number = 42;
@@ -19,6 +19,15 @@ export struct TopGlassAction {
   @Prop accentColor: ResourceColor = '#0A59F7';
   label: Resource = $r('app.string.cl_more_actions');
   onTap: () => void = (): void => {};
+
+  // 【圆形玻璃保留，只去掉材质外投的那层阴影】用户 2026-11-19：圆玻璃按钮要留，
+  // 问题只是按钮底部多出一层「像玻璃的阴影」。那层阴影来自材质面自带的
+  // applyShadow（util/overlayMaterial.ets 的 buildMaterial：'menu' 面为 true，
+  // 'control' 面为 false），它会在节点下沿投一块比按钮大一圈的底板，圆边糊出
+  // 一圈白晕——就是「多套了一层玻璃」的观感。
+  // 所以这里改传 surface: 'control'：材质滤镜/染色/圆角/按压反馈全保留，只是不再
+  // 投阴影。聊天页顶栏的返回/菜单圆钮（pages/chat/ChatHeader.ets 的 backButton）
+  // 用的是同一配置，两处顶栏观感一致。
 
   @State private pressed: boolean = false;
   @State private grabDX: number = 0;
@@ -59,7 +68,8 @@ export struct TopGlassAction {
         hostWidth: this.actionSize,
         hostHeight: this.actionSize,
         hostRadius: this.actionSize / 2,
-        dark: this.dark
+        dark: this.dark,
+        surface: 'control'
       });
       Row() {
         if (this.busy) {
