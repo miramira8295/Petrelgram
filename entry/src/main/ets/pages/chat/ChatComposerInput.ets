@@ -677,6 +677,10 @@ export struct ChatComposerInput {
             onCancel: (): void => { this.onClearReply(); }
           });
         }
+        // 【输入行与展开键同一个 Stack】(2026-11-19 用户反馈)
+        // 编辑条/回复条是这一行上方的兄弟节点；展开键必须跟着「输入行」走，
+        // 而不是跟着整张卡走，否则会叠到那些条右侧的 ✕ 上。
+        Stack({ alignContent: Alignment.TopStart }) {
         Row({ space: 6 }) {
           if (this.recording.isRecording) {
             Row({ space: 7 }) {
@@ -905,31 +909,24 @@ export struct ChatComposerInput {
           left: 12, right: 6,
           top: COMPOSER_ROW_PADDING, bottom: COMPOSER_ROW_PADDING
         })
+        // 【为什么必须 Bottom】(2026-11-19 用户：表情键应固定在最底下一行)
+        // 尾部按键靠 trailingInset() 贴内容盒下沿，缺了这条 Row 默认垂直居中，
+        // 行数一变按钮就跟着浮到中间。Bottom 是这套「贴最后一行」算法的前提。
+        .alignItems(VerticalAlign.Bottom)
         // 按钮一律贴 Row 内容盒下沿；多行时再由各按钮自己的 trailingInset()
         // 抬到「最后一行文字」的中线上（单行不抬，见 trailingInset 注释）。
         // 文字仍从左上排版。
-        .alignItems(VerticalAlign.Bottom);
-      }
-        .width('100%')
-        .backgroundColor(Color.Transparent)
-        .onAreaChange((_old: Area, area: Area): void => {
-          const measuredH: number = area.height as number;
-          const measuredW: number = area.width as number;
-          if (measuredH > 0 && Math.abs(measuredH - this.glassSurfaceH) > 0.5) {
-            this.glassSurfaceH = measuredH;
-          }
-          if (measuredW > 0 && Math.abs(measuredW - this.glassSurfaceW) > 0.5) {
-            this.glassSurfaceW = measuredW;
-          }
-        })
-        // 【扩展键放在右上角】(2026-11-19 用户要求)：原来是输入行尾部的一颗按钮，
-        // 现在浮在胶囊右上角；显隐判据不变（fullscreenShown，见 util/composerExpand）。
-        // 【为什么套一层满宽 Row】上一版直接给按钮写 .align(Alignment.TopEnd)，
-        // 结果它跑到左上角：Stack 子里每个孩子的位置由父的 alignContent(TopStart) 决定，
-        // .align 改的是组件**自身内容**的对齐，管不到自己在父里的落点。所以这里用一条
-        // 满宽 34 高的 Row 把按钮推到右端；这条 Row 自身设 hitTestBehavior(None)
-        // （自己不响应触摸、子节点照常响应），才不挡住下面文字的点选和长按。
-        // 右沿留 12：TextArea 的滚动条占 W-10..W-6，按钮右沿停在 W-12，不压条。
+        // 【扩展键的落点】(2026-11-19 用户两次纠正)
+        // ① 原本是输入行尾部的一颗按钮，后来要求搬到胶囊右上角浮着；
+        // ② 浮在「整张卡」右上角会和编辑条/回复条的 ✕ 重叠，所以现在它挂在
+        //    输入行自己的 Stack 里：顶边对齐输入行（= 第一行文字那一档），
+        //    上方的编辑/回复/媒体条只会把它整体往下推，不会和 ✕ 撞上。
+        // 显隐判据不变（fullscreenShown，见 util/composerExpand）。
+        // 【为什么是满宽 Row】Stack 子里每个孩子的位置由父的 alignContent(TopStart)
+        // 决定，.align 改的是组件**自身内容**的对齐，管不到自己在父里的落点；所以
+        // 用一条满宽 34 高的 Row 把按钮推到右端，并设 hitTestBehavior(None)，
+        // 自己不响应触摸、子节点照常响应，不挡住下面文字的点选和长按。
+        // 与表情键的右沿对齐：输入行 Row 的右内边距是 6，覆盖层也留 6。
         if (this.fullscreenShown()) {
           Row() {
             Row() {
@@ -954,12 +951,25 @@ export struct ChatComposerInput {
           .width('100%')
           .height(34)
           .justifyContent(FlexAlign.End)
-          // 与表情键的右沿对齐：输入行 Row 的右内边距是 6，覆盖层也必须留 6，
-          // 两颗键都是 34 宽，这样中线也落在同一条竖线上（用户 2026-11-19 指出偏了一点）。
           .padding({ right: 6 })
           .margin({ top: 2 })
           .hitTestBehavior(HitTestMode.None);
         }
+        }
+        .width('100%')
+      }
+        .width('100%')
+        .backgroundColor(Color.Transparent)
+        .onAreaChange((_old: Area, area: Area): void => {
+          const measuredH: number = area.height as number;
+          const measuredW: number = area.width as number;
+          if (measuredH > 0 && Math.abs(measuredH - this.glassSurfaceH) > 0.5) {
+            this.glassSurfaceH = measuredH;
+          }
+          if (measuredW > 0 && Math.abs(measuredW - this.glassSurfaceW) > 0.5) {
+            this.glassSurfaceW = measuredW;
+          }
+        })
       }
       .layoutWeight(1)
       .backgroundColor(this.glassHostOn() ? Color.Transparent : $r('app.color.chat_overlay'))
