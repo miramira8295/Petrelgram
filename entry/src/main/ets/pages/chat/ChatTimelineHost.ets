@@ -18,6 +18,8 @@ import { RowPageInputs } from '../../util/rowPageInputs';
 import { canRenderLightweightPlainTextRow } from '../../util/messageBubbleReuse';
 import { ChatTimelineSession } from './ChatTimelineSession';
 import { TIMELINE_SCROLL_CACHE_ROWS } from '../../util/timelineCacheBudget';
+import { edgeBlurRadiusOf, edgeBlurStopsEx } from '../../util/scrollEdgeBlur';
+import { edgeBlurPageBottomOn, edgeBlurPageTopOn, edgeBlurSwitch } from '../../util/edgeBlurSetting';
 
 type ChatTimelineRowBinding = RepeatItem<AlbumGroup> | TimelineLazyEntry;
 
@@ -64,6 +66,9 @@ export struct ChatTimelineHost {
   @Param langEpoch: number = 0;
   @Param materialEpoch: number = 0;
   @Param timelineTopMargin: number = 0;
+
+  // 顶/底边缘虚化条带的归一化高度（vp）：底部条带的 y 靠它算。只在尺寸变化时写。
+  @Local private bandViewH: number = 780;
 
   // 快速滑动期把 List 的缓存窗收窄：一次跳转会按「可视 + 2×cachedCount」把行
   // 一起建出来（实测单帧峰值 23~30 行、约 30ms）。滑动中收到 3，停稳再放回
@@ -246,16 +251,21 @@ export struct ChatTimelineHost {
       this.fastScroll = false;
       this.session.handleTimelineScrollStop();
     })
-    // 消息流 List **不挂容器级 linearGradientBlur**：
-    // 与静态设置页不同，聊天列表在静止浏览态（scrollActive=false）下常驻播放动态头像
-    // （30fps AVPlayer/ImageAnimator）与动态贴纸/表情（30~60fps Canvas/ImageAnimator）。
-    // linearGradientBlur 是整列表离屏滤镜，只要列表内任意 38×38vp 头像或贴纸更新一帧，
-    // RS 就必须把整张 1378×2832 的 List 重新合成进全屏离屏 FBO、跑 15 段高斯模糊着色器，
-    // 并将脏区扩大到整屏 [0,0,1378,2832]，进而每帧连带作废顶栏 ChatHeader 与底栏
-    // ChatComposerInput 共 5 颗悬浮毛玻璃胶囊的 FilterCache，导致 GPU 片元/纹理/带宽
-    // 长期飙到 90%~100%。顶底悬浮胶囊自身已带 backdropBlur + visualEffect，无需整表再套离屏滤镜。
+    // 屏幕最顶/最底的边缘渐变虚化：直接用 List 自己的 linearGradientBlur，
+    // 界面里不叠任何 backdropBlur 条带（那样会多出一层白雾玻璃，用户明确否决）。
+    // 两侧都关时半径为 0，滤镜不进渲染链路。
+    // 已知代价：本页常驻动态头像/贴纸，整表滤镜会把每次小更新放大成整表重合成；
+    // 需要省电/低端设备时在「外观设置 → 屏幕边缘虚化」里关掉即可。
+    .linearGradientBlur(this.edgeBlurRadius(), {
+      fractionStops: edgeBlurStopsEx(this.bandViewH, 780, 0, this.edgeBlurTopEnabled(), this.edgeBlurBottomEnabled()),
+      direction: GradientDirection.Bottom
+    })
     .onAreaChange((_old: Area, area: Area): void => {
       this.session.handleTimelineAreaChange(area);
+      const h: number = Number(area.height);
+      if (h > 0 && Math.abs(h - this.bandViewH) > 0.5) {
+        this.bandViewH = h;
+      }
     });
   }
 
@@ -388,6 +398,21 @@ export struct ChatTimelineHost {
 
   private timelinePillLabel(): string {
     return this.langEpoch < 0 ? '' : timelineStateText(this.timelinePillMode());
+  }
+
+  // 聊天页顶部：总开关最高，其次是「聊天页」的顶部开关，没单独设过用全局顶部。
+  private edgeBlurTopEnabled(): boolean {
+    return edgeBlurPageTopOn(edgeBlurSwitch.master, edgeBlurSwitch.top, edgeBlurSwitch.chatTop);
+  }
+
+  // 聊天页底部。
+  private edgeBlurBottomEnabled(): boolean {
+    return edgeBlurPageBottomOn(edgeBlurSwitch.master, edgeBlurSwitch.bottom, edgeBlurSwitch.chatBottom);
+  }
+
+  // 两侧都关时半径取 0：滤镜不参与渲染，不做离屏合成，也不做每帧背景采样。
+  private edgeBlurRadius(): number {
+    return edgeBlurRadiusOf(this.edgeBlurTopEnabled() || this.edgeBlurBottomEnabled());
   }
 
   build() {

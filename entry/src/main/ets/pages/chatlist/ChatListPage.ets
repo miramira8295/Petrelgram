@@ -32,6 +32,15 @@ import {
   HdsNavigation, HdsNavigationTitleBarOptions, HdsNavigationTitleMode, TitleBarContentOptions
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
+import {
+  EDGE_BLUR_FOLLOW,
+  EDGE_BLUR_ON_DEFAULT,
+  EDGE_BLUR_TOP_ON_DEFAULT,
+  KEY_EDGE_BLUR_LIST_TOP,
+  KEY_EDGE_BLUR_ON,
+  KEY_EDGE_BLUR_TOP_ON,
+  edgeBlurPageTopOn
+} from '../../util/edgeBlurSetting';
 import { homeCardMarginVp } from '../../util/pageMargin';
 import { APPEARANCE_EPOCH, KEY_STATUS_FOLLOW_TITLE } from '../../util/appearance';
 import { COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_BADGE_BG, COLOR_TAB_PILL_BG } from '../../util/theme';
@@ -402,6 +411,11 @@ export struct ChatListPage {
   @State private companionImageTabIndex: number = -1;
   @State private warmedVisualTabKeys: string[] = [];
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  // 顶栏玻璃的闸门跟着「顶部」边缘虚化开关：本页的顶栏一直挂 HDS 系统材质，
+  // 用户关掉顶部后那条模糊带不会自己消失（m00767 反馈的正是它）。
+  @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_LIST_TOP) private edgeBlurListTop: string = EDGE_BLUR_FORCE_OFF;
 
   @Styles
   actionNormalStyle() {
@@ -1201,6 +1215,7 @@ export struct ChatListPage {
   private titleBarWallpaperCache: boolean = false;
   private titleBarAppearanceCache: number = -1;
   private titleBarMaterialCache: number = -1;
+  private titleBarGlassCache: boolean = true;
 
   // 标题栏内容：应用名 + 同步状态副标题 + 搜索/⋮ 两个动作 + 超级群组顶栏抽屉 + 底部的文件夹条。
   // 引用保持稳定（同 ChatPage.chatTitleBarOptions），避免 HDS 因对象重建销毁重画整条标题栏而闪白。
@@ -1226,11 +1241,13 @@ export struct ChatListPage {
 
   private mainTitleBarOptions(): HdsNavigationTitleBarOptions {
     const content: TitleBarContentOptions = this.titleBarContent();
+    const glass: boolean = edgeBlurPageTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurListTop);
     if (this.titleBarOptionsCache !== null &&
       this.titleBarOptionsCache.content === content &&
       this.titleBarWallpaperCache === this.appWallpaperOn &&
       this.titleBarAppearanceCache === this.appearanceEpoch &&
-      this.titleBarMaterialCache === this.materialEpoch) {
+      this.titleBarMaterialCache === this.materialEpoch &&
+      this.titleBarGlassCache === glass) {
       return this.titleBarOptionsCache;
     }
     const options: HdsNavigationTitleBarOptions = {
@@ -1245,13 +1262,14 @@ export struct ChatListPage {
       // MainScreen 那条「底部边缘淡化」用 calc 定位失效、被画到了屏幕顶部
       // （它的 backdropBlur(18) 正好压在标题栏上）。那里修好后这条栏不必摘材质，
       // 仍按 titleBarStyle(..., false) 走：透明背板 + 关掉滚动渐变模糊。
-      style: titleBarStyle(Color.Transparent, this.accent(), false, true),
+      style: titleBarStyle(Color.Transparent, this.accent(), false, glass),
       content: content
     };
     this.titleBarOptionsCache = options;
     this.titleBarWallpaperCache = this.appWallpaperOn;
     this.titleBarAppearanceCache = this.appearanceEpoch;
     this.titleBarMaterialCache = this.materialEpoch;
+    this.titleBarGlassCache = glass;
     return options;
   }
 

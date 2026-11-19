@@ -2,7 +2,12 @@ import { showToast } from '../../util/toast';
 import { SplitPanePlaceholder } from '../common/SplitPanePlaceholder';
 import { ContactAlphabetIndex } from '../../services/ContactAlphabetIndex';
 import { homeCardMarginVp } from '../../util/pageMargin';
-import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops, edgeBlurStopsEx, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import {
+  EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
+  KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
+  KEY_EDGE_BLUR_TOP_ON, edgeBlurOtherBottomOn, edgeBlurOtherTopOn
+} from '../../util/edgeBlurSetting';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
@@ -113,6 +118,11 @@ function contactsSplitPlaceholder(): void {
 // 激活的页签不再刷新，切回来时框架补上延后的那次更新。
 @Component({ freezeWhenInactive: true })
 export struct ContactsPage {
+  @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_BOTTOM_ON) private edgeBlurBottomOn: boolean = EDGE_BLUR_BOTTOM_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_OTHER_TOP) private edgeBlurOtherTop: string = EDGE_BLUR_FOLLOW;
+  @StorageProp(KEY_EDGE_BLUR_OTHER_BOTTOM) private edgeBlurOtherBottom: string = EDGE_BLUR_FOLLOW;
   // 由 MainScreen 算好写进来的「APP 壁纸生效中」，见 store/AppSettings。
   @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
@@ -1657,8 +1667,8 @@ export struct ContactsPage {
           // 不裁剪，内容才能穿透到标题栏下方——渐变模糊模糊的正是穿过去的这部分。
           .contentStartOffset(EDGE_OVERLAY_VP)
           // 顶部/底部边缘渐变虚化（与首页会话列表同一套参数）。
-          .linearGradientBlur(BLUR_MAX_VP, {
-            fractionStops: edgeBlurStops(this.contactsViewH),
+          .linearGradientBlur(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), {
+            fractionStops: edgeBlurStopsEx(this.contactsViewH, 780, 0, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
             direction: GradientDirection.Bottom
           })
           .clip(false);
