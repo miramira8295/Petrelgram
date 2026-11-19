@@ -33,7 +33,12 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { SystemGlassSurface } from '../chat/SystemGlassSurface';
-import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, edgeBlurStops, edgeBlurStopsEx, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import {
+  EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
+  KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
+  KEY_EDGE_BLUR_TOP_ON, edgeBlurOtherBottomOn, edgeBlurOtherTopOn
+} from '../../util/edgeBlurSetting';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import {
   SearchSession, forgetSearchSession, rememberSearchSession, takeSearchSession
@@ -154,6 +159,11 @@ export function GlobalSearchPageBuilder(): void {
 
 @Component
 export struct GlobalSearchPage {
+  @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_BOTTOM_ON) private edgeBlurBottomOn: boolean = EDGE_BLUR_BOTTOM_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_OTHER_TOP) private edgeBlurOtherTop: string = EDGE_BLUR_FOLLOW;
+  @StorageProp(KEY_EDGE_BLUR_OTHER_BOTTOM) private edgeBlurOtherBottom: string = EDGE_BLUR_FOLLOW;
   // 本页在栈里的位置由外壳给（NavDestination 的 onReady），关闭 = 弹自己。
   private navStack: NavPathStack | null = null;
   private readonly chatDestToken: number = allocChatDestToken();
@@ -1933,8 +1943,8 @@ export struct GlobalSearchPage {
     .cachedCount(4)
     .maintainVisibleContentPosition(true)
     .contentStartOffset(this.headerHeight())
-    .linearGradientBlur(BLUR_MAX_VP, {
-      fractionStops: edgeBlurStops(this.listViewH),
+    .linearGradientBlur(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), {
+      fractionStops: edgeBlurStopsEx(this.listViewH, 780, 0, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
       direction: GradientDirection.Bottom
     })
     .clip(false)

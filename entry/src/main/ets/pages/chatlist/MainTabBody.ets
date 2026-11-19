@@ -1,6 +1,12 @@
 import { ChatListRowState, ChatRowFlags } from './ChatListRowState';
 import { FOLDER_TAGS_ENABLED, FolderInfo } from '../../store/FolderStore';
-import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { EDGE_OVERLAY_VP, edgeBlurRadiusOf, edgeBlurStopsEx } from '../../util/scrollEdgeBlur';
+import {
+  EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
+  KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_LIST_BOTTOM, KEY_EDGE_BLUR_LIST_TOP, KEY_EDGE_BLUR_ON,
+  KEY_EDGE_BLUR_TOP_ON,
+  edgeBlurPageBottomOn, edgeBlurPageTopOn
+} from '../../util/edgeBlurSetting';
 import { ChatListSubscription } from '../../store/ChatListSubscription';
 import { homeCardMarginVp } from '../../util/pageMargin';
 import {
@@ -144,6 +150,12 @@ export struct MainTabBody {
   listScroller: ListScroller = new ListScroller();
   // 列表实测高度（vp）：linearGradientBlur 的 fractionStops 要按实际高度归一化。
   @State private listViewH: number = 0;
+  // 屏幕顶/底边缘虚化的统一开关（设置页），以及「聊天列表」页的三态覆盖。
+  @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_BOTTOM_ON) private edgeBlurBottomOn: boolean = EDGE_BLUR_BOTTOM_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_LIST_TOP) private edgeBlurListTop: string = EDGE_BLUR_FOLLOW;
+  @StorageProp(KEY_EDGE_BLUR_LIST_BOTTOM) private edgeBlurListBottom: string = EDGE_BLUR_FOLLOW;
   // 每帧滚动量往上抱给 ChatListPage，文件夹条据此收起/展开（util/folderBarCollapse）。
   // **普通成员，不能用 @Prop**：@Prop 跨组件边界是深拷贝，函数会被丢掉，症状是
   // 回调永远不触发而编译、单测都看不出来（见 memory arkui-prop-deepcopy-drops-closures）。
@@ -876,6 +888,20 @@ export struct MainTabBody {
     return homeCardMarginVp(this.widthBp);
   }
 
+  // 首页会话列表顶部：总开关 + 顶部子开关 + 「聊天列表」的页面级设置。
+  private edgeBlurTopEnabled(): boolean {
+    return edgeBlurPageTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurListTop);
+  }
+
+  private edgeBlurBottomEnabled(): boolean {
+    return edgeBlurPageBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurListBottom);
+  }
+
+  // 两侧都关时半径取 0：滤镜不进渲染链路。
+  private edgeBlurRadius(): number {
+    return edgeBlurRadiusOf(this.edgeBlurTopEnabled() || this.edgeBlurBottomEnabled());
+  }
+
   build() {
     Column() {
       // No story ring here — stories live on the profile pages. StoryStore and
@@ -933,6 +959,18 @@ export struct MainTabBody {
         this.chatList();
       }
       .width('100%')
+      // 屏幕最顶/最底的边缘渐变虚化：容器级滤镜，界面里不叠任何玻璃条带。
+      // fractionStops 按容器实测高度归一化，底部渐隐带才会贴住屏幕下沿。
+      .linearGradientBlur(this.edgeBlurRadius(), {
+        fractionStops: edgeBlurStopsEx(this.listViewH, 780, 0, this.edgeBlurTopEnabled(), this.edgeBlurBottomEnabled()),
+        direction: GradientDirection.Bottom
+      })
+      .onAreaChange((_old: Area, area: Area): void => {
+        const h: number = Number(area.height);
+        if (h > 0 && Math.abs(h - this.listViewH) > 0.5) {
+          this.listViewH = h;
+        }
+      })
       // 高度要比父容器多出 EDGE_OVERLAY_VP，再用 offset 把整块上提同样的量：
       // 视觉范围 = [内容区顶 - 95, 屏幕底]，顶部渐变的原点仍在屏幕最上沿、
       // 底部渐变的终点落到屏幕最底沿。若只用 offset 不改高度，下沿会跟着上移，

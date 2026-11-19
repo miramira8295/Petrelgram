@@ -48,7 +48,12 @@ import {
 } from '../../util/wallpaperSlot';
 import { logE, logI } from '../../util/log';
 import { contentSideGutter } from '../../util/contentWidth';
-import { BLUR_MAX_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, edgeBlurStops, edgeBlurStopsEx } from '../../util/scrollEdgeBlur';
+import {
+  EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
+  KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
+  KEY_EDGE_BLUR_TOP_ON, edgeBlurOtherBottomOn, edgeBlurOtherTopOn
+} from '../../util/edgeBlurSetting';
 import { WallpaperPreview } from './WallpaperPreview';
 import { GalleryRow } from '../../util/backgroundRow';
 
@@ -150,6 +155,11 @@ interface BackgroundPageParams {
 @Entry
 @Component
 struct ChatBackgroundPage {
+  @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_BOTTOM_ON) private edgeBlurBottomOn: boolean = EDGE_BLUR_BOTTOM_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_OTHER_TOP) private edgeBlurOtherTop: string = EDGE_BLUR_FOLLOW;
+  @StorageProp(KEY_EDGE_BLUR_OTHER_BOTTOM) private edgeBlurOtherBottom: string = EDGE_BLUR_FOLLOW;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // 滚动区实测高度（vp）：linearGradientBlur 的 fractionStops 要按实际高度归一化。
@@ -1173,8 +1183,8 @@ struct ChatBackgroundPage {
         .onScrollStop((): void => { this.scrollActive = false; })
         // 半径传 0 = 不模糊（stops 仍然生效，只是没有半径）。滚动中关掉这一层，
         // 静止时恢复——和聊天消息列表同一套降级方式，静止画面像素不变。
-        .linearGradientBlur(this.scrollActive ? 0 : BLUR_MAX_VP, {
-          fractionStops: topEdgeBlurStops(this.listViewH),
+        .linearGradientBlur((this.scrollActive || !(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom))) ? 0 : BLUR_MAX_VP, {
+          fractionStops: edgeBlurStopsEx(this.listViewH, 780, 0, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
           direction: GradientDirection.Bottom
         })
         .clip(false)

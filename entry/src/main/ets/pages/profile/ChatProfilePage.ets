@@ -1,7 +1,12 @@
 import { showToast } from '../../util/toast';
 import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { QrDialog } from '../common/QrDialog';
-import { BLUR_MAX_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, edgeBlurStops, edgeBlurStopsEx } from '../../util/scrollEdgeBlur';
+import {
+  EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
+  KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
+  KEY_EDGE_BLUR_TOP_ON, edgeBlurOtherBottomOn, edgeBlurOtherTopOn
+} from '../../util/edgeBlurSetting';
 import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { InviteJoinResolver } from '../../util/inviteJoinResolver';
 import { joinChat as submitChatJoin, ChatJoinOutcome } from '../../util/chatJoin';
@@ -119,6 +124,11 @@ export function ChatProfilePageBuilder(): void {
 
 @Component
 export struct ChatProfilePage {
+  @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_BOTTOM_ON) private edgeBlurBottomOn: boolean = EDGE_BLUR_BOTTOM_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_OTHER_TOP) private edgeBlurOtherTop: string = EDGE_BLUR_FOLLOW;
+  @StorageProp(KEY_EDGE_BLUR_OTHER_BOTTOM) private edgeBlurOtherBottom: string = EDGE_BLUR_FOLLOW;
   // 本页所在的 Navigation 栈，onReady 时拿到。返回按钮靠它出栈——本页已不是
   // router 页，this.getUIContext().getRouter().back() 弹不到自己。
   private navStack: NavPathStack | undefined = undefined;
@@ -2050,8 +2060,8 @@ export struct ChatProfilePage {
     .cachedCount(PROFILE_LIST_CACHED_COUNT)
     // 头图与大头像就在列表第一项里、随内容滚走，所以顶部虚化不能常开（常开会
     // 糊掉静止状态的头像上沿）。跟着滚动量渐入：静止半径 0，一滚就雾化上边缘。
-    .linearGradientBlur(this.blurRadius, {
-      fractionStops: edgeBlurStops(this.listViewH),
+    .linearGradientBlur(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) ? this.blurRadius : 0, {
+      fractionStops: edgeBlurStopsEx(this.listViewH, 780, 0, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
       direction: GradientDirection.Bottom
     })
     .clip(false)
@@ -2060,7 +2070,7 @@ export struct ChatProfilePage {
       if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
     })
     .onDidScroll((offset: number): void => {
-      const target: number = Math.max(0, Math.min(BLUR_MAX_VP, offset * 2));
+      const target: number = Math.max(0, Math.min(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) ? BLUR_MAX_VP : 0, offset * 2));
       if (Math.abs(target - this.blurRadius) > 1) { this.blurRadius = target; }
     })
     // 壁纸生效时整页底必须透明，否则壁纸被这一层盖死（同 util/theme.mainPageFill

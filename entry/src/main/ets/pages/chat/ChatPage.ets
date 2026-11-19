@@ -231,6 +231,7 @@ import {
   HdsNavigationTitleBarOptions
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
+import { edgeBlurPageTopOn, edgeBlurSwitch } from '../../util/edgeBlurSetting';
 import { navigateToChatProfile, navigateToProfile } from '../../util/profileNav';
 import { endLinkNav } from '../../util/linkTapGuard';
 import { copyPlainText } from '../../util/clipboard';
@@ -6726,22 +6727,30 @@ export struct ChatPage {
   // 才重建。
   private titleBarOptionsCache: HdsNavigationTitleBarOptions | null = null;
 
+  // 顶栏玻璃（HDS 系统材质 + BlurStrategy）也跟着「顶部」开关走：关掉顶部边缘
+  // 虚化时不该还留这条系统模糊带。缓存键要带上它，否则拨了开关不会重建 options。
+  private titleBarGlassCache: boolean = true;
+
   private chatTitleBarOptions(): HdsNavigationTitleBarOptions {
     const content: TitleBarContentOptions = this.chatTitleBarContent();
+    const glass: boolean =
+      edgeBlurPageTopOn(edgeBlurSwitch.master, edgeBlurSwitch.top, edgeBlurSwitch.chatTop);
     const cached: HdsNavigationTitleBarOptions | null = this.titleBarOptionsCache;
-    if (cached !== null && cached.content === content) {
+    if (cached !== null && cached.content === content && this.titleBarGlassCache === glass) {
       return cached;
     }
     const options: HdsNavigationTitleBarOptions = {
       avoidLayoutSafeArea: true,
       // 消息 List 自己用 contentStartOffset 保留稳定锚点；这里不重复挤内容区。
       enableComponentSafeArea: false,
-      // 第三个参数 false = 静态栏：滑动时不变；第四个参数 false = 不挂 HDS 整条栏系统材质与
-      // BlurStrategy.ENABLE（顶栏三颗胶囊已在 ChatHeader 里自绘毛玻璃，避免再挂整页滤镜节点）。
-      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false, false),
+      // 第三个参数 false = 静态栏：滑动时不变；第四个参数 true = 挂 HDS 整条栏系统材质与
+      // BlurStrategy.ENABLE——聊天页最顶部那条玻璃就是它（上游 58d272ef 曾把它改回 false，
+      // 用户看到的就是「最顶部的模糊没了」）。顶栏三颗胶囊/输入栏另有各自的材质承载，不冲突。
+      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false, glass),
       content: content
     };
     this.titleBarOptionsCache = options;
+    this.titleBarGlassCache = glass;
     return options;
   }
 

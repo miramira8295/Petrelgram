@@ -3,7 +3,12 @@ import { router, promptAction } from '@kit.ArkUI';
 import { ContactsStore, ContactItem } from '../../store/ContactsStore';
 import { TD_SESSION_EPOCH, TD_ACCOUNT_SWITCHING } from '../../tdkit/AccountRegistry';
 import { loadMemberInviteContext, submitMemberInvites } from '../../util/chatMemberInvite';
-import { BLUR_MAX_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, topEdgeBlurStops, edgeBlurStops, edgeBlurStopsEx, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import {
+  EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
+  KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
+  KEY_EDGE_BLUR_TOP_ON, edgeBlurOtherBottomOn, edgeBlurOtherTopOn
+} from '../../util/edgeBlurSetting';
 import { requestOutcomeUncertain } from '../../util/tdRequestTimeout';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdClient } from '../../tdkit/TdClient';
@@ -42,6 +47,11 @@ const CARD_SIDE_MARGIN: number = 12;
 @Entry
 @Component
 struct NewGroupPage {
+  @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_BOTTOM_ON) private edgeBlurBottomOn: boolean = EDGE_BLUR_BOTTOM_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_OTHER_TOP) private edgeBlurOtherTop: string = EDGE_BLUR_FOLLOW;
+  @StorageProp(KEY_EDGE_BLUR_OTHER_BOTTOM) private edgeBlurOtherBottom: string = EDGE_BLUR_FOLLOW;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -894,7 +904,7 @@ struct NewGroupPage {
     .contentEndOffset(this.bottomSafe + 12)
     .scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
     .cachedCount(4)
-    .linearGradientBlur(BLUR_MAX_VP, {
+    .linearGradientBlur(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop)), {
       fractionStops: topEdgeBlurStops(this.listViewH),
       direction: GradientDirection.Bottom
     })
@@ -1107,8 +1117,8 @@ struct NewGroupPage {
     }
     .align(Alignment.Top)
     .width('100%').height('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
-    .linearGradientBlur(BLUR_MAX_VP, {
-      fractionStops: topEdgeBlurStops(this.listViewH),
+    .linearGradientBlur(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), {
+      fractionStops: edgeBlurStopsEx(this.listViewH, 780, 0, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
       direction: GradientDirection.Bottom
     })
     .clip(false)

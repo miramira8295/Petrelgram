@@ -15,7 +15,13 @@ import { guardKey } from '../../util/keyGuard';
 import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, chatListInForeground, chatListPublicationMode, ChatListFreeze, chatOrderUnchanged, chatRevisionsUnchanged, contentOnlyUpdate, updateTouchHold } from './ChatListFreeze';
 import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
 import { rememberListPosition, recallListPosition } from '../../util/chatListPosition';
-import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops } from '../../util/scrollEdgeBlur';
+import { EDGE_OVERLAY_VP, edgeBlurRadiusOf, edgeBlurStopsEx } from '../../util/scrollEdgeBlur';
+import {
+  EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
+  KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_LIST_BOTTOM, KEY_EDGE_BLUR_LIST_TOP, KEY_EDGE_BLUR_ON,
+  KEY_EDGE_BLUR_TOP_ON,
+  edgeBlurPageBottomOn, edgeBlurPageTopOn
+} from '../../util/edgeBlurSetting';
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_ROW_SWIPE_ACTIONS, powerAnimationDuration
 } from '../../store/AppSettings';
@@ -254,6 +260,12 @@ export struct ChatListView {
   private chats: ChatEntry[] = [];
   // 列表实测高度（vp）：linearGradientBlur 的 fractionStops 按实际高度归一化。
   @State private listViewH: number = 0;
+  // 屏幕顶/底边缘虚化的统一开关（设置页），以及「聊天列表」页的三态覆盖。
+  @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_BOTTOM_ON) private edgeBlurBottomOn: boolean = EDGE_BLUR_BOTTOM_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_LIST_TOP) private edgeBlurListTop: string = EDGE_BLUR_FOLLOW;
+  @StorageProp(KEY_EDGE_BLUR_LIST_BOTTOM) private edgeBlurListBottom: string = EDGE_BLUR_FOLLOW;
   @State private chatsEmpty: boolean = true;
   @State loading: boolean = true;
   @State loadFailed: boolean = false;
@@ -656,6 +668,20 @@ export struct ChatListView {
     return homeCardMarginVp(this.widthBp);
   }
 
+  // 聊天列表页顶部：总开关 + 顶部子开关 + 「聊天列表」的页面级设置。
+  private edgeBlurTopEnabled(): boolean {
+    return edgeBlurPageTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurListTop);
+  }
+
+  private edgeBlurBottomEnabled(): boolean {
+    return edgeBlurPageBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurListBottom);
+  }
+
+  // 两侧都关时半径取 0：滤镜不进渲染链路。
+  private edgeBlurRadius(): number {
+    return edgeBlurRadiusOf(this.edgeBlurTopEnabled() || this.edgeBlurBottomEnabled());
+  }
+
   build() {
     if (this.chatsEmpty) {
       this.emptyState();
@@ -782,6 +808,18 @@ export struct ChatListView {
       })
       }
       .layoutWeight(1).width('100%')
+      // 屏幕最顶/最底的边缘渐变虚化：容器级滤镜，界面里不叠任何玻璃条带。
+      // fractionStops 按容器实测高度归一化，底部渐隐带才会贴住屏幕下沿。
+      .linearGradientBlur(this.edgeBlurRadius(), {
+        fractionStops: edgeBlurStopsEx(this.listViewH, 780, 0, this.edgeBlurTopEnabled(), this.edgeBlurBottomEnabled()),
+        direction: GradientDirection.Bottom
+      })
+      .onAreaChange((_old: Area, area: Area): void => {
+        const h: number = Number(area.height);
+        if (h > 0 && Math.abs(h - this.listViewH) > 0.5) {
+          this.listViewH = h;
+        }
+      })
       // 上顶 EDGE_OVERLAY_VP（标题栏 56 + 状态栏 39），让渐变原点回到屏幕最上沿。
       .margin({ top: -EDGE_OVERLAY_VP });
     }

@@ -8,6 +8,13 @@ import { preferences } from '@kit.ArkData';
 import { EXT_LINK_DEFAULT } from '../util/externalLinkPolicy';
 import { mirrorChatEnvKey, seedChatEnvFromStorage } from '../util/chatEnvMirror';
 import { bumpMaterialEpoch } from '../util/materialEpoch';
+import {
+  EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
+  KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_CHAT_BOTTOM, KEY_EDGE_BLUR_CHAT_TOP, KEY_EDGE_BLUR_LIST_BOTTOM,
+  KEY_EDGE_BLUR_LIST_TOP, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
+  KEY_EDGE_BLUR_TOP_ON,
+  applyEdgeBlurPageValue, seedEdgeBlurOn, seedEdgeBlurPages, setEdgeBlurBottom, setEdgeBlurMaster, setEdgeBlurTop
+} from '../util/edgeBlurSetting';
 import { setCrashUploadOptOut } from '../services/crashRecordStore';
 import { LIGHT_DEFAULT, THICKNESS_DEFAULT } from '../util/materialTuning';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
@@ -603,6 +610,21 @@ export async function initSettings(context: common.Context): Promise<void> {
       normalizeListCachedCount(await s.get(KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT) as number));
     AppStorage.setOrCreate(KEY_MATERIAL_THICKNESS,
       await s.get(KEY_MATERIAL_THICKNESS, THICKNESS_DEFAULT) as number);
+    // 屏幕上下边缘的渐变虚化：默认全开，低性能设备可关。V1 走 AppStorage、V2 走 @Trace 单例，
+    // seed* 一次写两处（见 util/edgeBlurSetting）。三个子键必须一起播种：只写总开关会让
+    // 上次单独关掉的顶部/底部在重启后被默认值盖回开启。
+    seedEdgeBlurOn(
+      await s.get(KEY_EDGE_BLUR_ON, EDGE_BLUR_ON_DEFAULT) as boolean,
+      await s.get(KEY_EDGE_BLUR_TOP_ON, EDGE_BLUR_TOP_ON_DEFAULT) as boolean,
+      await s.get(KEY_EDGE_BLUR_BOTTOM_ON, EDGE_BLUR_BOTTOM_ON_DEFAULT) as boolean);
+    // 页面级六项同理：聊天页、聊天列表页、其他页面各一份顶部/底部覆盖。
+    seedEdgeBlurPages(
+      await s.get(KEY_EDGE_BLUR_CHAT_TOP, EDGE_BLUR_FOLLOW) as string,
+      await s.get(KEY_EDGE_BLUR_CHAT_BOTTOM, EDGE_BLUR_FOLLOW) as string,
+      await s.get(KEY_EDGE_BLUR_LIST_TOP, EDGE_BLUR_FOLLOW) as string,
+      await s.get(KEY_EDGE_BLUR_LIST_BOTTOM, EDGE_BLUR_FOLLOW) as string,
+      await s.get(KEY_EDGE_BLUR_OTHER_TOP, EDGE_BLUR_FOLLOW) as string,
+      await s.get(KEY_EDGE_BLUR_OTHER_BOTTOM, EDGE_BLUR_FOLLOW) as string);
     AppStorage.setOrCreate(KEY_SURFACE_GLASS_ON,
       await s.get(KEY_SURFACE_GLASS_ON, SURFACE_GLASS_ON_DEFAULT) as boolean);
     AppStorage.setOrCreate(KEY_BUBBLE_GLASS_ON,
@@ -679,6 +701,9 @@ export async function initSettings(context: common.Context): Promise<void> {
     AppStorage.setOrCreate(KEY_HOLD_SPEED_LIMIT, HOLD_SPEED_LIMIT_DEFAULT);
     AppStorage.setOrCreate(KEY_TEXT_SIZE, TEXT_SIZE_DEFAULT);
     AppStorage.setOrCreate(KEY_SPLIT_NAV_WIDTH, 0);
+    seedEdgeBlurOn(EDGE_BLUR_ON_DEFAULT);
+    seedEdgeBlurPages(EDGE_BLUR_FOLLOW, EDGE_BLUR_FOLLOW, EDGE_BLUR_FOLLOW, EDGE_BLUR_FOLLOW,
+      EDGE_BLUR_FOLLOW, EDGE_BLUR_FOLLOW);
     AppStorage.setOrCreate(KEY_BUBBLE_RADIUS, RADIUS_DEFAULT);
     AppStorage.setOrCreate(KEY_THREE_LINES, false);
     AppStorage.setOrCreate(KEY_NIGHT_MODE, NIGHT_SYSTEM);
@@ -764,6 +789,12 @@ export function setNumber(key: string, value: number): void {
 export function setBoolean(key: string, value: boolean): void {
   if (key === KEY_DEBUG_DRAWN_TRACE) { drawnStageMetrics.setEnabled(value); }
   if (key === KEY_HIDE_PINNED_DEFAULT) { pinnedVisibilityDefaults.hidden = value; }
+  // 边缘虚化的三个布尔键各自只改自己那一个字段：写总开关时不能连带把顶部/底部
+  // 重置成默认值（用户可能刚单独关掉顶部），而 V2 消费方只读 @Trace 单例，
+  // 必须由这里的 setter 同步过去。
+  if (key === KEY_EDGE_BLUR_ON) { setEdgeBlurMaster(value); }
+  if (key === KEY_EDGE_BLUR_TOP_ON) { setEdgeBlurTop(value); }
+  if (key === KEY_EDGE_BLUR_BOTTOM_ON) { setEdgeBlurBottom(value); }
   if (key === KEY_CRASH_UPLOAD) {
     // 崩溃上报的开关额外落一个标记文件。扩展进程读不到 AppStorage、也不能
     // import 这个模块（会把 ArkUI 依赖拖进那个没有 ArkUI 的进程），标记文件
@@ -779,6 +810,9 @@ export function setBoolean(key: string, value: boolean): void {
 }
 
 export function setString(key: string, value: string): void {
+  // 六个页面级覆盖（内部 follow / on / off）同样要同步单例，否则 V2 的聊天页
+  // 读不到刚改的值，切回页面仍是旧档。
+  applyEdgeBlurPageValue(key, value);
   AppStorage.setOrCreate(key, value);
   mirrorChatEnvKey(key, value);
   persist(key, value);

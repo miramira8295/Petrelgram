@@ -21,6 +21,11 @@
  *
  * 其中 listViewH 来自同一容器的 `.onAreaChange` 实测高度——手机/平板/横竖屏
  * 视口高度都不一样，必须运行时取，不能写死。
+ *
+ * 【统一开关】全部页面共用 util/edgeBlurSetting.ets 里的 KEY_EDGE_BLUR_ON：
+ * V1 组件把半径写成 `this.edgeBlurOn ? BLUR_MAX_VP : 0`（@StorageProp 绑定），
+ * V2 组件写 `edgeBlurRadiusOf(edgeBlurSwitch.on)`。传 0 等价于不画，绝不要为了
+ * 关掉它去条件渲染整棵滚动树。
  */
 
 /** 顶部模糊带高度（vp）。 */
@@ -100,6 +105,54 @@ export function edgeBlurStops(viewH: number, fallbackH: number = 780, topOffsetV
  * 设置类二级页面的内容通常不长、底部紧跟着导航/按钮区，底部再糊一条会显得
  * 页面"往下陷"（用户 2026-11-05）。顶部那条保留：内容仍然穿到标题栏底下。
  */
+export function edgeBlurRadiusOf(on: boolean, maxVp: number = BLUR_MAX_VP): number {
+  return on ? maxVp : 0;
+}
+
+/**
+ * 顶部带的上边界分数（与 edgeBlurStops 内部同一公式，Ex 版本要用它判断哪一段属顶部）。
+ */
+function topCutFrac(vh: number, topOffsetVp: number): number {
+  const startFrac: number = Math.max(0, Math.min(topOffsetVp / vh, 0.4));
+  return Math.min(startFrac + TOP_BAND_VP / vh, 0.45);
+}
+
+/** 底部带的下边界分数。 */
+function botStartFrac(vh: number): number {
+  return Math.max(1 - BOTTOM_BAND_VP / vh, 0.55);
+}
+
+/**
+ * 带顶部/底部独立开关的版本。
+ *
+ * 为什么不是"关掉就换个函数"：linearGradientBlur 只有一个半径参数，要分别关顶、
+ * 关底只能落到 fractionStops 上——把不启用那一侧的停靠点半径全部置 0。这样：
+ *   · 只关顶部 → 底部照旧糊，顶部那条带子读到的半径恒 0，等于不画；
+ *   · 只关底部 → 对称；
+ *   · 两侧都关 → 整组 stops 半径全 0，配合半径传 0，渲染侧是恒等变换。
+ * 全程不摘除属性、不重建滚动树，滚动位置和缓存都不受影响。
+ */
+export function edgeBlurStopsEx(viewH: number, fallbackH: number = 780, topOffsetVp: number = 0,
+  topOn: boolean = true, bottomOn: boolean = true): FractionStop[] {
+  const vh: number = viewH > 0 ? viewH : (fallbackH > 0 ? fallbackH : 780);
+  const all: FractionStop[] = edgeBlurStops(vh, fallbackH, topOffsetVp);
+  if (topOn && bottomOn) {
+    return all;
+  }
+  const topCut: number = topCutFrac(vh, topOffsetVp);
+  const botStart: number = botStartFrac(vh);
+  const out: FractionStop[] = [];
+  for (const stop of all) {
+    const radius: number = stop[0];
+    const position: number = stop[1];
+    const inTop: boolean = position <= topCut + 0.0001;
+    const inBottom: boolean = position >= botStart - 0.0001;
+    const mute: boolean = (inTop && !topOn) || (inBottom && !bottomOn);
+    out.push([mute ? 0 : radius, position]);
+  }
+  return out;
+}
+
 export function topEdgeBlurStops(viewH: number, fallbackH: number = 780): FractionStop[] {
   const vh: number = viewH > 0 ? viewH : (fallbackH > 0 ? fallbackH : 780);
   const topCut: number = Math.min(TOP_BAND_VP / vh, 0.45);
@@ -114,3 +167,4 @@ export function topEdgeBlurStops(viewH: number, fallbackH: number = 780): Fracti
   out.push([0, 1]);
   return out;
 }
+

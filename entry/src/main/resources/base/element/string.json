@@ -1973,6 +1973,66 @@
       "value": "存储与性能"
     },
     {
+      "name": "settings_group_edge_blur",
+      "value": "屏幕边缘虚化"
+    },
+    {
+      "name": "settings_edge_blur_master",
+      "value": "边缘虚化"
+    },
+    {
+      "name": "settings_edge_blur_master_sub",
+      "value": "屏幕顶部与底部的模糊淡化"
+    },
+    {
+      "name": "settings_edge_blur_top",
+      "value": "顶部"
+    },
+    {
+      "name": "settings_edge_blur_top_sub",
+      "value": "页面顶部边缘的模糊淡化"
+    },
+    {
+      "name": "settings_edge_blur_bottom",
+      "value": "底部"
+    },
+    {
+      "name": "settings_edge_blur_bottom_sub",
+      "value": "页面底部边缘的模糊淡化"
+    },
+    {
+      "name": "settings_edge_blur_chat",
+      "value": "聊天页"
+    },
+    {
+      "name": "settings_edge_blur_chat_sub",
+      "value": "打开会话时顶部、底部边缘的效果"
+    },
+    {
+      "name": "settings_edge_blur_chat_list",
+      "value": "聊天列表"
+    },
+    {
+      "name": "settings_edge_blur_chat_list_sub",
+      "value": "会话列表页顶部、底部边缘的效果"
+    },
+    {
+      "name": "settings_edge_blur_pages",
+      "value": "按页面单独设置"
+    },
+    {
+      "name": "settings_edge_blur_other",
+      "value": "其他页面"
+    },
+    {
+      "name": "settings_edge_blur_other_sub",
+      "value": "除聊天页与会话列表以外的所有页面"
+    },
+    {
+      "name": "settings_edge_blur_follow",
+      "value": "跟随"
+    },
+    {
       "name": "settings_data",
       "value": "数据与存储"
     },

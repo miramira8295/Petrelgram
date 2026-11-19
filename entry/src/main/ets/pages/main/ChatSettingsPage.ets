@@ -57,7 +57,14 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
-import { BLUR_MAX_VP, EDGE_OVERLAY_VP, topEdgeBlurStops } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops, edgeBlurStopsEx, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import {
+  EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
+  KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_CHAT_BOTTOM, KEY_EDGE_BLUR_CHAT_TOP, KEY_EDGE_BLUR_LIST_BOTTOM,
+  KEY_EDGE_BLUR_LIST_TOP, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
+  KEY_EDGE_BLUR_TOP_ON,
+  edgeBlurOverrideFor, edgeBlurOtherBottomOn, edgeBlurOtherTopOn, edgeBlurStateOn
+} from '../../util/edgeBlurSetting';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { appIconAvailable } from '../../util/appIcon';
 import { AppIconPicker } from './AppIconPicker';
@@ -145,6 +152,17 @@ export function ChatSettingsPageBuilder(): void {
 
 @Component
 export struct ChatSettingsPage {
+  @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
+  @StorageProp(KEY_EDGE_BLUR_BOTTOM_ON) private edgeBlurBottomOn: boolean = EDGE_BLUR_BOTTOM_ON_DEFAULT;
+  // 页面级覆盖（聊天页 / 聊天列表页）：follow | on | off。这两个属性只为让卡片里的
+  // 三态 chip 在别处改值后跟着重画，本页自己的虚化不受它们影响。
+  @StorageProp(KEY_EDGE_BLUR_CHAT_TOP) private edgeBlurChatTop: string = EDGE_BLUR_FOLLOW;
+  @StorageProp(KEY_EDGE_BLUR_CHAT_BOTTOM) private edgeBlurChatBottom: string = EDGE_BLUR_FOLLOW;
+  @StorageProp(KEY_EDGE_BLUR_LIST_TOP) private edgeBlurListTop: string = EDGE_BLUR_FOLLOW;
+  @StorageProp(KEY_EDGE_BLUR_LIST_BOTTOM) private edgeBlurListBottom: string = EDGE_BLUR_FOLLOW;
+  @StorageProp(KEY_EDGE_BLUR_OTHER_TOP) private edgeBlurOtherTop: string = EDGE_BLUR_FOLLOW;
+  @StorageProp(KEY_EDGE_BLUR_OTHER_BOTTOM) private edgeBlurOtherBottom: string = EDGE_BLUR_FOLLOW;
 
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   private accent(): ResourceColor {
@@ -399,6 +417,68 @@ export struct ChatSettingsPage {
         setBoolean(KEY_THREE_LINES, isThree);
       }
     });
+  }
+
+  // 屏幕顶部/底部的边缘渐变虚化——注意不是顶栏、输入栏那类玻璃组件，而是内容
+  // 滚到屏幕最上沿/最下沿时的模糊淡化。两层控制：全局（总开关 + 顶部 + 底部），
+  // 再加三类页面各自的顶部/底部开关覆盖全局默认。页面项只有开/关两种状态，
+  // 没有「跟随」第三态——用户把开关拨回与全局相同的值时内部自动变回跟随。
+  @Builder
+  edgeBlurCard() {
+    Column() {
+      this.cardTitle(str('settings_group_edge_blur'));
+      this.toggleRow(str('settings_edge_blur_master'), str('settings_edge_blur_master_sub'), KEY_EDGE_BLUR_ON);
+      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+      this.toggleRow(str('settings_edge_blur_top'), str('settings_edge_blur_top_sub'), KEY_EDGE_BLUR_TOP_ON);
+      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+      this.toggleRow(str('settings_edge_blur_bottom'), str('settings_edge_blur_bottom_sub'), KEY_EDGE_BLUR_BOTTOM_ON);
+      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+      Text(str('settings_edge_blur_pages'))
+        .fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
+        .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 2 });
+      this.edgeBlurPageRow(str('settings_edge_blur_chat'), KEY_EDGE_BLUR_CHAT_TOP, KEY_EDGE_BLUR_CHAT_BOTTOM,
+        this.edgeBlurChatTop, this.edgeBlurChatBottom);
+      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+      this.edgeBlurPageRow(str('settings_edge_blur_chat_list'), KEY_EDGE_BLUR_LIST_TOP, KEY_EDGE_BLUR_LIST_BOTTOM,
+        this.edgeBlurListTop, this.edgeBlurListBottom);
+      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+      this.edgeBlurPageRow(str('settings_edge_blur_other'), KEY_EDGE_BLUR_OTHER_TOP, KEY_EDGE_BLUR_OTHER_BOTTOM,
+        this.edgeBlurOtherTop, this.edgeBlurOtherBottom);
+    }.width('100%').padding({ bottom: 4 });
+  }
+
+  // 一类页面一行：标题 + 顶部开关 + 底部开关。开关显示的是「该页面实际会不会糊」，
+  // 拨动后与全局默认相同就回到跟随（edgeBlurOverrideFor），不同才写强制值。
+  @Builder
+  edgeBlurPageRow(title: string, topKey: string, bottomKey: string, topValue: string, bottomValue: string) {
+    Row({ space: 10 }) {
+      Text(title)
+        .fontSize(16).fontColor(COLOR_TEXT_PRIMARY)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1);
+      Row({ space: 5 }) {
+        Text(str('settings_edge_blur_top')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+        Toggle({ type: ToggleType.Switch, isOn: edgeBlurStateOn(this.edgeBlurTopOn, topValue) })
+          .selectedColor(this.accent())
+          .accessibilityText(str('a11y_toggle_state', title + str('settings_edge_blur_top'),
+            edgeBlurStateOn(this.edgeBlurTopOn, topValue) ? str('state_on') : str('state_off')))
+          .onChange((value: boolean): void => {
+            setString(topKey, edgeBlurOverrideFor(this.edgeBlurTopOn, value));
+          });
+      }.alignItems(VerticalAlign.Center);
+      Row({ space: 5 }) {
+        Text(str('settings_edge_blur_bottom')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+        Toggle({ type: ToggleType.Switch, isOn: edgeBlurStateOn(this.edgeBlurBottomOn, bottomValue) })
+          .selectedColor(this.accent())
+          .accessibilityText(str('a11y_toggle_state', title + str('settings_edge_blur_bottom'),
+            edgeBlurStateOn(this.edgeBlurBottomOn, bottomValue) ? str('state_on') : str('state_off')))
+          .onChange((value: boolean): void => {
+            setString(bottomKey, edgeBlurOverrideFor(this.edgeBlurBottomOn, value));
+          });
+      }.alignItems(VerticalAlign.Center);
+    }
+    .width('100%').height(64).padding({ left: 16, right: 13 })
+    .alignItems(VerticalAlign.Center);
   }
 
   // 浮层材质厚度。降级路径（低于 API 26）上它驱动自绘玻璃的高斯模糊半径，
@@ -1082,6 +1162,10 @@ export struct ChatSettingsPage {
             this.materialThicknessCard();
           }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
 
+          Column() {
+            this.edgeBlurCard();
+          }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
+
           // 光感等级任何 API 上都有东西可管：API 20 起的 hdsEffect 点光 / 按压阴影（util/hdsPointLight）读的
           // 就是它。以前按材质可用与否藏起来，老设备（和没报沉浸材质的设备）上档位照样生效却调不了。
           Column() {
@@ -1120,8 +1204,8 @@ export struct ChatSettingsPage {
       // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
       .clip(false)
       // 边缘渐变虚化：与设置页/首页同一套参数（顶/底 118vp、峰 22px）。
-      .linearGradientBlur(BLUR_MAX_VP, {
-        fractionStops: topEdgeBlurStops(this.blurViewH),
+      .linearGradientBlur(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), {
+        fractionStops: edgeBlurStopsEx(this.blurViewH, 780, 0, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
         direction: GradientDirection.Bottom
       })
       .onAreaChange((_old: Area, area: Area): void => {
