@@ -21,6 +21,7 @@ assert.ok(closeStart > 0 && closeEnd > closeStart);
 const closeOwnedResources = storeSource.slice(closeStart, closeEnd) + '\n  }';
 vm.runInContext(compile(`class StoreHarness {
  client: Object; chatId: number; messages: Object[]; checklistClosed=false; checklistOps=null;
+ closed=false; retryTimers=new Set();
  fullRichLoader=null; richTaskRequests=new Map(); applied=[]; notices=0;
  constructor(client,chatId,messages){this.client=client;this.chatId=chatId;this.messages=messages;}
  indexOf(id){return this.messages.findIndex(m=>m.id===id);}

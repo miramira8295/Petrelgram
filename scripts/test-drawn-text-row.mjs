@@ -58,6 +58,8 @@ const ctx=vm.createContext({StaticMiniThumbnail:class{constructor(_owner,params)
   tableScrollTouched:()=>false,isEdgeSwipeStart:x=>x<36,SWIPE_REPLY_MAX:-70,SWIPE_REPLY_TRIGGER:-40,SWIPE_SELECT_MAX:70,SWIPE_SELECT_TRIGGER:40,
   Curve:{EaseOut:1},Date:{now:()=>1000},messageDragType:()=> 'general.plain-text'});
 function load(path,names=[]){const s=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/@(?:Require|Param|Local|Computed|Event|ObservedV2|Trace)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'').replace(/\bexport /g,'');vm.runInContext(ts.transpileModule(s+names.map(n=>`\nglobalThis.${n}=${n};`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx,{filename:path});}
+ctx.AppStorage={get:()=>undefined};
+load(root+'util/systemFontWeight.ets');
 ctx.DrawModifier=class { invalidate(){} };
 ctx.COLOR_TEXT_PRIMARY='black';
 load(root+'util/drawnTextUnits.ets');

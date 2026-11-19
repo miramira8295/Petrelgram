@@ -10,6 +10,8 @@ class RoundRect {constructor(rect,x,y){allocations++;this.rect=rect;this.x=x;thi
 Object.assign(ctx,{drawing:{Brush:Paint,Pen:Paint,Path,RoundRect,CapStyle:{ROUND_CAP:1},JoinStyle:{ROUND_JOIN:1}},ColorMetrics:{resourceColor:()=>({alpha:255,red:1,green:2,blue:3})},COLOR_TEXT_PRIMARY:'primary',COLOR_TEXT_SECONDARY:'secondary',COLOR_ICON_SECONDARY:'icon'});
 function load(path,names){const s=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/\bexport /g,'').replace(/@(?:Require|Param|Local|Computed|Event)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'');vm.runInContext(ts.transpileModule(s+names.map(n=>`\nglobalThis.${n}=${n};`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);}
 const src='entry/src/main/ets/pages/chat/';
+ctx.AppStorage={get:()=>undefined};
+load('entry/src/main/ets/util/systemFontWeight.ets',[]);
 load(src+'DrawnTextLine.ets',['DrawnTextLineCache']);
 load(src+'DrawnMediaControl.ets',['DrawnMediaControl']);
 load(src+'DrawnLocationDecorations.ets',['DrawnLocationPreview','DrawnLocationBadge','DrawnLocationStop']);

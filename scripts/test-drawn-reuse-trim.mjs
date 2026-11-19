@@ -9,6 +9,9 @@ const ctx=vm.createContext({ViewV2:class{},ViewPU:class{},ImageFit:{Cover:0},Hit
 function load(path,names){const source=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'')
  .replace(/@(?:Require|Param|Local|Computed|Event|ObservedV2|Trace)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'').replace(/\bexport /g,'');
  vm.runInContext(ts.transpileModule(source+names.map(n=>`\nglobalThis.${n}=${n};`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx,{filename:path});}
+ctx.AppStorage={get:()=>undefined};
+ctx.text={FontWeight:Object.fromEntries(Array.from({length:9},(_,i)=>['W'+(i+1)*100,i]))};
+load(root+'util/systemFontWeight.ets',[]);
 load(root+'util/drawnTextUnits.ets',['DrawnTextUnits']);
 let conversions=0,density=2,fontScale=1;
 const ui={vp2px:n=>{conversions++;return n*density;},fp2px:n=>{conversions++;return n*density*fontScale+(n>14?3:0);}};

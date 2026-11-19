@@ -22,7 +22,7 @@ const WEIGHTS: text.FontWeight[] = [text.FontWeight.W100, text.FontWeight.W200, 
 // 返回是否真的变了。
 export function seedSystemFontWeightScale(config: Configuration | undefined): boolean {
   const raw: number | undefined = config === undefined ? undefined : config.fontWeightScale;
-  const next: number = raw !== undefined && raw > 0 ? raw : DEFAULT_SCALE;
+  const next: number = raw !== undefined && Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_SCALE;
   const current: number | undefined = AppStorage.get<number>(KEY_SYS_FONT_WEIGHT_SCALE);
   if (current !== undefined && Math.abs(current - next) < 0.001) {
     return false;
@@ -36,7 +36,7 @@ export function systemFontWeightScale(): number {
     return DEBUG_FORCE_SCALE;
   }
   const value: number | undefined = AppStorage.get<number>(KEY_SYS_FONT_WEIGHT_SCALE);
-  return value !== undefined && value > 0 ? value : DEFAULT_SCALE;
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : DEFAULT_SCALE;
 }
 
 // 枚举值是 0..8 的下标（W400 = 3），所以先还原成 100..900 再乘比例，

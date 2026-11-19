@@ -167,4 +167,3 @@ export function topEdgeBlurStops(viewH: number, fallbackH: number = 780): Fracti
   out.push([0, 1]);
   return out;
 }
-

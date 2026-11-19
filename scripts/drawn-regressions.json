@@ -133,5 +133,6 @@
   "test-reaction-keys.mjs",
   "test-reaction-first-frame.mjs",
   "test-background-sharp.mjs",
-  "test-surface-tint-alignment.mjs"
+  "test-surface-tint-alignment.mjs",
+  "test-pr-session-integration.mjs"
 ]

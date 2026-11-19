@@ -9,6 +9,8 @@ class Path {constructor(){allocations++;}reset(){}moveTo(){}lineTo(){}cubicTo(){
 class RoundRect {constructor(rect,x,y){allocations++;this.rect=rect;this.x=x;this.y=y;} }
 Object.assign(ctx,{drawing:{Brush:Paint,Pen:Paint,Path,RoundRect,CapStyle:{ROUND_CAP:1},JoinStyle:{ROUND_JOIN:1}},ColorMetrics:{resourceColor:()=>({alpha:255,red:1,green:2,blue:3})}});
 function load(name,exports){let s=fs.readFileSync('entry/src/main/ets/pages/chat/'+name+'.ets','utf8').split('@ComponentV2')[0].replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/\bexport /g,'');vm.runInContext(ts.transpileModule(s+exports.map(n=>`\nglobalThis.${n}=${n};`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);}
+ctx.AppStorage={get:()=>undefined};
+load('../../util/systemFontWeight',[]);
 load('DrawnTextLine',['DrawnTextLineCache']);load('DrawnMediaControl',['DrawnMediaControl']);load('DrawnMediaRetry',['DrawnRetryDecoration']);
 const p=new ctx.DrawnRetryDecoration(),dc={canvas:new Proxy({}, {get:()=>()=>{}})};
 const bind=(content='retry',width=100,env='env',color='#FFFFFF',d=1)=>p.bind({...ui,density:d},env,content,width,17,7,7,'#80000000',color);

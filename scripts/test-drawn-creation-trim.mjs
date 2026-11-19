@@ -45,6 +45,8 @@ assert.equal(completed.length,before,'unsupported capture completes once');asser
 capture.captured()();assert.equal(captured,'');
 console.log('PASS: deletion restore/recycle/A-B-A reject late capture, old completion retains original channel, 1000 unchanged binds have no writes.');
 
+ctx.AppStorage={get:()=>undefined};
+load(root+'util/systemFontWeight.ets',[]);
 load(root+'util/drawnTextDirection.ets',[]);
 load(root+'pages/chat/DrawnTextLine.ets',['DrawnTextLineCache']);
 load(root+'pages/chat/DrawnVideoDecoration.ets',['DrawnVideoDecoration']);
