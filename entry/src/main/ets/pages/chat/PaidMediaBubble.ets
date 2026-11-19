@@ -1,12 +1,58 @@
+import { CachedImage } from '../common/CachedImage';
+import { CachedImageSpec, CachedImageSpecCache } from '../../util/cachedImageSpec';
+import { DrawnMediaTexts, DrawnMediaTextPlan, DrawnMediaTextPainter } from './DrawnMediaText';
+import { DrawnMediaPlaceholder } from './DrawnMediaPlaceholder';
+import { DrawnTextUnits } from '../../util/drawnTextUnits';
+import { DrawnTextLine, DrawnTextLineCache } from './DrawnTextLine';
+import { DrawnLoadingSpinner } from './DrawnLoadingSpinner';
+import { DrawnCardBar } from './DrawnCardBar';
+import { DrawnMediaControl } from './DrawnMediaControl';
+import { chatEnv } from '../../util/chatEnvMirror';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 import { DrawnPaidMediaLayout, DrawnPaidMediaTextPainter } from './DrawnPaidMediaLayout';
+import { PaidMediaSet } from '../../util/paidMediaModel';
+import { DrawnPaidMediaGridLayouts, DrawnPaidMediaGridPlan } from './DrawnPaidMediaGridLayout';
+import { DrawnPaidMediaGrid } from './DrawnPaidMediaGrid';
 
 // P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
 @ComponentV2
 export struct PaidMediaBubble {
+  private env = chatEnv;
+  private countUnits: DrawnTextUnits = new DrawnTextUnits();
+  private countLabels: DrawnTextLineCache = new DrawnTextLineCache();
+  private countPainter: DrawnCardBar = new DrawnCardBar();
+  private actionPainter: DrawnCardBar = new DrawnCardBar();
+  private lockPainter: DrawnMediaControl = new DrawnMediaControl();
+  private playPainter: DrawnMediaControl = new DrawnMediaControl();
+  private retryPainter: DrawnCardBar = new DrawnCardBar();
+  @Computed private get environment(): string { return `${this.env.appearanceEpoch}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`; }
+  private posterSpecs: CachedImageSpecCache = new CachedImageSpecCache();
+  private fallbackLabels: DrawnMediaTexts = new DrawnMediaTexts();
+  private fallbackNotes: DrawnMediaTexts = new DrawnMediaTexts();
+  private fallbackLabelPainter: DrawnMediaTextPainter = new DrawnMediaTextPainter();
+  private fallbackNotePainter: DrawnMediaTextPainter = new DrawnMediaTextPainter();
+  private placeholderPainter: DrawnMediaControl = new DrawnMediaControl();
+  @Computed private get posterSpec(): CachedImageSpec {
+    return this.posterSpecs.prepare({ path: this.photoPath, boxWidth: this.cardWidth(), boxHeight: this.artworkHeight(),
+      fit: ImageFit.Cover, drawOnCanvas: true, sourceKey: `${this.ownerKey}:${this.messageId}:${this.photoFileId}` });
+  }
+  @Computed private get fallbackText(): DrawnMediaTextPlan {
+    return this.fallbackLabels.prepare(this.getUIContext(), this.environment, this.cardWidth(),
+      str(this.locked ? 'paid_media' : 'paid_media_unlocked'), 14, COLOR_TEXT_PRIMARY,
+      this.caption.trim() !== '' ? this.caption : '', 11.5, COLOR_TEXT_SECONDARY, 1, true, 2, 0, false, false, 2);
+  }
+  @Computed private get fallbackNote(): DrawnMediaTextPlan {
+    return this.fallbackNotes.prepare(this.getUIContext(), this.environment, this.cardWidth(),
+      str('paid_viewer_note'), 10.5, COLOR_TEXT_SECONDARY, '', 11, COLOR_TEXT_SECONDARY, 2);
+  }
+  private cardWidth(): number { return this.fitAvailableWidth ? Math.max(1, this.maxWidth) : Math.max(224, Math.min(280, this.maxWidth)); }
   @Param prepared: DrawnPaidMediaLayout | null = null;
   private textPainter: DrawnPaidMediaTextPainter = new DrawnPaidMediaTextPainter();
+  @Param mediaSet: PaidMediaSet | null = null;
+  @Param ownerKey: string = '';
+  private fallbackGrids: DrawnPaidMediaGridLayouts = new DrawnPaidMediaGridLayouts();
   @Param messageId: number = 0;
   @Param locked: boolean = true;
   @Param starCount: number = 0;
@@ -25,6 +71,7 @@ export struct PaidMediaBubble {
   @Event onBeforeAction: () => boolean = (): boolean => true;
   @Param onUnlock: (messageId: number) => void = (_messageId: number): void => {};
   @Param onOpen: (messageId: number) => void = (_messageId: number): void => {};
+  @Param onOpenAt: ((messageId: number, index: number) => void) | null = null;
   @Param onRetryPhoto: (messageId: number) => void = (_messageId: number): void => {};
 
   @Styles
@@ -37,6 +84,16 @@ export struct PaidMediaBubble {
   private pressedStyle(): void {
     .scale({ x: 0.985, y: 0.985 })
     .opacity(0.82)
+  }
+
+  @Computed private get countLabel(): DrawnTextLine {
+    const units = this.countUnits.prepare(this.getUIContext(), this.environment);
+    return this.countLabels.prepare(this.countText(), Math.max(1, this.cardWidth() - (this.locked ? 32 : 51)) * units.density,
+      units.fp2px(this.locked ? 13 : 10.5), { alpha: 255, red: 255, green: 255, blue: 255 }, this.environment, true);
+  }
+  @Computed private get countWidth(): number {
+    const label = this.countLabel;
+    return Math.max(1, Math.min(this.cardWidth() - 16, label.widthPx / this.countUnits.density + (this.locked ? 16 : 35)));
   }
 
   private countText(): string {
@@ -63,14 +120,22 @@ export struct PaidMediaBubble {
     return this.mediaKind === 'video' ? str('paid_play_video') : str('paid_view_photo');
   }
 
-  private trigger(): void {
-    if (!this.available() || this.pending || !this.onBeforeAction()) {
+  @Computed private get mediaGrid(): DrawnPaidMediaGridPlan | null {
+    if (this.mediaSet === null || this.mediaSet.items.length === 0) { return null; }
+    return this.prepared?.grid ?? this.fallbackGrids.prepare(this.mediaSet,
+      this.fitAvailableWidth ? Math.max(1, this.maxWidth) : Math.max(224, Math.min(280, this.maxWidth)));
+  }
+  private artworkHeight(): number { return this.mediaGrid?.height ?? this.prepared?.artworkHeight ?? 156; }
+  private trigger(index: number = 0): void {
+    const selectedReady = this.mediaSet !== null && !this.locked ? (this.mediaSet.viewerIndices[index] ?? -1) >= 0 : this.available();
+    if (!selectedReady || this.pending || !this.onBeforeAction()) {
       return;
     }
     if (this.locked) {
       this.onUnlock(this.messageId);
     } else {
-      this.onOpen(this.messageId);
+      if (this.onOpenAt !== null && this.onOpenAt !== undefined) { this.onOpenAt(this.messageId, index); }
+      else { this.onOpen(this.messageId); }
     }
   }
 
@@ -83,94 +148,91 @@ export struct PaidMediaBubble {
           angle: 135,
           colors: [['#D9C8F7', 0], ['#BDDDF8', 0.48], ['#F4D6E9', 1]]
         });
-      Row({ space: 8 }) {
-        ForEach([0, 1, 2, 3], (index: number) => {
-          Column()
-            .width(index % 2 === 0 ? 44 : 54)
-            .height(index % 2 === 0 ? 72 : 88)
-            .backgroundColor(index % 2 === 0 ? '#52FFFFFF' : '#3AFFFFFF')
-            .borderRadius(12)
-            .rotate({ angle: index % 2 === 0 ? -9 : 8 });
-        }, (index: number): string => `${index}`);
-      }
-      .opacity(0.8)
-      .blur(8);
-      Column({ space: 7 }) {
-        Stack() {
-          Circle({ width: 44, height: 44 }).fill('#B8000000');
-          SymbolGlyph($r('sys.symbol.lock_fill')).fontSize(19).fontColor([Color.White]);
+      if (this.mediaGrid !== null && this.mediaSet !== null) {
+        DrawnPaidMediaGrid({ mediaSet: this.mediaSet, gridPlan: this.mediaGrid, ownerKey: this.ownerKey,
+          locked: true, density: this.prepared?.density ?? this.getUIContext().vp2px(1), onOpen: (index: number): void => this.trigger(index) });
+      } else {
+        Row({ space: 8 }) {
+          ForEach([0, 1, 2, 3], (index: number) => {
+            Column()
+              .width(index % 2 === 0 ? 44 : 54)
+              .height(index % 2 === 0 ? 72 : 88)
+              .backgroundColor(index % 2 === 0 ? '#52FFFFFF' : '#3AFFFFFF')
+              .borderRadius(12)
+              .rotate({ angle: index % 2 === 0 ? -9 : 8 });
+          }, (index: number): string => `${index}`);
         }
-        Text(this.countText())
-          .fontSize(13).fontWeight(FontWeight.Medium).fontColor(Color.White)
-          .maxLines(this.prepared ? 1 : undefined)
-          .constraintSize({ maxWidth: this.prepared ? Math.max(1, this.maxWidth - 16) : undefined })
-          .textShadow({ radius: 5, color: '#66000000', offsetX: 0, offsetY: 1 });
+        .opacity(0.8)
+        .blur(8);
       }
+      Column({ space: 7 }) {
+        Row().width(44).height(44)
+          .drawModifier(this.lockPainter.bind(this.getUIContext(), this.environment, 44, '#B8000000', '#FFFFFF', 'lock'));
+        Row().width(this.countWidth).height(Math.max(24, this.prepared?.badgeHeight ?? 24))
+          .drawModifier(this.countPainter.bind(this.getUIContext(), {
+            width: this.countWidth, height: Math.max(24, this.prepared?.badgeHeight ?? 24),
+            environment: this.environment, centerPrepared: this.countLabel, centerColor: '#FFFFFF',
+            background: '#70000000', radius: 9, paddingLeft: 8, paddingRight: 8
+          }));
+      }.hitTestBehavior(HitTestMode.None);
     }
-    .width('100%').height(this.prepared?.artworkHeight ?? 156)
+    .width('100%').height(this.artworkHeight())
     .borderRadius(12).clip(true);
   }
 
   @Builder
   private unlockedArtwork() {
     Stack() {
-      if (this.photoPath !== '') {
-        Image(this.photoPath.startsWith('/') ? `file://${this.photoPath}` : this.photoPath).draggable(false)
-          .width('100%').height(this.prepared?.artworkHeight ?? 156).objectFit(ImageFit.Cover)
-          .transition(TransitionEffect.OPACITY.animation({
-            duration: 180, curve: Curve.EaseOut
-          }));
+      if (this.mediaGrid !== null && this.mediaSet !== null) {
+        DrawnPaidMediaGrid({ mediaSet: this.mediaSet, gridPlan: this.mediaGrid, ownerKey: this.ownerKey,
+          locked: false, density: this.prepared?.density ?? this.getUIContext().vp2px(1), onOpen: (index: number): void => this.trigger(index) });
+      } else if (this.photoPath !== '') {
+        CachedImage({ spec: this.posterSpec })
+          .transition(TransitionEffect.OPACITY.animation({ duration: 180, curve: Curve.EaseOut }));
       } else {
         Column({ space: 8 }) {
-          SymbolGlyph($r(this.mediaKind === 'video'
-            ? 'sys.symbol.video_fill' : 'sys.symbol.photo_fill'))
-            .fontSize(30).fontColor([COLOR_ICON_SECONDARY]);
-          Text(this.photoFileId === 0 ? $r('app.string.paid_media_unavailable') : $r('app.string.paid_loading_unlocked'))
-            .fontSize(11.5).fontColor(COLOR_TEXT_SECONDARY);
-        }
-        .width('100%').height(this.prepared?.artworkHeight ?? 156)
-        .justifyContent(FlexAlign.Center)
-        .backgroundColor('#E9EDF2');
+          Row().width(36).height(36).hitTestBehavior(HitTestMode.None)
+            .drawModifier(this.placeholderPainter.bind(this.getUIContext(), this.environment, 36,
+              '#00000000', COLOR_ICON_SECONDARY, this.mediaKind === 'video' ? 'play' : 'photo'));
+          DrawnMediaPlaceholder({ primaryKey: this.photoFileId === 0 ? 'paid_media_unavailable' : 'paid_loading_unlocked',
+            primarySize: 11.5, boxWidth: this.cardWidth(), boxHeight: 36 });
+        }.width('100%').height(this.artworkHeight()).justifyContent(FlexAlign.Center).backgroundColor('#E9EDF2');
       }
-      if (this.photoPath === '' && this.photoFileId !== 0) {
+      if (this.mediaGrid === null && this.photoPath === '' && this.photoFileId !== 0) {
         if (this.photoFailed) {
-          Column({ space: 4 }) {
-            SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-              .fontSize(19).fontColor([Color.White]);
-            Text($r('app.string.settings_retry')).fontSize(10.5).fontColor(Color.White);
-          }
-          .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-          .backgroundColor('#85000000').borderRadius(12)
+          Row().width(Math.min(130, this.cardWidth() - 16)).height(40)
+          .drawModifier(this.retryPainter.bind(this.getUIContext(), {
+            width: Math.min(130, this.cardWidth() - 16), height: 40, environment: this.environment,
+            center: `↻ ${str('settings_retry')}`, centerFont: 10.5, centerColor: '#FFFFFF', background: '#85000000', radius: 12
+          }))
           .onClick((): void => { if (this.onBeforeAction()) { this.onRetryPhoto(this.messageId); } });
         } else if (this.photoProgress > 0) {
-          Stack() {
-            Progress({ value: this.photoProgress, total: 100, type: ProgressType.Ring })
-              .width(34).height(34).color(Color.White);
-            Text(`${this.photoProgress}%`).fontSize(9).fontColor(Color.White);
-          }
+          DrawnLoadingSpinner({ ringSize: 34, ringColor: '#FFFFFF', ringStroke: 2.5,
+            percent: this.photoProgress, showPercent: true })
           .padding(7).backgroundColor('#70000000').borderRadius(24);
         } else {
-          LoadingProgress().width(26).height(26).color(Color.White)
+          DrawnLoadingSpinner({ ringSize: 26, ringColor: Color.White })
             .padding(8).backgroundColor('#70000000').borderRadius(22);
         }
       }
-      if (this.mediaKind === 'video' && this.available()) {
-        Stack() {
-          Circle({ width: 42, height: 42 }).fill('#98000000');
-          SymbolGlyph($r('sys.symbol.play_fill')).fontSize(18).fontColor([Color.White]);
-        }
+      if (this.mediaGrid === null && this.mediaKind === 'video' && this.available()) {
+        Row().width(42).height(42)
+          .drawModifier(this.playPainter.bind(this.getUIContext(), this.environment, 42, '#98000000', '#FFFFFF', 'play'));
       }
-      Row({ space: 5 }) {
-        SymbolGlyph($r('sys.symbol.lock_open_fill')).fontSize(11).fontColor([Color.White]);
-        Text(this.countText()).fontSize(10.5).fontColor(Color.White).maxLines(this.prepared ? 1 : undefined)
-          .constraintSize({ maxWidth: this.prepared ? Math.max(1, this.maxWidth - 27 - this.prepared.badgeHeight) : undefined });
+      Stack({ alignContent: Alignment.TopStart }) {
+        Row().width(20).height(20)
+          .drawModifier(this.lockPainter.bind(this.getUIContext(), this.environment, 20, '#00000000', '#FFFFFF', 'lock-open'))
+          .position({ x: 5, y: Math.max(0, ((this.prepared?.badgeHeight ?? 24) - 20) / 2) });
       }
-      .padding({ left: 7, right: 7, top: 4, bottom: 4 })
-      .height(this.prepared?.badgeHeight)
-      .backgroundColor('#85000000').borderRadius(9)
-      .position({ x: 8, y: this.prepared ? Math.max(0, this.prepared.artworkHeight - this.prepared.badgeHeight - 8) : 124 });
+      .width(this.countWidth).height(this.prepared?.badgeHeight ?? 24)
+      .drawModifier(this.countPainter.bind(this.getUIContext(), {
+        width: this.countWidth, height: this.prepared?.badgeHeight ?? 24, environment: this.environment,
+        leftPrepared: this.countLabel, leftColor: '#FFFFFF', background: '#85000000', radius: 9, paddingLeft: 28, paddingRight: 7
+      }))
+      .position({ x: 8, y: this.prepared ? Math.max(0, this.artworkHeight() - this.prepared.badgeHeight - 8) : this.artworkHeight() - 32 })
+      .hitTestBehavior(HitTestMode.None);
     }
-    .width('100%').height(this.prepared?.artworkHeight ?? 156)
+    .width('100%').height(this.artworkHeight())
     .borderRadius(12).clip(true);
   }
 
@@ -184,39 +246,29 @@ export struct PaidMediaBubble {
       if (this.prepared !== null) {
         Row().width('100%').height(this.prepared.textHeight);
       } else {
-        Row() {
-          Column({ space: 2 }) {
-            Text(this.locked ? $r('app.string.paid_media') : $r('app.string.paid_media_unlocked'))
-              .fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
-            if (this.caption.trim() !== '') {
-              Text(this.caption).fontSize(11.5).fontColor(COLOR_TEXT_SECONDARY)
-                .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis });
-            }
-            if (!this.locked && this.mediaCount > 1 && !this.completeSet) {
-              Text($r('app.string.paid_viewer_note'))
-                .fontSize(10.5).fontColor(COLOR_TEXT_SECONDARY)
-                .maxLines(2);
-            }
-          }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-        }.width('100%');
+        Column({ space: 2 }) {
+          Row().width(this.fallbackText.width).height(this.fallbackText.height)
+            .drawModifier(this.fallbackLabelPainter.bind(this.fallbackText))
+            .accessibilityText(`${str(this.locked ? 'paid_media' : 'paid_media_unlocked')}. ${this.caption}`);
+          if (!this.locked && this.mediaCount > 1 && !this.completeSet) {
+            Row().width(this.fallbackNote.width).height(this.fallbackNote.height)
+              .drawModifier(this.fallbackNotePainter.bind(this.fallbackNote)).accessibilityText(str('paid_viewer_note'));
+          }
+        }.width('100%').alignItems(HorizontalAlign.Start);
       }
-      Row({ space: 6 }) {
+      Stack({ alignContent: Alignment.TopStart }) {
         if (this.pending) {
-          LoadingProgress().width(16).height(16).color(Color.White);
-          Text($r('app.string.paid_checking')).fontSize(12.5).fontColor(Color.White)
-            .maxLines(this.prepared ? 1 : undefined).textOverflow({ overflow: TextOverflow.Ellipsis })
-            .constraintSize({ maxWidth: this.prepared ? Math.max(1, this.maxWidth - 38) : undefined });
-        } else {
-          Text(this.actionText())
-            .fontSize(12.5).fontWeight(FontWeight.Medium).fontColor(Color.White)
-            .maxLines(this.prepared ? 1 : undefined).textOverflow({ overflow: TextOverflow.Ellipsis })
-            .constraintSize({ maxWidth: this.prepared ? Math.max(1, this.maxWidth - 16) : undefined });
+          DrawnLoadingSpinner({ ringSize: 16, ringColor: '#FFFFFF' })
+            .position({ x: 8, y: Math.max(0, ((this.prepared?.buttonHeight ?? 36) - 16) / 2) });
         }
       }
       .width('100%').height(this.prepared?.buttonHeight ?? 36)
-      .justifyContent(FlexAlign.Center)
-      .backgroundColor(this.available() ? COLOR_PRIMARY : '#A7AFB8')
-      .borderRadius(10)
+      .drawModifier(this.actionPainter.bind(this.getUIContext(), {
+        width: this.cardWidth(), height: this.prepared?.buttonHeight ?? 36, environment: this.environment,
+        center: this.pending ? str('paid_checking') : this.actionText(), centerFont: 12.5, centerColor: '#FFFFFF',
+        background: this.available() ? COLOR_PRIMARY : '#A7AFB8', radius: 10, paddingLeft: this.pending ? 30 : 8, paddingRight: 8
+      }))
+      .accessibilityText(this.pending ? str('paid_checking') : this.actionText())
       .stateStyles({
         normal: this.normalStyle,
         pressed: this.pressedStyle

@@ -208,7 +208,7 @@ import webAppUrlTest from './WebAppUrl.test';
 import miniAppTest from './MiniApp.test';
 import playSlotTest from './PlaySlot.test';
 import playSlotRegistryTest from './PlaySlotRegistry.test';
-import backgroundBlurTest from './BackgroundBlur.test';
+import backgroundRasterTest from './BackgroundRaster.test';
 import themeTest from './Theme.test';
 import patternTileGridTest from './PatternTileGrid.test';
 import mediaThumbChannelTest from './MediaThumbChannel.test';
@@ -615,7 +615,7 @@ export default function testsuite() {
   customEmojiReactionsTest();
   inlineCustomEmojiPaintTest();
   markdownBlocksTest();
-  backgroundBlurTest();
+  backgroundRasterTest();
   themeTest();
   patternTileGridTest();
   mediaThumbChannelTest();

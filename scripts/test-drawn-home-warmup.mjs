@@ -37,13 +37,13 @@ function runtime() {
   assert.equal(r.frames.length, 1); assert.equal(r.frames[0].delay, 1000);
   r.tick(); assert.equal(r.allocations(), 0, 'message-job start occupies its own idle callback');
   for (let i = 0; i < 6; i++) { r.tick(); assert.equal(pool.prepared, i + 1); assert.ok(r.frames.length <= 1); }
-  assert.equal(r.allocations(), 16, 'two rows: eight native brushes/pens each');
+  assert.equal(r.allocations(), 14, 'two rows: seven native brushes/pens each after removing the shadow brush');
   assert.equal(r.listeners.size, 0); assert.equal(r.timers.size, 0); assert.equal(r.frames.length, 0);
   const originals = [...pool.backgrounds, ...pool.avatars, ...pool.foregrounds];
   const acquired = [];
   for (let i = 0; i < 2; i++) acquired.push(pool.takeBackground(), pool.takeAvatar(), pool.takeForeground());
   assert.equal(new Set(acquired).size, 6); assert.ok(acquired.every(x => originals.includes(x)));
-  assert.equal(r.allocations(), 16, 'warm acquisition really skips native constructors');
+  assert.equal(r.allocations(), 14, 'warm acquisition really skips native constructors');
   assert.equal(pool.hits, 6);
   acquired[0].plan = { identity: 'first-row' };
   const third = pool.takeBackground(); assert.ok(!acquired.includes(third)); assert.equal(third.plan, null);

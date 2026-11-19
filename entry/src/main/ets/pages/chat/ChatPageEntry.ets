@@ -10,7 +10,7 @@ import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { KEY_APP_DARK } from '../../util/theme';
 import {
-  BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, KEY_AUTOPLAY_MUTED, KEY_BG_BLUR, KEY_BG_BLUR_DARK,
+  BG_PATTERN_DEFAULT, KEY_AUTOPLAY_MUTED,
   KEY_BG_PATTERN, KEY_BG_PATTERN_DARK, KEY_CHAT_DIM, KEY_CHAT_DIM_LIGHT,
   KEY_LOCAL_BG_EPOCH, KEY_POWER_ACTIVE, KEY_POWER_AUTOPLAY_VIDEO,
   KEY_POWER_CHAT_EFFECTS, KEY_POWER_EMOJI,
@@ -54,9 +54,7 @@ struct ChatPageChrome {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp(KEY_APP_DARK) appDark: boolean = false;
   @StorageProp(KEY_LOCAL_BG_EPOCH) localBgEpoch: number = 0;
-  // 四个槽位各自拥有模糊、纹理和暗度键；这里按当前主题只把聊天槽位的一套下传。
-  @StorageProp(KEY_BG_BLUR) chatBgBlurLight: number = BG_BLUR_DEFAULT;
-  @StorageProp(KEY_BG_BLUR_DARK) chatBgBlurDark: number = BG_BLUR_DEFAULT;
+  // 四个槽位各自拥有纹理和暗度键；这里按当前主题只把聊天槽位的一套下传。
   @StorageProp(KEY_BG_PATTERN) chatBgPatternLight: number = BG_PATTERN_DEFAULT;
   @StorageProp(KEY_BG_PATTERN_DARK) chatBgPatternDark: number = BG_PATTERN_DEFAULT;
   @StorageProp(KEY_CHAT_DIM_LIGHT) chatBgDimLight: number = 0;
@@ -99,7 +97,6 @@ struct ChatPageChrome {
       appearanceEpoch: this.appearanceEpoch,
       materialEpoch: this.materialEpoch,
       localBgEpoch: this.localBgEpoch,
-      chatBgBlur: this.appDark ? this.chatBgBlurDark : this.chatBgBlurLight,
       chatBgPattern: this.appDark ? this.chatBgPatternDark : this.chatBgPatternLight,
       chatBgDim: this.appDark ? this.chatBgDimDark : this.chatBgDimLight,
       unifiedBackground: this.unifiedBg && isSplitByBreakpoint(

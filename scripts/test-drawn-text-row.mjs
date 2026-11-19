@@ -41,7 +41,7 @@ class ParagraphBuilder {
   build(){return new Paragraph(this.style,this.parts);}
 }
 const enumMock=new Proxy({},{get:(_t,k)=>k});
-const ctx=vm.createContext({ViewV2:class{},ViewPU:class{},Color:{White:'white'},$r:x=>({resource:x}),
+const ctx=vm.createContext({StaticMiniThumbnail:class{constructor(_owner,params){this.params=params;}},ViewV2:class{},ViewPU:class{},Color:{White:'white'},$r:x=>({resource:x}),
   ColorMetrics:{resourceColor:()=>({alpha:255,red:10,green:20,blue:30})},
   text:{ParagraphBuilder,FontCollection:{getGlobalInstance:()=>({})},FontWeight:enumMock,FontStyle:enumMock,
     TextBadgeType:enumMock,TextDecorationType:enumMock,TextDirection:enumMock,TextAlign:enumMock,WordBreak:enumMock,
@@ -61,15 +61,19 @@ function load(path,names=[]){const s=fs.readFileSync(path,'utf8').replace(/^impo
 ctx.DrawModifier=class { invalidate(){} };
 ctx.COLOR_TEXT_PRIMARY='black';
 load(root+'util/drawnTextUnits.ets');
+load(root+'util/reactionPresentation.ets');
+load(root+'util/reactionSenders.ets');
 load(root+'util/contactVcardSummary.ets');
 load(root+'pages/chat/DrawnMediaColors.ets');
-for(const file of ['drawnTextDirection','mediaBox','messageBubblePresentation','bubbleCornerInset','bubbleGlassPath','drawnPlainTextPolicy','drawnFooterPlacement','richText','messageLinkAction','translationMode','drawnInlineIcon','richBlocks','tableLayout','drawnTableGrid','drawnPageButton','drawnDocumentMedia','documentEmbedNavigation','drawnDocumentWidget','documentEmbedMetrics','androidSmallAlbumGeometry','packAlbumRows'])load(root+'util/'+file+'.ets');
+for(const file of ['formatFileSize','fileMessage','filePreview','richMessageTaskEdit','checklistModel','drawnTextDirection','mediaBox','messageBubblePresentation','bubbleCornerInset','bubbleGlassPath','drawnPlainTextPolicy','drawnFooterPlacement','richText','messageLinkAction','translationMode','drawnInlineIcon','richBlocks','tableLayout','drawnTableGrid','drawnTableGeometry','drawnPageButton','drawnDocumentMedia','documentEmbedNavigation','drawnDocumentWidget','documentEmbedMetrics','androidSmallAlbumGeometry','packAlbumRows'])load(root+'util/'+file+'.ets');
 load(root+'util/paidMediaModel.ets',['parsePaidMediaSet','paidMediaViewerTarget']);
 vm.runInContext('globalThis.actualParser=parseFormattedText',ctx);ctx.countParse=(...a)=>{parseCalls++;return ctx.actualParser(...a);};
 vm.runInContext('parseFormattedText=countParse',ctx);
-for(const file of ['drawnSourcePool','drawnRichHitIndex','drawnRichTextPolicy','drawnDocumentAnchors','drawnAlbumPolicy','drawnTextRowPolicy','drawnContentPolicy','messageDragGesture'])load(root+'util/'+file+'.ets',[file==='messageDragGesture'?'MessageDragGesture':file==='drawnTextRowPolicy'?'drawnTextRowEligible':file==='drawnRichTextPolicy'?'DrawnRichSourceCache':'drawnTailGutter']);
+for(const file of ['drawnSourcePool','drawnRichHitIndex','drawnRichTextPolicy','drawnRichFlow','drawnExpandedBlocks','drawnDocumentAnchors','drawnAlbumPolicy','drawnTextRowPolicy','drawnContentPolicy','messageDragGesture'])load(root+'util/'+file+'.ets',[file==='messageDragGesture'?'MessageDragGesture':file==='drawnTextRowPolicy'?'drawnTextRowEligible':file==='drawnRichTextPolicy'?'DrawnRichSourceCache':'drawnTailGutter']);
 load(root+'util/pollRichSource.ets');
-for(const file of ['DrawnGiveawayLayout','DrawnPaidMediaLayout','DrawnGiftLayout','DrawnGameLayout','DrawnPollLayout','DrawnContactLayout','DrawnStickerSource','DrawnGiveawaySource','DrawnGiftSource','DrawnPaidMediaSource','DrawnGameSource','DrawnDiceSource','DrawnVideoNoteSource','DrawnPollMessageSource','DrawnLocationMessageSource','DrawnContactMessageSource','DrawnVoiceMessageSource','DrawnFileMessageSource','DrawnStructuredSource','DrawnTranslatedSource','DrawnWebPreviewSource','DrawnTextLine','DrawnRichCompositeParagraph','DrawnRichTextLayout','DrawnSenderHeader','DrawnReplyQuote','DrawnReactionLayout','DrawnBubbleChrome','DrawnBubbleGeometry','DrawnBubblePlan','DrawnTextFooter','DrawnTextLayout'])load(root+'pages/chat/'+file+'.ets',file==='DrawnTextLayout'?['DrawnTextLayouts']:[]);
+load(root+'util/musicTrackModel.ets');
+load(root+'util/voiceWaveform.ets');
+for(const file of ['DrawnMediaText','DrawnFileCardLayout','DrawnDocumentCardLayout','DrawnMusicCardLayout','DrawnMusicMessageSource','DrawnLocationCardLayout','DrawnChecklistLayout','DrawnChecklistMessageSource','DrawnPaidMediaGridLayout','DrawnGiveawayAudienceLayout','DrawnGiveawayLayout','DrawnPaidMediaLayout','DrawnGiftLayout','DrawnGameLayout','DrawnPollLayout','DrawnContactLayout','DrawnStickerSource','DrawnGiveawaySource','DrawnGiftSource','DrawnPaidMediaSource','DrawnGameSource','DrawnDiceSource','DrawnVideoNoteSource','DrawnPollMessageSource','DrawnLocationMessageSource','DrawnContactMessageSource','DrawnVoiceMessageSource','DrawnFileMessageSource','DrawnStructuredSource','DrawnTranslatedSource','DrawnWebPreviewSource','DrawnTextLine','DrawnRichCompositeParagraph','DrawnRichDeepBlocks','DrawnRichTextLayout','DrawnSenderHeader','DrawnReplyQuote','DrawnReactionLayout','DrawnBubbleChrome','DrawnBubbleGeometry','DrawnBubblePlan','DrawnTextFooter','DrawnTextLayout'])load(root+'pages/chat/'+file+'.ets',file==='DrawnTextLayout'?['DrawnTextLayouts']:[]);
 load(root+'util/drawnMediaSlot.ets',['DrawnMediaSlots']);
 load(root+'util/drawnRouteMetrics.ets',['DrawnRouteReason','DrawnRouteTracker','drawnRouteMetrics']);
 load(root+'util/drawnStageMetrics.ets',['drawnStageMetrics','DrawnStage']);

@@ -13,6 +13,7 @@ import { EXT_LINK_DEFAULT, EXT_LINK_OPEN, normalizeExternalLinkPolicy } from '..
 import { copyPlainText } from '../../util/clipboard';
 import { navigateToProfile } from '../../util/profileNav';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
+import { logW } from '../../util/log';
 import { MessageEntry } from '../../store/MessageEntry';
 import { MessageStore } from '../../store/MessageStore';
 import { TdClient } from '../../tdkit/TdClient';
@@ -107,6 +108,22 @@ export class ChatMessageActionCoordinator {
 
   onGameOpen(messageId: number): void {
     this.requestBotCallback(messageId, { '@type': 'callbackQueryPayloadGame' }, 'game');
+  }
+
+  onRichTaskToggle(messageId: number, taskId: number, done: boolean): void {
+    const store = this.actions.store(); if (store === null) { return; }
+    const epoch = this.sessionEpoch, chatId = this.actions.chatId(), client = this.actions.client();
+    store.toggleRichTask(messageId, taskId, done).catch((error: Error): void => {
+      if (this.isCurrent(epoch, chatId, client)) { this.actions.toast({ message: error.message, duration: 1800 }); }
+    });
+  }
+
+  onChecklistToggle(messageId: number, taskId: number, done: boolean): void {
+    const store = this.actions.store(); if (store === null) { return; }
+    const epoch = this.sessionEpoch, chatId = this.actions.chatId(), client = this.actions.client();
+    store.toggleChecklistTask(messageId, taskId, done).catch((error: Error): void => {
+      if (this.isCurrent(epoch, chatId, client)) { this.actions.toast({ message: error.message, duration: 1800 }); }
+    });
   }
 
   onPollVote(messageId: number, optionIds: number[]): void {
@@ -383,6 +400,9 @@ export class ChatMessageActionCoordinator {
     req['url'] = tgUrl;
     this.actions.client().send(req).then((info: TdObject) => {
       const chatId = info['chat_id'] as number | undefined;
+      // 诊断：链接解析结果与当前会话的对照（用户报"多级 t.me/c 链接无法定位"）。
+      logW(`[MsgLink] url=${tgUrl} resolvedChat=${chatId} currentChat=${this.actions.chatId()}` +
+        ` hasMessage=${info['message'] !== undefined}`);
       if (chatId === undefined || chatId === 0) {
         openTelegramLink(this.actions.context(), url, true);
         return;
@@ -406,6 +426,7 @@ export class ChatMessageActionCoordinator {
       navigateToChat(params, 'content').catch(logChatNavFailure);
       endLinkNavIf(url);
     }).catch((e: TdError) => {
+      logW(`[MsgLink] url=${tgUrl} resolve failed: ${e.code ?? ''} ${e.message}`);
       this.actions.logError(`ChatPage.getMessageLinkInfo failed: ${e.message}`);
       openTelegramLink(this.actions.context(), url, true);
     });

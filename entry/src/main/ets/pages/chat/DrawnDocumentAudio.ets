@@ -1,3 +1,10 @@
+import { DrawnDocumentCardLayout } from './DrawnDocumentCardLayout';
+import { DrawnSeekTrack } from './DrawnSeekTrack';
+import { DrawnMediaTexts, DrawnMediaTextPlan, DrawnMediaTextPainter } from './DrawnMediaText';
+import { DrawnMediaControl } from './DrawnMediaControl';
+import { DrawnLoadingSpinner } from './DrawnLoadingSpinner';
+import { chatEnv } from '../../util/chatEnvMirror';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
 import { DrawnDocumentWidget } from '../../util/drawnDocumentWidget';
 import { documentFileId } from '../../util/drawnDocumentMedia';
 import { documentAudioTrack, documentAudioPlaylist } from '../../util/documentAudioTrack';
@@ -19,8 +26,58 @@ export struct DrawnDocumentAudio {
   @Param chatId: number = 0;
   @Param messageId: number = 0;
   @Param boxWidth: number = 0;
+  @Param preparedCard: DrawnDocumentCardLayout | undefined = undefined;
   @Param audioItems: DrawnDocumentWidget[] = [];
   @Event onClaim: () => boolean = (): boolean => true;
+  private env = chatEnv;
+  private labels: DrawnMediaTexts = new DrawnMediaTexts();
+  private labelPainter: DrawnMediaTextPainter = new DrawnMediaTextPainter();
+  private controlPainter: DrawnMediaControl = new DrawnMediaControl();
+  private seekPainter: DrawnSeekTrack = new DrawnSeekTrack();
+  @Local private seekDragging: boolean = false;
+  @Local private seekProgress: number = 0;
+  private seekGranted: boolean = false;
+  private seekGesture: boolean = false;
+  @Computed private get shownSeekProgress(): number { return this.seekDragging ? this.seekProgress : this.progress; }
+  @Computed private get seekWidth(): number { return Math.max(1, this.boxWidth - 48); }
+  @Computed private get seekInset(): number { return Math.min(8, this.seekWidth / 2); }
+  private seekCallback(): (fraction: number, mode: SliderChangeMode) => void {
+    // generation is a local state root so a rebind refreshes this callback even
+    // when the same file stays mounted after a visibility/account transition.
+    const generation = this.generation, fileId = documentFileId(this.widget.file);
+    return (fraction: number, mode: SliderChangeMode): void => {
+      if (generation !== this.generation || fileId <= 0 || !Number.isFinite(fraction)) { return; }
+      const value = Math.max(0, Math.min(1, fraction));
+      if (mode === SliderChangeMode.Begin) {
+        this.seekGesture = true; this.seekGranted = this.onClaim(); this.seekDragging = this.seekGranted;
+        if (this.seekGranted) { this.seekProgress = value; }
+      } else if (mode === SliderChangeMode.Moving) {
+        if (this.seekGranted && this.seekProgress !== value) { this.seekProgress = value; }
+      } else if (mode === SliderChangeMode.End) {
+        const granted = this.seekGranted; this.seekGesture = false; this.seekGranted = false;
+        if (granted && this.progress !== value) { this.progress = value; }
+        this.seekDragging = false;
+        if (granted) { getVoicePlayback().seek(-fileId, value); }
+      } else if (mode === SliderChangeMode.Click) {
+        const granted = this.seekGesture ? this.seekGranted : this.onClaim();
+        this.seekGesture = false; this.seekGranted = false;
+        if (granted && this.progress !== value) { this.progress = value; }
+        this.seekDragging = false;
+        if (granted) { getVoicePlayback().seek(-fileId, value); }
+      }
+    };
+  }
+  @Computed private get paintEnvironment(): string {
+    return `${this.env.appearanceEpoch}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
+  }
+  @Computed private get titleLabel(): string { return this.widget.title || this.widget.name || str('preview_music'); }
+  @Computed private get subtitleLabel(): string {
+    return `${this.widget.performer ?? ''} ${formatVoiceDuration(this.elapsed || (this.widget.duration ?? 0))}`;
+  }
+  @Computed private get labelPlan(): DrawnMediaTextPlan {
+    return (this.preparedCard?.labels ?? this.labels).prepare(this.getUIContext(), this.preparedCard?.environment ?? this.paintEnvironment, Math.max(1, this.boxWidth - 48),
+      this.titleLabel, 14, COLOR_TEXT_PRIMARY, this.subtitleLabel, 11, COLOR_TEXT_SECONDARY, 1, false, 1);
+  }
   @Local private path: string = '';
   @Local private loading: boolean = false;
   @Local private failed: boolean = false;
@@ -30,11 +87,14 @@ export struct DrawnDocumentAudio {
   @Local private elapsed: number = 0;
   private offFile: (() => void) | null = null;
   private offVoice: (() => void) | null = null;
-  private generation: number = 0;
+  @Local private generation: number = 0;
   private visible: boolean = false;
   @Local private pending: boolean = false;
   private detach(): void {
     this.generation++; this.pending = false;
+    this.seekGranted = false; this.seekGesture = false;
+    if (this.seekDragging) { this.seekDragging = false; }
+    if (this.seekProgress !== 0) { this.seekProgress = 0; }
     this.offFile?.(); this.offFile = null; this.offVoice?.(); this.offVoice = null;
   }
   private bind(): void {
@@ -96,23 +156,26 @@ export struct DrawnDocumentAudio {
       Stack() {
         DrawnDocumentAudioCover({ fileId: this.widget.coverFileId ?? 0, mini: this.widget.coverMini ?? '' });
         if (this.pending && this.loading) { LiveProgressRing({ fileId: documentFileId(this.widget.file), ringSize: 36 }); }
-        else if (this.preparing) { LoadingProgress().width(30).height(30).color(COLOR_PRIMARY); }
-        else { Text(this.playing ? 'Ⅱ' : '▶').fontSize(21).fontColor(COLOR_PRIMARY); }
+        else if (this.preparing) { DrawnLoadingSpinner({ ringSize: 30, ringColor: COLOR_PRIMARY }); }
+        else { Row().width(40).height(40).hitTestBehavior(HitTestMode.None)
+          .drawModifier(this.controlPainter.bind(this.getUIContext(), this.paintEnvironment, 40,
+            '#00000000', COLOR_PRIMARY, this.playing ? 'pause' : 'play')); }
       }.width(40).height(48).onClick((): void => this.tap())
         .accessibilityLevel('yes').accessibilityText(str(this.playing ? 'lvp_pause' : this.failed ? 'live_media_retry_now' : 'lvp_play'));
       Column({ space: 1 }) {
-        Text(this.widget.title || this.widget.name || str('preview_music')).fontSize(14).fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-        Text(`${this.widget.performer ?? ''} ${formatVoiceDuration(this.elapsed || (this.widget.duration ?? 0))}`)
-          .fontSize(11).fontColor(COLOR_TEXT_SECONDARY).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-        Slider({ value: this.progress, min: 0, max: 1, step: 0.001 }).height(20).width('100%')
-          .onChange((fraction: number, mode: SliderChangeMode): void => {
-            if ((mode === SliderChangeMode.End || mode === SliderChangeMode.Click) && this.onClaim()) {
-              getVoicePlayback().seek(-documentFileId(this.widget.file), fraction);
-            }
-          });
+        Row().width(this.labelPlan.width).height(this.labelPlan.height)
+          .drawModifier(this.labelPainter.bind(this.labelPlan))
+          .accessibilityText(`${this.titleLabel}. ${this.subtitleLabel}`);
+        // NONE removes native thumb/shadow; transparent tracks keep the native
+        // input and value semantics without duplicate visuals or a new host.
+        Slider({ value: this.shownSeekProgress, min: 0, max: 1, step: 0.001, style: SliderStyle.NONE })
+          .height(20).width('100%').padding({ left: this.seekInset, right: this.seekInset })
+          .trackColor('#00000000').selectedColor('#00000000').trackThickness(2)
+          .drawModifier(this.seekPainter.bind(this.getUIContext(), this.paintEnvironment, this.seekWidth, 20,
+            this.shownSeekProgress, this.seekDragging, COLOR_PRIMARY, '#4DB7CDE3'))
+          .onChange(this.seekCallback());
       }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-    }.width(this.boxWidth).height(72)
+    }.width(this.boxWidth).height(this.preparedCard?.height ?? 72)
       .onVisibleAreaChange([0], (visible: boolean): void => { if (this.visible !== visible) { this.visible = visible; this.bind(); } });
   }
 }

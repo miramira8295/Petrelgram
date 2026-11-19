@@ -1,3 +1,4 @@
+import { ChecklistBubble } from './ChecklistBubble';
 import { DrawnContentRow } from './DrawnContentRow';
 import { MessageTextPresentationCache, TRANSLATION_TEXT_INPUT } from '../../util/messageTextInput';
 import { MessageEntry } from '../../store/MessageEntry';
@@ -335,6 +336,7 @@ export struct MessageBubble {
       }
     } else if (this.msg.contentType === 'file') {
       FileBubble({
+        thumbnailId: this.msg.photoFileId, thumbnailPath: this.msg.photoPath, mini: this.msg.photoMini,
         fileId: this.msg.videoFileId,
         fileName: this.msg.videoFileName,
         mimeType: this.msg.videoMimeType,
@@ -417,6 +419,13 @@ export struct MessageBubble {
           );
         }
       });
+    } else if (this.msg.contentType === 'checklist') {
+      ChecklistBubble({ msg: this.msg, actions: this.actions, chatId: this.data.chatId,
+        maxWidth: this.inlineMaxW(), onClaim: (): boolean => {
+          if (this.context.gestureClaimed) { return false; }
+          if (this.data.selectionActive) { this.actions.onToggleSelectedMessage(this.msg.id); return false; }
+          return true;
+        } });
     } else if (this.msg.contentType === 'poll') {
       PollBubble({
         msg: this.msg,
@@ -439,6 +448,7 @@ export struct MessageBubble {
       });
     } else if (this.msg.contentType === 'game') {
       GameBubble({
+        chatId: this.data.chatId,
         messageId: this.msg.id,
         title: this.msg.gameTitle,
         shortName: this.msg.gameShortName,
@@ -459,6 +469,7 @@ export struct MessageBubble {
         starCount: this.msg.paidMediaStarCount,
         mediaCount: this.msg.paidMediaCount,
         mediaKind: this.msg.paidMediaKind,
+        mediaSet: this.msg.paidMediaSet ?? null, ownerKey: `${this.data.chatId}:${this.msg.rowId}`,
         mediaReady: this.msg.paidMediaSet === undefined ? undefined : (this.msg.paidMediaSet.viewerIndices[0] ?? -1) >= 0,
         completeSet: this.msg.paidMediaSet?.complete ?? false,
         caption: this.displayedMessageText(this.msg.text),
@@ -470,6 +481,7 @@ export struct MessageBubble {
         maxWidth: this.inlineMaxW(),
         onUnlock: (messageId: number): void => { if (this.context.gestureClaimed) { return; } this.actions.onPaidMediaUnlock(messageId); },
         onOpen: (messageId: number): void => { if (this.context.gestureClaimed) { return; } this.actions.onPaidMediaOpen(messageId); },
+        onOpenAt: (messageId: number, index: number): void => { if (this.context.gestureClaimed) { return; } this.actions.onPaidMediaOpen(messageId, index); },
         onRetryPhoto: (messageId: number): void => {
           if (this.context.gestureClaimed) { return; }
           this.actions.onSpecialPhotoRetry(messageId);
@@ -478,6 +490,7 @@ export struct MessageBubble {
       this.translationBlock();
     } else if (this.msg.contentType === 'gift') {
       GiftBubble({
+        chatId: this.data.chatId,
         messageId: this.msg.id,
         kind: this.msg.giftKind,
         title: this.msg.giftTitle,
@@ -500,6 +513,11 @@ export struct MessageBubble {
       this.translationBlock();
     } else if (this.msg.contentType === 'giveaway') {
       GiveawayBubble({
+        audience: this.msg.giveawayAudience, ownerKey: `${this.data.chatId}:${this.msg.rowId}`,
+        onPeer: (id: number, user: boolean): void => {
+          if (user) { this.actions.onContactOpen(id, '', ''); } else { this.actions.onGiveawayChannelOpen(id); }
+        },
+        chatId: this.data.chatId,
         messageId: this.msg.id,
         state: this.msg.giveawayState,
         winnerCount: this.msg.giveawayWinnerCount,

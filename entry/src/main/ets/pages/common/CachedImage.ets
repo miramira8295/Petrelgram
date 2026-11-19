@@ -1,7 +1,7 @@
+import { StaticMiniThumbnail } from './StaticMiniThumbnail';
 import { image } from '@kit.ImageKit';
 import { DrawnImageReceiver } from './DrawnImageReceiver';
 import { CachedImageSession } from '../../util/CachedImageSession';
-import { MINI_PLACEHOLDER_BLUR } from '../../util/miniThumbPlaceholder';
 import { CachedImageSpec } from '../../util/cachedImageSpec';
 import { scrollPlaceholderState } from '../../util/scrollEffects';
 
@@ -85,13 +85,8 @@ export struct CachedImage {
       // 40px 拉到几百 px 必然是马赛克，所以叠一层模糊让它读起来像"正在变清晰"
       // 而不是"画糊了"——官方客户端也是这个做法。
       if (this.showMiniPlaceholder()) {
-        Image(this.backdropImage)
-          .draggable(false)
-          .width(this.boxWidth).height(this.boxHeight)
-          .borderRadius(this.radius)
-          .clip(true)
-          .objectFit(this.fit)
-          .blur(MINI_PLACEHOLDER_BLUR);
+        StaticMiniThumbnail({ source: this.backdropImage, boxW: this.boxWidth, boxH: this.boxHeight, imageFit: this.fit })
+          .borderRadius(this.radius).clip(true);
       }
       if (!this.useDrawnImage()) {
         Image(this.pixelMap)

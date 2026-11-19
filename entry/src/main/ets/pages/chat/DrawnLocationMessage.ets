@@ -1,3 +1,5 @@
+import { DrawnDocumentWidget } from '../../util/drawnDocumentWidget';
+import { locationCardFor } from './DrawnLocationCardLayout';
 import { MessageEntry } from '../../store/MessageEntry';
 import { MessageBubbleActions } from './ReusableMessageBubble';
 import { LocationBubble } from './LocationBubble';
@@ -7,6 +9,7 @@ export struct DrawnLocationMessage {
   @Require @Param msg: MessageEntry;
   @Require @Param actions: MessageBubbleActions;
   @Param boxWidth: number = 262;
+  @Param widget: DrawnDocumentWidget | undefined = undefined;
   @Param chatId: number = 0;
   @Param nowSec: number = 0;
   @Param sharing: boolean = false;
@@ -22,7 +25,7 @@ export struct DrawnLocationMessage {
     if (this.sharing && this.onClaim()) { this.actions.onStopLiveLocation(); }
   }
   build() {
-    LocationBubble({ latitude: this.msg.locationLatitude, longitude: this.msg.locationLongitude,
+    LocationBubble({ preparedCard: locationCardFor(this.widget), latitude: this.msg.locationLatitude, longitude: this.msg.locationLongitude,
       accuracy: this.msg.locationAccuracy, valid: this.msg.locationValid,
       livePeriod: this.msg.locationLivePeriod, expiresIn: this.msg.locationExpiresIn,
       messageDate: this.msg.date, nowSec: this.nowSec, venueTitle: this.msg.venueTitle,

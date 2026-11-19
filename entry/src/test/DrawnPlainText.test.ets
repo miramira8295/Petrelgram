@@ -42,9 +42,10 @@ export default function drawnPlainTextTest() {
       expect(drawnChromeTextSupported('管理员 👨‍👩‍👧‍👦')).assertTrue();
       expect(drawnChromeTextSupported('first\nsecond')).assertTrue();
     });
-    it('bounds chrome text while system paragraphs support direction and tabs', 0, () => {
+    it('preserves long chrome while system paragraphs support direction and tabs', 0, () => {
       expect(drawnChromeTextSupported('x'.repeat(4096))).assertTrue();
-      expect(drawnChromeTextSupported('x'.repeat(4097))).assertFalse();
+      expect(drawnChromeTextSupported('x'.repeat(4097))).assertTrue();
+      expect(drawnChromeTextSupported('😀'.repeat(12000))).assertTrue();
       expect(drawnChromeTextSupported('مرحبا')).assertTrue();
       expect(drawnChromeTextSupported('x\u202ey')).assertTrue();
       expect(drawnChromeTextSupported('x\ty')).assertTrue();

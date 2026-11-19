@@ -61,3 +61,15 @@ for(const tapHost of [false,true]) {
  assert.equal(tapped-before,tapHost?1:0,'plain fallback preserves delegated clicks without enabling effects');
 }
 console.log('PASS: real disabled glass host retains fill and delegated clicks without filters or material allocation.');
+
+run(`class SharedGlass {${['initialRender','w','h','glassOn'].map(n=>method('SystemGlassSurface',n)).join('\n')}} globalThis.SharedGlass=SharedGlass;`);
+const plain=init(new ctx.SharedGlass());
+Object.assign(plain,{effectsEnabled:false,plainOutline:true,radius:18,fixedWidth:0,fixedHeight:0,mw:0,mh:0,fill:false,content:()=>{}});
+calls.length=0;glassHosts.length=0;plain.initialRender();
+assert.equal(glassHosts.length,0,'plain surface must not create a second material/measurement subtree');
+assert.ok(calls.some(c=>c[1]==='border'&&c[2].width===0.5));
+const area=calls.find(c=>c[1]==='onAreaChange')[2];
+for(let i=0;i<1000;i++)area({}, {width:300+i,height:48});
+assert.equal(plain.mw,0);assert.equal(plain.mh,0,'disabled material geometry never publishes local size');
+assert.ok(calls.some(c=>c[1]==='backgroundColor'&&c[2]?.type===10001));
+console.log('PASS: plain shared surface paints in its existing container with outline, no material child and no size-state writes.');

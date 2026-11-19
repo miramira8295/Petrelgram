@@ -6,8 +6,6 @@ import {
 } from '../../util/theme';
 import { INITIAL_HINT_DELAY_MS, initialHintLabelKey } from '../../util/initialLoadingHint';
 import { BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP } from '../../util/mediaBox';
-import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
-import { bubbleGlassBlurStyle, bubbleGlassFill } from '../../util/surfaceGlass';
 import { str } from '../../util/strings';
 import { SystemGlassSurface } from './SystemGlassSurface';
 
@@ -267,10 +265,10 @@ export struct InitialLoadingHint {
 
   @Builder
   private dateChipSkeleton() {
-    // 骨架胶囊：宽度随内容、高度固定，走系统沉浸材质（外壳自量宽度）。
+    // 骨架胶囊：宽度随内容、高度固定，普通填充与描边，不创建玻璃材质。
     // 外层 Stack 只承载外边距——带尾随闭包的组件后面不能再链通用属性。
     Stack() {
-      SystemGlassSurface({ radius: 13, fixedHeight: 26 }) {
+      SystemGlassSurface({ radius: 13, fixedHeight: 26, effectsEnabled: false, plainOutline: true }) {
         Row() {
           Row()
             .width(56)
@@ -361,10 +359,7 @@ export struct InitialLoadingHint {
     .width(this.bubbleWidthVp(spec))
     .padding({ left: 12, right: 11, top: 9, bottom: 8 })
     .alignItems(HorizontalAlign.Start)
-    .backgroundColor(this.materialEpoch >= 0
-      ? bubbleGlassFill(this.effectiveIsOut(spec) ? COLOR_BUBBLE_OUT : COLOR_BUBBLE_IN)
-      : (this.effectiveIsOut(spec) ? COLOR_BUBBLE_OUT : COLOR_BUBBLE_IN))
-    .backgroundBlurStyle(bubbleGlassBlurStyle())
+    .backgroundColor(this.effectiveIsOut(spec) ? COLOR_BUBBLE_OUT : COLOR_BUBBLE_IN)
     .border({ width: 0.5, color: $r('app.color.divider') })
     .borderRadius(this.bubbleRadius(spec));
   }
@@ -385,7 +380,7 @@ export struct InitialLoadingHint {
           if (spec.showAvatar) {
             Stack({ alignContent: Alignment.Center }) {
               Circle({ width: 38, height: 38 })
-                .fill(bubbleGlassFill(COLOR_BUBBLE_IN));
+                .fill(COLOR_BUBBLE_IN);
               Circle({ width: 38, height: 38 })
                 .fill(COLOR_TEXT_SECONDARY)
                 .opacity(0.10);
@@ -438,7 +433,7 @@ export struct InitialLoadingHint {
 
       if (this.statusHintShown && initialHintLabelKey(this.connectionState) !== '') {
         Row() {
-          SystemGlassSurface({ radius: 15, fixedHeight: 30 }) {
+          SystemGlassSurface({ radius: 15, fixedHeight: 30, effectsEnabled: false, plainOutline: true }) {
             Row({ space: 6 }) {
               Text(str(initialHintLabelKey(this.connectionState)))
                 .fontSize(12.5)

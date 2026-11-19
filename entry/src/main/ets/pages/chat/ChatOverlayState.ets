@@ -72,7 +72,7 @@ import { str } from '../../util/strings';
 // setSheet() 的第一个参数：build() 里 ChatOverlayHost 的六个 onXxxShowChange
 // 回调共用同一个写入口时用它区分是哪一个开关。
 export type ChatOverlaySheetKind =
-  'reaction' | 'forward' | 'scheduled' | 'poll' | 'contact' | 'videoNote' | 'pinnedList';
+  'reaction' | 'forward' | 'scheduled' | 'checklist' | 'poll' | 'contact' | 'videoNote' | 'pinnedList';
 
 // 宿主（ChatPage）暴露给控制器的那一小片接口，全是箭头函数字段——取值器读
 // 页面当下的真值，动作回调把副作用交回页面执行。仿 ComposerSession 的
@@ -117,6 +117,7 @@ export class ChatOverlayState {
   // Forwarding is deliberately kept as an in-page sheet: leaving ChatPage to
   // pick a destination used to discard the long-press/selection context.
   @Trace showForwardSheet: boolean = false;
+  @Trace showChecklistSheet: boolean = false;
   @Trace showPollSheet: boolean = false;
   @Trace showContactSheet: boolean = false;
   @Trace showVideoNoteRecorder: boolean = false;
@@ -180,6 +181,9 @@ export class ChatOverlayState {
         break;
       case 'scheduled':
         this.showScheduledSheet = show;
+        break;
+      case 'checklist':
+        this.showChecklistSheet = show;
         break;
       case 'poll':
         this.showPollSheet = show;
@@ -382,6 +386,7 @@ export class ChatOverlayState {
   // 的无害，不是搬迁纪律给的保证。页面侧因此在原位分两次调用，语句顺序与
   // HEAD 逐字一致。dispose() 那条路径上这两行本来就是连续的，所以那边收进去了。
   resetSession(): void {
+    this.showChecklistSheet = false;
     this.showReactionSheet = false;
     this.reactionTargetId = 0;
     this.reactionPendingKey = '';
@@ -398,6 +403,7 @@ export class ChatOverlayState {
   // aboutToDisappear 全链路里对这个定时器没有任何清理动作——这一行是本批
   // 主动新增的行为，不是从旧代码搬来的。
   dispose(): void {
+    this.showChecklistSheet = false;
     this.showReactionSheet = false;
     this.reactionTargetId = 0;
     this.closeForwardSheet();

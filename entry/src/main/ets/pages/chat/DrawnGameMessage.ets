@@ -7,6 +7,7 @@ import { DrawnGameLayout, gameLayoutFor } from './DrawnGameLayout';
 
 @ComponentV2
 export struct DrawnGameMessage {
+  @Param chatId: number = 0;
   @Require @Param msg: MessageEntry;
   @Require @Param actions: MessageBubbleActions;
   @Require @Param widget: DrawnDocumentWidget;
@@ -35,7 +36,7 @@ export struct DrawnGameMessage {
   aboutToDisappear(): void { this.aboutToRecycle(); }
 
   build() {
-    GameBubble({ richMessage: this.msg, prepared: this.layout,
+    GameBubble({ chatId: this.chatId, richMessage: this.msg, prepared: this.layout,
       messageId: this.msg.id, title: this.msg.gameTitle, shortName: this.msg.gameShortName,
       description: this.msg.gameDescription, gameText: this.msg.gameText, photoPath: this.msg.photoPath,
       photoFileId: this.msg.photoFileId, photoProgress: this.progress, photoFailed: this.msg.photoFailed,

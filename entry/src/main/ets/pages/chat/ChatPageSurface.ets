@@ -31,7 +31,6 @@ export struct ChatPageSurface {
   // 页面是否在屏上（NavDestination.onShown/onHidden）→ 背景层的 pin 生命周期。
   @Param surfaceActive: boolean = true;
   @Param screenH: number = 0;
-  @Param chatBgBlur: number = 0;
   @Param chatBgPattern: number = 0;
   @Param chatBgDim: number = 0;
   @Event onViewportAreaChange: (oldH: number, newH: number) => void = (_oldH: number, _newH: number): void => {};
@@ -131,11 +130,11 @@ export struct ChatPageSurface {
     // scroll anchors and the thumbnail nodes used by geometryTransition.
     Stack() {
       // 背景参数由页面传入，背景内部管理渲染。
-      // 聊天槽位的三根滑杆由页面按当前深浅色挑好传进去——见 ChatBackdrop 里
+      // 聊天槽位的纹理和遮罩由页面按当前深浅色挑好传进去——见 ChatBackdrop 里
       // 那段说明：那一层不再自己读全局键。
       ChatBackdrop({
         chatBg: this.chatBg, screenW: this.screenW, screenH: this.screenH,
-        bgBlur: this.chatBgBlur, bgPattern: this.chatBgPattern, chatDim: this.chatBgDim,
+        bgPattern: this.chatBgPattern, chatDim: this.chatBgDim,
         // 分栏 + 统一背景时这层会让位给整窗那张 APP 壁纸（判据在 ChatBackdrop 里）。
         isChatSlot: true,
         active: this.surfaceActive

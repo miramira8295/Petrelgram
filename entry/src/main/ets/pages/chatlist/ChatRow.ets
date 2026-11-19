@@ -48,10 +48,9 @@ import { plural, str } from '../../util/strings';
 import {
   overlayBackdropBlur, containerBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
-import { materialModifierWhen } from '../../util/materialModifier';
 import {
   KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT,
-  surfaceGlassBlurStyle, surfaceGlassFill, surfaceGlassOn
+  surfaceGlassFill, surfaceGlassOn
 } from '../../util/surfaceGlass';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logI } from '../../util/log';
@@ -95,7 +94,7 @@ export struct ChatRow {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
-  // 全局界面模糊：开关和档位都要能立刻重绘（见 util/surfaceGlass）。
+  // 整体颜色材质：开关和档位都要能立刻重绘（见 util/surfaceGlass）。
   @StorageProp(KEY_SURFACE_GLASS_ON) private surfaceGlass: boolean = SURFACE_GLASS_ON_DEFAULT;
   @StorageProp(SURFACE_GLASS_EPOCH) private surfaceGlassEpoch: number = 0;
   // 由 MainScreen 算好写进 AppStorage 的「APP 壁纸生效中」，见 store/AppSettings。
@@ -561,16 +560,7 @@ export struct ChatRow {
   // Native pressed feedback starts as soon as the finger goes down. Besides
   // making ordinary taps feel responsive, it also makes the long-press wait
   // visible before the context menu appears.
-  // 只有 APP 壁纸生效时才给每一行挂玻璃：普通纯色页面继续走实色 surface，
-  // 避免在没有视觉收益时给滚动列表增加合成层。materialEpoch 虽然不参与数值
-  // 计算，但必须在这里读到，用户改厚度/光感后可复用行才会重新应用材质修饰器。
-  // **只看「界面模糊质感」这一个开关。**
-  //
-  // 原来的判据是「应用壁纸开着」——那是把两件事绑在了一起：铺壁纸和要玻璃。
-  // 全局开关存在的意义就是让它成为唯一真相，所以壁纸那条不再单独开玻璃。
-  //
-  // 后果说清楚：**开着壁纸、但没打开新开关的用户，行会从玻璃变回实底。**
-  // 新开关默认关，所以升级后要自己去 设置 → 聊天 → 界面模糊质感 打开。
+  // 整体材质开关决定颜色填充；档位纪元保证复用行即时更新透明度。
   private rowGlassEnabled(): boolean {
     // `this.surfaceGlassEpoch >= 0` 恒真，**但不能删**：@StorageProp 只有在
     // build 链路里被真正读到才建立依赖，光声明不读，改设置时这一行不会重绘
@@ -581,36 +571,11 @@ export struct ChatRow {
 
   private rowFill(pressed: boolean): ResourceColor {
     if (!this.rowGlassEnabled()) {
-      // **不走玻璃就是实底。**
-      //
-      // 这里不能再用 mainCardFill(wallpaperOn, ...)：壁纸档那对颜色
-      // （card_on_wallpaper = #CCFFFFFF，80% 不透明）**是为玻璃配的**——半透是
-      // 为了让底下的 backdropBlur 透出来。开关关掉之后模糊没了，颜色还留在半透
-      // 档，壁纸上就是一层灰蒙蒙的纱（用户实测）。要么两样都有，要么两样都没有。
+      // 关闭整体材质时始终使用不透明底色。
       return pressed ? $r('app.color.surface_alt') : $r('app.color.surface');
     }
-    // 玻璃档的底色由 surfaceGlass 统一决定，与传进去的实色无关
-    // （不透明底色会把 backdropBlur 完全盖住）。
+    // 开启时由 surfaceGlass 按气泡同款透明度与颜色生成填充。
     return surfaceGlassFill(mainCardFill(this.appWallpaperOn, pressed));
-  }
-
-  private rowBlurStyle(): BlurStyle | undefined {
-    if (!this.rowGlassEnabled() || !this.liveEffects) {
-      return undefined;
-    }
-    // **背后没有壁纸就不挂模糊。**
-    //
-    // 行背后此时是一整块纯色（页面底色），而**模糊一块纯色得到的还是同一块
-    // 纯色**——观感一模一样，代价却是实打实的：2026-09-09 的 Frame 录制里，
-    // 会话行的 backdrop 模糊做了 8431 次快照、435ms CPU，占滤镜总开销的 48%，
-    // 缓存命中率只有 2.9%（行在滚、节点位置每帧都变，缓存必然失效）。
-    //
-    // 半透明的纱色（rowFill 里的 surfaceGlassFill）照旧留着，所以开着玻璃开关
-    // 的用户在没有壁纸时看到的东西和以前**一个像素都不差**。
-    if (!this.appWallpaperOn) {
-      return undefined;
-    }
-    return surfaceGlassBlurStyle();
   }
 
   @Styles
@@ -956,9 +921,7 @@ export struct ChatRow {
       // 真卡片外沿 4vp、上下 2vp（相邻两张之间 2+2 = 4vp），头像内缩 8vp
       // ——外边距不折叠，两张卡片之间就是两条 margin 相加。2026-09-18 用户把
       // 四周收到 4vp；头像因此落在 4+8=12vp，与顶部大标题 16vp 的对齐有意放弃
-      // （见 util/listCardGeometry）。壁纸生效时卡片交给现有 'card'
-      // 稳定玻璃：所有 API 都随“材质厚度”改变锁定的模糊半径；用户关闭材质时
-      // overlayGlassFill 会自然退回原来的可读性实底。
+      // （见 util/listCardGeometry）。卡片与气泡共享颜色透明度档位，关闭时回到实底。
       .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
       .margin({
         left: this.cardGutter(), right: this.cardGutter(),
@@ -985,12 +948,6 @@ export struct ChatRow {
         width: this.rowGlassEnabled() ? 0.5 : 0,
         color: GLASS_OUTLINE_COLOR
       })
-      // 用框架容器材质而不是 backdropBlur：后者在节点边缘有采样衰减，四角最明显
-      // （见 util/surfaceGlass.surfaceGlassBlurStyle 的说明）。
-      .backgroundBlurStyle(this.rowBlurStyle())
-      // 无壁纸时保持原来的系统材质表现；隐藏页签才暂停壁纸背后的实时采样。
-      .attributeModifier(materialModifierWhen('card', this.rowGlassEnabled() &&
-        (!this.appWallpaperOn || this.liveEffects)))
       .clip(true)
       .constraintSize({ minHeight: this.spec().minHeight })
       .padding({ left: HOME_CARD_INSET_VP, right: ROW_PAD_H, top: ROW_PAD_V, bottom: ROW_PAD_V })

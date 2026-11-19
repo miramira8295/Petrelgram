@@ -13,7 +13,7 @@ import { profileMenuItems } from '../../util/profileMenu';
 import { showProfileMoreMenu } from './ProfileMoreMenu';
 import {
   KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT,
-  surfaceGlassBlurStyle, surfaceGlassFill
+  surfaceGlassFill
 } from '../../util/surfaceGlass';
 import { getChatStore, getTdClient, getCallSession } from '../../tdkit/Globals';
 import { ProfileStore, CommonGroup, StoryItem, GiftItem, AvailGift } from '../../store/ProfileStore';
@@ -30,7 +30,6 @@ import {
 import {
   overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
-import { materialModifierWhen } from '../../util/materialModifier';
 import { AvatarView } from '../chatlist/AvatarView';
 import { ProfileMediaRow } from './ProfileMediaRow';
 import { ProfileContentRow, profileContentKey } from './ProfileContentRow';
@@ -212,9 +211,8 @@ export struct ProfilePage {
   @State availGifts: AvailGift[] = [];
   @State showGiftPicker: boolean = false;
   @State private profileContentReady: boolean = false;
-  // Build the destination's moving first frame without 13+ independent
-  // material/shadow layers. onShown enables the visual effects after data has
-  // been mirrored once outside the system transition.
+  // Delay the decorative avatar shadow until the destination transition ends.
+  // Card tint is ready on the first frame and does not depend on this gate.
   @State private profileEffectsReady: boolean = false;
   private userId: number = 0;
   // 从哪个群点进来的（群成员列表传入，0 = 不是从群里来）。主小程序在这个群里打开。
@@ -817,52 +815,35 @@ export struct ProfilePage {
     return `${m}:${`${s}`.padStart(2, '0')}`;
   }
 
-  // 和群组简介页同一套玻璃面。**两页必须看起来是同一个页面**，所以 ChatProfilePage
-  // 2026-09-18 改走联系人页那套（util/surfaceGlass）时，这里必须一起改——否则
-  // 一页是实色卡片、另一页是透明框。
-  // 原来那套（overlayGlassFill + 组件级材质）在这台设备上就是一个个透明框：
-  // 材质"可用"→ 底色返回透明 → 把观感让给早已被系统收回的组件级 systemMaterial。
+  // 与群组资料页和气泡保持一致：整体材质只改变填色透明度，不附加采样层。
   private glassOn(): boolean {
-    return this.profileEffectsReady && this.surfaceGlassOn && this.surfaceGlassEpoch >= 0;
+    return this.surfaceGlassOn && this.surfaceGlassEpoch >= 0;
   }
 
   private profileGlassFill(): ResourceColor {
     return this.glassOn() ? surfaceGlassFill($r('app.color.surface')) : $r('app.color.surface');
   }
 
-  // 框架容器材质，不是 backdropBlur——后者在节点边缘有采样衰减，四角最明显。
-  private profileGlassBlurStyle(): BlurStyle | undefined {
-    return this.glassOn() ? surfaceGlassBlurStyle() : undefined;
-  }
-
-  private profileGlassShadowRadius(): number {
+  private profileAvatarShadowRadius(): number {
     return this.profileEffectsReady ? GLASS_SHADOW_RADIUS : 0;
   }
 
-  private profileGlassShadowY(): number {
+  private profileAvatarShadowY(): number {
     return this.profileEffectsReady ? GLASS_SHADOW_Y : 0;
   }
 
   @Styles
   glassCard() {
     .backgroundColor(this.profileGlassFill())
-    .backgroundBlurStyle(this.profileGlassBlurStyle())
     .borderRadius(GLASS_RADIUS_CARD)
     .border({ width: 0.7, color: $r('app.color.divider') })
-    .shadow({ radius: this.profileGlassShadowRadius(), color: GLASS_SHADOW_COLOR,
-      offsetX: 0, offsetY: this.profileGlassShadowY() })
-    .attributeModifier(materialModifierWhen('card', this.profileEffectsReady))
   }
 
   @Styles
   glassTile() {
     .backgroundColor(this.profileGlassFill())
-    .backgroundBlurStyle(this.profileGlassBlurStyle())
     .borderRadius(GLASS_RADIUS_TILE)
     .border({ width: 0.7, color: $r('app.color.divider') })
-    .shadow({ radius: this.profileGlassShadowRadius(), color: GLASS_SHADOW_COLOR,
-      offsetX: 0, offsetY: this.profileGlassShadowY() })
-    .attributeModifier(materialModifierWhen('card', this.profileEffectsReady))
   }
 
   @Builder
@@ -873,11 +854,7 @@ export struct ProfilePage {
     .width(44).height(44).borderRadius(22)
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.profileGlassFill())
-    .backgroundBlurStyle(this.profileGlassBlurStyle())
     .border({ width: 0.7, color: $r('app.color.divider') })
-    .shadow({ radius: this.profileGlassShadowRadius(), color: GLASS_SHADOW_COLOR,
-      offsetX: 0, offsetY: this.profileGlassShadowY() })
-    .attributeModifier(materialModifierWhen('card', this.profileEffectsReady))
     .onClick(onTap);
   }
 
@@ -920,11 +897,9 @@ export struct ProfilePage {
       .width(130).height(130).padding(7).borderRadius(65)
       .justifyContent(FlexAlign.Center)
       .backgroundColor(this.profileGlassFill())
-      .backgroundBlurStyle(this.profileGlassBlurStyle())
       .border({ width: 0.7, color: $r('app.color.divider') })
-      .shadow({ radius: this.profileGlassShadowRadius(), color: GLASS_SHADOW_COLOR,
-        offsetX: 0, offsetY: this.profileGlassShadowY() })
-      .attributeModifier(materialModifierWhen('card', this.profileEffectsReady))
+      .shadow({ radius: this.profileAvatarShadowRadius(), color: GLASS_SHADOW_COLOR,
+        offsetX: 0, offsetY: this.profileAvatarShadowY() })
         // 没有头像文件时（仅首字母占位）点击无意义，不给反馈。
         // 记下点击处的屏幕坐标，查看器据此决定放大/缩回的中心点。
         .onClick((event: ClickEvent): void => {
@@ -1216,12 +1191,8 @@ export struct ProfilePage {
     }
     .height(PROFILE_TAB_BAR_HEIGHT)
     .backgroundColor(this.profileGlassFill())
-    .backgroundBlurStyle(this.profileGlassBlurStyle())
     .borderRadius(PROFILE_TAB_BAR_HEIGHT / 2)
     .border({ width: 0.7, color: $r('app.color.divider') })
-    .shadow({ radius: this.profileGlassShadowRadius(), color: GLASS_SHADOW_COLOR,
-      offsetX: 0, offsetY: this.profileGlassShadowY() })
-    .attributeModifier(materialModifierWhen('card', this.profileEffectsReady))
     .clip(true)
     .margin({ left: 8, right: 8, top: 14, bottom: 8 });
   }

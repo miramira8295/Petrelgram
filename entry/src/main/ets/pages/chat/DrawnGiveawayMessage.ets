@@ -6,6 +6,7 @@ import { DrawnGiveawayLayout, giveawayLayoutFor } from './DrawnGiveawayLayout';
 
 @ComponentV2
 export struct DrawnGiveawayMessage {
+  @Param chatId: number = 0;
   @Require @Param msg: MessageEntry;
   @Require @Param actions: MessageBubbleActions;
   @Require @Param widget: DrawnDocumentWidget;
@@ -18,7 +19,10 @@ export struct DrawnGiveawayMessage {
   @Event onClaim: () => boolean = (): boolean => false;
   @Computed private get layout(): DrawnGiveawayLayout | null { return giveawayLayoutFor(this.widget); }
   build() {
-    GiveawayBubble({ prepared: this.layout, messageId: this.msg.id, state: this.msg.giveawayState,
+    GiveawayBubble({ audience: this.msg.giveawayAudience, ownerKey: `${this.chatId}:${this.msg.rowId}`,
+      onPeer: (id: number, user: boolean): void => {
+        if (user) { this.actions.onContactOpen(id, '', ''); } else { this.actions.onGiveawayChannelOpen(id); }
+      }, chatId: this.chatId, prepared: this.layout, messageId: this.msg.id, state: this.msg.giveawayState,
       winnerCount: this.msg.giveawayWinnerCount, prize: this.msg.giveawayPrize,
       description: this.msg.giveawayDescription, selectionDate: this.msg.giveawaySelectionDate,
       unclaimedCount: this.msg.giveawayUnclaimedCount, originalMessageId: this.msg.giveawayMessageId,

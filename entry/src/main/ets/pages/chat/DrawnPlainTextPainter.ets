@@ -1,3 +1,4 @@
+// Bubble shadows are disabled, including blur resources and scroll-triggered invalidation.
 import { DrawContext } from '@kit.ArkUI';
 import { drawing } from '@kit.ArkGraphics2D';
 import { DrawnPlainTextLayout } from './DrawnPlainTextLayout';
@@ -8,31 +9,23 @@ import { DrawnPlainTextLayout } from './DrawnPlainTextLayout';
 export class DrawnPlainTextPainter extends DrawModifier {
   private layout: DrawnPlainTextLayout | null = null;
   private sendState: string = '';
-  private shadowOn: boolean = false;
   private brush: drawing.Brush = new drawing.Brush();
   private pen: drawing.Pen = new drawing.Pen();
-  private shadow: drawing.Brush = new drawing.Brush();
 
   private statusWidth: number = 0;
   constructor() {
-    super(); this.brush.setAntiAlias(true); this.pen.setAntiAlias(true); this.shadow.setAntiAlias(true);
+    super(); this.brush.setAntiAlias(true); this.pen.setAntiAlias(true);
     this.pen.setCapStyle(drawing.CapStyle.ROUND_CAP);
   }
 
-  bind(layout: DrawnPlainTextLayout | null, sendState: string, shadowOn: boolean): DrawnPlainTextPainter {
-    if (this.layout === layout && this.sendState === sendState && this.shadowOn === shadowOn) { return this; }
-    if (layout !== null && this.layout?.density !== layout.density) {
-      this.shadow.setColor({ alpha: 20, red: 0, green: 0, blue: 0 });
-      this.shadow.setMaskFilter(drawing.MaskFilter.createBlurMaskFilter(drawing.BlurType.NORMAL,
-        (2 * 0.57735 + 0.5) * layout.density));
-    }
+  bind(layout: DrawnPlainTextLayout | null, sendState: string, _shadowOn: boolean): DrawnPlainTextPainter {
+    if (this.layout === layout && this.sendState === sendState) { return this; }
     if (layout !== null) {
       const width = Math.max(layout.density, layout.iconPx / 10);
       if (width !== this.statusWidth) { this.pen.setStrokeWidth(width); this.statusWidth = width; }
     }
     this.layout = layout;
     this.sendState = sendState;
-    this.shadowOn = shadowOn;
     this.invalidate();
     return this;
   }
@@ -41,14 +34,6 @@ export class DrawnPlainTextPainter extends DrawModifier {
     const layout = this.layout;
     if (layout === null) { return; }
     const canvas = context.canvas;
-    if (this.shadowOn) {
-      canvas.save();
-      canvas.translate(0, layout.density);
-      canvas.attachBrush(this.shadow);
-      canvas.drawPath(layout.outline);
-      canvas.detachBrush();
-      canvas.restore();
-    }
     this.brush.setColor(layout.fill);
     canvas.attachBrush(this.brush);
     canvas.drawPath(layout.outline);

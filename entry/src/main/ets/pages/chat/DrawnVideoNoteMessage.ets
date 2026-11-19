@@ -1,3 +1,8 @@
+import { DrawnVideoNoteOverlay } from './DrawnVideoNoteOverlay';
+import { CachedImage } from '../common/CachedImage';
+import { CachedImageSpec, CachedImageSpecCache } from '../../util/cachedImageSpec';
+import { chatEnv } from '../../util/chatEnvMirror';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
 import { MessageEntry } from '../../store/MessageEntry';
 import { MessageBubbleActions } from './ReusableMessageBubble';
 import { AvLoopVideo } from '../common/AvLoopVideo';
@@ -6,6 +11,16 @@ import { str } from '../../util/strings';
 
 @ComponentV2
 export struct DrawnVideoNoteMessage {
+  @Param chatId: number = 0;
+  private overlayPainter: DrawnVideoNoteOverlay = new DrawnVideoNoteOverlay();
+  private coverSpecs: CachedImageSpecCache = new CachedImageSpecCache();
+  private env = chatEnv;
+  @Computed private get environment(): string { return `${this.env.appearanceEpoch}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`; }
+  @Computed private get coverSpec(): CachedImageSpec {
+    return this.coverSpecs.prepare({ path: this.msg.photoPath, boxWidth: this.side, boxHeight: this.side,
+      radius: this.side / 2, fit: ImageFit.Cover, drawOnCanvas: true,
+      sourceKey: `${this.chatId}:${this.msg.rowId}:${this.msg.videoFileId}` });
+  }
   @Require @Param msg: MessageEntry;
   @Require @Param actions: MessageBubbleActions;
   @Param boxWidth: number = 180;
@@ -56,23 +71,14 @@ export struct DrawnVideoNoteMessage {
   }
   build() {
     Stack({ alignContent: Alignment.Center }) {
-      if (this.msg.photoPath !== '') {
-        Image(this.msg.photoPath.startsWith('/') ? `file://${this.msg.photoPath}` : this.msg.photoPath)
-          .width(this.side).height(this.side).objectFit(ImageFit.Cover).draggable(false);
-      }
+      CachedImage({ spec: this.coverSpec });
       if (this.playing && this.msg.videoPath !== '') {
         AvLoopVideo({ videoPath: this.msg.videoPath, boxWidth: this.side, boxHeight: this.side,
           loop: false, muted: false, onFinished: this.finished(this.playerGeneration), onFailed: this.finished(this.playerGeneration) });
-      } else {
-        SymbolGlyph($r('sys.symbol.play_fill')).fontSize(22).fontColor([Color.White]);
       }
-      if (this.msg.videoPath === '' && this.progress > 0 && this.progress < 100) {
-        Progress({ value: this.progress, total: 100, type: ProgressType.Ring })
-          .width(46).height(46).color(Color.White);
-      }
-      Text(this.duration).fontSize(11).fontColor(Color.White)
-        .padding({ left: 7, right: 7, top: 2, bottom: 2 }).backgroundColor('#66000000').borderRadius(9)
-        .offset({ y: this.side / 2 - 18 });
+      Row().width(this.side).height(this.side).hitTestBehavior(HitTestMode.None)
+        .drawModifier(this.overlayPainter.bind(this.getUIContext(), this.environment, this.side,
+          this.playing && this.msg.videoPath !== '', this.progress, this.msg.videoPath === '', this.duration));
     }
     .width(this.side).height(this.side).backgroundColor($r('app.color.surface_alt'))
     .borderRadius(this.side / 2).clip(true)

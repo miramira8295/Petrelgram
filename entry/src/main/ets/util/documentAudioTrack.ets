@@ -27,7 +27,6 @@ export function documentAudioPlaylist(items: DrawnDocumentWidget[], chatId: numb
     if (item.kind !== 'audio' || id <= 0 || ids.has(id)) { continue; }
     ids.add(id);
     tracks.push(documentAudioTrack(item, chatId, messageId, item.file !== undefined ? documentFileState(item.file).path : ''));
-    if (tracks.length === 2048) { break; }
   }
   playlists.set(items, { chatId, messageId, tracks }); return tracks;
 }

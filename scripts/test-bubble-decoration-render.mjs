@@ -10,10 +10,10 @@ const compile=s=>ts.transpileModule(s,{compilerOptions:{target:ts.ScriptTarget.E
 function fragments(text){
  const ast=ts.createSourceFile('shell.ts',text,ts.ScriptTarget.Latest,true);let branch;const methods={};
  function visit(n){
-  if(!branch&&ts.isIfStatement(n)&&n.expression.getText(ast)==='this.env.bubbleMaterialOn'&&n.getText(ast).includes('solidShellShadow'))branch=n.getText(ast);
-  if(ts.isMethodDeclaration(n)&&['solidShellShadow','glassOutline'].includes(n.name.getText(ast)))methods[n.name.getText(ast)]=n.getText(ast);
+  if(!branch&&ts.isIfStatement(n)&&n.expression.getText(ast)==='this.env.bubbleMaterialOn'&&n.getText(ast).includes('glassOutline'))branch=n.getText(ast);
+  if(ts.isMethodDeclaration(n)&&['glassOutline'].includes(n.name.getText(ast)))methods[n.name.getText(ast)]=n.getText(ast);
   ts.forEachChild(n,visit);
- }visit(ast);assert.ok(branch);assert.equal(Object.keys(methods).length,2);
+ }visit(ast);assert.ok(branch);assert.equal(Object.keys(methods).length,1);
  return compile(`globalThis.render=function(){${branch}};globalThis.methods={${Object.values(methods).join(',')}};`);
 }
 function setup(text,cfg){
@@ -38,6 +38,7 @@ function setup(text,cfg){
  const ctx=vm.createContext(globals);vm.runInContext(fragments(text),ctx);
  const host={env:{bubbleMaterialOn:cfg.material},msg:{isOutgoing:cfg.outgoing},glassW:cfg.w,glassH:cfg.h,jumpFocus:.4,
   observeComponentCreation2:fn=>{fn(1,true);if(stack.at(-1).type==='Path')stack.pop();},ifElseBranchUpdateFunction:(_n,fn)=>fn(),
+  geo:{w:cfg.w,h:cfg.h,setSize(w,h){this.w=w;this.h=h;}},
   shadowShapeCache:{prepare:(...args)=>JSON.stringify(args)},
   hasBubbleTail:()=>cfg.tail,bubbleCornerRadius:()=>({topLeft:12,topRight:12,bottomLeft:cfg.tail?2:12,bottomRight:12}),
   isBareEmoji:()=>cfg.bare,glassReady:()=>cfg.ready,glassBodyOn:()=>cfg.body,
@@ -64,7 +65,7 @@ for(const material of [false,true])for(const outgoing of [false,true])for(const 
  const after=setup(source,cfg);assert.equal(after.snapshots,0);const owner=after.root.children[0];
  assert.deepEqual(size(owner),{w:cfg.contentW+7,h:cfg.contentH});
  const absolute=owner.children.filter(c=>c.props.position);for(const n of absolute){assert.deepEqual(plain(n.props.position),{x:0,y:0});assert.equal(n.props.hitTestBehavior,'None');assert.equal(n.props.accessibilityLevel,'no');}
- const callback=owner.props.onSizeChange;callback({}, {width:cfg.contentW+7,height:cfg.contentH});assert.equal(after.host.glassW,cfg.contentW+7);assert.equal(after.host.glassH,cfg.contentH);
+ const callback=owner.props.onSizeChange;callback({}, {width:cfg.contentW+7,height:cfg.contentH});assert.equal(after.host.measuredGlassW,cfg.contentW+7);assert.equal(after.host.measuredGlassH,cfg.contentH);
  if(baseline){
   const before=setup(baseline,cfg),oldOwner=before.root.children[0];assert.equal(before.snapshots,1);
   assert.deepEqual(size(owner),size(oldOwner));

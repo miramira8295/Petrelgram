@@ -202,6 +202,7 @@ export interface AttachActionsHost {
   // 输入框当下的草稿文本（页面 `@Local draft`，42 处引用，留页面）。
   // pickAndSendAudio/pickAndSendFile 发送后拼 caption 要读它。
   draftText: () => string;
+  sendMarkdown: () => void;
   // 发送后清空草稿（对应原 `this.draft = ''`）。与 `draftText()` 成对使用，
   // 不合并成一个"读并清空"的方法——原文本来就是先读 `.trim()` 传给
   // `store.sendXxx`，成功与否都紧接着清空，两步逐字保留。
@@ -263,7 +264,7 @@ export class AttachActions {
     pendingMediaCount: (): number => 0,
     appendPendingMedia: (_items: MediaSendItem[]): number => 0,
     composerSending: (): boolean => false,
-    draftText: (): string => '',
+    sendMarkdown: (): void => {}, draftText: (): string => '',
     clearDraft: (): void => {},
     setAtBottom: (_value: boolean): void => {},
     closeAttachPanel: (): void => {},
@@ -691,6 +692,10 @@ export class AttachActions {
       this.chooseLocationKind();
     } else if (key === 'contact') {
       this.openContactPicker();
+    } else if (key === 'checklist') {
+      this.host.setSheet('checklist', true);
+    } else if (key === 'markdown') {
+      this.host.sendMarkdown();
     } else if (key === 'poll') {
       this.openPollComposer();
     } else if (key === 'dice') {

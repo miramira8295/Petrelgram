@@ -11065,10 +11065,6 @@
       "value": "เล่นอัตโนมัติ"
     },
     {
-      "name": "cb_blur_amount",
-      "value": "ระดับความเบลอ"
-    },
-    {
       "name": "meow_mode_custom",
       "value": "WebPush กำหนดเอง"
     },
@@ -11877,24 +11873,8 @@
       "value": "%1$d วินาที"
     },
     {
-      "name": "chat_settings_surface_glass",
-      "value": "เบลอส่วนติดต่อ"
-    },
-    {
-      "name": "chat_settings_surface_glass_sub",
-      "value": "กระจกฝ้าบนหน้ารายชื่อ ตั้งค่า และโปรไฟล์ ให้เข้ากับแถบพิมพ์ วาดใหม่ทุกเฟรม ปิดได้หากรู้สึกกระตุก"
-    },
-    {
-      "name": "chat_settings_surface_glass_level",
-      "value": "ระดับความเบลอ"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "วิดีโอไดนามิกเรนจ์สูง"
-    },
-    {
-      "name": "material_level_veil",
-      "value": "ผ้าคลุมบาง"
     },
     {
       "name": "chat_settings_surface_glass_ui",
@@ -11907,22 +11887,6 @@
     {
       "name": "chat_settings_bubble_glass",
       "value": "ฟองข้อความ"
-    },
-    {
-      "name": "chat_settings_bubble_glass_sub",
-      "value": "ฟองข้อความในแชท มีจำนวนมากที่สุดและสิ้นเปลืองที่สุด"
-    },
-    {
-      "name": "glass_warn_title",
-      "value": "ใช้แบตเตอรี่มากขึ้น"
-    },
-    {
-      "name": "glass_warn_body",
-      "value": "เอฟเฟกต์เบลอถูกเรนเดอร์ทุกเฟรม ทำให้ใช้แบตเตอรี่และความร้อนเพิ่มขึ้นชัดเจน และอาจเฟรมตกขณะเลื่อน หากเครื่องร้อนหรือหน่วง ให้กลับมาเลือก «ปิด»"
-    },
-    {
-      "name": "glass_warn_enable",
-      "value": "เปิดใช้ต่อไป"
     },
     {
       "name": "cp_secret_pending_out",

@@ -1,3 +1,8 @@
+import { CachedImage } from '../common/CachedImage';
+import { CachedImageSpec, CachedImageSpecCache } from '../../util/cachedImageSpec';
+import { DrawnMediaControl } from './DrawnMediaControl';
+import { chatEnv } from '../../util/chatEnvMirror';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
 import { DrawnDocumentPlayback } from './DrawnDocumentPlayback';
 import { str } from '../../util/strings';
 import { DrawnDocumentMedia, documentFileId } from '../../util/drawnDocumentMedia';
@@ -15,6 +20,17 @@ export struct DrawnDocumentMediaIsland {
   @Event onOpen: () => void = (): void => {};
   @Local private path: string = '';
   @Local private failed: boolean = false;
+  private specs: CachedImageSpecCache = new CachedImageSpecCache();
+  private control: DrawnMediaControl = new DrawnMediaControl();
+  private env = chatEnv;
+  @Computed private get environment(): string {
+    return `${this.env.appearanceEpoch}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
+  }
+  @Computed private get imageSpec(): CachedImageSpec {
+    return this.specs.prepare({ path: this.path, boxWidth: this.boxWidth, boxHeight: this.boxHeight,
+      fit: ImageFit.Cover, drawOnCanvas: true,
+      sourceKey: `document-media:${this.media.key}:${documentFileId(this.media.file)}:${documentFileId(this.media.thumbnail)}` });
+  }
   private generation: number = 0;
   private off: (() => void) | null = null;
   private visible: boolean = false;
@@ -28,27 +44,27 @@ export struct DrawnDocumentMediaIsland {
     if (!this.visible || !this.pageActive) { return; }
     this.off = watchDocumentFile(file, (state: DocumentFileState): void => {
       if (generation !== this.generation) { return; }
-      this.path = state.path; this.failed = state.failed;
+      if (this.path !== state.path) { this.path = state.path; }
+      if (this.failed !== state.failed) { this.failed = state.failed; }
     });
     requestDocumentFile(file, THUMBNAIL_PRIORITY);
   }
   @Monitor('media', 'pageActive') onMediaChanged(): void { this.bind(); }
   aboutToAppear(): void { this.bind(); }
-  aboutToDisappear(): void { this.detach(); }
+  aboutToDisappear(): void { this.visible = false; this.detach(); }
   aboutToRecycle(): void { this.visible = false; this.detach(); this.path = ''; }
   aboutToReuse(): void { this.visible = false; this.bind(); }
   build() {
     Stack() {
       if (this.path !== '') {
-        Image(this.path.startsWith('/') ? `file://${this.path}` : this.path)
-          .width(this.boxWidth).height(this.boxHeight).objectFit(ImageFit.Cover).draggable(false);
+        CachedImage({ spec: this.imageSpec });
       } else if (!this.failed && (this.media.thumbnail !== undefined || this.media.kind === 'photo')) {
         LiveProgressRing({ fileId: documentFileId(this.media.thumbnail ?? this.media.file), ringSize: 30 });
       }
-      if (this.media.kind !== 'photo') {
-        SymbolGlyph($r('sys.symbol.play_fill')).fontSize(30).fontColor([Color.White]);
-      } else if (this.failed) {
-        SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(24);
+      if (this.media.kind !== 'photo' || this.failed) {
+        Row().width(44).height(44).hitTestBehavior(HitTestMode.None).accessibilityLevel('no')
+          .drawModifier(this.control.bind(this.getUIContext(), this.environment, 44,
+            '#73000000', '#FFFFFF', this.media.kind !== 'photo' ? 'play' : 'retry'));
       }
       if (this.media.kind === 'video' || this.media.kind === 'animation') {
         DrawnDocumentPlayback({ media: this.media, pageActive: this.pageActive, boxWidth: this.boxWidth, boxHeight: this.boxHeight,

@@ -1,3 +1,5 @@
+import { StaticMiniThumbnail } from '../common/StaticMiniThumbnail';
+import { DrawnMediaRetry } from './DrawnMediaRetry';
 import { MessageEntry } from '../../store/MessageEntry';
 import { MessageBubbleActions, MessageBubbleRenderData } from './ReusableMessageBubble';
 import { MessageBubbleContext } from './MessageBubbleShell';
@@ -9,7 +11,6 @@ import { LiveProgressRing } from './LiveProgressRing';
 import { BUBBLE_AVATAR_GUTTER_VP } from '../../util/mediaBox';
 import { drawnAnimationPlaying } from '../../util/drawnAnimationPolicy';
 import { thumbBackdropColor } from '../../util/thumbBackdrop';
-import { MINI_PLACEHOLDER_BLUR } from '../../util/miniThumbPlaceholder';
 import { scrollPlaceholderState } from '../../util/scrollEffects';
 import { chatEnv } from '../../util/chatEnvMirror';
 import { str } from '../../util/strings';
@@ -95,14 +96,11 @@ export struct DrawnSingleMediaSurface {
         Image(this.slot.pixels).width(this.tile.width).height(this.tile.height).draggable(false).objectFit(ImageFit.Cover).syncLoad(true);
       }
       if (this.imageEpoch >= 0 && this.slot.showMini(this.scroll.active)) {
-        Image(this.slot.mini).width(this.tile.width).height(this.tile.height).draggable(false).objectFit(ImageFit.Cover).blur(MINI_PLACEHOLDER_BLUR);
+        StaticMiniThumbnail({ source: this.slot.mini, boxW: this.tile.width, boxH: this.tile.height });
       }
       if (this.missing()) {
         if (this.msg.contentType === 'photo' && (this.msg.photoFailed || this.msg.photoFileId === 0)) {
-          Column({ space: 3 }) {
-            SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(18).fontColor([Color.White]);
-            Text($r('app.string.settings_retry')).fontSize(11).fontColor(Color.White).fontWeight(FontWeight.Medium);
-          }.padding({ left: 10, right: 10, top: 7, bottom: 7 }).backgroundColor('#80000000').borderRadius(18);
+          DrawnMediaRetry({ maxWidth: this.tile.width, iconSize: 18, paddingX: 10 });
         } else if (this.msg.photoFileId !== 0 && !this.msg.photoFailed) {
           LiveProgressRing({ fileId: this.msg.photoFileId, initialPercent: this.msg.photoProgress, ringSize: 36 });
         }
