@@ -19,7 +19,8 @@ local.aboutToRecycle();callbacks.get(19)(77);assert.equal(local.progress,3);asse
 // Exercise compiled seek handling with empty UP touches and cancelled gestures.
 load(compiled+'pages/chat/MusicBubble.ts',['MusicBubble']);
 ctx.TouchType={Down:0,Move:1,Up:2,Cancel:3};
-const seeks=[];const music=Object.assign(Object.create(ctx.MusicBubble.prototype),{currentTrack:()=>true,resolvedDuration:()=>100,waveWidth:100,dragging:false,onBeforeSeek:()=>true,setClock(){},onSeek:n=>seeks.push(n)});
+const seeks=[];const music=Object.assign(Object.create(ctx.MusicBubble.prototype),{currentTrack:()=>true,resolvedDuration:()=>100,dragging:false,onBeforeSeek:()=>true,setClock(){},onSeek:n=>seeks.push(n)});
+Object.defineProperty(music,'waveWidth',{value:100});
 music.onWaveTouch({type:0,touches:[{x:10}],changedTouches:[]});
 music.onWaveTouch({type:2,touches:[],changedTouches:[{x:70}]});assert.deepEqual(seeks,[.7]);
 music.onWaveTouch({type:0,touches:[{x:10}],changedTouches:[]});music.onWaveTouch({type:3,touches:[],changedTouches:[]});assert.deepEqual(seeks,[.7]);

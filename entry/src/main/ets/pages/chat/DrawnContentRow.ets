@@ -333,7 +333,7 @@ export struct DrawnContentRow {
   }
 
 
-  private hasLiveVideoSurface(): boolean { return drawnLiveSurface(this.group, this.data); }
+  private hasLiveVideoSurface(): boolean { return drawnLiveSurface(this.group, this.data, this.actions.playback !== undefined); }
 
   private bubbleCornerRadius(): BorderRadiuses {
     // Read all reactive inputs before the cache lookup, including on hits.
@@ -424,7 +424,7 @@ export struct DrawnContentRow {
                 }
                 .padding(this.msg.isOutgoing ? { right: 7 } : { left: 7 })
                 .drawModifier(this.bubbleOutline.bind(this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius(),
-                  this.bubbleFillColor(), `${this.env.appearanceEpoch}`, !this.env.scrollActive, this.getUIContext().vp2px(1)))
+                  this.bubbleFillColor(), `${this.env.appearanceEpoch}`, false, this.getUIContext().vp2px(1)))
                 .scale({ x: 1 + this.jumpFocus * JUMP_FOCUS_SCALE, y: 1 + this.jumpFocus * JUMP_FOCUS_SCALE,
                   centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
                 .parallelGesture(this.canDragMessage() ? undefined : LongPressGesture({ fingers: 1, repeat: false, duration: 500 })

@@ -11065,10 +11065,6 @@
       "value": "Reproducción automática"
     },
     {
-      "name": "cb_blur_amount",
-      "value": "Cantidad de desenfoque"
-    },
-    {
       "name": "meow_mode_custom",
       "value": "WebPush personalizado"
     },
@@ -11877,24 +11873,8 @@
       "value": "%1$d s"
     },
     {
-      "name": "chat_settings_surface_glass",
-      "value": "Desenfoque de interfaz"
-    },
-    {
-      "name": "chat_settings_surface_glass_sub",
-      "value": "Cristal esmerilado en Contactos, Ajustes y Perfil, igual que la barra de entrada. Se dibuja en cada fotograma: desactívalo si notas tirones."
-    },
-    {
-      "name": "chat_settings_surface_glass_level",
-      "value": "Nivel de desenfoque"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Vídeo de alto rango dinámico"
-    },
-    {
-      "name": "material_level_veil",
-      "value": "Velo"
     },
     {
       "name": "chat_settings_surface_glass_ui",
@@ -11907,22 +11887,6 @@
     {
       "name": "chat_settings_bubble_glass",
       "value": "Burbujas"
-    },
-    {
-      "name": "chat_settings_bubble_glass_sub",
-      "value": "Burbujas de mensajes: las más numerosas y costosas"
-    },
-    {
-      "name": "glass_warn_title",
-      "value": "Mayor consumo de batería"
-    },
-    {
-      "name": "glass_warn_body",
-      "value": "El desenfoque se renderiza en cada fotograma: aumenta el consumo y el calor, y puede provocar saltos al desplazarse. Si el dispositivo se calienta o va lento, vuelve y elige «Desactivado»."
-    },
-    {
-      "name": "glass_warn_enable",
-      "value": "Activar igualmente"
     },
     {
       "name": "cp_secret_pending_out",

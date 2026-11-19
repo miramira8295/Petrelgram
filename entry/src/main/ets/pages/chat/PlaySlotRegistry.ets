@@ -2,27 +2,9 @@ import {
   PlaySlotCandidate, pickPlaySlot, slotKey, PLAY_SLOT_ENTER_RATIO, PLAY_SLOT_KEEP_RATIO
 } from './playSlot';
 
-// 候选表 + 「视觉驻留才判定」的闸门。
-//
-// 判定主体是单个候选，不是整个列表：某条视频在视野里自己稳住了就该起播，
-// 与列表是否仍在滚动无关——视觉停留不是滑动停留。每个候选各自维护一个
-// stableSince：从它首次达到入选线（PLAY_SLOT_ENTER_RATIO）的那一刻起计时，
-// 一旦某次上报的 ratio 掉到入选线以下，这个候选的 stableSince 清零重来。
-// 只有连续达标满 PLAY_SLOT_DWELL_MS 的候选才有资格参与竞选新任——现任的
-// 迟滞连任（见 pickPlaySlot）不受驻留门槛约束，否则在播的那条每次 ratio
-// 抖动都要重新攒 400ms。
-//
-// 400ms 的由来：气泡用 onVisibleAreaApproximateChange({ expectedUpdateInterval:
-// 200 }) 限频上报可见比例，两个上报周期才算「真的稳住了」，一次性的抖动
-// 不算。慢速滑动时某条稳稳占了大半屏数百毫秒 → 起播；快速滑过时某条短暂
-// 全屏可见 → 连续驻留凑不满 400ms → 不起播。「滑动中不乱播」是驻留判据的
-// 自然结果，不需要额外的滚动闸门。
-//
-// 释放不等任何计时：已在播的那条一旦 ratio < PLAY_SLOT_KEEP_RATIO 或从候选
-// 表消失，立刻释放，见 releaseIfGone()。
-//
-// 时间由外部注入（report(..., now) / tick(now)），不在内部读时钟，这样整套
-// 时序都能单测。
+// 可见驻留 + 滚动门控。滚动期间仍维护候选/驻留，并即时释放离屏现任，
+// 但不选新任；停稳后沿用已有候选竞选，不依赖新的可见区回调。
+// 400ms 驻留过滤短暂出现的媒体，滚动门控避免长气泡在惯性期间创建播放器。
 export const PLAY_SLOT_DWELL_MS: number = 400;
 
 // 手动锁定（pin）的有效期。pin 让一条视频绕过驻留门槛立即当选，这是为
@@ -47,6 +29,9 @@ export class PlaySlotRegistry {
   private viewportCenterY: number = 0;
   // suspend() 与 resume() 之间为 true：候选表仍在，但不选任何播放位。
   private suspended: boolean = false;
+  private scrollBlocked: boolean = false;
+
+  setScrollBlocked(blocked: boolean): void { this.scrollBlocked = blocked; }
 
   subscribe(listener: PlaySlotListener): () => void {
     this.listeners.push(listener);
@@ -127,6 +112,7 @@ export class PlaySlotRegistry {
   // 下次值得再检查一次的延时（毫秒）；没有候选正在攒驻留时返回 -1。调用方
   // （ChatPage）据此安排一次性定时器，时间到了再调 tick(now)。
   nextCheckDelay(now: number): number {
+    if (this.suspended || this.scrollBlocked) { return -1; }
     let earliest = -1;
     this.stableSince.forEach((since: number): void => {
       const remaining = PLAY_SLOT_DWELL_MS - (now - since);
@@ -175,6 +161,7 @@ export class PlaySlotRegistry {
     this.pinned = '';
     this.pinnedAt = 0;
     this.suspended = false;
+    this.scrollBlocked = false;
     this.setSlot('');
   }
 
@@ -207,7 +194,7 @@ export class PlaySlotRegistry {
   }
 
   private elect(now: number): void {
-    if (this.suspended) {
+    if (this.suspended || this.scrollBlocked) {
       return;
     }
     this.expirePin(now);

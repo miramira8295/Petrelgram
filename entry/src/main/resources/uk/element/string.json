@@ -11065,10 +11065,6 @@
       "value": "Автовідтворення"
     },
     {
-      "name": "cb_blur_amount",
-      "value": "Ступінь розмиття"
-    },
-    {
       "name": "meow_mode_custom",
       "value": "Власний WebPush"
     },
@@ -11877,24 +11873,8 @@
       "value": "%1$d с"
     },
     {
-      "name": "chat_settings_surface_glass",
-      "value": "Розмиття інтерфейсу"
-    },
-    {
-      "name": "chat_settings_surface_glass_sub",
-      "value": "Матове скло на вкладках «Контакти», «Налаштування» та «Профіль» — як у поля вводу. Малюється щокадру: вимкніть, якщо підгальмовує."
-    },
-    {
-      "name": "chat_settings_surface_glass_level",
-      "value": "Рівень розмиття"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Відео з розширеним динамічним діапазоном"
-    },
-    {
-      "name": "material_level_veil",
-      "value": "Вуаль"
     },
     {
       "name": "chat_settings_surface_glass_ui",
@@ -11907,22 +11887,6 @@
     {
       "name": "chat_settings_bubble_glass",
       "value": "Бульбашки"
-    },
-    {
-      "name": "chat_settings_bubble_glass_sub",
-      "value": "Бульбашки повідомлень — їх найбільше і вони найдорожчі"
-    },
-    {
-      "name": "glass_warn_title",
-      "value": "Більша витрата батареї"
-    },
-    {
-      "name": "glass_warn_body",
-      "value": "Розмиття малюється щокадру: помітно зростає витрата батареї та нагрів, можливі пропуски кадрів під час прокручування. Якщо пристрій гріється або гальмує — поверніться й виберіть «Вимк»."
-    },
-    {
-      "name": "glass_warn_enable",
-      "value": "Усе одно ввімкнути"
     },
     {
       "name": "cp_secret_pending_out",

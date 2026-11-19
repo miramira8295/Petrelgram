@@ -296,6 +296,13 @@ export function glassTintHex(dark: boolean): string {
   return dark ? '#8C2F3F52' : '#8CFFFFFF';
 }
 
+// Fixed chat-overlay tint, matching resources/{base,dark}/element/color.json.
+// Use the explicit theme for contrast calculations: getColorSync may resolve
+// the wrong qualifier for app-managed dark mode. No wallpaper sampling.
+export function chatOverlayFillHex(dark: boolean): string {
+  return dark ? '#CC232E3C' : '#CCFFFFFF';
+}
+
 export function pressAnimationWins(surface: OverlaySurface): boolean {
   return !(materialAvailable() && usesInteraction(surface));
 }
@@ -487,6 +494,14 @@ export function plainBackdropBlur(surface: OverlaySurface): number {
   // 原来这里只吃偏移、不看面，所有面同一个半径——材质还在时看不出来，材质被
   // 系统收回之后就露馅了：厚度调到「超薄」，输入框和弹窗仍然一样厚。
   return materialOff() ? 0 : fallbackBlurForIndex(shiftedStyleIndex(baseStyleIndex(surface), thicknessOffset()));
+}
+
+// Chat overlay blur is disabled while investigating scroll latency. Keep the
+// existing translucent fills and surface geometry; do not change the global
+// material preference or blur in menus/viewers. This fixed O(1) policy adds no
+// scroll subscription, bitmap cache or per-frame work.
+export function chatOverlayBackdropBlur(_surface: OverlaySurface): number {
+  return 0;
 }
 
 export function overlayBackdropBlur(surface: OverlaySurface): number {

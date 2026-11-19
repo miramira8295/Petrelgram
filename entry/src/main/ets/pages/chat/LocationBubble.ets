@@ -1,11 +1,49 @@
+import { DrawnLocationCardLayout, DrawnLocationCardLayouts } from './DrawnLocationCardLayout';
+import { DrawnLocationPreview, DrawnLocationBadge, DrawnLocationStop } from './DrawnLocationDecorations';
+import { DrawnMediaTexts, DrawnMediaTextPlan, DrawnMediaTextPainter } from './DrawnMediaText';
+import { DrawnMediaControl } from './DrawnMediaControl';
+import { chatEnv } from '../../util/chatEnvMirror';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
 import { DrawnDocumentMap } from './DrawnDocumentMap';
 import { DrawnDocumentWidget } from '../../util/drawnDocumentWidget';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 
 // P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
 @ComponentV2
 export struct LocationBubble {
+  @Param preparedCard: DrawnLocationCardLayout | undefined = undefined;
+  private cardLayouts: DrawnLocationCardLayouts = new DrawnLocationCardLayouts();
+  @Computed private get cardLayout(): DrawnLocationCardLayout {
+    return this.preparedCard ?? this.cardLayouts.prepare(this.getUIContext(), { title: this.venueTitle,
+      address: this.venueAddress, live: this.livePeriod > 0, valid: this.valid, sharing: this.sharing,
+      width: this.maxWidth, environment: this.paintEnvironment });
+  }
+  private paintEnv = chatEnv;
+  private texts: DrawnMediaTexts = new DrawnMediaTexts();
+  private textPainter: DrawnMediaTextPainter = new DrawnMediaTextPainter();
+  private previewPainter: DrawnLocationPreview = new DrawnLocationPreview();
+  private badgePainter: DrawnLocationBadge = new DrawnLocationBadge();
+  private stopPainter: DrawnLocationStop = new DrawnLocationStop();
+  private chevronPainter: DrawnMediaControl = new DrawnMediaControl();
+  @Computed private get paintEnvironment(): string {
+    return `${this.paintEnv.appearanceEpoch}:${this.paintEnv.langEpoch}:${textMeasureEnvironment.epoch}`;
+  }
+  private cardWidth(): number {
+    return this.cardLayout.width;
+  }
+  // Native paragraphs are cached independently. A countdown label update never
+  // reshapes the title, rebuilds the map widget, or changes the reserved row box.
+  private textPlan(): DrawnMediaTextPlan {
+    return this.cardLayout.labels.prepare(this.getUIContext(), this.cardLayout.environment,
+      Math.max(1, this.cardWidth() - 32 - (this.available() ? 21 : 0)), this.title(), 14.5,
+      COLOR_TEXT_PRIMARY, this.detail(), 11.5, this.available() ? COLOR_TEXT_SECONDARY : '#D95B57',
+      1, true, 3, 0, false, false, 1);
+  }
+  private badgeForPaint(): DrawnLocationBadge {
+    return this.badgePainter.bind(this.getUIContext(), this.paintEnvironment,
+      str(this.liveActive() ? 'loc_live_short' : 'ended'), this.liveActive(), this.cardWidth());
+  }
   @Param latitude: number = 0;
   @Param longitude: number = 0;
   @Param accuracy: number = 0;
@@ -26,7 +64,7 @@ export struct LocationBubble {
   // Only coordinates invalidate this object, never the countdown or live status.
   @Computed private get mapWidget(): DrawnDocumentWidget {
     return { key: 'location-map', kind: 'map', name: '', mimeType: '', size: 0,
-      latitude: this.latitude, longitude: this.longitude, zoom: 15, width: 262, height: 104 };
+      latitude: this.latitude, longitude: this.longitude, zoom: 15, width: this.cardLayout.width, height: this.cardLayout.mapHeight };
   }
 
   // 本机正在共享的就是这一条。停止入口必须长在气泡上——之前只放在会话页顶部
@@ -127,48 +165,21 @@ export struct LocationBubble {
     Stack() {
       if (this.realMap && this.valid) {
         DrawnDocumentMap({ widget: this.mapWidget, chatId: this.chatId,
-          boxWidth: Math.max(1, Math.min(270, this.maxWidth)), boxHeight: 104,
+          boxWidth: Math.max(1, Math.min(270, this.maxWidth)), boxHeight: this.cardLayout.mapHeight,
           onOpen: (): void => this.onOpen() });
       } else {
-        Column()
-          .width('100%').height('100%')
-          .backgroundColor(this.valid ? '#DCE9DF' : '#E4E7EA');
-        if (this.valid) {
-          Divider().width(290).strokeWidth(5).color('#C5D7C9')
-            .rotate({ angle: 14 }).position({ x: -20, y: 25 });
-          Divider().width(290).strokeWidth(2).color('#F8FAF7')
-            .rotate({ angle: -18 }).position({ x: -18, y: 65 });
-          Divider().width(210).strokeWidth(3).color('#CCDCCF')
-            .rotate({ angle: 70 }).position({ x: 38, y: 44 });
-          Divider().width(180).strokeWidth(1).color('#F7FAF6')
-            .rotate({ angle: 42 }).position({ x: 50, y: 10 });
-          Stack() {
-            Circle({ width: 38, height: 38 }).fill('#203390EC');
-            Circle({ width: 28, height: 28 }).fill(COLOR_PRIMARY)
-              .shadow({ radius: 6, color: '#4A1F78B4', offsetX: 0, offsetY: 2 });
-            SymbolGlyph($r('sys.symbol.mappin_and_rectangle'))
-              .fontSize(15).fontColor([Color.White]);
-          }.width(42).height(42);
-        } else {
-          Column({ space: 5 }) {
-            SymbolGlyph($r('sys.symbol.map')).fontSize(24).fontColor(['#8E969F']);
-            Text($r('app.string.loc_coords_missing')).fontSize(11).fontColor('#737B84');
-          }.justifyContent(FlexAlign.Center);
-        }
+        Row().width('100%').height(this.cardLayout.mapHeight)
+          .drawModifier(this.previewPainter.bind(this.getUIContext(), this.paintEnvironment,
+            this.cardWidth(), this.valid, str('loc_coords_missing')));
       }
       if (this.livePeriod > 0) {
-        Row({ space: 5 }) {
-          Circle({ width: 7, height: 7 })
-            .fill(this.liveActive() ? '#32B66A' : '#929AA3');
-          Text(this.liveActive() ? $r('app.string.loc_live_short') : $r('app.string.ended'))
-            .fontSize(10.5).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
-        }
-        .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-        .backgroundColor('#EFFFFFFF').borderRadius(12)
-        .position({ x: 8, y: 8 });
+        Row().width(this.badgeForPaint().widthVp).height(this.badgeForPaint().heightVp)
+          .drawModifier(this.badgeForPaint())
+          .hitTestBehavior(HitTestMode.None)
+          .position({ x: 8, y: 8 });
       }
     }
-    .width('100%').height(104)
+    .width('100%').height(this.cardLayout.mapHeight)
     .borderRadius(10)
     .clip(true);
   }
@@ -176,42 +187,29 @@ export struct LocationBubble {
   build() {
     Column({ space: 9 }) {
       this.mapPreview();
+      if (this.cardLayout.showText) {
       Row({ space: 8 }) {
-        Column({ space: 3 }) {
-          Text(this.title())
-            .fontSize(14.5).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%');
-          Text(this.detail())
-            .fontSize(11.5)
-            .fontColor(this.available() ? COLOR_TEXT_SECONDARY : '#D95B57')
-            .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%');
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start);
+        Row().width(this.textPlan().width).height(this.textPlan().height)
+          .drawModifier(this.textPainter.bind(this.textPlan()));
         if (this.available()) {
-          SymbolGlyph($r('sys.symbol.chevron_right'))
-            .fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
+          Row().width(13).height(13)
+            .drawModifier(this.chevronPainter.bind(this.getUIContext(), this.paintEnvironment,
+              13, '#00000000', COLOR_ICON_SECONDARY, 'chevron'));
         }
       }
-      .padding({ left: 2, right: 30, bottom: this.sharing ? 4 : 10 })
-      .height(this.fitAvailableWidth ? 60 : undefined);
+      .padding({ left: 2, right: 30, bottom: 10 })
+      .height(this.cardLayout.textHeight);
+      }
       if (this.sharing) {
-        Row({ space: 6 }) {
-          SymbolGlyph($r('sys.symbol.stop_circle')).fontSize(16).fontColor(['#D95B57']);
-          Text($r('app.string.loc_stop_sharing'))
-            .fontSize(13).fontWeight(FontWeight.Medium).fontColor('#D95B57');
-        }
-        .justifyContent(FlexAlign.Center)
-        .width('100%').height(34)
-        .backgroundColor('#14D95B57')
-        .borderRadius(8)
-        // 气泡右下角浮着时间和已读对号（详情行靠 right:30 给它让位）。这一条
-        // 是整宽的，只能靠下方留一条空带让浮层落在它外面。
-        .margin({ bottom: 22 })
+        Row().width('100%').height(this.cardLayout.stopHeight)
+        .drawModifier(this.stopPainter.bind(this.getUIContext(), this.paintEnvironment,
+          str('loc_stop_sharing'), this.cardWidth(), this.cardLayout.stopHeight))
+        .accessibilityText(str('loc_stop_sharing'))
+        .accessibilityLevel('yes')
         .onClick((): void => { this.onStopLive(); });
       }
     }
-    .width(this.fitAvailableWidth ? Math.max(1, Math.min(270, this.maxWidth)) : Math.max(210, Math.min(270, this.maxWidth)))
+    .width(this.cardWidth()).height(this.cardLayout.height)
     .stateStyles({
       normal: this.cardNormalStyle,
       pressed: this.cardPressedStyle

@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import {ctx,load,root,group} from './test-drawn-text-row.mjs';
+const imported=await import(process.env.TYPESCRIPT_MODULE||'typescript'),ts=imported.default||imported;
+load(root+'util/giveawayAudience.ets',['giveawayAudienceOf']);
+const active={'@type':'messageGiveaway',parameters:{boosted_chat_id:-10,additional_chat_ids:[-10,-20,-30,-20,0,NaN,Infinity]}};
+const a=ctx.giveawayAudienceOf(active);
+assert.deepEqual(Array.from(a.chatIds),[-10,-20,-30]);assert.equal(a.winnerUserIds.length,0);
+const winner={'@type':'messageGiveawayWinners',boosted_chat_id:-10,winner_user_ids:[1,2,1,0,-3,1.5,NaN,4]};
+const w=ctx.giveawayAudienceOf(winner);assert.deepEqual(Array.from(w.winnerUserIds),[1,2,4]);
+assert.equal(ctx.giveawayAudienceOf(active).signature,a.signature);
+assert.notEqual(ctx.giveawayAudienceOf({...winner,winner_user_ids:[1,3,4]}).signature,w.signature);
+for(const type of ['messageGiveawayCompleted','messageGiveawayPrizeStars','messageGift','messageText'])assert.equal(ctx.giveawayAudienceOf({'@type':type}),undefined,'service/prize variants keep current behavior');
+let reads=0;const large=Array.from({length:10000},(_,i)=>i+1);
+const watched=new Proxy(large,{get(t,k){if(/^\d+$/.test(String(k)))reads++;return Reflect.get(t,k);}});
+assert.equal(ctx.giveawayAudienceOf({...winner,winner_user_ids:watched}).winnerUserIds.length,10000);assert.equal(reads,10000,'one read per source entry, no cross-product scan');
+load(root+'util/formatMsgContent.ets',['formatMsgContent']);
+const parsed=ctx.formatMsgContent({content:active});assert.equal(parsed.giveawayAudience.signature,a.signature);
+const result=ctx.formatMsgContent({content:winner});assert.equal(result.giveawayAudience.signature,w.signature);
+function extract(path,name){const source=fs.readFileSync(path,'utf8'),ast=ts.createSourceFile(path,source,ts.ScriptTarget.Latest,true);let found;function visit(node){if(ts.isFunctionDeclaration(node)&&node.name?.getText(ast)===name)found=node;ts.forEachChild(node,visit);}visit(ast);assert.ok(found);return found.getText(ast).replace(/^export\s+/,'');}
+function evaluate(code){vm.runInContext(ts.transpileModule(code,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);}
+evaluate(extract(root+'store/MessageEntry.ets','cloneMessage')+'\nglobalThis.cloneAudience=cloneMessage;');
+evaluate(fs.readFileSync(root+'util/richBlockRevision.ets','utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/\bexport /g,''));
+evaluate(extract(root+'util/collapseAlbums.ets','computeMutableSig')+'\nglobalThis.audienceSig=computeMutableSig;');
+const head=group('').head,entry=new Proxy({...head,giveawayAudience:a},{get(t,k){return k in t?t[k]:[];}});
+assert.equal(ctx.cloneAudience(entry).giveawayAudience,a,'message snapshots retain normalized audience by reference');
+const changed=new Proxy({...head,giveawayAudience:w},{get(t,k){return k in t?t[k]:[];}});
+assert.notEqual(ctx.audienceSig(entry),ctx.audienceSig(changed),'changed winners cannot be lost by timeline fingerprinting');
+console.log('PASS: giveaway channel/winner normalization, dedup/invalid IDs/order, exact linear reads, real TD parser/clone/content-key propagation and service-message exclusion.');

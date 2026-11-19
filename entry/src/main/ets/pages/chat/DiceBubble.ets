@@ -1,5 +1,7 @@
+import { DrawnMediaPlaceholder } from './DrawnMediaPlaceholder';
+import { DrawnLoadingSpinner } from './DrawnLoadingSpinner';
 import { promptAction } from '@kit.ArkUI';
-import { COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { TgsStickerView } from './TgsStickerView';
 import { str } from '../../util/strings';
 
@@ -107,9 +109,10 @@ export struct DiceBubble {
         });
       } else {
         Stack() {
-          Text(this.safeEmoji()).fontSize(this.animationSide * 0.64);
+          DrawnMediaPlaceholder({ primary: this.safeEmoji(), primarySize: this.animationSide * 0.64, primaryColor: COLOR_TEXT_PRIMARY,
+            boxWidth: this.animationSide, boxHeight: this.animationSide });
           if (!this.hasFinalState || this.value <= 0) {
-            LoadingProgress().width(20).height(20)
+            DrawnLoadingSpinner({ ringSize: 20, ringColor: $r('app.color.primary') })
               .position({ x: this.animationSide - 32, y: this.animationSide - 32 });
           }
         }

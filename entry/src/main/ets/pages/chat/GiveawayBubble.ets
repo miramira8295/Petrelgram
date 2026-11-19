@@ -1,3 +1,11 @@
+import { GiveawayAudience } from '../../util/giveawayAudience';
+import { DrawnGiveawayAudience } from './DrawnGiveawayAudience';
+import { DrawnGiveawayAudienceLayout, DrawnGiveawayAudienceLayouts } from './DrawnGiveawayAudienceLayout';
+import { DrawnCardBar } from './DrawnCardBar';
+import { CachedImage } from '../common/CachedImage';
+import { CachedImageSpec, CachedImageSpecCache } from '../../util/cachedImageSpec';
+import { chatEnv } from '../../util/chatEnvMirror';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { monthDayTime } from '../../util/intlFormat';
@@ -6,7 +14,34 @@ import { DrawnGiveawayLayout, DrawnGiveawayTextPainter } from './DrawnGiveawayLa
 // P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
 @ComponentV2
 export struct GiveawayBubble {
+  @Param chatId: number = 0;
+  @Param audience: GiveawayAudience | undefined = undefined;
+  @Param ownerKey: string = '';
+  @Event onPeer: (id: number, user: boolean) => void = (): void => {};
+  private audiences: DrawnGiveawayAudienceLayouts = new DrawnGiveawayAudienceLayouts();
+  @Computed private get audienceLayout(): DrawnGiveawayAudienceLayout | null {
+    return this.prepared !== null ? this.prepared.audience : this.audiences.prepare(this.getUIContext(), this.audience, this.cardWidth(), this.environment);
+  }
   @Param prepared: DrawnGiveawayLayout | null = null;
+  private env = chatEnv;
+  private artworkPainter: DrawnCardBar = new DrawnCardBar();
+  private badgePainter: DrawnCardBar = new DrawnCardBar();
+  private statsPainter: DrawnCardBar = new DrawnCardBar();
+  private buttonPainter: DrawnCardBar = new DrawnCardBar();
+  private photoSpecs: CachedImageSpecCache = new CachedImageSpecCache();
+  @Computed private get environment(): string { return `${this.env.appearanceEpoch}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`; }
+  @Computed private get photoSpec(): CachedImageSpec {
+    return this.photoSpecs.prepare({ path: this.photoPath, boxWidth: 104, boxHeight: 104, fit: ImageFit.Contain,
+      drawOnCanvas: true, sourceKey: `${this.chatId}:${this.messageId}:${this.boostedChatId}` });
+  }
+  private cardWidth(): number { return this.fitAvailableWidth ? Math.max(1, this.maxWidth) : Math.max(220, Math.min(278, this.maxWidth)); }
+  private statsLabel(): string {
+    const labels: string[] = [];
+    if (this.winnerCount > 0) { labels.push(plural('gw_winners_n', this.winnerCount, this.winnerCount)); }
+    if (this.onlyNewMembers) { labels.push(str('gw_new_members_only')); }
+    if (this.unclaimedCount > 0) { labels.push(plural('gw_unclaimed_n', this.unclaimedCount, this.unclaimedCount)); }
+    return labels.join(' · ');
+  }
   private textPainter: DrawnGiveawayTextPainter = new DrawnGiveawayTextPainter();
   @Param messageId: number = 0;
   @Param state: string = '';
@@ -81,35 +116,23 @@ export struct GiveawayBubble {
   build() {
     Column({ space: 9 }) {
       Stack() {
-        Column()
-          .width('100%').height('100%')
-          .linearGradient({
-            angle: 135,
-            colors: [[this.refunded ? '#E2E5E9' : '#DDEBFF', 0],
-              [this.refunded ? '#F5F6F7' : '#F3E7FF', 1]]
-          });
-        if (this.photoPath !== '') {
-          Image(this.photoPath.startsWith('/') ? `file://${this.photoPath}` : this.photoPath).draggable(false)
-            .width(104).height(104).objectFit(ImageFit.Contain);
-        } else {
-          Text(this.state === 'prize' ? '🏆' : (this.refunded ? '↩️' : '🎉'))
-            .fontSize(52);
-        }
-        Row({ space: 5 }) {
-          SymbolGlyph($r(this.state === 'active'
-            ? 'sys.symbol.clock_fill' : 'sys.symbol.checkmark_seal_fill'))
-            .fontSize(11).fontColor([this.refunded ? '#8C96A1' : COLOR_PRIMARY]);
-          Text(this.statusText()).fontSize(10.5)
-            .maxLines(this.prepared ? 1 : undefined).textOverflow({ overflow: TextOverflow.Ellipsis })
-            .constraintSize({ maxWidth: this.prepared ? Math.max(1, this.maxWidth - 29 - this.prepared.badgeHeight) : undefined })
-            .fontColor(this.refunded ? '#8C96A1' : COLOR_PRIMARY);
-        }
-        .padding({ left: 7, right: 7, top: 4, bottom: 4 })
-        .height(this.prepared?.badgeHeight)
-        .backgroundColor('#DFFFFFFF').borderRadius(9)
-        .position({ x: 9, y: this.prepared ? Math.max(0, this.prepared.artworkHeight - this.prepared.badgeHeight - 8) : 94 });
+        CachedImage({ spec: this.photoSpec });
+        Row().width(Math.max(1, this.cardWidth() - 18)).height(this.prepared?.badgeHeight ?? 24)
+          .drawModifier(this.badgePainter.bind(this.getUIContext(), {
+            width: Math.max(1, this.cardWidth() - 18), height: this.prepared?.badgeHeight ?? 24,
+            environment: this.environment, left: `${this.state === 'active' ? '◷' : '✓'} ${this.statusText()}`,
+            leftFont: 10.5, leftColor: this.refunded ? '#8C96A1' : COLOR_PRIMARY,
+            background: '#DFFFFFFF', radius: 9, paddingLeft: 7, paddingRight: 7
+          }))
+          .position({ x: 9, y: this.prepared ? Math.max(0, this.prepared.artworkHeight - this.prepared.badgeHeight - 8) : 94 });
       }
       .width('100%').height(this.prepared?.artworkHeight ?? 126)
+      .drawModifier(this.artworkPainter.bind(this.getUIContext(), {
+        width: this.cardWidth(), height: this.prepared?.artworkHeight ?? 126, environment: this.environment,
+        background: this.refunded ? '#EDF0F3' : '#ECEAFF', radius: 12,
+        center: this.photoPath !== '' ? '' : this.state === 'prize' ? '🏆' : this.refunded ? '↩️' : '🎉',
+        centerFont: 52, centerColor: COLOR_PRIMARY
+      }))
       .borderRadius(12).clip(true);
       if (this.prepared !== null) {
         Row().width('100%').height(this.prepared.textHeight);
@@ -126,35 +149,22 @@ export struct GiveawayBubble {
             .maxLines(this.fullDescription ? undefined : 3).textOverflow({ overflow: TextOverflow.Ellipsis });
         }
       }
-      Row({ space: 10 }) {
-        if (this.winnerCount > 0) {
-          Text(plural('gw_winners_n', this.winnerCount, this.winnerCount))
-            .fontSize(10.5).fontColor(COLOR_TEXT_SECONDARY)
-            .maxLines(this.prepared ? 1 : undefined).textOverflow({ overflow: TextOverflow.Ellipsis })
-            .height(this.prepared?.statsHeight).lineHeight(this.prepared?.statsHeight).layoutWeight(this.prepared ? 1 : 0);
-        }
-        if (this.onlyNewMembers) {
-          Text($r('app.string.gw_new_members_only')).fontSize(10.5).fontColor(COLOR_TEXT_SECONDARY)
-            .maxLines(this.prepared ? 1 : undefined).textOverflow({ overflow: TextOverflow.Ellipsis })
-            .height(this.prepared?.statsHeight).lineHeight(this.prepared?.statsHeight).layoutWeight(this.prepared ? 1 : 0);
-        }
-        if (this.unclaimedCount > 0) {
-          Text(plural('gw_unclaimed_n', this.unclaimedCount, this.unclaimedCount))
-            .fontSize(10.5).fontColor('#B06A32')
-            .maxLines(this.prepared ? 1 : undefined).textOverflow({ overflow: TextOverflow.Ellipsis })
-            .height(this.prepared?.statsHeight).lineHeight(this.prepared?.statsHeight).layoutWeight(this.prepared ? 1 : 0);
-        }
-      }.width('100%').height(this.prepared?.statsHeight);
+      if (this.audienceLayout !== null) {
+        DrawnGiveawayAudience({ model: this.audienceLayout, ownerKey: this.ownerKey || `${this.chatId}:${this.messageId}`,
+          onActivate: (id: number, user: boolean): void => { if (this.onBeforeAction()) { this.onPeer(id, user); } } });
+      }
+      Row().width('100%').height(this.prepared?.statsHeight ?? (this.statsLabel() !== '' ? 18 : 0))
+        .drawModifier(this.statsPainter.bind(this.getUIContext(), {
+          width: this.cardWidth(), height: this.prepared?.statsHeight ?? 18, environment: this.environment,
+          left: this.statsLabel(), leftFont: 10.5, leftColor: COLOR_TEXT_SECONDARY
+        })).accessibilityText(this.statsLabel());
       if (this.prepared ? this.prepared.hasOriginal : this.originalMessageId > 0) {
-        Row({ space: 6 }) {
-          SymbolGlyph($r('sys.symbol.arrow_up_right')).fontSize(13).fontColor([COLOR_PRIMARY]);
-          Text($r('app.string.gw_view_original')).fontSize(12).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
-            .maxLines(this.prepared ? 1 : undefined).textOverflow({ overflow: TextOverflow.Ellipsis })
-            .constraintSize({ maxWidth: this.prepared ? Math.max(1, this.maxWidth - 35) : undefined });
-        }
-        .width('100%').height(this.prepared?.buttonHeight ?? 34)
-        .justifyContent(FlexAlign.Center)
-        .backgroundColor('#123390EC').borderRadius(9)
+        Row().width('100%').height(this.prepared?.buttonHeight ?? 34)
+        .drawModifier(this.buttonPainter.bind(this.getUIContext(), {
+          width: this.cardWidth(), height: this.prepared?.buttonHeight ?? 34, environment: this.environment,
+          center: `↗ ${str('gw_view_original')}`, centerFont: 12, centerColor: COLOR_PRIMARY, background: '#123390EC', radius: 9
+        }))
+        .accessibilityText(str('gw_view_original'))
         .stateStyles({
           normal: this.normalStyle,
           pressed: this.pressedStyle

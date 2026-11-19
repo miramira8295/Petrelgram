@@ -11065,10 +11065,6 @@
       "value": "التشغيل التلقائي"
     },
     {
-      "name": "cb_blur_amount",
-      "value": "درجة الضبابية"
-    },
-    {
       "name": "meow_mode_custom",
       "value": "WebPush مخصص"
     },
@@ -11877,24 +11873,8 @@
       "value": "%1$d ث"
     },
     {
-      "name": "chat_settings_surface_glass",
-      "value": "ضبابية الواجهة"
-    },
-    {
-      "name": "chat_settings_surface_glass_sub",
-      "value": "زجاج ضبابي في جهات الاتصال والإعدادات والملف الشخصي، بنفس مظهر شريط الكتابة. يُرسم في كل إطار — أوقفه إذا تقطّع التمرير."
-    },
-    {
-      "name": "chat_settings_surface_glass_level",
-      "value": "درجة الضبابية"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "فيديو بنطاق ديناميكي عالٍ"
-    },
-    {
-      "name": "material_level_veil",
-      "value": "حجاب"
     },
     {
       "name": "chat_settings_surface_glass_ui",
@@ -11907,22 +11887,6 @@
     {
       "name": "chat_settings_bubble_glass",
       "value": "الفقاعات"
-    },
-    {
-      "name": "chat_settings_bubble_glass_sub",
-      "value": "فقاعات الرسائل — الأكثر عددًا والأعلى استهلاكًا"
-    },
-    {
-      "name": "glass_warn_title",
-      "value": "استهلاك أعلى للبطارية"
-    },
-    {
-      "name": "glass_warn_body",
-      "value": "يُرسم التمويه في كل إطار: يزيد استهلاك البطارية والحرارة بوضوح، وقد يسبب تقطيعًا أثناء التمرير. إذا سخن الجهاز أو تقطّع، عد واختر «إيقاف»."
-    },
-    {
-      "name": "glass_warn_enable",
-      "value": "تفعيل على أي حال"
     },
     {
       "name": "cp_secret_pending_out",

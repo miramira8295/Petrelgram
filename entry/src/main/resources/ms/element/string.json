@@ -11065,10 +11065,6 @@
       "value": "Main automatik"
     },
     {
-      "name": "cb_blur_amount",
-      "value": "Tahap kabur"
-    },
-    {
       "name": "meow_mode_custom",
       "value": "WebPush Tersuai"
     },
@@ -11877,24 +11873,8 @@
       "value": "%1$d saat"
     },
     {
-      "name": "chat_settings_surface_glass",
-      "value": "Kabur antara muka"
-    },
-    {
-      "name": "chat_settings_surface_glass_sub",
-      "value": "Kaca kabur pada Kenalan, Tetapan dan Profil, sepadan dengan bar input. Dilukis setiap bingkai — matikan jika tersekat-sekat."
-    },
-    {
-      "name": "chat_settings_surface_glass_level",
-      "value": "Tahap kabur"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Video julat dinamik tinggi"
-    },
-    {
-      "name": "material_level_veil",
-      "value": "Tirai"
     },
     {
       "name": "chat_settings_surface_glass_ui",
@@ -11907,22 +11887,6 @@
     {
       "name": "chat_settings_bubble_glass",
       "value": "Gelembung"
-    },
-    {
-      "name": "chat_settings_bubble_glass_sub",
-      "value": "Gelembung mesej — paling banyak dan paling mahal"
-    },
-    {
-      "name": "glass_warn_title",
-      "value": "Bateri lebih cepat habis"
-    },
-    {
-      "name": "glass_warn_body",
-      "value": "Kabur dipaparkan setiap bingkai: penggunaan bateri dan haba meningkat ketara, dan bingkai boleh tergugur semasa menatal. Jika peranti panas atau tersekat, kembali dan pilih «Mati»."
-    },
-    {
-      "name": "glass_warn_enable",
-      "value": "Tetap hidupkan"
     },
     {
       "name": "cp_secret_pending_out",

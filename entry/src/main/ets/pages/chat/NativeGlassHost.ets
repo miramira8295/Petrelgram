@@ -12,7 +12,7 @@
 //      所以出来的就是菜单那块玻璃。材质不可用时退回 backgroundEffect 自绘。
 //
 // 尺寸一律用调用方量出来的绝对 vp，不用 '100%'（百分比在这一层解析不可靠，实测会偏）。
-import { immersiveMaterialAvailable, materialOff, OverlaySurface, plainGlassFill } from '../../util/overlayMaterial';
+import { immersiveMaterialAvailable, materialOff, OverlaySurface } from '../../util/overlayMaterial';
 import { materialModifierWhen } from '../../util/materialModifier';
 
 @ComponentV2
@@ -54,7 +54,7 @@ export struct NativeGlassHost {
       if (!this.effectsEnabled) {
         Row()
           .width(this.hostWidth).height(this.hostHeight).borderRadius(this.hostRadius)
-          .backgroundColor(plainGlassFill($r('app.color.surface')))
+          .backgroundColor($r('app.color.chat_overlay'))
           .focusable(false)
           .hitTestBehavior(this.tapHost ? HitTestMode.Default : HitTestMode.None)
           .onClick((): void => { if (this.tapHost) { this.onHostTap(); } })

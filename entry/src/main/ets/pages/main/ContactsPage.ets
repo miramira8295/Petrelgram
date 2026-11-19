@@ -10,7 +10,7 @@ import { getTdClient } from '../../tdkit/Globals';
 import { flushPendingNavs } from '../../util/pendingNavFlush';
 import {
   KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT,
-  surfaceGlassBlurStyle, surfaceGlassFill
+  surfaceGlassFill
 } from '../../util/surfaceGlass';
 import { ContactsStore, ContactItem } from '../../store/ContactsStore';
 import {
@@ -48,7 +48,6 @@ import {
 } from '../../util/contactAddRequest';
 import { plural, str } from '../../util/strings';
 import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
-import { materialModifierWhen } from '../../util/materialModifier';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE, logW } from '../../util/log';
@@ -65,8 +64,7 @@ import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 
-// 卡片底色 + 毛玻璃。开关关着时 surfaceGlassFill 原样返回实色、
-// cardBlurStyle 返回 undefined，和改动前逐字节等价（见 util/surfaceGlass）。
+// 卡片与消息气泡使用同档透明度的颜色填充；关闭整体材质时保持实色。
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
 // 联系人行是**一行一张卡片**（2026-10-29 用户要求与首页同款）：圆角 16、
@@ -127,7 +125,7 @@ export struct ContactsPage {
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
-  // 全局界面模糊：开关和档位都要能立刻重绘。开关本身是 AppStorage 键，
+  // 整体颜色材质：开关和档位都要能立刻重绘。开关本身是 AppStorage 键，
   // 档位走 epoch（surfaceGlass 是 util，订阅不了 AppStorage，同 MATERIAL_EPOCH 的做法）。
   @StorageProp(KEY_SURFACE_GLASS_ON) private surfaceGlassOn: boolean = SURFACE_GLASS_ON_DEFAULT;
   @StorageProp(SURFACE_GLASS_EPOCH) private surfaceGlassEpoch: number = 0;
@@ -140,12 +138,6 @@ export struct ContactsPage {
 
   private cardFill(): ResourceColor {
     return this.glassOn() ? surfaceGlassFill(CARD_BG) : CARD_BG;
-  }
-
-  // 框架容器材质，不是 backdropBlur——后者在节点边缘有采样衰减，四角最明显
-  // （见 util/surfaceGlass.surfaceGlassBlurStyle）。
-  private cardBlurStyle(): BlurStyle | undefined {
-    return this.glassOn() ? surfaceGlassBlurStyle() : undefined;
   }
 
   private contactsScroller: ListScroller = new ListScroller();
@@ -986,7 +978,6 @@ export struct ContactsPage {
     .height(SEARCH_BAR_HEIGHT)
     .padding({ left: 13, right: 9 })
     .backgroundColor(this.cardFill())
-    .backgroundBlurStyle(this.cardBlurStyle())
     .borderRadius(SEARCH_BAR_HEIGHT / 2)
     .border({
       width: this.searchFocused ? 1.5 : 0.5,
@@ -1054,7 +1045,6 @@ export struct ContactsPage {
     .margin({ left: this.cardGutter(), right: this.cardGutter(), top: 12 })
     .padding({ bottom: 4 })
     .backgroundColor(this.cardFill())
-    .backgroundBlurStyle(this.cardBlurStyle())
     .borderRadius(CARD_RADIUS)
     .opacity(this.skeletonBright ? 0.56 : 0.92)
     .animation({
@@ -1090,7 +1080,6 @@ export struct ContactsPage {
     .margin({ left: this.cardGutter(), right: this.cardGutter(), top: 12 })
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.cardFill())
-    .backgroundBlurStyle(this.cardBlurStyle())
     .borderRadius(CARD_RADIUS)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
@@ -1141,7 +1130,6 @@ export struct ContactsPage {
     .margin({ left: this.cardGutter(), right: this.cardGutter(), top: 12 })
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.cardFill())
-    .backgroundBlurStyle(this.cardBlurStyle())
     .borderRadius(CARD_RADIUS)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
@@ -1221,7 +1209,7 @@ export struct ContactsPage {
   // 卡片几何全部照抄首页（pages/chatlist/ChatRow）：外边距 homeCardMarginVp、上下
   // 间距 3+3、圆角 16、行内边距左 8 / 右 14 / 上下 8（在 ContactRowView 里）。
   // 底色与玻璃铺在**每行一个的卡片容器**上，行本身透明（见 ContactRowView.rowFill）：
-  // 行再各铺一块就是两层模糊叠加，又重又灰。
+  // 行本身不再叠加填色，避免透明度累加。
   // 点击、按压、长按菜单挂在 ListItem 上（理由见 ContactRowView）。
   @Builder
   listCard() {
@@ -1273,7 +1261,6 @@ export struct ContactsPage {
               color: GLASS_OUTLINE_COLOR
             })
             .backgroundColor(this.cardFill())
-            .backgroundBlurStyle(this.cardBlurStyle())
             .clip(true);
           }
         }
@@ -1357,7 +1344,6 @@ export struct ContactsPage {
         })
         .justifyContent(FlexAlign.Center)
         .backgroundColor(this.cardFill())
-        .backgroundBlurStyle(this.cardBlurStyle())
         .borderRadius(CONTACT_CARD_RADIUS);
       }
       .width('100%')
@@ -1373,7 +1359,6 @@ export struct ContactsPage {
           top: CONTACT_CARD_GAP_VP, bottom: CONTACT_CARD_GAP_VP
         })
         .backgroundColor(this.cardFill())
-        .backgroundBlurStyle(this.cardBlurStyle())
         .borderRadius(CONTACT_CARD_RADIUS)
         .clip(true);
       }
@@ -1554,8 +1539,7 @@ export struct ContactsPage {
       top: 6,
       bottom: Math.max(18, this.bottomSafe + 10)
     })
-    .backgroundColor(this.cardFill())
-    .backgroundBlurStyle(this.cardBlurStyle());
+    .backgroundColor(this.cardFill());
   }
 
   // 标题栏内容：大标题 + 右上角两个图标——[新建联系人][最近通话]。

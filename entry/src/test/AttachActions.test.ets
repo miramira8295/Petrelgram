@@ -24,15 +24,16 @@ export default function attachActionsTest() {
   describe('attachActions', () => {
     it('keeps a fixed order in a private chat', 0, () => {
       expect(keysOf(attachActions(false, false)))
-        .assertDeepEquals(['media', 'file', 'audio', 'videoNote', 'location', 'contact', 'dice']);
+        .assertDeepEquals(['media', 'file', 'audio', 'videoNote', 'location', 'contact', 'checklist', 'markdown', 'dice']);
     });
 
-    it('adds the poll only for groups and channels', 0, () => {
+    it('offers polls for groups/channels and checklists outside channels', 0, () => {
       const expected: string[] =
-        ['media', 'file', 'audio', 'videoNote', 'location', 'contact', 'poll', 'dice'];
+        ['media', 'file', 'audio', 'videoNote', 'location', 'contact', 'poll', 'checklist', 'markdown', 'dice'];
       expect(keysOf(attachActions(true, false))).assertDeepEquals(expected);
-      expect(keysOf(attachActions(false, true))).assertDeepEquals(expected);
-      expect(keysOf(attachActions(true, true))).assertDeepEquals(expected);
+      const channel: string[] = expected.filter((key: string): boolean => key !== 'checklist');
+      expect(keysOf(attachActions(false, true))).assertDeepEquals(channel);
+      expect(keysOf(attachActions(true, true))).assertDeepEquals(channel);
     });
 
     // 私聊相对群聊只少 poll 一项，其余相对次序完全不变——这就是"位置不漂移"
@@ -196,6 +197,7 @@ class FakeHost implements AttachActionsHost {
     this.callOrder.push('draftText');
     return this.draftTextValue;
   };
+  sendMarkdown: () => void = (): void => { this.callOrder.push('sendMarkdown'); };
   clearDraft: () => void = (): void => { this.callOrder.push('clearDraft'); };
   setAtBottom: (value: boolean) => void = (value: boolean): void => {
     this.callOrder.push(`setAtBottom:${value}`);
@@ -279,6 +281,17 @@ export function attachActionsControllerTest(): void {
       controller.runAttachAction('poll');
 
       expect(host.callOrder).assertDeepEquals(['closeAttachPanel', 'setSheet:poll:true']);
+    });
+
+    it('routes checklist to its compose sheet', 0, (): void => {
+      const host: FakeHost = new FakeHost();
+      controllerOn(host).runAttachAction('checklist');
+      expect(host.callOrder).assertDeepEquals(['closeAttachPanel', 'setSheet:checklist:true']);
+    });
+    it('routes explicit Markdown sending independently of normal text', 0, (): void => {
+      const host: FakeHost = new FakeHost();
+      controllerOn(host).runAttachAction('markdown');
+      expect(host.callOrder).assertDeepEquals(['closeAttachPanel', 'sendMarkdown']);
     });
 
     it("runAttachAction('contact')：只经 host.setSheet('contact', true)，不串台", 0, (): void => {

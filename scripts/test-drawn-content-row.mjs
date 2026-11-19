@@ -47,11 +47,12 @@ load(root+'pages/chat/DrawnVideoMeta.ets',['drawnVideoMetaCache']);
 load(root+'util/drawnStageMetrics.ets',['drawnStageMetrics','DrawnStage']);
 load(root+'util/mediaThumbChannel.ets',['publishThumbPath','subscribeThumbPath','thumbPathFor']);
 load(root+'pages/chat/DrawnMediaPosition.ets',['DrawnMediaPosition']);
+load(root+'pages/chat/PlaySlotChannel.ets',['PlaySlotChannel','PlaySlotBinding','EMPTY_PLAY_SLOT']);
 load(compiled+'pages/chat/DrawnAlbumVideo.ts',['DrawnAlbumVideo']);
 let positionReads=0, geometryTop=200;
 const geometryUi={getFrameNodeById:()=>{positionReads++;return {getMeasuredSize:()=>({height:200}),getPositionToWindowWithTransform:()=>({y:geometryTop})};},px2vp:n=>n/2};
 View.prototype.getUIContext=()=>geometryUi;
-const events=[],actions=new Proxy({}, {get:(_t,k)=>(...args)=>events.push([k,...args])});
+const events=[],actions=new Proxy({}, {get:(_t,k)=>k==='playback'?undefined:(...args)=>events.push([k,...args])});
 const cell={chatId:1,messageId:10,idx:2,width:150,height:100,isVideo:true,isLive:false,isPlaySlot:true,videoFileId:8,inlineFileId:9,videoFileSize:30,videoDuration:2};
 const video=new context.DrawnAlbumVideo(null,{cell,actions});
 // Callbacks can be installed before aboutToAppear, as in native initialRender.
@@ -80,6 +81,8 @@ reactions[Symbol.iterator]=function*(){iterations++;yield* Array.prototype.value
 Object.assign(content,{msg:{reactions,editDate:0,isOutgoing:false},context:{liveViews:''},env:{langEpoch:1,appearanceEpoch:1},
   textMeasureCache:{prepare(){}},inlineMaxW:()=>250,reactorsArrowShown:()=>false,messageTimeText:()=> '12:34',
   measureTextVp:(s,n)=>{measure++;return s.length*n/2;}});
+content.measureReactionCount=(label)=>content.measureTextVp(label,12);
+content.reactionAvatars=()=>0;content.data={isGroup:true,isChannel:false};
 const width=content.reactionsRowWidth(),reads=measure;
 for(let i=0;i<1000;i++)assert.equal(content.reactionsRowWidth(),width);
 assert.equal(iterations,1);assert.equal(measure,reads);
@@ -143,7 +146,7 @@ console.log('PASS: 1000 local publication transfers, synchronous stale callback 
 
 const albumVideoSource=fs.readFileSync(root+'pages/chat/DrawnAlbumVideo.ets','utf8');
 assert.ok(!albumVideoSource.includes("@Monitor('content.cell'"));
-assert.ok(albumVideoSource.includes("@Monitor('observedCell', 'sendState')"));
+assert.ok(albumVideoSource.includes("@Monitor('observedCell', 'sendState', 'actions')"));
 local.content=undefined;assert.equal(local.observedCell,cell);
 local.content=channel;assert.equal(local.observedCell,undefined);
 channel.bind({...cell,isPlaySlot:true},true);assert.equal(local.observedCell,channel.cell);
@@ -285,3 +288,21 @@ channel.setThumbReady(true);channel.recycle();assert.equal(local.slotThumbReady,
 local.content=undefined;local.mediaWidth=55;local.mediaHeight=66;local.thumbReady=true;
 assert.equal(local.slotWidth,55);assert.equal(local.slotHeight,66);assert.equal(local.slotThumbReady,true);
 console.log('PASS: slot-local geometry/readiness, 1000 equal updates without writes, recycle reset and legacy presentation.');
+
+// Replay the real medium-weight measurement path as well as the width memo.
+load(root+'util/textMeasureCache.ets',['TextMeasureCache']);
+context.FontWeight={Medium:500};
+const countOwner=Object.create(context.BubbleContentLayout.prototype);
+let counterMeasures=0,failCounter=false;
+Object.assign(countOwner,{env:{langEpoch:0,appearanceEpoch:0},reactionCountWidths:new context.TextMeasureCache(),
+  getUIContext:()=>({px2vp:x=>x/2,getMeasureUtils:()=>({measureTextSize:args=>{
+    counterMeasures++;assert.equal(args.fontWeight,500);
+    if(failCounter)throw Error('temporary font failure');return {width:args.textContent.length*14};
+  }})})});
+assert.equal(countOwner.measureReactionCount('12'),14);
+for(let i=0;i<1000;i++)assert.equal(countOwner.measureReactionCount('12'),14);
+assert.equal(counterMeasures,1);
+countOwner.env.appearanceEpoch++;countOwner.measureReactionCount('12');assert.equal(counterMeasures,2);
+failCounter=true;countOwner.measureReactionCount('999');assert.equal(countOwner.textMeasureFailed,true);
+failCounter=false;assert.equal(countOwner.measureReactionCount('999'),21);assert.equal(counterMeasures,4);
+console.log('PASS: medium reaction counters use the real font weight, 1000 warm hits avoid native measure, theme invalidates and failed measurement retries.');

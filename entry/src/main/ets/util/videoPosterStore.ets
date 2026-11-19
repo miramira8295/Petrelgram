@@ -25,6 +25,7 @@ const subs: Map<string, Set<(path: string) => void>> = new Map<string, Set<(path
 const queued: Set<string> = new Set<string>();
 const queue: PosterJob[] = [];
 let running: boolean = false;
+let queueHead: number = 0;
 let cacheRoot: string = '';
 let dirReady: boolean = false;
 
@@ -117,10 +118,13 @@ function ensureDir(): boolean {
 }
 
 function pump(): void {
-  if (running || queue.length === 0) {
+  if (running || queueHead >= queue.length) {
     return;
   }
-  const job: PosterJob | undefined = queue.shift();
+  const job: PosterJob | undefined = queue[queueHead++];
+  // Cursor/compaction: draining many file covers is O(N), not repeated O(N) shifts.
+  if (queueHead === queue.length) { queue.length = 0; queueHead = 0; }
+  else if (queueHead >= 256 && queueHead * 2 >= queue.length) { queue.splice(0, queueHead); queueHead = 0; }
   if (job === undefined) {
     return;
   }

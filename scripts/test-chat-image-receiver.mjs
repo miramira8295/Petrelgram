@@ -13,6 +13,7 @@ const ui = { vp2px: n => n * density };
 const cache = new Map(), pending = [], channels = new Map(), subscribers = new Map();
 const requestKey = r => `${r.path}:${r.width}:${r.height}:${r.opaque}`;
 class ViewV2 {
+  static create(view) { view.initialRender(); }
   initParam(k, v) { this[k] = v; }
   resetParam(k, v) { this[k] = v; }
   resetMonitorsOnReuse() {}
@@ -30,7 +31,7 @@ function node(type) {
 }
 const ctx = vm.createContext({
   ViewV2, ViewPU: class {}, ImageFit: fit, Color: { Transparent: 0 },
-  ImageInterpolation: { High: 1 }, Stack: node('Stack'), Image: node('Image'), If: node('If'),
+  HitTestMode: { None: 0 }, __Common__: node('Common'), ImageInterpolation: { High: 1 }, Stack: node('Stack'), Image: node('Image'), If: node('If'),
   MINI_PLACEHOLDER_BLUR: 8, scrollPlaceholderState: { active: false },
   DrawModifier: class { invalidate() { invalidations++; } },
   drawing: { FilterMode: { FILTER_MODE_LINEAR: 1 },
@@ -57,6 +58,7 @@ for (const file of ['imageSwap', 'cachedImageSpec', 'CachedImageSession', 'liveT
   load(`entry/src/main/ets/util/${file}.ets`, file === 'cachedImageSpec' ? ['CachedImageSpecCache', 'sameCachedImageDecode'] : []);
 }
 load('entry/src/main/ets/pages/common/DrawnImageReceiver.ets', ['DrawnImageReceiver']);
+load(compiled + 'pages/common/StaticMiniThumbnail.ts', ['StaticMiniThumbnail']);
 load(compiled + 'pages/common/CachedImage.ts', ['CachedImage']);
 load(compiled + 'pages/chat/LiveThumbImage.ts', ['LiveThumbImage', 'LiveThumbSpecCache']);
 function handle(name, w = 400, h = 200) {

@@ -21,11 +21,11 @@ assert.equal(started[0][0],-20);assert.equal(started[0][3],'music');
 engine.startDocumentMusic(21,ctx.streamAudioSource(21,5000,'audio/mpeg'),40);assert.equal(started[1][0],-21);
 engine.toggleMusic(-20,'/invalid',40);engine.startMusic(-20,'/invalid',40);engine.toggleDocumentMusic(0,ctx.localAudioSource('/invalid'),40);
 assert.equal(started.length,2);
-let fileCallback,voiceCallback,requests=0,published=[],plays=[];
+let fileCallback,voiceCallback,requests=0,published=[],plays=[],seeks=[];
 ctx.cachedMusicCover=()=>'';
 Object.assign(ctx,{documentFileState:()=>({path:'',failed:false}),watchDocumentFile:(_file,fn)=>{fileCallback=fn;return()=>{};},
  requestDocumentFile(){requests++},cancelDocumentFile(){},publishNowPlaying:state=>published.push(state),
- getVoicePlayback:()=>({current:()=>({mode:'idle'}),setDocumentPlaylist(){},subscribe:fn=>{voiceCallback=fn;return()=>{};},toggleDocumentMusic:(...args)=>plays.push(args),seek(){}})});
+ getVoicePlayback:()=>({current:()=>({mode:'idle'}),setDocumentPlaylist(){},subscribe:fn=>{voiceCallback=fn;return()=>{};},toggleDocumentMusic:(...args)=>plays.push(args),seek:(...args)=>seeks.push(args)})});
 load(compiled+'pages/chat/DrawnDocumentAudio.ts',['DrawnDocumentAudio']);
 const card=Object.create(ctx.DrawnDocumentAudio.prototype);
 Object.assign(card,{widget:first,audioItems:[first,second],chatId:3,messageId:123,visible:true,generation:0,pending:false,offFile:null,offVoice:null,onClaim:()=>true});
@@ -64,3 +64,26 @@ queued.generation++;finish({local:{is_downloading_completed:true,path:'/late'}})
 queued.setDocumentPlaylist([a,unknown]);queued.advanceDocumentPlaylist(-20);finish({local:{is_downloading_completed:true,path:'/next'}});await Promise.resolve();assert.equal(advanced.length,2);assert.equal(advanced[1][1].path,'/next');
 const musicQueue=[a,b];controller.adopt(a,musicQueue);controller.adopt(b,musicQueue);assert.equal(controller.getQueue(),musicQueue);assert.equal(controller.index,1);
 console.log('PASS: shared/deduplicated playlist, 1000 cache hits, next/end/account boundaries, stale whole-file completion and music-center queue retention.');
+
+ctx.SliderChangeMode={Begin:0,Moving:1,End:2,Click:3};
+card.widget=first;card.visible=true;card.onSourceChanged();card.onClaim=()=>true;
+let handler=card.seekCallback();handler(.2,0);handler(.6,1);assert.equal(card.shownSeekProgress,.6);
+for(let i=0;i<1000;i++){voiceCallback({playingId:-20,mode:'music',status:'playing',positionMs:i,durationMs:40000});assert.equal(card.shownSeekProgress,.6,'playback clock cannot overwrite active drag');}
+handler(.6,2);assert.deepEqual(seeks.pop(),[-20,.6]);assert.equal(card.shownSeekProgress,.6,'committed thumb does not snap back before playback notification');
+handler(.7,3);assert.deepEqual(seeks.pop(),[-20,.7],'keyboard/click can seek without Begin');
+let claims=0;card.onClaim=()=>{claims++;return false;};handler(.2,0);handler(.8,1);handler(.8,3);handler(.8,2);assert.equal(claims,1);assert.equal(seeks.length,0,'denied gesture cannot dispatch a seek');
+card.onClaim=()=>true;handler(.2,0);card.widget=second;card.onSourceChanged();const newHandler=card.seekCallback();newHandler(.4,0);handler(.8,2);assert.equal(card.seekDragging,true,'stale End cannot cancel the new drag');assert.equal(seeks.length,0);
+card.widget=first;card.onSourceChanged();handler(.8,2);newHandler(.4,2);assert.equal(seeks.length,0,'A/B/A rejects both old callbacks');
+handler=card.seekCallback();handler(Infinity,3);assert.equal(seeks.length,0);handler(2,3);assert.deepEqual(seeks.pop(),[-20,1]);card.aboutToDisappear();handler(.5,3);assert.equal(seeks.length,0,'detached seek ignored');
+let scans=0;const many=new Proxy(Array.from({length:5000},(_,i)=>({...first,file:{id:10000+i},title:`track ${i}`})),{get(t,k){if(k===Symbol.iterator)scans++;return Reflect.get(t,k);}});
+const fullList=ctx.documentAudioPlaylist(many,3,123);assert.equal(fullList.length,5000);assert.equal(fullList.at(-1).fileId,14999);const scanCount=scans;for(let i=0;i<1000;i++)assert.equal(ctx.documentAudioPlaylist(many,3,123),fullList);assert.equal(scans,scanCount);
+console.log('PASS: local seek drag vs playback clock, commit/click/denial, reuse and detach epochs, finite clamp, full 5000-track playlist and 1000 no-rescan cache hits.');
+
+let indexed=0;const mapSet=queued.documentIndices.set.bind(queued.documentIndices);queued.documentIndices.set=(...args)=>{indexed++;return mapSet(...args);};
+queued.setDocumentPlaylist(fullList);assert.equal(queued.documentPlaylist,fullList);assert.equal(queued.documentIndices.size,5000);assert.equal(indexed,5000);for(let i=0;i<1000;i++)queued.setDocumentPlaylist(fullList);assert.equal(indexed,5000,'same playlist cannot rebuild the entire index');
+queued.advanceDocumentPlaylist(fullList.at(-2).messageId);assert.equal(advanced.at(-1)[0].fileId,14999,'player advances beyond the old cutoff');
+load(compiled+'pages/chat/DrawnDocumentVoice.ts',['DrawnDocumentVoice']);
+const voice=Object.assign(Object.create(ctx.DrawnDocumentVoice.prototype),{widget:first,visible:true,generation:0,pending:false,loading:false,off:null,onClaim:()=>true});voice.bind();
+const request=voice.requestCallback(),oldRequests=requests;request();request();assert.equal(requests,oldRequests+1,'pending voice click cannot enqueue the same transfer twice');
+voice.widget=second;voice.onSourceChanged();request();assert.equal(requests,oldRequests+1,'old source click cannot request the replacement file');const currentRequest=voice.requestCallback();currentRequest();assert.equal(requests,oldRequests+2);fileCallback({path:'',failed:true});currentRequest();assert.equal(requests,oldRequests+3,'failed transfer can be retried');voice.aboutToDisappear();currentRequest();assert.equal(requests,oldRequests+3);
+console.log('PASS: full player playlist and one-time index, next beyond 2048, pending voice dedup and reused/detached button callbacks.');

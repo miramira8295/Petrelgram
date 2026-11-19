@@ -1,3 +1,7 @@
+import { DrawnMediaControl } from './DrawnMediaControl';
+import { DrawnLoadingSpinner } from './DrawnLoadingSpinner';
+import { chatEnv } from '../../util/chatEnvMirror';
+import { DrawnCardBar } from './DrawnCardBar';
 import { DrawnPollLayout } from './DrawnPollLayout';
 import { DrawnPollOptionDecoration, DrawnPollPercentLabels } from './DrawnPollOptionDecoration';
 import { DrawnTextUnits } from '../../util/drawnTextUnits';
@@ -59,6 +63,16 @@ export struct PollBubble {
   @Param fitAvailableWidth: boolean = false;
   @Event onBeforeAction: () => boolean = (): boolean => true;
 
+  private paintEnv = chatEnv;
+  @Computed private get chromeEnvironment(): string {
+    return `${this.paintEnv.appearanceEpoch}:${this.paintEnv.langEpoch}:${textMeasureEnvironment.epoch}`;
+  }
+  private unavailableIcon: DrawnMediaControl = new DrawnMediaControl();
+  private explanationIcon: DrawnMediaControl = new DrawnMediaControl();
+  private errorIcon: DrawnMediaControl = new DrawnMediaControl();
+  private headerPainter: DrawnCardBar = new DrawnCardBar();
+  private footerPainter: DrawnCardBar = new DrawnCardBar();
+  private submitPainter: DrawnCardBar = new DrawnCardBar();
   private emptyEntities: TdObject[] = [];
   @Local draftIds: number[] = [];
   @Local draftChanged: boolean = false;
@@ -341,7 +355,7 @@ export struct PollBubble {
     const label = this.isResultsVisible ? this.percentLabels.prepare(this.optionVotePercentage(index), accent,
       units.fp2px(11.5), 40 * units.density, `${textMeasureEnvironment.epoch}`) : null;
     return decoration.bind(units.density, accent, this.optionState(index),
-      this.optionMarked(index), this.optionBarPercent(index), label);
+      this.optionMarked(index), this.optionBarPercent(index), label, this.optionFill(index));
   }
 
   @Builder
@@ -350,7 +364,7 @@ export struct PollBubble {
       Row({ space: 8 }) {
         Stack() {
           if (this.optionState(index) === 'pending') {
-            LoadingProgress().width(14).height(14).color(Color.White);
+            DrawnLoadingSpinner({ ringSize: 14, ringColor: Color.White });
           }
         }.width(20).height(20);
         DrawnPollText({ msg: this.msg, content: this.optionDisplayText(index),
@@ -369,8 +383,6 @@ export struct PollBubble {
     .constraintSize({ minHeight: 40 })
     .height(this.prepared?.optionHeights[index])
     .drawModifier(this.optionDecoration(index))
-    .backgroundColor(this.optionFill(index))
-    .border({ width: 1, color: this.optionMarked(index) ? this.optionAccent(index) : '#16000000' })
     .borderRadius(10)
     .clip(true)
     .stateStyles({
@@ -384,18 +396,14 @@ export struct PollBubble {
 
   build() {
     Column({ space: 8 }) {
-      Row({ space: 7 }) {
-        Text(this.msg.pollIsQuiz ? '💡' : '📊').fontSize(16);
-        Text(this.msg.pollIsQuiz ? $r('app.string.poll_quiz_word') : $r('app.string.poll_word'))
-          .fontSize(11.5).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
-          .maxLines(this.prepared ? 1 : undefined).layoutWeight(this.prepared ? 1 : 0);
-        if (!this.prepared) { Blank(); }
-        Text(this.statusText())
-          .fontSize(10.5)
-          .fontColor(this.isUnavailable || this.msg.pollIsClosed || this.isExpired
-            ? '#9A6562' : COLOR_TEXT_SECONDARY)
-          .maxLines(this.prepared ? 1 : undefined).layoutWeight(this.prepared ? 1 : 0);
-      }.width('100%').height(this.prepared?.headerHeight);
+      Row()
+        .width('100%').height(this.prepared?.headerHeight ?? 20)
+        .drawModifier(this.headerPainter.bind(this.getUIContext(), {
+          width: this.richTextWidth(0), height: this.prepared?.headerHeight ?? 20, environment: this.chromeEnvironment,
+          left: `${this.msg.pollIsQuiz ? '💡' : '📊'} ${str(this.msg.pollIsQuiz ? 'poll_quiz_word' : 'poll_word')}`,
+          leftFont: 11.5, leftColor: COLOR_PRIMARY, right: this.statusText(), rightFont: 10.5,
+          rightColor: this.isUnavailable || this.msg.pollIsClosed || this.isExpired ? '#9A6562' : COLOR_TEXT_SECONDARY
+        }));
 
       DrawnPollText({ msg: this.msg, preparedLayout: this.prepared?.question ?? null,
         content: this.msg.pollQuestion.trim() !== '' ? this.msg.pollQuestion : str('poll_unavailable'),
@@ -434,8 +442,8 @@ export struct PollBubble {
         }.width('100%');
       } else {
         Row({ space: 7 }) {
-          SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-            .fontSize(17).fontColor(['#B05D58']);
+          Row().width(17).height(17).hitTestBehavior(HitTestMode.None).accessibilityLevel('no')
+            .drawModifier(this.unavailableIcon.bind(this.getUIContext(), this.chromeEnvironment, 17, '#00000000', '#B05D58', 'warning'));
           if (this.prepared?.unavailable) {
             DrawnPollText({ msg: this.msg, content: str('poll_no_options'), preparedLayout: this.prepared.unavailable,
               boxWidth: this.richTextWidth(44), textSize: 12, textColor: '#B05D58' });
@@ -453,16 +461,17 @@ export struct PollBubble {
       if (this.prepared ? this.prepared.showSubmit : this.msg.pollAllowMultiple && this.isInteractive) {
         Row() {
           if (this.msg.pollVotePending) {
-            LoadingProgress().width(16).height(16).color(Color.White);
-          } else {
-            Text(this.hasVoted ? $r('app.string.poll_update_vote') : $r('app.string.poll_submit_vote'))
-              .fontSize(13).fontWeight(FontWeight.Medium).fontColor(Color.White).maxLines(this.prepared ? 1 : undefined);
+            DrawnLoadingSpinner({ ringSize: 16, ringColor: Color.White });
           }
         }
         .width('100%').height(this.prepared?.submitHeight ?? 34)
         .justifyContent(FlexAlign.Center)
-        .backgroundColor(this.draftChanged ? COLOR_PRIMARY : '#A7AFB8')
-        .borderRadius(9)
+        .drawModifier(this.submitPainter.bind(this.getUIContext(), {
+          width: this.richTextWidth(0), height: this.prepared?.submitHeight ?? 34, environment: this.chromeEnvironment,
+          center: this.msg.pollVotePending ? '' : str(this.hasVoted ? 'poll_update_vote' : 'poll_submit_vote'),
+          centerFont: 13, centerColor: '#FFFFFF', background: this.draftChanged ? COLOR_PRIMARY : '#A7AFB8', radius: 9
+        }))
+        .accessibilityText(str(this.hasVoted ? 'poll_update_vote' : 'poll_submit_vote'))
         .stateStyles({
           normal: pollSubmitNormalStyle,
           pressed: pollSubmitPressedStyle
@@ -472,8 +481,8 @@ export struct PollBubble {
 
       if (this.prepared ? this.prepared.showExplanation : this.msg.pollExplanation.trim() !== '' && this.isResultsVisible) {
         Row({ space: 7 }) {
-          SymbolGlyph($r('sys.symbol.info_circle'))
-            .fontSize(15).fontColor([COLOR_PRIMARY]);
+          Row().width(15).height(15).hitTestBehavior(HitTestMode.None).accessibilityLevel('no')
+            .drawModifier(this.explanationIcon.bind(this.getUIContext(), this.chromeEnvironment, 15, '#00000000', COLOR_PRIMARY, 'info'));
           DrawnPollText({ msg: this.msg, content: this.msg.pollExplanation,
             preparedLayout: this.prepared?.explanation ?? null,
             entities: this.msg.pollExplanationEntities ?? this.emptyEntities, boxWidth: this.richTextWidth(40), textSize: 11.5,
@@ -489,8 +498,8 @@ export struct PollBubble {
 
       if (this.msg.pollVoteError.trim() !== '') {
         Row({ space: 6 }) {
-          SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-            .fontSize(14).fontColor(['#D9514E']);
+          Row().width(14).height(14).hitTestBehavior(HitTestMode.None).accessibilityLevel('no')
+            .drawModifier(this.errorIcon.bind(this.getUIContext(), this.chromeEnvironment, 14, '#00000000', '#D9514E', 'warning'));
           if (this.prepared?.error) {
             DrawnPollText({ msg: this.msg, content: this.msg.pollVoteError, preparedLayout: this.prepared.error,
               boxWidth: this.richTextWidth(82), textSize: 10.5, textColor: '#D9514E' });
@@ -505,20 +514,18 @@ export struct PollBubble {
         .padding({ right: 62, bottom: 10 });
       } else {
         Row() {
-          Text(this.voterText()).fontSize(10.5).fontColor(COLOR_TEXT_SECONDARY)
-            .maxLines(this.prepared ? 1 : undefined).layoutWeight(this.prepared ? 1 : 0);
-          if (!this.prepared) { Blank(); }
           if (this.isSubmitting) {
-            Row({ space: 5 }) {
-              LoadingProgress().width(13).height(13).color(COLOR_PRIMARY);
-              Text($r('app.string.submitting')).fontSize(10.5).fontColor(COLOR_PRIMARY)
-                .maxLines(this.prepared ? 1 : undefined);
-            }
+            DrawnLoadingSpinner({ ringSize: 13, ringColor: COLOR_PRIMARY });
           }
         }
-        .width('100%')
-        .height(this.prepared?.footerHeight)
-        .padding({ right: 62, bottom: 10 });
+        .width('100%').height(this.prepared?.footerHeight ?? 24)
+        .justifyContent(FlexAlign.Center)
+        .drawModifier(this.footerPainter.bind(this.getUIContext(), {
+          width: this.richTextWidth(0), height: this.prepared?.footerHeight ?? 24, environment: this.chromeEnvironment,
+          left: this.voterText(), leftFont: 10.5, leftColor: COLOR_TEXT_SECONDARY,
+          right: this.isSubmitting ? str('submitting') : '', rightFont: 10.5, rightColor: COLOR_PRIMARY,
+          paddingRight: 62, paddingBottom: 10
+        }));
       }
     }
     .width(this.fitAvailableWidth ? Math.max(1, this.maxWidth) : Math.max(220, Math.min(278, this.maxWidth)))

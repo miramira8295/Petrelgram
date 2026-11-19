@@ -21,6 +21,7 @@ export interface ChatBackgroundState {
   path: string;           // local file once downloaded, '' while pending
   imageOpacity: number;   // pattern intensity, 1 for plain wallpapers
   dimming: number;        // 0..1, applied over the image in dark mode
+  // Preserved for TDLib/serialized-state compatibility; never applied by wallpaper rendering.
   blurred: boolean;
   bubbleOutColor: string; // outgoing bubble tint carried by a chat theme
   // A pattern is a small tileable motif drawn over the fill; a photo wallpaper
@@ -133,12 +134,11 @@ export function emptyChatBackground(): ChatBackgroundState {
 // 的图之后，那两行的缩略图一直是空的（真机实报）。两处各写一遍必然跑偏，所以
 // 收成一个函数。
 //
-// blurred 恒为真的理由见 applyDefault 里那段说明：本机图没有"壁纸自己的属性"，
-// 它模不模糊完全由用户那根滑杆说了算。
+// 本机图保持原图，不再提供背景模糊。
 export function localWallpaperState(path: string): ChatBackgroundState {
   return {
     custom: true, colors: [], angle: 180, path: path,
-    imageOpacity: 1, dimming: 0, blurred: true, bubbleOutColor: '', isPattern: false
+    imageOpacity: 1, dimming: 0, blurred: false, bubbleOutColor: '', isPattern: false
   };
 }
 
@@ -630,11 +630,6 @@ export class ChatBackgroundStore {
     // 判据与完整推导见 util/localWallpaper。
     const local: string = this.localWallpaperPath(forDarkTheme);
     if (localWallpaperWins(this.hasSpecificBackground(), local)) {
-      // blurred 对整图壁纸的含义就是"模糊滑杆对它生效"（见
-      // util/chatBackgroundRaster.backgroundBlurRadius：非图案的整图要这个标志为真
-      // 才吃 userBlur）。服务端壁纸的这一位是壁纸自己的属性，而本机自选的图没有
-      // "自己的属性"——它的模糊完全由用户那根滑杆说了算，所以这里恒为 true。
-      // 深色遮罩不用管：那是画在整层末尾的全局层，与壁纸来源无关，本来就生效。
       this.patch(localWallpaperState(local));
       return;
     }

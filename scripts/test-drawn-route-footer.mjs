@@ -28,7 +28,7 @@ ctx.logW=()=>{};
 for(const [name,change]of [
  ['disabled',r=>r.env.drawnEnabled=false],['body-disabled',r=>r.env.drawnPlain=false],
  ['policy',r=>r.group.head.contentType='unsupported'],
- ['chrome-sender',r=>{r.data.isGroup=true;r.group.head.senderName='x'.repeat(4097);}],['layout-null',r=>r.textLayouts.prepare=()=>null],
+ ['chrome-sender',r=>{r.data.isGroup=true;r.group.head.senderName={invalid:'name'};}],['layout-null',r=>r.textLayouts.prepare=()=>null],
  ['exception',r=>r.textLayouts.prepare=()=>{throw Error('injected');}]]){
  const row=makeRow();change(row);metrics.reset();assert.equal(row.plan,null,name);
  for(let i=0;i<1000;i++)assert.equal(row.plan,null);
@@ -95,7 +95,7 @@ for(const [field,reason,show] of [
  ['replySenderName',R.ChromeReplySender,r=>{r.group={...r.group,head:{...r.group.head,replyToMessageId:8}};}],
  ['replyText',R.ChromeReplyText,r=>{r.group={...r.group,head:{...r.group.head,replyToMessageId:8}};}]
 ]) {
- const r=makeRow();r.group.head[field]='x'.repeat(4097);
+ const r=makeRow();r.group.head[field]={invalid:field};
  let prepared=0;r.textLayouts={failureReason:R.Drawn,prepare:()=>{prepared++;return {};}};
  assert.ok(r.plan,field+' hidden');show(r);metrics.reset();
  assert.equal(r.plan,null,field+' shown');assert.equal(r.routeTracker.reason,reason);assert.equal(prepared,1);
@@ -107,33 +107,24 @@ for(const hide of [r=>r.group.showSenderName=false,r=>r.group.head.isOutgoing=tr
  const r=makeRow();r.data.isGroup=true;r.group.head.senderName='name\t';r.group.head.senderTag='role\t';hide(r);
  assert.ok(r.plan,'hidden header branch');
 }
-const forward=makeRow();forward.group.head.forwardFrom='x'.repeat(4097);assert.equal(forward.plan,null);
+const forward=makeRow();forward.group.head.forwardFrom={invalid:'forward'};assert.equal(forward.plan,null);
 assert.equal(forward.routeTracker.reason,R.ChromeForward);
 
-// Real parser -> source negative cache -> layout result -> compiled row route.
-// One parse at most per rejected source, no parse on 1000 diagnostic reads.
+// Large valid entity sets now stay drawn; the parser/source/row cache is still
+// shared and must not repeat parsing on diagnostic reads or across owners.
 for(const kind of ['text','single','album']) {
- for(const [body,entities,reason,label] of [
-  ['abc',Array.from({length:1025},()=>({offset:0,length:1,type:{'@type':'textEntityTypeBold'}})),R.EntityLimit,'body-entity-limit']
- ]) {
-  const r=makeRow();r.kind=kind;r.group=message(kind);r.data.lightweightPlainText=false;
-  r.group.head.text=body;r.group.head.textEntities=entities;r.group.caption=body;r.group.captionEntities=entities;
-  const engine=kind==='text'?new ctx.DrawnTextLayouts():new ctx.DrawnMediaLayouts(kind==='single');
-  r.textLayouts=kind==='text'?engine:null;r.singleLayouts=kind==='single'?engine:null;r.albumLayouts=kind==='album'?engine:null;
-  metrics.reset();const before=layoutCounters().parseCalls;
-  assert.equal(r.plan,null,kind+label);assert.equal(engine.failureReason,reason);assert.equal(r.routeTracker.reason,reason);
-  const parsed=layoutCounters().parseCalls;assert.ok(parsed-before<=1);
-  for(let i=0;i<1000;i++)assert.equal(r.plan,null);
-  assert.equal(layoutCounters().parseCalls,parsed);assert.match(metrics.summary(),new RegExp(label+'=1\\b'));
-  // Existing raw-cache result also explains rejection in a different owner.
-  const second=kind==='text'?new ctx.DrawnTextLayouts():new ctx.DrawnMediaLayouts(kind==='single');
-  assert.equal(second.prepare(ui,r.group,r.data,style),null);assert.equal(second.failureReason,reason);
-  assert.equal(layoutCounters().parseCalls,parsed,'cross-owner negative source hit');
-  // Successful A, rejected B, successful A: no stale failure on fast positive hit.
-  const good=message(kind);assert.ok(engine.prepare(ui,good,r.data,style));
-  assert.equal(engine.failureReason,R.Drawn);assert.equal(engine.prepare(ui,r.group,r.data,style),null);
-  assert.ok(engine.prepare(ui,good,r.data,style));assert.equal(engine.failureReason,R.Drawn);
- }
+ const r=makeRow();r.kind=kind;r.group=message(kind);r.data.lightweightPlainText=false;
+ const body='abc',entities=Array.from({length:1025},()=>({offset:0,length:1,type:{'@type':'textEntityTypeBold'}}));
+ r.group.head.text=body;r.group.head.textEntities=entities;r.group.caption=body;r.group.captionEntities=entities;
+ const engine=kind==='text'?new ctx.DrawnTextLayouts():new ctx.DrawnMediaLayouts(kind==='single');
+ r.textLayouts=kind==='text'?engine:null;r.singleLayouts=kind==='single'?engine:null;r.albumLayouts=kind==='album'?engine:null;
+ metrics.reset();assert.ok(r.plan);assert.equal(engine.failureReason,R.Drawn);assert.equal(r.routeTracker.reason,R.Drawn);
+ const parsed=layoutCounters().parseCalls;
+ for(let i=0;i<1000;i++)assert.ok(r.plan);
+ assert.equal(layoutCounters().parseCalls,parsed);
+ const second=kind==='text'?new ctx.DrawnTextLayouts():new ctx.DrawnMediaLayouts(kind==='single');
+ assert.ok(second.prepare(ui,r.group,r.data,style));assert.equal(second.failureReason,R.Drawn);
+ assert.equal(layoutCounters().parseCalls,parsed,'cross-owner normalized source hit');
 }
 const labels=[['empty',R.SourceEmpty],['text-limit',R.TextLimit],['entity-limit',R.EntityLimit],
  ['segments:2',R.TextSegments],['segment-kind:pre',R.TextSegmentKind],['segment-offset',R.TextSegmentOffset],
@@ -145,7 +136,7 @@ for(let i=0;i<1000;i++)tracker.record(1,10,R.TextTab);
 tracker.record(1,10,R.TextBom);ctx.drawnStageMetrics.setEnabled(false);
 assert.deepEqual(trace,['PG/route/body-tab','end','PG/route/body-bom','end']);
 assert.equal(metrics.counts.length,36,'fixed memory regardless of messages/reasons');
-console.log('PASS: hidden/shown header and quote guards, text/single/album exact rejection propagation, 15000 cached failures without reparsing, cross-owner negative hits, A-B-A reset, fixed private trace labels.');
+console.log('PASS: hidden/shown header and quote guards, text/single/album exact rejection propagation, large entity sets stay drawn without reparsing, cross-owner source hits, A-B-A reset, fixed private trace labels.');
 
 // An exception is logged on first parse; the cached negative result must retain
 // its cause too, rather than becoming an unexplained layout-null on reuse.

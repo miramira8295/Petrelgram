@@ -11065,10 +11065,6 @@
       "value": "自動播放"
     },
     {
-      "name": "cb_blur_amount",
-      "value": "模糊度"
-    },
-    {
       "name": "meow_mode_custom",
       "value": "自訂 WebPush"
     },
@@ -11877,24 +11873,8 @@
       "value": "%1$d 秒"
     },
     {
-      "name": "chat_settings_surface_glass",
-      "value": "介面模糊質感"
-    },
-    {
-      "name": "chat_settings_surface_glass_sub",
-      "value": "為聯絡人、設定、我的頁面鋪一層毛玻璃，質感與輸入列一致。每幀即時算繪，低階機或覺得卡時請關閉。"
-    },
-    {
-      "name": "chat_settings_surface_glass_level",
-      "value": "模糊檔位"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "高動態範圍影片"
-    },
-    {
-      "name": "material_level_veil",
-      "value": "薄紗"
     },
     {
       "name": "chat_settings_surface_glass_ui",
@@ -11907,22 +11887,6 @@
     {
       "name": "chat_settings_bubble_glass",
       "value": "氣泡"
-    },
-    {
-      "name": "chat_settings_bubble_glass_sub",
-      "value": "對話內的訊息氣泡。數量最多，最耗電"
-    },
-    {
-      "name": "glass_warn_title",
-      "value": "開啟後會更耗電"
-    },
-    {
-      "name": "glass_warn_body",
-      "value": "模糊質感每幀即時算繪，會明顯增加耗電與發熱，捲動時也可能掉幀。裝置發燙或卡頓時，回到這裡選「關閉」即可。"
-    },
-    {
-      "name": "glass_warn_enable",
-      "value": "仍要開啟"
     },
     {
       "name": "cp_secret_pending_out",
@@ -13367,6 +13331,10 @@
     {
       "name": "link_copied_internal",
       "value": "已複製內部連結（僅本應用程式可開啟）"
+    },
+    {
+      "name": "chat_settings_bubble_tint_sub",
+      "value": "調節底色不透明度，不使用背景模糊"
     }
   ]
 }

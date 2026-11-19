@@ -1,15 +1,23 @@
+import { CachedImage } from '../common/CachedImage';
+import { CachedImageSpec, CachedImageSpecCache } from '../../util/cachedImageSpec';
+import { DrawnMediaPlaceholder } from './DrawnMediaPlaceholder';
+import { DrawnMediaControl } from './DrawnMediaControl';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
+import { DrawnLoadingSpinner } from './DrawnLoadingSpinner';
 import { MessageEntry } from '../../store/MessageEntry';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { TgsStickerView } from './TgsStickerView';
 import { SmartLoopVideo } from '../common/SmartLoopVideo';
 import { animationDurationFor, scrollActiveNow } from '../../util/scrollEffects';
-import { COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY } from '../../util/theme';
 import { str } from '../../util/strings';
 import { progressForOr, subscribeProgress } from '../../util/mediaProgressChannel';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { MessageBubbleActions, MessageBubbleRenderData } from './ReusableMessageBubble';
 import { stickerFramesCached } from '../../services/stickerFrameIndex';
 import { MessageBubbleContext, MessageBubbleShell } from './MessageBubbleShell';
+
+interface DrawnStickerStatusSpec { failed: boolean; percent: number; }
 
 const STICKER_MAX: number = 160;
 
@@ -26,6 +34,11 @@ export struct StickerMessageBubble {
   @Param nowSec: number = 0;
   @Param jumpFocus: number = 0;
   @Param leaving: number = 0;
+  private imageSpecs: CachedImageSpecCache = new CachedImageSpecCache();
+  private statusPainter: DrawnMediaControl = new DrawnMediaControl();
+  @Computed private get decorationEnvironment(): string {
+    return `${this.env.appearanceEpoch}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
+  }
   private context: MessageBubbleContext = new MessageBubbleContext();
   private env: ChatEnvMirror = chatEnv;
   @Local private stickerPlaybackFailed: boolean = false;
@@ -138,52 +151,36 @@ export struct StickerMessageBubble {
   }
 
   @Builder
-  stickerStatusBadge(failed: boolean, percent: number) {
+  stickerStatusBadge($$: DrawnStickerStatusSpec) {
     Stack() {
-      Circle({ width: 30, height: 30 }).fill('#78000000')
-        .stroke('#20FFFFFF').strokeWidth(0.7);
-      if (failed) {
-        SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(16).fontColor([Color.White]);
-      } else if (percent > 0) {
-        Progress({ value: percent, total: 100, type: ProgressType.Ring })
-          .width(20).height(20).color(Color.White);
-      } else {
-        LoadingProgress().width(17).height(17).color(Color.White);
-      }
+      if (!$$.failed && $$.percent <= 0) { DrawnLoadingSpinner({ ringSize: 17, ringColor: '#FFFFFF' }); }
     }
     .width(30).height(30)
-    .accessibilityText(failed ? $r('app.string.mb_sticker_failed') : $r('app.string.mb_sticker_loading'));
+    .drawModifier(this.statusPainter.bind(this.getUIContext(), this.decorationEnvironment, 30,
+      '#78000000', '#FFFFFF', $$.failed ? 'retry' : '', $$.failed ? 0 : $$.percent))
+    .accessibilityText($$.failed ? $r('app.string.mb_sticker_failed') : $r('app.string.mb_sticker_loading'));
   }
 
   @Builder
   stickerUnavailable() {
-    Column({ space: 6 }) {
-      SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-        .fontSize(24).fontColor([COLOR_ICON_SECONDARY]);
-      Text($r('app.string.mb_sticker_unavailable'))
-        .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).fontWeight(FontWeight.Medium);
-    }
-    .width(this.stickerW()).height(this.stickerH())
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor('#12000000')
-    .borderRadius(18);
+    DrawnMediaPlaceholder({ primary: '!', secondaryKey: 'mb_sticker_unavailable', primarySize: 24,
+      boxWidth: this.stickerW(), boxHeight: this.stickerH(), tone: '#12000000', cornerRadius: 18 });
   }
 
   @Builder
   stickerPausedFallback() {
     if (this.msg.text !== '') {
-      Text(this.msg.text)
-        .fontSize(this.msg.isEmojiSticker ? 52 : 42)
-        .textAlign(TextAlign.Center)
-        .width(this.stickerW()).height(this.stickerH());
+      DrawnMediaPlaceholder({ primary: this.msg.text, primarySize: this.msg.isEmojiSticker ? 52 : 42, primaryColor: COLOR_TEXT_PRIMARY,
+        boxWidth: this.stickerW(), boxHeight: this.stickerH() });
     } else {
-      Column({ space: 5 }) {
-        SymbolGlyph($r('sys.symbol.pause')).fontSize(21).fontColor([COLOR_ICON_SECONDARY]);
-        Text($r('app.string.mb_animation_paused')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
-      }
-      .width(this.stickerW()).height(this.stickerH())
-      .justifyContent(FlexAlign.Center);
+      DrawnMediaPlaceholder({ primary: 'Ⅱ', secondaryKey: 'mb_animation_paused', primarySize: 21,
+        boxWidth: this.stickerW(), boxHeight: this.stickerH(), gap: 5 });
     }
+  }
+
+  private stickerImageSpec(path: string): CachedImageSpec {
+    return this.imageSpecs.prepare({ path, boxWidth: this.stickerW(), boxHeight: this.stickerH(), fit: ImageFit.Contain,
+      drawOnCanvas: true, opaque: false, sourceKey: `${this.data.chatId}:${this.msg.rowId}:${this.msg.stickerFileId || this.msg.photoFileId}` });
   }
 
   private emojiScale(): number {
@@ -229,19 +226,19 @@ export struct StickerMessageBubble {
       // a small corner state communicates loading without replacing it.
       Stack() {
         if (this.msg.text !== '') {
-          Text(this.msg.text)
-            .fontSize((this.msg.contentType === 'customEmoji' ? 52 : 56) * this.emojiScale())
-            .textAlign(TextAlign.Center);
+          DrawnMediaPlaceholder({ primary: this.msg.text,
+            primarySize: (this.msg.contentType === 'customEmoji' ? 52 : 56) * this.emojiScale(), primaryColor: COLOR_TEXT_PRIMARY,
+            boxWidth: 72 * this.emojiScale(), boxHeight: 68 * this.emojiScale() });
         } else {
-          Text($r('app.string.mb_emoji_unavailable'))
-            .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).fontWeight(FontWeight.Medium);
+          DrawnMediaPlaceholder({ primaryKey: 'mb_emoji_unavailable', primarySize: 12,
+            boxWidth: 72 * this.emojiScale(), boxHeight: 68 * this.emojiScale() });
         }
         if (this.msg.contentType === 'customEmoji') {
           Column() {
             if (this.msg.photoFailed) {
-              this.stickerStatusBadge(true, 0);
+              this.stickerStatusBadge({ failed: true, percent: 0 });
             } else {
-              LoadingProgress().width(14).height(14).color(this.accent())
+              DrawnLoadingSpinner({ ringSize: 14, ringColor: this.accent() })
                 .backgroundColor('#CCFFFFFF').borderRadius(9).padding(2);
             }
           }
@@ -267,11 +264,9 @@ export struct StickerMessageBubble {
         if (this.stickerAnimationSuspended() && this.msg.photoPath === '') {
           this.stickerPausedFallback();
         } else if (this.stickerPlaybackFailed && this.msg.photoPath !== '') {
-          Image(this.msg.photoPath.startsWith('/') ? `file://${this.msg.photoPath}` : this.msg.photoPath).draggable(false)
-            .width(this.stickerW()).height(this.stickerH()).objectFit(ImageFit.Contain);
+          CachedImage({ spec: this.stickerImageSpec(this.msg.photoPath) });
         } else if (this.stickerAnimationSuspended() && this.msg.photoPath !== '') {
-          Image(this.msg.photoPath.startsWith('/') ? `file://${this.msg.photoPath}` : this.msg.photoPath).draggable(false)
-            .width(this.stickerW()).height(this.stickerH()).objectFit(ImageFit.Contain);
+          CachedImage({ spec: this.stickerImageSpec(this.msg.photoPath) });
         } else if (!this.stickerPlaybackFailed &&
           this.msg.stickerFormat === 'tgs' && this.msg.stickerPath !== '') {
           TgsStickerView({ tgsPath: this.msg.stickerPath, thumbPath: this.msg.photoPath,
@@ -293,8 +288,7 @@ export struct StickerMessageBubble {
             onPlaybackFailed: this.playbackFailure() })
             .hitTestBehavior(HitTestMode.None);
         } else if (this.msg.photoPath !== '') {
-          Image(this.msg.photoPath.startsWith('/') ? `file://${this.msg.photoPath}` : this.msg.photoPath).draggable(false)
-            .width(this.stickerW()).height(this.stickerH()).objectFit(ImageFit.Contain)
+          CachedImage({ spec: this.stickerImageSpec(this.msg.photoPath) })
             .transition(TransitionEffect.OPACITY.animation({
               duration: this.effectDuration(180), curve: Curve.EaseOut
             }));
@@ -308,8 +302,8 @@ export struct StickerMessageBubble {
 
         if (this.msg.stickerPath === '' && this.msg.stickerFileId !== 0) {
           Column() {
-            this.stickerStatusBadge(this.msg.stickerFailed,
-              this.liveStickerProgress > 0 ? this.liveStickerProgress : this.livePhotoProgress);
+            this.stickerStatusBadge({ failed: this.msg.stickerFailed,
+              percent: this.liveStickerProgress > 0 ? this.liveStickerProgress : this.livePhotoProgress });
           }
           .width('100%').height('100%')
           .padding({ right: 7, top: 7 })
@@ -317,14 +311,14 @@ export struct StickerMessageBubble {
           .alignItems(HorizontalAlign.End);
         } else if (this.msg.photoPath === '' && this.msg.photoFileId !== 0) {
           Column() {
-            this.stickerStatusBadge(this.msg.photoFailed, this.livePhotoProgress);
+            this.stickerStatusBadge({ failed: this.msg.photoFailed, percent: this.livePhotoProgress });
           }
           .width('100%').height('100%')
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center);
         } else if (this.stickerPlaybackFailed) {
           Column() {
-            this.stickerStatusBadge(true, 0);
+            this.stickerStatusBadge({ failed: true, percent: 0 });
           }
           .width('100%').height('100%')
           .padding({ right: 7, top: 7 })

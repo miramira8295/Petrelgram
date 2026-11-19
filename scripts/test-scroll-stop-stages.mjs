@@ -19,10 +19,10 @@ run(`class Session {${handler}} globalThis.Session=Session;`);
 const session=new ctx.Session();
 Object.defineProperty(session,'timelineScrollActive',{set:action('active')});
 Object.defineProperty(session,'nextDidScrollIsUserDriven',{set:action('user')});
-Object.assign(session,{bindings:{store:()=>({flushScrollDeferredUpdate:action('flush')}),playSlot:{armSettle:action('play')},capMessageReuseBuckets:action('cache')},
+Object.assign(session,{bindings:{store:()=>({flushScrollDeferredUpdate:action('flush')}),playSlot:{setScrolling:moving=>{assert.equal(moving,false);action('play-gate')();},armSettle:action('play')},capMessageReuseBuckets:action('cache')},
  maybeTrimWindow:action('trim'),resumeChatTgsAfterScroll:action('animations'),driveVisibleWork:settle=>{assert.equal(settle,false,'stop owns the only playback settle');action('visible')();},
  scheduleScrollWork:callback=>{action('schedule')();queue.push(callback);},flushQueuedOlderLoad:action('history')});
-const expected=['active','user','effects','decode','flush','trim','animations','visible','play','cache','schedule'];
+const expected=['active','user','effects','decode','flush','trim','animations','visible','play-gate','play','cache','schedule'];
 for(let i=0;i<1000;i++){
  work.length=0;session.handleTimelineScrollStop();assert.deepEqual(work,expected);assert.equal(queue.length,1);
  queue.shift()();assert.equal(work.at(-1),'history');

@@ -10,8 +10,10 @@ import { logE } from './log';
 // string 通道不必全部改成对象签名，而 Unicode emoji 不可能以 ASCII 前缀
 // 开头，两类 key 不会相撞。
 const CUSTOM_EMOJI_KEY_PREFIX: string = 'ce:';
+const PAID_REACTION_KEY: string = 'paid:stars';
 
 export interface ReactionKey {
+  paid?: boolean;
   emoji: string;         // 标准 emoji（自定义反应为 ''）
   customEmojiId: string; // 自定义 emoji id，int64 以字符串承载（标准反应为 ''）
 }
@@ -29,7 +31,8 @@ export function customEmojiReactionKey(customEmojiId: string): string {
 
 // 气泡上的 ReactionInfo 只带两个原始字段，这里给出统一的 key 拼装入口，
 // 避免每个调用点各自判断该用 emoji 还是 id。
-export function reactionKeyFrom(emoji: string, customEmojiId: string): string {
+export function reactionKeyFrom(emoji: string, customEmojiId: string, paid: boolean = false): string {
+  if (paid) { return PAID_REACTION_KEY; }
   return customEmojiId !== '' ? customEmojiReactionKey(customEmojiId) : emoji;
 }
 
@@ -39,6 +42,7 @@ export function isCustomEmojiReactionKey(key: string): boolean {
 }
 
 export function parseReactionKey(key: string): ReactionKey {
+  if (key === PAID_REACTION_KEY) { return { emoji: '⭐', customEmojiId: '', paid: true }; }
   if (isCustomEmojiReactionKey(key)) {
     return { emoji: '', customEmojiId: key.substring(CUSTOM_EMOJI_KEY_PREFIX.length) };
   }
@@ -50,6 +54,7 @@ export function parseReactionKey(key: string): ReactionKey {
 // 传递，这里保持字符串原样，绝不能转成 number（超过 2^53 会丢精度）。
 export function reactionTypeOf(key: string): TdObject {
   const parsed: ReactionKey = parseReactionKey(key);
+  if (parsed.paid) { return { '@type': 'reactionTypePaid' }; }
   if (parsed.customEmojiId !== '') {
     const custom: TdObject = { '@type': 'reactionTypeCustomEmoji' };
     custom['custom_emoji_id'] = parsed.customEmojiId;
@@ -70,6 +75,8 @@ export function parseAvailableReactions(result: TdObject): AvailableReactionSet 
   const emojis: string[] = [];
   const customEmojiIds: string[] = [];
   const buckets: string[] = ['top_reactions', 'recent_reactions', 'popular_reactions'];
+  const seenEmojis: Set<string> = new Set();
+  const seenCustom: Set<string> = new Set();
   for (const bucket of buckets) {
     for (const item of (result[bucket] as TdObject[] | undefined) ?? []) {
       const type = item['type'] as TdObject | undefined;
@@ -79,14 +86,14 @@ export function parseAvailableReactions(result: TdObject): AvailableReactionSet 
       const typeName: string = (type['@type'] as string | undefined) ?? '';
       if (typeName === 'reactionTypeEmoji') {
         const emoji: string = (type['emoji'] as string | undefined) ?? '';
-        if (emoji !== '' && emojis.indexOf(emoji) < 0) {
-          emojis.push(emoji);
+        if (emoji !== '' && !seenEmojis.has(emoji)) {
+          seenEmojis.add(emoji); emojis.push(emoji);
         }
       } else if (typeName === 'reactionTypeCustomEmoji') {
         const raw = type['custom_emoji_id'];
         const id: string = raw !== undefined ? `${raw}` : '';
-        if (id !== '' && id !== '0' && customEmojiIds.indexOf(id) < 0) {
-          customEmojiIds.push(id);
+        if (id !== '' && id !== '0' && !seenCustom.has(id)) {
+          seenCustom.add(id); customEmojiIds.push(id);
         }
       }
     }
