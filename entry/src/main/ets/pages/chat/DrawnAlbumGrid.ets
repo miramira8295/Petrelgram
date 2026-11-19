@@ -1,7 +1,8 @@
+import { StaticMiniThumbnail } from '../common/StaticMiniThumbnail';
+import { DrawnMediaRetry } from './DrawnMediaRetry';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { AlbumCellRenderData } from '../../util/albumCellRenderData';
 import { thumbBackdropColor } from '../../util/thumbBackdrop';
-import { MINI_PLACEHOLDER_BLUR } from '../../util/miniThumbPlaceholder';
 import { scrollPlaceholderState } from '../../util/scrollEffects';
 import { str } from '../../util/strings';
 import { chatEnv } from '../../util/chatEnvMirror';
@@ -97,8 +98,7 @@ export struct DrawnAlbumGrid {
               .draggable(false).objectFit(ImageFit.Cover).syncLoad(true);
           }
           if (this.imageEpoch >= 0 && this.media.slots[tile.cell.idx]?.showMini(this.scroll.active)) {
-            Image(this.media.slots[tile.cell.idx]?.mini ?? '').width(tile.width).height(tile.height)
-              .draggable(false).objectFit(ImageFit.Cover).blur(MINI_PLACEHOLDER_BLUR);
+            StaticMiniThumbnail({ source: this.media.slots[tile.cell.idx]?.mini ?? '', boxW: tile.width, boxH: tile.height });
           }
           if (this.cellAt(tile.cell.idx)?.uploading) {
             LiveProgressRing({ fileId: this.cellAt(tile.cell.idx)?.isVideo
@@ -107,10 +107,7 @@ export struct DrawnAlbumGrid {
           } else if (this.missing(tile.cell.idx)) {
             if (!this.cellAt(tile.cell.idx)?.isVideo &&
               (this.cellAt(tile.cell.idx)?.failed || this.cellAt(tile.cell.idx)?.thumbFileId === 0)) {
-              Column({ space: 3 }) {
-                SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(17).fontColor([Color.White]);
-                Text($r('app.string.settings_retry')).fontSize(11).fontColor(Color.White);
-              }.padding(7).backgroundColor('#80000000').borderRadius(18);
+              DrawnMediaRetry({ maxWidth: tile.width });
             } else if ((this.cellAt(tile.cell.idx)?.thumbFileId ?? 0) !== 0 && !this.cellAt(tile.cell.idx)?.failed) {
               LiveProgressRing({ fileId: this.cellAt(tile.cell.idx)?.thumbFileId ?? 0,
                 initialPercent: this.cellAt(tile.cell.idx)?.progress ?? 0,

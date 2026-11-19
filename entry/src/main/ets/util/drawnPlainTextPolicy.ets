@@ -123,10 +123,12 @@ export class DrawnPlainLayoutCache<K, T> {
   }
 }
 
-// Chrome is independently bounded; system paragraphs own BiDi and control
-// characters. Empty reply labels remain legal (loading/deleted target).
+// Runtime guard for TD snapshots: complete strings, including long summaries,
+// BiDi and controls, are shaped by cached single-line system paragraphs. Their
+// measured width/ellipsis is bounded; text length does not change the renderer.
+// Empty labels remain legal while a reply target is loading/deleted.
 export function drawnChromeTextSupported(content: string): boolean {
-  return content.length <= 4096;
+  return typeof content === 'string';
 }
 
 // ClickEvent uses vp; drawing and the cached quote rectangle use physical px.

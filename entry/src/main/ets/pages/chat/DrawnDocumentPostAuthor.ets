@@ -1,3 +1,9 @@
+import { CachedImage } from '../common/CachedImage';
+import { CachedImageSpec, CachedImageSpecCache } from '../../util/cachedImageSpec';
+import { DrawnMediaTexts, DrawnMediaTextPlan, DrawnMediaTextPainter } from './DrawnMediaText';
+import { DrawnMediaPlaceholder } from './DrawnMediaPlaceholder';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
+import { documentFileId } from '../../util/drawnDocumentMedia';
 import { DrawnDocumentWidget } from '../../util/drawnDocumentWidget';
 import { documentFileState, watchDocumentFile, requestDocumentFile, DocumentFileState } from '../../util/documentFileChannel';
 import { THUMBNAIL_PRIORITY } from '../../util/downloadPriority';
@@ -18,6 +24,23 @@ export struct DrawnDocumentPostAuthor {
   private generation: number = 0;
   private visible: boolean = false;
   private env = chatEnv;
+  private labels: DrawnMediaTexts = new DrawnMediaTexts();
+  private labelPainter: DrawnMediaTextPainter = new DrawnMediaTextPainter();
+  private specs: CachedImageSpecCache = new CachedImageSpecCache();
+  @Computed private get hasAvatar(): boolean { return this.widget.avatar !== undefined || (this.widget.avatarMini ?? '') !== ''; }
+  @Computed private get nameLabel(): string { return this.widget.name || str('mb_web_link'); }
+  @Computed private get paintEnvironment(): string {
+    return `${this.env.appearanceEpoch}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
+  }
+  @Computed private get labelPlan(): DrawnMediaTextPlan {
+    return this.labels.prepare(this.getUIContext(), this.paintEnvironment, Math.max(1, this.boxWidth - (this.hasAvatar ? 50 : 0)),
+      this.nameLabel, 15, COLOR_TEXT_PRIMARY, this.dateLabel, 12, COLOR_TEXT_SECONDARY, 1, true, 3);
+  }
+  @Computed private get imageSpec(): CachedImageSpec {
+    return this.specs.prepare({ path: this.path !== '' ? this.path : (this.widget.avatarMini ?? ''),
+      boxWidth: 40, boxHeight: 40, radius: 20, fit: ImageFit.Cover, drawOnCanvas: true,
+      sourceKey: `document-author:${this.widget.key}:${documentFileId(this.widget.avatar)}` });
+  }
   @Computed private get dateLabel(): string {
     const epoch = this.env.langEpoch;
     return this.widget.date ? fullDate(new Date(this.widget.date * 1000)) : '';
@@ -40,20 +63,18 @@ export struct DrawnDocumentPostAuthor {
   aboutToDisappear(): void { this.visible = false; this.detach(); }
   build() {
     Row({ space: 10 }) {
-      if (this.widget.avatar !== undefined || (this.widget.avatarMini ?? '') !== '') {
+      if (this.hasAvatar) {
         Stack() {
           if (this.path !== '' || (this.widget.avatarMini ?? '') !== '') {
-            Image(this.path !== '' ? (this.path.startsWith('/') ? `file://${this.path}` : this.path) : this.widget.avatarMini)
-              .width(40).height(40).objectFit(ImageFit.Cover).draggable(false);
-          } else { Text(String.fromCodePoint(this.widget.name.codePointAt(0) ?? 32)).fontSize(18).fontColor(COLOR_PRIMARY); }
+            CachedImage({ spec: this.imageSpec });
+          } else { DrawnMediaPlaceholder({ primary: String.fromCodePoint(this.widget.name.codePointAt(0) ?? 32),
+            primarySize: 18, primaryColor: COLOR_PRIMARY, boxWidth: 40, boxHeight: 40 }); }
         }.width(40).height(40).borderRadius(20).clip(true).backgroundColor($r('app.color.surface_alt'))
           .hitTestBehavior(HitTestMode.None).accessibilityLevel('no');
       }
-      Column({ space: 3 }) {
-        Text(this.widget.name || str('mb_web_link')).fontSize(15).fontWeight(FontWeight.Medium)
-          .fontColor(COLOR_TEXT_PRIMARY).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-        if (this.dateLabel !== '') { Text(this.dateLabel).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).maxLines(1); }
-      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+      Row().width(this.labelPlan.width).height(this.labelPlan.height)
+        .drawModifier(this.labelPainter.bind(this.labelPlan))
+        .accessibilityText(`${this.nameLabel}. ${this.dateLabel}`);
     }.width(this.boxWidth).height(56)
       .onVisibleAreaChange([0], (visible: boolean): void => { if (this.visible !== visible) { this.visible = visible; this.bind(); } })
       .onClick((): void => this.onOpen());

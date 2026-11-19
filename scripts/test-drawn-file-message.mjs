@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {ctx,load,root,compiled,ui,data,style,group,layoutCounters} from './test-drawn-text-row.mjs';
 const g=group('file caption https://example.org');
-Object.assign(g.head,{contentType:'file',videoFileId:31,videoFileName:'sample.pdf',videoFileSize:900,videoMimeType:'application/pdf',videoPath:'',videoProgress:0,videoFailed:false,mediaDownloadActive:false});
+Object.assign(g.head,{contentType:'file',photoFileId:0,photoPath:'',photoMini:'',videoFileId:31,videoFileName:'sample.pdf',videoFileSize:900,videoMimeType:'application/pdf',videoPath:'',videoProgress:0,videoFailed:false,mediaDownloadActive:false});
 const engine=new ctx.DrawnTextLayouts(),p=engine.prepare(ui,g,data,style);
 assert.ok(p);assert.equal(p.caption.widgets.length,1);assert.equal(p.caption.widgets[0].widget.kind,'message-file');
 const counts=layoutCounters();
@@ -36,9 +36,21 @@ local.aboutToRecycle();callbacks.get(32)(88);assert.equal(local.progress,55);ass
 console.log('PASS: file row caption/translation, 1000 transfer updates without layout, narrow widths, compiled progress subscriptions and stale callback guards.');
 // Route is explicit and fallback must remain a FILE row when switches are off.
 const rowSource=fs.readFileSync(root+'pages/chat/DrawnMessageRow.ets','utf8');
-assert.match(rowSource,/if \(this\.rowGroup\.head\.contentType === 'file' \|\| this\.rowGroup\.head\.contentType === 'audio' \|\| this\.rowGroup\.head\.contentType === 'voice' \|\| this\.rowGroup\.head\.contentType === 'contact' \|\| this\.rowGroup\.head\.contentType === 'location' \|\| this\.rowGroup\.head\.contentType === 'venue' \|\| this\.rowGroup\.head\.contentType === 'poll' \|\| this\.rowGroup\.head\.contentType === 'videoNote' \|\| this\.rowGroup\.head\.contentType === 'dice' \|\| this\.rowGroup\.head\.contentType === 'game' \|\| this\.rowGroup\.head\.contentType === 'paidMedia' \|\| this\.rowGroup\.head\.contentType === 'gift' \|\| this\.rowGroup\.head\.contentType === 'giveaway'\) \{\s*MessageBubble\(/);
+assert.match(rowSource,/if \(this\.rowGroup\.head\.contentType === 'file' \|\| this\.rowGroup\.head\.contentType === 'audio' \|\| this\.rowGroup\.head\.contentType === 'voice' \|\| this\.rowGroup\.head\.contentType === 'contact' \|\| this\.rowGroup\.head\.contentType === 'location' \|\| this\.rowGroup\.head\.contentType === 'venue' \|\| this\.rowGroup\.head\.contentType === 'checklist' \|\| this\.rowGroup\.head\.contentType === 'poll' \|\| this\.rowGroup\.head\.contentType === 'videoNote' \|\| this\.rowGroup\.head\.contentType === 'dice' \|\| this\.rowGroup\.head\.contentType === 'game' \|\| this\.rowGroup\.head\.contentType === 'paidMedia' \|\| this\.rowGroup\.head\.contentType === 'gift' \|\| this\.rowGroup\.head\.contentType === 'giveaway'\) \{\s*MessageBubble\(/);
 const policy=fs.readFileSync(root+'util/drawnTextRowPolicy.ets','utf8');
 assert.match(policy,/contentType === 'file'/);
 const routing=fs.readFileSync(root+'pages/chat/ReusableMessageBubble.ets','utf8');
 assert.match(routing,/contentType === 'richMessage' \|\| this\.shownGroup\.head\.contentType === 'file'/);
 console.log('PASS: file route preserves legacy file behavior when drawn plan is unavailable.');
+// No-caption documents used to reserve 80vp AND shape an empty caption.
+const compactEngine=new ctx.DrawnTextLayouts();
+const compact=compactEngine.prepare(ui,empty,data,style),card=compact.caption.widgets[0];
+assert.equal(compact.caption.source.blocks.length,1,'no phantom empty caption paragraph');
+assert.ok(card.height<80,'file slot is measured from actual controls');
+assert.equal(compact.caption.heightVp,card.height+6,'only inter-block spacing remains');
+assert.ok(compact.height<100,'ordinary file plus time fits a compact bubble');
+const compactCounts=layoutCounters();
+for(let i=0;i<1000;i++)assert.equal(compactEngine.prepare(ui,{...empty,head:{...empty.head,photoPath:'/cover'+i,videoProgress:i%100}},data,style),compact);
+assert.deepEqual(layoutCounters(),compactCounts,'thumbnail/progress never reshape filename or bubble');
+const captionPlan=compactEngine.prepare(ui,g,data,style);assert.ok(captionPlan.height>compact.height,'real caption is retained');
+console.log('PASS: captionless files have one measured control block, compact footer and no blank paragraph; 1000 cover updates retain complete geometry.');

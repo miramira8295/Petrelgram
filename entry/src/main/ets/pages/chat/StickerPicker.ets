@@ -1568,12 +1568,11 @@ export struct StickerPicker {
             .margin({ left: 16, right: 48 });
           }
 
-          // 常驻按钮。自己是一块独立的玻璃（'control' 档：带按压光感），
-          // 所以不用垫底色去挡——包滑到它下面时，两层玻璃叠着反而分得清。
+          // 常驻搜索按钮沿用半透明底，不为贴纸列表增加背景模糊或材质阴影。
           if (this.allowSearch) {
             Row() {
               Stack() {
-                NativeGlassHost({ hostWidth: 32, hostHeight: 32, hostRadius: 16 });
+                NativeGlassHost({ effectsEnabled: false, hostWidth: 32, hostHeight: 32, hostRadius: 16 });
                 Column() {
                   SymbolGlyph(this.searchOpen ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'))
                     .fontSize(17)

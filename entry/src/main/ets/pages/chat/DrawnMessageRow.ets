@@ -1,3 +1,7 @@
+import { StaticMiniThumbnail } from '../common/StaticMiniThumbnail';
+import { documentCardFor } from './DrawnDocumentCardLayout';
+import { DrawnChecklistMessage } from './DrawnChecklistMessage';
+import { DrawnMediaRetry } from './DrawnMediaRetry';
 import { StickerMessageBubble } from './StickerMessageBubble';
 import { DrawnGiveawayMessage } from './DrawnGiveawayMessage';
 import { DrawnGiftMessage } from './DrawnGiftMessage';
@@ -102,7 +106,6 @@ import { senderRoleFor, senderRoleKey } from '../../util/senderRoleChannel';
 import { pinForTranslationGrowth } from '../../util/translationGrowthPin';
 import { senderHasAnimatedPhoto } from '../../services/PhotoAnimationFetch';
 import { animationDurationFor, scrollActiveNow, scrollPlaceholderState } from '../../util/scrollEffects';
-import { MINI_PLACEHOLDER_BLUR } from '../../util/miniThumbPlaceholder';
 import { AlbumCornerRadiiCache } from '../../util/albumCornerRadii';
 import { ShatterDeleteOverlay } from '../common/ShatterDeleteOverlay';
 import { DrawnRowLeaveCapture } from './DrawnRowLeaveCapture';
@@ -367,7 +370,7 @@ export struct DrawnMessageRow {
     // Match the former caption gate without building a paragraph just to discard
     // it. Empty media rows remain eligible when a body renderer is disabled.
     const bodyText = this.kind === 'album' ? this.rowGroup.caption : this.rowGroup.head.text;
-    const structuredBody = this.kind === 'text' && (this.rowGroup.head.contentType === 'richMessage' || this.rowGroup.head.contentType === 'file' || this.rowGroup.head.contentType === 'audio' || this.rowGroup.head.contentType === 'voice' || this.rowGroup.head.contentType === 'contact' || this.rowGroup.head.contentType === 'location' || this.rowGroup.head.contentType === 'venue' || this.rowGroup.head.contentType === 'poll' || this.rowGroup.head.contentType === 'videoNote' || this.rowGroup.head.contentType === 'dice' || this.rowGroup.head.contentType === 'game' || this.rowGroup.head.contentType === 'paidMedia' || this.rowGroup.head.contentType === 'gift' || this.rowGroup.head.contentType === 'giveaway' || this.rowGroup.head.contentType === 'sticker' || this.rowGroup.head.contentType === 'emoji' || this.rowGroup.head.contentType === 'customEmoji');
+    const structuredBody = this.kind === 'text' && (this.rowGroup.head.contentType === 'richMessage' || this.rowGroup.head.contentType === 'file' || this.rowGroup.head.contentType === 'audio' || this.rowGroup.head.contentType === 'voice' || this.rowGroup.head.contentType === 'contact' || this.rowGroup.head.contentType === 'location' || this.rowGroup.head.contentType === 'venue' || this.rowGroup.head.contentType === 'checklist' || this.rowGroup.head.contentType === 'poll' || this.rowGroup.head.contentType === 'videoNote' || this.rowGroup.head.contentType === 'dice' || this.rowGroup.head.contentType === 'game' || this.rowGroup.head.contentType === 'paidMedia' || this.rowGroup.head.contentType === 'gift' || this.rowGroup.head.contentType === 'giveaway' || this.rowGroup.head.contentType === 'sticker' || this.rowGroup.head.contentType === 'emoji' || this.rowGroup.head.contentType === 'customEmoji');
     if ((bodyText !== '' || structuredBody) && (!structuredBody && this.rowData.lightweightPlainText ? this.env.drawnPlain === false : this.env.drawnRich === false)) { return this.rejectRoute(DrawnRouteReason.BodyDisabled); }
     if (!eligible) { return this.rejectRoute(DrawnRouteReason.Policy); }
     // Read Local values even during handoff to retain async dependencies.
@@ -453,6 +456,9 @@ export struct DrawnMessageRow {
     // The explicit live host is authoritative for this retained child.
     if (this.publication?.hostActive === true) { this.active = true; }
     if (!this.active || !this.presentationReady()) { return; }
+    if (this.rowGroup.head.contentType === 'richMessage' && this.rowGroup.head.richIsFull === false) {
+      this.actions.onRichMessageLoadFull(this.rowGroup.head.id);
+    }
     this.syncMediaVisibility();
     const environment = this.roleEnvironment;
     if (this.attachedGroup === this.rowGroup && this.attachedData === this.rowData &&
@@ -532,7 +538,7 @@ export struct DrawnMessageRow {
   @Computed
   private get deleteNodeKey(): string { return `dissolve-delete-message-${this.rowData.chatId}-${this.rowGroup.head.rowId}`; }
   @Computed
-  private get deleteCaptureSupported(): boolean { return !drawnLiveSurface(this.rowGroup, this.rowData); }
+  private get deleteCaptureSupported(): boolean { return !drawnLiveSurface(this.rowGroup, this.rowData, this.actions.playback !== undefined); }
   @Monitor('deleteNodeKey', 'leaving', 'deleteCaptureSupported', 'actions')
   private syncDeleteCapture(): void {
     if (!this.active || !this.presentationReady() || this.plan === null) { this.leaveCapture.reset(); return; }
@@ -623,7 +629,8 @@ export struct DrawnMessageRow {
       this.foreground.press(null);
       if (reaction.reaction === null) {
         this.actions.onShowReactorsList(m.id, `reactors_anchor_${this.rowData.chatId}_${m.id}`);
-      } else { this.actions.onSetReaction(m.id, reaction.key, reaction.reaction.isChosen); }
+      } else if (reaction.reaction.isPaid) { this.actions.onShowReactors(m.id, reaction.key); }
+      else { this.actions.onSetReaction(m.id, reaction.key, reaction.reaction.isChosen); }
       return;
     }
     if (chrome !== null && chrome.content.forward !== null && albumRectContains(chrome.forwardRect, hitX, hitY)) {
@@ -644,7 +651,9 @@ export struct DrawnMessageRow {
     if (link !== null) {
       if (semantic || event.source !== SourceType.TouchScreen || (this.touchPlan === p && this.touchLink === link)) {
         this.foreground.press(null);
-        if (link.link.action === 'web-preview') {
+        if (link.link.action === 'rich-task-toggle' && link.link.taskId !== undefined) {
+          this.actions.onRichTaskToggle(m.id, link.link.taskId, link.link.taskChecked !== true);
+        } else if (link.link.action === 'web-preview') {
           if (m.linkPhotoFailed) { this.actions.onLinkPreviewRetry(m.id); }
           else if (linkPreviewPresentation(m.linkUrl, m.linkPreviewType, m.linkSiteName).actionable) { this.actions.onLinkTap(m.linkUrl, false); }
         }
@@ -950,18 +959,15 @@ export struct DrawnMessageRow {
           Image(this.imageSlot(slot.index)?.pixels).width((this.nativeTiles[slot.index]?.width ?? 0)).height((this.nativeTiles[slot.index]?.height ?? 0))
             .draggable(false).objectFit(ImageFit.Cover);
         } else if (this.imageSlot(slot.index)?.showMini(this.scroll.active)) {
-          Image(this.imageSlot(slot.index)?.mini ?? '').width((this.nativeTiles[slot.index]?.width ?? 0)).height((this.nativeTiles[slot.index]?.height ?? 0))
-            .draggable(false).objectFit(ImageFit.Cover).blur(MINI_PLACEHOLDER_BLUR);
+          StaticMiniThumbnail({ source: this.imageSlot(slot.index)?.mini ?? '',
+            boxW: this.nativeTiles[slot.index]?.width ?? 0, boxH: this.nativeTiles[slot.index]?.height ?? 0 });
         }
         if (this.sendState === 'sending') {
           LiveProgressRing({ fileId: (this.nativeTiles[slot.index]?.cell.isVideo ?? false) ? this.kind === 'single' ? this.rowGroup.head.videoFileId : (this.nativeTiles[slot.index]?.cell.videoFileId ?? 0)
             : (this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0), initialPercent: 0, ringSize: Math.min(44, Math.min((this.nativeTiles[slot.index]?.width ?? 0), (this.nativeTiles[slot.index]?.height ?? 0)) * .3) });
         } else if (this.imageSlot(slot.index)?.path === '') {
           if (!(this.nativeTiles[slot.index]?.cell.isVideo ?? false) && ((this.nativeTiles[slot.index]?.cell.failed ?? false) || (this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0) === 0)) {
-            Column({ space: 3 }) {
-              SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(17).fontColor([Color.White]);
-              Text($r('app.string.settings_retry')).fontSize(11).fontColor(Color.White);
-            }.padding(7).backgroundColor('#80000000').borderRadius(18);
+            DrawnMediaRetry({ maxWidth: this.nativeTiles[slot.index]?.width ?? 160 });
           } else if ((this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0) !== 0 && !(this.nativeTiles[slot.index]?.cell.failed ?? false)) {
             LiveProgressRing({ fileId: (this.nativeTiles[slot.index]?.cell.thumbFileId ?? 0), initialPercent: this.kind === 'single' ? this.rowGroup.head.photoProgress : (this.nativeTiles[slot.index]?.cell.progress ?? 0),
               ringSize: Math.min(34, Math.min((this.nativeTiles[slot.index]?.width ?? 0), (this.nativeTiles[slot.index]?.height ?? 0)) * .4) });
@@ -1052,7 +1058,7 @@ export struct DrawnMessageRow {
           .position({ x: this.plan?.captionX ?? 0, y: this.plan?.captionY ?? 0 });
       }
       if ((this.plan?.quote?.mediaWidthPx ?? 0) > 0 || (this.plan?.chrome?.content.avatarCount ?? 0) > 0 ||
-        (this.plan?.chrome?.reactions?.images.length ?? 0) > 0 || this.plan?.chrome?.reactions?.arrow) {
+        (this.plan?.chrome?.reactions?.chips.length ?? 0) > 0) {
         DrawnChromeIslands({ plan: this.plan, msg: this.rowGroup.head, chatId: this.rowData.chatId,
           themeBubbleOut: this.rowData.themeBubbleOut });
       }
@@ -1062,7 +1068,7 @@ export struct DrawnMessageRow {
       this.rowGroup.head.isOutgoing ? '100%' : (this.plan?.bubbleX ?? 0),
       1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS, this.canDragMessage() && this.allowBodyDrag,
       this.deleteCaptureSupported && (this.plan?.caption?.source.links.length ?? 0) === 0))
-    .drawModifier(this.painter.bind(this.plan, !this.transparentSticker() && !this.env.scrollActive && !this.glassLive(), !this.transparentSticker() && !this.glassLive()))
+    .drawModifier(this.painter.bind(this.plan, false, !this.transparentSticker() && !this.glassLive()))
     .onTouch((e: TouchEvent): void => { this.touch(e); })
     .onClick((e: ClickEvent): void => { this.click(e); })
     .onDragStart((event: DragEvent): DragItemInfo => {
@@ -1076,7 +1082,7 @@ export struct DrawnMessageRow {
     .onDragEnd((): void => { this.draggingMessage = false; })
     .bindContextMenu(this.menuShown, this.menu(), {
       offset: { x: this.menuOffset, y: 0 },
-      preview: drawnLiveSurface(this.rowGroup, this.rowData) || menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp) ? MenuPreviewMode.NONE : MenuPreviewMode.IMAGE,
+      preview: drawnLiveSurface(this.rowGroup, this.rowData, this.actions.playback !== undefined) || menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp) ? MenuPreviewMode.NONE : MenuPreviewMode.IMAGE,
       previewAnimationOptions: { scale: [0.98, 1.035], transition: this.menuFx.preview() },
       borderRadius: 16, backgroundColor: Color.Transparent,
       backgroundBlurStyle: containerBlur('menu'), systemMaterial: overlayMaterial('menu'),
@@ -1091,7 +1097,7 @@ export struct DrawnMessageRow {
       if (this.rowGroup.head.contentType === 'sticker' || this.rowGroup.head.contentType === 'emoji' || this.rowGroup.head.contentType === 'customEmoji') {
         StickerMessageBubble({ msg: this.rowGroup.head, group: this.rowGroup, data: this.rowData, actions: this.actions,
           nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving });
-      } else if (this.rowGroup.head.contentType === 'file' || this.rowGroup.head.contentType === 'audio' || this.rowGroup.head.contentType === 'voice' || this.rowGroup.head.contentType === 'contact' || this.rowGroup.head.contentType === 'location' || this.rowGroup.head.contentType === 'venue' || this.rowGroup.head.contentType === 'poll' || this.rowGroup.head.contentType === 'videoNote' || this.rowGroup.head.contentType === 'dice' || this.rowGroup.head.contentType === 'game' || this.rowGroup.head.contentType === 'paidMedia' || this.rowGroup.head.contentType === 'gift' || this.rowGroup.head.contentType === 'giveaway') {
+      } else if (this.rowGroup.head.contentType === 'file' || this.rowGroup.head.contentType === 'audio' || this.rowGroup.head.contentType === 'voice' || this.rowGroup.head.contentType === 'contact' || this.rowGroup.head.contentType === 'location' || this.rowGroup.head.contentType === 'venue' || this.rowGroup.head.contentType === 'checklist' || this.rowGroup.head.contentType === 'poll' || this.rowGroup.head.contentType === 'videoNote' || this.rowGroup.head.contentType === 'dice' || this.rowGroup.head.contentType === 'game' || this.rowGroup.head.contentType === 'paidMedia' || this.rowGroup.head.contentType === 'gift' || this.rowGroup.head.contentType === 'giveaway') {
         MessageBubble({ msg: this.rowGroup.head, group: this.rowGroup, data: this.rowData, actions: this.actions,
           nowSec: this.nowSec, jumpFocus: this.jumpFocus, leaving: this.leaving });
       } else if (this.kind === 'text') {
@@ -1168,26 +1174,26 @@ export struct DrawnMessageRow {
                       return this.claimDocumentWidget(item.widget);
                     } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
                 } else if (item.widget.kind === 'message-giveaway') {
-                  DrawnGiveawayMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
+                  DrawnGiveawayMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
                     onClaim: (): boolean => {
                       if (this.claimed) { return false; }
                       return this.claimDocumentWidget(item.widget);
                     } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
                 } else if (item.widget.kind === 'message-gift') {
-                  DrawnGiftMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
+                  DrawnGiftMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
                     onClaim: (): boolean => {
                       if (this.claimed) { return false; }
                       return this.claimDocumentWidget(item.widget);
                     } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
                 } else if (item.widget.kind === 'message-paid-media') {
                   DrawnPaidMediaMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget,
-                    boxWidth: item.width, pending: this.rowData.paidMediaPending,
+                    boxWidth: item.width, pending: this.rowData.paidMediaPending, chatId: this.rowData.chatId,
                     onClaim: (): boolean => {
                       if (this.claimed) { return false; }
                       return this.claimDocumentWidget(item.widget);
                     } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
                 } else if (item.widget.kind === 'message-game') {
-                  DrawnGameMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
+                  DrawnGameMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
                     onClaim: (): boolean => {
                       if (this.claimed) { return false; }
                       return this.claimDocumentWidget(item.widget);
@@ -1200,7 +1206,14 @@ export struct DrawnMessageRow {
                       return this.claimDocumentWidget(item.widget);
                     } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
                 } else if (item.widget.kind === 'message-video-note') {
-                  DrawnVideoNoteMessage({ msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width, sendState: this.sendState,
+                  DrawnVideoNoteMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width, sendState: this.sendState,
+                    onClaim: (): boolean => {
+                      if (this.claimed) { return false; }
+                      return this.claimDocumentWidget(item.widget);
+                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                } else if (item.widget.kind === 'message-checklist') {
+                  DrawnChecklistMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget,
+                    chatId: this.rowData.chatId, boxWidth: item.width,
                     onClaim: (): boolean => {
                       if (this.claimed) { return false; }
                       return this.claimDocumentWidget(item.widget);
@@ -1213,7 +1226,7 @@ export struct DrawnMessageRow {
                       return this.claimDocumentWidget(item.widget);
                     } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
                 } else if (item.widget.kind === 'message-location') {
-                  DrawnLocationMessage({ msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width,
+                  DrawnLocationMessage({ widget: item.widget, msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width,
                     chatId: this.rowData.chatId, nowSec: this.nowSec,
                     sharing: this.rowData.liveSharingId !== 0 && this.rowData.liveSharingId === this.rowGroup.head.id,
                     onClaim: (): boolean => {
@@ -1221,7 +1234,7 @@ export struct DrawnMessageRow {
                       return this.claimDocumentWidget(item.widget);
                     } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
                 } else if (item.widget.kind === 'message-contact') {
-                  DrawnContactMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
+                  DrawnContactMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
                     onClaim: (): boolean => {
                       if (this.claimed) { return false; }
                       return this.claimDocumentWidget(item.widget);
@@ -1233,13 +1246,13 @@ export struct DrawnMessageRow {
                       return this.claimDocumentWidget(item.widget);
                     } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
                 } else if (item.widget.kind === 'message-audio') {
-                  DrawnAudioMessage({ msg: this.rowGroup.head, data: this.rowData, actions: this.actions, boxWidth: item.width,
+                  DrawnAudioMessage({ widget: item.widget, msg: this.rowGroup.head, data: this.rowData, actions: this.actions, boxWidth: item.width,
                     onClaim: (): boolean => {
                       if (this.claimed) { return false; }
                       return this.claimDocumentWidget(item.widget);
                     } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
                 } else if (item.widget.kind === 'message-file') {
-                  DrawnFileMessage({ msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width, sendState: this.sendState,
+                  DrawnFileMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width, sendState: this.sendState,
                     onClaim: (): boolean => {
                       if (this.claimed) { return false; }
                       return this.claimDocumentWidget(item.widget);
@@ -1273,15 +1286,15 @@ export struct DrawnMessageRow {
                       if (this.claimDocumentWidget(item.widget)) { this.actions.onLocationOpen(item.widget.latitude, item.widget.longitude, '', true); }
                     } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
                 } else if (item.widget.kind === 'audio') {
-                  DrawnDocumentAudio({ widget: item.widget, audioItems: this.plan?.caption?.source.audioItems, chatId: this.rowData.chatId, messageId: this.rowGroup.head.id, boxWidth: item.width,
+                  DrawnDocumentAudio({ widget: item.widget, preparedCard: documentCardFor(item), audioItems: this.plan?.caption?.source.audioItems, chatId: this.rowData.chatId, messageId: this.rowGroup.head.id, boxWidth: item.width,
                     onClaim: (): boolean => this.claimDocumentWidget(item.widget) })
                     .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
                 } else if (item.widget.kind === 'voice') {
-                  DrawnDocumentVoice({ widget: item.widget, boxWidth: item.width,
+                  DrawnDocumentVoice({ widget: item.widget, preparedCard: documentCardFor(item), boxWidth: item.width,
                     onClaim: (): boolean => this.claimDocumentWidget(item.widget) })
                     .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
                 } else {
-                  DrawnDocumentFile({ widget: item.widget, chatId: this.rowData.chatId, messageId: this.rowGroup.head.id, boxWidth: item.width,
+                  DrawnDocumentFile({ widget: item.widget, preparedCard: documentCardFor(item), chatId: this.rowData.chatId, messageId: this.rowGroup.head.id, boxWidth: item.width,
                     onClaim: (): boolean => this.claimDocumentWidget(item.widget) })
                     .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
                 }

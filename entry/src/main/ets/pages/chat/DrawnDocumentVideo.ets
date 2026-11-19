@@ -2,7 +2,9 @@ import { DrawnDocumentWidget } from '../../util/drawnDocumentWidget';
 import { claimDocumentVideo } from '../../util/documentVideoFocus';
 import { DrawnDocumentArticleImage } from './DrawnDocumentArticleImage';
 import { DrawnDocumentEmbed } from './DrawnDocumentEmbed';
-import { COLOR_PRIMARY } from '../../util/theme';
+import { DrawnMediaControl } from './DrawnMediaControl';
+import { chatEnv } from '../../util/chatEnvMirror';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
 
 // ArticleViewer passes autoplay=false for embedded URL players. Mount only on
 // an explicit play tap; controls/seek remain local, never invalidate row layout.
@@ -15,6 +17,11 @@ export struct DrawnDocumentVideo {
   @Event onOpen: (url: string) => void = (_url: string): void => {};
   @Local private playing: boolean = false;
   @Local private fallback: boolean = false;
+  private env = chatEnv;
+  private playPainter: DrawnMediaControl = new DrawnMediaControl();
+  @Computed private get environment(): string {
+    return `${this.env.appearanceEpoch}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
+  }
   private controller: VideoController = new VideoController();
   private release: (() => void) | null = null;
   private generation: number = 0;
@@ -67,8 +74,9 @@ export struct DrawnDocumentVideo {
         this.player(this.controller, this.widget, this.generation);
       } else {
         DrawnDocumentArticleImage({ widget: this.widget, boxWidth: this.boxWidth, boxHeight: this.boxHeight });
-        Button() { SymbolGlyph($r('sys.symbol.play_fill')).fontSize(30).fontColor([COLOR_PRIMARY]); }
-          .width(52).height(52).borderRadius(26).accessibilityText($r('app.string.vf_play'))
+        Button().width(52).height(52).padding(0).backgroundColor('#00000000').borderRadius(26)
+          .drawModifier(this.playPainter.bind(this.getUIContext(), this.environment, 52, '#73000000', '#FFFFFF', 'play'))
+          .accessibilityText($r('app.string.vf_play'))
           .onClick((): void => this.start());
       }
     }.width(this.boxWidth).height(this.boxHeight).clip(true)

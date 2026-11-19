@@ -1331,6 +1331,7 @@ export default function messageStoreTest() {
       await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
       const before = b.sent.length;
       const pending = store.editTextAsync(90, 'new text');
+      await Promise.resolve(); // formatted text preparation is async before the native edit request
       const sent = b.sent.slice(before)
         .map((s: string): TdObject => JSON.parse(s) as TdObject)
         .find((o: TdObject): boolean => o['@type'] === 'editMessageText');
@@ -1353,6 +1354,7 @@ export default function messageStoreTest() {
       await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
       const before = b.sent.length;
       const pending = store.editCaptionAsync(91, 'new caption');
+      await Promise.resolve(); // formatted caption preparation is async
       const sent = b.sent.slice(before)
         .map((s: string): TdObject => JSON.parse(s) as TdObject)
         .find((o: TdObject): boolean => o['@type'] === 'editMessageCaption');

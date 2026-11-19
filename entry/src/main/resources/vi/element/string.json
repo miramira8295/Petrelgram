@@ -11065,10 +11065,6 @@
       "value": "Tự động phát"
     },
     {
-      "name": "cb_blur_amount",
-      "value": "Mức độ làm mờ"
-    },
-    {
       "name": "meow_mode_custom",
       "value": "WebPush tùy chỉnh"
     },
@@ -11877,24 +11873,8 @@
       "value": "%1$d giây"
     },
     {
-      "name": "chat_settings_surface_glass",
-      "value": "Làm mờ giao diện"
-    },
-    {
-      "name": "chat_settings_surface_glass_sub",
-      "value": "Kính mờ cho Danh bạ, Cài đặt và Hồ sơ, đồng bộ với thanh nhập. Vẽ lại mỗi khung hình — hãy tắt nếu bị giật."
-    },
-    {
-      "name": "chat_settings_surface_glass_level",
-      "value": "Mức làm mờ"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Video dải động cao"
-    },
-    {
-      "name": "material_level_veil",
-      "value": "Màn mỏng"
     },
     {
       "name": "chat_settings_surface_glass_ui",
@@ -11907,22 +11887,6 @@
     {
       "name": "chat_settings_bubble_glass",
       "value": "Bong bóng"
-    },
-    {
-      "name": "chat_settings_bubble_glass_sub",
-      "value": "Bong bóng tin nhắn — nhiều nhất và tốn kém nhất"
-    },
-    {
-      "name": "glass_warn_title",
-      "value": "Hao pin hơn"
-    },
-    {
-      "name": "glass_warn_body",
-      "value": "Hiệu ứng mờ được vẽ lại mỗi khung hình: hao pin và nóng máy tăng rõ, có thể rớt khung khi cuộn. Nếu máy nóng hoặc giật, hãy quay lại và chọn «Tắt»."
-    },
-    {
-      "name": "glass_warn_enable",
-      "value": "Vẫn bật"
     },
     {
       "name": "cp_secret_pending_out",

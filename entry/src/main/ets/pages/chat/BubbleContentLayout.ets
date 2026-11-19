@@ -1,3 +1,6 @@
+import { ReactionChip } from './ReactionChip';
+import { reactionAvatarCount, reactionAvatarWidth, reactionTotal } from '../../util/reactionSenders';
+import { REACTION_HEIGHT_VP, reactionCountGap } from '../../util/reactionPresentation';
 import { ReactionTransitions } from '../../util/reactionTransitions';
 import { TextMeasureCache, textMeasureEnvironment, sharedTextMeasurements } from '../../util/textMeasureCache';
 import { deviceInfo } from '@kit.BasicServicesKit';
@@ -54,6 +57,9 @@ export struct BubbleContentLayout {
   private measuredBubbleW: number = 0;
   private reactionTransitions: ReactionTransitions = new ReactionTransitions();
   private textMeasureCache: TextMeasureCache = new TextMeasureCache();
+  private reactionTotalSource: ReactionInfo[] | null = null;
+  private reactionTotalValue: number = 0;
+  private reactionCountWidths: TextMeasureCache = new TextMeasureCache();
   private textMeasureFailed: boolean = false;
   private rxWidthSig: string = '';
   private rxSource: ReactionInfo[] | null = null;
@@ -225,51 +231,29 @@ export struct BubbleContentLayout {
   }
 
 
+  private reactionAvatars(r: ReactionInfo): number {
+    if (this.reactionTotalSource !== this.msg.reactions) {
+      this.reactionTotalSource = this.msg.reactions; this.reactionTotalValue = reactionTotal(this.msg.reactions);
+    }
+    return reactionAvatarCount(r, this.reactionTotalValue, this.data.isChannel, !this.data.isGroup && !this.data.isChannel);
+  }
+
   @Builder
   reactionsRow() {
     Flex({ wrap: FlexWrap.Wrap }) {
-      ForEach(this.msg.reactions, (r: ReactionInfo) => {
-        Row({ space: 4 }) {
-          if (r.customEmojiId !== '') {
-            // 位图还没下载完时给一个同尺寸占位，chip 宽度不会跳动。
-            if (r.customEmojiPath !== '') {
-              Image(this.reactionImageSource(r.customEmojiPath))
-                .width(15).height(15).objectFit(ImageFit.Contain)
-                .draggable(false);
-            } else {
-              Row()
-                .width(15).height(15).borderRadius(4)
-                .backgroundColor(r.isChosen ? '#40FFFFFF' : '#1A000000');
-            }
-          } else {
-            Text(r.emoji).fontSize(13);
-          }
-          Text(`${r.count}`).fontSize(12).fontColor(r.isChosen ? Color.White : COLOR_TEXT_SECONDARY);
-        }
-        // 未选中态原来是写死的 '#00000010'（6% 的黑）：浅色气泡上几乎看不见，
-        // 深色气泡上黑叠黑更是没有。换成跟随主题的资源，深色那边用的是白色
-        // 透明度而不是黑色。
-        .backgroundColor(r.isChosen ? this.accent() : $r('app.color.reaction_chip'))
-        // 半径取高度的一半（15 的内容 + 上下各 4 = 23），两端才是正圆弧。
-        .borderRadius(12).padding({ left: 9, right: 9, top: 4, bottom: 4 })
-        .margin({ right: 4, top: 4 })
-        .stateStyles({ normal: contentReactionNormal, pressed: contentReactionPressed })
-        .animation({ duration: this.reactionDuration(120), curve: Curve.EaseOut })
-        .onClick(() => {
-          if (this.context.gestureClaimed) { return; }
-          this.actions.onSetReaction(this.msg.id, reactionKeyFrom(r.emoji, r.customEmojiId), r.isChosen);
-        })
-        // Long-press a chip to see who reacted with it.
-        .gesture(LongPressGesture().onAction(() => {
-          this.actions.onShowReactors(this.msg.id, reactionKeyFrom(r.emoji, r.customEmojiId));
-        }))
-        .transition(this.reactionTransitions.prepare(r, this.reactionDuration(180)));
-        // key 里带上路径，位图下载完成后 chip 才会重建并显示图片。
-      // count 与 isChosen 必须进键：它们是这枚 chip 上**唯一会变的两样**，而键不变
-      // 时 ForEach 不重跑子构建函数（同 albumGrid 上方那段推导）——点赞数会停在
-      // 上一条消息、或者停在自己点之前的那个数上。
-      }, (r: ReactionInfo) => `rx_${reactionKeyFrom(r.emoji, r.customEmojiId)}` +
-        `_${r.customEmojiPath}_${r.count}_${r.isChosen ? 'y' : 'n'}`);
+      ForEach(this.msg.reactions, (r: ReactionInfo, index: number) => {
+        // Capture the stable slot, not the old immutable item. Reading msg here
+        // lets V2 refresh the child Param without replacing its resource owner.
+        ReactionChip({ reaction: this.msg.reactions[index] ?? r, outgoing: this.msg.isOutgoing,
+          ownerKey: `${this.data.chatId}:${this.msg.id}:${reactionKeyFrom(r.emoji, r.customEmojiId, r.isPaid === true)}`,
+          avatarCount: this.reactionAvatars(this.msg.reactions[index] ?? r),
+          onToggle: (key: string, chosen: boolean): void => {
+            if (!this.context.gestureClaimed) { this.actions.onSetReaction(this.msg.id, key, chosen); }
+          },
+          onShow: (key: string): void => { this.actions.onShowReactors(this.msg.id, key); }
+        }).margin({ right: 4, top: 4 })
+          .transition(this.reactionTransitions.prepare(r, this.reactionDuration(180)));
+      }, (r: ReactionInfo, index: number): string => `rx_${reactionKeyFrom(r.emoji, r.customEmojiId, r.isPaid === true)}_${index}`);
       // 末尾的「>」：点开看谁回应了（按表情分组的名单，见 ReactorsMenu）。
       // 频道里 Telegram 不给查回应人，不挂。
       if (this.reactorsArrowShown()) {
@@ -280,7 +264,7 @@ export struct BubbleContentLayout {
         }
         // 不垫底色：它不是一个回应，只是「看名单」的入口，和表情胶囊长得一样会被
         // 读成又一个表情（用户：「箭头有个灰色的底色，能去掉吗」）。热区照旧。
-        .height(23)
+        .height(REACTION_HEIGHT_VP)
         .borderRadius(12).padding({ left: REACTORS_ARROW_PAD_H, right: REACTORS_ARROW_PAD_H })
         .margin({ right: 4, top: 4 })
         .justifyContent(FlexAlign.Center)
@@ -315,16 +299,18 @@ export struct BubbleContentLayout {
     const views: string = this.context.liveViews;
     // 签名里必须带上影响时间戳宽度的四样（时刻文本、已编辑、自己发的、浏览数），
     // 否则同一条消息被编辑过之后仍拿着旧的上限。
-    const sig = `${arrowShown}:${timeText}:${edited}:${outgoing}:${views}:${environment}:${availableWidth}`;
+    const sig = `${arrowShown}:${timeText}:${edited}:${outgoing}:${views}:${environment}:${availableWidth}:${this.data.isGroup}:${this.data.isChannel}`;
     if (reactions === this.rxSource && sig === this.rxWidthSig && this.rxWidthCache > 0) {
       return this.rxWidthCache;
     }
     this.textMeasureFailed = false;
     const chips: number[] = [];
     for (const r of reactions) {
-      // 自定义表情是 15×15 的位图（或同尺寸占位）；unicode 表情是 13fp 的 Text，得测。
-      const icon: number = r.customEmojiId !== '' ? CHIP_ICON_VP : this.measureTextVp(r.emoji, 13);
-      chips.push(reactionChipWidth(icon, this.measureTextVp(`${r.count}`, 12)));
+      // Both standard and custom reactions reserve the same 20vp icon slot.
+      const icon: number = CHIP_ICON_VP;
+      const avatarCount = this.reactionAvatars(r);
+      chips.push(avatarCount > 0 ? 8 + icon + reactionCountGap(r.customEmojiId !== '') + reactionAvatarWidth(avatarCount) :
+        reactionChipWidth(icon, this.measureReactionCount(`${r.count}`), r.customEmojiId !== ''));
     }
     if (arrowShown) {
       chips.push(REACTORS_ARROW_PAD_H * 2 + REACTORS_ARROW_ICON_VP + REACTORS_ARROW_MARGIN_R);
@@ -344,6 +330,22 @@ export struct BubbleContentLayout {
     return this.rxWidthCache;
   }
 
+
+  private measureReactionCount(label: string): number {
+    // Medium-weight counter metrics cannot share the regular timestamp cache.
+    this.reactionCountWidths.prepare(`${textMeasureEnvironment.epoch}:${this.env.langEpoch}:${this.env.appearanceEpoch}`);
+    try {
+      return this.reactionCountWidths.width(label, 12, (content: string, size: number): number => {
+        const ui = this.getUIContext();
+        const result = ui.getMeasureUtils().measureTextSize({ textContent: content,
+          fontSize: size, fontWeight: FontWeight.Medium });
+        return ui.px2vp(result.width as number);
+      });
+    } catch (error) {
+      this.textMeasureFailed = true;
+      return 12 * Math.max(1, label.length);
+    }
+  }
 
   private measureTextVp(text: string, fontSize: number): number {
     try {
@@ -392,9 +394,6 @@ export struct BubbleContentLayout {
   }
 
 
-  private reactionImageSource(path: string): string {
-    return path.startsWith('/') ? `file://${path}` : path;
-  }
 
 
   private replyQuoteMaxW(): number {

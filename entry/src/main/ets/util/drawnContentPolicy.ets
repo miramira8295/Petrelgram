@@ -9,9 +9,22 @@ export function drawnContentEligible(type: string, material: boolean): boolean {
     type !== 'sticker' && type !== 'customEmoji' && type !== 'videoNote' && type !== 'dice';
 }
 
+// Native surfaces are switched inside media children. Parent snapshot bindings
+// must stay safe without subscribing to playback. Cache potential surface
+// presence once per immutable group (O(N) on a new group, O(1) thereafter).
+const potentialVideoSurface: WeakMap<AlbumGroup, boolean> = new WeakMap();
+function canHostVideoSurface(group: AlbumGroup): boolean {
+  const known = potentialVideoSurface.get(group);
+  if (known !== undefined) { return known; }
+  const result = group.head.videoFileId !== 0 || group.photoIsVideo.some((value: boolean): boolean => value);
+  potentialVideoSurface.set(group, result);
+  return result;
+}
+
 // The play slot encodes the album index. Validate that indexed member instead
 // of scanning every member on each menu/snapshot/press binding.
-export function drawnLiveSurface(group: AlbumGroup, data: MessageBubbleRenderData): boolean {
+export function drawnLiveSurface(group: AlbumGroup, data: MessageBubbleRenderData, localPlayback: boolean = false): boolean {
+  if (localPlayback && canHostVideoSurface(group)) { return true; }
   const key = data.playSlotKey;
   // GIF playback owns a native surface too, even without a normal play slot.
   // Conservatively avoid snapshots while a downloaded GIF can be mounted.

@@ -139,7 +139,7 @@ console.log('PASS: nested map/file/voice widgets, caption preservation, constant
 const musicSource=sources.prepare([{'@type':'pageBlockAudio',audio:{audio:file(73),title:'Track',performer:'Artist',duration:42},caption:{text:plain('audio caption')}}]);
 assert.ok(musicSource);const musicPlan=engine.prepare(ui,{...spec,source:musicSource});
 assert.equal(musicPlan.widgets.length,1);assert.equal(musicPlan.widgets[0].widget.kind,'audio');
-assert.equal(musicPlan.widgets[0].height,72);assert.ok(musicPlan.accessibilityText.includes('audio caption'));
+assert.equal(musicPlan.widgets[0].height,52,'music height includes measured labels and seek track');assert.ok(musicPlan.accessibilityText.includes('audio caption'));
 const musicWarm=layoutCounters();for(let i=0;i<1000;i++)assert.equal(engine.prepare(ui,{...spec,source:musicSource}),musicPlan);
 assert.deepEqual(layoutCounters(),musicWarm);
 console.log('PASS: audio block admission, caption and 1000 geometry cache hits.');
@@ -201,9 +201,9 @@ assert.equal(articleHits.length,3);assert.equal(articlesLayout.widgets.length,1)
 assert.equal(articleHits[0].link.url,'https://article.test/one');assert.ok(articleHits[1].y>=articleHits[0].y+articleHits[0].heightVp);
 const counters=layoutCounters();for(let i=0;i<1000;i++){assert.equal(articleSource.prepare(articleNodes,'en'),articles);assert.equal(articlesEngine.prepare(ui,articleSpec),articlesLayout);}assert.deepEqual(layoutCounters(),counters);
 const narrow=articlesEngine.prepare(ui,{...articleSpec,maxWidthVp:100});assert.ok(Number.isFinite(narrow.heightVp));assert.ok(narrow.hits.every(h=>h.x+h.widthVp<=100));
-assert.equal(articleSource.prepare([{'@type':'pageBlockRelatedArticles',articles:Array.from({length:2049},()=>({url:'https://a',title:'a'}))}]),null);
-assert.equal(articleSource.reason,'structured-block-limit');
-console.log('PASS: related article metadata priority, thumbnail, whole-card links, narrow layout, 1000 cached prepares and bounded article count.');
+const manyArticles=articleSource.prepare([{'@type':'pageBlockRelatedArticles',articles:Array.from({length:2049},(_,i)=>({url:`https://a/${i}`,title:'a'}))}]);
+assert.ok(manyArticles);assert.equal(manyArticles.blocks.length,2050);assert.equal(manyArticles.blocks.at(-1).article.url,'https://a/2048');
+console.log('PASS: related article metadata priority, thumbnail, whole-card links, narrow layout, 1000 cached prepares and full 2049-article document.');
 const embeds=new ctx.DrawnStructuredSource();
 const embedNodes=[{'@type':'pageBlockEmbedded',html:'<p>Embedded</p>',url:'https://example.test',width:320,height:180,allow_scrolling:true,
  caption:{text:plain('Caption'),credit:link('Credit','https://credit.test')}}];

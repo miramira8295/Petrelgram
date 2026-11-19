@@ -25,6 +25,10 @@
       "value": "#FFFFFF"
     },
     {
+      "name": "chat_overlay",
+      "value": "#CCFFFFFF"
+    },
+    {
       "name": "dock_glass",
       "value": "#8CFFFFFF"
     },
@@ -159,6 +163,30 @@
     {
       "name": "list_preview_text",
       "value": "#8E8E93"
+    },
+    {
+      "name": "reaction_in",
+      "value": "#286C9FD2"
+    },
+    {
+      "name": "reaction_in_selected",
+      "value": "#FF6C9FD2"
+    },
+    {
+      "name": "reaction_in_text",
+      "value": "#FF4885B8"
+    },
+    {
+      "name": "reaction_out",
+      "value": "#2864A84D"
+    },
+    {
+      "name": "reaction_out_selected",
+      "value": "#FF64A84D"
+    },
+    {
+      "name": "reaction_out_text",
+      "value": "#FF4B8C37"
     }
   ]
 }

@@ -28,14 +28,14 @@ import {
 } from '../../store/ChatBackgroundStore';
 import { inflateTgvIfNeeded } from '../../util/gunzipTgs';
 import {
-  NO_BLUR_RADIUS, patternTileGrid, patternTileGridLayer, wallpaperTakesBlur, wallpaperTakesUserDim
+  patternTileGrid, patternTileGridLayer, wallpaperTakesUserDim
 } from '../../util/chatBackgroundRaster';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import {
-  BG_BLUR_DEFAULT, BG_BLUR_MAX, BG_BLUR_MIN, BG_PATTERN_DEFAULT, BG_PATTERN_MIN,
-  CHAT_DIM_MAX, KEY_BG_BLUR, KEY_BG_PATTERN, KEY_BG_PATTERN_DARK, KEY_CHAT_DIM,
+  BG_PATTERN_DEFAULT, BG_PATTERN_MIN,
+  CHAT_DIM_MAX, KEY_BG_PATTERN, KEY_BG_PATTERN_DARK, KEY_CHAT_DIM,
   bumpLocalWallpaperEpoch, KEY_LOCAL_BG_DARK, KEY_LOCAL_BG_LIGHT,
   patternStrengthKey, setNumber, setString
 } from '../../store/AppSettings';
@@ -56,7 +56,7 @@ const CARD_RADIUS: number = 14;
 const TILE_HEIGHT: number = 118;
 const PREVIEW_HEIGHT: number = 188;
 const SOLID_SWATCH: number = 40;
-// 三条滑杆改成「常显」之后的不可用态：文字、轨道、滑块一起降透明度，并且 .enabled(false)
+// 浓度和遮罩滑杆改成「常显」之后的不可用态：文字、轨道、滑块一起降透明度，并且 .enabled(false)
 // 让它拖不动。以前是条件渲染（用不到就整行不画），于是切背景时卡片高度跳、偶发整张卡片
 // 不出现；改成常显+置灰后，布局恒定，用户也能看出「这项跟当前背景无关」。
 const COLOR_TEXT_DISABLED: ResourceColor = '#59000000';
@@ -113,7 +113,7 @@ struct GalleryTile {
         // 这里改成同样按格高铺：格高 118vp → 每列 57.4vp，一张 155px 的缩略图被**缩小**
         // 而不是放大，图元大小和真实背景一致，线稿也回到细腻。
         if (this.cellW > 0) {
-          patternTileGridLayer(this.row.thumb, 1, patternTileGrid(this.cellW, TILE_HEIGHT), NO_BLUR_RADIUS);
+          patternTileGridLayer(this.row.thumb, 1, patternTileGrid(this.cellW, TILE_HEIGHT));
         } else {
           // 首帧还没量到宽度时的兜底（下一帧就会换成平铺）。
           Image(`file://${this.row.thumb}`).draggable(false)
@@ -162,9 +162,8 @@ struct ChatBackgroundPage {
   @State private scrollActive: boolean = false;
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
   @StorageProp('screenWidthVp') screenW: number = 360;
-  // 三根滑杆改成 @State 镜像：它们要按**槽位**读写，而 @StorageProp 的键是写死的。
+  // 浓度和遮罩滑杆改成 @State 镜像：它们要按**槽位**读写，而 @StorageProp 的键是写死的。
   // 这页只活一会儿，进来时从槽位键读一次、改动时写回去就够。
-  @State bgBlur: number = BG_BLUR_DEFAULT;
   @State loadState: string = 'loading';
   @State rows: GalleryRow[] = [];
   @State forDark: boolean = false;
@@ -473,12 +472,6 @@ struct ChatBackgroundPage {
     return mode === SliderChangeMode.End || mode === SliderChangeMode.Click;
   }
 
-  private setBlur(value: number, mode: SliderChangeMode): void {
-    if (!this.sliderSettled(mode)) { return; }
-    this.bgBlur = Math.round(value);
-    setNumber(this.slotKeys().blur, this.bgBlur);
-  }
-
   private setPattern(value: number, mode: SliderChangeMode): void {
     if (!this.sliderSettled(mode)) { return; }
     this.patternPct = Math.round(value) / 100;
@@ -506,7 +499,6 @@ struct ChatBackgroundPage {
 
   private loadSlotValues(): void {
     const keys: WallpaperSlotKeys = this.slotKeys();
-    this.bgBlur = AppStorage.get<number>(keys.blur) ?? BG_BLUR_DEFAULT;
     this.patternPct = AppStorage.get<number>(keys.pattern) ?? BG_PATTERN_DEFAULT;
     this.chatDim = AppStorage.get<number>(keys.dim) ?? 0;
   }
@@ -651,12 +643,10 @@ struct ChatBackgroundPage {
       });
       if (slotIsApp(this.effectiveSlot())) {
         // APP 槽位和聊天槽位存的是同一种数据（序列化的 ChatBackgroundState），
-        // 这样原生壁纸和本机图走的是同一条渲染路径。blurred 恒为 true 的理由见
-        // ChatBackgroundStore 里同一处说明。
+        // 这样原生壁纸和本机图走的是同一条渲染路径。
         const state: ChatBackgroundState = emptyChatBackground();
         state.custom = true;
         state.path = dest;
-        state.blurred = true;
         setString(this.slotKeys().state, serialiseSnapshot(state));
         this.currentBackground = state;
       } else {
@@ -907,7 +897,6 @@ struct ChatBackgroundPage {
     Stack() {
       WallpaperPreview({
         wallpaper: this.currentBackground,
-        blurAmount: this.bgBlur,
         patternStrength: this.patternPct,
         dimAmount: this.chatDim,
         dark: this.forDark,
@@ -918,27 +907,6 @@ struct ChatBackgroundPage {
     }
     .width('100%').height(PREVIEW_HEIGHT).borderRadius(CARD_RADIUS).clip(true)
     .border({ width: 0.7, color: $r('app.color.divider') });
-  }
-
-  @Builder
-  @Builder
-  blurAdjustment() {
-    Column({ space: 6 }) {
-      Row() {
-        Text($r('app.string.cb_blur_amount')).fontSize(15)
-          .fontColor(this.showsBlur() ? COLOR_TEXT_PRIMARY : COLOR_TEXT_DISABLED).layoutWeight(1);
-        Text(`${this.bgBlur}`).fontSize(14)
-          .fontColor(this.showsBlur() ? COLOR_TEXT_SECONDARY : COLOR_TEXT_DISABLED);
-      }.width('100%');
-      Slider({ value: this.bgBlur, min: BG_BLUR_MIN, max: BG_BLUR_MAX, step: 1, style: SliderStyle.OutSet })
-        .width('100%')
-        .trackColor(this.showsBlur() ? $r('app.color.divider') : COLOR_TRACK_DISABLED)
-        .selectedColor(this.showsBlur() ? COLOR_PRIMARY : COLOR_BLOCK_DISABLED)
-        .blockColor(this.showsBlur() ? COLOR_PRIMARY : COLOR_BLOCK_DISABLED)
-        .enabled(this.showsBlur())
-        .onChange((value: number, mode: SliderChangeMode): void => { this.setBlur(value, mode); });
-    }
-    .width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 });
   }
 
   @Builder
@@ -990,12 +958,7 @@ struct ChatBackgroundPage {
     .width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 });
   }
 
-  // 纯色 / 跟随系统没有模糊和遮罩（util/chatBackgroundRaster.wallpaperTakes*），
-  // 三项都不出现时整张卡片不画。
-  private showsBlur(): boolean {
-    return wallpaperTakesBlur(this.currentBackground.path);
-  }
-
+  // 纯色 / 跟随系统不叠加用户深色遮罩。
   private showsDim(): boolean {
     return slotHasDim(this.effectiveSlot()) &&
       wallpaperTakesUserDim(this.currentBackground.colors, this.currentBackground.path);
@@ -1005,11 +968,11 @@ struct ChatBackgroundPage {
   @Builder
   adjustmentsCard() {
     Column() {
-      this.blurAdjustment();
-      Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 8, right: 4 });
       this.patternAdjustment();
-      Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 8, right: 4 });
-      this.dimAdjustment();
+      if (slotHasDim(this.effectiveSlot())) {
+        Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 8, right: 4 });
+        this.dimAdjustment();
+      }
     }
     .width('100%').padding({ top: 2, bottom: 2 })
     .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);

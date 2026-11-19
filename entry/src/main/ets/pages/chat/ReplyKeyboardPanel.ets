@@ -90,8 +90,8 @@ export struct ReplyKeyboardPanel {
     .padding(8)
     .margin({ left: 8, right: 8, bottom: this.bottomGap })
     .backgroundColor($r('app.color.surface_alt'))
+    .border({ width: 0.5, color: $r('app.color.divider') })
     .borderRadius(16)
-    .shadow({ radius: 6, color: '#16000000', offsetX: 0, offsetY: 2 })
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: 10 }))
       .animation({ duration: this.enterDuration, curve: Curve.EaseOut }));

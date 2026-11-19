@@ -49,7 +49,7 @@ export class DrawnRichBlockBackground {
     this.stripeBrush = stripeWidth > 0 ? new drawing.Brush() : null;
     this.stripeBrush?.setAntiAlias(true); this.stripeBrush?.setColor(accent);
     this.stripe = stripeWidth > 0 ? { left: rect.left, top: rect.top,
-      right: rect.left + stripeWidth, bottom: rect.bottom } : null;
+      right: Math.min(rect.right, rect.left + stripeWidth), bottom: rect.bottom } : null;
   }
   paint(canvas: drawing.Canvas): void {
     canvas.attachBrush(this.brush); canvas.drawRoundRect(this.shape); canvas.detachBrush();

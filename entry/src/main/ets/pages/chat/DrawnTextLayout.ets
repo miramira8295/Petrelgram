@@ -1,3 +1,6 @@
+import { DrawnMusicMessageSource } from './DrawnMusicMessageSource';
+import { fileCardTileSize } from './DrawnFileCardLayout';
+import { DrawnChecklistMessageSource } from './DrawnChecklistMessageSource';
 import { systemFontWeightScale } from '../../util/systemFontWeight';
 import { DrawnStickerSource } from './DrawnStickerSource';
 import { DrawnGiveawaySource } from './DrawnGiveawaySource';
@@ -58,11 +61,12 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
   private gameSource: DrawnGameSource | null = null;
   private diceSource: DrawnDiceSource | null = null;
   private videoNoteSource: DrawnVideoNoteSource | null = null;
+  private checklistSource: DrawnChecklistMessageSource | null = null;
   private pollSource: DrawnPollMessageSource | null = null;
   private locationSource: DrawnLocationMessageSource | null = null;
   private contactSource: DrawnContactMessageSource | null = null;
   private voiceSource: DrawnVoiceMessageSource | null = null;
-  private audioSource: DrawnFileMessageSource | null = null;
+  private audioSource: DrawnMusicMessageSource | null = null;
   private fileSource: DrawnFileMessageSource | null = null;
   private structured: DrawnStructuredSource | null = null;
   private sources: DrawnTranslatedSource = new DrawnTranslatedSource();
@@ -92,6 +96,7 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
   private cachedReplace: boolean = false;
   private cachedSpoilers: boolean | undefined = undefined;
   private cachedExpanded: ReadonlyArray<number> | undefined = undefined;
+  private cachedPollExpired: boolean | undefined = undefined;
   private cachedGeometry: string = '';
 
   prepare(ui: UIContext, group: AlbumGroup, data: MessageBubbleRenderData, style: DrawnBubbleStyle): DrawnBubblePlan | null {
@@ -105,7 +110,8 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
       this.cachedSelection === data.selectedMemberIds && this.cachedTranslation === (style.translationStatus ?? null) &&
       this.cachedReplace === (style.replaceTranslation === true) && this.cachedGeometry === geometry &&
       this.cachedViews === style.views && this.cachedMathRevision === style.mathRevision &&
-      this.cachedExpanded === style.expandedBlocks && (this.cachedSpoilers === true) === (style.spoilersRevealed === true)) {
+      this.cachedExpanded === style.expandedBlocks && this.cachedPollExpired === style.pollExpired &&
+      (this.cachedSpoilers === true) === (style.spoilersRevealed === true)) {
       return this.current;
     }
     const avatarSpace = data.isGroup && !m.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0;
@@ -114,12 +120,12 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
     let structuredSource: DrawnRichSource | undefined = undefined;
     if (m.contentType === 'richMessage') {
       if (this.structured === null) { this.structured = new DrawnStructuredSource(); }
-      const document = this.structured.prepare(m.richBlocks, style.textEnvironment);
+      const document = this.structured.prepare(m.richBlocks, style.textEnvironment, m.isOutgoing && m.richIsFull !== false && m.sendState !== 'sending' && style.replaceTranslation !== true);
       if (document === null) { this.failureReason = DrawnRouteReason.Policy; return null; }
       structuredSource = document;
     }
-    const translatedSource = this.sources.prepare(m.text, m.textEntities, m, style.translationStatus ?? null, style.replaceTranslation === true, structuredSource);
-    if (m.text !== '' && translatedSource === null) { this.failureReason = drawnSourceRouteReason(this.sources.reason); return null; }
+    const translatedSource = m.contentType === 'checklist' ? null : this.sources.prepare(m.text, m.textEntities, m, style.translationStatus ?? null, style.replaceTranslation === true, structuredSource);
+    if (m.contentType !== 'checklist' && m.text !== '' && translatedSource === null) { this.failureReason = drawnSourceRouteReason(this.sources.reason); return null; }
     let source = this.previews.prepare(translatedSource, m, style.environment);
     if (m.contentType === 'sticker' || m.contentType === 'emoji' || m.contentType === 'customEmoji') {
       if (this.stickerSource === null) { this.stickerSource = new DrawnStickerSource(); }
@@ -150,6 +156,10 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
       if (this.videoNoteSource === null) { this.videoNoteSource = new DrawnVideoNoteSource(); }
       source = this.videoNoteSource.prepare(source);
     }
+    if (m.contentType === 'checklist') {
+      if (this.checklistSource === null) { this.checklistSource = new DrawnChecklistMessageSource(); }
+      source = this.checklistSource.prepare(ui, null, m, maxPx / d, style.environment, data.chatId);
+    }
     if (m.contentType === 'poll') {
       if (this.pollSource === null) { this.pollSource = new DrawnPollMessageSource(); }
       source = this.pollSource.prepare(ui, source, m, maxPx / d, style.environment,
@@ -157,7 +167,7 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
     }
     if (m.contentType === 'location' || m.contentType === 'venue') {
       if (this.locationSource === null) { this.locationSource = new DrawnLocationMessageSource(); }
-      source = this.locationSource.prepare(source, data.liveSharingId !== 0 && data.liveSharingId === m.id);
+      source = this.locationSource.prepare(ui, source, m, maxPx / d, style.environment, data.liveSharingId !== 0 && data.liveSharingId === m.id);
     }
     if (m.contentType === 'contact') {
       if (this.contactSource === null) { this.contactSource = new DrawnContactMessageSource(); }
@@ -168,12 +178,13 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
       source = this.voiceSource.prepare(source, m.speechState, m.speechText, style.textEnvironment);
     }
     if (m.contentType === 'audio') {
-      if (this.audioSource === null) { this.audioSource = new DrawnFileMessageSource(true); }
-      source = this.audioSource.prepare(source);
+      if (this.audioSource === null) { this.audioSource = new DrawnMusicMessageSource(); }
+      source = this.audioSource.prepare(ui, source, m, maxPx / d, style.environment);
     }
     if (m.contentType === 'file') {
       if (this.fileSource === null) { this.fileSource = new DrawnFileMessageSource(); }
-      source = this.fileSource.prepare(source);
+      source = this.fileSource.prepareFile(ui, source, m.videoFileName, maxPx / d, style.environment,
+        fileCardTileSize(m.videoFileName, m.videoMimeType, m.photoFileId, m.photoMini));
     }
     if (source === null) { this.failureReason = drawnSourceRouteReason(this.sources.reason); return null; }
     const body = this.bodies.prepare(ui, { source, mathRevision: style.mathRevision, maxWidthVp: maxPx / d, minWidthVp: 0,
@@ -200,7 +211,7 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
     const secondary = drawnColor(COLOR_TEXT_SECONDARY);
     const footer = this.footers.prepare(ui, formatClockTime(m.date), m.editDate > 0 ? str('mb_edited') : '',
       style.views, m.isOutgoing, maxPx, secondary, style.environment);
-    const chrome = this.chrome.prepare(ui, m, data.isChannel, maxPx / d, style.environment);
+    const chrome = this.chrome.prepare(ui, m, data.isChannel, maxPx / d, style.environment, !data.isGroup && !data.isChannel);
     const key = `${avatarSpace}:${group.showAvatar}:${group.showSenderName}:${m.isOutgoing}:${m.senderId}:` +
       `${m.senderInitials}:${style.radius}:${style.environment}:${data.themeBubbleOut}`;
     const old = this.current;
@@ -272,7 +283,7 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
     this.cachedViews = style.views; this.cachedMathRevision = style.mathRevision;
     this.cachedTranslation = style.translationStatus ?? null; this.cachedReplace = style.replaceTranslation === true;
     this.cachedSpoilers = style.spoilersRevealed; this.cachedExpanded = style.expandedBlocks;
-    this.cachedGeometry = geometry;
+    this.cachedGeometry = geometry; this.cachedPollExpired = style.pollExpired;
     return p;
   }
   // Keep the native 38vp row and original short bubble height. Shift the fixed

@@ -1,3 +1,4 @@
+// Chat scroll surfaces use a translucent fill/outline, without compositor blur or shadows.
 import { BOTTOM_DRAWER_HEIGHT, drawerBottomInset } from '../../util/drawerMetrics';
 import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { SystemGlassSurface } from './SystemGlassSurface';
@@ -39,11 +40,9 @@ export struct BottomDrawerShell {
     // 一半跑到卡片上面去了，卡片下沿实际只离屏幕底 inset/2 + 4，「表情 / 贴纸
     // / GIF」那一条整个躺在系统手势带里（issue #154）。
     Stack({ alignContent: Alignment.Top }) {
-      // 卡片的玻璃交给系统沉浸材质（SystemGlassSurface 垫一层 Toggle 材质）。
-      // 这是"整块面板"级的面：材质自带模糊与 25% 淡底，所以原来那三件
-      // （半透明底 / backdropBlur / visualEffect）全部撤掉，否则底色会把材质盖死。
+      // 抽屉保留半透明底和细描边；大面积背景不再采样滚动消息或叠投影。
       Stack() {
-        SystemGlassSurface({ radius: 18, fixedHeight: this.drawerHeight }) {
+        SystemGlassSurface({ effectsEnabled: false, plainOutline: true, radius: 18, fixedHeight: this.drawerHeight }) {
           Column() {
             this.content();
           }
@@ -58,8 +57,7 @@ export struct BottomDrawerShell {
       .width('calc(100% - 16vp)')
       .height(this.drawerHeight)
       .translate({ y: this.cardOffsetY })
-      .opacity(this.cardOpacity)
-      .shadow({ radius: 8, color: '#1A000000', offsetX: 0, offsetY: -2 });
+      .opacity(this.cardOpacity);
     }
     .width('100%')
     .height(this.visibleShellHeight())

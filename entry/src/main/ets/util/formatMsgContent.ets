@@ -1,3 +1,5 @@
+import { ChecklistModel, parseChecklist } from './checklistModel';
+import { GiveawayAudience, giveawayAudienceOf } from './giveawayAudience';
 import { FlatText, flattenRichMessage } from './richMessage';
 import { remoteUniqueIdOf, stickerSetIdOf } from './stickerSetItems';
 import { TdObject } from '../tdkit/TdTypes';
@@ -37,6 +39,9 @@ export interface MsgContent {
   // messageRichMessage 的原始页面块。渲染在 RichMessageView 里做，这里只把
   // 数据带过去——解析结果是自定义类型，塞进 MessageEntry 会牵一大串。
   richBlocks?: TdObject[];
+  richIsFull?: boolean;
+  richIsRtl?: boolean;
+  checklist?: ChecklistModel;
   linkPhotoWidth?: number;
   linkPhotoHeight?: number;
   linkPhotoLocalPath?: string;
@@ -147,6 +152,7 @@ export interface MsgContent {
   giftStatus?: string;
   giftCode?: string;
   giftRefunded?: boolean;
+  giveawayAudience?: GiveawayAudience;
   giveawayState?: string;
   giveawayWinnerCount?: number;
   giveawayPrize?: string;
@@ -686,21 +692,30 @@ export function speechTextOf(note: TdObject | undefined): string {
 }
 
 
-export function formatMsgContent(message: TdObject): MsgContent {
+export function formatMsgContent(message: TdObject, previousChecklist?: ChecklistModel): MsgContent {
   const content = message['content'] as TdObject | undefined;
   const type = content !== undefined ? (content['@type'] as string | undefined) : undefined;
   // 富文本长帖：页面块模型摊平成常规的 text + entities，之后就是一条普通
   // 文本消息，气泡那边一行都不用改（见 util/richMessage）。
+  if (type === 'messageChecklist') {
+    const checklist = parseChecklist(content!['list'] as TdObject | undefined, previousChecklist);
+    if (checklist !== null) {
+      return { contentType: 'checklist', text: checklist.preview, checklist,
+        photoFileId: 0, photoWidth: 0, photoHeight: 0, placeholderLabel: '', entities: [],
+        linkSiteName: '', linkTitle: '', linkDescription: '', linkDescriptionEntities: [], linkPhotoFileId: 0, linkUrl: '',
+        videoDuration: 0, videoFileId: 0, videoFileSize: 0, videoMimeType: '', videoFileName: '', photoFullFileId: 0 };
+    }
+  }
   if (type === 'messageRichMessage') {
     const flat: FlatText = flattenRichMessage(content!);
     const rich = content!['message'] as TdObject | undefined;
     const blocks = rich !== undefined
       ? ((rich['blocks'] as TdObject[] | undefined) ?? []) : [];
-    if (flat.text !== '') {
+    if (flat.text !== '' || blocks.length > 0) {
       return {
         // 摊平的 text 仍然带着：会话预览、搜索命中、复制都用它，只有气泡走
         // 块渲染。contentType 是 richMessage，气泡据此挂 RichMessageView。
-        contentType: 'richMessage', text: flat.text, richBlocks: blocks, photoFileId: 0, photoWidth: 0, photoHeight: 0,
+        contentType: 'richMessage', text: flat.text, richBlocks: blocks, richIsFull: rich?.['is_full'] !== false, richIsRtl: rich?.['is_rtl'] === true, photoFileId: 0, photoWidth: 0, photoHeight: 0,
         placeholderLabel: '', entities: flat.entities,
         linkSiteName: '', linkTitle: '', linkDescription: '', linkDescriptionEntities: [],
         linkPhotoFileId: 0, linkUrl: '',
@@ -924,10 +939,15 @@ export function formatMsgContent(message: TdObject): MsgContent {
     const docSize = docFile !== undefined
       ? (((docFile['size'] as number | undefined) ?? 0) || ((docFile['expected_size'] as number | undefined) ?? 0)) : 0;
     const localState: LocalFileState = localFileState(docFile);
+    const thumb = doc?.['thumbnail'] as TdObject | undefined;
+    const thumbnail = previewImageFromThumbnail(thumb);
+    const thumbState = localFileState(thumb?.['file'] as TdObject | undefined);
     return {
       contentType: 'file',
       text: captionText(content!),
-      photoFileId: 0, photoWidth: 0, photoHeight: 0,
+      photoFileId: thumbnail.fileId, photoWidth: thumbnail.width, photoHeight: thumbnail.height,
+      photoLocalPath: thumbState.path, photoInitialProgress: thumbState.progress,
+      photoInitialActive: thumbState.active, photoMini: miniThumbUrl(doc),
       placeholderLabel: '',
       entities: textEntities(content!['caption'] as TdObject | undefined),
       linkSiteName: '', linkTitle: '', linkDescription: '', linkDescriptionEntities: [], linkPhotoFileId: 0, linkUrl: '',
@@ -1121,7 +1141,7 @@ export function formatMsgContent(message: TdObject): MsgContent {
   }
   if (type === 'messageGiveaway') {
     const parameters = content!['parameters'] as TdObject | undefined;
-    return giveawayBase(
+    const formatted = giveawayBase(
       'active',
       (content!['winner_count'] as number | undefined) ?? 0,
       giveawayPrizeText(content!['prize'] as TdObject | undefined),
@@ -1137,9 +1157,11 @@ export function formatMsgContent(message: TdObject): MsgContent {
         ? ((parameters['only_new_members'] as boolean | undefined) ?? false) : false,
       content!['sticker'] as TdObject | undefined
     );
+    formatted.giveawayAudience = giveawayAudienceOf(content);
+    return formatted;
   }
   if (type === 'messageGiveawayWinners') {
-    return giveawayBase(
+    const formatted = giveawayBase(
       'winners',
       (content!['winner_count'] as number | undefined) ?? 0,
       giveawayPrizeText(content!['prize'] as TdObject | undefined),
@@ -1152,6 +1174,8 @@ export function formatMsgContent(message: TdObject): MsgContent {
       (content!['only_new_members'] as boolean | undefined) ?? false,
       undefined
     );
+    formatted.giveawayAudience = giveawayAudienceOf(content);
+    return formatted;
   }
   if (type === 'messageGiveawayCompleted') {
     return giveawayBase(

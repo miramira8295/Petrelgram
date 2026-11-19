@@ -11065,10 +11065,6 @@
       "value": "Otomatik oynatma"
     },
     {
-      "name": "cb_blur_amount",
-      "value": "Bulanıklık miktarı"
-    },
-    {
       "name": "meow_mode_custom",
       "value": "Özel WebPush"
     },
@@ -11877,24 +11873,8 @@
       "value": "%1$d sn"
     },
     {
-      "name": "chat_settings_surface_glass",
-      "value": "Arayüz bulanıklığı"
-    },
-    {
-      "name": "chat_settings_surface_glass_sub",
-      "value": "Kişiler, Ayarlar ve Profil sayfalarına giriş çubuğuyla aynı buzlu cam dokusu. Her karede çizilir; takılma olursa kapatın."
-    },
-    {
-      "name": "chat_settings_surface_glass_level",
-      "value": "Bulanıklık düzeyi"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Yüksek dinamik aralıklı video"
-    },
-    {
-      "name": "material_level_veil",
-      "value": "Tül"
     },
     {
       "name": "chat_settings_surface_glass_ui",
@@ -11907,22 +11887,6 @@
     {
       "name": "chat_settings_bubble_glass",
       "value": "Baloncuklar"
-    },
-    {
-      "name": "chat_settings_bubble_glass_sub",
-      "value": "Mesaj baloncukları — en çok sayıda ve en maliyetli olan"
-    },
-    {
-      "name": "glass_warn_title",
-      "value": "Daha fazla pil tüketimi"
-    },
-    {
-      "name": "glass_warn_body",
-      "value": "Bulanıklık her karede yeniden çizilir: pil tüketimi ve ısınma belirgin artar, kaydırırken kare atlamaları olabilir. Cihaz ısınır veya takılırsa buraya dönüp «Kapalı» seçin."
-    },
-    {
-      "name": "glass_warn_enable",
-      "value": "Yine de aç"
     },
     {
       "name": "cp_secret_pending_out",

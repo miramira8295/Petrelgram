@@ -1,3 +1,4 @@
+import { ChecklistComposeSheet } from './ChecklistComposeSheet';
 import { SelectionSession } from './SelectionSession';
 import { ChatTimelineSession } from './ChatTimelineSession';
 import { ChatOverlayState } from './ChatOverlayState';
@@ -47,6 +48,9 @@ export struct ChatOverlayHost {
   @Event onForwardSent: () => void = (): void => {};
   @Event onPollSubmit: (question: string, options: string[], isAnonymous: boolean,
     isQuiz: boolean, correctOptionId: number) => void = (): void => {};
+  @Param onChecklistSubmit: (title: string, tasks: string[], allowAdd: boolean, allowMark: boolean) => Promise<void> =
+    (): Promise<void> => Promise.resolve();
+  @Event onChecklistClose: () => void = (): void => {};
   @Event onPollClose: () => void = (): void => {};
   @Event onContactPick: (contact: PickedContact) => void = (): void => {};
   @Event onContactClose: () => void = (): void => {};
@@ -69,7 +73,7 @@ export struct ChatOverlayHost {
   // ChatPage.prepareMessageBubble 里 translationActive() 的用法。
   private anyOpen(): boolean {
     return this.overlayState.showReactionSheet || this.overlayState.showForwardSheet ||
-      this.overlayState.showScheduledSheet || this.overlayState.showPollSheet ||
+      this.overlayState.showScheduledSheet || this.overlayState.showChecklistSheet || this.overlayState.showPollSheet ||
       this.overlayState.showContactSheet || this.overlayState.showVideoNoteRecorder ||
       this.overlayState.showPinnedListSheet;
   }
@@ -117,6 +121,11 @@ export struct ChatOverlayHost {
           onShowChange: (show: boolean): void => { this.overlayState.setSheet('scheduled', show); },
           chatId: this.chatId
         });
+      }
+      if (this.overlayState.showChecklistSheet) {
+        ChecklistComposeSheet({ onSubmit: (title: string, tasks: string[], allowAdd: boolean, allowMark: boolean): Promise<void> =>
+          this.onChecklistSubmit(title, tasks, allowAdd, allowMark),
+          onClose: (): void => this.onChecklistClose() });
       }
       if (this.overlayState.showPollSheet) {
         PollComposeSheet({

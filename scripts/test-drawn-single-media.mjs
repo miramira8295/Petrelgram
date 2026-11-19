@@ -39,9 +39,10 @@ ctx.progressForOr=(_id,n)=>n;ctx.subscribeProgress=(id,fn)=>{progress.push(fn);r
 ctx.subscribePoster=(_p,fn)=>{posters.push(fn);return()=>{};};ctx.requestPoster=()=>{};ctx.publishThumbPath=(...args)=>published.push(args);
 ctx.chatEnv={langEpoch:0};ctx.formatFileSize=n=>String(n);ctx.formatMediaDuration=n=>String(n);ctx.isLivePhotoVideo=()=>false;
 load(root+'pages/chat/DrawnMediaPosition.ets',['DrawnMediaPosition']);
+load(root+'pages/chat/PlaySlotChannel.ets',['PlaySlotChannel','PlaySlotBinding','EMPTY_PLAY_SLOT']);
 load(compiled+'pages/chat/DrawnSingleMediaVideo.ts',['DrawnSingleMediaVideo']);
 const v=Object.create(ctx.DrawnSingleMediaVideo.prototype);const msg={...g.head,videoVariants:[],videoPath:'/a',videoProgress:0};
-Object.assign(v,{msg,data:{...data,playSlotKey:'10:-1'},actions:new Proxy({},{get:(_,k)=>(...a)=>events.push([k,...a])}),slot:{updateLocalPath:p=>localPaths.push(p)},files:new ctx.DrawnSingleInlineFile(),active:false,binding:'',generation:0,observationKey:'',observationEpoch:0,candidateId:0,mediaPosition:new ctx.DrawnMediaPosition(),getUIContext:()=>({getFrameNodeById:()=>({getMeasuredSize:()=>({height:200}),getPositionToWindowWithTransform:()=>({y:200})}),px2vp:n=>n/2}),unsubProgress:null,unsubPoster:null,mediaWidth:200,mediaHeight:300});
+Object.assign(v,{playbackBinding:new ctx.PlaySlotBinding(),playbackState:ctx.EMPTY_PLAY_SLOT,msg,data:{...data,playSlotKey:'10:-1'},actions:new Proxy({},{get:(_,k)=>k==='playback'?undefined:(...a)=>events.push([k,...a])}),slot:{updateLocalPath:p=>localPaths.push(p)},files:new ctx.DrawnSingleInlineFile(),active:false,binding:'',generation:0,observationKey:'',observationEpoch:0,candidateId:0,mediaPosition:new ctx.DrawnMediaPosition(),getUIContext:()=>({getFrameNodeById:()=>({getMeasuredSize:()=>({height:200}),getPositionToWindowWithTransform:()=>({y:200})}),px2vp:n=>n/2}),unsubProgress:null,unsubPoster:null,mediaWidth:200,mediaHeight:300});
 v.aboutToAppear();const oldProgress=progress.at(-1),oldPoster=posters.at(-1),oldPosition=v.positionCallback(),oldEnd=v.endedCallback(),oldRatio=v.ratioCallback();
 oldProgress(40);assert.equal(v.progress,40);oldPoster('/pa');assert.equal(localPaths.at(-1),'/pa');oldPosition(33);assert.deepEqual(events.at(-1),['onPlaySlotPositionChanged',10,-1,33]);
 const subscriptionCount=progress.length;for(let i=0;i<1000;i++){v.data={...v.data,playSlotStartMs:i};v.changed();}assert.equal(progress.length,subscriptionCount);
@@ -88,3 +89,23 @@ v.sendState='sent';v.changed();assert.equal(v.candidateId,msg.id);assert.equal(p
 v.ratioCallback()(true,.9);assert.equal(events.at(-1)[0],'onMediaRatio');v.aboutToRecycle();
 assert.equal(ctx.drawnSingleMediaEligible({...g,head:{...g.head,sendState:'sending'}},false,false),true);
 console.log('PASS: uploading keeps subscriptions, releases playback candidate, rejects stale playback, resumes after send.');
+
+// The compiled single-video overlay uses the same retained meta/live painter as
+// albums and a local control surface; progress must not recreate player hosts.
+const created=[],videoChildren=[],badgeStates=[],decorations=[];let renderId=0;
+for(const name of ['Stack','If','Row','Circle','Progress','LoadingProgress','Text','SymbolGlyph'])ctx[name]=new Proxy({}, {get:(_t,k)=>(..._args)=>{if(k.startsWith('create'))created.push(name);}});
+class VideoChild {constructor(_parent,params){this.params=params;videoChildren.push(params);}}
+ctx.DrawnLoadingSpinner=VideoChild;ctx.VideoBubbleSurface=VideoChild;ctx.SmartLoopVideo=VideoChild;ctx.ViewV2.create=()=>{};
+ctx.textMeasureEnvironment={epoch:1};ctx.PLAY_SLOT_KEEP_RATIO=.4;ctx.PLAY_SLOT_ENTER_RATIO=.6;
+v.badgePainter={bind:(_ui,_env,size,state,percent)=>{badgeStates.push({size,state,percent});return v.badgePainter;}};
+v.decoration={bind:(...args)=>{decorations.push(args);return v.decoration;}};
+Object.assign(v,{getUIContext:()=>ui,observeComponentCreation2:fn=>fn(++renderId,true),ifElseBranchUpdateFunction:(_i,fn)=>fn(),mediaWidth:240,mediaHeight:180,thumbReady:true,poster:'',progress:0,env:{appearanceEpoch:1,langEpoch:1},data:{...data,animationPlaybackFailed:false},msg:{...msg,videoPath:'',videoFileId:7,videoFailed:false,isAnimation:false,videoDuration:12,videoFileSize:1000}});
+v.playing=()=>false;Object.defineProperty(v,'animationPlaying',{value:false,configurable:true});Object.defineProperty(v,'downloadExpected',{value:false,configurable:true});
+function renderVideo(){created.length=0;videoChildren.length=0;badgeStates.length=0;v.initialRender();for(const name of ['Circle','Progress','LoadingProgress','Text','SymbolGlyph'])assert.equal(created.includes(name),false,name);}
+renderVideo();assert.equal(badgeStates[0].state,'play');assert.equal(decorations.at(-1)[4],false,'single center icon has its own state surface');
+v.progress=25;renderVideo();assert.equal(badgeStates[0].state,'download');assert.equal(badgeStates[0].percent,25);
+v.progress=0;v.msg={...v.msg,videoFailed:true};renderVideo();assert.equal(badgeStates[0].state,'retry');
+v.msg={...v.msg,videoFailed:false,videoFileId:0};renderVideo();assert.equal(badgeStates[0].state,'warning');
+Object.defineProperty(v,'downloadExpected',{value:true,configurable:true});renderVideo();assert.equal(badgeStates[0].state,'wait');assert.ok(videoChildren.some(p=>p.ringSize>0));
+ctx.isLivePhotoVideo=()=>true;renderVideo();assert.equal(badgeStates.length,0);assert.equal(decorations.at(-1)[6],'cp_live_photo');
+console.log('PASS: compiled single-video play/download/retry/unavailable/wait/live overlays use retained Canvas decoration without native static controls.');

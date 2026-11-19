@@ -16,7 +16,7 @@ const CODE_EXTENSIONS: string[] =
     'kt', 'swift', 'py', 'go', 'rs', 'c', 'cc', 'cpp', 'h', 'hpp', 'sh'];
 const TEXT_EXTENSIONS: string[] = ['txt', 'md', 'log', 'ini', 'conf'];
 const IMAGE_EXTENSIONS: string[] =
-  ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'heic', 'avif'];
+  ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'heic', 'heif', 'avif', 'tif', 'tiff'];
 const VIDEO_EXTENSIONS: string[] = ['mp4', 'mov', 'mkv', 'webm', 'avi', 'flv', 'm4v'];
 const AUDIO_EXTENSIONS: string[] = ['mp3', 'm4a', 'aac', 'flac', 'wav', 'ogg', 'opus'];
 const APP_EXTENSIONS: string[] = ['hap', 'apk', 'ipa', 'app'];

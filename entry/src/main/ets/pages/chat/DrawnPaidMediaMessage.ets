@@ -12,6 +12,7 @@ export struct DrawnPaidMediaMessage {
   @Require @Param widget: DrawnDocumentWidget;
   @Param pending: boolean = false;
   @Param boxWidth: number = 262;
+  @Param chatId: number = 0;
   @Local private progress: number = 0;
   private off: (() => void) | null = null;
   private generation: number = 0;
@@ -37,6 +38,7 @@ export struct DrawnPaidMediaMessage {
 
   build() {
     PaidMediaBubble({ prepared: this.layout, messageId: this.msg.id, locked: this.msg.paidMediaLocked,
+      mediaSet: this.msg.paidMediaSet ?? null, ownerKey: `${this.chatId}:${this.msg.rowId}`,
       starCount: this.msg.paidMediaStarCount, mediaCount: this.msg.paidMediaCount,
       mediaKind: this.msg.paidMediaKind, caption: '', photoPath: this.msg.photoPath,
       mediaReady: this.msg.paidMediaSet === undefined ? undefined : (this.msg.paidMediaSet.viewerIndices[0] ?? -1) >= 0,
@@ -46,6 +48,7 @@ export struct DrawnPaidMediaMessage {
       onBeforeAction: (): boolean => this.active && this.onClaim(),
       onUnlock: (id: number): void => this.actions.onPaidMediaUnlock(id),
       onOpen: (id: number): void => this.actions.onPaidMediaOpen(id),
+      onOpenAt: (id: number, index: number): void => this.actions.onPaidMediaOpen(id, index),
       onRetryPhoto: (id: number): void => this.actions.onSpecialPhotoRetry(id) });
   }
 }

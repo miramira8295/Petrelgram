@@ -1,3 +1,10 @@
+import { DrawnLoadingSpinner } from './DrawnLoadingSpinner';
+import { DrawnTextUnits } from '../../util/drawnTextUnits';
+import { DrawnCardBar } from './DrawnCardBar';
+import { DrawnMediaControl } from './DrawnMediaControl';
+import { chatEnv } from '../../util/chatEnvMirror';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
+import { DrawnAudioWaveform } from './DrawnAudioWaveform';
 import { AudioClock, IDLE_AUDIO_CLOCK } from '../../util/audioClock';
 import { getVoicePlayback, VoiceState } from '../../services/VoicePlayback';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
@@ -24,6 +31,14 @@ const WAVEFORM_WIDTH: number = 132;
 // @Monitor 兜非复用路径（挂错 = 跟着别的那条语音的播放状态走）。
 @ComponentV2
 export struct VoiceBubble {
+  private infoPainter: DrawnCardBar = new DrawnCardBar();
+  private speedPainter: DrawnCardBar = new DrawnCardBar();
+  private dotPainter: DrawnMediaControl = new DrawnMediaControl();
+  private controlPainter: DrawnMediaControl = new DrawnMediaControl();
+  private paintEnv = chatEnv;
+  @Computed private get paintEnvironment(): string {
+    return `${this.paintEnv.appearanceEpoch}:${this.paintEnv.langEpoch}:${textMeasureEnvironment.epoch}`;
+  }
   @Param waveformWidth: number = WAVEFORM_WIDTH;
   @Param allowTranscription: boolean = true;
   @Event onBeforeControl: () => boolean = (): boolean => true;
@@ -214,11 +229,8 @@ export struct VoiceBubble {
     return voiceWaveformBars(this.waveform, WAVEFORM_BAR_COUNT, this.msgId);
   }
 
-  private bars(): number[] { return this.waveformBars; }
-
-  private playedBarCount(): number {
-    return Math.round(Math.max(0, Math.min(1, this.progress)) * WAVEFORM_BAR_COUNT);
-  }
+  private waveUnits: DrawnTextUnits = new DrawnTextUnits();
+  private wavePainter: DrawnAudioWaveform = new DrawnAudioWaveform();
 
   private speedLabel(): string {
     return this.speed === 1 ? '1x' : `${this.speed}x`;
@@ -249,29 +261,17 @@ export struct VoiceBubble {
   @Builder
   private playControl(): void {
     Stack() {
-      Circle({ width: 38, height: 38 })
-        .fill(this.sourceUnavailable() ? '#AEB6BF'
-          : (this.downloadFailed || this.playbackFailed ? '#E86C68' : this.accent()));
-      if (this.downloading()) {
-        if (this.downloadProgress > 0) {
-          Progress({ value: this.downloadProgress, total: 100, type: ProgressType.Ring })
-            .width(32).height(32).color(Color.White).style({ strokeWidth: 2 });
-          Text(`${this.downloadProgress}`)
-            .fontSize(9).fontWeight(FontWeight.Medium).fontColor(Color.White);
-        } else {
-          LoadingProgress().width(20).height(20).color(Color.White);
-        }
-      } else if (this.loadingPlayback()) {
-        LoadingProgress().width(20).height(20).color(Color.White);
-      } else {
-        SymbolGlyph($r(this.playing() ? 'sys.symbol.pause'
-          : ((this.finished || this.downloadFailed || this.playbackFailed)
-            ? 'sys.symbol.arrow_counterclockwise' : 'sys.symbol.play_fill')))
-          .fontSize(this.sourceUnavailable() ? 16 : 17)
-          .fontColor([Color.White]);
+      if ((this.downloading() && this.downloadProgress <= 0) || this.loadingPlayback()) {
+        DrawnLoadingSpinner({ ringSize: 20, ringColor: Color.White });
       }
     }
     .width(38).height(38)
+    .drawModifier(this.controlPainter.bind(this.getUIContext(), this.paintEnvironment, 38,
+      this.sourceUnavailable() ? '#AEB6BF' : (this.downloadFailed || this.playbackFailed ? '#E86C68' : this.accent()),
+      '#FFFFFF', this.downloading() ? 'percent' : this.loadingPlayback() ? '' : this.playing() ? 'pause'
+        : (this.finished || this.downloadFailed || this.playbackFailed) ? 'retry' : 'play',
+      this.downloading() ? this.downloadProgress : 0, false,
+      this.downloading() && this.downloadProgress > 0 ? `${this.downloadProgress}` : ''))
     .stateStyles({
       normal: voiceControlNormalStyle,
       pressed: voiceControlPressedStyle
@@ -319,7 +319,7 @@ export struct VoiceBubble {
   speechArea() {
     if (this.speechState === 'pending') {
       Row({ space: 6 }) {
-        LoadingProgress().width(13).height(13).color(this.accent());
+        DrawnLoadingSpinner({ ringSize: 13, ringColor: this.accent() });
         Text(this.speechText !== '' ? this.speechText : $r('app.string.voice_transcribing'))
           .fontSize(13).fontColor(this.speechSecondaryColor())
           .maxLines(4).textOverflow({ overflow: TextOverflow.Ellipsis });
@@ -346,38 +346,31 @@ export struct VoiceBubble {
     Row({ space: 9 }) {
       this.playControl();
       Column({ space: 3 }) {
-        Row({ space: 1.8 * this.waveformWidth / WAVEFORM_WIDTH }) {
-          ForEach(this.bars(), (height: number, index: number) => {
-            Column()
-              .width(2.1 * this.waveformWidth / WAVEFORM_WIDTH)
-              .height(height)
-              .borderRadius(1.1)
-              .backgroundColor(index < this.playedBarCount()
-                ? this.accent() : this.inactiveWaveColor());
-          }, (height: number, index: number): string => `${index}_${height}`);
-        }
-        .width(this.waveformWidth)
-        .height(22)
-        .alignItems(VerticalAlign.Center);
+        Row()
+          .width(this.waveformWidth)
+          .height(22)
+          .drawModifier(this.wavePainter.bind(this.waveformBars, this.progress,
+            this.waveUnits.prepare(this.getUIContext(), this.paintEnvironment).density, this.accent(), this.inactiveWaveColor(), true, this.paintEnvironment));
         Row({ space: 5 }) {
-          Text(this.timeLabel())
-            .fontSize(11.5)
-            .fontColor(this.downloadFailed || this.playbackFailed ? '#D95B57' : COLOR_TEXT_SECONDARY)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1);
+          Row()
+            .layoutWeight(1).height(20)
+            .drawModifier(this.infoPainter.bind(this.getUIContext(), {
+              width: Math.max(1, this.waveformWidth - (this.showUnlistenedDot() ? 11 : 0) - (this.voicePath !== '' ? 47 : 0)),
+              height: 20, environment: this.paintEnvironment, left: this.timeLabel(), leftFont: 11.5,
+              leftColor: this.downloadFailed || this.playbackFailed ? '#D95B57' : COLOR_TEXT_SECONDARY
+            }))
+            .accessibilityText(this.timeLabel());
           if (this.showUnlistenedDot()) {
-            Circle({ width: 6, height: 6 }).fill(this.accent());
+            Row().width(6).height(6)
+              .drawModifier(this.dotPainter.bind(this.getUIContext(), this.paintEnvironment, 6, this.accent(), '#00000000', ''));
           }
           if (this.voicePath !== '') {
-            Text(this.speedLabel())
-              .fontSize(10.5)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.accent())
-              .height(20)
-              .padding({ left: 6, right: 6 })
-              .borderRadius(10)
-              .backgroundColor(this.isOutgoing ? '#1755A24D' : '#163390EC')
+            Row()
+              .width(42).height(20)
+              .drawModifier(this.speedPainter.bind(this.getUIContext(), {
+                width: 42, height: 20, environment: this.paintEnvironment, center: this.speedLabel(), centerFont: 10.5,
+                centerColor: this.accent(), background: this.isOutgoing ? '#1755A24D' : '#163390EC', radius: 10
+              }))
               .stateStyles({
                 normal: voiceSpeedNormalStyle,
                 pressed: voiceSpeedPressedStyle

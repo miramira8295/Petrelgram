@@ -7,7 +7,7 @@
 // 面板格子的标识。分发靠它，所以这份表是全集——列表里冒出表外的 key，
 // 就是一个点了没反应的格子。
 export const ATTACH_KEYS: string[] =
-  ['media', 'file', 'audio', 'videoNote', 'location', 'contact', 'poll', 'dice'];
+  ['media', 'file', 'audio', 'videoNote', 'location', 'contact', 'poll', 'dice', 'checklist', 'markdown'];
 
 export interface AttachAction {
   key: string;
@@ -25,8 +25,7 @@ export interface AttachAction {
 // 第一行：把一份现成的东西发出去。
 // 第二行：现场构造一条结构化消息。
 //
-// 投票排在倒数第二不是随手放的：它是唯一会因会话类型消失的一项，放在这里，
-// 私聊时只有骰子一个格子会挪位。
+// 投票按会话类型隐藏；清单与 Markdown 长帖在其后，原有前六项保持位置。
 const ORDER: AttachAction[] = [
   { key: 'media', icon: 'sys.symbol.picture', label: $r('app.string.cp_photo_or_video'), tint: '#65AADD' },
   { key: 'file', icon: 'sys.symbol.doc', label: $r('app.string.storage_file'), tint: '#7BC862' },
@@ -35,11 +34,14 @@ const ORDER: AttachAction[] = [
   { key: 'location', icon: 'sys.symbol.map', label: $r('app.string.loc_location'), tint: '#E17076' },
   { key: 'contact', icon: 'sys.symbol.person', label: $r('app.string.tab_contacts'), tint: '#A695E7' },
   { key: 'poll', icon: 'sys.symbol.data_proportion', label: $r('app.string.poll_word'), tint: '#EE7AAE' },
+  { key: 'checklist', icon: 'sys.symbol.checkmark_circle', label: $r('app.string.checklist_title'), tint: '#65AADD' },
+  { key: 'markdown', icon: 'sys.symbol.doc', label: $r('app.string.compose_markdown_rich'), tint: '#7BC862' },
   { key: 'dice', icon: 'sys.symbol.gamecontroller', label: $r('app.string.cp_dice'), tint: '#FAA774' }
 ];
 
 // 投票仅群/频道可发——这是 Telegram 的限制，不是本端的选择。
 function allowed(action: AttachAction, isGroup: boolean, isChannel: boolean): boolean {
+  if (action.key === 'checklist') { return !isChannel; }
   if (action.key === 'poll') {
     return isGroup || isChannel;
   }

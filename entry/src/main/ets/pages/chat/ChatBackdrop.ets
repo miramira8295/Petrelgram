@@ -11,14 +11,13 @@ import { CachedImage } from '../common/CachedImage';
 import { cachedPixelMap, loadPixelMap, PixelHandle, PixelRequest } from '../../util/pixelCache';
 import { releaseAllWallpaperPins, releaseWallpaperPin, retainWallpaperPin } from '../../util/wallpaperPins';
 import {
-  BackgroundRasterParams, backgroundBlurRadius, BLUR_OVERSCAN_SCALE, cachedRaster, combineDimming,
-  NO_BLUR_RADIUS, patternOpacity, rasterSignature, rasterizeBackground, retainRaster, releaseRaster,
+  BackgroundRasterParams, cachedRaster, combineDimming,
+  patternOpacity, rasterSignature, rasterizeBackground, retainRaster, releaseRaster,
   sweepChatbgCacheSoon, wallpaperTakesUserDim
 } from '../../util/chatBackgroundRaster';
-import { PatternTileLayer } from './PatternTileLayer';
 import { gradientStops } from '../../util/backgroundPresentation';
 import {
-  BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, CHAT_DIM_MAX
+  BG_PATTERN_DEFAULT, CHAT_DIM_MAX
 } from '../../store/AppSettings';
 import { KEY_APP_DARK } from '../../util/theme';
 import { publishChatContentWidth } from '../../util/chatContentWidth';
@@ -35,14 +34,14 @@ let backdropPinSeq: number = 0;
 // 一堆只为它存在的空转字段。省电设置里对应的那一行也一并去掉。
 //
 // 从 ChatPage 里搬出来。它自成一体——**只吃输入、不向外回调**，所以搬家不需要
-// 在两边之间牵任何状态：深浅主题它自己从 AppStorage 订阅，模糊度、图案浓度、
+// 在两边之间牵任何状态：深浅主题它自己从 AppStorage 订阅，图案浓度、
 // 深色遮罩由调用方传入，离屏光栅的缓存和防抖也一并搬了过来。
 //
 // 页面传入背景参数与屏幕尺寸。
 
 // 光栅防抖窗口。背景解析过程中会连续发布几个中间态（实测首次进入会话有三次
 // 整屏 JPEG 编码，52+68+58ms），只有熬过安静窗口的那一个值得栅格化——期间
-// 实时绘制的分层背景照常显示，视觉上不缺东西。
+// 静态配色先占位，缓存像素就绪后再显示完整壁纸。
 const RASTER_DEBOUNCE_MS: number = 280;
 
 @Component
@@ -106,16 +105,7 @@ export struct ChatBackdrop {
     return Math.max(this.areaH, this.screenH);
   }
 
-  // ── 三根滑杆：由**调用方按槽位传入**，不再自己读全局键 ────────────────────
-  //
-  // 原来这三个值是从 KEY_BG_BLUR / KEY_BG_PATTERN(_DARK) / KEY_CHAT_DIM 直接读的，
-  // 那等于「全 app 只有一套壁纸参数」。壁纸设置改成四个独立槽位（APP 浅色 /
-  // APP 深色 / 聊天浅色 / 聊天深色）之后，每个槽位都要有自己的纹理、遮罩和模糊，
-  // 所以这层不能再自己去拿——它画的是哪个槽位，只有调用方知道。
-  //
-  // 深浅色的选择也一并上交：本组件仍然订阅 appDark（暗化层要用），但"该拿浅色
-  // 那份还是深色那份参数"是槽位的事，不是它的事。
-  @Prop @Watch('onParamsChanged') bgBlur: number = BG_BLUR_DEFAULT;
+  // 壁纸浓度和遮罩按四个独立槽位由调用方传入。
   @Prop @Watch('onParamsChanged') bgPattern: number = BG_PATTERN_DEFAULT;
   @StorageProp(KEY_APP_DARK) @Watch('onParamsChanged') appDark: boolean = false;
   @Prop @Watch('onParamsChanged') chatDim: number = 0;
@@ -162,7 +152,7 @@ export struct ChatBackdrop {
     sweepChatbgCacheSoon(this.cacheDir());
   }
 
-  // 背景状态、屏幕尺寸、模糊度、图案浓度、深浅主题——任何一个变了，合成图都
+  // 背景状态、屏幕尺寸、图案浓度、深浅主题——任何一个变了，合成图都
   // 得重算，所以每一路都挂 @Watch。
   //
   // chatBg 尤其不能漏：@Prop 变化只触发**重新渲染**，不会重跑副作用。漏掉它
@@ -188,11 +178,6 @@ export struct ChatBackdrop {
     return this.bgPattern;
   }
 
-  private blurRadius(): number {
-    return backgroundBlurRadius(
-      this.chatBg.path, this.chatBg.isPattern, this.chatBg.blurred, this.bgBlur);
-  }
-
   private imageOpacity(): number {
     return patternOpacity(this.chatBg.isPattern, this.chatBg.imageOpacity, this.patternStrength());
   }
@@ -214,7 +199,7 @@ export struct ChatBackdrop {
       colors: this.chatBg.colors, angle: this.chatBg.angle, path: this.chatBg.path,
       isPattern: this.chatBg.isPattern,
       imageOpacity: this.imageOpacity(),
-      dimming: this.rasterDimming(), blurred: this.chatBg.blurred, userBlur: this.bgBlur,
+      dimming: this.rasterDimming(),
       width: this.screenW, height: this.screenH
     };
   }
@@ -225,7 +210,7 @@ export struct ChatBackdrop {
 
   private syncRaster(): void {
     logI(`[Backdrop] sync path='${this.chatBg.path}' pattern=${this.chatBg.isPattern}` +
-      ` colors=${this.chatBg.colors.length} blur=${this.bgBlur} raster='${this.rasterPath}'` +
+      ` colors=${this.chatBg.colors.length} raster='${this.rasterPath}'` +
       ` shown=${this.rasterShown} layer=${this.layerW()}x${this.layerH()}`);
     // 「跟随系统」（没有颜色也没有文件）不走光栅：底色是 $r('app.color.chat_bg')，
     // 离屏合成时按**那一刻**的深浅色取值，而签名里没有深浅色——深色下烘出的那张
@@ -261,7 +246,7 @@ export struct ChatBackdrop {
       rasterizeBackground(this.getUIContext(), settled, this.cacheDir())
         .then((path: string): void => {
           // 编码期间背景还可能再变一次，落盘前对一次签名。
-          if (path !== '' && rasterSignature(this.rasterParams()) === settledSig) {
+          if (this.pinAlive && path !== '' && rasterSignature(this.rasterParams()) === settledSig) {
             this.setRasterPath(path);
           }
         });
@@ -275,7 +260,7 @@ export struct ChatBackdrop {
       return;
     }
     // 位图已经解码在内存里（这张整屏光栅 pin 住、所有会话共用）就直接算"已上屏"：CachedImage 首帧会同步命中
-    // （start() 的 cachedPixelMap 分支），分层实时版（渐变 + SVG 图案平铺 + 模糊）一次都不必建（2026-09-15）。
+    // （start() 的 cachedPixelMap 分支），分层实时版（渐变 + SVG 图案平铺）一次都不必建（2026-09-15）。
     // 原来一律先置 false：每次进会话第一帧都把 SVG 图案铺一遍，等 onReady 再撤——转场第一帧 RS 要把这些路径
     // 画进整页离屏缓存，实测 85ms（trace 20260915T174809：UpdateCacheSurface + PATH_MASK_CACHE ×11）。
     // 请求尺寸必须和 CachedImage.request() 逐位一致（同一个 layerW/layerH、同一个 vp2px），否则 key 对不上。
@@ -337,7 +322,7 @@ export struct ChatBackdrop {
       }
       this.applyPin(handle, req);
     }).catch((): void => {
-      // 解码失败就走实时分层兜底，不登记即可。
+      // 解码失败保留静态配色占位，不登记即可。
     });
   }
 
@@ -410,7 +395,7 @@ export struct ChatBackdrop {
   }
 
   // 深色下的用户遮罩。它会与服务端下发的 dark_theme_dimming 合并并烘进最终
-  // 光栅；缓存生成期间仍由实时层兜底。
+  // 光栅；缓存生成期间仍由静态占位层兜底。
   private darkMaskOpacity(): number {
     // 纯色 / 跟随系统没有遮罩选项（见 wallpaperTakesUserDim），滑杆里留着的旧值不生效。
     if (!this.appDark || !wallpaperTakesUserDim(this.chatBg.colors, this.chatBg.path)) {
@@ -447,14 +432,8 @@ export struct ChatBackdrop {
 
   @Builder
   wallpaperLayer() {
-    // 两层叠放，不再 if/else 互斥。
-    //
-    // 原来是「有光栅就只画 CachedImage，否则才画分层版」：光栅路径一有，分层版
-    // 就从树上摘掉，而 CachedImage 解码失败时画的是空、不重试也不回退——背景
-    // 就永久空白，直到退出重进会话。离线 + 整会话翻译正好把解码队列压满
-    // （6 路 translate 同时 20s 超时 → 整屏行同时翻「失败」重建 → 一堆头像和
-    // 缩略图解码，光栅那张全屏 JPEG 最大最容易被挤掉），用户报的就是这个
-    // （issue #90）。现在分层版一直垫在底下，直到光栅像素真正上屏才撤。
+    // 占位和光栅叠放。路径存在不代表像素已解码；失败时保留静态配色，
+    // 避免空白，也不重新引入全屏实时 blur / SVG 平铺。
     Stack({ alignContent: Alignment.TopStart }) {
       if (!this.rasterShown) {
       Stack({ alignContent: Alignment.TopStart }) {
@@ -472,35 +451,9 @@ export struct ChatBackdrop {
             .backgroundColor(this.suppressedByUnifiedBg() || this.splitNoWallpaper()
               ? $r('app.color.page_bg') : $r('app.color.chat_bg'));
         }
-        // 图案是可重复的小母题，不是独立照片：官方端按固定密度平铺到边，而不是
-        // 把一份实例适配到屏幕（见 patternTileGrid 的注释——用 Contain 适配一份
-        // 时，比例比图案更宽的设备（如平板）会在离轴边缘露白）。整图壁纸仍然
-        // 铺满并裁切（Cover）。
-        // 当磁盘已有烘焙好的光栅文件（rasterPath !== ''）时，解码的 ~15ms 内仅垫渐变底色，
-        // 绝不在转场首帧挂载 PatternTileLayer（2x 超采样 SVG + 实时 blur + renderGroup，实测卡 85ms）。
-        if (this.chatBg.path !== '' && this.chatBg.isPattern && this.rasterPath === '') {
-          // 组件而不是全局 @Builder：多参数的全局 @Builder 建完就不再跟随参数
-          // 变化，模糊度/图案浓度到货后这一层会停在旧值上。见 PatternTileLayer。
-          PatternTileLayer({
-            path: this.chatBg.path,
-            tileOpacity: this.imageOpacity(),
-            blurRadius: this.blurRadius(),
-            screenW: this.layerW(),
-            screenH: this.layerH()
-          });
-        } else if (this.chatBg.path !== '') {
-          Image(this.chatBg.path.startsWith('/')
-            ? `file://${this.chatBg.path}` : this.chatBg.path).draggable(false)
-            .width('100%').height('100%')
-            .objectFit(ImageFit.Cover)
-            .opacity(this.imageOpacity())
-            // 模糊需要一点过扫：否则边缘的半透明像素会在视口四周露出来。按
-            // **实际半径**判断而不是 blurred 标志——用户把滑杆拖到 0 时不该白白
-            // 放大裁掉边缘。
-            .scale(this.blurRadius() > NO_BLUR_RADIUS
-              ? { x: BLUR_OVERSCAN_SCALE, y: BLUR_OVERSCAN_SCALE } : { x: 1, y: 1 })
-            .blur(this.blurRadius());
-        }
+        // 冷缓存只垫静态配色：不挂原图、SVG 平铺或实时模糊。完整壁纸由
+        // rasterizeBackground 合成一次；真正解码就绪后才撤掉这一层。
+        // 照片没有服务端配色时使用上面的主题底色，不额外解码取色。
         if (this.chatBg.dimming > 0) {
           Column().width('100%').height('100%')
             .backgroundColor(Color.Black)

@@ -1,3 +1,8 @@
+import { DrawnDocumentCardLayouts, rememberDocumentCard, offsetDocumentWidget } from './DrawnDocumentCardLayout';
+import { drawnExpandedBlockSet } from '../../util/drawnExpandedBlocks';
+import { buildDrawnDeepBlocks, DrawnDeepLayoutHost } from './DrawnRichDeepBlocks';
+import { DrawnTableColumnGeometry, DrawnTableRowGeometry } from '../../util/drawnTableGeometry';
+import { drawnRichFlowSource } from '../../util/drawnRichFlow';
 import { drawnWeightBold, drawnWeightNormal, systemFontWeightScale } from '../../util/systemFontWeight';
 import { documentEmbedHeight } from '../../util/documentEmbedMetrics';
 import { DrawnDocumentWidget, DrawnDocumentWidgetPlacement } from '../../util/drawnDocumentWidget';
@@ -19,7 +24,7 @@ import { ColorMetrics, UIContext } from '@kit.ArkUI';
 import { common2D, drawing, text } from '@kit.ArkGraphics2D';
 import { DrawnPlainLayoutCache } from '../../util/drawnPlainTextPolicy';
 import { DrawnRichHitIndex } from '../../util/drawnRichHitIndex';
-import { appendDrawnRichHits, DrawnRichLink, DrawnRichHit, DrawnRichRect, DrawnRichSourceCache, DrawnRichSource, DrawnRichButton } from '../../util/drawnRichTextPolicy';
+import { appendDrawnRichHits, drawnRichBlockPadding, DrawnRichLink, DrawnRichHit, DrawnRichRect, DrawnRichSourceCache, DrawnRichSource, DrawnRichButton } from '../../util/drawnRichTextPolicy';
 
 const EMPTY_DRAWN_LABEL_ENTITIES: TdObject[] = [];
 const EMPTY_DRAWN_ANCHORS: ReadonlyMap<string, number> = new Map<string, number>();
@@ -126,6 +131,7 @@ export class DrawnRichTextLayouts {
     new DrawnPlainLayoutCache<DrawnRichTextSpec, DrawnRichTextLayout>(sameRichSpec);
   private blockLabels: DrawnRichSourceCache | null = null;
   private blockLayouts: DrawnRichTextLayouts[] = [];
+  private cardLayouts: DrawnDocumentCardLayouts[] = [];
   private generation: number = 0;
   private environment: string = '';
   private failedSpec: DrawnRichTextSpec | null = null;
@@ -145,13 +151,42 @@ export class DrawnRichTextLayouts {
       throw new Error('rich paragraph remains unavailable');
     }
     try {
-      const result = spec.source.table !== undefined ? this.buildTable(ui, spec, density) : spec.source.blocks !== undefined ? this.buildBlocks(ui, spec, density) : this.build(spec, density, fontPx, reservePx, linePx);
+      const flow = spec.maxLines === undefined ? drawnRichFlowSource(spec.source) : spec.source;
+      const bodySpec = flow === spec.source ? spec : richSpecSnapshot(spec);
+      if (bodySpec !== spec) { bodySpec.source = flow; }
+      let result: DrawnRichTextLayout;
+      if (flow.table !== undefined) { result = this.buildTable(ui, bodySpec, density); }
+      else if (flow.blocks !== undefined) {
+        result = (flow.nestingDepth ?? 0) > 16 ? this.buildDeepBlocks(ui, bodySpec, density) : this.buildBlocks(ui, bodySpec, density);
+      } else { result = this.build(bodySpec, density, fontPx, reservePx, linePx); }
+      if (flow !== spec.source) {
+        result.source = spec.source; result.accessibilityText = spec.source.content;
+      }
       this.cache.put(richSpecSnapshot(spec), result);
       return result;
     } catch (error) {
       this.failedSpec = richSpecSnapshot(spec);
       throw error as Error;
     }
+  }
+
+  private buildDeepBlocks(ui: UIContext, spec: DrawnRichTextSpec, density: number): DrawnRichTextLayout {
+    let engineIndex: number = 0;
+    const host: DrawnDeepLayoutHost = {
+      prepare: (childSpec: DrawnRichTextSpec): DrawnRichTextLayout => {
+        if (engineIndex === this.blockLayouts.length) { this.blockLayouts.push(new DrawnRichTextLayouts()); }
+        return this.blockLayouts[engineIndex++].prepare(ui, childSpec);
+      },
+      label: (content: string, width: number, parentSpec: DrawnRichTextSpec): DrawnRichTextLayout => {
+        return this.blockLabel(ui, content, width, parentSpec, engineIndex++);
+      },
+      create: (paragraph: DrawnRichCompositeParagraph, width: number, height: number, hits: DrawnRichHit[]): DrawnRichTextLayout => {
+        return new DrawnRichTextLayout(paragraph, width, height, spec.source, hits);
+      }
+    };
+    const result = buildDrawnDeepBlocks(spec, density, host);
+    this.blockLayouts.length = engineIndex;
+    return result;
   }
 
   private buildBlocks(ui: UIContext, spec: DrawnRichTextSpec, density: number): DrawnRichTextLayout {
@@ -171,19 +206,20 @@ export class DrawnRichTextLayouts {
     let previewImage: DrawnAlbumRect | null = null;
     let previewTop: number = -1;
     let previewBottom: number = 0;
-    const expanded = new Set<number>(spec.expandedBlocks ?? []);
+    const expanded = drawnExpandedBlockSet(spec.expandedBlocks);
     const accent = richColor(spec.accent);
     const background = richColor($r('app.color.code_surface'));
     let y: number = 0;
     let width: number = Math.max(0, spec.minWidthVp);
     let engineIndex: number = 0;
+    let cardIndex: number = 0;
     const generation = ++this.generation;
     for (let i: number = 0; i < blocks.length; i++) {
       const block = blocks[i], framed = block.kind === 'pre' || block.kind === 'quote';
       if (block.kind === 'anchor') { anchors.set(block.anchorName ?? '', y); continue; }
       const labelBlock = block.kind === 'translation-label';
       if (block.preview && previewTop < 0) { previewTop = y; }
-      const padding = framed || block.preview ? 9 : block.kind === 'list-item' ? 24 : 0;
+      const padding = drawnRichBlockPadding(block, spec.maxWidthVp);
       const innerWidth = Math.max(1, spec.maxWidthVp - padding * 2);
       if (block.kind === 'preview-image') {
         const height = Math.max(108, Math.min(188, innerWidth / (block.imageRatio ?? 1.5)));
@@ -231,8 +267,13 @@ export class DrawnRichTextLayouts {
       }
       if (block.widget !== undefined) {
         const widget = block.widget;
-        const height = widget.kind === 'message-sticker' ? widget.height * Math.min(1, spec.maxWidthVp / widget.width) : widget.kind === 'message-dice' ? Math.min(150, spec.maxWidthVp) : widget.kind === 'message-video-note' ? Math.min(180, spec.maxWidthVp) : widget.kind === 'message-location' ? widget.height : (widget.kind === 'message-contact' || widget.kind === 'message-poll' || widget.kind === 'message-game' || widget.kind === 'message-gift' || widget.kind === 'message-paid-media' || widget.kind === 'message-giveaway') ? widget.height : widget.kind === 'message-voice' ? 60 : widget.kind === 'message-audio' ? 148 : widget.kind === 'message-file' ? 60 : (widget.kind === 'html-embed' || widget.kind === 'video-embed') ? documentEmbedHeight(widget, spec.maxWidthVp) : widget.kind === 'map' ? Math.max(80, Math.min(300, spec.maxWidthVp * widget.height / widget.width)) : (widget.kind === 'post-author' || widget.kind === 'chat-link') ? 56 : 72;
-        widgets.push({ widget, x: 0, y, width: widget.kind === 'message-contact' ? widget.width : widget.kind === 'message-sticker' ? Math.min(widget.width, spec.maxWidthVp) : (widget.kind === 'message-video-note' || widget.kind === 'message-dice') ? height : spec.maxWidthVp, height });
+        const isCard = widget.kind === 'file' || widget.kind === 'audio' || widget.kind === 'voice';
+        if (isCard && cardIndex === this.cardLayouts.length) { this.cardLayouts.push(new DrawnDocumentCardLayouts()); }
+        const card = isCard ? this.cardLayouts[cardIndex++].prepare(ui, widget, spec.maxWidthVp, spec.environment) : undefined;
+        const height = card?.height ?? ( widget.kind === 'message-sticker' ? widget.height * Math.min(1, spec.maxWidthVp / widget.width) : widget.kind === 'message-dice' ? Math.min(150, spec.maxWidthVp) : widget.kind === 'message-video-note' ? Math.min(180, spec.maxWidthVp) : widget.kind === 'message-location' ? widget.height : (widget.kind === 'message-contact' || widget.kind === 'message-poll' || widget.kind === 'message-checklist' || widget.kind === 'message-game' || widget.kind === 'message-gift' || widget.kind === 'message-paid-media' || widget.kind === 'message-giveaway') ? widget.height : widget.kind === 'message-voice' ? 60 : widget.kind === 'message-audio' ? widget.height : widget.kind === 'message-file' ? widget.height : (widget.kind === 'html-embed' || widget.kind === 'video-embed') ? documentEmbedHeight(widget, spec.maxWidthVp) : widget.kind === 'map' ? Math.max(80, Math.min(300, spec.maxWidthVp * widget.height / widget.width)) : (widget.kind === 'post-author' || widget.kind === 'chat-link') ? 56 : 72);
+        const placement: DrawnDocumentWidgetPlacement = { widget, x: 0, y, width: widget.kind === 'message-contact' ? widget.width : widget.kind === 'message-sticker' ? Math.min(widget.width, spec.maxWidthVp) : (widget.kind === 'message-video-note' || widget.kind === 'message-dice') ? height : spec.maxWidthVp, height };
+        widgets.push(placement);
+        if (card !== undefined) { rememberDocumentCard(placement, card); }
         y += height + 6; width = widget.kind === 'message-contact' ? widget.width : widget.kind === 'message-sticker' ? Math.min(widget.width, spec.maxWidthVp) : (widget.kind === 'message-video-note' || widget.kind === 'message-dice') ? height : spec.maxWidthVp;
         document.lastLine = { left: 0, width: width * density, baseline: y * density, ascent: 0 };
         continue;
@@ -357,11 +398,18 @@ export class DrawnRichTextLayouts {
         const marker = this.blockLabel(ui, block.marker ?? '•', 22, spec, engineIndex++);
         document.parts.push({ paragraph: marker.paragraph, x: 0, y: y * density });
         spoken.push(block.marker ?? '•');
+        if (block.task !== undefined && padding > 0) {
+          const label = str(block.task.checked ? 'checklist_mark_not_done' : 'checklist_mark_done');
+          const action: DrawnRichLink = { action: 'rich-task-toggle', taskId: block.task.id, taskChecked: block.task.checked,
+            start: 0, end: 0, label, url: '', hidesUrl: false, accessibilityFirst: true, accessibilityLabel: label };
+          hits.push({ key: `${generation}:task:${block.task.id}`, link: action, x: 0, y,
+            widthVp: Math.min(24, padding), heightVp: Math.max(20, marker.heightVp), accessible: true });
+        }
       }
       if (block.kind === 'details' && block.title !== undefined) {
         if (engineIndex === this.blockLayouts.length) { this.blockLayouts.push(new DrawnRichTextLayouts()); }
         const title = this.blockLayouts[engineIndex++].prepare(ui, { source: block.title, mathRevision: spec.mathRevision,
-          maxWidthVp: spec.maxWidthVp - 24, minWidthVp: 0, fontSize: spec.fontSize, reserve: '',
+          maxWidthVp: Math.max(1, spec.maxWidthVp - 24), minWidthVp: 0, fontSize: spec.fontSize, reserve: '',
           foreground: spec.accent, accent: spec.accent, environment: spec.environment });
         for (const anchor of title.anchors) { anchors.set(anchor[0], anchor[1] + y); }
         appendDrawnIcons(icons, title.icons, 24, y);
@@ -404,7 +452,7 @@ export class DrawnRichTextLayouts {
         foreground: block.kind === 'preview-site' || block.kind === 'preview-action' ? spec.accent : spec.foreground,
         accent: spec.accent, environment: spec.environment,
         maxLines: block.lineLimit ?? (block.expandable && !expanded.has(block.offset) ? 4 : undefined),
-        codeBlock: block.kind === 'pre'
+        codeBlock: block.kind === 'flow' ? spec.codeBlock : block.kind === 'pre'
       };
       const child = this.blockLayouts[engineIndex++];
       const retained = this.cache.get(bodySpec);
@@ -412,7 +460,7 @@ export class DrawnRichTextLayouts {
       const body = retained ?? child.prepare(ui, bodySpec);
       for (const anchor of body.anchors) { anchors.set(anchor[0], anchor[1] + y); }
       spoken.push(body.accessibilityText);
-      for (const item of body.widgets) { widgets.push({ widget: item.widget, x: item.x + padding, y: item.y + y, width: item.width, height: item.height }); }
+      for (const item of body.widgets) { widgets.push(offsetDocumentWidget(item, padding, y)); }
       for (const item of body.media) { media.push({ key: `${i}:${item.key}`, media: item.media, slides: item.slides,
         x: item.x + padding, y: item.y + y, width: item.width, height: item.height }); }
       for (const table of body.tables) { tables.push({ key: `${i}:${table.key}`, layout: table.layout,
@@ -467,13 +515,14 @@ export class DrawnRichTextLayouts {
           baseline: y * density, ascent: 0 };
       }
       if (block.preview) { previewBottom = y; width = spec.maxWidthVp; }
-      if (i < lastContentIndex) { y += block.preview ? 3 : 6; }
+      if (i < lastContentIndex && block.kind !== 'flow') { y += block.preview ? 3 : 6; }
     }
     if (previewTop >= 0) {
       document.backgrounds.push(new DrawnRichBlockBackground({ left: 0, top: previewTop * density,
         right: 3 * density, bottom: previewBottom * density }, density, accent, accent, 0));
     }
     this.blockLayouts.length = engineIndex;
+    this.cardLayouts.length = cardIndex;
     document.height = y * density;
     const result = new DrawnRichTextLayout(document, width, y, spec.source, hits);
     if (anchors.size > 0) { result.anchors = anchors; }
@@ -494,39 +543,42 @@ export class DrawnRichTextLayouts {
     const anchors: Map<string, number> = new Map<string, number>();
     const grid = drawnTableGrid(table.rows);
     if (grid === null) { throw new Error('invalid structured table spans'); }
-    const widths: number[] = new Array<number>(grid.columns).fill(48);
+    const columns = new DrawnTableColumnGeometry(grid);
     for (const position of grid.cells) {
       const needed = Math.min(200, Math.max(48,
         (textWidthEstimate(position.cell.source.content, spec.fontSize) + 20) / position.columns));
-      for (let c: number = position.column; c < position.column + position.columns; c++) {
-        widths[c] = Math.max(widths[c], needed);
-      }
+      columns.raise(position.column, position.column + position.columns, needed);
     }
-    const xs: number[] = [0];
-    for (const width of widths) { xs.push(xs[xs.length - 1] + width); }
+    columns.finish();
     const heights: number[] = new Array<number>(grid.rows).fill(30);
     const bodies: DrawnRichTextLayout[] = [];
+    let mergedRows: boolean = false;
     for (let i: number = 0; i < grid.cells.length; i++) {
-      const pos = grid.cells[i];
+      const pos = grid.cells[i]; mergedRows = mergedRows || pos.rows > 1;
       if (i === this.blockLayouts.length) { this.blockLayouts.push(new DrawnRichTextLayouts()); }
       const body = this.blockLayouts[i].prepare(ui, { source: pos.cell.source, mathRevision: spec.mathRevision,
-        maxWidthVp: xs[pos.column + pos.columns] - xs[pos.column] - 20, minWidthVp: 0,
+        maxWidthVp: columns.at(pos.column + pos.columns) - columns.at(pos.column) - 20, minWidthVp: 0,
         fontSize: spec.fontSize, reserve: '', foreground: spec.foreground, accent: spec.accent,
         environment: spec.environment });
       bodies.push(body);
       if (pos.rows === 1) { heights[pos.row] = Math.max(heights[pos.row], body.heightVp + 12); }
     }
-    // Satisfy merged-cell heights after ordinary rows; each span is bounded.
-    for (let i: number = 0; i < grid.cells.length; i++) {
-      const pos = grid.cells[i];
-      if (pos.rows === 1) { continue; }
-      let current: number = 0;
-      for (let r: number = pos.row; r < pos.row + pos.rows; r++) { current += heights[r]; }
-      const extra = Math.max(0, bodies[i].heightVp + 12 - current) / pos.rows;
-      for (let r: number = pos.row; r < pos.row + pos.rows; r++) { heights[r] += extra; }
+    // Preserve sequential merged-cell constraints using range operations; no
+    // per-cell traversal of every row covered by a tall rowspan.
+    let ys: number[] = [0];
+    if (mergedRows) {
+      const rows = new DrawnTableRowGeometry(heights);
+      for (let i: number = 0; i < grid.cells.length; i++) {
+        const pos = grid.cells[i];
+        if (pos.rows === 1) { continue; }
+        const current = rows.total(pos.row, pos.row + pos.rows);
+        const extra = Math.max(0, bodies[i].heightVp + 12 - current) / pos.rows;
+        rows.grow(pos.row, pos.row + pos.rows, extra);
+      }
+      ys = rows.coordinates();
+    } else {
+      for (const height of heights) { ys.push(ys[ys.length - 1] + height); }
     }
-    const ys: number[] = [0];
-    for (const height of heights) { ys.push(ys[ys.length - 1] + height); }
     const document = new DrawnRichCompositeParagraph();
     const hits: DrawnRichHit[] = [], spoken: string[] = [];
     const tableIcons: DrawnInlineIconPlacement[] = [];
@@ -535,7 +587,7 @@ export class DrawnRichTextLayouts {
     const generation = ++this.generation;
     for (let i: number = 0; i < grid.cells.length; i++) {
       const pos = grid.cells[i], body = bodies[i];
-      const left = xs[pos.column], right = xs[pos.column + pos.columns];
+      const left = columns.at(pos.column), right = columns.at(pos.column + pos.columns);
       const top = ys[pos.row], bottom = ys[pos.row + pos.rows];
       const cellWidth = right - left - 20;
       const x = left + 10 + (pos.cell.align === 'right' ? cellWidth - body.widthVp
@@ -569,8 +621,8 @@ export class DrawnRichTextLayouts {
     }
     this.blockLayouts.length = grid.cells.length;
     document.height = ys[ys.length - 1] * density;
-    document.lastLine = { left: 0, width: xs[xs.length - 1] * density, baseline: document.height, ascent: 0 };
-    const result = new DrawnRichTextLayout(document, xs[xs.length - 1], document.height / density, spec.source, hits);
+    document.lastLine = { left: 0, width: columns.width * density, baseline: document.height, ascent: 0 };
+    const result = new DrawnRichTextLayout(document, columns.width, document.height / density, spec.source, hits);
     if (anchors.size > 0) { result.anchors = anchors; }
     result.accessibilityText = spoken.join(' / '); result.density = density;
     appendDrawnIcons(result.icons, tableIcons, 0, 0);

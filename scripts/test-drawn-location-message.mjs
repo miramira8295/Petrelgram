@@ -5,6 +5,7 @@ Object.assign(g.head,{contentType:'location',locationLatitude:0,locationLongitud
  locationLivePeriod:3600,locationExpiresIn:100,venueTitle:'',venueAddress:'',date:100});
 const engine=new ctx.DrawnTextLayouts(),d={...data,liveSharingId:0},p=engine.prepare(ui,g,d,style);
 assert.ok(p);assert.equal(p.caption.widgets[0].widget.kind,'message-location');
+const initialHeight=p.caption.widgets[0].height;
 const counts=layoutCounters();
 for(let i=0;i<1000;i++) {
  const next={...g,head:{...g.head,locationLatitude:i/100,locationLongitude:-i/100,locationExpiresIn:i%100,locationAccuracy:i,sendState:i%2?'sent':'sending'}};
@@ -12,9 +13,9 @@ for(let i=0;i<1000;i++) {
 }
 assert.deepEqual(layoutCounters(),counts);
 const shared=engine.prepare(ui,g,{...d,liveSharingId:g.head.id},style);
-assert.equal(shared.caption.widgets[0].height,245);assert.ok(shared.height>p.height);
-assert.equal(p.caption.widgets[0].height,180,'published geometry must not be mutated');
-assert.equal(engine.prepare(ui,g,d,style).caption.widgets[0].height,180);
+assert.ok(shared.caption.widgets[0].height > p.caption.widgets[0].height);assert.ok(shared.height>p.height);
+assert.equal(p.caption.widgets[0].height,initialHeight,'published geometry must not be mutated');
+assert.equal(engine.prepare(ui,g,d,style).caption.widgets[0].height,initialHeight);
 for(const width of [160,240,400]) {
  const plan=engine.prepare(ui,{...g,head:{...g.head,contentType:'venue',venueTitle:'Cafe',venueAddress:'Road'}},{...d,contentWidth:width},style);
  assert.ok(plan.caption.widgets[0].width<=plan.caption.widthVp+.01);

@@ -128,6 +128,8 @@ const rx=[{emoji:'x',customEmojiId:'',count:1}];rx[Symbol.iterator]=function*(){
 Object.assign(compat,{msg:{text:'hello',textEntities:[],reactions:rx,editDate:0,isOutgoing:false},group:{caption:'',captionEntities:[]},
  env:{appearanceEpoch:1,langEpoch:1},context:{liveViews:''},textMeasureCache:{prepare(){}},inlineMaxW:()=>250,reactorsArrowShown:()=>false,
  messageTimeText:()=> '12:34',measureTextVp:(t,n)=>{measures++;return t.length*n/2;},formattedTextHasLink:()=>{parses++;return false;}});
+compat.measureReactionCount=(label)=>compat.measureTextVp(label,12);
+compat.reactionAvatars=()=>0;compat.data={isGroup:true,isChannel:false};
 compat.hasInlineLink();const firstWidth=compat.reactionsRowWidth(),initialMeasures=measures;
 for(let i=0;i<1000;i++){assert.equal(compat.hasInlineLink(),false);assert.equal(compat.reactionsRowWidth(),firstWidth);}
 assert.equal(parses,1);assert.equal(rxScans,1);assert.equal(measures,initialMeasures);

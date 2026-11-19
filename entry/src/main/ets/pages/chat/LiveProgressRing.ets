@@ -1,3 +1,5 @@
+import { str } from '../../util/strings';
+import { DrawnLoadingSpinner } from './DrawnLoadingSpinner';
 import { progressFor, subscribeProgress } from '../../util/mediaProgressChannel';
 
 // 自己订阅、自己更新的下载进度环。
@@ -22,18 +24,23 @@ export struct LiveProgressRing {
   @Param initialPercent: number = 0;
   @Param ringSize: number = 36;
   @Local private percent: number = 0;
+  private active: boolean = false;
+  private generation: number = 0;
   private unsubProgress: (() => void) | null = null;
 
   private attach(fileId: number, initialPercent: number): void {
     this.detach();
     const known: number = progressFor(fileId);
     this.percent = known > 0 ? known : initialPercent;
+    if (!this.active) { return; }
+    const generation = this.generation;
     this.unsubProgress = subscribeProgress(fileId, (percent: number): void => {
-      this.percent = percent;
+      if (generation === this.generation && this.percent !== percent) { this.percent = percent; }
     });
   }
 
   private detach(): void {
+    this.generation++;
     if (this.unsubProgress !== null) {
       this.unsubProgress();
       this.unsubProgress = null;
@@ -48,41 +55,34 @@ export struct LiveProgressRing {
   }
 
   aboutToAppear(): void {
+    this.active = true;
     this.attach(this.fileId, this.initialPercent);
   }
 
   aboutToRecycle(): void {
+    this.active = false;
     this.detach();
   }
 
   aboutToReuse(): void {
+    this.active = true;
     // @Param 已是新值：同步重挂，进度从通道现值/新行 initialPercent 播种。
     this.attach(this.fileId, this.initialPercent);
   }
 
   // 不退订会让箭头函数一直持有本组件实例，组件无法释放。
-  aboutToDisappear(): void {
-    this.detach();
-  }
+  aboutToDisappear(): void { this.aboutToRecycle(); }
 
   build() {
     Stack() {
-      if (this.percent > 0) {
-        Progress({ value: this.percent, total: 100, type: ProgressType.Ring })
-          .width(this.ringSize).height(this.ringSize).color(Color.White)
-          .style({ strokeWidth: 2.5 });
-        Text(`${this.percent}%`)
-          .fontSize(Math.max(10, this.ringSize * 0.25))
-          .fontWeight(FontWeight.Medium)
-          .fontColor(Color.White);
-      } else {
-        LoadingProgress()
-          .width(this.ringSize * 0.72).height(this.ringSize * 0.72).color(Color.White);
-      }
+      DrawnLoadingSpinner({ ringSize: this.ringSize, ringColor: '#FFFFFF', ringStroke: 2.5,
+        percent: this.percent > 0 ? this.percent : -1, showPercent: this.percent > 0, activityScale: .72 });
     }
+    .width(this.ringSize + 12).height(this.ringSize + 12)
     .padding(6)
     .backgroundColor('#73000000')
     .border({ width: 0.5, color: '#24FFFFFF' })
-    .borderRadius(this.ringSize);
+    .borderRadius(this.ringSize)
+    .accessibilityText(this.percent > 0 ? `${this.percent}%` : str('downloading'));
   }
 }

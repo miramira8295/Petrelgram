@@ -1,3 +1,4 @@
+import { DrawnGiveawayAudienceLayout, DrawnGiveawayAudienceLayouts } from './DrawnGiveawayAudienceLayout';
 import { drawnWeightMedium, drawnWeightNormal } from '../../util/systemFontWeight';
 import { UIContext, DrawContext } from '@kit.ArkUI';
 import { text } from '@kit.ArkGraphics2D';
@@ -22,6 +23,8 @@ export interface DrawnGiveawayLayout {
   buttonHeight: number;
   badgeHeight: number;
   hasOriginal: boolean;
+  audience: DrawnGiveawayAudienceLayout | null;
+  audienceHeight: number;
   titles: text.Paragraph[];
   prize: text.Paragraph;
   description: text.Paragraph | null;
@@ -63,6 +66,7 @@ class DrawnGiveawayParagraphs {
 // only four geometries here: stats visible/hidden × original button visible/hidden.
 export class DrawnGiveawayLayouts {
   private units: DrawnTextUnits = new DrawnTextUnits();
+  private audiences: DrawnGiveawayAudienceLayouts = new DrawnGiveawayAudienceLayouts();
   private titles: DrawnGiveawayParagraphs[] = [new DrawnGiveawayParagraphs(), new DrawnGiveawayParagraphs(),
     new DrawnGiveawayParagraphs(), new DrawnGiveawayParagraphs(), new DrawnGiveawayParagraphs()];
   private prizes: DrawnGiveawayParagraphs = new DrawnGiveawayParagraphs();
@@ -78,13 +82,15 @@ export class DrawnGiveawayLayouts {
   private description: string = '';
   prepare(ui: UIContext, message: MessageEntry, maxWidth: number, environment: string): DrawnGiveawayLayout {
     const width = Math.max(1, maxWidth), prizeText = message.giveawayPrize ?? '', descriptionText = message.giveawayDescription ?? '';
+    const audience = this.audiences.prepare(ui, message.giveawayAudience, width, environment);
+    const audienceHeight = audience?.height ?? 0;
     const hasOriginal = message.giveawayMessageId > 0;
     const hasStats = message.giveawayWinnerCount > 0 || message.giveawayOnlyNewMembers || message.giveawayUnclaimedCount > 0;
     const index = (hasOriginal ? 2 : 0) + (hasStats ? 1 : 0);
     const same = this.ui === ui && this.environment === environment && this.width === width &&
       this.prize === prizeText && this.description === descriptionText;
     const cached = this.plans[index];
-    if (same && cached !== null) { return cached; }
+    if (same && cached !== null && cached.audience === audience && cached.audienceHeight === audienceHeight) { return cached; }
     const units = this.units.prepare(ui, environment), density = units.density;
     const labels: string[] = ['gw_cancelled', 'gw_channel', 'gw_you_won', 'gw_results', 'gw_ended'];
     const titles: text.Paragraph[] = [];
@@ -108,10 +114,10 @@ export class DrawnGiveawayLayouts {
     const titleY = 126 + 9, prizeY = titleY + titleHeight + 9;
     const descriptionY = prizeY + prize.getHeight() / density + 9;
     const textHeight = titleHeight + 9 + prize.getHeight() / density + (description !== null ? 9 + description.getHeight() / density : 0);
-    const height = 126 + textHeight + statsHeight + (hasOriginal ? buttonHeight : 0) + 9 + (hasOriginal ? 36 : 27);
+    const height = 126 + textHeight + statsHeight + (audienceHeight > 0 ? audienceHeight + 9 : 0) + (hasOriginal ? buttonHeight : 0) + 9 + (hasOriginal ? 36 : 27);
     if (!Number.isFinite(height) || height <= 0) { throw new Error('invalid giveaway prelayout height'); }
     const layout: DrawnGiveawayLayout = { width, height, density, artworkHeight: 126, textHeight, titleY, prizeY,
-      descriptionY, statsHeight, buttonHeight, badgeHeight, hasOriginal, titles, prize, description };
+      descriptionY, statsHeight, buttonHeight, badgeHeight, hasOriginal, titles, prize, description, audience, audienceHeight };
     if (!same) { this.plans.fill(null); }
     this.plans[index] = layout;
     this.ui = ui; this.environment = environment; this.width = width; this.prize = prizeText; this.description = descriptionText;

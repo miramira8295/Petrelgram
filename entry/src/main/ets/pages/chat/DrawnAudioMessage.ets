@@ -1,3 +1,5 @@
+import { DrawnDocumentWidget } from '../../util/drawnDocumentWidget';
+import { musicCardFor } from './DrawnMusicCardLayout';
 import { MessageEntry } from '../../store/MessageEntry';
 import { MessageBubbleActions, MessageBubbleRenderData } from './ReusableMessageBubble';
 import { MusicBubble } from './MusicBubble';
@@ -10,6 +12,7 @@ export struct DrawnAudioMessage {
   @Require @Param msg: MessageEntry;
   @Require @Param actions: MessageBubbleActions;
   @Param boxWidth: number = 262;
+  @Param widget: DrawnDocumentWidget | undefined = undefined;
   @Require @Param data: MessageBubbleRenderData;
   @Event onClaim: () => boolean = (): boolean => false;
   @Local private progress: number = 0;
@@ -35,7 +38,7 @@ export struct DrawnAudioMessage {
   aboutToDisappear(): void { this.aboutToRecycle(); }
 
   build() {
-    MusicBubble({ msgId: this.msg.id, durationSec: this.msg.videoDuration, isOutgoing: this.msg.isOutgoing,
+    MusicBubble({ preparedCard: musicCardFor(this.widget), msgId: this.msg.id, durationSec: this.msg.videoDuration, isOutgoing: this.msg.isOutgoing,
       audioFileId: this.msg.videoFileId, audioPath: this.msg.videoPath, fileSize: this.msg.videoFileSize,
       fileName: this.msg.videoFileName, title: this.msg.audioTitle, performer: this.msg.audioPerformer,
       coverPath: this.msg.photoPath, coverMini: this.msg.audioCoverMini, coverFailed: this.msg.photoFailed,

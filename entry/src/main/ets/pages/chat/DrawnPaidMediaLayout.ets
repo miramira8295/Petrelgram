@@ -8,6 +8,7 @@ import { drawnFirstStrongRtl } from '../../util/drawnTextDirection';
 import { COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 import { DrawnTextLineCache, drawnColor } from './DrawnTextLine';
+import { DrawnPaidMediaGridLayouts, DrawnPaidMediaGridPlan, paidSingleArtworkHeight } from './DrawnPaidMediaGridLayout';
 
 export interface DrawnPaidMediaLayout {
   width: number;
@@ -22,19 +23,16 @@ export interface DrawnPaidMediaLayout {
   lockedTitle: text.Paragraph;
   unlockedTitle: text.Paragraph;
   note: text.Paragraph | null;
+  grid: DrawnPaidMediaGridPlan | null;
 }
 
 const paidLayouts: WeakMap<DrawnDocumentWidget, DrawnPaidMediaLayout> = new WeakMap<DrawnDocumentWidget, DrawnPaidMediaLayout>();
 export function rememberPaidMediaLayout(widget: DrawnDocumentWidget, layout: DrawnPaidMediaLayout): void { paidLayouts.set(widget, layout); }
 export function paidMediaLayoutFor(widget: DrawnDocumentWidget): DrawnPaidMediaLayout | null { return paidLayouts.get(widget) ?? null; }
 
-// The current multi-item model exposes only its first item; keep its existing
-// preview size until all items are modeled. Single-item previews have real sizes.
+// Compatibility for entries loaded without the normalized paid-media set.
 export function drawnPaidArtworkHeight(width: number, sourceWidth: number, sourceHeight: number, count: number): number {
-  if (count !== 1 || !Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight) ||
-    sourceWidth <= 0 || sourceHeight <= 0) { return 156; }
-  const maximum = Math.min(360, width * 1.2), minimum = Math.min(96, maximum);
-  return Math.max(minimum, Math.min(maximum, width * (sourceHeight / sourceWidth)));
+  return count === 1 ? paidSingleArtworkHeight(width, sourceWidth, sourceHeight) : 156;
 }
 
 class DrawnPaidTextLayouts {
@@ -68,6 +66,8 @@ class DrawnPaidTextLayouts {
 // Retain both with-note and without-note geometries. Unlock state does not
 // reshape static labels, and a single-item unlock keeps the same layout object.
 export class DrawnPaidMediaLayouts {
+  private grids: DrawnPaidMediaGridLayouts = new DrawnPaidMediaGridLayouts();
+  private grid: DrawnPaidMediaGridPlan | null = null;
   private units: DrawnTextUnits = new DrawnTextUnits();
   private locked: DrawnPaidTextLayouts = new DrawnPaidTextLayouts();
   private unlocked: DrawnPaidTextLayouts = new DrawnPaidTextLayouts();
@@ -82,9 +82,10 @@ export class DrawnPaidMediaLayouts {
   private artworkHeight: number = 0;
   prepare(ui: UIContext, message: MessageEntry, maxWidth: number, environment: string): DrawnPaidMediaLayout {
     const width = Math.max(1, maxWidth);
-    const artworkHeight = drawnPaidArtworkHeight(width, message.photoWidth, message.photoHeight, message.paidMediaCount);
+    const grid = (message.paidMediaSet?.items.length ?? 0) > 0 ? this.grids.prepare(message.paidMediaSet!, width) : null;
+    const artworkHeight = grid?.height ?? drawnPaidArtworkHeight(width, message.photoWidth, message.photoHeight, message.paidMediaCount);
     const showNote = !message.paidMediaLocked && message.paidMediaCount > 1 && message.paidMediaSet?.complete !== true;
-    const same = this.ui === ui && this.environment === environment && this.width === width && this.artworkHeight === artworkHeight;
+    const same = this.ui === ui && this.environment === environment && this.width === width && this.artworkHeight === artworkHeight && this.grid === grid;
     const cached = showNote ? this.withNote : this.withoutNote;
     if (same && cached !== null) { return cached; }
     const units = this.units.prepare(ui, environment), density = units.density;
@@ -104,10 +105,10 @@ export class DrawnPaidMediaLayouts {
     const height = artworkHeight + textHeight + buttonHeight + 36;
     if (!Number.isFinite(height) || height <= 0) { throw new Error('invalid paid prelayout height'); }
     const layout: DrawnPaidMediaLayout = { width, height, density, artworkHeight, textHeight,
-      headingY, noteY, buttonHeight, badgeHeight, lockedTitle, unlockedTitle, note: showNote ? noteParagraph : null };
+      headingY, noteY, buttonHeight, badgeHeight, lockedTitle, unlockedTitle, note: showNote ? noteParagraph : null, grid };
     if (!same) { this.withNote = null; this.withoutNote = null; }
     if (showNote) { this.withNote = layout; } else { this.withoutNote = layout; }
-    this.ui = ui; this.environment = environment; this.width = width; this.artworkHeight = artworkHeight;
+    this.ui = ui; this.environment = environment; this.width = width; this.artworkHeight = artworkHeight; this.grid = grid;
     return layout;
   }
 }

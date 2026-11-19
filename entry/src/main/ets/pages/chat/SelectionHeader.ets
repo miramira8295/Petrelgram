@@ -1,3 +1,4 @@
+// Chat scroll surfaces use a translucent fill/outline, without compositor blur or shadows.
 import { COLOR_TEXT_PRIMARY } from '../../util/theme';
 import { CHAT_HEADER_ACTION_SIZE, CHAT_HEADER_RADIUS } from './ChatHeader';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
@@ -83,7 +84,7 @@ export struct SelectionHeader {
   capsule(symbol: string, tint: ResourceColor, onTap: () => void) {
     Stack() {
       // 玻璃由系统沉浸材质承载（Toggle 承载层），内容只画图标。
-      SystemGlassSurface({
+      SystemGlassSurface({ effectsEnabled: false, plainOutline: true,
         radius: CHAT_HEADER_RADIUS,
         fixedWidth: CHAT_HEADER_ACTION_SIZE,
         fixedHeight: CHAT_HEADER_ACTION_SIZE
@@ -105,7 +106,6 @@ export struct SelectionHeader {
     .width(CHAT_HEADER_ACTION_SIZE)
     .height(CHAT_HEADER_ACTION_SIZE)
     .borderRadius(CHAT_HEADER_RADIUS)
-    .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
     .onClick((): void => { onTap(); });
   }
 

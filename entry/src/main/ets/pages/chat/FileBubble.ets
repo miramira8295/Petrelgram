@@ -1,3 +1,11 @@
+import { FileMessagePreview } from './FileMessagePreview';
+import { FilePreviewSource, filePreviewKind, fileHasPreview } from '../../util/filePreview';
+import { DrawnFileCardLayout, fileCardTileSize, fileCardTextWidth, FILE_CARD_TOP, FILE_CARD_BOTTOM } from './DrawnFileCardLayout';
+import { DrawnLoadingSpinner } from './DrawnLoadingSpinner';
+import { DrawnMediaTextPlan, DrawnMediaTexts, DrawnMediaTextPainter } from './DrawnMediaText';
+import { DrawnMediaControl } from './DrawnMediaControl';
+import { chatEnv } from '../../util/chatEnvMirror';
+import { textMeasureEnvironment } from '../../util/textMeasureCache';
 import { COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
   displayFileName, fileStatusText, fileTypeVisual, FileTypeVisual, isAudioFileName
@@ -7,6 +15,19 @@ import { str } from '../../util/strings';
 // P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
 @ComponentV2
 export struct FileBubble {
+  private actionPainter: DrawnMediaControl = new DrawnMediaControl();
+  private labelLayouts: DrawnMediaTexts = new DrawnMediaTexts();
+  private labelPainter: DrawnMediaTextPainter = new DrawnMediaTextPainter();
+  private previewPainter: DrawnMediaControl = new DrawnMediaControl();
+  private controlPainter: DrawnMediaControl = new DrawnMediaControl();
+  private paintEnv = chatEnv;
+  @Computed private get paintEnvironment(): string {
+    return `${this.paintEnv.appearanceEpoch}:${this.paintEnv.langEpoch}:${textMeasureEnvironment.epoch}`;
+  }
+  @Param thumbnailId: number = 0;
+  @Param thumbnailPath: string = '';
+  @Param mini: string = '';
+  @Param preparedCard: DrawnFileCardLayout | undefined = undefined;
   @Param fileId: number = 0;
   @Param fileName: string = '';
   @Param mimeType: string = '';
@@ -48,8 +69,36 @@ export struct FileBubble {
     .opacity(0.65)
   }
 
-  private visual(): FileTypeVisual {
-    return fileTypeVisual(this.fileName, this.mimeType);
+  @Computed private get displayName(): string { return displayFileName(this.fileName); }
+  @Computed private get typeVisual(): FileTypeVisual { return fileTypeVisual(this.fileName, this.mimeType); }
+  private visual(): FileTypeVisual { return this.typeVisual; }
+
+  @Computed private get tileSize(): number {
+    return this.preparedCard?.tileSize ?? fileCardTileSize(this.fileName, this.mimeType, this.thumbnailId, this.mini);
+  }
+  @Computed private get previewSource(): FilePreviewSource {
+    return { fileId: this.fileId, filePath: this.filePath, fileSize: this.fileSize,
+      thumbnailId: this.thumbnailId, thumbnailPath: this.thumbnailPath, mini: this.mini,
+      kind: filePreviewKind(this.fileName, this.mimeType) };
+  }
+
+  @Builder private previewTile(): void {
+    Stack() {
+      // BuilderParam otherwise rebinds this to FileMessagePreview, which owns no controlPainter.
+      FileMessagePreview({ source: this.previewSource, boxSize: this.tileSize,
+        placeholder: (): void => { this.typeTile(); } });
+      if (this.uploading || this.downloadActive || this.filePath === '' || this.previewSource.kind === 'video') {
+        Stack() {
+          if ((this.uploading || this.downloadActive) && this.downloadProgress <= 0) {
+            DrawnLoadingSpinner({ ringSize: 21, ringColor: Color.White });
+          }
+        }.width(28).height(28)
+          .drawModifier(this.previewPainter.bind(this.getUIContext(), this.paintEnvironment, 28,
+            '#66000000', '#FFFFFF', this.uploading || this.downloadActive ? 'percent' :
+              this.downloadFailed ? 'retry' : this.filePath !== '' ? 'play' : 'download',
+            this.tileProgress(), false));
+      }
+    }.width(this.tileSize).height(this.tileSize);
   }
 
   private sourceUnavailable(): boolean {
@@ -81,97 +130,54 @@ export struct FileBubble {
   @Builder
   private typeTile(): void {
     Stack() {
-      Column()
-        .width(48).height(48)
-        .borderRadius(13)
-        .backgroundColor(this.sourceUnavailable() ? '#AEB6BF' : this.visual().color);
-      if (this.uploading) {
-        // 一个 Progress 兼任转圈与百分比：没有字节时 LOADING（系统自带的不确定
-        // 态动效），有百分比后切回 PROGRESSING，不用在两个节点之间换来换去。
-        Progress({ value: this.downloadProgress, total: 100, type: ProgressType.Ring })
-          .width(40).height(40)
-          .color(Color.White)
-          .style({
-            strokeWidth: 2,
-            status: this.downloadProgress > 0 ? ProgressStatus.PROGRESSING : ProgressStatus.LOADING
-          });
-        if (this.downloadProgress > 0) {
-          Text(`${this.downloadProgress}`)
-            .fontSize(9)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(Color.White);
-        }
-      } else if (this.downloadActive) {
-        if (this.downloadProgress > 0) {
-          Progress({ value: this.downloadProgress, total: 100, type: ProgressType.Ring })
-            .width(40).height(40)
-            .color(Color.White)
-            .style({ strokeWidth: 2 });
-          Text(`${this.downloadProgress}`)
-            .fontSize(9)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(Color.White);
-        } else {
-          LoadingProgress().width(21).height(21).color(Color.White);
-        }
-      } else if (!this.downloadFailed && this.filePath === '' && this.downloadProgress > 0) {
-        // 暂停态：停在百分比上的静止环 + ▶，一眼看出"点一下会继续"。
-        Progress({ value: this.downloadProgress, total: 100, type: ProgressType.Ring })
-          .width(40).height(40)
-          .color(Color.White)
-          .style({ strokeWidth: 2 });
-        // 音频用 ▶（这类文件暂停后点一下就是「继续听」）；文档类用下载箭头，
-        // 在 APP/TXT 上放播放三角语义是错的。
-        SymbolGlyph($r(isAudioFileName(this.fileName, this.mimeType)
-          ? 'sys.symbol.play_fill' : 'sys.symbol.arrow_down'))
-          .fontSize(14).fontColor([Color.White]);
-      } else if (this.downloadFailed) {
-        Text('!')
-          .fontSize(22)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Color.White);
-      } else {
-        Text(this.visual().label)
-          .fontSize(this.visual().label.length > 4 ? 8.5 : 10.5)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Color.White)
-          .maxLines(1);
-        if (this.filePath !== '') {
-          Stack() {
-            Circle({ width: 16, height: 16 }).fill('#F7FFFFFF');
-            SymbolGlyph($r('sys.symbol.checkmark'))
-              .fontSize(10)
-              .fontColor([this.visual().color]);
-          }
-          .width(16).height(16)
-          .position({ x: 33, y: 33 });
-        }
+      if ((this.uploading || this.downloadActive) && this.downloadProgress <= 0) {
+        DrawnLoadingSpinner({ ringSize: 21, ringColor: Color.White });
       }
     }
-    .width(48).height(48);
+    .width(this.tileSize).height(this.tileSize)
+    .drawModifier(this.controlPainter.bind(this.getUIContext(), this.paintEnvironment, this.tileSize,
+      this.sourceUnavailable() ? '#AEB6BF' : this.visual().color, '#FFFFFF', this.tileGlyph(),
+      this.tileProgress(), true, this.tileLabel()));
+  }
+
+  private tileProgress(): number {
+    return this.uploading || this.downloadActive || (!this.downloadFailed && this.filePath === '')
+      ? this.downloadProgress : 0;
+  }
+
+  private tileGlyph(): string {
+    if (this.uploading || this.downloadActive) { return 'percent'; }
+    if (!this.downloadFailed && this.filePath === '' && this.downloadProgress > 0) {
+      return isAudioFileName(this.fileName, this.mimeType) ? 'play' : 'download';
+    }
+    if (this.downloadFailed) { return 'error'; }
+    return this.filePath !== '' ? 'label-check' : 'label';
+  }
+
+  private tileLabel(): string {
+    if (this.uploading || this.downloadActive) { return this.downloadProgress > 0 ? `${this.downloadProgress}` : ''; }
+    if (!this.downloadFailed && this.filePath === '' && this.downloadProgress > 0) { return ''; }
+    return this.downloadFailed ? '!' : this.visual().label;
+  }
+
+  @Computed private get labelPlan(): DrawnMediaTextPlan {
+    const width = this.fitAvailableWidth ? Math.max(0, this.maxWidth) : Math.max(190, Math.min(262, this.maxWidth));
+    const textWidth = fileCardTextWidth(width, this.tileSize);
+    const labels = this.preparedCard?.labels ?? this.labelLayouts;
+    return labels.prepare(this.getUIContext(), this.preparedCard?.environment ?? this.paintEnvironment, textWidth,
+      this.displayName, 14.5, COLOR_TEXT_PRIMARY, this.status(), 11,
+      this.downloadFailed ? '#D95B57' : COLOR_TEXT_SECONDARY, 2, true, 4, this.tileSize);
   }
 
   build() {
     Row({ space: 10 }) {
       Row({ space: 10 }) {
-        this.typeTile();
-        Column({ space: 4 }) {
-          Text(displayFileName(this.fileName))
-            .fontSize(14.5)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(COLOR_TEXT_PRIMARY)
-            .maxLines(2)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .width('100%');
-          Text(this.status())
-            .fontSize(11)
-            .fontColor(this.downloadFailed ? '#D95B57' : COLOR_TEXT_SECONDARY)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .width('100%');
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start);
+        if (fileHasPreview(this.previewSource)) { this.previewTile(); } else { this.typeTile(); }
+        Row()
+          .width(this.labelPlan.width).height(this.labelPlan.height)
+          .drawModifier(this.labelPainter.bind(this.labelPlan))
+          .accessibilityText(`${this.displayName}. ${this.status()}`);
+
       }
       .layoutWeight(1)
       .alignItems(VerticalAlign.Center)
@@ -193,16 +199,10 @@ export struct FileBubble {
     // 右侧动作按钮：**没下载 = 下载图标，下载完 = 保存图标**，两者都是图标
     // （用户 2026-11-05）。下载中/上传中不显示，让左侧的进度环独占表达状态。
     if (!this.uploading && !this.downloadActive && !this.sourceUnavailable()) {
-      Row() {
-        if (this.filePath === '') {
-          SymbolGlyph($r('sys.symbol.arrow_down_to_line'))
-            .fontSize(18).fontColor([COLOR_ICON_SECONDARY]);
-        } else {
-          SymbolGlyph($r('sys.symbol.square_and_arrow_down'))
-            .fontSize(18).fontColor([COLOR_ICON_SECONDARY]);
-        }
-      }
+      Row()
       .width(28).height(28).borderRadius(14)
+      .drawModifier(this.actionPainter.bind(this.getUIContext(), this.paintEnvironment, 28,
+        '#00000000', COLOR_ICON_SECONDARY, this.filePath === '' ? 'download' : 'save'))
       .justifyContent(FlexAlign.Center)
       .stateStyles({
         normal: this.actionNormalStyle,
@@ -222,6 +222,6 @@ export struct FileBubble {
   .width(this.fitAvailableWidth ? Math.max(0, this.maxWidth) : Math.max(190, Math.min(262, this.maxWidth)))
   .alignItems(VerticalAlign.Center)
   // 右侧给动作按钮留位（28vp + 间距），其余交给时间浮层。
-  .padding({ top: 1, bottom: 10, right: this.uploading || this.downloadActive ? 12 : 4 });
+  .padding({ top: FILE_CARD_TOP, bottom: FILE_CARD_BOTTOM, right: 4 });
 }
 }

@@ -1,3 +1,5 @@
+import { TdObject } from '../../tdkit/TdTypes';
+import { remapComposeEntities } from '../../util/composeMarkdown';
 // 输入框上方那一条在做什么（普通输入 / 回复某条 / 编辑某条）的状态机。
 // 从 ChatPage 整体搬出（B9 批）。
 //
@@ -50,10 +52,10 @@
 // 做成单例会让一个会话的编辑草稿冒到另一个会话的输入框里。页面用字段初始化器
 // new 一个：首帧前就已存在、引用全生命周期稳定、类型非空。
 //
-// 【为什么没有 …Seq】
-// 本簇没有异步在途请求需要序号守卫——回复/编辑都是同步的用户操作或同步的
-// TDLib 编辑请求由页面的 commitEdit（留页面）自己管。dispose() 仍然提供，
-// 只清 focusTimer 这一个句柄，是为了和其余控制器统一的 bind/dispose 生命周期。
+// 【Markdown 编辑的异步所有权】
+// getMarkdownText 只在进入编辑时调用。editPrepareEpoch、MessageStore 身份与
+// 未修改草稿共同守住结果；切消息、取消、reset/dispose 后的旧结果不覆盖输入。
+// 无法无歧义写成 Markdown 的实体随逐次 onChange 增量移动，未修改提交保留原文。
 //
 // 【不在本类里声明 @Monitor】
 // 官方规则：类中 @Monitor 的解注册依赖 GC，销毁时机不可靠。本簇的所有联动都
@@ -82,6 +84,12 @@ import {
 //    要用就现取——否则页面改了字段、控制器手里还是旧的。
 // 2. draft/composerSending/pendingMedia/bottomSlot 等留页面的字段，本类只经
 //    这里的取值器/setter 读写，不在本类里存一份影子拷贝。
+export interface ComposerEditPayload {
+  text: string;
+  entities: TdObject[];
+  parseMarkdown: boolean;
+}
+
 export interface ComposerSessionHost {
   // 顶栏当前标题（HeaderIdentitySession 的 title）——startReply 在消息没有
   // senderName 时的回退文案。控制器之间不互相持有引用，只经宿主中转。
@@ -143,6 +151,33 @@ export class ComposerSession {
   // startReply 末尾"请求输入框焦点"那次 setTimeout(0) 的句柄（B9 加固，见
   // 文件头说明）；-1 = 没有在途的那一次。
   private focusTimer: number = -1;
+  private editPrepareEpoch: number = 0;
+  private editSourceText: string = '';
+  private editSourceEntities: TdObject[] = [];
+  private editSeedText: string = '';
+  private editDraftText: string = '';
+  private editDraftEntities: TdObject[] = [];
+
+  private clearEditFormatting(): void {
+    this.editPrepareEpoch++;
+    this.editSourceText = ''; this.editSourceEntities = [];
+    this.editSeedText = ''; this.editDraftText = ''; this.editDraftEntities = [];
+  }
+
+  draftChanged(value: string): void {
+    if (this.editingId === 0 || this.editDraftText === value) { return; }
+    this.editDraftEntities = remapComposeEntities(this.editDraftText, value, this.editDraftEntities);
+    this.editDraftText = value;
+  }
+
+  editPayload(value: string): ComposerEditPayload {
+    this.draftChanged(value);
+    // No-op editing preserves literal Markdown-looking text and every entity.
+    if (value === this.editSeedText) {
+      return { text: this.editSourceText, entities: this.editSourceEntities, parseMarkdown: false };
+    }
+    return { text: value, entities: this.editDraftEntities, parseMarkdown: true };
+  }
 
   // 未 bind 时的空宿主：字段类型非空，且控制器在 aboutToAppear 之前就已经被
   // 构造出来（页面的字段初始化器 new）。取值器返回的都是「什么都还没有」的值。
@@ -160,6 +195,7 @@ export class ComposerSession {
 
   // ChatPage.aboutToAppear 里调一次。
   bind(host: ComposerSessionHost): void {
+    this.editPrepareEpoch++;
     this.host = host;
   }
 
@@ -175,6 +211,7 @@ export class ComposerSession {
   // 本身）。原文照抄未改数字，这里指出但不擅自"纠正成 9"去改写历史注释的
   // 用词——保留"七"是尊重原文，此处旁注真实字段数。
   apply(next: ComposerMode): void {
+    if (next.editingId === 0 || next.editingId !== this.editingId) { this.clearEditFormatting(); }
     this.mode = next;
     this.replyToId = next.replyToId;
     this.replyToName = next.replyName;
@@ -249,7 +286,25 @@ export class ComposerSession {
     const preview: string = msg.text !== '' ? msg.text
       : (editKind === 'caption' ? str('cp_no_caption') : '');
     this.apply(enterEdit(this.mode, messageId, editKind, preview, this.host.draft()));
+    this.clearEditFormatting();
+    this.editSourceText = msg.text; this.editSourceEntities = msg.textEntities ?? [];
+    this.editSeedText = msg.text; this.editDraftText = msg.text; this.editDraftEntities = this.editSourceEntities;
     this.host.setDraft(msg.text);
+    const epoch = this.editPrepareEpoch, seed = msg.text;
+    if (this.editSourceEntities.length === 0 || store === null || store === undefined || typeof store.prepareMarkdownEdit !== 'function') { return; }
+    store.prepareMarkdownEdit(messageId).then((formatted: TdObject): void => {
+      if (epoch !== this.editPrepareEpoch || this.editingId !== messageId || this.host.store() !== store ||
+        this.host.draft() !== seed || this.editDraftText !== seed) { return; }
+      const current = this.host.findMsg(messageId);
+      if (current === null || current.text !== seed || current.editDate !== msg.editDate) { return; }
+      this.editSeedText = formatted['text'] as string;
+      this.editDraftText = this.editSeedText;
+      this.editDraftEntities = formatted['entities'] as TdObject[];
+      this.host.setDraft(this.editSeedText);
+    }).catch((): void => {
+      // Native parse/connection failure keeps the original editable draft and
+      // source entities. It must not replace text after a later edit session.
+    });
   }
 
   cancelEdit(): void {
@@ -285,10 +340,10 @@ export class ComposerSession {
     return this.editingId !== 0;
   }
 
-  // ChatPage.aboutToDisappear 调用。本簇没有异步在途请求要守（commitEdit 的
-  // TDLib 请求留在页面，由页面自己的生命周期管），只清 startReply 那一次
-  // setTimeout 的句柄——顺序上无所谓先后，这里保持与其余控制器一致的形状。
+  // ChatPage.aboutToDisappear 调用。原生 Markdown 准备结果失效，清回复焦点
+  // 定时器；真正的提交请求仍留页面，由页面自己的生命周期管理。
   dispose(): void {
+    this.editPrepareEpoch++;
     if (this.focusTimer !== -1) {
       clearTimeout(this.focusTimer);
       this.focusTimer = -1;

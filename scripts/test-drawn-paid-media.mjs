@@ -69,7 +69,7 @@ local.msg={...g.head,rowId:42,photoFileId:24,photoProgress:7};local.bind();old(9
 local.aboutToRecycle();callbacks.get(24)(99);assert.equal(local.progress,7);assert.equal(offs,2);
 load(compiled+'pages/chat/PaidMediaBubble.ts',['PaidMediaBubble']);
 const unlocked=[],opened=[];
-const card=Object.assign(Object.create(ctx.PaidMediaBubble.prototype),{messageId:1,locked:true,starCount:10,pending:false,photoFileId:23,photoPath:'',mediaKind:'photo',onBeforeAction:()=>false,onUnlock:id=>unlocked.push(id),onOpen:id=>opened.push(id)});
+const card=Object.assign(Object.create(ctx.PaidMediaBubble.prototype),{mediaSet:null,onOpenAt:null,messageId:1,locked:true,starCount:10,pending:false,photoFileId:23,photoPath:'',mediaKind:'photo',onBeforeAction:()=>false,onUnlock:id=>unlocked.push(id),onOpen:id=>opened.push(id)});
 card.trigger();assert.equal(unlocked.length,0);
 card.onBeforeAction=()=>true;card.trigger();assert.deepEqual(unlocked,[1]);
 card.pending=true;card.trigger();assert.equal(unlocked.length,1);
