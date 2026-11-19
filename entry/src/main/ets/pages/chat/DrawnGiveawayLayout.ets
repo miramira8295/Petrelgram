@@ -1,3 +1,4 @@
+import { drawnWeightMedium, drawnWeightNormal } from '../../util/systemFontWeight';
 import { UIContext, DrawContext } from '@kit.ArkUI';
 import { text } from '@kit.ArkGraphics2D';
 import { MessageEntry } from '../../store/MessageEntry';
@@ -44,7 +45,7 @@ class DrawnGiveawayParagraphs {
       this.width === width && this.font === font) { return this.current; }
     const builder = new text.ParagraphBuilder({ textStyle: { fontSize: font,
       color: drawnColor(medium ? COLOR_TEXT_PRIMARY : COLOR_TEXT_SECONDARY),
-      fontWeight: medium ? text.FontWeight.W500 : text.FontWeight.W400 },
+      fontWeight: medium ? drawnWeightMedium() : drawnWeightNormal() },
       wordBreak: text.WordBreak.BREAK_WORD,
       textDirection: drawnFirstStrongRtl(content) ? text.TextDirection.RTL : text.TextDirection.LTR,
       align: text.TextAlign.LEFT }, text.FontCollection.getGlobalInstance());

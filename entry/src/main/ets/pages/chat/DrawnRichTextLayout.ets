@@ -1,3 +1,4 @@
+import { drawnWeightBold, drawnWeightNormal, systemFontWeightScale } from '../../util/systemFontWeight';
 import { documentEmbedHeight } from '../../util/documentEmbedMetrics';
 import { DrawnDocumentWidget, DrawnDocumentWidgetPlacement } from '../../util/drawnDocumentWidget';
 import { DrawnInlineIconPlacement, appendDrawnIcons } from '../../util/drawnInlineIcon';
@@ -135,7 +136,7 @@ export class DrawnRichTextLayouts {
     const fontPx: number = this.units.fp2px(spec.fontSize);
     const reservePx: number = this.units.fp2px(14);
     const linePx: number = this.units.fp2px(spec.fontSize * 1.34);
-    const environment: string = `${spec.environment}:${density}:${fontPx}:${reservePx}:${linePx}`;
+    const environment: string = `${spec.environment}:${density}:${fontPx}:${reservePx}:${linePx}:${systemFontWeightScale()}`;
     if (this.environment !== environment) { this.failedSpec = null; this.environment = environment; }
     this.cache.prepare(environment);
     const hit = this.cache.get(spec);
@@ -230,7 +231,7 @@ export class DrawnRichTextLayouts {
       }
       if (block.widget !== undefined) {
         const widget = block.widget;
-        const height = widget.kind === 'message-sticker' ? widget.height * Math.min(1, spec.maxWidthVp / widget.width) : widget.kind === 'message-dice' ? Math.min(150, spec.maxWidthVp) : widget.kind === 'message-video-note' ? Math.min(180, spec.maxWidthVp) : widget.kind === 'message-location' ? widget.height : (widget.kind === 'message-contact' || widget.kind === 'message-poll' || widget.kind === 'message-game' || widget.kind === 'message-gift' || widget.kind === 'message-paid-media' || widget.kind === 'message-giveaway') ? widget.height : widget.kind === 'message-voice' ? 60 : widget.kind === 'message-audio' ? 148 : widget.kind === 'message-file' ? 80 : (widget.kind === 'html-embed' || widget.kind === 'video-embed') ? documentEmbedHeight(widget, spec.maxWidthVp) : widget.kind === 'map' ? Math.max(80, Math.min(300, spec.maxWidthVp * widget.height / widget.width)) : (widget.kind === 'post-author' || widget.kind === 'chat-link') ? 56 : 72;
+        const height = widget.kind === 'message-sticker' ? widget.height * Math.min(1, spec.maxWidthVp / widget.width) : widget.kind === 'message-dice' ? Math.min(150, spec.maxWidthVp) : widget.kind === 'message-video-note' ? Math.min(180, spec.maxWidthVp) : widget.kind === 'message-location' ? widget.height : (widget.kind === 'message-contact' || widget.kind === 'message-poll' || widget.kind === 'message-game' || widget.kind === 'message-gift' || widget.kind === 'message-paid-media' || widget.kind === 'message-giveaway') ? widget.height : widget.kind === 'message-voice' ? 60 : widget.kind === 'message-audio' ? 148 : widget.kind === 'message-file' ? 60 : (widget.kind === 'html-embed' || widget.kind === 'video-embed') ? documentEmbedHeight(widget, spec.maxWidthVp) : widget.kind === 'map' ? Math.max(80, Math.min(300, spec.maxWidthVp * widget.height / widget.width)) : (widget.kind === 'post-author' || widget.kind === 'chat-link') ? 56 : 72;
         widgets.push({ widget, x: 0, y, width: widget.kind === 'message-contact' ? widget.width : widget.kind === 'message-sticker' ? Math.min(widget.width, spec.maxWidthVp) : (widget.kind === 'message-video-note' || widget.kind === 'message-dice') ? height : spec.maxWidthVp, height });
         y += height + 6; width = widget.kind === 'message-contact' ? widget.width : widget.kind === 'message-sticker' ? Math.min(widget.width, spec.maxWidthVp) : (widget.kind === 'message-video-note' || widget.kind === 'message-dice') ? height : spec.maxWidthVp;
         document.lastLine = { left: 0, width: width * density, baseline: y * density, ascent: 0 };
@@ -601,7 +602,7 @@ export class DrawnRichTextLayouts {
     let markedBackground: text.RectStyle | undefined = undefined;
     const paragraphBuilder = new text.ParagraphBuilder({
       textStyle: { fontSize: fontPx, color: foreground, heightOnly: true, heightScale: linePx / fontPx,
-        halfLeading: true },
+        halfLeading: true, fontWeight: drawnWeightNormal() },
       maxLines: spec.maxLines,
       wordBreak: text.WordBreak.BREAK_WORD, textDirection: rtl ? text.TextDirection.RTL : text.TextDirection.LTR,
       align: rtl ? text.TextAlign.RIGHT : text.TextAlign.LEFT
@@ -640,7 +641,7 @@ export class DrawnRichTextLayouts {
         heightOnly: true, heightScale: linePx / fontPx, halfLeading: true,
         badgeType: run.script === 1 ? text.TextBadgeType.TEXT_SUPERSCRIPT : run.script === -1 ? text.TextBadgeType.TEXT_SUBSCRIPT : undefined,
         fontFamilies: run.code ? ['monospace'] : undefined,
-        fontWeight: run.bold ? text.FontWeight.W700 : text.FontWeight.W400,
+        fontWeight: run.bold ? drawnWeightBold() : drawnWeightNormal(),
         fontStyle: run.italic ? text.FontStyle.ITALIC : text.FontStyle.NORMAL,
         decoration: { textDecoration: run.strike ? text.TextDecorationType.LINE_THROUGH :
           (run.underline ? text.TextDecorationType.UNDERLINE : text.TextDecorationType.NONE), color }
@@ -669,7 +670,8 @@ export class DrawnRichTextLayouts {
         const key = mathKeyOf(expression, renderSize, argb);
         const bitmap = mathMetricsFor(key);
         const fallbackBuilder = new text.ParagraphBuilder({ textStyle: { fontSize: fontPx,
-          fontFamilies: ['monospace'], color }, textDirection: text.TextDirection.LTR }, text.FontCollection.getGlobalInstance());
+          fontFamilies: ['monospace'], color, fontWeight: drawnWeightNormal() },
+          textDirection: text.TextDirection.LTR }, text.FontCollection.getGlobalInstance());
         fallbackBuilder.addText(run.text); const fallback = fallbackBuilder.build(); fallback.layoutSync(maxPx);
         let width = bitmap !== undefined ? bitmap.width / 2 : Math.max(1, fallback.getLongestLine());
         let height = bitmap !== undefined ? bitmap.height / 2 : fallback.getHeight();
@@ -688,7 +690,8 @@ export class DrawnRichTextLayouts {
         const fallbackKey: string = `${run.text}:${run.link || run.url !== ''}`;
         let fallback = fallbacks.get(fallbackKey);
         if (fallback === undefined) {
-          const builder = new text.ParagraphBuilder({ textStyle: { fontSize: fontPx, color },
+          const builder = new text.ParagraphBuilder({ textStyle: { fontSize: fontPx, color,
+            fontWeight: drawnWeightNormal() },
             maxLines: 1, align: text.TextAlign.CENTER, textDirection: text.TextDirection.LTR },
             text.FontCollection.getGlobalInstance());
           builder.addText(run.text); fallback = builder.build(); fallback.layoutSync(emojiPx);

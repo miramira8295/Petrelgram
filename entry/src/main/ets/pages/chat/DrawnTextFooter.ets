@@ -1,3 +1,4 @@
+import { drawnWeightNormal, systemFontWeightScale } from '../../util/systemFontWeight';
 import { DrawnTextUnits } from '../../util/drawnTextUnits';
 import { UIContext } from '@kit.ArkUI';
 import { common2D, text } from '@kit.ArkGraphics2D';
@@ -24,9 +25,10 @@ export class DrawnTextFooterCache {
     maxPx: number, color: common2D.Color, environment: string): DrawnTextFooter {
     this.units.prepare(ui, environment);
     const d = this.units.density, font = this.units.fp2px(11), small = this.units.fp2px(10.5), icon = this.units.fp2px(12);
-    const key = `${time}:${edited}:${views}:${outgoing}:${maxPx}:${d}:${font}:${small}:${icon}:${environment}`;
+    const key = `${time}:${edited}:${views}:${outgoing}:${maxPx}:${d}:${font}:${small}:${icon}:${environment}:${systemFontWeightScale()}`;
     if (this.current !== null && key === this.key) { this.current.line.recolor(color); return this.current; }
-    const pb = new text.ParagraphBuilder({ textStyle: { fontSize: font, color } }, text.FontCollection.getGlobalInstance());
+    const pb = new text.ParagraphBuilder({ textStyle: { fontSize: font, color,
+      fontWeight: drawnWeightNormal() } }, text.FontCollection.getGlobalInstance());
     if (views !== '') { pb.addText(views); this.gap(pb, 6 * d); }
     if (edited !== '') {
       pb.pushStyle({ fontSize: small, color }); pb.addText(edited); pb.popStyle(); this.gap(pb, 4 * d);

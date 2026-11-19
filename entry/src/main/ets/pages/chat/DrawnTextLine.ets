@@ -1,3 +1,4 @@
+import { drawnWeightMedium, drawnWeightNormal, systemFontWeightScale } from '../../util/systemFontWeight';
 import { drawnFirstStrongRtl } from '../../util/drawnTextDirection';
 import { ColorMetrics } from '@kit.ArkUI';
 import { common2D, text } from '@kit.ArkGraphics2D';
@@ -42,17 +43,19 @@ export class DrawnTextLineCache {
   private fontPx: number = 0;
   private linePx: number = 0;
   private medium: boolean = false;
+  private weightScale: number = 0;
 
   prepare(content: string, maxPx: number, fontPx: number, color: common2D.Color,
     environment: string, medium: boolean = false, linePx: number = 0): DrawnTextLine {
     if (this.current !== null && this.content === content && this.environment === environment &&
-      this.maxPx === maxPx && this.fontPx === fontPx && this.medium === medium && this.linePx === linePx) {
+      this.maxPx === maxPx && this.fontPx === fontPx && this.medium === medium && this.linePx === linePx &&
+      this.weightScale === systemFontWeightScale()) {
       this.current.recolor(color);
       return this.current;
     }
     if (!(maxPx > 0) || !(fontPx > 0)) { throw new Error('invalid drawn label width/font'); }
     const style: text.TextStyle = {
-      fontSize: fontPx, color: color, fontWeight: medium ? text.FontWeight.W500 : text.FontWeight.W400,
+      fontSize: fontPx, color: color, fontWeight: medium ? drawnWeightMedium() : drawnWeightNormal(),
       ellipsis: '\u2026'
     };
     if (linePx > 0) {
@@ -74,7 +77,7 @@ export class DrawnTextLineCache {
     const result = new DrawnTextLine(paragraph, width, color);
     this.current = result;
     this.content = content; this.environment = environment; this.maxPx = maxPx;
-    this.fontPx = fontPx; this.medium = medium; this.linePx = linePx;
+    this.fontPx = fontPx; this.medium = medium; this.linePx = linePx; this.weightScale = systemFontWeightScale();
     return result;
   }
 }

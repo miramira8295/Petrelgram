@@ -1,3 +1,4 @@
+import { drawnWeightNormal } from '../../util/systemFontWeight';
 import { UIContext, DrawContext } from '@kit.ArkUI';
 import { text } from '@kit.ArkGraphics2D';
 import { MessageEntry } from '../../store/MessageEntry';
@@ -85,7 +86,8 @@ export class DrawnContactLayouts {
     const title = this.titles.prepare(name, textWidth * density, units.fp2px(14.5),
       drawnColor(COLOR_TEXT_PRIMARY), environment, true);
     const builder = new text.ParagraphBuilder({
-      textStyle: { fontSize: units.fp2px(11.5), color: drawnColor(available ? COLOR_TEXT_SECONDARY : '#D95B57') },
+      textStyle: { fontSize: units.fp2px(11.5), color: drawnColor(available ? COLOR_TEXT_SECONDARY : '#D95B57'),
+        fontWeight: drawnWeightNormal() },
       wordBreak: text.WordBreak.BREAK_WORD,
       textDirection: drawnFirstStrongRtl(subtitle) ? text.TextDirection.RTL : text.TextDirection.LTR,
       align: text.TextAlign.LEFT

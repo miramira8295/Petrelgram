@@ -1,3 +1,4 @@
+import { drawnWeightNormal, systemFontWeightScale } from '../../util/systemFontWeight';
 import { DrawnTextUnits } from '../../util/drawnTextUnits';
 import { placeDrawnFooter } from '../../util/drawnFooterPlacement';
 import { DrawnSenderHeader } from './DrawnSenderHeader';
@@ -150,7 +151,7 @@ export class DrawnPlainTextLayouts {
     const density: number = this.units.density;
     const fontPx: number = this.units.fp2px(spec.fontSize);
     const smallPx: number = this.units.fp2px(11);
-    const environment: string = `${spec.textEnvironment}:${density}:${fontPx}:${smallPx}`;
+    const environment: string = `${spec.textEnvironment}:${density}:${fontPx}:${smallPx}:${systemFontWeightScale()}`;
     if (this.currentLayout !== null && this.currentSpec !== null &&
       this.currentEnvironment === environment && this.currentLayout.header === header &&
       this.currentLayout.quote === quote && sameDrawnPlainTextSpec(this.currentSpec, spec)) {
@@ -250,7 +251,8 @@ export class DrawnPlainTextLayouts {
     const maxPx: number = Math.floor((spec.maxWidthVp - 16) * density);
     if (maxPx <= 0) { throw new Error('invalid drawn content width'); }
     const bodyBuilder = new text.ParagraphBuilder({
-      textStyle: { fontSize: fontPx, color: foreground, heightOnly: true, heightScale: 1.34, halfLeading: true },
+      textStyle: { fontSize: fontPx, color: foreground, heightOnly: true, heightScale: 1.34, halfLeading: true,
+        fontWeight: drawnWeightNormal() },
       wordBreak: text.WordBreak.BREAK_WORD, textDirection: text.TextDirection.LTR, align: text.TextAlign.LEFT
     }, fonts);
     bodyBuilder.addText(spec.content);
@@ -268,7 +270,8 @@ export class DrawnPlainTextLayouts {
     // Unknown metrics force a separate footer row rather than guessing an overlap.
     const lastRight: number = last !== undefined ? last.left + last.width : Number.NaN;
     const lastTop: number = last !== undefined ? Math.max(0, last.baseline - last.ascent) : Number.NaN;
-    const footerBuilder = new text.ParagraphBuilder({ textStyle: { fontSize: smallPx, color: secondary } }, fonts);
+    const footerBuilder = new text.ParagraphBuilder({ textStyle: { fontSize: smallPx, color: secondary,
+      fontWeight: drawnWeightNormal() } }, fonts);
     if (spec.edited !== '') {
       footerBuilder.pushStyle({ fontSize: this.units.fp2px(10.5), color: secondary });
       footerBuilder.addText(spec.edited);
