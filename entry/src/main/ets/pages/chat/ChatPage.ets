@@ -4446,8 +4446,12 @@ export struct ChatPage {
       this.returnState = dropReachedJumps(this.returnState, this.timeline.curBottomId);
     }
     if (this.timeline.atBottom) {
+      // reachedLatest() 每次返回新对象；状态本来就空时不必换引用，否则 @Local
+      // returnState 的消费方（回底按钮）会在每个滚动下标变化帧重算一次。
       if (Date.now() >= this.jumpLandingUntil) {
-        this.returnState = reachedLatest();
+        if (this.returnState.jumpStack.length !== 0 || this.returnState.readAnchor !== 0) {
+          this.returnState = reachedLatest();
+        }
       }
       return;
     }

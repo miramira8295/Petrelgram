@@ -790,8 +790,8 @@ export struct MainTabBody {
     .contentStartOffset(this.contentTopInset + EDGE_OVERLAY_VP)
     .onDidScroll((offset: number, state: ScrollState): void => {
       this.updateScrollActivity(state);
-      this.updateImmersiveBars(offset);
       const y: number = this.listScroller.currentOffset().yOffset;
+      this.updateImmersiveBars(offset, y <= 0);
       // 复用同一帧已经取到的 y，不再多调一次 currentOffset()（这个回调每帧都跑）。
       const report: ((delta: number, atTop: boolean) => void) | undefined = this.onScrollForFolderBar;
       if (report !== undefined) {
@@ -843,13 +843,20 @@ export struct MainTabBody {
 
   // 小方形屏（SPEC-04）：上滑隐藏标题栏与底部页签，下滑或回到顶部恢复。
   // 其他形态一律不隐藏；离开小方形屏时若还藏着，立刻放出来。
-  private updateImmersiveBars(delta: number): void {
-    const prevHidden: boolean = this.immersive.hidden;
+  private updateImmersiveBars(delta: number, atTop: boolean): void {
+    const prev: ImmersiveBarsState = this.immersive;
+    const prevHidden: boolean = prev.hidden;
     if (!isSmallSquare(this.widthBp, this.heightBp)) {
-      this.immersive = new ImmersiveBarsState();
+      // 其他形态一律显示：只在确实藏着（或还有累计量）时才换新对象。
+      if (prev.hidden || prev.accumulated !== 0) {
+        this.immersive = new ImmersiveBarsState();
+      }
     } else {
-      const atTop: boolean = this.listScroller.currentOffset().yOffset <= 0;
-      this.immersive = nextImmersiveBars(this.immersive, delta, atTop);
+      const next: ImmersiveBarsState = nextImmersiveBars(prev, delta, atTop);
+      // 数值没变化就不要换引用：@State 一旦指向新对象，整条列表会重绘一次。
+      if (next.hidden !== prev.hidden || next.accumulated !== prev.accumulated) {
+        this.immersive = next;
+      }
     }
     if (this.immersive.hidden !== prevHidden) {
       AppStorage.setOrCreate(KEY_IMMERSIVE_BARS_HIDDEN, this.immersive.hidden);

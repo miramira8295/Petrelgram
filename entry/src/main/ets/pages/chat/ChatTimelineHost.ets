@@ -7,7 +7,6 @@ import { FloatingDateOverlay, TimelineStatePillSlot } from './FloatingDateOverla
 import { TL_NONE, timelineStateMode, timelineStateText } from '../../util/timelineState';
 import { ROW_TEMPLATE_DEFERRED, ROW_TEMPLATE_PLAIN, ROW_TEMPLATE_PLAIN_GUTTER, ROW_TEMPLATE_RICH, ROW_TEMPLATE_RICH_GUTTER, rowTemplateId } from '../../util/rowTemplateId';
 import { MessageBubbleRenderData } from './ReusableMessageBubble';
-import { rowProbe } from '../../util/rowProbe';
 import { MessageRowHost } from './MessageRowHost';
 import { MessageBubbleActions } from './ReusableMessageBubble';
 import { stackFromEndWanted } from '../../util/stackFromEnd';
@@ -111,17 +110,11 @@ export struct ChatTimelineHost {
     });
   }
 
-  // 行数据准备（prepareMessageBubble）+ 打点。单独成普通方法：@Builder 体内不许
-  // 声明局部变量。
+  // 行数据准备（prepareMessageBubble）。单独成普通方法：@Builder 体内不许声明局部变量。
+  // 原先这里挂过 rowProbe 逐帧打点（临时仪表），已移除：它的 displaySync 常驻 120Hz
+  // 且没有任何 stop 调用，进过一次会话就跟着进程跑到退出。
   private prepareRowData(group: AlbumGroup): MessageBubbleRenderData {
-    // 首次进会话才启动逐帧统计；start() 自身幂等。
-    rowProbe.start();
-    rowProbe.rowBuilt();
-    const start: number = Date.now();
-    const data: MessageBubbleRenderData =
-      this.session.prepareMessageBubble(group, this.rowPageInputs).data;
-    rowProbe.recordPrepare((Date.now() - start) * 1e6);
-    return data;
+    return this.session.prepareMessageBubble(group, this.rowPageInputs).data;
   }
 
   // Repeat 的模板名。分的是**外壳**的池，必须可枚举（见 util/rowTemplateId）。

@@ -61,9 +61,17 @@ export struct ArchivePage {
     this.unsubscribeUnread = getUnreadCountStore().subscribe((): void => {
       this.unreadCount = getUnreadCountStore().getUnread('archive');
     });
-    AppStorage.setOrCreate(CHAT_LIST_NOW, Math.floor(Date.now() / 1000));
+    // CHAT_LIST_NOW 与 ChatListPage.syncClockMinute() 共写：对齐到整分钟并按值比较
+    // 才写，否则两页同时在栈上时会互相覆盖、把会话列表每秒重绘一次。
+    const nowMinSec: number = Math.floor(Date.now() / 60000) * 60;
+    if ((AppStorage.get<number>(CHAT_LIST_NOW) ?? 0) !== nowMinSec) {
+      AppStorage.setOrCreate(CHAT_LIST_NOW, nowMinSec);
+    }
     this.clockTimer = setInterval((): void => {
-      AppStorage.setOrCreate(CHAT_LIST_NOW, Math.floor(Date.now() / 1000));
+      const tickMinSec: number = Math.floor(Date.now() / 60000) * 60;
+      if ((AppStorage.get<number>(CHAT_LIST_NOW) ?? 0) !== tickMinSec) {
+        AppStorage.setOrCreate(CHAT_LIST_NOW, tickMinSec);
+      }
     }, 60000);
   }
 
