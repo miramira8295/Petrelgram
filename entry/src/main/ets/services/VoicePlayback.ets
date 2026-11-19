@@ -609,6 +609,7 @@ class VoicePlayback {
   // 播放期后台保活：状态机唯一出口处同步，保证 acquire/release 成对。
   // 对应类别的"后台播放"开关关闭时不挂任务（切后台由系统正常暂停）。
   private heldKind: string | null = null;
+  private heldToken: string | null = null;
 
   private syncKeepAlive(state: VoiceState): void {
     let desired: string | null = null;
@@ -623,13 +624,14 @@ class VoicePlayback {
       return;
     }
     if (this.heldKind !== null) {
-      mediaPlaybackKeepAlive.release(this.heldKind);
+      mediaPlaybackKeepAlive.release(this.heldToken);
+      this.heldToken = null;
       this.heldKind = null;
     }
     if (desired !== null) {
       const context = getUiAbilityContext();
       if (context !== null) {
-        mediaPlaybackKeepAlive.acquire(context, desired);
+        this.heldToken = mediaPlaybackKeepAlive.acquire(context, desired);
         this.heldKind = desired;
       }
     }
