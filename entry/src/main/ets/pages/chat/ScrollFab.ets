@@ -65,7 +65,7 @@ export struct ScrollFab {
       // 提交版（PR #21 前）玻璃就画在按钮自身，这两者天然同层；拆成 NativeGlassHost
       // 之后玻璃变成了兄弟节点，所以要把变换上提到这层包壳。
       Stack() {
-      NativeGlassHost({ effectsEnabled: false, hostWidth: 46, hostHeight: 46, hostRadius: 23 });
+      NativeGlassHost({ hostWidth: 46, hostHeight: 46, hostRadius: 23 });
       Button({ type: ButtonType.Circle }) {
         if (this.busy) {
           LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);

@@ -83,7 +83,7 @@ export struct MembershipBar {
   // 玻璃交给系统沉浸材质：SystemGlassSurface 垫一层 Toggle 材质，内容再画上面。
   @Builder
   private surface() {
-    SystemGlassSurface({ effectsEnabled: false, radius: bottomPillRadius() }) {
+    SystemGlassSurface({ radius: bottomPillRadius() }) {
     Row({ space: 8 }) {
       if (this.state === MEMBERSHIP_READONLY) {
         SymbolGlyph($r(this.isMuted ? 'sys.symbol.bell' : 'sys.symbol.bell_slash'))
@@ -154,7 +154,7 @@ export struct MembershipBar {
   @Builder
   private joinPill(label: Resource, anchorId: string, onTap: () => void) {
     Stack() {
-      SystemGlassSurface({ effectsEnabled: false, radius: bottomPillRadius() }) {
+      SystemGlassSurface({ radius: bottomPillRadius() }) {
         Row() {
           Text(label)
             .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)

@@ -132,7 +132,7 @@ export struct ChatTopicBar {
     // 外层 Stack 只负责定位：自定义组件带尾随闭包时不能再链 .margin()。
     Stack() {
       // 系统沉浸材质玻璃外壳：材质层要绝对尺寸，卡片自己只负责排版。
-      SystemGlassSurface({ effectsEnabled: false, radius: 14, fixedHeight: CARD_HEIGHT }) {
+      SystemGlassSurface({ radius: 14, fixedHeight: CARD_HEIGHT }) {
         List({ space: 6, scroller: this.scroller }) {
       LazyForEach(this.source, (row: ForumTopicRow) => {
         ListItem() {

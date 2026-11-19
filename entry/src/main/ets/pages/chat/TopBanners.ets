@@ -373,7 +373,7 @@ export struct TopBanners {
     // 这张浮卡是"整块面板"级：玻璃交给 SystemGlassSurface 垫的系统材质，
     // 外层 Stack 只负责定位（宽度 calc、高度、外边距、进出场动画）。
     Stack() {
-    SystemGlassSurface({ effectsEnabled: false, radius: 14, fill: true, dark: this.appDark }) {
+    SystemGlassSurface({ radius: 14, fill: true, dark: this.appDark }) {
     Column() {
       if (this.hasContent()) {
         if (this.actionBarKind !== '') {

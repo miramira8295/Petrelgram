@@ -345,7 +345,7 @@ export struct ChatHeader {
     // backdropBlur + materialModifier + visualEffect + chromeOutline 描边——在
     // 内容区一件都画不出来，只剩一圈白描边，正是用户说的"白色轮廓线很怪"。
     Stack() {
-      NativeGlassHost({ effectsEnabled: false,
+      NativeGlassHost({
         hostWidth: CHAT_HEADER_ACTION_SIZE,
         hostHeight: CHAT_HEADER_ACTION_SIZE,
         hostRadius: CHAT_HEADER_RADIUS,
@@ -395,7 +395,7 @@ export struct ChatHeader {
   menuButton() {
     // 与返回键同一副：材质垫底，图标行只管点击与按压反馈。
     Stack() {
-      NativeGlassHost({ effectsEnabled: false,
+      NativeGlassHost({
         hostWidth: CHAT_HEADER_ACTION_SIZE,
         hostHeight: CHAT_HEADER_ACTION_SIZE,
         hostRadius: CHAT_HEADER_RADIUS,
@@ -458,7 +458,7 @@ export struct ChatHeader {
       // 身份胶囊：宽度自适应（layoutWeight 1），所以用铺满模式让外壳跟住父容器，
       // 材质层再由外壳自己量到的像素铺。
       Stack() {
-        SystemGlassSurface({ effectsEnabled: false, radius: CHAT_HEADER_RADIUS, fill: true, dark: this.appDark }) {
+        SystemGlassSurface({ radius: CHAT_HEADER_RADIUS, fill: true, dark: this.appDark }) {
           Row({ space: 10 }) {
       AvatarView({
         avatarPath: this.header.avatarPath,

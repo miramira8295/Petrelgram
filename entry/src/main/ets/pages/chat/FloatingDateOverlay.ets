@@ -137,7 +137,7 @@ export struct FloatingDateOverlay {
     // effects and hit testing; the overlay does not size the message List.
     Row() {
       // 系统沉浸材质玻璃（Toggle 承载层）：与输入栏、右上角功能菜单同一套材质参数。
-      SystemGlassSurface({ effectsEnabled: false, radius: 14, fixedHeight: 28 }) {
+      SystemGlassSurface({ radius: 14, fixedHeight: 28 }) {
         Row() {
           Text(this.state.label)
             .fontSize(12)

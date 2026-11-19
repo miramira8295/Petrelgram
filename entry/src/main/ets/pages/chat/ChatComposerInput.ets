@@ -600,7 +600,7 @@ export struct ChatComposerInput {
       if (!this.recording.isRecording) {
         Stack({ alignContent: Alignment.Top }) {
           if (this.glassHostOn()) {
-            NativeGlassHost({ effectsEnabled: false, hostWidth: 46, hostHeight: 46, hostRadius: 23, dark: this.appDark })
+            NativeGlassHost({ hostWidth: 46, hostHeight: 46, hostRadius: 23, dark: this.appDark })
           }
           Stack() {
           SymbolGlyph($r('sys.symbol.paperclip'))
@@ -646,7 +646,7 @@ export struct ChatComposerInput {
       // 悬浮玻璃：底层画布 + 上层内容。内容自己不再画底色/模糊/描边，全部交给画布上的系统材质。
       Stack({ alignContent: Alignment.TopStart }) {
         if (this.glassHostOn()) {
-          NativeGlassHost({ effectsEnabled: false,
+          NativeGlassHost({
             hostWidth: this.glassSurfaceW, hostHeight: this.glassSurfaceH, hostRadius: 24, dark: this.appDark
           })
         }
@@ -978,7 +978,7 @@ export struct ChatComposerInput {
         Stack() {
           // 与左侧附件键同一套玻璃：玻璃落在这层 Stack 上，图标由子组件出。
           if (this.glassHostOn()) {
-            NativeGlassHost({ effectsEnabled: false, hostWidth: 46, hostHeight: 46, hostRadius: 23, dark: this.appDark })
+            NativeGlassHost({ hostWidth: 46, hostHeight: 46, hostRadius: 23, dark: this.appDark })
           }
           ComposerSendButton({
             hasDraft: this.canSendText(),
