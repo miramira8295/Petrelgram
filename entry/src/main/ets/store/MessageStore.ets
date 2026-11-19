@@ -205,6 +205,10 @@ export class MessageStore {
   private pinnedEntries: PinnedEntry[] = [];
   private pinnedLoadState: string = 'loading';
   private coalesceTimer: number = -1;
+  // 关闭标记与「关闭时要清掉的重试定时器」。重试回调可能在页面退出、话题切换
+  // 甚至账号切换之后才到期；那时 TdClient 已被 dispose，再发请求只会报错刷日志。
+  private closed: boolean = false;
+  private retryTimers: Set<number> = new Set();
   // ChatPage starts TDLib work while the destination is entering, but holds the
   // first ready message snapshot until the system page transition has settled.
   // Loading stays concurrent; only the expensive UI subscriber publication is
@@ -500,6 +504,7 @@ export class MessageStore {
 
   open(aroundMessageId?: number, passive: boolean = false,
     aroundIsResume: boolean = false): void {
+    this.closed = false;
     this.checklistClosed = false;
     // Embedded consumers such as the livestream interaction panel need chat
     // history and updates without changing TDLib's open-chat lifecycle for the
@@ -591,6 +596,11 @@ export class MessageStore {
   }
 
   close(): void {
+    this.closed = true;
+    for (const timer of this.retryTimers) {
+      clearTimeout(timer);
+    }
+    this.retryTimers.clear();
     this.checklistClosed = true;
     this.checklistOps?.close(); this.checklistOps = null;
     this.richTaskRequests.clear();
@@ -4015,7 +4025,7 @@ export class MessageStore {
           const attempts: number = this.fullPhotoAttempts.get(curFullId) ?? 0;
           if (attempts <= 2) {
             this.fullPhotoPendingRefresh.set(messageId, pendingFullPriority);
-            setTimeout((): void => {
+            this.retryLater((): void => {
               this.fullPhotoPendingRefresh.delete(messageId);
               this.requestFullPhoto(messageId, false, pendingFullPriority);
             }, 700);
@@ -4098,7 +4108,7 @@ export class MessageStore {
       logE(`MessageStore photo ${fileId} (attempt ${attempt}): ${err.message}`);
       settle();
       if (attempt <= 2) {
-        setTimeout(() => this.downloadThumb(fileId), 1000 * attempt);
+        this.retryLater((): void => { this.downloadThumb(fileId); }, 1000 * attempt);
       } else {
         this.setThumbnailFailed(fileId, true);
         // 三次都不行，多半不是网络而是 id 过期——换新 id 再来（issue #68）。
@@ -4161,7 +4171,7 @@ export class MessageStore {
     }).catch((error: TdError): void => {
       logE(`MessageStore link photo ${fileId} (attempt ${attempt}): ${error.message}`);
       if (attempt <= 2) {
-        setTimeout((): void => { this.downloadLinkPreviewPhoto(fileId); }, 1000 * attempt);
+        this.retryLater((): void => { this.downloadLinkPreviewPhoto(fileId); }, 1000 * attempt);
       } else {
         this.linkFileToMsg.delete(fileId);
         this.patchLinkPreviewEntries(fileId, (entry: MessageEntry): void => {
@@ -4896,7 +4906,7 @@ export class MessageStore {
       }
       if (attempt <= 2 && messageId > 0) {
         this.fullPhotoPendingRefresh.set(messageId, priority);
-        setTimeout((): void => {
+        this.retryLater((): void => {
           this.fullPhotoPendingRefresh.delete(messageId);
           this.requestFullPhoto(messageId, false, priority);
         }, 700 * attempt);
@@ -5041,7 +5051,7 @@ export class MessageStore {
       logE(`MessageStore sticker ${fileId} (attempt ${attempt}): ${err.message}`);
       if (attempt <= 2) {
         // 和缩略图同一套退避：失败一次就放弃是 issue #68 的另一半。
-        setTimeout((): void => { this.requestStickerSource(messageId, true); }, 1000 * attempt);
+        this.retryLater((): void => { this.requestStickerSource(messageId, true); }, 1000 * attempt);
         return;
       }
       this.patchStickerEntries(fileId, (c: MessageEntry): void => {
@@ -7145,7 +7155,25 @@ export class MessageStore {
   // 初始历史落地的时刻；其后 INITIAL_SETTLE_WINDOW_MS 内视为安置期。
   private initialSettleStart: number = 0;
 
+  // 登记式重试定时器：close() 会统一清掉，回调到期时再查一次 closed，
+  // 避免页面退出/切话题/切号之后仍向已 dispose 的 TdClient 发请求。
+  private retryLater(fn: () => void, delayMs: number): void {
+    if (this.closed) { return; }
+    let timer: number = -1;
+    timer = setTimeout((): void => {
+      this.retryTimers.delete(timer);
+      if (this.closed) {
+        return;
+      }
+      fn();
+    }, delayMs);
+    this.retryTimers.add(timer);
+  }
+
   private notifySoon(): void {
+    if (this.closed) {
+      return;
+    }
     if (this.coalesceTimer !== -1) {
       return;
     }
@@ -7218,6 +7246,9 @@ export class MessageStore {
   }
 
   private notify(kind: string = 'update'): void {
+    if (this.closed) {
+      return;
+    }
     this.checkWindowOrder(kind);
     // openChat may emit updateNewMessage before the first getChatHistory page
     // returns (commonly just the newest message of a newly visited channel).
@@ -7249,7 +7280,12 @@ export class MessageStore {
     this.currentNotifyKind = kind;
     try {
       for (const l of this.msgSubs) {
-        l(this.messages);
+        // 一个订阅者抛错不能让同轮其余订阅者丢快照：逐个隔离，记日志继续。
+        try {
+          l(this.messages);
+        } catch (e) {
+          logE(`MessageStore.notify listener failed: ${e}`);
+        }
       }
     } finally {
       this.currentNotifyKind = 'update';
