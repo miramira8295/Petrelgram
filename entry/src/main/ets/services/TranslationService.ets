@@ -191,6 +191,10 @@ const MAX_ACTIVE_SAFE: number = 2;
 const THROTTLE_COOLDOWN_MS: number = 30_000;
 // A failed message is retried on a later request, but not in a tight loop.
 const FAILURE_HOLD_MS: number = 60_000;
+// 进程级缓存必须有上限：每条译文都很小，但翻过的消息条数没有上界，
+// 不给上限就是两张只增不减的 Map。超限按插入序淘汰最老的。
+const MAX_CACHE_ENTRIES: number = 500;
+const MAX_FAILED_ENTRIES: number = 500;
 
 export class TranslationService {
   private client: TdClient;
@@ -201,9 +205,14 @@ export class TranslationService {
   private queue: Job[] = [];
   private queued: Set<string> = new Set();
   private active: number = 0;
+  private activeJobs: Set<Job> = new Set();
+  private retryTimer: number = -1;
   private backoffUntil: number = 0;
   // 上次撞上 flood-wait 的时刻，0 表示从没撞过。
   private throttledAt: number = 0;
+  // 换账号/换 slot 后旧实例被整体丢弃前置位：在途请求的 then/catch 回来时
+  // 不再 publish（chatId/messageId 是账号内自增，会污染新账号的同号消息）。
+  private abandoned: boolean = false;
 
   private maxActive(): number {
     if (this.throttledAt === 0 || Date.now() - this.throttledAt > THROTTLE_COOLDOWN_MS) {
@@ -226,6 +235,7 @@ export class TranslationService {
   // one TDLib call, and everyone gets the same callback.
   request(chatId: number, messageId: number, editDate: number, lang: string,
     onDone: (result: TranslatedText | null) => void): void {
+    if (this.abandoned) { onDone(null); return; }
     const key = keyOf(chatId, messageId, editDate, lang);
     const hit = this.cache.get(key);
     if (hit !== undefined) {
@@ -258,27 +268,37 @@ export class TranslationService {
   // 失败行上的「重试」。清掉 60 秒冷却和瞬时态，调用方随后照常 request()
   // 即可——否则那次请求会被 FAILURE_HOLD_MS 静默挡掉。
   retry(chatId: number, messageId: number, editDate: number, lang: string): void {
+    if (this.abandoned) { return; }
     this.failedAt.delete(keyOf(chatId, messageId, editDate, lang));
     clearTranslationStatus(messageId);
   }
 
   private pump(): void {
+    if (this.abandoned) {
+      return;
+    }
     if (this.active >= this.maxActive() || this.queue.length === 0) {
       return;
     }
     const wait = this.backoffUntil - Date.now();
     if (wait > 0) {
-      setTimeout((): void => this.pump(), wait + 50);
+      if (this.retryTimer === -1) {
+        this.retryTimer = setTimeout((): void => { this.retryTimer = -1; this.pump(); }, wait + 50);
+      }
       return;
     }
     const job = this.queue.shift() as Job;
     this.active++;
+    this.activeJobs.add(job);
     publishTranslating(job.messageId);
     const req: TdRequest = { '@type': 'translateMessageText' };
     req['chat_id'] = job.chatId;
     req['message_id'] = job.messageId;
     req['to_language_code'] = job.lang;
     this.client.send(req, 20000).then((result: TdObject): void => {
+      if (this.abandoned) {
+        return;
+      }
       // formattedText：text 和 entities 是一对，分开取就等于把格式扔了。
       const translated: TranslatedText = {
         text: (result['text'] as string | undefined) ?? '',
@@ -286,6 +306,9 @@ export class TranslationService {
       };
       this.finish(job, translated);
     }).catch((e: TdError): void => {
+      if (this.abandoned) {
+        return;
+      }
       // "Too Many Requests: retry after N" — quiet the whole queue, not just
       // this message; every queued request goes to the same rate bucket.
       const match = /retry after (\d+)/.exec(e.message);
@@ -294,6 +317,9 @@ export class TranslationService {
         this.throttledAt = Date.now();
       } else {
         this.failedAt.set(job.key, Date.now());
+        if (this.failedAt.size > MAX_FAILED_ENTRIES) {
+          this.failedAt.delete(this.failedAt.keys().next().value as string);
+        }
       }
       // 原始报错原样交给界面（用户要求）。限流是"稍后自动重来"，不是失败，
       // 所以那种情况保持「翻译中」，不弹错误。
@@ -305,11 +331,46 @@ export class TranslationService {
     });
   }
 
+  // 同一个服务实例只服务一个 TdClient。切账号 / 切 slot 后 Globals 会重建
+  // client 并 dispose 旧的；旧实例上的缓存和失败计时都属于旧账号。
+  usesClient(client: TdClient): boolean {
+    return this.client === client;
+  }
+
+  // 换 client 前把旧实例的等待者统一放掉，并停止后续一切发布。
+  abandon(): void {
+    if (this.abandoned) { return; }
+    this.abandoned = true;
+    if (this.retryTimer !== -1) { clearTimeout(this.retryTimer); this.retryTimer = -1; }
+    const pending: Job[] = this.queue;
+    this.activeJobs.forEach((job: Job): void => { pending.push(job); });
+    this.activeJobs.clear();
+    this.queue = [];
+    this.queued.clear();
+    this.cache.clear();
+    this.failedAt.clear();
+    this.active = 0;
+    this.backoffUntil = 0;
+    this.throttledAt = 0;
+    for (const job of pending) {
+      for (const resolve of job.resolvers) {
+        resolve(null);
+      }
+    }
+  }
+
   private finish(job: Job, result: TranslatedText | null, requeue: boolean = false): void {
+    if (this.abandoned) {
+      return;
+    }
     this.active--;
+    this.activeJobs.delete(job);
     this.queued.delete(job.key);
     if (result !== null) {
       this.cache.set(job.key, result);
+      if (this.cache.size > MAX_CACHE_ENTRIES) {
+        this.cache.delete(this.cache.keys().next().value as string);
+      }
       clearTranslationStatus(job.messageId);
     }
     if (requeue) {
@@ -329,6 +390,11 @@ let instance: TranslationService | null = null;
 
 export function getTranslationService(client: TdClient): TranslationService {
   if (instance === null) {
+    instance = new TranslationService(client);
+  } else if (!instance.usesClient(client)) {
+    // 切号后 Globals 会新建 TdClient 并 dispose 旧的。旧单例还钉在旧 client
+    // 上，继续用就是「每译必失败」，且缓存键是账号内自增 id，会串译文。
+    instance.abandon();
     instance = new TranslationService(client);
   }
   return instance;
