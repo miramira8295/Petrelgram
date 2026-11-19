@@ -160,6 +160,13 @@ export struct WebmStickerView {
   // 本片源的提前回卷量，拿到 duration 之后算一次（见上方常量的说明）。
   private rewindAheadMs: number = LOOP_REWIND_MAX_MS;
   private surfaceContext: object | null = null;
+  // 原生播放器的释放是异步排队的，而同一个 componentId 上不能并存两个原生实例
+  // （initPlayer 见到 player !== null 直接返回 false）。换源/换 surface 时不等旧
+  // 实例释放完就建新的，画面会一直停在旧贴纸上——Repeat 复用同一实例时必现。
+  private releasePending: number = 0;
+  private releaseWaiters: Array<() => void> = [];
+  // 源代数：换源 / 换 surface / 释放时自增，把上一代排队中的 init 作废。
+  private sourceGen: number = 0;
 
   private componentId(): string {
     return `webm_sticker_${this.instanceId}`;
@@ -202,11 +209,11 @@ export struct WebmStickerView {
     this.useAlpha = alphaStickerCandidate(this.powerCategory) && alphaStickerPipelineAvailable();
     if (this.surfaceContext !== null && !this.useAlpha) {
       const context: object = this.surfaceContext;
-      enqueueInit((): void => {
-        if (!this.destroyed && this.initPlayer(context)) {
-          livePlayers++;
-        }
-      });
+      const gen: number = ++this.sourceGen;
+      // 先把旧播放器真正释放掉（它还挂在同一个 componentId 上），释放完成后再建。
+      // 不等的话 initPlayer 会被 player !== null 挡住，画面停在旧贴纸。
+      this.stopLoopWatch();
+      this.releasePlayer((): void => { this.startInit(gen, context); });
     }
   }
 
@@ -287,24 +294,79 @@ export struct WebmStickerView {
 
   private destroyed: boolean = false;
 
+  // 彻底放手：组件要走 / 复用回收 / 初始化失败时调用。
   private release(): void {
     this.destroyed = true;
+    this.sourceGen++;
     this.stopLoopWatch();
-    if (this.player !== null) {
-      const p = this.player;
-      this.player = null;
-      // Deferred: releasing inline (e.g. a whole grid page unmounting on a
-      // tab switch) serializes many native teardowns into one frame.
-      // The shared native-release queue yields between jobs as well. Keep the
-      // live count until teardown succeeds; failures remain visible in the log.
-      enqueueRelease(() => {
-        void enqueueNativeReleaseSync((): void => { p.release(); }, [])
-          .then((): void => { livePlayers--; })
-          .catch((error: Error): void => {
-            logE(`WebmStickerView.release failed: ${error}`);
-          });
-      });
+    this.releasePlayer(null);
+  }
+
+  // 释放当前原生播放器；onDone 在原生实例真正释放后回调（没有播放器时就地回调）。
+  // 换源必须走这里：先等旧实例释放完，再建新的。
+  private releasePlayer(onDone: (() => void) | null): void {
+    const p: IjkMediaPlayer | null = this.player;
+    this.player = null;
+    if (p === null) {
+      this.whenReleasesDone(onDone);
+      return;
     }
+    this.releasePending++;
+    // Deferred: releasing inline (e.g. a whole grid page unmounting on a
+    // tab switch) serializes many native teardowns into one frame.
+    // The shared native-release queue yields between jobs as well. Keep the
+    // live count until teardown succeeds; failures remain visible in the log.
+    enqueueRelease(() => {
+      void enqueueNativeReleaseSync((): void => { p.release(); }, [])
+        .then((): void => { livePlayers--; this.releaseSettled(onDone); })
+        .catch((error: Error): void => {
+          logE(`WebmStickerView.release failed: ${error}`);
+          this.releaseSettled(onDone);
+        });
+    });
+  }
+
+  private releaseSettled(onDone: (() => void) | null): void {
+    this.releasePending--;
+    if (this.releasePending < 0) {
+      this.releasePending = 0;
+    }
+    this.whenReleasesDone(onDone);
+  }
+
+  // 所有在途的原生释放都落定后才执行 onDone；期间来的回调按顺序排队。
+  private whenReleasesDone(onDone: (() => void) | null): void {
+    if (onDone !== null) {
+      this.releaseWaiters.push(onDone);
+    }
+    if (this.releasePending !== 0) {
+      return;
+    }
+    const waiters: Array<() => void> = this.releaseWaiters;
+    this.releaseWaiters = [];
+    for (const waiter of waiters) {
+      waiter();
+    }
+  }
+
+  // 排队建播放器：只认自己那一代源，且此刻组件还活着。
+  private startInit(gen: number, context: object): void {
+    if (gen !== this.sourceGen || this.destroyed) {
+      return;
+    }
+    // Deferred: a screenful of cells mounting together would otherwise run all
+    // their native setups in the same frame.
+    enqueueInit((): void => {
+      if (gen !== this.sourceGen || this.destroyed) {
+        return; // cell died / source changed while queued (rapid tab switching)
+      }
+      if (this.initPlayer(context)) {
+        livePlayers++;
+        if (livePlayers > 24) {
+          logW(`WebmStickerView: ${livePlayers} live players`);
+        }
+      }
+    });
   }
 
   private initPlayer(context: object): boolean {
@@ -449,19 +511,9 @@ export struct WebmStickerView {
         .onLoad((context: object) => {
           this.surfaceContext = context;
           this.destroyed = false;
-          // Deferred: a screenful of cells mounting together would otherwise
-          // run all their native setups in the same frame.
-          enqueueInit(() => {
-            if (this.destroyed) {
-              return; // cell died while queued (rapid tab switching)
-            }
-            if (this.initPlayer(context)) {
-              livePlayers++;
-              if (livePlayers > 24) {
-                logW(`WebmStickerView: ${livePlayers} live players`);
-              }
-            }
-          });
+          const gen: number = ++this.sourceGen;
+          // surface 重建时旧实例可能还在：先释放完再建（同一 componentId 不能并存）。
+          this.releasePlayer((): void => { this.startInit(gen, context); });
         })
         .onDestroy(() => {
           this.surfaceContext = null;
