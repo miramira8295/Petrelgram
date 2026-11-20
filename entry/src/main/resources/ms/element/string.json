@@ -13331,6 +13331,14 @@
     {
       "name": "link_copied_internal",
       "value": "Pautan dalaman disalin (hanya aplikasi ini)"
+    },
+    {
+      "name": "cl_archive_pull",
+      "value": "Tarik ke bawah untuk menunjukkan arkib"
+    },
+    {
+      "name": "cl_archive_release",
+      "value": "Lepaskan untuk menunjukkan arkib"
     }
   ]
 }

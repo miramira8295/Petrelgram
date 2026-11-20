@@ -41,9 +41,11 @@ export struct SearchChatRow {
     return labels.join(' · ');
   }
 
+  @Prop continuousPanel: boolean = false;
+
   @Styles
   normalStyle() {
-    .backgroundColor(mainCardFill(this.wallpaperOn, false))
+    .backgroundColor(this.continuousPanel ? Color.Transparent : mainCardFill(this.wallpaperOn, false))
   }
 
   @Styles
@@ -102,9 +104,11 @@ export struct SearchMessageRow {
   @Prop opening: boolean = false;
   @Prop wallpaperOn: boolean = false;
 
+  @Prop continuousPanel: boolean = false;
+
   @Styles
   normalStyle() {
-    .backgroundColor(mainCardFill(this.wallpaperOn, false))
+    .backgroundColor(this.continuousPanel ? Color.Transparent : mainCardFill(this.wallpaperOn, false))
   }
 
   @Styles
@@ -220,9 +224,11 @@ export struct SearchAppRow {
     return labels.join(' · ');
   }
 
+  @Prop continuousPanel: boolean = false;
+
   @Styles
   normalStyle() {
-    .backgroundColor(mainCardFill(this.wallpaperOn, false))
+    .backgroundColor(this.continuousPanel ? Color.Transparent : mainCardFill(this.wallpaperOn, false))
   }
 
   @Styles

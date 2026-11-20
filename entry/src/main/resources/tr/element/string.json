@@ -13331,6 +13331,14 @@
     {
       "name": "link_copied_internal",
       "value": "Dahili bağlantı kopyalandı (yalnızca bu uygulama)"
+    },
+    {
+      "name": "cl_archive_pull",
+      "value": "Arşivi göstermek için aşağı çekin"
+    },
+    {
+      "name": "cl_archive_release",
+      "value": "Arşivi göstermek için bırakın"
     }
   ]
 }

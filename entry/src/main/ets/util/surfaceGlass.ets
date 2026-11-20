@@ -1,7 +1,11 @@
-// 整体卡片与气泡共用同一套半透明底色；档位只改变 alpha，不创建滤镜。
+// 整体卡片与气泡共用透明度档位；气泡保留自己的底色，不创建滤镜。
 // 两面的开关与档位独立保存，首页卡片和聊天气泡可以分别调节。
 import { normalizeThickness } from './materialTuning';
-import { appIsDark } from './appearance';
+import {
+  appIsDark, BUBBLE_IN_DEFAULT_LIGHT, BUBBLE_IN_DEFAULT_DARK,
+  BUBBLE_OUT_DEFAULT_LIGHT, BUBBLE_OUT_DEFAULT_DARK
+} from './appearance';
+import { toRgbHex } from './colorMath';
 
 export const KEY_SURFACE_GLASS_ON: string = 'surfaceGlassOn';
 export const KEY_BUBBLE_GLASS_ON: string = 'bubbleGlassOn';
@@ -42,6 +46,8 @@ export function bubbleTintLevel(level: number): number {
 
 // 超薄、薄、标准、厚、超厚：约 60%、70%、80%、90%、95%。
 const BUBBLE_TINT_ALPHA: string[] = ['99', 'B3', 'CC', 'E6', 'F2'];
+const BUBBLE_IN_RESOURCE_ID: number = $r('app.color.bubble_in').id;
+const BUBBLE_OUT_RESOURCE_ID: number = $r('app.color.bubble_out').id;
 
 export function bubbleTintFillHex(dark: boolean, level: number): string {
   const alpha = BUBBLE_TINT_ALPHA[bubbleTintLevel(level) + 2];
@@ -57,7 +63,24 @@ export function surfaceGlassFill(solid: ResourceColor): ResourceColor {
 }
 
 export function bubbleGlassFill(solid: ResourceColor): ResourceColor {
-  return bubbleGlassOn() ? bubbleTintFillHex(appIsDark(), bubbleGlassLevel()) : solid;
+  if (!bubbleGlassOn()) { return solid; }
+  let hex: string = '';
+  if (typeof solid === 'string') {
+    hex = solid.length === 7 || solid.length === 9 ? toRgbHex(solid) : '';
+  } else if (typeof solid === 'number') {
+    hex = `#${(solid & 0xFFFFFF).toString(16).padStart(6, '0').toUpperCase()}`;
+  } else {
+    // These are the only resource fills supplied by bubble renderers. Resolve
+    // the explicit app mode, not the potentially stale system resource mode.
+    const name: string = String(solid.params?.[0] ?? '');
+    if (name === 'app.color.bubble_in' || (name === '' && solid.id === BUBBLE_IN_RESOURCE_ID)) {
+      hex = appIsDark() ? BUBBLE_IN_DEFAULT_DARK : BUBBLE_IN_DEFAULT_LIGHT;
+    } else if (name === 'app.color.bubble_out' || (name === '' && solid.id === BUBBLE_OUT_RESOURCE_ID)) {
+      hex = appIsDark() ? BUBBLE_OUT_DEFAULT_DARK : BUBBLE_OUT_DEFAULT_LIGHT;
+    }
+  }
+  // Unknown colors retain their original fill instead of silently turning white.
+  return hex === '' ? solid : `#${BUBBLE_TINT_ALPHA[bubbleGlassLevel() + 2]}${hex.substring(1)}`;
 }
 
 export const SURFACE_GLASS_EPOCH: string = 'surfaceGlassEpoch';

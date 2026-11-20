@@ -1,3 +1,4 @@
+import { DrawnMenuMedia, DrawnMenuSticker, DrawnMenuPaintState } from './DrawnMenuPreview';
 import { StaticMiniThumbnail } from '../common/StaticMiniThumbnail';
 import { documentCardFor } from './DrawnDocumentCardLayout';
 import { DrawnChecklistMessage } from './DrawnChecklistMessage';
@@ -553,6 +554,7 @@ export struct DrawnMessageRow {
   }
   aboutToAppear(): void { this.active = true; this.attach(); this.syncMedia(); this.syncDeleteCapture(); }
   aboutToRecycle(): void {
+    this.menuPaintState = null;
     this.canvasTransition?.cancel();
     this.loginUrl?.cancel(); this.switchInline?.cancel();
     this.noteShown = false; this.noteSource = null; this.pendingAnchor = null;
@@ -1016,8 +1018,24 @@ export struct DrawnMessageRow {
   }
   private glassLive(): boolean { return !this.transparentSticker() && this.env.bubbleMaterialOn && !this.env.powerSaving; }
 
+  private menuMediaPath(tile: DrawnBubbleTile, index: number): string {
+    const slot = this.imageSlot(index), owner = slot?.content.cell, expected = tile.cell;
+    return owner?.chatId === expected.chatId && owner?.messageId === expected.messageId &&
+      owner?.thumbFileId === expected.thumbFileId ? slot?.path || expected.thumbPath : expected.thumbPath;
+  }
+  private menuPaintState: DrawnMenuPaintState | null = null;
+  private menuPaint(): DrawnMenuPaintState {
+    if (this.menuPaintState === null) { this.menuPaintState = new DrawnMenuPaintState(); }
+    return this.menuPaintState;
+  }
   @Builder
-  canvasContent() {
+  menuPreview() { this.canvasContent(true); }
+
+  // Snapshot ownership includes native card/widget islands. The custom preview
+  // reuses prepared geometry but owns its painters and uses posters, never a
+  // second video/sticker player. No parsing/layout work is added to scrolling.
+  @Builder
+  canvasContent(preview: boolean = false) {
     Stack({ alignContent: Alignment.TopStart }) {
       if (this.glassLive()) {
         DrawnGlassBackground({ plan: this.plan, fillColor: this.rowGroup.head.isOutgoing ?
@@ -1025,14 +1043,22 @@ export struct DrawnMessageRow {
       }
       if (this.kind !== 'text') {
         Stack({ alignContent: Alignment.TopStart }) {
-          if (this.useAlbumCanvas && this.canvasTransitionIndex >= 0) {
+          if (preview) {
+            ForEach(this.nativeTiles, (tile: DrawnBubbleTile, index: number) => {
+              DrawnMenuMedia({ path: this.menuMediaPath(tile, index), mini: tile.cell.mini,
+                sourceKey: `${tile.cell.chatId}:${tile.cell.messageId}:${tile.cell.thumbFileId}`,
+                boxWidth: tile.width, boxHeight: tile.height, corners: tile.corners })
+                .position({ x: tile.x, y: tile.y });
+            }, (tile: DrawnBubbleTile): string => tile.key);
+          }
+          if (!preview && this.useAlbumCanvas && this.canvasTransitionIndex >= 0) {
             Stack() {}
               .attributeModifier(this.nativeAnchors.bind(this.canvasTransitionIndex, this.canvasTransitionFrame))
               .drawModifier(this.media.slots[this.canvasTransitionIndex]?.receiver)
               .accessibilityLevel('no')
               .onAreaChange((): void => { this.canvasTransition?.ready(); });
           }
-          if (!this.useAlbumCanvas) {
+          if (!preview && !this.useAlbumCanvas) {
             ForEach(this.mediaSlots, (slot: DrawnMediaSlot) => {
               this.mediaTile(slot);
             }, (slot: DrawnMediaSlot): string => slot.key);
@@ -1040,7 +1066,8 @@ export struct DrawnMessageRow {
         }.width(this.plan?.grid.width ?? 0).height(this.plan?.grid.height ?? 0)
         .position({ x: this.plan?.grid.x ?? 0, y: this.plan?.grid.y ?? 0 })
         .borderRadius(this.gridRadii()).clip(true).hitTestBehavior(HitTestMode.None)
-        .drawModifier(this.useAlbumCanvas ? this.albumCanvas : undefined);
+        .accessibilityLevel(this.a11y?.active ? 'no-hide-descendants' : 'auto')
+        .drawModifier(!preview && this.useAlbumCanvas ? this.albumCanvas : undefined);
       }
       if (this.plan?.caption?.hitsByUrl.has(this.env.linkNavBusy)) {
         DrawnBusyLink({ plan: this.plan?.caption ?? null, url: this.env.linkNavBusy })
@@ -1048,7 +1075,13 @@ export struct DrawnMessageRow {
       }
       // Static/TGS/video stickers share the canvas transform and capture host.
       // The existing non-hit-test foreground draws time AFTER the native content.
-      if (this.rowGroup.head.contentType === 'sticker') {
+      if (preview && this.transparentSticker()) {
+        DrawnMenuSticker({ msg: this.rowGroup.head,
+          boxWidth: this.plan?.caption?.widgets[0]?.width ?? 0, boxHeight: this.plan?.caption?.widgets[0]?.height ?? 0 })
+          .position({ x: (this.plan?.captionX ?? 0) + (this.plan?.caption?.widgets[0]?.x ?? 0),
+            y: (this.plan?.captionY ?? 0) + (this.plan?.caption?.widgets[0]?.y ?? 0) });
+      }
+      if (!preview && this.rowGroup.head.contentType === 'sticker') {
         StickerMessageBubble({ msg: this.rowGroup.head, group: this.rowGroup, data: this.rowData,
           actions: this.actions, contentOnly: true,
           contentMax: Math.max(this.plan?.caption?.widgets[0]?.width ?? 0, this.plan?.caption?.widgets[0]?.height ?? 0),
@@ -1060,7 +1093,7 @@ export struct DrawnMessageRow {
             y: (this.plan?.captionY ?? 0) + (this.plan?.caption?.widgets[0]?.y ?? 0) });
       }
       Row().width(this.plan?.width ?? 0).height(this.plan?.height ?? 0)
-        .drawModifier(this.foreground.bind(this.plan, this.sendState, this.footerPaintKey))
+        .drawModifier((preview ? this.menuPaint().foreground : this.foreground).bind(this.plan, this.sendState, this.footerPaintKey))
         .hitTestBehavior(HitTestMode.None);
       if (this.plan?.caption?.previewImage !== null && this.plan?.caption?.previewImage !== undefined) {
         Stack() { DrawnPreviewImage({ msg: this.rowGroup.head, plan: this.plan?.caption ?? null }); }
@@ -1085,13 +1118,196 @@ export struct DrawnMessageRow {
         DrawnChromeIslands({ plan: this.plan, msg: this.rowGroup.head, chatId: this.rowData.chatId,
           themeBubbleOut: this.rowData.themeBubbleOut });
       }
+      if (!preview && this.a11y?.active) {
+        DrawnRowAccessibility({ plan: this.plan, msg: this.rowGroup.head, sendState: this.sendState,
+          onActivate: (x: number, y: number, event: ClickEvent): void => { this.click(event, x, y, true); },
+          onMenu: (): void => {
+            if (this.rowData.selectionActive) { this.actions.onToggleSelectedMessage(this.rowGroup.head.id); }
+            else { this.openMenu((this.plan?.width ?? 0) / 2); }
+          } });
+      }
+      if ((this.plan?.caption?.widgets.length ?? 0) > 0) {
+        ForEach(this.plan?.caption?.widgets ?? this.emptyWidgets, (item: DrawnDocumentWidgetPlacement) => {
+          if (item.widget.kind === 'message-sticker') {
+            if (!preview && this.rowGroup.head.contentType !== 'sticker') {
+              StickerMessageBubble({ msg: this.rowGroup.head, group: this.rowGroup, data: this.rowData,
+                actions: this.actions, contentOnly: true, contentMax: Math.max(item.width, item.height),
+                onClaim: (): boolean => {
+                  if (this.claimed) { return false; }
+                  return this.claimDocumentWidget(item.widget);
+                } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+            }
+          } else if (item.widget.kind === 'message-giveaway') {
+            DrawnGiveawayMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
+              onClaim: (): boolean => {
+                if (this.claimed) { return false; }
+                return this.claimDocumentWidget(item.widget);
+              } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'message-gift') {
+            DrawnGiftMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
+              onClaim: (): boolean => {
+                if (this.claimed) { return false; }
+                return this.claimDocumentWidget(item.widget);
+              } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'message-paid-media') {
+            DrawnPaidMediaMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget,
+              boxWidth: item.width, pending: this.rowData.paidMediaPending, chatId: this.rowData.chatId,
+              onClaim: (): boolean => {
+                if (this.claimed) { return false; }
+                return this.claimDocumentWidget(item.widget);
+              } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'message-game') {
+            DrawnGameMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
+              onClaim: (): boolean => {
+                if (this.claimed) { return false; }
+                return this.claimDocumentWidget(item.widget);
+              } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'message-dice') {
+            DrawnDiceMessage({ msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width,
+              chatId: this.rowData.chatId, selectionActive: this.rowData.selectionActive,
+              onClaim: (): boolean => {
+                if (this.claimed) { return false; }
+                return this.claimDocumentWidget(item.widget);
+              } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (preview && item.widget.kind === 'message-video-note') {
+            DrawnMenuMedia({ path: this.rowGroup.head.photoPath, mini: this.rowGroup.head.photoMini,
+              sourceKey: `menu-note:${this.rowGroup.head.rowId}:${this.rowGroup.head.photoFileId}`,
+              boxWidth: item.width, boxHeight: item.height,
+              corners: { topLeft: item.width / 2, topRight: item.width / 2, bottomLeft: item.width / 2, bottomRight: item.width / 2 } })
+              .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'message-video-note') {
+            DrawnVideoNoteMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width, sendState: this.sendState,
+              onClaim: (): boolean => {
+                if (this.claimed) { return false; }
+                return this.claimDocumentWidget(item.widget);
+              } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'message-checklist') {
+            DrawnChecklistMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget,
+              chatId: this.rowData.chatId, boxWidth: item.width,
+              onClaim: (): boolean => {
+                if (this.claimed) { return false; }
+                return this.claimDocumentWidget(item.widget);
+              } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'message-poll') {
+            DrawnPollMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget,
+              boxWidth: item.width, nowSec: this.nowSec,
+              onClaim: (): boolean => {
+                if (this.claimed) { return false; }
+                return this.claimDocumentWidget(item.widget);
+              } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'message-location') {
+            DrawnLocationMessage({ widget: item.widget, msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width,
+              chatId: this.rowData.chatId, nowSec: this.nowSec,
+              sharing: this.rowData.liveSharingId !== 0 && this.rowData.liveSharingId === this.rowGroup.head.id,
+              onClaim: (): boolean => {
+                if (this.claimed) { return false; }
+                return this.claimDocumentWidget(item.widget);
+              } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'message-contact') {
+            DrawnContactMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
+              onClaim: (): boolean => {
+                if (this.claimed) { return false; }
+                return this.claimDocumentWidget(item.widget);
+              } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'message-voice') {
+            DrawnVoiceMessage({ msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width, sendState: this.sendState,
+              onClaim: (): boolean => {
+                if (this.claimed) { return false; }
+                return this.claimDocumentWidget(item.widget);
+              } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'message-audio') {
+            DrawnAudioMessage({ widget: item.widget, msg: this.rowGroup.head, data: this.rowData, actions: this.actions, boxWidth: item.width,
+              onClaim: (): boolean => {
+                if (this.claimed) { return false; }
+                return this.claimDocumentWidget(item.widget);
+              } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'message-file') {
+            DrawnFileMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width, sendState: this.sendState,
+              onClaim: (): boolean => {
+                if (this.claimed) { return false; }
+                return this.claimDocumentWidget(item.widget);
+              } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'video-embed') {
+            DrawnDocumentVideo({ widget: item.widget, boxWidth: item.width, boxHeight: item.height,
+              onClaim: (): boolean => this.claimDocumentWidget(item.widget),
+              onOpen: (url: string): void => { this.actions.onLinkTap(url, true); } })
+              .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'html-embed') {
+            DrawnDocumentEmbed({ widget: item.widget, boxWidth: item.width, boxHeight: item.height,
+              onMetricsChanged: (): void => {
+                if (this.presentationReady() && this.plan?.caption?.widgetOwners.has(item.widget)) { this.mathRevision++; }
+              },
+              onClaim: (): boolean => this.claimDocumentWidget(item.widget),
+              onOpen: (url: string): void => { this.actions.onLinkTap(url, true); } })
+              .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'article-image') {
+            DrawnDocumentArticleImage({ widget: item.widget })
+              .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'post-author' || item.widget.kind === 'chat-link') {
+            DrawnDocumentPostAuthor({ widget: item.widget, boxWidth: item.width,
+              onOpen: (): void => {
+                if (this.claimDocumentWidget(item.widget) && item.widget.url !== undefined && item.widget.url !== '') {
+                  this.actions.onLinkTap(item.widget.url, true);
+                }
+              } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'map') {
+            DrawnDocumentMap({ widget: item.widget, chatId: this.rowData.chatId, boxWidth: item.width, boxHeight: item.height,
+              onOpen: (): void => {
+                if (this.claimDocumentWidget(item.widget)) { this.actions.onLocationOpen(item.widget.latitude, item.widget.longitude, '', true); }
+              } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'audio') {
+            DrawnDocumentAudio({ widget: item.widget, preparedCard: documentCardFor(item), audioItems: this.plan?.caption?.source.audioItems, chatId: this.rowData.chatId, messageId: this.rowGroup.head.id, boxWidth: item.width,
+              onClaim: (): boolean => this.claimDocumentWidget(item.widget) })
+              .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else if (item.widget.kind === 'voice') {
+            DrawnDocumentVoice({ widget: item.widget, preparedCard: documentCardFor(item), boxWidth: item.width,
+              onClaim: (): boolean => this.claimDocumentWidget(item.widget) })
+              .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          } else {
+            DrawnDocumentFile({ widget: item.widget, preparedCard: documentCardFor(item), chatId: this.rowData.chatId, messageId: this.rowGroup.head.id, boxWidth: item.width,
+              onClaim: (): boolean => this.claimDocumentWidget(item.widget) })
+              .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+          }
+        }, (item: DrawnDocumentWidgetPlacement): string => `${this.rowData.chatId}:${this.rowGroup.head.id}:${item.widget.key}`);
+      }
+      if ((this.plan?.caption?.media.length ?? 0) > 0) {
+        ForEach(this.plan?.caption?.media ?? this.emptyDocumentMedia, (asset: DrawnDocumentMediaPlacement) => {
+          if (asset.slides !== undefined) {
+            DrawnDocumentGallery({ slides: asset.slides, boxWidth: asset.width, boxHeight: asset.height,
+              onOpen: (media: DrawnDocumentMedia): void => { this.openDocumentMedia(media); } })
+              .position({ x: (this.plan?.captionX ?? 0) + asset.x, y: (this.plan?.captionY ?? 0) + asset.y });
+          } else {
+          DrawnDocumentMediaIsland({ media: asset.media, boxWidth: asset.width, boxHeight: asset.height,
+            onOpen: (): void => {
+              this.openDocumentMedia(asset.media);
+            } })
+            .position({ x: (this.plan?.captionX ?? 0) + asset.x, y: (this.plan?.captionY ?? 0) + asset.y });
+          }
+        }, (asset: DrawnDocumentMediaPlacement): string => `${this.rowData.chatId}:${this.rowGroup.head.id}:${asset.key}`);
+      }
+      if ((this.plan?.caption?.tables.length ?? 0) > 0) {
+        ForEach(this.plan?.caption?.tables ?? this.emptyTables, (table: DrawnTablePlacement) => {
+          DrawnTableIsland({ msg: this.rowGroup.head, placement: table, onMetricsChanged: (): void => { this.mathRevision++; },
+            onClaimTouch: (): void => {
+              if (!this.claimed && this.rowData.selectionActive) { this.actions.onToggleSelectedMessage(this.rowGroup.head.id); }
+              this.claimed = true;
+            },
+            onLinkTap: (link: DrawnRichLink): void => {
+              if (this.rowData.selectionActive) { this.claimed = true; this.actions.onToggleSelectedMessage(this.rowGroup.head.id); }
+              else { this.claimed = true; if (!this.openDocumentLink(link.url)) { this.actions.onLinkTap(link.url, link.hidesUrl); } }
+            } })
+            .position({ x: (this.plan?.captionX ?? 0) + table.x, y: (this.plan?.captionY ?? 0) + table.y });
+        }, (table: DrawnTablePlacement): string => table.key);
+      }
     }
-    .attributeModifier(this.canvasAttributes.bind(this.plan?.width ?? 0, this.plan?.height ?? 0,
-      1 + this.jumpFocus * JUMP_FOCUS_SCALE,
+    .attributeModifier((preview ? this.menuPaint().attributes : this.canvasAttributes).bind(this.plan?.width ?? 0, this.plan?.height ?? 0,
+      preview ? 1 : 1 + this.jumpFocus * JUMP_FOCUS_SCALE,
       this.rowGroup.head.isOutgoing ? '100%' : (this.plan?.bubbleX ?? 0),
-      1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS, this.canDragMessage() && this.allowBodyDrag,
-      this.deleteCaptureSupported && (this.plan?.caption?.source.links.length ?? 0) === 0))
-    .drawModifier(this.painter.bind(this.plan, false, !this.transparentSticker() && !this.glassLive()))
+      preview ? 1 : 1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS, !preview && this.canDragMessage() && this.allowBodyDrag,
+      !preview && this.deleteCaptureSupported && (this.plan?.caption?.source.links.length ?? 0) === 0))
+    .drawModifier((preview ? this.menuPaint().background : this.painter).bind(this.plan, false, !this.transparentSticker() && !this.glassLive()))
+    .hitTestBehavior(preview ? HitTestMode.None : HitTestMode.Default)
+    .accessibilityLevel(preview ? 'no-hide-descendants' : 'no')
     .onTouch((e: TouchEvent): void => { this.touch(e); })
     .onClick((e: ClickEvent): void => { this.click(e); })
     .onDragStart((event: DragEvent): DragItemInfo => {
@@ -1102,17 +1318,7 @@ export struct DrawnMessageRow {
       this.menuShown = false; this.foreground.press(null);
       return configureMessageDrag(event, this.rowData.chatId, this.rowGroup.head.id, messageDragType(this.rowGroup.head.contentType));
     })
-    .onDragEnd((): void => { this.draggingMessage = false; })
-    .bindContextMenu(this.menuShown, this.menu(), {
-      offset: { x: this.menuOffset, y: 0 },
-      preview: drawnLiveSurface(this.rowGroup, this.rowData, this.actions.playback !== undefined) || menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp) ? MenuPreviewMode.NONE : MenuPreviewMode.IMAGE,
-      previewAnimationOptions: { scale: [0.98, 1.035], transition: this.menuFx.preview() },
-      borderRadius: 16, backgroundColor: Color.Transparent,
-      backgroundBlurStyle: containerBlur('menu'), systemMaterial: overlayMaterial('menu'),
-      transition: this.menuFx.menu(), mask: { color: '#52000000', backgroundBlurStyle: BlurStyle.BACKGROUND_THIN },
-      modalMode: ModalMode.TARGET_WINDOW, hapticFeedbackMode: HapticFeedbackMode.AUTO,
-      onDisappear: (): void => { this.menuShown = false; }
-    });
+    .onDragEnd((): void => { this.draggingMessage = false; });
   }
 
   build() {
@@ -1155,9 +1361,22 @@ export struct DrawnMessageRow {
             // no extra component + Stack are needed on every normal message.
             Row() {
               this.canvasContent();
-            }.accessibilityLevel(this.a11y.active ? 'no-hide-descendants' : 'auto').id(this.deleteNodeKey)
+            }.accessibilityLevel('no').id(this.deleteNodeKey)
             .opacity(this.leaving > 0 && (!this.deleteCaptureSupported || this.capturedDeleteKey === this.deleteNodeKey) ? 0 : 1)
-            .hitTestBehavior(this.leaving > 0 ? HitTestMode.None : HitTestMode.Default);
+            .hitTestBehavior(this.leaving > 0 ? HitTestMode.None : HitTestMode.Default)
+            .bindContextMenu(this.menuShown, this.menu(), {
+              offset: { x: this.menuOffset, y: 0 },
+              // The framework invokes custom previews without a component receiver.
+              preview: menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp) ? MenuPreviewMode.NONE
+                : (this.transparentSticker() || drawnLiveSurface(this.rowGroup, this.rowData, this.actions.playback !== undefined))
+                  ? (): void => { this.menuPreview(); } : MenuPreviewMode.IMAGE,
+              previewAnimationOptions: { scale: [0.98, 1.035], transition: this.menuFx.preview() },
+              borderRadius: 16, backgroundColor: Color.Transparent,
+              backgroundBlurStyle: containerBlur('menu'), systemMaterial: overlayMaterial('menu'),
+              transition: this.menuFx.menu(), mask: { color: '#52000000', backgroundBlurStyle: BlurStyle.BACKGROUND_THIN },
+              modalMode: ModalMode.TARGET_WINDOW, hapticFeedbackMode: HapticFeedbackMode.AUTO,
+              onDisappear: (): void => { this.menuShown = false; this.menuPaintState = null; }
+            });
             if (this.leaving > 0 && this.deleteCaptureSupported) {
               ShatterDeleteOverlay({ nodeId: this.deleteNodeKey, particleBudget: this.actions.rowLeave.particleBudget(),
                 onCaptured: this.leaveCapture.captured(),
@@ -1178,181 +1397,6 @@ export struct DrawnMessageRow {
               SenderAnimatedLayer({ senderId: this.rowGroup.head.senderId, senderIsUser: this.rowGroup.head.senderIsUser, avatarSize: 38 })
                 .position({ x: this.plan?.avatar.x ?? 0, y: this.plan?.avatar.y ?? 0 })
                 .hitTestBehavior(HitTestMode.None);
-            }
-            if (this.a11y.active) {
-              DrawnRowAccessibility({ plan: this.plan, msg: this.rowGroup.head, sendState: this.sendState,
-                onActivate: (x: number, y: number, event: ClickEvent): void => { this.click(event, x, y, true); },
-                onMenu: (): void => {
-                  if (this.rowData.selectionActive) { this.actions.onToggleSelectedMessage(this.rowGroup.head.id); }
-                  else { this.openMenu((this.plan?.width ?? 0) / 2); }
-                } });
-            }
-            if ((this.plan?.caption?.widgets.length ?? 0) > 0) {
-              ForEach(this.plan?.caption?.widgets ?? this.emptyWidgets, (item: DrawnDocumentWidgetPlacement) => {
-                if (item.widget.kind === 'message-sticker') {
-                  if (this.rowGroup.head.contentType !== 'sticker') {
-                    StickerMessageBubble({ msg: this.rowGroup.head, group: this.rowGroup, data: this.rowData,
-                      actions: this.actions, contentOnly: true, contentMax: Math.max(item.width, item.height),
-                      onClaim: (): boolean => {
-                        if (this.claimed) { return false; }
-                        return this.claimDocumentWidget(item.widget);
-                      } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                  }
-                } else if (item.widget.kind === 'message-giveaway') {
-                  DrawnGiveawayMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
-                    onClaim: (): boolean => {
-                      if (this.claimed) { return false; }
-                      return this.claimDocumentWidget(item.widget);
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'message-gift') {
-                  DrawnGiftMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
-                    onClaim: (): boolean => {
-                      if (this.claimed) { return false; }
-                      return this.claimDocumentWidget(item.widget);
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'message-paid-media') {
-                  DrawnPaidMediaMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget,
-                    boxWidth: item.width, pending: this.rowData.paidMediaPending, chatId: this.rowData.chatId,
-                    onClaim: (): boolean => {
-                      if (this.claimed) { return false; }
-                      return this.claimDocumentWidget(item.widget);
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'message-game') {
-                  DrawnGameMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
-                    onClaim: (): boolean => {
-                      if (this.claimed) { return false; }
-                      return this.claimDocumentWidget(item.widget);
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'message-dice') {
-                  DrawnDiceMessage({ msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width,
-                    chatId: this.rowData.chatId, selectionActive: this.rowData.selectionActive,
-                    onClaim: (): boolean => {
-                      if (this.claimed) { return false; }
-                      return this.claimDocumentWidget(item.widget);
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'message-video-note') {
-                  DrawnVideoNoteMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width, sendState: this.sendState,
-                    onClaim: (): boolean => {
-                      if (this.claimed) { return false; }
-                      return this.claimDocumentWidget(item.widget);
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'message-checklist') {
-                  DrawnChecklistMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget,
-                    chatId: this.rowData.chatId, boxWidth: item.width,
-                    onClaim: (): boolean => {
-                      if (this.claimed) { return false; }
-                      return this.claimDocumentWidget(item.widget);
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'message-poll') {
-                  DrawnPollMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget,
-                    boxWidth: item.width, nowSec: this.nowSec,
-                    onClaim: (): boolean => {
-                      if (this.claimed) { return false; }
-                      return this.claimDocumentWidget(item.widget);
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'message-location') {
-                  DrawnLocationMessage({ widget: item.widget, msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width,
-                    chatId: this.rowData.chatId, nowSec: this.nowSec,
-                    sharing: this.rowData.liveSharingId !== 0 && this.rowData.liveSharingId === this.rowGroup.head.id,
-                    onClaim: (): boolean => {
-                      if (this.claimed) { return false; }
-                      return this.claimDocumentWidget(item.widget);
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'message-contact') {
-                  DrawnContactMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
-                    onClaim: (): boolean => {
-                      if (this.claimed) { return false; }
-                      return this.claimDocumentWidget(item.widget);
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'message-voice') {
-                  DrawnVoiceMessage({ msg: this.rowGroup.head, actions: this.actions, boxWidth: item.width, sendState: this.sendState,
-                    onClaim: (): boolean => {
-                      if (this.claimed) { return false; }
-                      return this.claimDocumentWidget(item.widget);
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'message-audio') {
-                  DrawnAudioMessage({ widget: item.widget, msg: this.rowGroup.head, data: this.rowData, actions: this.actions, boxWidth: item.width,
-                    onClaim: (): boolean => {
-                      if (this.claimed) { return false; }
-                      return this.claimDocumentWidget(item.widget);
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'message-file') {
-                  DrawnFileMessage({ msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width, sendState: this.sendState,
-                    onClaim: (): boolean => {
-                      if (this.claimed) { return false; }
-                      return this.claimDocumentWidget(item.widget);
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'video-embed') {
-                  DrawnDocumentVideo({ widget: item.widget, boxWidth: item.width, boxHeight: item.height,
-                    onClaim: (): boolean => this.claimDocumentWidget(item.widget),
-                    onOpen: (url: string): void => { this.actions.onLinkTap(url, true); } })
-                    .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'html-embed') {
-                  DrawnDocumentEmbed({ widget: item.widget, boxWidth: item.width, boxHeight: item.height,
-                    onMetricsChanged: (): void => {
-                      if (this.presentationReady() && this.plan?.caption?.widgetOwners.has(item.widget)) { this.mathRevision++; }
-                    },
-                    onClaim: (): boolean => this.claimDocumentWidget(item.widget),
-                    onOpen: (url: string): void => { this.actions.onLinkTap(url, true); } })
-                    .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'article-image') {
-                  DrawnDocumentArticleImage({ widget: item.widget })
-                    .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'post-author' || item.widget.kind === 'chat-link') {
-                  DrawnDocumentPostAuthor({ widget: item.widget, boxWidth: item.width,
-                    onOpen: (): void => {
-                      if (this.claimDocumentWidget(item.widget) && item.widget.url !== undefined && item.widget.url !== '') {
-                        this.actions.onLinkTap(item.widget.url, true);
-                      }
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'map') {
-                  DrawnDocumentMap({ widget: item.widget, chatId: this.rowData.chatId, boxWidth: item.width, boxHeight: item.height,
-                    onOpen: (): void => {
-                      if (this.claimDocumentWidget(item.widget)) { this.actions.onLocationOpen(item.widget.latitude, item.widget.longitude, '', true); }
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'audio') {
-                  DrawnDocumentAudio({ widget: item.widget, preparedCard: documentCardFor(item), audioItems: this.plan?.caption?.source.audioItems, chatId: this.rowData.chatId, messageId: this.rowGroup.head.id, boxWidth: item.width,
-                    onClaim: (): boolean => this.claimDocumentWidget(item.widget) })
-                    .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else if (item.widget.kind === 'voice') {
-                  DrawnDocumentVoice({ widget: item.widget, preparedCard: documentCardFor(item), boxWidth: item.width,
-                    onClaim: (): boolean => this.claimDocumentWidget(item.widget) })
-                    .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                } else {
-                  DrawnDocumentFile({ widget: item.widget, preparedCard: documentCardFor(item), chatId: this.rowData.chatId, messageId: this.rowGroup.head.id, boxWidth: item.width,
-                    onClaim: (): boolean => this.claimDocumentWidget(item.widget) })
-                    .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
-                }
-              }, (item: DrawnDocumentWidgetPlacement): string => `${this.rowData.chatId}:${this.rowGroup.head.id}:${item.widget.key}`);
-            }
-            if ((this.plan?.caption?.media.length ?? 0) > 0) {
-            ForEach(this.plan?.caption?.media ?? this.emptyDocumentMedia, (asset: DrawnDocumentMediaPlacement) => {
-              if (asset.slides !== undefined) {
-                DrawnDocumentGallery({ slides: asset.slides, boxWidth: asset.width, boxHeight: asset.height,
-                  onOpen: (media: DrawnDocumentMedia): void => { this.openDocumentMedia(media); } })
-                  .position({ x: (this.plan?.captionX ?? 0) + asset.x, y: (this.plan?.captionY ?? 0) + asset.y });
-              } else {
-              DrawnDocumentMediaIsland({ media: asset.media, boxWidth: asset.width, boxHeight: asset.height,
-                onOpen: (): void => {
-                  this.openDocumentMedia(asset.media);
-                } })
-                .position({ x: (this.plan?.captionX ?? 0) + asset.x, y: (this.plan?.captionY ?? 0) + asset.y });
-              }
-            }, (asset: DrawnDocumentMediaPlacement): string => `${this.rowData.chatId}:${this.rowGroup.head.id}:${asset.key}`);
-            }
-            if ((this.plan?.caption?.tables.length ?? 0) > 0) {
-            ForEach(this.plan?.caption?.tables ?? this.emptyTables, (table: DrawnTablePlacement) => {
-              DrawnTableIsland({ msg: this.rowGroup.head, placement: table, onMetricsChanged: (): void => { this.mathRevision++; },
-                onClaimTouch: (): void => {
-                  if (!this.claimed && this.rowData.selectionActive) { this.actions.onToggleSelectedMessage(this.rowGroup.head.id); }
-                  this.claimed = true;
-                },
-                onLinkTap: (link: DrawnRichLink): void => {
-                  if (this.rowData.selectionActive) { this.claimed = true; this.actions.onToggleSelectedMessage(this.rowGroup.head.id); }
-                  else { this.claimed = true; if (!this.openDocumentLink(link.url)) { this.actions.onLinkTap(link.url, link.hidesUrl); } }
-                } })
-                .position({ x: (this.plan?.captionX ?? 0) + table.x, y: (this.plan?.captionY ?? 0) + table.y });
-            }, (table: DrawnTablePlacement): string => table.key);
             }
           }.width(this.plan?.width ?? 0).height(this.plan?.height ?? 0)
             .id(this.rowGroup.head.richBlocks !== undefined ? this.documentNodeId() : undefined)

@@ -20,7 +20,7 @@ import { PlaySlotDriver } from './PlaySlotDriver';
 import { ChatBackgroundState } from '../../store/ChatBackgroundStore';
 import { MusicQueue } from '../../services/MusicQueue';
 import { AlbumGroupDataSource, clampPrefetchRange, PrefetchRange, rowIdentity, repeatRowKey, reuseUnchangedRows, sameRowArray } from './AlbumGroupDataSource';
-import { BasicPrefetcher, UIContext } from '@kit.ArkUI';
+import { BasicPrefetcher, LengthMetrics, UIContext } from '@kit.ArkUI';
 import { HeaderIdentitySession } from './HeaderIdentitySession';
 import { FloatingDateState } from './FloatingDateOverlay';
 import { firstRowBelowChrome, floatDateNeedsRescan, floatDateScrollMovedEnough } from '../../util/floatDateGate';
@@ -316,6 +316,15 @@ export class ChatTimelineSession {
   curBottomId: number = 0;
 
   resumeDividerId: number = 0;
+
+  // Target message id when opening a chat directly to a linked message or
+  // thread root. Keeps initial staging and settleInitialTimelineAnchor()
+  // aligned to the jump target instead of falling through to Edge.Bottom.
+  initialJumpTargetId: number = 0;
+
+  // Monotonic counter bumped on TouchType.Down so post-layout jump settle
+  // timers immediately yield the moment the user touches the timeline.
+  userTouchSeq: number = 0;
 
   // One-shot gate for loading older pages: a fast fling to the very top used to
   // chain-load page after page. A prepend itself moves start out of the trigger
@@ -909,6 +918,8 @@ export class ChatTimelineSession {
 
   handleTimelineTouch(e: TouchEvent): void {
     if (e.type === TouchType.Down) {
+      this.userTouchSeq++;
+      this.initialJumpTargetId = 0;
       this.bottomLayoutFollowSeq++;
       this.bottomFollowPending = false;
       this.initialViewportFillEnabled = false;
@@ -1383,6 +1394,19 @@ export class ChatTimelineSession {
     }
   }
 
+  // First row whose bottom edge is actually visible below the floating top
+  // chrome. curStartIdx from onScrollIndex often points at a row tucked behind
+  // the translucent header (0..headerChromeHeight), which shifts when chrome
+  // height changes (e.g. pinned banner).
+  firstVisibleRowIndex(): number {
+    if (this.curStartIdx < 0 || this.curStartIdx >= this.groups.length) {
+      return -1;
+    }
+    const chromeH: number = this.bindings !== null ? this.bindings.headerChromeHeight() : 0;
+    return firstRowBelowChrome(this.curStartIdx, this.groups.length, chromeH,
+      (index: number): number => this.rowBottomVp(index));
+  }
+
   private preImeStackFromEnd: boolean = true;
 
   stackFromEndWanted(): boolean {
@@ -1541,6 +1565,20 @@ export class ChatTimelineSession {
 
   initialMessageStageTarget(groups: AlbumGroup[]): InitialMessageStageTarget {
     const timelineStore: MessageStore | null = this.bindings!.store();
+    if (this.initialJumpTargetId > 0) {
+      const jumpIndex: number = groupIndexOf(groups, this.initialJumpTargetId);
+      if (jumpIndex >= 0) {
+        // Materialize rows around the linked message before revealing the
+        // initial mask so deferred placeholder heights above the target do not
+        // expand later and push the viewport onto the next message.
+        const startIndex: number = Math.max(0, jumpIndex - Math.min(jumpIndex, 8));
+        return {
+          anchorIndex: startIndex,
+          alignFromStart: true,
+          availableRows: Math.max(0, groups.length - startIndex)
+        };
+      }
+    }
     // A selected remembered position is a first-frame START anchor just like
     // unread, but it has no read-state semantics. Check it before asking the
     // store for firstUnreadId (which is correctly 0 in a fully-read chat).
@@ -1699,16 +1737,88 @@ export class ChatTimelineSession {
   }
 
   scrollToTimelineIndexAtY(index: number, itemY: number = 0): void {
-    this.scroller.scrollToIndex(index, false, ScrollAlign.START);
-    if (Number.isFinite(itemY) && Math.abs(itemY) > 0.5) {
-      // START puts the row at y=0. Restore the captured partial-row offset so
-      // leaving and reopening a chat returns to the same viewport geometry.
-      this.scroller.scrollBy(0, -itemY);
+    // ScrollAlign.START with .contentStartOffset(headerH) places row `index`
+    // at y = +headerH (verified on device in ScrollAnchorController.ets:321-339),
+    // NOT y = 0. Compensate with extraOffset = -targetY + headerH in one step
+    // so re-entering a chat does not drift upward by ~headerH (1 message) each time.
+    const headerH: number = this.bindings !== null ? this.bindings.headerChromeHeight() : 0;
+    const targetY: number = Number.isFinite(itemY) ? itemY : headerH;
+    const extra: number = -targetY + headerH;
+    try {
+      this.scroller.scrollToIndex(index, false, ScrollAlign.START, {
+        extraOffset: LengthMetrics.vp(extra)
+      });
+    } catch (_e) {
+      this.scroller.scrollToIndex(index, false, ScrollAlign.START);
+      if (Math.abs(extra) > 0.5) {
+        this.scroller.scrollBy(0, extra);
+      }
     }
+  }
+
+  // Post-layout residual check for jump and resume landings. Lazy List rows
+  // outside the initial viewport use estimated heights until measured; once
+  // laid out, a lightweight scrollBy(0, dy) aligns the exact target without
+  // forcing another full-list scrollToIndex re-measure.
+  correctJumpLanding(index: number, resume: boolean, itemY: number): boolean {
+    if (index < 0 || index >= this.groups.length) {
+      return false;
+    }
+    let rect: RectResult;
+    try {
+      rect = this.scroller.getItemRect(index);
+    } catch (_e) {
+      rect = { x: 0, y: 0, width: 0, height: 0 };
+    }
+    if (!(rect.width > 0) || !(rect.height > 0)) {
+      if (resume) {
+        this.scrollToTimelineIndexAtY(index, itemY);
+      } else {
+        this.scrollToJumpTarget(index);
+      }
+      return true;
+    }
+    const topInset: number = this.bindings !== null ? this.bindings.headerChromeHeight() : 0;
+    if (resume) {
+      const expectedY: number = Number.isFinite(itemY) ? itemY : topInset;
+      const dy: number = rect.y - expectedY;
+      if (Math.abs(dy) > 2) {
+        this.scroller.scrollBy(0, dy);
+        return true;
+      }
+      return false;
+    }
+    const bottomInset: number = this.bindings !== null ? this.bindings.bottomChromeH() : 0;
+    const screenH: number = this.bindings !== null ? this.bindings.screenH() : 0;
+    if (screenH <= topInset + bottomInset + 60) {
+      return false;
+    }
+    const visH: number = screenH - topInset - bottomInset;
+    let desiredY: number;
+    if (rect.height > visH * 0.75) {
+      // Tall message: show its top edge cleanly beneath the floating header.
+      desiredY = topInset + 16;
+    } else {
+      const desiredCenter: number = topInset + visH * 0.5;
+      desiredY = Math.max(topInset + 12, desiredCenter - rect.height * 0.5);
+    }
+    const dy: number = rect.y - desiredY;
+    if (Math.abs(dy) > 12) {
+      this.scroller.scrollBy(0, dy);
+      return true;
+    }
+    return false;
   }
 
   settleInitialTimelineAnchor(): void {
     if (!this.didInitialScroll || this.groups.length === 0) {
+      return;
+    }
+    if (this.initialJumpTargetId > 0) {
+      const jumpIndex: number = groupIndexOf(this.groups, this.initialJumpTargetId);
+      if (jumpIndex >= 0) {
+        this.correctJumpLanding(jumpIndex, false, 0);
+      }
       return;
     }
     if (this.resumeDividerId > 0) {
@@ -1956,14 +2066,16 @@ export class ChatTimelineSession {
       this.curStartIdx < 0 || this.curStartIdx >= this.groups.length) {
       return;
     }
+    const anchorIdx: number = this.firstVisibleRowIndex();
+    if (anchorIdx < 0 || anchorIdx >= this.groups.length) {
+      return;
+    }
     this.hiddenAtBottom = this.atBottom;
     this.hiddenNewestId = this.groups[this.groups.length - 1].head.id;
-    this.hiddenAnchorId = this.groups[this.curStartIdx].head.id;
-    try {
-      this.hiddenAnchorY = this.scroller.getItemRect(this.curStartIdx).y;
-    } catch (e) {
-      this.hiddenAnchorY = 0;
-    }
+    this.hiddenAnchorId = this.groups[anchorIdx].head.id;
+    const anchorY: number = this.anchorItemY(anchorIdx);
+    this.hiddenAnchorY = Number.isNaN(anchorY)
+      ? (this.bindings !== null ? this.bindings.headerChromeHeight() : 0) : anchorY;
   }
 
   resyncListAfterHidden(): void {

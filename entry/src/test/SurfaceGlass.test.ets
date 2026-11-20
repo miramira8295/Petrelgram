@@ -30,23 +30,33 @@ export default function surfaceGlassTest() {
       expect(surfaceGlassFill('#112233')).assertEqual('#112233');
       expect(bubbleGlassFill('#445566')).assertEqual('#445566');
     }));
-    it('light_surface_and_bubble_use_identical_rgba_at_every_level', 0, () => withSurfaceSettings((): void => {
+    it('light_glass_preserves_default_and_custom_bubble_hues_at_every_level', 0, () => withSurfaceSettings((): void => {
       AppStorage.setOrCreate(KEY_APP_DARK, false);
       AppStorage.setOrCreate(KEY_SURFACE_GLASS_ON, true); AppStorage.setOrCreate(KEY_BUBBLE_GLASS_ON, true);
       for (const level of [-2, -1, 0, 1, 2]) {
         AppStorage.setOrCreate(KEY_SURFACE_GLASS_LEVEL, level); AppStorage.setOrCreate(KEY_BUBBLE_GLASS_LEVEL, level);
         expect(surfaceGlassFillHex()).assertEqual(bubbleTintFillHex(false, level));
-        expect(surfaceGlassFill('#000000')).assertEqual(bubbleGlassFill('#000000'));
+        const alpha = surfaceGlassFillHex().substring(1, 3);
+        expect(bubbleGlassFill($r('app.color.bubble_out'))).assertEqual(`#${alpha}E1FFC7`);
+        expect(bubbleGlassFill($r('app.color.bubble_in'))).assertEqual(`#${alpha}FFFFFF`);
+        expect(bubbleGlassFill('#123456')).assertEqual(`#${alpha}123456`);
+        expect(bubbleGlassFill('#80123456')).assertEqual(`#${alpha}123456`);
         expect(surfaceGlassFillHex().substring(3)).assertEqual('FFFFFF');
       }
     }));
-    it('dark_surface_and_bubble_use_identical_rgba_at_every_level', 0, () => withSurfaceSettings((): void => {
+    it('dark_glass_preserves_default_and_custom_bubble_hues_at_every_level', 0, () => withSurfaceSettings((): void => {
       AppStorage.setOrCreate(KEY_APP_DARK, true);
       AppStorage.setOrCreate(KEY_SURFACE_GLASS_ON, true); AppStorage.setOrCreate(KEY_BUBBLE_GLASS_ON, true);
       for (const level of [-2, -1, 0, 1, 2]) {
         AppStorage.setOrCreate(KEY_SURFACE_GLASS_LEVEL, level); AppStorage.setOrCreate(KEY_BUBBLE_GLASS_LEVEL, level);
         expect(surfaceGlassFillHex()).assertEqual(bubbleTintFillHex(true, level));
-        expect(surfaceGlassFill('#000000')).assertEqual(bubbleGlassFill('#000000'));
+        const alpha = surfaceGlassFillHex().substring(1, 3);
+        expect(bubbleGlassFill($r('app.color.bubble_out'))).assertEqual(`#${alpha}2B5278`);
+        expect(bubbleGlassFill($r('app.color.bubble_in'))).assertEqual(`#${alpha}182533`);
+        expect(bubbleGlassFill('#112233')).assertEqual(`#${alpha}112233`);
+        expect(bubbleGlassFill(0xFF112233)).assertEqual(`#${alpha}112233`);
+        const other = $r('app.color.chat_bg');
+        expect(bubbleGlassFill(other) === other).assertTrue();
         expect(surfaceGlassFillHex().substring(3)).assertEqual('232E3C');
       }
     }));

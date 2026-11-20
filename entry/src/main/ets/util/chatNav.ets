@@ -5,13 +5,13 @@ import { logE } from './log';
 import { canPrefetchChat, prefetchInitialPage } from './chatPrefetch';
 import { getChatStore } from '../tdkit/Globals';
 import { ChatEntry } from '../store/ChatEntry';
-import { chatKey, decideChatPush, ChatPushDecision, PushOrigin, StackFrame } from './splitRouting';
+import { decideChatPush, ChatPushDecision, PushOrigin, StackFrame } from './splitRouting';
 import { NavStackLike, snapshotOf, stackOf } from './navStacks';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, KEY_WINDOW_PORTRAIT, WIDTH_BP_SM, isSplitByBreakpoint
 } from './layoutBreakpoint';
 import { setChatListRenderActive } from './chatListRenderGate';
-import { routeTopicId } from './messageTopicScope';
+import { routeScopeKey } from './messageTopicScope';
 
 // 聊天详情页目的地的名字。此前十个调用点各自写了一遍这个字符串、各自直接
 // pushUrl——谁也不检查栈里是否已经有一个同会话的详情页，于是通知、消息里的
@@ -48,14 +48,12 @@ function numberField(params: Object | undefined, key: string): number {
 }
 
 
-// 会话的实例键：param 里塞的是 chatId / forumTopicId 两个数字。注意话题字段
-// 叫 forumTopicId 而不是 topicId——十来个调用点塞的都是这个名字，别改。
+// A chat, each discussion thread and each typed topic own distinct stack frames.
 function chatFrameKey(name: string, param: Object | undefined): string {
   if (name !== CHAT_DEST_NAME || param === undefined) {
     return '';
   }
-  return chatKey(numberField(param, 'chatId'),
-    routeTopicId(param as Record<string, Object> | undefined));
+  return `${numberField(param, 'chatId')}:${routeScopeKey(param as Record<string, Object>)}`;
 }
 
 // 打开会话详情页。这是**所有**会话入口的唯一漏斗（通知、深链、搜索结果、
@@ -127,7 +125,7 @@ export function navigateToChat(
   AppStorage.setOrCreate<number>(KEY_MAIN_TAB, CHAT_TAB_INDEX);
   const target: StackFrame = {
     name: CHAT_DEST_NAME,
-    key: chatKey(numberField(params, 'chatId'), routeTopicId(params))
+    key: `${numberField(params, 'chatId')}:${routeScopeKey(params)}`
   };
   // 允许同时开多个会话窗口，但同一个会话只能有一个——规则在 splitRouting 的
   // decideChatPush。已经开着的会话不再新开一层，而是出栈回到它，
@@ -149,7 +147,7 @@ export function navigateToChat(
   // 原来的位置（issue #80、#102）。push 那条不用管，它本来就把参数带进去了。
   const jumpTo: number = numberField(params, 'jumpTo');
   if (decision.action === 'skip') {
-    requestChatJump(numberField(params, 'chatId'), jumpTo);
+    requestChatJump(numberField(params, 'chatId'), jumpTo, routeScopeKey(params));
     return Promise.resolve();
   }
   if (decision.action === 'popTo') {
@@ -159,7 +157,7 @@ export function navigateToChat(
       stack.pop(false);
     }
     // 出栈之后再发：那一页这时才在眼前，滚动落点也才量得准。
-    requestChatJump(numberField(params, 'chatId'), jumpTo);
+    requestChatJump(numberField(params, 'chatId'), jumpTo, routeScopeKey(params));
     return Promise.resolve();
   }
   // onNavBarStateChange(false) arrives after HdsNavigation has started the

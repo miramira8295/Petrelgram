@@ -41,10 +41,11 @@ ctx.__Common__=new Proxy({}, {get:()=>()=>{}});
 ctx.Row=new Proxy({}, {get:(_t,key)=>(...args)=>{if(key==='drawModifier')paintOrder.push('foreground');}});
 const host=Object.create(ctx.DrawnMessageRow.prototype);
 for(const [key,value] of Object.entries({plan,rowGroup:g,rowData:data,kind:'text',sendState:'sent',views:'',env:{},
-  actions:{},interaction:{},jumpFocus:0,claimed:false,deleteCaptureSupported:false,footerPaintKey:'',
+  actions:{},a11y:{active:false},interaction:{},jumpFocus:0,claimed:false,deleteCaptureSupported:false,footerPaintKey:'',
   canvasAttributes:{bind:()=>({})},painter:{bind:()=>({})},foreground:{bind:()=>({})},
   menuFx:{preview:()=>({}),menu:()=>({})},menu:()=>{},canDragMessage:()=>false,
   observeComponentCreation2:fn=>{observers.push(fn);fn(observers.length,true);},
+  forEachUpdateFunction:(_id,items,fn)=>items.forEach(fn),
   ifElseBranchUpdateFunction:(_id,fn)=>fn(),updateStateVarsOfChildByElmtId:(_id,params)=>updates.push(params),
   presentationReady:()=>true}))Object.defineProperty(host,key,{value,writable:true,configurable:true});
 host.canvasContent();assert.deepEqual(paintOrder,['sticker','foreground']);

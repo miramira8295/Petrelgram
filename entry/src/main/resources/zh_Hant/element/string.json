@@ -13335,6 +13335,14 @@
     {
       "name": "chat_settings_bubble_tint_sub",
       "value": "調節底色不透明度，不使用背景模糊"
+    },
+    {
+      "name": "cl_archive_pull",
+      "value": "下拉顯示封存對話"
+    },
+    {
+      "name": "cl_archive_release",
+      "value": "放開顯示封存對話"
     }
   ]
 }

@@ -13,7 +13,8 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
 import { contentSideGutter } from '../../util/contentWidth';
-import { BLUR_MAX_VP, edgeBlurStops, edgeBlurStopsEx, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import { ScrollEdgeBlurBinder } from '../../util/scrollEdgeBlurModifier';
 import {
   EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
   KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
@@ -26,6 +27,7 @@ const COLOR_DANGER: string = '#E5484D';
 @Entry
 @Component
 struct TwoStepVerificationPage {
+  private edgeBlur: ScrollEdgeBlurBinder = new ScrollEdgeBlurBinder();
   @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
   @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
   @StorageProp(KEY_EDGE_BLUR_BOTTOM_ON) private edgeBlurBottomOn: boolean = EDGE_BLUR_BOTTOM_ON_DEFAULT;
@@ -480,10 +482,7 @@ struct TwoStepVerificationPage {
           });
         }
         .align(Alignment.Top).width('100%').height('100%').scrollBar(BarState.Off)
-        .linearGradientBlur(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), {
-          fractionStops: edgeBlurStopsEx(this.listViewH, 780, 0, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
-          direction: GradientDirection.Bottom
-        })
+        .attributeModifier(this.edgeBlur.bind(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), this.listViewH, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
         .clip(false)
         .onAreaChange((_o: Area, n: Area): void => {
           const h: number = n.height as number;

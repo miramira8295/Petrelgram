@@ -259,7 +259,9 @@ export struct ChatHeader {
 
   @Builder
   titleAccessory() {
-    if (this.header.state === 'loading' || this.header.profileOpening) {
+    // 跳转资料页改为同步 Navigation.pushPath，不再借 profileOpening 在退场顶栏挂
+    // LoadingProgress——那会在点击首帧触发整栏重绘，并在 600ms 推页期间持续脏绘底层页。
+    if (this.header.state === 'loading') {
       LoadingProgress().width(15).height(15).color(this.accent()).margin({ left: 5 });
     } else if (emojiStatusVisible(this.header.emojiPath, this.header.emojiUid)) {
       if (!this.animationsAllowed) {

@@ -10,6 +10,8 @@ import { NativeGlassHost } from '../chat/NativeGlassHost';
 
 @Component
 export struct TopGlassAction {
+  @Prop embedded: boolean = false;
+  @Prop plainFill: ResourceColor = Color.Transparent;
   @Prop actionSize: number = 42;
   @Prop icon: string = 'sys.symbol.more';
   @Prop busy: boolean = false;
@@ -64,13 +66,15 @@ export struct TopGlassAction {
 
   build() {
     Stack() {
-      NativeGlassHost({
-        hostWidth: this.actionSize,
-        hostHeight: this.actionSize,
-        hostRadius: this.actionSize / 2,
-        dark: this.dark,
-        surface: 'control'
-      });
+      if (!this.embedded) {
+        NativeGlassHost({
+          hostWidth: this.actionSize,
+          hostHeight: this.actionSize,
+          hostRadius: this.actionSize / 2,
+          dark: this.dark,
+          surface: 'control'
+        });
+      }
       Row() {
         if (this.busy) {
           LoadingProgress().width(20).height(20).color(this.accentColor);
@@ -85,6 +89,8 @@ export struct TopGlassAction {
     }
     .width(this.actionSize)
     .height(this.actionSize)
+    .backgroundColor(this.embedded ? this.plainFill : Color.Transparent)
+    .borderRadius(this.actionSize / 2)
     .opacity(this.pressed ? 0.75 : 1)
     .scale({ x: this.pressed ? 0.92 : 1, y: this.pressed ? 0.92 : 1 })
     // 位移放在 .animation() 之后：上面按下/抬起走 130ms 缓动，位移必须即时跟手。

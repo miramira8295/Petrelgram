@@ -13331,6 +13331,14 @@
     {
       "name": "link_copied_internal",
       "value": "پیوند داخلی کپی شد (فقط در این برنامه)"
+    },
+    {
+      "name": "cl_archive_pull",
+      "value": "برای نمایش بایگانی به پایین بکشید"
+    },
+    {
+      "name": "cl_archive_release",
+      "value": "برای نمایش بایگانی رها کنید"
     }
   ]
 }

@@ -1,10 +1,14 @@
 import { image } from '@kit.ImageKit';
 import { AvLoopVideo } from './AvLoopVideo';
+import { DrawnImageReceiver } from './DrawnImageReceiver';
 import { acquireAvatarFrames, trimAvatarFrames } from '../../services/AvatarFrameStore';
 import { AvatarFrameAsset, AvatarFrameLease } from '../../util/avatarFramePool';
 import { chatEnv, ChatEnvMirror } from '../../util/chatEnvMirror';
+import { stickerFrameClock } from '../../util/stickerFrameClock';
+import { alphaClipFps, alphaPlayableIndex } from '../../util/webm/alphaPlayback';
 
-// 只用于聊天发送者头像。短片缓存成功后交给系统ImageAnimator，不在JS逐帧刷新。
+// 只用于聊天发送者头像。短片帧缓存完成后通过 DrawModifier + 共享 displaySync 时钟播放，
+// 避免 ImageAnimator 每换一帧触发父容器 Measure/Layout 与整页 onAreaChange 扫描。
 @ComponentV2
 export struct AvatarFrameView {
   @Param videoPath: string = '';
@@ -12,15 +16,21 @@ export struct AvatarFrameView {
   @Param paused: boolean = false;
   @Param onWorking: () => void = (): void => {};
   @Param onFailed: () => void = (): void => {};
-  @Local private frames: ImageFrameInfo[] = [];
   @Local private fallback: boolean = false;
-  @Local private epoch: number = 0;
   private env: ChatEnvMirror = chatEnv;
-  // 普通字段保持单调；@Local会在复用时重置，不能用它拒绝旧异步结果。
+  private receiver: DrawnImageReceiver = new DrawnImageReceiver();
+  // 普通字段保持单调；@Local 会在复用时重置，不能用它拒绝旧异步结果。
   private generation: number = 0;
   private active: boolean = false;
   private loading: boolean = false;
   private lease: AvatarFrameLease<image.PixelMap> | null = null;
+  private asset: AvatarFrameAsset<image.PixelMap> | null = null;
+  private timesMs: number[] = [];
+  private durationMs: number = 0;
+  private startedAt: number = 0;
+  private shownIndex: number = -1;
+  private reportedWorking: boolean = false;
+  private unsubClock: (() => void) | null = null;
 
   aboutToAppear(): void { this.active = true; this.reset(); }
   aboutToDisappear(): void { this.active = false; this.clear(); }
@@ -40,28 +50,101 @@ export struct AvatarFrameView {
   @Monitor('paused', 'playbackEnvironmentKey')
   onPlaybackChanged(): void {
     if (!this.env.appIsForeground) { trimAvatarFrames(); }
-    if (this.active && !this.paused && this.env.appIsForeground) { this.load(); }
-  }
-
-  private reset(): void { this.clear(); this.load(); }
-  private clear(): void {
-    this.epoch = ++this.generation;
-    const held = this.lease;
-    this.lease = null;
-    const hadFrames = this.frames.length > 0;
-    this.frames = [];
-    this.fallback = false;
-    this.loading = false;
-    if (held !== null) {
-      // ImageAnimator撤下发生在下一帧，不能在它仍持有PixelMap时允许LRU释放。
-      if (hadFrames) {
-        setTimeout((): void => { held.release(); if (!chatEnv.appIsForeground) { trimAvatarFrames(); } }, 200);
-      } else { held.release(); }
+    if (this.paused || !this.env.appIsForeground) {
+      this.stopClock();
+      return;
+    }
+    if (this.active) {
+      if (this.asset !== null) {
+        this.startClock();
+      } else {
+        this.load();
+      }
     }
   }
 
+  private reset(): void { this.clear(); this.load(); }
+
+  private stopClock(): void {
+    if (this.unsubClock !== null) {
+      this.unsubClock();
+      this.unsubClock = null;
+    }
+  }
+
+  private clear(): void {
+    this.generation++;
+    this.stopClock();
+    this.receiver.setPixels(undefined);
+    const held = this.lease;
+    this.lease = null;
+    this.asset = null;
+    this.timesMs = [];
+    this.durationMs = 0;
+    this.startedAt = 0;
+    this.shownIndex = -1;
+    this.reportedWorking = false;
+    this.fallback = false;
+    this.loading = false;
+    if (held !== null) {
+      held.release();
+      if (!chatEnv.appIsForeground) { trimAvatarFrames(); }
+    }
+  }
+
+  private drawFrame(index: number): void {
+    const asset = this.asset;
+    if (asset === null || index < 0 || index >= asset.frames.length || index === this.shownIndex) {
+      return;
+    }
+    this.shownIndex = index;
+    try {
+      this.receiver.bind(this.getUIContext(), this.avatarSize, this.avatarSize, ImageFit.Cover, true);
+      this.receiver.setPixels(asset.frames[index]);
+      if (!this.reportedWorking) {
+        this.reportedWorking = true;
+        this.onWorking();
+      }
+    } catch (_e) {
+      this.stopClock();
+    }
+  }
+
+  private startClock(): void {
+    this.stopClock();
+    const asset = this.asset;
+    if (!this.active || asset === null || asset.frames.length === 0 || this.paused || !this.env.appIsForeground) {
+      return;
+    }
+    if (this.shownIndex < 0) {
+      this.drawFrame(0);
+    }
+    if (asset.frames.length < 2) {
+      return;
+    }
+    this.startedAt = 0;
+    const fps = alphaClipFps(asset.frames.length, this.durationMs);
+    this.unsubClock = stickerFrameClock.subscribe(this.getUIContext(), fps,
+      (timestampMs: number, targetMs: number): void => {
+        if (!this.active || this.asset === null || this.paused || !this.env.appIsForeground) {
+          this.stopClock();
+          return;
+        }
+        if (this.startedAt === 0) {
+          this.startedAt = timestampMs;
+        }
+        const total = Math.max(1, this.durationMs);
+        let elapsed = targetMs - this.startedAt;
+        if (elapsed >= total) {
+          elapsed = elapsed % total;
+          this.startedAt = targetMs - elapsed;
+        }
+        this.drawFrame(alphaPlayableIndex(this.timesMs, elapsed, this.asset.frames.length));
+      });
+  }
+
   private load(): void {
-    if (!this.active || this.loading || this.fallback || this.frames.length > 0 ||
+    if (!this.active || this.loading || this.fallback || this.asset !== null ||
       this.paused || !this.env.appIsForeground || this.videoPath === '') { return; }
     this.loading = true;
     const token = this.generation;
@@ -72,38 +155,37 @@ export struct AvatarFrameView {
         held.ready.then((asset: AvatarFrameAsset<image.PixelMap> | null): void => {
           if (!this.active || token !== this.generation) { return; }
           this.loading = false;
-          if (asset === null) {
+          if (asset === null || asset.frames.length === 0) {
             held.release();
             this.lease = null;
             this.fallback = true;
             return;
           }
-          const frames: ImageFrameInfo[] = [];
+          const times: number[] = [];
+          let acc = 0;
           for (let i = 0; i < asset.frames.length; i++) {
-            frames.push({ src: asset.frames[i] as PixelMap, duration: asset.durationsMs[i] });
+            times.push(acc);
+            acc += Math.max(16, asset.durationsMs[i] ?? 33);
           }
-          this.frames = frames;
+          this.timesMs = times;
+          this.durationMs = Math.max(1, acc);
+          this.asset = asset;
+          this.shownIndex = -1;
+          this.startClock();
         });
       });
   }
 
   build() {
     Stack() {
-      if (this.frames.length > 0) {
-        // images不支持动态换源，换素材/复用时用新epoch明确创建新动画节点。
-        ForEach([this.epoch], (_epoch: number) => {
-          ImageAnimator()
-            .images(this.frames)
-            .state(this.paused || !this.env.appIsForeground ? AnimationStatus.Paused : AnimationStatus.Running)
-            .iterations(-1)
-            .fillMode(FillMode.Forwards)
-            .onStart((): void => { this.onWorking(); })
-            .width(this.avatarSize).height(this.avatarSize);
-        }, (epoch: number): string => `${epoch}`);
-      } else if (this.fallback) {
+      if (this.fallback) {
         AvLoopVideo({ videoPath: this.videoPath, boxWidth: this.avatarSize, boxHeight: this.avatarSize,
           loop: true, muted: true, paused: this.paused || !this.env.appIsForeground,
           onWorking: this.onWorking, onFailed: this.onFailed });
+      } else {
+        Row()
+          .width(this.avatarSize).height(this.avatarSize)
+          .drawModifier(this.receiver);
       }
     }.width(this.avatarSize).height(this.avatarSize);
   }

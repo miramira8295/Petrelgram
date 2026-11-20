@@ -16,7 +16,8 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
 import { readableContentWidth } from '../../util/contentWidth';
-import { BLUR_MAX_VP, edgeBlurStops, edgeBlurStopsEx, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import { ScrollEdgeBlurBinder } from '../../util/scrollEdgeBlurModifier';
 import {
   EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
   KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
@@ -45,6 +46,7 @@ function storageChatKey(item: StorageChatItem): string {
 @Entry
 @Component
 struct StorageUsagePage {
+  private edgeBlur: ScrollEdgeBlurBinder = new ScrollEdgeBlurBinder();
   @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
   @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
   @StorageProp(KEY_EDGE_BLUR_BOTTOM_ON) private edgeBlurBottomOn: boolean = EDGE_BLUR_BOTTOM_ON_DEFAULT;
@@ -383,10 +385,7 @@ struct StorageUsagePage {
       // 上沿让出状态栏 + 56vp header，否则第一张卡会被 header 压住。
       .contentStartOffset(this.topSafe + 56 + 6)
       .contentEndOffset(this.bottomSafe + 24)
-      .linearGradientBlur(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), {
-        fractionStops: edgeBlurStopsEx(this.listViewH, 780, 0, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
-        direction: GradientDirection.Bottom
-      })
+      .attributeModifier(this.edgeBlur.bind(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), this.listViewH, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
       .clip(false)
       .onAreaChange((_o: Area, n: Area): void => {
         const h: number = n.height as number;

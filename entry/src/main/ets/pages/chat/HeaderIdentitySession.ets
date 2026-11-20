@@ -633,6 +633,15 @@ export class HeaderIdentitySession {
     } else if (this.identityResolved || (store !== null && store.getIsGroup())) {
       openUserProfile = false;
       params = { 'chatId': this.host.chatId() };
+      if (this.title !== '') {
+        params['prefillTitle'] = this.title;
+        params['prefillInitials'] = this.initials;
+        params['prefillAvatarPath'] = this.avatarPath;
+        params['prefillAvatarAnimPath'] = this.avatarAnimPath;
+        params['prefillSubtitle'] = this.subtitle;
+        params['prefillIsChannel'] = this.kind === 'channel';
+        params['prefillIsMuted'] = this.isMuted;
+      }
     } else {
       showToast($r('app.string.cp_profile_loading'), 1200);
       this.resolveIdentity();

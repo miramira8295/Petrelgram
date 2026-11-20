@@ -1,3 +1,5 @@
+import { HomeConversationPanel } from '../chatlist/HomeConversationPanel';
+import { homeCardMarginVp } from '../../util/pageMargin';
 import { showToast } from '../../util/toast';
 import { ShatterDeleteOverlay } from '../common/ShatterDeleteOverlay';
 import { SearchChannelPicker } from './SearchChannelPicker';
@@ -24,20 +26,19 @@ import {
   COLOR_PRIMARY,
   COLOR_TEXT_PRIMARY,
   COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
-  mainCardFill, mainPageFill, COLOR_ON_PRIMARY, KEY_APP_DARK
+  mainCardFill, mainPageFill, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import {
   KEY_APP_BG_ON, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_FORCE_SINGLE_COLUMN
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
-import { SystemGlassSurface } from '../chat/SystemGlassSurface';
-import { BLUR_MAX_VP, edgeBlurStops, edgeBlurStopsEx, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import { edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import { ScrollEdgeBlurBinder } from '../../util/scrollEdgeBlurModifier';
 import {
-  EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
-  KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
-  KEY_EDGE_BLUR_TOP_ON, edgeBlurOtherBottomOn, edgeBlurOtherTopOn
+  EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT,
+  KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM,
+  edgeBlurOtherBottomOn
 } from '../../util/edgeBlurSetting';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import {
@@ -159,21 +160,17 @@ export function GlobalSearchPageBuilder(): void {
 
 @Component
 export struct GlobalSearchPage {
+  private edgeBlur: ScrollEdgeBlurBinder = new ScrollEdgeBlurBinder();
   @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
-  @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
   @StorageProp(KEY_EDGE_BLUR_BOTTOM_ON) private edgeBlurBottomOn: boolean = EDGE_BLUR_BOTTOM_ON_DEFAULT;
-  @StorageProp(KEY_EDGE_BLUR_OTHER_TOP) private edgeBlurOtherTop: string = EDGE_BLUR_FOLLOW;
   @StorageProp(KEY_EDGE_BLUR_OTHER_BOTTOM) private edgeBlurOtherBottom: string = EDGE_BLUR_FOLLOW;
   // 本页在栈里的位置由外壳给（NavDestination 的 onReady），关闭 = 弹自己。
   private navStack: NavPathStack | null = null;
   private readonly chatDestToken: number = allocChatDestToken();
-  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
-  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
-  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
-  @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
   @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
   @StorageProp('topSafeHeight') topSafe: number = 0;
+  @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // 窗口宽（不是屏幕宽），限宽用。平板上把结果列拉满 2880px，头像贴最左、时间
   // 贴最右，眼睛要横扫整屏才读得完一行（设备截图实测）。
   @StorageProp('screenWidthVp') screenW: number = 360;
@@ -187,7 +184,7 @@ export struct GlobalSearchPage {
   // 下载列表和应用榜按 query 过滤，query 变了要同步它们的数据源（见 syncQueryFilteredData）。
   @State @Watch('syncQueryFilteredData') query: string = '';
   @State @Watch('syncTabFilteredData') tab: number = SEARCH_TAB_RECENT;
-  // 「最近」页列表滚到悬浮栏底下时雾化，需要列表自身高度。
+  // 底部边缘虚化按裁剪后的列表视口归一化。
   @State private listViewH: number = 0;
   @State objectScope: string = 'all';
   @State messageScope: string = 'all';
@@ -271,7 +268,7 @@ export struct GlobalSearchPage {
 
   @Styles
   resultRowNormalStyle() {
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
+    .backgroundColor(Color.Transparent)
   }
 
   @Styles
@@ -1425,7 +1422,7 @@ export struct GlobalSearchPage {
       .layoutWeight(1)
       .height(48)
       .padding({ left: 13, right: 8 })
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
+    .backgroundColor(Color.Transparent)
       .borderRadius(24)
       .border({
         width: this.searchFocused ? 1.5 : 0.5,
@@ -1593,8 +1590,8 @@ export struct GlobalSearchPage {
     }
     .width('100%')
     .margin({ top: 8 })
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-    .borderRadius(18)
+    .backgroundColor(Color.Transparent)
+    .borderRadius(0)
     .clip(true)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: 5 }))
@@ -1661,7 +1658,7 @@ export struct GlobalSearchPage {
         ListItem() {
           Stack({ alignContent: Alignment.TopStart }) {
           Row() {
-            SearchChatRow({
+            SearchChatRow({ continuousPanel: true,
               query: this.query,
               chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
               initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
@@ -1681,7 +1678,7 @@ export struct GlobalSearchPage {
             .accessibilityText(str('delete') + ' ' + str('gs_recent') + ' ' + r.title)
             .onClick((): void => { this.removeRecent(r.chatId); });
           }.width('100%')
-          .backgroundColor(mainCardFill(this.appWallpaperOn, false))
+          .backgroundColor(Color.Transparent)
           .id('search-delete-recent-' + r.chatId)
           .opacity(this.deleteSnapshotReady && this.deletingRecentKey === 'recent:' + r.chatId ? 0 : 1);
           if (this.deleteEffectVisible && this.deletingRecentKey === 'recent:' + r.chatId) {
@@ -1704,9 +1701,9 @@ export struct GlobalSearchPage {
     }
     .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
     .width('100%')
-    .margin({ top: 10, bottom: 10 })
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-    .borderRadius(18)
+    .margin({ top: 0, bottom: 0 })
+    .backgroundColor(Color.Transparent)
+    .borderRadius(0)
     .clip(!this.deleteEffectVisible)
     .transition(TransitionEffect.asymmetric(
       TransitionEffect.IDENTITY,
@@ -1755,7 +1752,7 @@ export struct GlobalSearchPage {
         ListItem() {
           Stack({ alignContent: Alignment.TopStart }) {
           Row() {
-            SearchChatRow({
+            SearchChatRow({ continuousPanel: true,
               query: this.query,
               chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
               initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
@@ -1775,7 +1772,7 @@ export struct GlobalSearchPage {
             .onClick((): void => { this.removeOpened(r.chatId); });
           }
           .width('100%')
-          .backgroundColor(mainCardFill(this.appWallpaperOn, false))
+          .backgroundColor(Color.Transparent)
           .id('search-delete-opened-' + r.chatId)
           .opacity(this.deleteSnapshotReady && this.deletingRecentKey === 'opened:' + r.chatId ? 0 : 1);
           if (this.deleteEffectVisible && this.deletingRecentKey === 'opened:' + r.chatId) {
@@ -1798,9 +1795,9 @@ export struct GlobalSearchPage {
     }
     .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
     .width('100%')
-    .margin({ top: 10, bottom: 10 })
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-    .borderRadius(18)
+    .margin({ top: 0, bottom: 0 })
+    .backgroundColor(Color.Transparent)
+    .borderRadius(0)
     .clip(!this.deleteEffectVisible)
     .transition(TransitionEffect.asymmetric(
       TransitionEffect.IDENTITY,
@@ -1845,8 +1842,8 @@ export struct GlobalSearchPage {
     .height(214)
     .margin({ top: 12 })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-    .borderRadius(20)
+    .backgroundColor(Color.Transparent)
+    .borderRadius(0)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
       .animation({
@@ -1895,8 +1892,8 @@ export struct GlobalSearchPage {
     .height(220)
     .margin({ top: 12 })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-    .borderRadius(20)
+    .backgroundColor(Color.Transparent)
+    .borderRadius(0)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
       .animation({
@@ -1942,12 +1939,9 @@ export struct GlobalSearchPage {
     .scrollBar(BarState.Off)
     .cachedCount(4)
     .maintainVisibleContentPosition(true)
-    .contentStartOffset(this.headerHeight())
-    .linearGradientBlur(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), {
-      fractionStops: edgeBlurStopsEx(this.listViewH, 780, 0, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
-      direction: GradientDirection.Bottom
-    })
-    .clip(false)
+    .contentStartOffset(0)
+    .attributeModifier(this.edgeBlur.bind(edgeBlurRadiusOf(edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), this.listViewH, false, edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
+    .clip(true)
     .onAreaChange((_o: Area, n: Area): void => {
       const h: number = n.height as number;
       if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
@@ -2025,8 +2019,8 @@ export struct GlobalSearchPage {
     .height(214)
     .margin({ top: 12 })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-    .borderRadius(20)
+    .backgroundColor(Color.Transparent)
+    .borderRadius(0)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
       .animation({
@@ -2057,8 +2051,8 @@ export struct GlobalSearchPage {
     .height(194)
     .margin({ top: 12 })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-    .borderRadius(20)
+    .backgroundColor(Color.Transparent)
+    .borderRadius(0)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
       .animation({
@@ -2081,7 +2075,7 @@ export struct GlobalSearchPage {
         ListItemGroup() {
           LazyForEach(this.joinedChannelsData, (r: SearchRow) => {
             ListItem() {
-              SearchChatRow({
+              SearchChatRow({ continuousPanel: true,
                 query: this.query,
                 chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
                 initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
@@ -2094,7 +2088,7 @@ export struct GlobalSearchPage {
             guardKey(this.joinedChannelsData.keyTableId, index, searchRowKey(r)));
         }
         .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
-        .backgroundColor(mainCardFill(this.appWallpaperOn, false));
+        .backgroundColor(Color.Transparent);
       }
       if (this.similarChannels.length > 0) {
         ListItem() {
@@ -2103,7 +2097,7 @@ export struct GlobalSearchPage {
         ListItemGroup() {
           LazyForEach(this.similarChannelsData, (r: SearchRow) => {
             ListItem() {
-              SearchChatRow({
+              SearchChatRow({ continuousPanel: true,
                 query: this.query,
                 chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
                 initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
@@ -2116,7 +2110,7 @@ export struct GlobalSearchPage {
             guardKey(this.similarChannelsData.keyTableId, index, searchRowKey(r)));
         }
         .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
-        .backgroundColor(mainCardFill(this.appWallpaperOn, false));
+        .backgroundColor(Color.Transparent);
       }
       if (this.joinedChannels.length === 0 && this.similarChannels.length === 0) {
         ListItem() {
@@ -2151,7 +2145,7 @@ export struct GlobalSearchPage {
       ListItemGroup() {
         LazyForEach(this.appsData, (r: SearchRow) => {
           ListItem() {
-            SearchAppRow({
+            SearchAppRow({ continuousPanel: true,
               query: this.query, identity: r.identity, userId: r.userId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
               initials: r.initials, opening: this.resultOpeningKey === `app:${r.userId}`,
               wallpaperOn: this.appWallpaperOn
@@ -2163,7 +2157,7 @@ export struct GlobalSearchPage {
           guardKey(this.appsData.keyTableId, index, appRowKey(r) + this.query + JSON.stringify(r.identity)));
       }
       .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
-      .backgroundColor(mainCardFill(this.appWallpaperOn, false));
+      .backgroundColor(Color.Transparent);
       if (this.query.trim() !== '' && (this.chatSearching || this.chatSearchFailed)) {
         ListItem() { this.chatSearchInlineState(); }
       }
@@ -2316,8 +2310,8 @@ export struct GlobalSearchPage {
       bottom: compact ? 0 : 12
     })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-    .borderRadius(compact ? 0 : 20)
+    .backgroundColor(Color.Transparent)
+    .borderRadius(0)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: 3 }))
       .animation({
@@ -2370,8 +2364,8 @@ export struct GlobalSearchPage {
       bottom: compact ? 0 : 12
     })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-    .borderRadius(compact ? 0 : 20)
+    .backgroundColor(Color.Transparent)
+    .borderRadius(0)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: 3 }))
       .animation({
@@ -2549,14 +2543,14 @@ export struct GlobalSearchPage {
           (r: SearchRow, idx: number) => {
             ListItem() {
               this.chatRow(r, idx > 0);
-            }.backgroundColor(mainCardFill(this.appWallpaperOn, false));
+            }.backgroundColor(Color.Transparent);
           }, (r: SearchRow) => `res_${r.chatId}_${r.title}_${r.subtitle}_${r.avatarPath}`);
       }
       .layoutWeight(1)
       .width('100%')
-      .margin({ top: 12, bottom: 12 })
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-      .borderRadius(20)
+      .margin({ top: 0, bottom: 0 })
+    .backgroundColor(Color.Transparent)
+      .borderRadius(0)
       .clip(true);
     }
   }
@@ -2574,10 +2568,10 @@ export struct GlobalSearchPage {
       }
       .layoutWeight(1)
       .width('100%')
-      .margin({ top: 12, bottom: 12 })
+      .margin({ top: 0, bottom: 0 })
       .justifyContent(FlexAlign.Center)
-      .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-      .borderRadius(20);
+      .backgroundColor(Color.Transparent)
+      .borderRadius(0);
     } else {
       Grid() {
         // LazyForEach + 复用格（SearchMediaCell）：翻页结果不设上限，原来 ForEach 一次全建。
@@ -2607,9 +2601,9 @@ export struct GlobalSearchPage {
       .cachedCount(2)
       .layoutWeight(1)
       .width('100%')
-      .margin({ top: 12, bottom: 12 })
-      .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-      .borderRadius(20)
+      .margin({ top: 0, bottom: 0 })
+      .backgroundColor(Color.Transparent)
+      .borderRadius(0)
       .clip(true)
       .onReachEnd(() => {
         if (this.nextOffset !== '' && !this.loading && !this.pagingError) {
@@ -2644,7 +2638,7 @@ export struct GlobalSearchPage {
           // 最多三条，ForEach 就够了。
           ForEach(this.visibleHashtagPosts().slice(0, 3), (it: FoundItem) => {
             ListItem() {
-              SearchMessageRow({
+              SearchMessageRow({ continuousPanel: true,
                 chatId: it.chatId, chatTitle: it.chatTitle, avatarPath: it.avatarPath, initials: it.initials,
                 match: it.match, query: this.query, preview: it.preview, timeLabel: formatTime(it.date, this.nowSec),
                 opening: this.resultOpeningKey === `message:${it.chatId}:${it.messageId}`,
@@ -2667,7 +2661,7 @@ export struct GlobalSearchPage {
         ListItemGroup() {
           LazyForEach(this.combinedAppsData, (r: SearchRow) => {
             ListItem() {
-              SearchAppRow({
+              SearchAppRow({ continuousPanel: true,
                 query: this.query, identity: r.identity, userId: r.userId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
                 initials: r.initials, opening: this.resultOpeningKey === `app:${r.userId}`,
                 wallpaperOn: this.appWallpaperOn
@@ -2679,7 +2673,7 @@ export struct GlobalSearchPage {
             guardKey(this.combinedAppsData.keyTableId, index, appRowKey(r)));
         }
         .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
-        .backgroundColor(mainCardFill(this.appWallpaperOn, false));
+        .backgroundColor(Color.Transparent);
         if (this.filteredAppResults().length === 0 &&
           (!this.appsLoaded || this.appsFailed ||
             this.apps.some((row: SearchRow) => row.title === ''))) {
@@ -2696,7 +2690,7 @@ export struct GlobalSearchPage {
         ListItemGroup() {
           LazyForEach(this.combinedChatsData, (r: SearchRow) => {
             ListItem() {
-              SearchChatRow({
+              SearchChatRow({ continuousPanel: true,
                 query: this.query,
                 chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
                 initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
@@ -2709,7 +2703,7 @@ export struct GlobalSearchPage {
             guardKey(this.combinedChatsData.keyTableId, index, searchRowKey(r)));
         }
         .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
-        .backgroundColor(mainCardFill(this.appWallpaperOn, false));
+        .backgroundColor(Color.Transparent);
         if (this.filteredChatResults().length === 0 &&
           (this.chatSearching || this.chatSearchFailed)) {
           ListItem() {
@@ -2732,7 +2726,7 @@ export struct GlobalSearchPage {
         ListItemGroup() {
           LazyForEach(this.combinedMessagesData, (it: FoundItem) => {
             ListItem() {
-              SearchMessageRow({
+              SearchMessageRow({ continuousPanel: true,
                 chatId: it.chatId, chatTitle: it.chatTitle, avatarPath: it.avatarPath, initials: it.initials,
                 match: it.match, query: this.query, preview: it.preview, timeLabel: formatTime(it.date, this.nowSec),
                 opening: this.resultOpeningKey === `message:${it.chatId}:${it.messageId}`,
@@ -2761,11 +2755,11 @@ export struct GlobalSearchPage {
     }
     .layoutWeight(1)
     .width('100%')
-    .margin({ top: 12, bottom: 12 })
+    .margin({ top: 0, bottom: 0 })
     .edgeEffect(EdgeEffect.Spring)
     .scrollBar(BarState.Off)
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-    .borderRadius(20)
+    .backgroundColor(Color.Transparent)
+    .borderRadius(0)
     .clip(true)
     .cachedCount(4)
     .onReachEnd(() => {
@@ -2824,16 +2818,16 @@ export struct GlobalSearchPage {
       }
       .layoutWeight(1)
       .width('100%')
-      .margin({ top: 12, bottom: 12 })
+      .margin({ top: 0, bottom: 0 })
       .justifyContent(FlexAlign.Center)
-      .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-      .borderRadius(20);
+      .backgroundColor(Color.Transparent)
+      .borderRadius(0);
     } else {
       List() {
         // LazyForEach + 复用行（SearchMessageRow）：翻页结果不设上限，原来 ForEach 一次全建。
         LazyForEach(this.messageItemsData, (it: FoundItem) => {
           ListItem() {
-            SearchMessageRow({
+            SearchMessageRow({ continuousPanel: true,
               chatId: it.chatId, chatTitle: it.chatTitle, avatarPath: it.avatarPath, initials: it.initials,
               match: it.match, query: this.query, preview: it.preview, timeLabel: formatTime(it.date, this.nowSec),
               opening: this.resultOpeningKey === `message:${it.chatId}:${it.messageId}`,
@@ -2853,9 +2847,9 @@ export struct GlobalSearchPage {
       }
       .layoutWeight(1)
       .width('100%')
-      .margin({ top: 12, bottom: 12 })
-      .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-      .borderRadius(20)
+      .margin({ top: 0, bottom: 0 })
+      .backgroundColor(Color.Transparent)
+      .borderRadius(0)
       .clip(true)
       .cachedCount(4)
       .divider({
@@ -2911,7 +2905,7 @@ export struct GlobalSearchPage {
       ListItem() { this.sectionHeader(str(publicResults ? 'gs_public_names' : 'gs_existing_chats')); }
       LazyForEach(publicResults ? this.publicNamesData : this.localNamesData, (row: SearchRow) => {
         ListItem() {
-          SearchChatRow({ chatId: row.chatId, title: row.title, subtitle: row.subtitle,
+          SearchChatRow({ continuousPanel: true, chatId: row.chatId, title: row.title, subtitle: row.subtitle,
             avatarPath: row.avatarPath, initials: row.initials, query: this.query, identity: row.identity,
             wallpaperOn: this.appWallpaperOn, savedMessages: this.isSavedMessagesChat(row.chatId) });
         }.onClick((): void => this.openChat(row.chatId));
@@ -3003,68 +2997,50 @@ export struct GlobalSearchPage {
     .backgroundColor(mainPageFill(this.appWallpaperOn));
   }
 
-  // 搜索框(48) + 页签条(40 + 上间距 8) + 顶部安全区与内边距(10)，以及有搜索词时的 scopeControls 二级筛选区
-  // （顶底 padding 8+8=16、说明行 16、间距 8、筛选胶囊行 30，共 70vp；选「频道」时多一行 32vp + 间距 8vp = 40vp）。
-  private headerHeight(): number {
-    const baseH: number = this.topSafe + 10 + 48 + 8 + 40;
-    const hasScope: boolean = this.query.trim() !== '' &&
-      (this.tab === TAB_CHATS || this.tab === TAB_MESSAGES);
-    const extraChannelRow: number =
-      hasScope && this.tab === TAB_MESSAGES && this.messageScope === 'channel' ? 40 : 0;
-    return baseH + (hasScope ? 70 + extraChannelRow : 0);
+  @Builder
+  panelHeader() {
+    Column() {
+      this.searchBar();
+      // Keep the existing category-strip identity when Recent enters/leaves.
+      if (this.query.trim() === '') {
+        this.searchCategoryTabs(true);
+      } else {
+        this.searchCategoryTabs(false);
+        this.scopeControls();
+      }
+    }
+    .width('100%')
+    .padding({ left: SEARCH_PAGE_INSET, right: SEARCH_PAGE_INSET, top: 4 });
+  }
+
+  @Builder
+  panelContent() {
+    Column() {
+      this.tabBody();
+    }.width('100%').height('100%').clip(true);
   }
 
   @Builder
   body() {
     Stack({ alignContent: Alignment.TopStart }) {
-    // NavDestination 自带的页面层会隔断 MainScreen 的壁纸，和资料详情页一样在
-    // 当前目的页内重画一层；分栏时 AppBackdrop 会按统一规则自动停止绘制。
-    AppBackdrop({ split: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) });
-    // 内容层：铺满整页、从 y=0 起，「最近」页的列表会从悬浮搜索栏底下穿过。
-    Column() {
+      AppBackdrop({ split: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) });
       Column() {
-        this.tabBody();
+        HomeConversationPanel({
+          // Keep page ownership: BuilderParam is called on the panel instance.
+          header: (): void => { this.panelHeader(); },
+          content: (): void => { this.panelContent(); }
+        })
+          .width('100%')
+          .layoutWeight(1)
+          .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
       }
-      .width('100%')
-      .layoutWeight(1)
-      .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
-      // 「最近」页的 List 用 contentStartOffset 自己让位；其余页签的列表还没逐一套
-      // 偏移，先整体下移，避免内容被悬浮栏压住。
+      .width('100%').height('100%')
+      .alignItems(HorizontalAlign.Center)
       .padding({
-        left: SEARCH_PAGE_INSET, right: SEARCH_PAGE_INSET,
-        top: this.tab === SEARCH_TAB_RECENT ? 0 : this.headerHeight()
+        left: homeCardMarginVp(this.widthBp), right: homeCardMarginVp(this.widthBp),
+        top: this.topSafe + 10,
+        bottom: Math.max(homeCardMarginVp(this.widthBp), this.bottomSafe - 8)
       });
-    }
-    .width('100%').height('100%')
-    .alignItems(HorizontalAlign.Center)
-    .backgroundColor(mainPageFill(this.appWallpaperOn))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
-
-    // 悬浮搜索栏 + 页签：玻璃底压最上层，滚上来的内容在它后面雾化。
-    Stack() {
-      SystemGlassSurface({ radius: 0, dark: this.appDark }) {
-      Column() {
-      Column() {
-        this.searchBar();
-        // Rebuild the strip only when Recent enters/leaves, resetting its scroll to the selected tab.
-        if (this.query.trim() === '') {
-          this.searchCategoryTabs(true);
-        } else {
-          this.searchCategoryTabs(false);
-          this.scopeControls();
-        }
-      }
-      .width('100%')
-      .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
-      .padding({ left: SEARCH_PAGE_INSET, right: SEARCH_PAGE_INSET, top: this.topSafe + 10 });
-    }
-    .width('100%')
-    .alignItems(HorizontalAlign.Center);
-      }
-    }
-    .width('100%')
-    .hitTestBehavior(HitTestMode.Transparent);
-
     }
     .width('100%').height('100%')
     .backgroundColor(mainPageFill(this.appWallpaperOn))

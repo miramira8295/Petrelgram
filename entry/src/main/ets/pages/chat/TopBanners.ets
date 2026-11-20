@@ -184,7 +184,7 @@ export struct TopBanners {
       actionBarVisible: this.actionBarKind !== ''
     };
     // 外层的 bottom:2 margin 由父布局计算，不属于节点自己的 height。
-    return chatTopBannerHeight(input) - CHAT_TOP_BANNER_BOTTOM_GAP;
+    return Math.max(0, chatTopBannerHeight(input) - CHAT_TOP_BANNER_BOTTOM_GAP);
   }
 
   // 直播条上那句"多少人在线"。a11y 文案要把它拼进整句里，所以用 str/plural
@@ -373,9 +373,11 @@ export struct TopBanners {
     // 这张浮卡是"整块面板"级：玻璃交给 SystemGlassSurface 垫的系统材质，
     // 外层 Stack 只负责定位（宽度 calc、高度、外边距、进出场动画）。
     Stack() {
+    // No content means no background, including during collapse. A percentage
+    // surface must never survive under an empty/invalid-height wrapper.
+    if (this.hasContent()) {
     SystemGlassSurface({ effectsEnabled: false, radius: 14, fill: true, dark: this.appDark }) {
     Column() {
-      if (this.hasContent()) {
         if (this.actionBarKind !== '') {
           ChatActionBarView({
             kind: this.actionBarKind,
@@ -422,15 +424,16 @@ export struct TopBanners {
         if (this.liveShowing()) {
           this.liveStreamBanner();
         }
-      }
     }
     .width('100%')
     .height('100%');
     }
     }
+    }
     .width('calc(100% - 24vp)')
     .height(this.containerHeight())
-    .margin({ left: 12, right: 12, bottom: 2 })
+    .margin({ left: 12, right: 12, bottom: this.hasContent() ? CHAT_TOP_BANNER_BOTTOM_GAP : 0 })
+    .clip(true)
     // 按压跟手位移放在卡片级：垫在下面的系统玻璃才会一起动。
     .translate({ x: this.grabSlot >= 0 ? this.grabDX : 0, y: this.grabSlot >= 0 ? this.grabDY : 0 })
     .transition(TransitionEffect.OPACITY

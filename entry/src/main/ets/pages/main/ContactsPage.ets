@@ -1,12 +1,14 @@
+import { HomeConversationPanel } from '../chatlist/HomeConversationPanel';
+import { TopGlassAction } from '../chatlist/TopGlassAction';
 import { showToast } from '../../util/toast';
 import { SplitPanePlaceholder } from '../common/SplitPanePlaceholder';
 import { ContactAlphabetIndex } from '../../services/ContactAlphabetIndex';
 import { homeCardMarginVp } from '../../util/pageMargin';
-import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops, edgeBlurStopsEx, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import { edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import { ScrollEdgeBlurBinder } from '../../util/scrollEdgeBlurModifier';
 import {
-  EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
-  KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
-  KEY_EDGE_BLUR_TOP_ON, edgeBlurOtherBottomOn, edgeBlurOtherTopOn
+  EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT,
+  KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, edgeBlurOtherBottomOn
 } from '../../util/edgeBlurSetting';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
@@ -28,18 +30,13 @@ import {
   COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
   ROW_PAD_H
 } from '../../util/theme';
-import { GLASS_OUTLINE_COLOR } from '../../util/bubbleTail';
 import { TdRequest, TdObject, TdError } from '../../tdkit/TdTypes';
 import {
   CONTACT_ERR_BAD_PHONE, CONTACT_ERR_NETWORK, CONTACT_ERR_NO_USER,
   contactAddErrorKind, contactErrorRecoverable
 } from '../../util/contactAddError';
 import { ComponentContent, promptAction, router, SymbolGlyphModifier } from '@kit.ArkUI';
-import {
-  HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
-  HdsNavigationTitleMode, TitleBarContentOptions
-} from '@kit.UIDesignKit';
-import { titleBarStyle } from '../../util/hdsTitleBar';
+import { HdsNavigation } from '@kit.UIDesignKit';
 import { searchPublicUsers } from '../../store/PublicUserSearch';
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH, KEY_FORCE_SINGLE_COLUMN,
@@ -56,7 +53,6 @@ import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overl
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE, logW } from '../../util/log';
-import { readableContentWidth } from '../../util/contentWidth';
 import { registerStack, NavStackLike } from '../../util/navStacks';
 import { navigateToProfile } from '../../util/profileNav';
 import { splitContentMinWidth, splitNavMaxWidth, splitNavMinWidth } from '../../util/splitMetrics';
@@ -71,11 +67,8 @@ import { KEY_APP_BG_ON } from '../../store/AppSettings';
 
 // 卡片与消息气泡使用同档透明度的颜色填充；关闭整体材质时保持实色。
 const CARD_BG: ResourceColor = $r('app.color.surface');
-const CARD_RADIUS: number = 14;
-// 联系人行是**一行一张卡片**（2026-10-29 用户要求与首页同款）：圆角 16、
-// 相邻两张之间 3+3 = 6vp，都与首页会话卡片对齐（见 pages/chatlist/ChatRow）。
+// 行共用首页同款面板；仅长按预览保留独立圆角。
 const CONTACT_CARD_RADIUS: number = 16;
-const CONTACT_CARD_GAP_VP: number = 3;
 const SEARCH_BAR_HEIGHT: number = 46;
 const SEARCH_DELAY_MS: number = 350;
 const CONTACT_LONG_PRESS_MS: number = 500;
@@ -119,9 +112,7 @@ function contactsSplitPlaceholder(): void {
 @Component({ freezeWhenInactive: true })
 export struct ContactsPage {
   @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
-  @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
   @StorageProp(KEY_EDGE_BLUR_BOTTOM_ON) private edgeBlurBottomOn: boolean = EDGE_BLUR_BOTTOM_ON_DEFAULT;
-  @StorageProp(KEY_EDGE_BLUR_OTHER_TOP) private edgeBlurOtherTop: string = EDGE_BLUR_FOLLOW;
   @StorageProp(KEY_EDGE_BLUR_OTHER_BOTTOM) private edgeBlurOtherBottom: string = EDGE_BLUR_FOLLOW;
   // 由 MainScreen 算好写进来的「APP 壁纸生效中」，见 store/AppSettings。
   @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
@@ -153,6 +144,7 @@ export struct ContactsPage {
   private contactsScroller: ListScroller = new ListScroller();
   // 列表实测高度（vp）：linearGradientBlur 的 fractionStops 要按实际高度归一化。
   @State private contactsViewH: number = 0;
+  private edgeBlur: ScrollEdgeBlurBinder = new ScrollEdgeBlurBinder();
   private alphabet: ContactAlphabetIndex = new ContactAlphabetIndex();
   private orderedContacts: ContactItem[] = [];
   // 联系人卡片的 LazyForEach 数据源，喂的是 filtered() 那一份（见 onContactListInputChanged）。
@@ -167,8 +159,9 @@ export struct ContactsPage {
   // ——必须自己丢掉重建，否则夜间模式下左栏和会话页都变深、只有右栏空态还是
   // 浅色（平板实测）。详见 util/splitPlaceholderHolder。
   @StorageProp(KEY_APP_DARK) @Watch('onAppDarkChanged') private appDark: boolean = false;
+  @StorageProp('topSafeHeight') private topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
-  // 平板上不把一列内容拉满整屏——见 util/contentWidth。窗口宽（不是屏幕宽），
+  // 用于分栏宽度计算。窗口宽（不是屏幕宽），
   // 分屏 / 悬浮窗 / 折叠屏改变窗口时 EntryAbility 的 windowSizeChange 会刷新它。
   @StorageProp('screenWidthVp') screenW: number = 360;
   // 设置里的「强制单栏」（宽屏也当手机用）。
@@ -984,18 +977,18 @@ export struct ContactsPage {
           }));
       }
     }
-    .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
+    .width('calc(100% - 2vp)')
     .height(SEARCH_BAR_HEIGHT)
     .padding({ left: 13, right: 9 })
-    .backgroundColor(this.cardFill())
+    .backgroundColor(Color.Transparent)
     .borderRadius(SEARCH_BAR_HEIGHT / 2)
     .border({
-      width: this.searchFocused ? 1.5 : 0.5,
+      width: this.searchFocused ? 1.5 : 0,
       color: this.searchFocused ? this.accent() : COLOR_DIVIDER
     })
     .alignItems(VerticalAlign.Center)
-    // 与下方联系人卡片同一条外沿。
-    .margin({ left: this.cardGutter(), right: this.cardGutter(), top: 4 })
+    // 搜索栏内嵌共享面板，与首页文件夹轨道同样左右留 1vp。
+    .margin({ left: 1, right: 1, top: 4 })
     .animation({
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 160),
       curve: Curve.EaseOut
@@ -1051,11 +1044,10 @@ export struct ContactsPage {
         this.skeletonRow(index);
       }, (index: number): string => `${index}`);
     }
-    .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
-    .margin({ left: this.cardGutter(), right: this.cardGutter(), top: 12 })
+    .width('100%')
+    .margin({ top: 12 })
     .padding({ bottom: 4 })
-    .backgroundColor(this.cardFill())
-    .borderRadius(CARD_RADIUS)
+    .backgroundColor(Color.Transparent)
     .opacity(this.skeletonBright ? 0.56 : 0.92)
     .animation({
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 640),
@@ -1085,12 +1077,11 @@ export struct ContactsPage {
         .fontColor(COLOR_TEXT_SECONDARY)
         .textAlign(TextAlign.Center);
     }
-    .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
+    .width('100%')
     .height(190)
-    .margin({ left: this.cardGutter(), right: this.cardGutter(), top: 12 })
+    .margin({ top: 12 })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.cardFill())
-    .borderRadius(CARD_RADIUS)
+    .backgroundColor(Color.Transparent)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
       .animation({
@@ -1135,12 +1126,11 @@ export struct ContactsPage {
       .accessibilityText($r('app.string.ct_reload_contacts'))
       .onClick((): void => { this.retryContacts(); });
     }
-    .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
+    .width('100%')
     .height(220)
-    .margin({ left: this.cardGutter(), right: this.cardGutter(), top: 12 })
+    .margin({ top: 12 })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.cardFill())
-    .borderRadius(CARD_RADIUS)
+    .backgroundColor(Color.Transparent)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
       .animation({
@@ -1203,41 +1193,37 @@ export struct ContactsPage {
       }
       .width('100%')
       .height(34)
-      // 与联系人卡片里的文字列对齐：卡片外边距 + 卡片内缩（左），行尾内距（右）。
-      .padding({ left: this.cardGutter() + HOME_CARD_INSET_VP, right: this.cardGutter() + ROW_PAD_H })
+      // 面板已承担外边距，这里仅保留行内缩。
+      .padding({ left: HOME_CARD_INSET_VP, right: ROW_PAD_H })
       .alignItems(VerticalAlign.Center);
     }
     .width('100%');
   }
 
-  // 联系人列表：一行一张卡片，与首页会话列表同款（2026-10-29 用户要求）。
+  // 联系人列表：透明行连续排列，共用固定面板底色。
   //
   // 原来是 Scroll 里的 Column + ForEach：几千个联系人一次性全建、全排版，每次上下线
   // 更新都整表比对（2026-09-14 用户：「翻联系人列表也很卡，点资料直接去卡死了」）。
   // 现在只建可视区和 cachedCount 那几行，其余滚动时逐帧补建，滚出去的行进复用池。
   //
-  // 卡片几何全部照抄首页（pages/chatlist/ChatRow）：外边距 homeCardMarginVp、上下
-  // 间距 3+3、圆角 16、行内边距左 8 / 右 14 / 上下 8（在 ContactRowView 里）。
-  // 底色与玻璃铺在**每行一个的卡片容器**上，行本身透明（见 ContactRowView.rowFill）：
-  // 行本身不再叠加填色，避免透明度累加。
-  // 点击、按压、长按菜单挂在 ListItem 上（理由见 ContactRowView）。
+  // 行内保留头像/文字 padding，外层不再重复填色、描边或添加卡片间距。
+  // 点击、按压、长按菜单继续挂在 ListItem 上，避免复用旧闭包。
   @Builder
   listCard() {
     // 标题行（排序说明 + 结果数）。它自己也占一行 ListItem，缩进对齐卡片内的文字列。
     ListItem() {
       this.listCardHeader();
     }
-    .width('100%')
-    .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
+    .width('100%');
     LazyForEach(this.contactsData, (c: ContactItem) => {
       ListItem() {
         Column() {
-          // 字母分组：卡片**外面**的一行路标，缩进 = 卡片外边距 + 卡片内缩，
+          // 字母分组：共享面板内的一行路标，缩进与联系人头像对齐，
           // 与卡片里的头像同一条线。11sp 次要色——分组是「路标」不是内容。
           if (this.query.trim() === '' && this.alphabet.heading(c.id) !== '') {
             Text(this.alphabet.heading(c.id)).fontSize(11).fontWeight(FontWeight.Medium)
               .fontColor(COLOR_TEXT_SECONDARY).width('100%').height(26)
-              .padding({ left: this.cardGutter() + HOME_CARD_INSET_VP, top: 4 })
+              .padding({ left: HOME_CARD_INSET_VP, top: 4 })
               .textAlign(TextAlign.Start);
           }
           // 删除时这一张卡片整体消散：与会话列表同一套（DissolveDeleteEffect +
@@ -1256,28 +1242,14 @@ export struct ContactsPage {
                 busy: this.openingContactId === c.id || this.deletingContactId === c.id
               });
             }
-            .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
-            .margin({
-              left: this.cardGutter(), right: this.cardGutter(),
-              top: CONTACT_CARD_GAP_VP, bottom: CONTACT_CARD_GAP_VP
-            })
-            .borderRadius(CONTACT_CARD_RADIUS)
-            // 描边跟着玻璃走：玻璃档用 GLASS_OUTLINE_COLOR（30% 白）——用 divider
-            // 会在壁纸上围一圈发暗的框，圆角处四条边叠起来最明显（首页同类问题的结论）。
-            // 非玻璃档一律不描边（理由见 ChatRow）：`appWallpaperOn` 对纯色背景也
-            // 成立，白色背景下这条灰线会变成整页唯一看得见的卡片轮廓。
-            .border({
-              width: this.glassOn() ? 0.5 : 0,
-              color: GLASS_OUTLINE_COLOR
-            })
-            .backgroundColor(this.cardFill())
+            .width('100%')
+            .backgroundColor(Color.Transparent)
             .clip(true);
           }
         }
         .width('100%');
       }
       .width('100%')
-      .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
       .accessibilityText(`${c.name}，${c.statusText}`)
       .onTouch((event: TouchEvent): void => {
         if (event.type === TouchType.Down) {
@@ -1339,41 +1311,29 @@ export struct ContactsPage {
       );
     }, (c: ContactItem, index: number): string =>
       guardKey(this.contactsData.keyTableId, index, this.contactListVersion(c)));
-    // 全局搜索中 / 搜不到：也各占一行卡片，与联系人卡片同宽同圆角。
+    // 全局搜索中 / 搜不到：在同一共享面板里显示状态行。
     if (this.remoteLoading) {
       ListItem() {
         Row({ space: 8 }) {
           LoadingProgress().width(18).height(18).color(this.accent());
           Text($r('app.string.ct_searching_global')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
         }
-        .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
+        .width('100%')
         .height(48)
-        .margin({
-          left: this.cardGutter(), right: this.cardGutter(),
-          top: CONTACT_CARD_GAP_VP, bottom: CONTACT_CARD_GAP_VP
-        })
         .justifyContent(FlexAlign.Center)
-        .backgroundColor(this.cardFill())
-        .borderRadius(CONTACT_CARD_RADIUS);
+        .backgroundColor(Color.Transparent);
       }
-      .width('100%')
-      .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
+      .width('100%');
     } else if (this.query.trim() !== '' && this.filtered().length === 0) {
       ListItem() {
         Column() {
           this.searchEmptyState();
         }
-        .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
-        .margin({
-          left: this.cardGutter(), right: this.cardGutter(),
-          top: CONTACT_CARD_GAP_VP, bottom: CONTACT_CARD_GAP_VP
-        })
-        .backgroundColor(this.cardFill())
-        .borderRadius(CONTACT_CARD_RADIUS)
+        .width('100%')
+        .backgroundColor(Color.Transparent)
         .clip(true);
       }
-      .width('100%')
-      .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
+      .width('100%');
     }
   }
 
@@ -1552,153 +1512,95 @@ export struct ContactsPage {
     .backgroundColor(this.cardFill());
   }
 
-  // 标题栏内容：大标题 + 右上角两个图标——[新建联系人][最近通话]。
-  //
-  // 2026-10-29 用户定：原来右上角是 ⋮ 菜单（新建群组 / 最近通话），新建联系人靠
-  // 右下角 FAB；现在 FAB 和「最近通话」入口卡片都去掉了，两个入口并排挪到顶上。
-  // 新建群组随之不再从这里进（用户要求删掉，别再往这个菜单里加别的项）。
-  private titleBarContent(): TitleBarContentOptions {
-    const addIcon: HdsNavigationIconOptions = {
-      icon: $r('sys.symbol.person_badge_plus'),
-      label: $r('app.string.ct_new_contact'),
-      action: (): void => { this.openAddContactSheet(); }
-    };
-    const recentsIcon: HdsNavigationIconOptions = {
-      // 听筒 + 去电箭头：系统符号里没有「听筒 + 一来一去两箭头」的合成图标，
-      // 这一枚是与「最近通话」最贴的（同族还有 phone_arrow_down_left_fill）。
-      icon: $r('sys.symbol.phone_arrow_up_right_fill'),
-      label: $r('app.string.ct_recent_calls'),
-      action: (): void => { this.openRecentCalls(); }
-    };
-    return {
-      title: {
-        mainTitle: $r('app.string.tab_contacts'),
-        // 加载中才有副标题。原来那一版是两行文字各自做位移动画来"挤"出副标题，
-        // HDS 的标题栏自己管这个位置，交给它即可。
-        subTitle: this.loading ? $r('app.string.refreshing') : ''
-      },
-      menu: { value: [{ content: addIcon }, { content: recentsIcon }] }
-    };
+  @Builder
+  contactsTitle() {
+    Row({ space: 8 }) {
+      Column() {
+        Text($r('app.string.tab_contacts'))
+          .fontSize(25).fontWeight(FontWeight.Bold).fontColor(this.accent())
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        if (this.loading) {
+          Text($r('app.string.refreshing')).fontSize(11).lineHeight(14)
+            .fontColor(COLOR_TEXT_SECONDARY).maxLines(1);
+        }
+      }
+      .alignItems(HorizontalAlign.Start).justifyContent(FlexAlign.Center)
+      .height(56).layoutWeight(1);
+      TopGlassAction({
+        actionSize: 40, embedded: true, plainFill: this.cardFill(),
+        icon: 'sys.symbol.person_badge_plus', dark: this.appDark,
+        iconColor: COLOR_ICON_SECONDARY, accentColor: this.accent(),
+        label: $r('app.string.ct_new_contact'),
+        onTap: (): void => { this.openAddContactSheet(); }
+      });
+      TopGlassAction({
+        actionSize: 40, embedded: true, plainFill: this.cardFill(),
+        icon: 'sys.symbol.phone_arrow_up_right_fill', dark: this.appDark,
+        iconColor: COLOR_ICON_SECONDARY, accentColor: this.accent(),
+        label: $r('app.string.ct_recent_calls'),
+        onTap: (): void => { this.openRecentCalls(); }
+      });
+    }
+    .width('100%').height(56).padding({ left: 16, right: 16 })
+    .alignItems(VerticalAlign.Center);
   }
 
-  // 联系人卡片离内容区边缘的横向留白。从 2026-10-29 起跟首页会话卡片走
-  // （homeCardMarginVp，手机 6），不再是 pageMarginVp 的 12——用户要求
-  // 「下方列表和首页样式一样」，两页的卡片外沿现在逐像素重合。
-  private cardGutter(): number {
-    return homeCardMarginVp(this.widthBp);
+  @Builder
+  contactsList() {
+    List({ scroller: this.contactsScroller }) {
+      if (this.query.trim() === '' && this.loading && this.contacts.length === 0) {
+        ListItem() { this.loadingCard(); }.width('100%');
+      } else if (this.query.trim() === '' && this.loadError !== '' && this.contacts.length === 0) {
+        ListItem() { this.errorContactsCard(); }.width('100%');
+      } else if (this.query.trim() === '' && !this.loading && this.contacts.length === 0) {
+        ListItem() { this.emptyContactsCard(); }.width('100%');
+      } else {
+        this.listCard();
+      }
+    }
+    .width('100%').height('100%')
+    .alignListItem(ListItemAlign.Center)
+    .cachedCount(CONTACT_LIST_CACHED_COUNT, false)
+    .contentEndOffset(this.bottomSafe + 88)
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .scrollBar(BarState.Off)
+    .enableScrollInteraction(!this.contextMenuShown)
+    .onAreaChange((_old: Area, area: Area): void => {
+      const h: number = Number(area.height);
+      if (h > 0 && Math.abs(h - this.contactsViewH) > 0.5) { this.contactsViewH = h; }
+    })
+    // 与首页一致：顶部保持清晰，仅列表底部响应已有边缘模糊设置；关闭时不挂滤镜节点。
+    .attributeModifier(this.edgeBlur.bind(
+      edgeBlurRadiusOf(edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
+      this.contactsViewH, false,
+      edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
+    .clip(true);
   }
 
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
       HdsNavigation(this.contactsStack) {
-        // 这一层 Stack 是本次修复加的：FAB 必须住在 **navBar 内容**里，才会被
-        // 左栏框住。原来它挂在最外层 Stack 上（HdsNavigation 的兄弟节点），那
-        // 在单栏时无所谓——整屏就是一栏——分栏之后它罩着整个 HdsNavigation、
-        // 连右栏一起罩，FAB 于是飘进右栏压着资料页。
-        //
-        // clip 默认就是 false（Stack 不裁子节点，只有 Scroll/List/Grid 这类默认
-        // 裁），但这里**显式写出来**：本页的渐变模糊靠的是内容穿透到标题栏底下
-        // 再被合成，整条链上任何一层开始裁剪，模糊就没了内容可透。链上新插一层
-        // 就得跟着表态一次，别让下一个人去猜默认值。
-        Stack({ alignContent: Alignment.BottomEnd }) {
-          // 整页是一个 List（原来是 Scroll > Column > 各卡片）：搜索框占一个
-          // ListItem，联系人是 LazyForEach 逐行的独立卡片（见 listCard）。
-          // 限宽改由每一项自己的 constraintSize + alignListItem 居中；List 本身仍铺满窗口，
-          // 两侧留白还在它的命中区里，按在留白上照样拖得动。
-          List({ scroller: this.contactsScroller }) {
-            ListItem() {
-              this.searchBox();
-            }
-            .width('100%')
-            .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
-            if (this.query.trim() === '' && this.loading && this.contacts.length === 0) {
-              ListItem() {
-                this.loadingCard();
-              }
-              .width('100%')
-              .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
-            } else if (this.query.trim() === '' && this.loadError !== '' && this.contacts.length === 0) {
-              ListItem() {
-                this.errorContactsCard();
-              }
-              .width('100%')
-              .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
-            } else if (this.query.trim() === '' && !this.loading && this.contacts.length === 0) {
-              ListItem() {
-                this.emptyContactsCard();
-              }
-              .width('100%')
-              .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
-            } else {
-              this.listCard();
-            }
-          }
-          .width('100%')
-          // **高度必须显式铺满。** 这个滚动容器住在一个 alignContent: BottomEnd 的 Stack 里
-          // （FAB 那次修复加的一层），不给高度就按内容量高——于是内容少的时候整个滚动区被
-          // Stack 按到底部，观感是"联系人列表整体沉在屏幕下半截"（issue #118）。
-          .height('100%')
-          .alignListItem(ListItemAlign.Center)
-          // 第二个参数 true：滚出视口的备用行也画出来——标题栏的渐变模糊糊的正是穿到它底下
-          // 的这部分（同首页会话列表，与下面的 clip(false) 是一对）。
-          .cachedCount(CONTACT_LIST_CACHED_COUNT, true)
-          .contentEndOffset(this.bottomSafe + 88)
-          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-          .scrollBar(BarState.Off)
-          .enableScrollInteraction(!this.contextMenuShown)
-          // navBar 的实际宽度：分栏时它就是左栏宽，拖分割线会变，MainScreen 的
-          // dock 要跟着走。这个 List 是 navBar 内容的根节点、width('100%')，
-          // 它的宽度就是 navBar 宽度——HdsNavigation 没有回调宽度的接口，只能这么
-          // 量（与 SettingsPage 同一个办法）。
-          // 同值不写：onAreaChange 在滚动/键盘/单双栏切换时会连着来几次，而
-          // setOrCreate 即便同值也会惊动订阅方。
-          .onAreaChange((_old: Area, area: Area): void => {
-            const h: number = Number(area.height);
-            if (h > 0 && Math.abs(h - this.contactsViewH) > 0.5) {
-              this.contactsViewH = h;
-            }
-            const w: number = area.width as number;
-            if (AppStorage.get<number>(CONTACTS_NAV_BAR_WIDTH_KEY) !== w) {
-              AppStorage.setOrCreate<number>(CONTACTS_NAV_BAR_WIDTH_KEY, w);
-              // 三个页签共用一个记忆值，哪个页签拖的都算（issue #106）。
-              rememberSplitNavWidth(w, isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait));
-            }
+        Column() {
+          this.contactsTitle();
+          HomeConversationPanel({
+            header: (): void => { this.searchBox(); },
+            content: (): void => { this.contactsList(); }
           })
-          // 不裁剪，内容才能穿透到标题栏下方——渐变模糊模糊的正是穿过去的这部分。
-          .contentStartOffset(EDGE_OVERLAY_VP)
-          // 顶部/底部边缘渐变虚化（与首页会话列表同一套参数）。
-          .linearGradientBlur(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), {
-            fractionStops: edgeBlurStopsEx(this.contactsViewH, 780, 0, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
-            direction: GradientDirection.Bottom
-          })
-          .clip(false);
+          .width(`calc(100% - ${homeCardMarginVp(this.widthBp) * 2}vp)`)
+          .layoutWeight(1);
         }
         .width('100%').height('100%')
-        .clip(false);
+        .padding({ top: this.topSafe, bottom: Math.max(homeCardMarginVp(this.widthBp), this.bottomSafe - 8) })
+        .onAreaChange((_old: Area, area: Area): void => {
+          // Dock/split navigation follows the full pane, never the inset panel.
+          const w: number = Number(area.width);
+          if (w > 0 && AppStorage.get<number>(CONTACTS_NAV_BAR_WIDTH_KEY) !== w) {
+            AppStorage.setOrCreate<number>(CONTACTS_NAV_BAR_WIDTH_KEY, w);
+            rememberSplitNavWidth(w, isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait));
+          }
+        });
       }
-      .titleBar({
-        // 两个都要，各管一头：
-        //
-        //   avoidLayoutSafeArea     标题栏**自己**避让系统安全区
-        //   enableComponentSafeArea 标题栏成为**内容区**的安全区，内容避让它
-        //
-        // 官方示例里只有后者，因为那是个普通非全屏窗口。**本应用整体是全屏沉浸
-        // 布局**（EntryAbility 调了 setWindowLayoutFullScreen(true)），页面的布局区
-        // 本来就覆盖状态栏——这也是全应用每个页面都要手动 padding(topSafe) 的原因。
-        // 所以这里必须自己避让，少了它标题栏就顶进状态栏（真机两次实测）。
-        //
-        // 但**不要**再在 HdsNavigation 根上加 expandSafeArea：那会把标题栏往状态栏
-        // 里推，和这一行正好对着干，两者抵消之后渐变模糊的合成也跟着废掉。状态栏
-        // 那条的底色由 HdsNavigation 自己的 backgroundColor 铺——全屏布局下它本来
-        // 就盖到那儿。
-        avoidLayoutSafeArea: true,
-        // 内容区不再避让标题栏：List 上沿直接贴屏幕顶，linearGradientBlur 的渐变
-        // 原点才落在屏幕最上沿。标题自己仍靠 avoidLayoutSafeArea 避让系统安全区。
-        enableComponentSafeArea: false,
-        // 顶栏去雾：背板全透明 + 关掉 HDS 滚动渐变模糊，理由见 ChatListPage。
-        style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false, false),
-        content: this.titleBarContent()
-      })
+      .hideTitleBar(true, false)
       .hideBackButton(true)
       //
       // 【这里曾经是 .mode(NavigationMode.Stack)】原注释（保留在下面）说的是：
@@ -1739,12 +1641,7 @@ export struct ContactsPage {
       // ProfilePage——它有 store 订阅和头像放大态，不该因为在左栏拉起一个面板
       // 就以为自己隐藏了。取值与聊天/设置两个页签一致。
       .attributeModifier(SHEET_LIFECYCLE_MODIFIER)
-      // MINI 而不是 FREE：四个页签的标题栏现在是同一档窄栏，标题与右上角图标
-      // 同一行。FREE 的大标题会先占掉一整行，把标题压到图标下面一截——用户拿
-      // 四个页签并排对比过，聊天页（本来就是 MINI）的标题明显更高（issue #111）。
-      // 这四处必须一起改：只要有一个还是 FREE，切页签时标题就会跳一下。
-      .titleMode(HdsNavigationTitleMode.MINI)
-      .bindToScrollable([this.contactsScroller])
+      .bindToScrollable([])
       .width('100%').height('100%');
     }
     .width('100%').height('100%')

@@ -1,6 +1,7 @@
 import { showToast } from '../../util/toast';
 import { promptAction, router } from '@kit.ArkUI';
-import { BLUR_MAX_VP, edgeBlurStops, edgeBlurStopsEx, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import { ScrollEdgeBlurBinder } from '../../util/scrollEdgeBlurModifier';
 import {
   EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
   KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
@@ -74,6 +75,7 @@ function callItemTransition(fresh: boolean): TransitionEffect {
 @Entry
 @Component
 struct CallsPage {
+  private edgeBlur: ScrollEdgeBlurBinder = new ScrollEdgeBlurBinder();
   @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
   @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
   @StorageProp(KEY_EDGE_BLUR_BOTTOM_ON) private edgeBlurBottomOn: boolean = EDGE_BLUR_BOTTOM_ON_DEFAULT;
@@ -621,10 +623,7 @@ struct CallsPage {
     // 列表从屏幕顶端开始（标题栏悬浮在上面），用内容偏移避让
     // topSafe + topBar(56) + segmentBar(40+2+8)。
     .contentStartOffset(this.topSafe + 56 + 50)
-    .linearGradientBlur(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), {
-      fractionStops: edgeBlurStopsEx(this.listViewH, 780, 0, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
-      direction: GradientDirection.Bottom
-    })
+    .attributeModifier(this.edgeBlur.bind(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), this.listViewH, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
     // 模糊带要能画到 List 矩形之外，这里只是让边缘不被裁。
     .clip(false)
     .onAreaChange((_o: Area, n: Area): void => {

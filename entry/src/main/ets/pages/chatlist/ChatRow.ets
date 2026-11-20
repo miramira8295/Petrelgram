@@ -75,6 +75,8 @@ export const CHAT_ROW_VERTICAL_GUTTER: number = CHAT_SWIPE_VERTICAL_GUTTER_VP;
 @Reusable
 @Component
 export struct ChatRow {
+  // Homepage shares one surface; standalone archive retains individual cards.
+  @Prop continuousPanel: boolean = false;
   // 卡片外沿按系统横向断点取值（util/pageMargin）；滑动操作背景复用同一个值。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
@@ -571,6 +573,7 @@ export struct ChatRow {
   }
 
   private rowFill(pressed: boolean): ResourceColor {
+    if (this.continuousPanel) { return pressed ? '#14000000' : Color.Transparent; }
     if (!this.rowGlassEnabled()) {
       // 关闭整体材质时始终使用不透明底色。
       return pressed ? $r('app.color.surface_alt') : $r('app.color.surface');
@@ -683,7 +686,7 @@ export struct ChatRow {
 
   // 首页会话卡片外沿（util/pageMargin）：手机 6，折叠屏 10，平板 14。
   private cardGutter(): number {
-    return homeCardMarginVp(this.widthBp);
+    return this.continuousPanel ? 0 : homeCardMarginVp(this.widthBp);
   }
 
   build() {
@@ -926,9 +929,10 @@ export struct ChatRow {
       .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
       .margin({
         left: this.cardGutter(), right: this.cardGutter(),
-        top: CHAT_ROW_VERTICAL_GUTTER, bottom: CHAT_ROW_VERTICAL_GUTTER
+        top: this.continuousPanel ? 0 : CHAT_ROW_VERTICAL_GUTTER,
+        bottom: this.continuousPanel ? 0 : CHAT_ROW_VERTICAL_GUTTER
       })
-      .borderRadius(16)
+      .borderRadius(this.continuousPanel ? 0 : 16)
       // 描边跟着玻璃走，**颜色也要跟着换**。
       //
       // 原来是 `COLOR_DIVIDER`：行是不透明白卡片时它就是一条正常的灰细线；换成
@@ -946,7 +950,7 @@ export struct ChatRow {
       // 轮廓（2026-10-30 用户："白色背景下 item 带有了个细边框"）。
       // 不透明卡片本来也不需要边——它旁边没有照片要分隔。只留玻璃那一档。
       .border({
-        width: this.rowGlassEnabled() ? 0.5 : 0,
+        width: !this.continuousPanel && this.rowGlassEnabled() ? 0.5 : 0,
         color: GLASS_OUTLINE_COLOR
       })
       .clip(true)

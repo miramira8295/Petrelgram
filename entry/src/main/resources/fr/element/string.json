@@ -13331,6 +13331,14 @@
     {
       "name": "link_copied_internal",
       "value": "Lien interne copié (dans cette app uniquement)"
+    },
+    {
+      "name": "cl_archive_pull",
+      "value": "Tirez vers le bas pour afficher les archives"
+    },
+    {
+      "name": "cl_archive_release",
+      "value": "Relâchez pour afficher les archives"
     }
   ]
 }

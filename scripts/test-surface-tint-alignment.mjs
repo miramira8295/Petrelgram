@@ -8,9 +8,10 @@ const root='entry/src/main/ets/';
 const read=path=>fs.readFileSync(root+path+'.ets','utf8');
 const stored=new Map([['surfaceGlassOn',true],['bubbleGlassOn',false],['surfaceGlassLevel',-1],['bubbleGlassLevel',2],['appIsDark',true],['surfaceGlassEpoch',88]]);
 const original=[...stored];let tests=0;
+const resourceIds=new Map();
 const context=vm.createContext({
  AppStorage:{get:key=>stored.get(key),setOrCreate:(key,value)=>stored.set(key,value),delete:key=>stored.delete(key)},
- $r:name=>({id:100,type:10001,bundleName:'',moduleName:'',params:[name]}),
+ $r:name=>{if(!resourceIds.has(name))resourceIds.set(name,100+resourceIds.size);return {id:resourceIds.get(name),type:10001,bundleName:'',moduleName:'',params:[]};},
  describe:(_name,fn)=>fn(),it:(_name,_flags,fn)=>{fn();tests++;assert.deepEqual([...stored].sort(),[...original].sort(),'test must restore shared settings');},
  expect:value=>({assertEqual:expected=>assert.equal(value,expected),assertTrue:()=>assert.equal(value,true),assertFalse:()=>assert.equal(value,false)})
 });
@@ -25,9 +26,21 @@ const theme=read('util/theme'),themeAst=ts.createSourceFile('theme.ets',theme,ts
 run(themeAst.statements.find(n=>ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>d.name.getText(themeAst)==='KEY_APP_DARK')).getText(themeAst),'theme dark key');
 const appearance=read('util/appearance'),appearanceAst=ts.createSourceFile('appearance.ets',appearance,ts.ScriptTarget.Latest,true);
 run(appearanceAst.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name.text==='appIsDark').getText(appearanceAst),'appIsDark');
+run(appearanceAst.statements.filter(n=>ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>/^BUBBLE_(IN|OUT)_DEFAULT_/.test(d.name.getText(appearanceAst)))).map(n=>n.getText(appearanceAst)).join('\n'),'default bubble hues');
+run(read('util/colorMath'),'colorMath');
 const surface=read('util/surfaceGlass');run(surface,'surfaceGlass');
 run(fs.readFileSync('entry/src/test/SurfaceGlass.test.ets','utf8')+'\nsurfaceGlassTest();','SurfaceGlass.test.ets');
 assert.equal(tests,10);
+// Glass must not override the foreground chosen for custom dark/light bubbles.
+run(`let bubbleTextOut='#FFFFFF', bubbleTextIn='#000000';\n`+
+ themeAst.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name.text==='bubbleTextFor').getText(themeAst)+
+ `\nglobalThis.bubbleTextFor=bubbleTextFor;`,'bubbleTextFor');
+for(const enabled of [false,true]){
+ stored.set('bubbleGlassOn',enabled);
+ assert.equal(context.bubbleTextFor(true),'#FFFFFF');
+ assert.equal(context.bubbleTextFor(false),'#000000');
+}
+stored.set('bubbleGlassOn',false);
 assert.doesNotMatch(surface,/\b(?:surfaceGlassBlurStyle|surfaceGlassScrim|surfaceGlassVeilOnly|glassBlurStyleFor|bubbleGlassBlurStyle|BlurStyle)\b/);
 assert.doesNotMatch(surface,/from\s+['"][^'"]*(?:overlayMaterial|materialModifier)['"]/);
 const cards=['pages/chatlist/ChatRow','pages/chatlist/MainTabBody','pages/profile/ChatProfilePage','pages/profile/ProfilePage','pages/main/ContactsPage','pages/main/MyProfilePage','pages/main/SettingsPage'];
@@ -82,4 +95,4 @@ for(const slot of ['appLight','chatLight','appDark','chatDark']){
  }
  preview.wallpaper={colors:['#111111'],path:''};assert.equal(preview.darkDim(),0,slot+' solid stays free of user mask');
 }
-console.log('PASS: 10 real Hypium cases, same-RGBA palettes, independent settings, invalid values, seven filter-free card surfaces; real adjustments builder creates dim/divider only for dark slots, and all four preview slots preserve dim eligibility.');
+console.log('PASS: 10 real Hypium cases; glass preserves default/custom/numeric bubble hues and contrasting text; independent tint settings, invalid values, seven filter-free card surfaces; light wallpaper has no dim layer.');

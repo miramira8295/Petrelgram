@@ -115,6 +115,7 @@ export class VideoStreamSession {
 
   close(): void {
     this.closed = true;
+    this.resetRequests();
     if (this.unsubFile !== null) {
       this.unsubFile();
       this.unsubFile = null;
@@ -269,12 +270,22 @@ export class VideoStreamSession {
       return;
     }
     const start = Math.max(0, Math.floor(offset / CHUNK_SIZE) * CHUNK_SIZE);
-    const end = this.limitEnd(start + Math.max(length, CHUNK_SIZE));
+    const end = this.limitEnd(offset + Math.max(length, CHUNK_SIZE));
+    if (urgent) {
+      const missing = offset + this.bufferedFrom(offset);
+      if (missing < end) {
+        // Check urgency before pending deduplication: a queued prefetch is not
+        // an active download. A seek must not wait behind the old read window.
+        this.preemptIfOutsideWindow(missing);
+        const first = Math.max(0, Math.floor(missing / CHUNK_SIZE) * CHUNK_SIZE);
+        this.requestChunk(first, this.limitEnd(first + CHUNK_SIZE) - first, true);
+      }
+    }
     let cur = start;
     while (cur < end) {
       const next = this.limitEnd(cur + CHUNK_SIZE);
       if (!this.hasRange(cur, next - cur) && !this.pendingStarts.has(cur)) {
-        this.requestChunk(cur, next - cur, urgent);
+        this.requestChunk(cur, next - cur);
       }
       cur = next;
     }
@@ -332,7 +343,6 @@ export class VideoStreamSession {
     this.requestLengths.set(offset, length);
     if (urgent) {
       this.requestQueue.unshift(offset);
-      this.preemptIfOutsideWindow(offset);
     } else {
       this.requestQueue.push(offset);
     }
@@ -351,15 +361,22 @@ export class VideoStreamSession {
   // pumpQueue 在 activeStart >= 0 时一律早退，seek 就得排在它后面——窗口越大越
   // 难受。现在落在当前窗口内的等它，落在窗口外的立刻取代。
   private preemptIfOutsideWindow(offset: number): void {
-    if (this.activeStart < 0) {
+    if (this.activeStart >= 0 && offset >= this.activeStart && offset < this.activeEnd) {
       return;
     }
-    if (offset >= this.activeStart && offset < this.activeEnd) {
-      return;
-    }
+    this.resetRequests();
+  }
+
+  // Keep downloaded ranges, discard only obsolete requests. Work is bounded
+  // by the read-ahead window, not the file length or number of previous seeks.
+  private resetRequests(): void {
     this.requestSeq++;
     this.activeStart = -1;
     this.activeEnd = -1;
+    this.requestQueue = [];
+    this.pendingStarts.clear();
+    this.requestLengths.clear();
+    this.requestAttempts.clear();
   }
 
   private pumpQueue(): void {
@@ -397,6 +414,11 @@ export class VideoStreamSession {
     req['limit'] = length;
     req['synchronous'] = true;
     this.client.send(req, STREAM_REQUEST_TIMEOUT_MS).then((f: TdObject) => {
+      // A -> B -> A can reuse the same offset. Old callbacks must not delete
+      // the new A's pending marker or publish an obsolete file snapshot.
+      if (this.closed || seq !== this.requestSeq) {
+        return;
+      }
       this.pendingStarts.delete(offset);
       this.requestLengths.delete(offset);
       this.requestAttempts.delete(offset);
@@ -404,34 +426,25 @@ export class VideoStreamSession {
       // 会结束，那时窗口里多半只下了一部分，标满就是骗自己。真实到手的字节由
       // applyFile 从 downloaded_prefix_size 增量推进（起播就绪判据本来也只看它）。
       this.applyFile(f);
-      if (seq !== this.requestSeq) {
-        return;   // 已被抢占：新请求自己会推进队列
+      if (this.closed || seq !== this.requestSeq) {
+        return; // A progress listener may have moved or closed the session.
       }
       this.activeStart = -1;
       this.activeEnd = -1;
       this.pumpQueue();
     }).catch((e: TdError) => {
-      if (seq !== this.requestSeq) {
-        this.pendingStarts.delete(offset);
-        this.requestLengths.delete(offset);
-        this.requestAttempts.delete(offset);
+      if (this.closed || seq !== this.requestSeq) {
         return;
       }
       this.activeStart = -1;
       this.activeEnd = -1;
-      if (this.closed) {
-        this.pendingStarts.delete(offset);
-        this.requestLengths.delete(offset);
-        this.requestAttempts.delete(offset);
-        return;
-      }
       const attempt = (this.requestAttempts.get(offset) ?? 0) + 1;
       if (attempt <= MAX_REQUEST_RETRIES) {
         this.requestAttempts.set(offset, attempt);
         const delayMs = Math.min(4000, 300 * Math.pow(2, attempt - 1));
         logW(`VideoStreamSession.download ${this.fileId}@${offset}+${length} retry ${attempt}: ${e.message}`);
         setTimeout(() => {
-          if (this.closed) {
+          if (this.closed || seq !== this.requestSeq) {
             return;
           }
           this.requestQueue.unshift(offset);

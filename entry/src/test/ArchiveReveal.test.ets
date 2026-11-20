@@ -1,53 +1,76 @@
 import { describe, expect, it } from '@ohos/hypium';
-import {
-  archiveCardScale, archiveIconScale, archiveIconSpin, archiveRevealProgress
-} from '../main/ets/util/archiveReveal';
+import { ArchiveRevealGesture, archiveLogicalIndex } from '../main/ets/util/archiveReveal';
 
 export default function archiveRevealTest() {
   describe('archiveReveal', () => {
-    it('进度按下拉深度归一化', 0, () => {
-      expect(archiveRevealProgress(0, 72, false)).assertEqual(0);
-      expect(archiveRevealProgress(36, 72, false)).assertEqual(0.5);
-      expect(archiveRevealProgress(72, 72, false)).assertEqual(1);
+    it('惯性与程序滚动停在首条会话，不露出归档', 0, () => {
+      const g = new ArchiveRevealGesture();
+      expect(g.filter(-100, 90, 72, false, true)).assertEqual(-18);
+      expect(g.filter(-10, 72, 72, false, true)).assertEqual(0);
     });
-
-    // 拉过头不该让卡片继续放大——上面还有个更硬的钳位在 onDidScroll 里，
-    // 这里再钳一次，两处都错才会露出来。
-    it('拉过头钳在 1，负数钳在 0', 0, () => {
-      expect(archiveRevealProgress(200, 72, false)).assertEqual(1);
-      expect(archiveRevealProgress(-30, 72, false)).assertEqual(0);
+    it('只有实际触摸拖动才能进入隐藏行', 0, () => {
+      const g = new ArchiveRevealGesture();
+      expect(g.filter(-20, 72, 72, true, true)).assertEqual(0);
+      g.begin();
+      expect(g.filter(-20, 72, 72, true, true)).assertEqual(-9);
+      expect(g.filter(-20, 72, 72, true, false)).assertEqual(0);
     });
-
-    it('已锁定展开时恒为 1，不再跟手', 0, () => {
-      expect(archiveRevealProgress(0, 72, true)).assertEqual(1);
-      expect(archiveRevealProgress(5, 72, true)).assertEqual(1);
+    it('长列表普通区域不增加阻尼', 0, () => {
+      const g = new ArchiveRevealGesture(); g.begin();
+      expect(g.filter(-20, 100, 72, true, true)).assertEqual(-20);
+      expect(g.filter(40, 30, 72, true, true)).assertEqual(40);
     });
-
-    it('行高非法时给 0，不产生 NaN 传进 scale', 0, () => {
-      expect(archiveRevealProgress(36, 0, false)).assertEqual(0);
-      expect(archiveRevealProgress(36, -1, false)).assertEqual(0);
+    it('进入归档才分段阻尼并限制过拉', 0, () => {
+      const g = new ArchiveRevealGesture(); g.begin();
+      expect(g.filter(-40, 90, 72, true, true)).assertEqual(-27.9);
+      expect(g.filter(-1000, 10, 72, true, true)).assertEqual(-10);
     });
-
-    it('卡片缩放两端固定：0.86 → 1', 0, () => {
-      expect(archiveCardScale(0)).assertEqual(0.86);
-      expect(archiveCardScale(1)).assertEqual(1);
-      expect(archiveCardScale(0.5) > 0.86 && archiveCardScale(0.5) < 1).assertTrue();
+    it('深度足够但手势不足200ms仍收回', 0, () => {
+      const g = new ArchiveRevealGesture(); g.begin(); g.observe(60, 72, 1000);
+      expect(g.release(0, 72, 1199, true, false)).assertEqual(72);
+      expect(g.revealed).assertFalse();
     });
-
-    it('图标从 -90° 转正', 0, () => {
-      expect(archiveIconSpin(0)).assertEqual(-90);
-      expect(archiveIconSpin(1)).assertEqual(0);
+    it('停留足够但没有露出85%仍收回', 0, () => {
+      const g = new ArchiveRevealGesture(); g.begin(); g.observe(60, 72, 1000);
+      expect(g.release(20, 72, 1500, true, false)).assertEqual(72);
     });
-
-    it('图标缩放比卡片夸张一档：0.6 → 1', 0, () => {
-      expect(archiveIconScale(0)).assertEqual(0.6);
-      expect(archiveIconScale(1)).assertEqual(1);
+    it('达标松手吸附归档而不是进入归档页面', 0, () => {
+      const g = new ArchiveRevealGesture(); g.begin(); g.observe(60, 72, 1000);
+      expect(g.release(10, 72, 1200, true, false)).assertEqual(0);
+      expect(g.revealed).assertTrue();
+      expect(g.settling).assertTrue();
     });
-
-    it('越界的进度不会算出越界的形变', 0, () => {
-      expect(archiveCardScale(2)).assertEqual(1);
-      expect(archiveCardScale(-1)).assertEqual(0.86);
-      expect(archiveIconSpin(2)).assertEqual(0);
+    it('准备提示220ms出现，反向拖动立即撤销', 0, () => {
+      const g = new ArchiveRevealGesture(); g.begin(); g.observe(60, 72, 1000);
+      expect(g.ready(10, 72, 1219)).assertFalse();
+      expect(g.ready(10, 72, 1220)).assertTrue();
+      expect(g.ready(20, 72, 1300)).assertFalse();
+    });
+    it('整行滚出才隐藏，不再滚8vp就收回', 0, () => {
+      const g = new ArchiveRevealGesture(); g.revealed = true;
+      g.observe(10, 72, 1000); expect(g.revealed).assertTrue();
+      g.observe(60, 72, 1100); expect(g.revealed).assertTrue();
+      g.observe(70, 72, 1200); expect(g.revealed).assertFalse();
+    });
+    it('手势取消和归档消失均不能提交展开', 0, () => {
+      const g = new ArchiveRevealGesture(); g.begin(); g.observe(60, 72, 1000);
+      expect(g.release(0, 72, 1500, true, true)).assertEqual(72);
+      g.begin(); g.observe(60, 72, 2000);
+      expect(g.release(0, 72, 2500, false, false)).assertEqual(72);
+    });
+    it('普通滚动抬手不吸附，重新触摸中止旧吸附', 0, () => {
+      const g = new ArchiveRevealGesture(); g.begin();
+      expect(g.release(100, 72, 1500, true, false)).assertNull();
+      g.settling = true; g.begin(); expect(g.settling).assertFalse();
+      g.revealed = true;
+      expect(g.release(20, 72, 2000, true, false)).assertNull();
+    });
+    it('会话记忆索引不包含归档，紧凑行也遵循比例阈值', 0, () => {
+      expect(archiveLogicalIndex(0)).assertEqual(0);
+      expect(archiveLogicalIndex(1)).assertEqual(0);
+      expect(archiveLogicalIndex(7)).assertEqual(6);
+      const g = new ArchiveRevealGesture(); g.begin(); g.observe(50, 60, 1000);
+      expect(g.release(8, 60, 1250, true, false)).assertEqual(0);
     });
   });
 }

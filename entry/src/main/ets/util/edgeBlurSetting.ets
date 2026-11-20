@@ -21,9 +21,10 @@
 // 唯一写入口是 AppSettings.setBoolean / setString，它们同时更新 AppStorage、本单例
 // 与磁盘，三个入口不会各说各话。
 //
-// 【关闭时怎么写】不要把 linearGradientBlur 整个去掉（属性不能条件挂载，复制整棵
-// 滚动树更不行），而是半径传 0 且 stops 里只剩 0：半径 0 的渐变模糊在渲染侧是
-// 恒等变换，不再产生模糊计算。见 util/scrollEdgeBlur 的 edgeBlurStopsEx。
+// 【关闭时怎么写】不要直接链式调用 `.linearGradientBlur(0, ...)`：真机 Rosen 实测
+// 即使半径 0 且 stops 全 0，节点仍会挂上 `NeedFilter[true]` + `RSLinearGradientBlurFilterBlur`，
+// 触发整屏脏区扩张与每帧整屏离屏快照。请统一走 util/scrollEdgeBlurModifier 的
+// ScrollEdgeBlurBinder + `.attributeModifier(...)`，关闭时根本不调用 linearGradientBlur。
 
 export const KEY_EDGE_BLUR_ON: string = 'edgeBlurOn';
 export const KEY_EDGE_BLUR_TOP_ON: string = 'edgeBlurTopOn';

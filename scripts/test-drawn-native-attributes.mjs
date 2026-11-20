@@ -52,7 +52,7 @@ assert.match(tile,/Stack.attributeModifier(?:\.bind\(this\))?\(this.nativeAnchor
 assert.match(tile,/Stack.drawModifier\(this.media.slots\[slot.index\]\?\.receiver\)/);
 assert.doesNotMatch(tile,/Stack\.(size|position|borderRadius|clip|geometryTransition|backgroundColor|hitTestBehavior)\(/,'anchor properties have one owner');
 assert.doesNotMatch(source,/\.drawModifier\(|\.bindContextMenu\(/,'unsupported builder/drawing APIs remain in the DSL');
-assert.match(compiled,/Stack.bindContextMenu\(this.menuShown/,'context menu stays on original canvas host');
+assert.match(compiled,/Row.bindContextMenu\(this.menuShown/,'context menu uses the existing complete capture host');
 console.log('PASS: 9000 warm anchors have equal complete snapshots; same geometry/new message changes only transition; resize/video/fallback/recreated node/A-B-A/focus/drag preserved; nine-slot bound and compiled attribute ownership verified. Native diff counts are modeled, not device timing.');
 // Press affects only the canvas opacity/group. It must not override jump scale,
 // capture-parent opacity, media geometry or drag policy; scroll/link/live gates

@@ -13627,6 +13627,14 @@
     {
       "name": "cp_channel_direct_unavailable",
       "value": "暂时无法打开频道私信，请稍后重试"
+    },
+    {
+      "name": "cl_archive_pull",
+      "value": "下拉显示归档会话"
+    },
+    {
+      "name": "cl_archive_release",
+      "value": "松开显示归档会话"
     }
   ]
 }

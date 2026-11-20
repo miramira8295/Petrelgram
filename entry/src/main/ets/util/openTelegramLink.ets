@@ -1,3 +1,4 @@
+import { messageLinkRoute } from './messageLinkRoute';
 import { pushUrl, showDialog } from './uiContext';
 import { showToast } from '../util/toast';
 import { resolveUserToken } from './userLink';
@@ -108,22 +109,20 @@ function resolvePublicChat(context: common.UIAbilityContext, username: string, d
 
 function openMessageLink(context: common.UIAbilityContext, link: string, original: string,
     allowBrowser: boolean): void {
+  const client = getTdClient();
   const req: TdRequest = { '@type': 'getMessageLinkInfo' };
   req['url'] = link;
-  getTdClient().send(req).then((info: TdObject): void => {
-    const chatId = (info['chat_id'] as number | undefined) ?? 0;
-    if (chatId === 0) {
+  client.send(req).then((info: TdObject): void => {
+    if (client !== getTdClient()) { return; }
+    const params = messageLinkRoute(info);
+    if (params === null) {
       onLinkUnresolved(context, original, allowBrowser);
       return;
     }
-    const msg = info['message'] as TdObject | undefined;
-    const msgId = msg !== undefined ? ((msg['id'] as number | undefined) ?? 0) : 0;
-    const params: Record<string, Object> = { 'chatId': chatId };
-    if (msgId > 0) {
-      params['jumpTo'] = msgId;
-    }
     navigateToChat(params, 'content').catch(logChatNavFailure);
+    endLinkNavIf(original);
   }).catch((error: TdError): void => {
+    if (client !== getTdClient()) { return; }
     logE(`openTelegramLink.getMessageLinkInfo failed: ${error.message}`);
     onLinkUnresolved(context, original, allowBrowser);
   });

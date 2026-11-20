@@ -109,7 +109,21 @@ export class LiveTopCardController {
   // ——— 显示态：TopBanners 直接读这些 @Trace ———
 
   @Trace pinnedVisibility: PinnedVisibility = new PinnedVisibility();
-  @Trace pinnedPreview: string = '';
+  // pinnedPreview 字符串本身在滚动经过多条置顶消息时高频切换（1/13 → 2/13）；
+  // 拆出布尔 @Trace hasPinnedPreview 专供 pinnedVisible() 订阅，避免 ChatPage.build()
+  // 因置顶文案变化而整页重跑。
+  @Trace private pinnedPreviewValue: string = '';
+  @Trace private hasPinnedPreview: boolean = false;
+  get pinnedPreview(): string { return this.pinnedPreviewValue; }
+  set pinnedPreview(value: string) {
+    if (this.pinnedPreviewValue !== value) {
+      this.pinnedPreviewValue = value;
+    }
+    const has: boolean = value !== '';
+    if (this.hasPinnedPreview !== has) {
+      this.hasPinnedPreview = has;
+    }
+  }
   @Trace pinnedCount: number = 0;
   @Trace pinnedLoadState: string = 'loading'; // loading | ready | error
   @Trace pinnedJumpBusy: boolean = false;
@@ -120,8 +134,31 @@ export class LiveTopCardController {
   // （搬之前它孤零零声明在页面的另一处、与其余 pinned 字段隔了 170 行，这里
   // 归位到同一块。）
   @Trace pinnedCycle: number = 0;
-  @Trace musicTrack: NowPlaying | null = null;
-  @Trace musicStatus: string = 'idle';
+  @Trace private musicTrackValue: NowPlaying | null = null;
+  @Trace private musicStatusValue: string = 'idle';
+  @Trace private musicVisibleFlag: boolean = false;
+  get musicTrack(): NowPlaying | null { return this.musicTrackValue; }
+  set musicTrack(value: NowPlaying | null) {
+    if (this.musicTrackValue !== value) {
+      this.musicTrackValue = value;
+    }
+    this.syncMusicVisible();
+  }
+  get musicStatus(): string { return this.musicStatusValue; }
+  set musicStatus(value: string) {
+    if (this.musicStatusValue !== value) {
+      this.musicStatusValue = value;
+    }
+    this.syncMusicVisible();
+  }
+  private syncMusicVisible(): void {
+    const status: string = this.musicStatusValue;
+    const visible: boolean = this.musicTrackValue !== null &&
+      (status === 'playing' || status === 'loading' || status === 'paused');
+    if (this.musicVisibleFlag !== visible) {
+      this.musicVisibleFlag = visible;
+    }
+  }
   @Trace musicPositionMs: number = 0;
   @Trace musicDurationMs: number = 0;
   // 音乐条 / 置顶条两张卡当前停在哪一张：'music' | 'pinned'。两条同时可见时由
@@ -328,7 +365,7 @@ export class LiveTopCardController {
   }
 
   pinnedVisible(): boolean {
-    return !this.pinnedVisibility.hidden && this.pinnedPreview !== '';
+    return !this.pinnedVisibility.hidden && this.hasPinnedPreview;
   }
 
   shouldShow(): boolean {
@@ -344,9 +381,7 @@ export class LiveTopCardController {
   // 播放条只在会话列表那一页上）。
   // 'completed' 不算：那是这一条放完了，会话页不该留一张常驻的空控制条。
   musicVisible(): boolean {
-    const status: string = this.musicStatus;
-    return this.musicTrack !== null &&
-      (status === 'playing' || status === 'loading' || status === 'paused');
+    return this.musicVisibleFlag;
   }
 
   musicAndPinnedVisible(): boolean { return this.musicVisible() && this.pinnedVisible(); }

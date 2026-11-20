@@ -13331,6 +13331,14 @@
     {
       "name": "link_copied_internal",
       "value": "تم نسخ الرابط الداخلي (يفتح في هذا التطبيق فقط)"
+    },
+    {
+      "name": "cl_archive_pull",
+      "value": "اسحب للأسفل لإظهار الأرشيف"
+    },
+    {
+      "name": "cl_archive_release",
+      "value": "أفلت لإظهار الأرشيف"
     }
   ]
 }

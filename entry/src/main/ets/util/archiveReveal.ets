@@ -1,56 +1,62 @@
-// 下拉露出「归档的聊天」时那张卡片的形变曲线。
-//
-// 【为什么要形变】原来只有高度和透明度跟着下拉深度线性变化，卡片是"从一条缝里
-// 平推出来"的，没有被拉出来的手感。加两条跟手的形变：卡片整体从 0.86 缩放到 1，
-// 归档图标同时从 -90° 转正、从 0.6 放大到 1——手指还在拉的时候它就在"成形"，
-// 松手到位那一下再用弹簧收尾。
-//
-// 【为什么是纯函数】这三条曲线要在 onDidScroll 每一帧被读到，改坏了只能靠肉眼
-// 在真机上看。抽出来就能用断言钉住端点和单调性。
+// Telegram Android: DialogsActivity + PullForegroundDrawable. Fixed list row,
+// 85% snap height, 200ms release gate, 220ms ready hint, .45→.20 drag friction.
+// All scroll decisions are O(1); no observed state, timers or allocations here.
+export class ArchiveRevealGesture {
+  revealed: boolean = false;
+  touching: boolean = false;
+  settling: boolean = false;
+  private startedAt: number = -1;
 
-// 卡片完全成形时的缩放（即 1），和最小缩放。
-const CARD_SCALE_MIN: number = 0.86;
-// 图标转正之前的起始角度（度）。负值 = 逆时针转进来。
-const ICON_SPIN_START: number = -90;
-const ICON_SCALE_MIN: number = 0.6;
+  begin(): void {
+    this.touching = true;
+    this.settling = false;
+    this.startedAt = -1;
+  }
 
-// 下拉进度，0..1。revealed 为真时恒为 1——已经锁定展开，不再跟手。
-export function archiveRevealProgress(
-  pullPx: number, rowHeight: number, revealed: boolean
-): number {
-  if (revealed) {
-    return 1;
+  observe(y: number, height: number, now: number): void {
+    const visible = height - y;
+    if (visible < 4) {
+      this.startedAt = -1;
+      this.revealed = false;
+    } else if (this.touching && this.startedAt < 0) {
+      this.startedAt = now;
+    }
   }
-  if (!Number.isFinite(pullPx) || !Number.isFinite(rowHeight) || rowHeight <= 0) {
-    return 0;
+
+  ready(y: number, height: number, now: number): boolean {
+    return height > 0 && this.startedAt >= 0 && now - this.startedAt >= 220 &&
+      height - y > height * 0.85;
   }
-  const p: number = pullPx / rowHeight;
-  if (p <= 0) {
-    return 0;
+
+  // Positive scroll delta moves the list up. Only actual finger drag may
+  // enter a hidden archive row; fling/scrollbar/retap stop at the first chat.
+  filter(delta: number, y: number, height: number, dragging: boolean, available: boolean): number {
+    if (this.revealed && available) { return delta; }
+    if (delta >= 0) { return delta; }
+    if (!available || !dragging || !this.touching) {
+      return Math.max(delta, Math.min(0, height - y));
+    }
+    const beforeRow = Math.min(0, height - y);
+    if (delta >= beforeRow) { return delta; }
+    const progress = Math.max(0, Math.min(1, 1 - y / height));
+    // No extra overscroll above the archive: native spring is reserved for
+    // normal scrolling after reveal, not stacked on top of pull friction.
+    return Math.max(-Math.max(0, y), beforeRow + (delta - beforeRow) * (0.45 - 0.25 * progress));
   }
-  return p >= 1 ? 1 : p;
+
+  // null means normal list scrolling; number is the normalized snap offset.
+  release(y: number, height: number, now: number, available: boolean, cancelled: boolean): number | null {
+    this.touching = false;
+    if (this.revealed && available) { return null; }
+    if (y >= height) { this.startedAt = -1; return null; }
+    this.revealed = available && !cancelled && this.startedAt >= 0 &&
+      now - this.startedAt >= 200 && height - y >= height * 0.85;
+    this.startedAt = -1;
+    this.settling = true;
+    return this.revealed ? 0 : height;
+  }
 }
 
-// 卡片整体缩放：0.86 → 1。
-export function archiveCardScale(progress: number): number {
-  const p: number = clamp01(progress);
-  return CARD_SCALE_MIN + (1 - CARD_SCALE_MIN) * p;
-}
-
-// 归档图标的旋转角（度）：-90 → 0。
-export function archiveIconSpin(progress: number): number {
-  return ICON_SPIN_START * (1 - clamp01(progress));
-}
-
-// 归档图标的缩放：0.6 → 1。比卡片本身更夸张一档，成形感集中在图标上。
-export function archiveIconScale(progress: number): number {
-  const p: number = clamp01(progress);
-  return ICON_SCALE_MIN + (1 - ICON_SCALE_MIN) * p;
-}
-
-function clamp01(v: number): number {
-  if (!Number.isFinite(v) || v <= 0) {
-    return 0;
-  }
-  return v >= 1 ? 1 : v;
+export function archiveLogicalIndex(listIndex: number): number {
+  return Math.max(0, listIndex - 1);
 }

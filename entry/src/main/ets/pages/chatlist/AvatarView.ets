@@ -1,39 +1,99 @@
+import { image } from '@kit.ImageKit';
 import { AVATAR_PALETTE, AVATAR_SIZE, COLOR_PRIMARY } from '../../util/theme';
 import { formatTTL } from '../../util/formatTTL';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { AvLoopVideo } from '../common/AvLoopVideo';
-import { CachedImage } from '../common/CachedImage';
-import { CachedImageSpecCache } from '../../util/cachedImageSpec';
+import { CachedImageSession } from '../../util/CachedImageSession';
+import { CachedImageSpec } from '../../util/cachedImageSpec';
 import { KEY_POWER_ACTIVE, KEY_POWER_ANIMATED_AVATAR } from '../../store/AppSettings';
 
 @Component
 export struct AvatarView {
-  @Prop avatarPath: string;
+  @Prop @Watch('onAvatarInputChanged') avatarPath: string;
   @Prop initials: string;
-  @Prop colorSeed: number;
+  @Prop @Watch('onAvatarInputChanged') colorSeed: number;
   @Prop autoDeleteTime: number = 0;
   @StorageProp(LANGUAGE_EPOCH) private languageEpoch: number = 0;
   @Prop isLive: boolean = false;
   @Prop livePulseExpanded: boolean = false;
   // Animated profile photo (MPEG4 loop). Only profile pages pass this —
   // list rows stay static (one looping player per row would be too heavy).
-  @Prop animPath: string = '';
+  @Prop @Watch('onAvatarInputChanged') animPath: string = '';
   @Prop animationPaused: boolean = false;
   // 「我的收藏」：和自己的私聊。画书签而不是自己的头像——用户在列表里要一眼
   // 认出它，Telegram 各端都是这么处理的（issue #8）。
-  @Prop savedMessages: boolean = false;
+  @Prop @Watch('onAvatarInputChanged') savedMessages: boolean = false;
   // 预载/隐藏页签先画首字母占位，真正成为当前页后再启动图片或视频解码。
-  @Prop loadImage: boolean = true;
-  @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
-  @StorageProp(KEY_POWER_ANIMATED_AVATAR) animatedAvatar: boolean = true;
+  @Prop @Watch('onAvatarInputChanged') loadImage: boolean = true;
+  @StorageProp(KEY_POWER_ACTIVE) @Watch('onAvatarInputChanged') powerSaving: boolean = false;
+  @StorageProp(KEY_POWER_ANIMATED_AVATAR) @Watch('onAvatarInputChanged') animatedAvatar: boolean = true;
   // **必须是 @Prop，不能是普通成员**：会话行的头像在手机/平板分栏之间是两个尺寸
   // （见 util/chatRowMetrics），而没有装饰器的成员只在构造时取一次值、之后再不同步
   // ——转屏或进出分栏时已经存在的那些行会停在旧尺寸上（HdsSubDestination 的 menuItems
   // 栽过同一个坑）。数字过 @Prop 的深拷贝没有任何代价。
-  @Prop avatarSize: number = AVATAR_SIZE;
-  // 每次重渲染都现造 spec 字面量的话，CachedImage 的 @Param 必然换引用
-  // （V2 对对象参数按 `===` 比较）——会话列表每行一颗头像，这里是无谓重渲染。
-  private imageCache: CachedImageSpecCache = new CachedImageSpecCache();
+  @Prop @Watch('onAvatarInputChanged') avatarSize: number = AVATAR_SIZE;
+  // 直接在 V1 @Component 内持有 CachedImageSession 与 @State pixelMap，不再嵌套 V2
+  // @ComponentV2 的 CachedImage：ChatRow / ContactRowView / MemberRow 等外层都是
+  // V1 @Reusable，复用 V2 子组件会导致 ArkUI AceStateMgmt 报
+  // `CachedImage activeCount_ error:2` 并冻住旧频道的头像位图。
+  @State private pixelMap: image.PixelMap | undefined = undefined;
+  private imageActive: boolean = false;
+  private imageSession: CachedImageSession = new CachedImageSession(
+    (pixels: image.PixelMap | undefined, _ready: boolean): void => {
+      if (this.pixelMap !== pixels) {
+        this.pixelMap = pixels;
+      }
+    }
+  );
+
+  aboutToAppear(): void {
+    this.imageActive = true;
+    this.imageSession.activate(this.currentImageSpec());
+  }
+
+  aboutToRecycle(): void {
+    this.imageActive = false;
+    if (this.pixelMap !== undefined) {
+      this.pixelMap = undefined;
+    }
+    this.imageSession.recycle();
+  }
+
+  aboutToReuse(_params: Record<string, Object>): void {
+    this.imageActive = true;
+    this.imageSession.activate(this.currentImageSpec());
+  }
+
+  aboutToDisappear(): void {
+    this.imageActive = false;
+    this.imageSession.dispose();
+  }
+
+  private onAvatarInputChanged(): void {
+    const spec: CachedImageSpec = this.currentImageSpec();
+    if (!this.imageActive) {
+      this.imageActive = true;
+      this.imageSession.activate(spec);
+      return;
+    }
+    this.imageSession.update(spec);
+  }
+
+  private shouldLoadStaticImage(): boolean {
+    return !this.savedMessages && !this.shouldAnimate() && this.loadImage && this.avatarPath !== '';
+  }
+
+  private currentImageSpec(): CachedImageSpec {
+    return {
+      path: this.shouldLoadStaticImage() ? this.avatarPath : '',
+      sourceKey: `${this.colorSeed}:${this.avatarPath}`,
+      boxWidth: this.avatarSize,
+      boxHeight: this.avatarSize,
+      radius: this.avatarSize / 2,
+      fit: ImageFit.Cover,
+      pinBounded: true,
+    };
+  }
 
   // 动态头像播不播。
   //
@@ -89,23 +149,13 @@ export struct AvatarView {
         // circle rather than a hole.
         this.initialsCircle();
         if (this.loadImage) {
-          CachedImage({ spec: this.imageCache.prepare({
-            path: this.avatarPath,
-            boxWidth: this.avatarSize,
-            boxHeight: this.avatarSize,
-            radius: this.avatarSize / 2,
-            fit: ImageFit.Cover,
-            // 【2026-09-21 补上这两个】pinBounded / syncSmall 这套机制就是为头像
-            // （issue #137「翻消息时头像会闪」）建的，而**本组件一个都没传**——
-            // 只有 MessageBubble 和 LightweightPlainTextBubble 在用。会话列表、
-            // 联系人、@ 弹窗的头像全走这里，于是：被大图挤出缓存后重解码、
-            // 首帧只有首字母圆底。
-            //   pinBounded：只保最近 48 张，超出还给 LRU（见 util/boundedPins）。
-            //   syncSmall ：未命中时在主线程同步解一次，首帧就有照片。
-            //               准入见 util/pixelSyncPolicy——那条阈值同日由 160 抬到
-            //               176，否则本机 161px 的头像差一像素够不着。
-            pinBounded: true,
-          }) });
+          Image(this.pixelMap)
+            .draggable(false)
+            .width(this.avatarSize).height(this.avatarSize)
+            .borderRadius(this.avatarSize / 2)
+            .clip(true)
+            .interpolation(ImageInterpolation.High)
+            .objectFit(ImageFit.Cover);
         }
       }
       .width(this.avatarSize).height(this.avatarSize);

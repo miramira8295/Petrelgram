@@ -18,7 +18,7 @@
   "test-drawn-single-media.mjs",
   "test-drawn-completion.mjs",
   "test-drawn-inline-emoji.mjs",
-  "test-chatlist-scroll-lifecycle.mjs",
+  "test-home-conversation-panel.mjs",
   "test-drawn-creation-trim.mjs",
   "test-drawn-reuse-trim.mjs",
   "test-drawn-geometry-reuse.mjs",
@@ -140,5 +140,8 @@
   "test-attach-panel.mjs",
   "test-navigation-haptics.mjs",
   "test-channel-direct-messages.mjs",
-  "test-message-sender-navigation.mjs"
+  "test-message-sender-navigation.mjs",
+  "test-video-stream-seek.mjs",
+  "test-drawn-menu-preview.mjs",
+  "test-message-link-scope.mjs"
 ]

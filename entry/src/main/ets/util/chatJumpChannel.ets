@@ -15,7 +15,7 @@
 //
 // **为什么是旁路而不是改路由。** 已经挂在树上的那个 ChatPage 不会因为 popTo
 // 重新吃一遍 pathInfo（栈帧的参数没变），没有任何"重新传参"的口子。和
-// translationChannel / mediaThumbChannel 同构：发布方不认识订阅方，键用 chatId。
+// translationChannel / mediaThumbChannel 同构：发布方不认识订阅方，键用 chatId + 带类型的 scope，避免同群的后台评论页也收到跳转。
 //
 // **不留待送队列**：skip/popTo 的前提就是那一页已经挂着、也已经订阅了，没有
 // 竞态；而留一份"待送"反而会在下次打开同一个会话时冒出一次陈旧的跳转。
@@ -23,34 +23,36 @@
 
 type JumpListener = (messageId: number) => void;
 
-const subs: Map<number, Set<JumpListener>> = new Map();
+const subs: Map<string, Set<JumpListener>> = new Map();
 
 // 返回退订函数，交给调用方的订阅登记册管理。
-export function subscribeChatJump(chatId: number, listener: JumpListener): () => void {
-  let listeners: Set<JumpListener> | undefined = subs.get(chatId);
+export function subscribeChatJump(chatId: number, listener: JumpListener, scope: string = 'chat'): () => void {
+  const key = `${chatId}:${scope}`;
+  let listeners: Set<JumpListener> | undefined = subs.get(key);
   if (listeners === undefined) {
     listeners = new Set<JumpListener>();
-    subs.set(chatId, listeners);
+    subs.set(key, listeners);
   }
   listeners.add(listener);
   return (): void => {
-    const current: Set<JumpListener> | undefined = subs.get(chatId);
+    const current: Set<JumpListener> | undefined = subs.get(key);
     if (current === undefined) {
       return;
     }
     current.delete(listener);
     if (current.size === 0) {
-      subs.delete(chatId);
+      subs.delete(key);
     }
   };
 }
 
 // 没有订阅者就是"这个会话现在没开着"——静默丢弃，不排队。
-export function requestChatJump(chatId: number, messageId: number): void {
+export function requestChatJump(chatId: number, messageId: number, scope: string = 'chat'): void {
+  const key = `${chatId}:${scope}`;
   if (chatId === 0 || messageId <= 0) {
     return;
   }
-  const listeners: Set<JumpListener> | undefined = subs.get(chatId);
+  const listeners: Set<JumpListener> | undefined = subs.get(key);
   if (listeners === undefined) {
     return;
   }

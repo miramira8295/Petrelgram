@@ -522,6 +522,13 @@ export class ChatStore {
 
 
 
+  // Ordered worker IDs are already cached. Archive summary needs one entry,
+  // not an O(n) copied array on each reveal/store publication.
+  firstChat(listKey: string = MAIN): ChatEntry | null {
+    const id = this.listIds(listKey)[0];
+    return id === undefined ? null : this.mirror.get(id) ?? null;
+  }
+
   getChats(listKey: string = MAIN): ChatEntry[] {
     const list: ChatEntry[] = [];
     for (const id of this.listIds(listKey)) {

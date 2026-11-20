@@ -15,7 +15,8 @@ import { guardKey } from '../../util/keyGuard';
 import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, chatListInForeground, chatListPublicationMode, ChatListFreeze, chatOrderUnchanged, chatRevisionsUnchanged, contentOnlyUpdate, updateTouchHold } from './ChatListFreeze';
 import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
 import { rememberListPosition, recallListPosition } from '../../util/chatListPosition';
-import { EDGE_OVERLAY_VP, edgeBlurRadiusOf, edgeBlurStopsEx } from '../../util/scrollEdgeBlur';
+import { EDGE_OVERLAY_VP, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import { ScrollEdgeBlurBinder } from '../../util/scrollEdgeBlurModifier';
 import {
   EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_FORCE_OFF, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
   KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_LIST_BOTTOM, KEY_EDGE_BLUR_LIST_TOP, KEY_EDGE_BLUR_ON,
@@ -48,6 +49,8 @@ const FLUSH_BYPASS_DEFER_MS: number = 32;
 
 @Component
 export struct ChatListView {
+  // Homepage shares one surface; standalone archive retains individual cards.
+  @Prop continuousPanel: boolean = false;
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
   // 会话行档位，判据与 MainTabBody 一致（见 util/chatRowMetrics）。
   @StorageProp('screenWidthVp') private screenW: number = 360;
@@ -67,6 +70,7 @@ export struct ChatListView {
   // 列表首行是否可见：没有未静音未读时，决定是否需要回顶。
   private topVisible: boolean = true;
   private firstVisibleIndex: number = 0;
+  private edgeBlur: ScrollEdgeBlurBinder = new ScrollEdgeBlurBinder();
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   // 底栏点了已选中的「聊天」页签（issue #35）：优先跳到下一个未静音未读；
   // 没有这种会话才回顶。归档页等复用本组件的地方也生效。
@@ -148,12 +152,12 @@ export struct ChatListView {
     .height(CHAT_SWIPE_ACTION_HEIGHT)
     .margin({
       left: this.cardGutter(),
-      top: CHAT_SWIPE_VERTICAL_GUTTER_VP,
-      bottom: CHAT_SWIPE_VERTICAL_GUTTER_VP
+      top: this.continuousPanel ? 0 : CHAT_SWIPE_VERTICAL_GUTTER_VP,
+      bottom: this.continuousPanel ? 0 : CHAT_SWIPE_VERTICAL_GUTTER_VP
     })
     // ACTIONING 会强制扩宽 builder 顶层；底色和圆角必须在同一节点。
     .backgroundColor(readSwipeVisual(this.rowUnread(row.snapshot.chat)).background)
-    .borderRadius(CHAT_SWIPE_RADIUS_VP)
+    .borderRadius(this.continuousPanel ? 0 : CHAT_SWIPE_RADIUS_VP)
     .clip(true);
   }
 
@@ -173,12 +177,12 @@ export struct ChatListView {
     .height(CHAT_SWIPE_ACTION_HEIGHT)
     .margin({
       right: this.cardGutter(),
-      top: CHAT_SWIPE_VERTICAL_GUTTER_VP,
-      bottom: CHAT_SWIPE_VERTICAL_GUTTER_VP
+      top: this.continuousPanel ? 0 : CHAT_SWIPE_VERTICAL_GUTTER_VP,
+      bottom: this.continuousPanel ? 0 : CHAT_SWIPE_VERTICAL_GUTTER_VP
     })
     // 长滑的主动作是最外侧归档，因此扩出的整块区域使用归档色。
     .backgroundColor(archiveSwipeVisual(this.rowArchived()).background)
-    .borderRadius(CHAT_SWIPE_RADIUS_VP)
+    .borderRadius(this.continuousPanel ? 0 : CHAT_SWIPE_RADIUS_VP)
     .clip(true);
   }
 
@@ -665,12 +669,13 @@ export struct ChatListView {
 
   // 首页会话卡片外沿（util/pageMargin）：手机 6，折叠屏 10，平板 14。
   private cardGutter(): number {
-    return homeCardMarginVp(this.widthBp);
+    return this.continuousPanel ? 0 : homeCardMarginVp(this.widthBp);
   }
 
   // 聊天列表页顶部：总开关 + 顶部子开关 + 「聊天列表」的页面级设置。
   private edgeBlurTopEnabled(): boolean {
-    return edgeBlurPageTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurListTop);
+    // 首页按用户要求保持顶部清晰；独立归档页仍遵循顶部模糊设置。
+    return !this.continuousPanel && edgeBlurPageTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurListTop);
   }
 
   private edgeBlurBottomEnabled(): boolean {
@@ -718,7 +723,8 @@ export struct ChatListView {
           ListItem() {
             ChatRow({
               compact: !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
-              row: item,
+              continuousPanel: this.continuousPanel,
+            row: item,
               listKey: this.listKey,
               liveEffects: this.liveEffects(),
               loadImages: this.imagesActive
@@ -770,14 +776,13 @@ export struct ChatListView {
         }
       }
       .width('100%').height('100%')
-      // Keep enough painted cache for the floating title blur without asking
-      // every hidden/adjacent tab to prepare a full extra screen of ChatRows.
-      .cachedCount(2, true)
+      // Standalone pages keep the previous painted cache; the panel clips offscreen rows.
+      .cachedCount(2, !this.continuousPanel)
       // cachedCount 的第二个参数 true 与这里的 clip(false) 是一对：前者让滚出
       // 视口的行不被回收，后者让它画得出来。官方《设置动态模糊样式》点名过——
       // 列表穿透到标题栏下方时缺了任一个，标题栏底下就是空的，渐变模糊没有
       // 东西可糊。
-      .clip(false)
+      .clip(this.continuousPanel)
       .edgeEffect(EdgeEffect.Spring)
       // Stop touch scrolling as soon as the long-press menu begins to appear.
       // This prevents residual spring/inertia from shifting the source row
@@ -788,7 +793,7 @@ export struct ChatListView {
       // 容器上顶了 EDGE_OVERLAY_VP，内容起点跟着上移，这里补回来，首行才不会被切。
       // 上顶量随「状态栏 + 标题栏 + 文件夹条」实时变：文件夹条展开时列表区整体下移，
       // 这里不减掉那截，拉开的那条带就没有虚化（下拉出现文件夹时最明显）。
-      .contentStartOffset(EDGE_OVERLAY_VP + this.contentTopInset)
+      .contentStartOffset((this.continuousPanel ? 0 : EDGE_OVERLAY_VP) + this.contentTopInset)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
       .onDidScroll((offset: number, state: ScrollState): void => {
         this.updateScrollActivity(state);
@@ -808,12 +813,9 @@ export struct ChatListView {
       })
       }
       .layoutWeight(1).width('100%')
-      // 屏幕最顶/最底的边缘渐变虚化：容器级滤镜，界面里不叠任何玻璃条带。
-      // fractionStops 按容器实测高度归一化，底部渐隐带才会贴住屏幕下沿。
-      .linearGradientBlur(this.edgeBlurRadius(), {
-        fractionStops: edgeBlurStopsEx(this.listViewH, 780, 0, this.edgeBlurTopEnabled(), this.edgeBlurBottomEnabled()),
-        direction: GradientDirection.Bottom
-      })
+      // 边缘虚化遵循用户设置；关闭时完全不挂 linearGradientBlur，避免 Rosen 给列表加全屏滤镜。
+      .attributeModifier(this.edgeBlur.bind(
+        this.edgeBlurRadius(), this.listViewH, this.edgeBlurTopEnabled(), this.edgeBlurBottomEnabled()))
       .onAreaChange((_old: Area, area: Area): void => {
         const h: number = Number(area.height);
         if (h > 0 && Math.abs(h - this.listViewH) > 0.5) {
@@ -821,7 +823,8 @@ export struct ChatListView {
         }
       })
       // 上顶 EDGE_OVERLAY_VP（标题栏 56 + 状态栏 39），让渐变原点回到屏幕最上沿。
-      .margin({ top: -EDGE_OVERLAY_VP });
+      .margin({ top: this.continuousPanel ? 0 : -EDGE_OVERLAY_VP })
+      .clip(this.continuousPanel);
     }
   }
 }

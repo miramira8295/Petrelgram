@@ -13331,6 +13331,14 @@
     {
       "name": "link_copied_internal",
       "value": "Đã sao chép liên kết nội bộ (chỉ trong ứng dụng này)"
+    },
+    {
+      "name": "cl_archive_pull",
+      "value": "Kéo xuống để hiện kho lưu trữ"
+    },
+    {
+      "name": "cl_archive_release",
+      "value": "Thả ra để hiện kho lưu trữ"
     }
   ]
 }

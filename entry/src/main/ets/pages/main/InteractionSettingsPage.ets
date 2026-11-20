@@ -1,6 +1,6 @@
 import { NavigationHapticSettings } from './NavigationHapticSettings';
 import {
-  KEY_EXTERNAL_LINK_ACTION, KEY_FOLDER_BAR_SCROLL_HIDE, KEY_MSG_GESTURE, KEY_ROW_SWIPE_ACTIONS,
+  KEY_EXTERNAL_LINK_ACTION, KEY_MSG_GESTURE, KEY_ROW_SWIPE_ACTIONS,
   KEY_SHOW_CONTACTS_TAB, KEY_VIEWER_CONTINUOUS_HOP, setBoolean, setString
 } from '../../store/AppSettings';
 import {
@@ -11,7 +11,8 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../u
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { HdsSubDestination } from '../common/HdsSubDestination';
-import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurStops, edgeBlurStopsEx, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import { ScrollEdgeBlurBinder } from '../../util/scrollEdgeBlurModifier';
 import {
   EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
   KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
@@ -74,6 +75,7 @@ export function InteractionSettingsPageBuilder(): void {
 
 @Component
 export struct InteractionSettingsPage {
+  private edgeBlur: ScrollEdgeBlurBinder = new ScrollEdgeBlurBinder();
   @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
   @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
   @StorageProp(KEY_EDGE_BLUR_BOTTOM_ON) private edgeBlurBottomOn: boolean = EDGE_BLUR_BOTTOM_ON_DEFAULT;
@@ -88,7 +90,6 @@ export struct InteractionSettingsPage {
   @StorageLink(KEY_MSG_GESTURE) gestureScheme: string = GESTURE_CLASSIC;
   @StorageLink(KEY_SHOW_CONTACTS_TAB) showContactsTab: boolean = true;
   @StorageLink(KEY_ROW_SWIPE_ACTIONS) rowSwipeActions: boolean = false;
-  @StorageLink(KEY_FOLDER_BAR_SCROLL_HIDE) folderBarScrollHide: boolean = true;
   @StorageLink(KEY_VIEWER_CONTINUOUS_HOP) viewerContinuousHop: boolean = true;
   @StorageLink(KEY_EXTERNAL_LINK_ACTION) externalLinkAction: string = EXT_LINK_DEFAULT;
   // 迁移前这里还有 leavingPage/leaveTimer 两个字段、一个 aboutToDisappear 清理，
@@ -274,26 +275,6 @@ export struct InteractionSettingsPage {
     .backgroundColor(CARD_BG)
     .borderRadius(CARD_RADIUS);
 
-    // 列表滑动时收起文件夹栏（默认开，和加这个开关之前的行为一致）。
-    // 关掉后横条常驻，收起态的缩略块也就不会再出现。
-    Row({ space: 12 }) {
-      Column({ space: 3 }) {
-        Text($r('app.string.ix_hide_folder_bar')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).width('100%');
-        Text($r('app.string.ix_hide_folder_bar_sub')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).width('100%');
-      }.layoutWeight(1);
-      Toggle({ type: ToggleType.Switch, isOn: this.folderBarScrollHide })
-        .selectedColor(COLOR_PRIMARY)
-        .onChange((v: boolean): void => {
-          this.folderBarScrollHide = v;
-          setBoolean(KEY_FOLDER_BAR_SCROLL_HIDE, v);
-        });
-    }
-    .width('100%')
-    .padding({ left: 16, right: 13, top: 12, bottom: 12 })
-    .alignItems(VerticalAlign.Center)
-    .backgroundColor(CARD_BG)
-    .borderRadius(CARD_RADIUS);
-
     // 看图连续翻页（issue #167）。查看器打开时读一次，改了下次打开生效。
     Row({ space: 12 }) {
       Column({ space: 3 }) {
@@ -334,10 +315,7 @@ export struct InteractionSettingsPage {
       // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
       .clip(false)
       // 边缘渐变虚化：与设置页/首页同一套参数（顶/底 118vp、峰 22px）。
-      .linearGradientBlur(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), {
-        fractionStops: edgeBlurStopsEx(this.blurViewH, 780, 0, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
-        direction: GradientDirection.Bottom
-      })
+      .attributeModifier(this.edgeBlur.bind(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), this.blurViewH, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
       .onAreaChange((_old: Area, area: Area): void => {
         const h: number = Number(area.height);
         if (h > 0 && Math.abs(h - this.blurViewH) > 0.5) {

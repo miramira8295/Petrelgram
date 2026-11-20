@@ -1,3 +1,5 @@
+import { messageLinkRoute } from '../../util/messageLinkRoute';
+import { conversationScopeKey, routeScopeKey } from '../../util/messageTopicScope';
 import { common } from '@kit.AbilityKit';
 import { LINK_COMMAND, LINK_COPY, LINK_HASHTAG, LINK_NONE, LINK_USER, LinkAction, linkActionOf } from '../../util/messageLinkAction';
 import { KEY_EXTERNAL_LINK_ACTION } from '../../store/AppSettings';
@@ -13,7 +15,6 @@ import { EXT_LINK_DEFAULT, EXT_LINK_OPEN, normalizeExternalLinkPolicy } from '..
 import { copyPlainText } from '../../util/clipboard';
 import { navigateToProfile } from '../../util/profileNav';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
-import { logW } from '../../util/log';
 import { MessageEntry } from '../../store/MessageEntry';
 import { MessageStore } from '../../store/MessageStore';
 import { TdClient } from '../../tdkit/TdClient';
@@ -34,6 +35,8 @@ export interface ChatMessageActionHost {
   ensureUser: (userId: number) => void;
   currentUserId: () => number;
   threadRootId: () => number;
+  forumTopicId: () => number;
+  directMessagesTopicId: () => number;
   forwardIds: (ids: number[]) => number[];
   openForwardPicker: (messageIds: number[]) => void;
   closeContextMenu: () => void;
@@ -56,6 +59,7 @@ export class ChatMessageActionCoordinator {
   private botCallbackPending: Set<string> = new Set<string>();
   @Trace paidMediaPendingIds: number[] = [];
   private sessionEpoch: number = 0;
+  private messageLinkRevision: number = 0;
   private host: ChatMessageActionHost | null = null;
 
   bind(host: ChatMessageActionHost): void { this.host = host; }
@@ -390,44 +394,46 @@ export class ChatMessageActionCoordinator {
     return false;
   }
 
+  private messageLinkScope(): string {
+    return conversationScopeKey(this.actions.threadRootId(), this.actions.forumTopicId(),
+      this.actions.directMessagesTopicId());
+  }
+
   private resolveMessageLink(url: string): void {
     const tgUrl = normalizeTelegramLink(url);
     if (tgUrl === '') {
       openTelegramLink(this.actions.context(), url, true);
       return;
     }
+    const epoch = this.sessionEpoch;
+    const revision = ++this.messageLinkRevision;
+    const chatId = this.actions.chatId();
+    const scope = this.messageLinkScope();
+    const client = this.actions.client();
     const req: TdRequest = { '@type': 'getMessageLinkInfo' };
     req['url'] = tgUrl;
-    this.actions.client().send(req).then((info: TdObject) => {
-      const chatId = info['chat_id'] as number | undefined;
-      // 诊断：链接解析结果与当前会话的对照（用户报"多级 t.me/c 链接无法定位"）。
-      logW(`[MsgLink] url=${tgUrl} resolvedChat=${chatId} currentChat=${this.actions.chatId()}` +
-        ` hasMessage=${info['message'] !== undefined}`);
-      if (chatId === undefined || chatId === 0) {
-        openTelegramLink(this.actions.context(), url, true);
-        return;
-      }
-      const msg = info['message'] as TdObject | undefined;
-      const msgId = msg !== undefined ? (msg['id'] as number | undefined) : undefined;
-      // A link to a message already in this chat: scroll in place (same as the
-      // pinned-message jump) instead of pushing a duplicate ChatPage instance —
-      // that duplication was why repeat taps looked like they did nothing.
-      if (chatId === this.actions.chatId()) {
-        if (msgId !== undefined && msgId > 0) {
-          this.actions.jumpToLinkedMessage(msgId);
-        }
+    client.send(req).then((info: TdObject): void => {
+      if (!this.isCurrent(epoch, chatId, client) || revision !== this.messageLinkRevision ||
+        scope !== this.messageLinkScope()) { return; }
+      const params = messageLinkRoute(info);
+      if (params === null) {
+        this.actions.toast({ message: str('cp_cannot_locate'), duration: 1500 });
         endLinkNavIf(url);
         return;
       }
-      const params: Record<string, Object> = { 'chatId': chatId };
-      if (msgId !== undefined && msgId > 0) {
-        params['jumpTo'] = msgId;
+      const msgId = (params['jumpTo'] as number | undefined) ?? 0;
+      // Same group is insufficient: comments and forum topics have their own
+      // history windows. Cache presence must never select a different route.
+      if (params['chatId'] === chatId && routeScopeKey(params) === scope) {
+        if (msgId > 0) { this.actions.jumpToLinkedMessage(msgId); }
+      } else {
+        navigateToChat(params, 'content').catch(logChatNavFailure);
       }
-      navigateToChat(params, 'content').catch(logChatNavFailure);
       endLinkNavIf(url);
-    }).catch((e: TdError) => {
-      logW(`[MsgLink] url=${tgUrl} resolve failed: ${e.code ?? ''} ${e.message}`);
-      this.actions.logError(`ChatPage.getMessageLinkInfo failed: ${e.message}`);
+    }).catch((error: TdError): void => {
+      if (!this.isCurrent(epoch, chatId, client) || revision !== this.messageLinkRevision ||
+        scope !== this.messageLinkScope()) { return; }
+      this.actions.logError(`ChatPage.getMessageLinkInfo failed: ${error.message}`);
       openTelegramLink(this.actions.context(), url, true);
     });
   }

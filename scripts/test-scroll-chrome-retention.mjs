@@ -73,3 +73,29 @@ for(let i=0;i<1000;i++)area({}, {width:300+i,height:48});
 assert.equal(plain.mw,0);assert.equal(plain.mh,0,'disabled material geometry never publishes local size');
 assert.ok(calls.some(c=>c[1]==='backgroundColor'&&c[2]?.type===10001));
 console.log('PASS: plain shared surface paints in its existing container with outline, no material child and no size-state writes.');
+
+// Hidden pinned banner used to produce height -2 and leave a full-parent
+// translucent surface alive. Replay real bindings, not just the height helper.
+run(fs.readFileSync('entry/src/main/ets/util/chatChromeGeometry.ets','utf8').replace(/\bexport /g,''));
+run(`class Banners {${['initialRender','hasContent','liveShowing','containerHeight'].map(n=>method('TopBanners',n)).join('\n')}} globalThis.Banners=Banners;`);
+const surfaces=[];
+ctx.SystemGlassSurface=class{constructor(_owner,params){surfaces.push(params);}};
+const effect={combine(){return this;},animation(){return this;}};
+ctx.TransitionEffect={OPACITY:effect,translate:()=>effect};
+const banners=init(new ctx.Banners());
+let pinned=false,music=false;
+Object.assign(banners,{appDark:false,actionBarKind:'',grabSlot:-1,grabDX:0,grabDY:0,
+ topCard:{pinnedVisible:()=>pinned,musicVisible:()=>music,liveGroupCallId:0,liveCallIsActive:false}});
+for(let cycle=0;cycle<3;cycle++)for(let mask=0;mask<=15;mask++){
+ pinned=!!(mask&1);music=!!(mask&2);const live=!!(mask&4),action=!!(mask&8);
+ banners.topCard.liveGroupCallId=live?1:0;banners.topCard.liveCallIsActive=live;banners.actionBarKind=action?'join':'';
+ surfaces.length=0;calls.length=0;banners.initialRender();
+ const rows=Number(pinned||music)+Number(live)+Number(action);
+ const height=rows?rows*54+(rows-1)*.5:0;
+ assert.equal(banners.containerHeight(),height,'hidden banner height must be zero, never negative');
+ assert.equal(surfaces.length,rows?1:0,'no material/background subtree when all rows collapse');
+ assert.equal(calls.find(c=>c[0]==='Stack'&&c[1]==='height')[2],height);
+ assert.equal(calls.find(c=>c[0]==='Stack'&&c[1]==='margin')[2].bottom,rows?2:0);
+ assert.equal(calls.find(c=>c[0]==='Stack'&&c[1]==='clip')?.[2],true,'collapse cannot paint beyond wrapper');
+}
+console.log('PASS: pinned/music/live/action combinations and repeated collapse remove background, clamp empty height/gap to zero and preserve active rows.');

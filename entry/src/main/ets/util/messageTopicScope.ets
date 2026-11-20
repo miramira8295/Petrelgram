@@ -70,3 +70,20 @@ export function conversationScopeId(
   }
   return threadRootId;
 }
+
+// Navigation/subscriptions need a typed identity: a discussion root, forum
+// topic and direct-message topic with the same numeric ID are different pages.
+export function conversationScopeKey(
+  threadRootId: number = 0, forumTopicId: number = 0, directMessagesTopicId: number = 0
+): string {
+  if (directMessagesTopicId > 0) { return `direct:${directMessagesTopicId}`; }
+  if (forumTopicId > 0) { return `forum:${forumTopicId}`; }
+  if (threadRootId > 0) { return `thread:${threadRootId}`; }
+  return 'chat';
+}
+
+export function routeScopeKey(params: Record<string, Object> | undefined): string {
+  return conversationScopeKey((params?.['threadRootId'] as number | undefined) ?? 0,
+    (params?.['forumTopicId'] as number | undefined) ?? 0,
+    (params?.['directMessagesTopicId'] as number | undefined) ?? 0);
+}

@@ -32,9 +32,7 @@ export struct ContactRowView {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
   }
 
-  // 行本身不再铺底色：2026-10-29 起一行一张卡片（与首页同款），底色、玻璃、
-  // 圆角都由页面那一层的卡片负责，行透明才能让卡片那块透上来（行各铺一块就是
-  // 两层模糊叠加，又重又灰）。只剩按压高亮留在行上，由卡片 clip 裁圆角。
+  // 常态透明，使用页面共享面板的底色；按压只高亮当前行。
   private rowFill(): ResourceColor {
     return this.pressed ? $r('app.color.surface_alt') : Color.Transparent;
   }

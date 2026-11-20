@@ -1,7 +1,8 @@
 import { showToast } from '../../util/toast';
 import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { QrDialog } from '../common/QrDialog';
-import { BLUR_MAX_VP, edgeBlurStops, edgeBlurStopsEx } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP } from '../../util/scrollEdgeBlur';
+import { ScrollEdgeBlurBinder } from '../../util/scrollEdgeBlurModifier';
 import {
   EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
   KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
@@ -44,7 +45,7 @@ import {
 } from '../../store/ChatProfileStore';
 import {
   GLASS_GAP, GLASS_RADIUS_CARD, GLASS_RADIUS_CHIP,
-  GLASS_RADIUS_TILE, GLASS_SHADOW_COLOR, GLASS_SHADOW_RADIUS, GLASS_SHADOW_Y
+  GLASS_RADIUS_TILE
 } from './ProfileGlass';
 import {
   overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
@@ -94,6 +95,9 @@ const DETAIL_TAB_INDICATOR_HEIGHT: number = 32;
 const CONTENT_QUERY_DEBOUNCE_MS: number = 250;
 // 资料页 List 在可视区外多备的行数（成员行、文件行、媒体行都不贵）。
 const PROFILE_LIST_CACHED_COUNT: number = 4;
+// HdsNavDestination 的 onShown() 实测在推页动画中段（~270ms）即触发，而整段弹簧推页
+// 持续约 590ms；等动画真正落地（600ms）后再卸载 renderGroup 并挂载下半屏页签/搜索框。
+const TRANSITION_SETTLE_MS: number = 600;
 
 interface ProfileTabItem {
   key: string;
@@ -136,6 +140,7 @@ export struct ChatProfilePage {
   // 顶/底虚化四件套：半径随滚动量渐入，静止时 0（头图在列表里，常开会糊头像）。
   @State private listViewH: number = 0;
   @State private blurRadius: number = 0;
+  private edgeBlur: ScrollEdgeBlurBinder = new ScrollEdgeBlurBinder();
   // 路由参数。router 时代靠 this.getUIContext().getRouter().getParams() 现取，NavDestination 要在
   // onReady 里从 NavDestinationContext 拿，而 onReady 实测晚于 aboutToAppear
   // （平板 API 26，见 ChatPage 的同名注释），所以吃参数的那一段整体挪进了
@@ -144,6 +149,12 @@ export struct ChatProfilePage {
   // applyRouteParams() 的一次性守卫：那段里建了 ChatProfileStore 并订阅了它
   // （经 startStore()），重入会覆盖 this.store / this.unsub，旧订阅退不掉。
   private paramsApplied: boolean = false;
+  // 推页转场是否已落地。过渡期间只画轻量上半屏并把整页缓存为 renderGroup，
+  // 下半屏页签条/成员搜索框（原生 TextInput）和后台 store 刷新等 onShown() 落地后一次补齐。
+  @State private transitionSettled: boolean = false;
+  private hasPrefill: boolean = false;
+  private pendingStoreRefresh: boolean = false;
+  private transitionSettleTimer: number = -1;
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -291,6 +302,27 @@ export struct ChatProfilePage {
     // 之后由用户自己切。
     this.pendingTabKey = params !== undefined
       ? ((params['tab'] as string | undefined) ?? '') : '';
+    if (this.navStack !== undefined) {
+      this.overOwnChat = this.computeOverOwnChat(this.navStack);
+    }
+    const prefillTitle: string = params !== undefined
+      ? ((params['prefillTitle'] as string | undefined) ?? '') : '';
+    if (this.chatId !== 0 && prefillTitle !== '') {
+      this.hasPrefill = true;
+      this.title = prefillTitle;
+      const prefillInitials: string = (params?.['prefillInitials'] as string | undefined) ?? '';
+      this.initials = prefillInitials !== '' ? prefillInitials : prefillTitle.substring(0, 1).toUpperCase();
+      this.avatarPath = (params?.['prefillAvatarPath'] as string | undefined) ?? '';
+      this.avatarAnimPath = (params?.['prefillAvatarAnimPath'] as string | undefined) ?? '';
+      this.subtitle = (params?.['prefillSubtitle'] as string | undefined) ?? '';
+      this.isChannel = (params?.['prefillIsChannel'] as boolean | undefined) ?? false;
+      this.isMuted = (params?.['prefillIsMuted'] as boolean | undefined) ?? false;
+      if (this.overOwnChat) {
+        this.membershipState = 'writable';
+      }
+      this.pageState = 'ready';
+    }
+    this.armTransitionSettle();
     if (this.chatId !== 0) {
       this.startStore();
     } else if (this.inviteLink !== '') {
@@ -299,6 +331,59 @@ export struct ChatProfilePage {
       this.pageState = 'error';
       this.errorText = str('cpp_link_no_chat');
     }
+  }
+
+  private armTransitionSettle(): void {
+    if (this.transitionSettled) {
+      return;
+    }
+    this.clearTransitionSettleTimer();
+    const delayMs: number = isSplitByBreakpoint(
+      this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait)
+      ? 0 : powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, TRANSITION_SETTLE_MS);
+    if (delayMs <= 0) {
+      this.settleTransition();
+      return;
+    }
+    this.transitionSettleTimer = setTimeout((): void => {
+      this.transitionSettleTimer = -1;
+      this.settleTransition();
+    }, delayMs);
+  }
+
+  private clearTransitionSettleTimer(): void {
+    if (this.transitionSettleTimer !== -1) {
+      clearTimeout(this.transitionSettleTimer);
+      this.transitionSettleTimer = -1;
+    }
+  }
+
+  private settleTransition(): void {
+    this.clearTransitionSettleTimer();
+    if (this.transitionSettled) {
+      return;
+    }
+    this.transitionSettled = true;
+    if (this.pendingStoreRefresh) {
+      this.pendingStoreRefresh = false;
+      this.store?.flushPending();
+      this.refresh();
+    }
+  }
+
+  private sameStringList(a: string[], b: string[]): boolean {
+    if (a === b) {
+      return true;
+    }
+    if (a.length !== b.length) {
+      return false;
+    }
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   // 返回上一层。**不能用 this.getUIContext().getRouter().back()**：本页是 HdsNavDestination，router 页栈里
@@ -329,7 +414,9 @@ export struct ChatProfilePage {
     if (this.store !== null) {
       this.store.close();
     }
-    this.pageState = 'loading';
+    if (!this.hasPrefill) {
+      this.pageState = 'loading';
+    }
     const store = new ChatProfileStore(getTdClient(), this.chatId);
     this.store = store;
     this.unsub = store.subscribe(() => { this.refresh(); });
@@ -339,6 +426,9 @@ export struct ChatProfilePage {
   // 从提权/限制面板返回时重拉成员：身份标签和受限状态都可能变了。
   // 迁移前是 onPageShow，方法体一字未动，改由 HdsNavDestination.onShown() 触发。
   private handleShown(): void {
+    if (!this.transitionSettled && this.transitionSettleTimer === -1) {
+      this.armTransitionSettle();
+    }
     markChatDestShown(this.chatDestToken);
     this.inviteJoinResolver?.refresh();
     if (this.pendingMemberReload) {
@@ -369,6 +459,7 @@ export struct ChatProfilePage {
   private qrScanner: TelegramQrScanner = new TelegramQrScanner();
 
   aboutToDisappear(): void {
+    this.clearTransitionSettleTimer();
     markChatDestHidden(this.chatDestToken, true);
     this.qrScanner.cancel();
     this.closeQr();
@@ -385,27 +476,36 @@ export struct ChatProfilePage {
     if (s === null) {
       return;
     }
+    // 已有预填首帧时，推页 585ms 过渡期内不往 @State 刷后台回包，让 renderGroup 纹理保持干净、
+    // 避免转场中途爆发整页重绘；onShown() 落地后一次同步完整快照。
+    if (!this.transitionSettled && this.hasPrefill) {
+      this.pendingStoreRefresh = true;
+      return;
+    }
     const beforeTabs = this.visibleTabs();
     const beforeKey = beforeTabs.length > 0 && this.selectedTab < beforeTabs.length
       ? beforeTabs[this.selectedTab].key : '';
-    this.pageState = s.loadState;
-    this.errorText = s.errorText;
-    this.membershipState = s.membershipState;
-    this.joinByRequest = this.inviteNeedsApproval || s.joinByRequest;
-    if (this.membershipState === 'writable' || this.membershipState === 'blocked') {
+    if (this.pageState !== s.loadState) { this.pageState = s.loadState; }
+    if (this.errorText !== s.errorText) { this.errorText = s.errorText; }
+    if (this.membershipState !== s.membershipState) { this.membershipState = s.membershipState; }
+    const nextJoinByRequest = this.inviteNeedsApproval || s.joinByRequest;
+    if (this.joinByRequest !== nextJoinByRequest) { this.joinByRequest = nextJoinByRequest; }
+    if ((this.membershipState === 'writable' || this.membershipState === 'blocked') && this.joinRequestSent) {
       this.joinRequestSent = false;
     }
-    this.membersState = s.membersState;
-    this.contentItems = s.contentItems;
-    this.contentState = s.contentState;
-    this.mediaKind = s.mediaKind;
-    this.contentErrorText = s.contentErrorText;
-    this.contentHasMore = s.contentHasMore;
-    this.contentPaging = s.contentPaging;
-    this.contentPagingError = s.contentPagingError;
-    this.contentTotalCount = s.contentTotalCount;
-    this.availableTabKeys = s.availableTabs;
-    this.tabsState = s.tabsState;
+    if (this.membersState !== s.membersState) { this.membersState = s.membersState; }
+    if (this.contentItems !== s.contentItems) { this.contentItems = s.contentItems; }
+    if (this.contentState !== s.contentState) { this.contentState = s.contentState; }
+    if (this.mediaKind !== s.mediaKind) { this.mediaKind = s.mediaKind; }
+    if (this.contentErrorText !== s.contentErrorText) { this.contentErrorText = s.contentErrorText; }
+    if (this.contentHasMore !== s.contentHasMore) { this.contentHasMore = s.contentHasMore; }
+    if (this.contentPaging !== s.contentPaging) { this.contentPaging = s.contentPaging; }
+    if (this.contentPagingError !== s.contentPagingError) { this.contentPagingError = s.contentPagingError; }
+    if (this.contentTotalCount !== s.contentTotalCount) { this.contentTotalCount = s.contentTotalCount; }
+    if (!this.sameStringList(this.availableTabKeys, s.availableTabs)) {
+      this.availableTabKeys = s.availableTabs;
+    }
+    if (this.tabsState !== s.tabsState) { this.tabsState = s.tabsState; }
     const nextTabs = this.visibleTabs();
     if (nextTabs.length > 0) {
       const wantedKey: string = this.pendingTabKey !== '' ? this.pendingTabKey : beforeKey;
@@ -414,38 +514,40 @@ export struct ChatProfilePage {
       if (this.pendingTabKey !== '' && nextIndex >= 0) {
         this.pendingTabKey = '';
       }
-      this.selectedTab = nextIndex >= 0 ? nextIndex : 0;
+      const resolvedTab = nextIndex >= 0 ? nextIndex : 0;
+      if (this.selectedTab !== resolvedTab) { this.selectedTab = resolvedTab; }
       const selectedKey = nextTabs[this.selectedTab].key;
       if (s.contentTab !== selectedKey) {
         s.selectContentTab(selectedKey);
       }
       this.moveDetailIndicator(this.selectedTab);
-    } else {
+    } else if (this.selectedTab !== 0) {
       this.selectedTab = 0;
     }
     if (s.loadState !== 'ready') {
       return;
     }
-    this.title = s.title;
-    this.initials = s.initials;
-    this.avatarPath = s.avatarPath;
-    this.avatarAnimPath = s.avatarAnimPath;
-    this.subtitle = s.subtitle;
-    this.description = s.description;
-    this.chatUsername = s.username;
-    this.isChannel = s.isChannel;
-    this.isMuted = s.isMuted;
-    this.canManageVideoChats = s.canManageVideoChats;
-    this.canManageChat = s.canManageChat;
-    this.canInviteMembers = s.canInviteMembers;
-    this.viewerIsCreator = s.isCreator;
-    this.canPromoteMembers = s.canPromoteMembers;
-    this.canRestrictMembers = s.canRestrictMembers;
-    this.canDeleteMessages = s.canDeleteMessages;
-      this.canManageTags = this.store?.canManageTags ?? false;
-    this.selfUserId = s.selfUserId;
-    this.liveGroupCallId = s.liveGroupCallId;
-    this.members = s.members;
+    if (this.title !== s.title) { this.title = s.title; }
+    if (this.initials !== s.initials) { this.initials = s.initials; }
+    if (this.avatarPath !== s.avatarPath) { this.avatarPath = s.avatarPath; }
+    if (this.avatarAnimPath !== s.avatarAnimPath) { this.avatarAnimPath = s.avatarAnimPath; }
+    if (this.subtitle !== s.subtitle) { this.subtitle = s.subtitle; }
+    if (this.description !== s.description) { this.description = s.description; }
+    if (this.chatUsername !== s.username) { this.chatUsername = s.username; }
+    if (this.isChannel !== s.isChannel) { this.isChannel = s.isChannel; }
+    if (this.isMuted !== s.isMuted) { this.isMuted = s.isMuted; }
+    if (this.canManageVideoChats !== s.canManageVideoChats) { this.canManageVideoChats = s.canManageVideoChats; }
+    if (this.canManageChat !== s.canManageChat) { this.canManageChat = s.canManageChat; }
+    if (this.canInviteMembers !== s.canInviteMembers) { this.canInviteMembers = s.canInviteMembers; }
+    if (this.viewerIsCreator !== s.isCreator) { this.viewerIsCreator = s.isCreator; }
+    if (this.canPromoteMembers !== s.canPromoteMembers) { this.canPromoteMembers = s.canPromoteMembers; }
+    if (this.canRestrictMembers !== s.canRestrictMembers) { this.canRestrictMembers = s.canRestrictMembers; }
+    if (this.canDeleteMessages !== s.canDeleteMessages) { this.canDeleteMessages = s.canDeleteMessages; }
+    const nextManageTags = this.store?.canManageTags ?? false;
+    if (this.canManageTags !== nextManageTags) { this.canManageTags = nextManageTags; }
+    if (this.selfUserId !== s.selfUserId) { this.selfUserId = s.selfUserId; }
+    if (this.liveGroupCallId !== s.liveGroupCallId) { this.liveGroupCallId = s.liveGroupCallId; }
+    if (this.members !== s.members) { this.members = s.members; }
   }
 
   // onReady 时本页在栈顶，正下方那层是不是同一个会话（见 util/splitRouting.profileSitsOnOwnChat）。
@@ -726,7 +828,7 @@ export struct ChatProfilePage {
     } else if (x + width > offset + this.detailTabViewW - 8) {
       target = x + width - this.detailTabViewW + 8;
     }
-    if (target >= 0) {
+    if (target >= 0 && Math.abs(target - offset) > 1) {
       this.tabScroller.scrollTo({
         xOffset: target,
         yOffset: 0,
@@ -1118,20 +1220,18 @@ export struct ChatProfilePage {
           if (this.chatId !== 0) { this.leaveCurrentChat(); }
         });
       }.width('100%').padding({ left: this.pageMargin(), right: this.pageMargin() });
-      // 头像外面套一圈玻璃：设计里 130 的外径、7 的内缩，环本身就是一块
-      // 毛玻璃，头像浮在它中间。
+      // 头像外框使用半透明填色：外径 130、内缩 7，不附加模糊或阴影。
       Column() {
         AvatarView({
           avatarPath: this.avatarPath, initials: this.initials,
           colorSeed: this.chatId, avatarSize: 116,
-          animPath: this.avatarAnimPath
+          animPath: this.transitionSettled ? this.avatarAnimPath : ''
         });
       }
       .width(130).height(130).padding(7).borderRadius(65)
       .justifyContent(FlexAlign.Center)
       .backgroundColor(this.cardFill())
       .border({ width: 0.7, color: $r('app.color.divider') })
-      .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
         // 记下点击处的屏幕坐标，查看器据此决定放大/缩回的中心点。
         .onClick((event: ClickEvent): void => {
           if (this.avatarPath !== '') {
@@ -2008,8 +2108,10 @@ export struct ChatProfilePage {
           this.header();
           if (this.pageState === 'ready') {
             this.actionsRow();
-            this.infoCard();
-            if (this.tabsState === 'loading') {
+            if (this.transitionSettled || this.description !== '' || this.chatUsername !== '') {
+              this.infoCard();
+            }
+            if (this.transitionSettled && this.tabsState === 'loading') {
               this.tabsLoadingCard();
             }
           } else {
@@ -2018,7 +2120,8 @@ export struct ChatProfilePage {
         }
         .width('100%');
       }
-      if (this.pageState === 'ready' && this.tabsState !== 'loading' && this.visibleTabs().length > 0) {
+      if (this.transitionSettled && this.pageState === 'ready' && this.tabsState !== 'loading' &&
+        this.visibleTabs().length > 0) {
         ListItem() {
           Column() {
             this.detailTabBar();
@@ -2037,11 +2140,12 @@ export struct ChatProfilePage {
     .scrollBar(BarState.Off)
     .cachedCount(PROFILE_LIST_CACHED_COUNT)
     // 头图与大头像就在列表第一项里、随内容滚走，所以顶部虚化不能常开（常开会
-    // 糊掉静止状态的头像上沿）。跟着滚动量渐入：静止半径 0，一滚就雾化上边缘。
-    .linearGradientBlur(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) ? this.blurRadius : 0, {
-      fractionStops: edgeBlurStopsEx(this.listViewH, 780, 0, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
-      direction: GradientDirection.Bottom
-    })
+    // 糊掉静止状态的头像上沿）。跟着滚动量渐入：静止半径 0 时不挂滤镜节点，一滚再挂。
+    .attributeModifier(this.edgeBlur.bind(
+      edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) ? this.blurRadius : 0,
+      this.listViewH,
+      edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop),
+      edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
     .clip(false)
     .onAreaChange((_o: Area, n: Area): void => {
       const h: number = n.height as number;
@@ -2084,7 +2188,6 @@ export struct ChatProfilePage {
       this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;
       // 必须在这里调而不是等 aboutToAppear：实测 onReady 晚于 aboutToAppear。
       this.applyRouteParams();
-      this.overOwnChat = this.computeOverOwnChat(ctx.pathStack);
     })
     .onWillShow((): void => { markChatDestShown(this.chatDestToken); })
     .onShown((): void => { this.handleShown(); })

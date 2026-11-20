@@ -72,6 +72,7 @@ function setup() {
   vm.runInContext(compile(`class DockProbe { ${fields}\n${methods} } globalThis.DockProbe = DockProbe;`), ctx);
   dock = new ctx.DockProbe();
   Object.assign(dock, {
+    drawnWarmup: { update() {}, cancel() {} },
     tab: 0, appliedTab: 0, appIsForeground: true,
     chatNavBarVisible: false, contactsNavBarVisible: false, settingsNavBarVisible: false, profileNavBarVisible: false,
     getUIContext: () => ({ postDelayedFrameCallback: cb => frames.push(cb.task), animateTo: (_, fn) => fn() }),

@@ -91,16 +91,8 @@ const MINI_BALL: number = 40;
 // 官方示意图里带播放条的那条栏也是接近满宽的。
 const MINI_SIDE_MARGIN: number = 12;
 const MINI_COVER: number = 34;
-// 底距。一路试下来：bottomSafe + 12（太远）→ max(8, bottomSafe)（还是远）→
-// 半个 bottomSafe（太低）→ 七成（2026-09 定的）→ 八成半（2026-11-18 上半天）→
-// 现在九成半（2026-11-18 夜，按 dumpLayout 实测对齐畅连：畅连输入胶囊下沿
-// y=2754，我们 2764，差 10px≈3.3vp；九成半 = 30vp = 90px，胶囊下沿落到 2755）。
-// 别再往上加了：整条 bottomSafe（1.0）时输入胶囊会跑到 2749，比畅连还高 5px。
-// **必须和 util/composerChrome 的 COMPOSER_DOCK_GAP_RATIO 同步**，否则输入栏和
-// 底栏不落在同一条基线上（那个常量就是照这个数写的）。
-// 另一方面也别往下：底部那条是系统的返回/主页手势带，胶囊下沿贴太近，下半截
-// 的点击会被系统先吃掉。
-
+// 首页面板止于底部安全区，dock 再向上留 4vp。此处独立于聊天页输入栏。
+const DOCK_SAFE_EXTRA: number = 4;
 const DOCK_GAP: number = 6;     // minimum gap below the capsule
 const DOCK_ITEM_INSET: number = 5;
 const DOCK_SWITCH_DURATION: number = 240;
@@ -955,6 +947,10 @@ export struct MainScreen {
     this.profileDockItem();
   }
 
+  private dockBottomGap(): number {
+    return Math.max(DOCK_GAP, this.bottomSafe + DOCK_SAFE_EXTRA);
+  }
+
   @Builder
   dock() {
     Column() {
@@ -1000,7 +996,7 @@ export struct MainScreen {
     .padding({ left: this.dockPadding(), right: this.dockPadding() })
     .margin({ bottom: this.keyboardH > 0
       ? DOCK_GAP
-      : Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.95)) })
+      : this.dockBottomGap() })
     // 返回列表时淡入；进入目的页时 syncDock() 同帧撤下玻璃层。
     .opacity(this.dockShown ? 1 : 0)
     // 下面这两行是**退场空档**的正解，缺一不可，都在 dockShown 翻 false 的那一
@@ -1090,7 +1086,7 @@ export struct MainScreen {
       // **一次都不设 barWidth**，交给修饰器按 sideBarWidth 决定（横排恒传 null）。
       // 依据见 HdsTabsFloatingOptions.sideBarWidth 里抄的官方两段。
       .attributeModifier(new HdsTabsFloatingModifier({
-        bottomMargin: Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.95)),
+        bottomMargin: this.dockBottomGap(),
         sideBarWidth: null,
         // 没有迷你条时复用迁移前那套留白算法（胶囊宽度回到原来的比例）；
         // 有迷你条时放开，否则页签和播放条挤在一起会重叠。
@@ -1167,7 +1163,7 @@ export struct MainScreen {
         .divider({ mode: DividerMode.NONE })
         .barHeight(DOCK_H)
         .attributeModifier(new HdsTabsFloatingModifier({
-          bottomMargin: Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.95)),
+          bottomMargin: this.dockBottomGap(),
           sideBarWidth: null,
           // 与手机端同一套留白规则：有迷你条时放开到 MINI_SIDE_MARGIN，否则页签和播放条叠在一起。
           sideMargin: this.miniBarActive() ? MINI_SIDE_MARGIN : this.dockPadding(),
@@ -1193,7 +1189,7 @@ export struct MainScreen {
           }
         })
         .width(this.dockWidth())
-        .height(DOCK_H + Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.95)) + 8)
+        .height(DOCK_H + this.dockBottomGap() + 8)
         // 保留 HDS 页签与音乐胶囊状态；全屏媒体期间整条隐藏并禁用交互。
         .visibility(this.dockVisible() ? Visibility.Visible : Visibility.Hidden)
         .enabled(this.dockVisible());

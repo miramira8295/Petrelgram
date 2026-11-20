@@ -13331,6 +13331,14 @@
     {
       "name": "link_copied_internal",
       "value": "Tautan internal disalin (hanya di aplikasi ini)"
+    },
+    {
+      "name": "cl_archive_pull",
+      "value": "Tarik ke bawah untuk menampilkan arsip"
+    },
+    {
+      "name": "cl_archive_release",
+      "value": "Lepaskan untuk menampilkan arsip"
     }
   ]
 }

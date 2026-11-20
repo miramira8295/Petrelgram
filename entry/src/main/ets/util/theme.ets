@@ -214,12 +214,7 @@ export function applyBubbleColors(c: BubbleColorSet | null): void {
 }
 
 export function bubbleTextFor(outgoing: boolean): ResourceColor {
-  // Material mode has a neutral 80% panel, independent of custom solid colors.
-  // Match its light/dark foreground; power saving uses the original solid fill.
-  if (AppStorage.get<boolean>('bubbleGlassOn') === true &&
-    AppStorage.get<boolean>('powerSavingActive') !== true) {
-    return $r('app.color.bubble_text');
-  }
+  // Glass retains the bubble hue, so it also retains its contrasting text color.
   return outgoing ? bubbleTextOut : bubbleTextIn;
 }
 // Frequently used surfaces (cards, headers, inputs) and page backgrounds.

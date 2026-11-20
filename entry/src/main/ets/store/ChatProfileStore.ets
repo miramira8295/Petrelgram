@@ -170,6 +170,9 @@ export class ChatProfileStore {
   private tabProbePending: number = 0;
   private tabAvailability: Map<string, boolean> = new Map<string, boolean>();
   private membersAvailable: boolean = false;
+  // 成员列表批量解析 / 头像集中从本地缓存回填时合并通知，避免 30 路并发回调把整页连刷几十遍。
+  private notifyBatchTimer: number = -1;
+  private membersDirty: boolean = false;
 
   constructor(client: TdClient, chatId: number) {
     this.client = client;
@@ -243,6 +246,11 @@ export class ChatProfileStore {
   close(): void {
     this.contentSeq++;
     this.tabProbeSeq++;
+    if (this.notifyBatchTimer !== -1) {
+      clearTimeout(this.notifyBatchTimer);
+      this.notifyBatchTimer = -1;
+    }
+    this.membersDirty = false;
     for (const un of this.unsubs) {
       un();
     }
@@ -250,7 +258,37 @@ export class ChatProfileStore {
     this.listeners = [];
   }
 
+  private flushMembersDirty(): void {
+    if (!this.membersDirty) {
+      return;
+    }
+    this.membersDirty = false;
+    // 创建者和管理员排在前面。稳定排序：同档之间保持 TDLib 给的顺序。
+    this.members = [...this.members].sort(
+      (a: MemberItem, b: MemberItem): number =>
+        memberRoleRank(a.role) - memberRoleRank(b.role));
+  }
+
+  private scheduleNotify(): void {
+    if (this.notifyBatchTimer !== -1) {
+      return;
+    }
+    this.notifyBatchTimer = setTimeout((): void => {
+      this.notifyBatchTimer = -1;
+      this.notify();
+    }, 32);
+  }
+
+  flushPending(): void {
+    if (this.notifyBatchTimer !== -1) {
+      clearTimeout(this.notifyBatchTimer);
+      this.notifyBatchTimer = -1;
+    }
+    this.flushMembersDirty();
+  }
+
   private notify(): void {
+    this.flushPending();
     for (const l of this.listeners) {
       l();
     }
@@ -287,7 +325,7 @@ export class ChatProfileStore {
     const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
     if (done && path !== '') {
       apply(path);
-      this.notify();
+      this.scheduleNotify();
     }
   }
 
@@ -347,10 +385,19 @@ export class ChatProfileStore {
   }
 
   private finishTabProbe(tab: string, available: boolean): void {
+    const prevAvailable = this.tabAvailability.get(tab) ?? false;
     this.tabAvailability.set(tab, available);
-    this.tabProbePending = Math.max(0, this.tabProbePending - 1);
-    if (this.tabProbePending === 0) {
-      this.tabsState = 'ready';
+    if (tab !== PROFILE_TAB_GIFTS) {
+      this.tabProbePending = Math.max(0, this.tabProbePending - 1);
+      if (this.tabProbePending === 0) {
+        this.tabsState = 'ready';
+      }
+    }
+    if (this.tabsState !== 'ready') {
+      return;
+    }
+    if (tab === PROFILE_TAB_GIFTS && available === prevAvailable) {
+      return;
     }
     this.rebuildAvailableTabs();
     this.notify();
@@ -1003,6 +1050,7 @@ export class ChatProfileStore {
     this.membersSeq++;
     this.memberOffset = 0;
     this.members = [];
+    this.membersDirty = false;
     this.memberIds.clear();
     this.membersState = 'loading';
     this.fetchMembersPage();
@@ -1021,6 +1069,7 @@ export class ChatProfileStore {
     if (this.basicGroupId !== 0) {
       this.membersSeq++;
       this.members = [];
+      this.membersDirty = false;
       this.memberIds.clear();
       this.membersState = 'loading';
       this.notify();
@@ -1115,6 +1164,7 @@ export class ChatProfileStore {
     }
     const seq: number = ++this.membersSeq;
     this.members = [];
+    this.membersDirty = false;
     this.memberIds.clear();
     this.hasMoreMembers = false;
     this.membersPending = false;
@@ -1186,11 +1236,8 @@ export class ChatProfileStore {
           roleTitle: role.title,
           tag: memberTag
         };
-        // 创建者和管理员排在前面。稳定排序：同档之间保持 TDLib 给的顺序，
-        // 否则每来一个成员整列都会重排一次。
-        this.members = [...this.members, item].sort(
-          (a: MemberItem, b: MemberItem): number =>
-            memberRoleRank(a.role) - memberRoleRank(b.role));
+        this.members.push(item);
+        this.membersDirty = true;
         const photo = user['profile_photo'] as TdObject | undefined;
         const small = photo !== undefined ? (photo['small'] as TdObject | undefined) : undefined;
         this.download(small !== undefined ? ((small['id'] as number | undefined) ?? 0) : 0,
@@ -1204,7 +1251,7 @@ export class ChatProfileStore {
                 status: x.status, role: x.role, roleTitle: x.roleTitle, tag: x.tag
               } : x);
           });
-        this.notify();
+        this.scheduleNotify();
       });
     }
   }

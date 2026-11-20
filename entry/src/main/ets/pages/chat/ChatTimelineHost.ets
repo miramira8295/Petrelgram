@@ -18,7 +18,8 @@ import { RowPageInputs } from '../../util/rowPageInputs';
 import { canRenderLightweightPlainTextRow } from '../../util/messageBubbleReuse';
 import { ChatTimelineSession } from './ChatTimelineSession';
 import { TIMELINE_SCROLL_CACHE_ROWS } from '../../util/timelineCacheBudget';
-import { edgeBlurRadiusOf, edgeBlurStopsEx } from '../../util/scrollEdgeBlur';
+import { edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import { ScrollEdgeBlurBinder } from '../../util/scrollEdgeBlurModifier';
 import { edgeBlurPageBottomOn, edgeBlurPageTopOn, edgeBlurSwitch } from '../../util/edgeBlurSetting';
 
 type ChatTimelineRowBinding = RepeatItem<AlbumGroup> | TimelineLazyEntry;
@@ -69,6 +70,7 @@ export struct ChatTimelineHost {
 
   // 顶/底边缘虚化条带的归一化高度（vp）：底部条带的 y 靠它算。只在尺寸变化时写。
   @Local private bandViewH: number = 780;
+  private edgeBlur: ScrollEdgeBlurBinder = new ScrollEdgeBlurBinder();
 
   // 快速滑动期把 List 的缓存窗收窄：一次跳转会按「可视 + 2×cachedCount」把行
   // 一起建出来（实测单帧峰值 23~30 行、约 30ms）。滑动中收到 3，停稳再放回
@@ -251,15 +253,10 @@ export struct ChatTimelineHost {
       this.fastScroll = false;
       this.session.handleTimelineScrollStop();
     })
-    // 屏幕最顶/最底的边缘渐变虚化：直接用 List 自己的 linearGradientBlur，
-    // 界面里不叠任何 backdropBlur 条带（那样会多出一层白雾玻璃，用户明确否决）。
-    // 两侧都关时半径为 0，滤镜不进渲染链路。
-    // 已知代价：本页常驻动态头像/贴纸，整表滤镜会把每次小更新放大成整表重合成；
-    // 需要省电/低端设备时在「外观设置 → 屏幕边缘虚化」里关掉即可。
-    .linearGradientBlur(this.edgeBlurRadius(), {
-      fractionStops: edgeBlurStopsEx(this.bandViewH, 780, 0, this.edgeBlurTopEnabled(), this.edgeBlurBottomEnabled()),
-      direction: GradientDirection.Bottom
-    })
+    // 屏幕最顶/最底的边缘渐变虚化：通过 AttributeModifier 按需挂载到 List，
+    // 关闭时完全不调用 linearGradientBlur，避免 Rosen 给整屏 List 挂 NeedFilter[true]。
+    .attributeModifier(this.edgeBlur.bind(
+      this.edgeBlurRadius(), this.bandViewH, this.edgeBlurTopEnabled(), this.edgeBlurBottomEnabled()))
     .onAreaChange((_old: Area, area: Area): void => {
       this.session.handleTimelineAreaChange(area);
       const h: number = Number(area.height);

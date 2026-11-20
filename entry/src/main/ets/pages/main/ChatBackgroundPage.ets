@@ -48,7 +48,8 @@ import {
 } from '../../util/wallpaperSlot';
 import { logE, logI } from '../../util/log';
 import { contentSideGutter } from '../../util/contentWidth';
-import { BLUR_MAX_VP, edgeBlurStops, edgeBlurStopsEx } from '../../util/scrollEdgeBlur';
+import { BLUR_MAX_VP } from '../../util/scrollEdgeBlur';
+import { ScrollEdgeBlurBinder } from '../../util/scrollEdgeBlurModifier';
 import {
   EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
   KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
@@ -155,6 +156,7 @@ interface BackgroundPageParams {
 @Entry
 @Component
 struct ChatBackgroundPage {
+  private edgeBlur: ScrollEdgeBlurBinder = new ScrollEdgeBlurBinder();
   @StorageProp(KEY_EDGE_BLUR_ON) private edgeBlurOn: boolean = EDGE_BLUR_ON_DEFAULT;
   @StorageProp(KEY_EDGE_BLUR_TOP_ON) private edgeBlurTopOn: boolean = EDGE_BLUR_TOP_ON_DEFAULT;
   @StorageProp(KEY_EDGE_BLUR_BOTTOM_ON) private edgeBlurBottomOn: boolean = EDGE_BLUR_BOTTOM_ON_DEFAULT;
@@ -1146,10 +1148,7 @@ struct ChatBackgroundPage {
         .onScrollStop((): void => { this.scrollActive = false; })
         // 半径传 0 = 不模糊（stops 仍然生效，只是没有半径）。滚动中关掉这一层，
         // 静止时恢复——和聊天消息列表同一套降级方式，静止画面像素不变。
-        .linearGradientBlur((this.scrollActive || !(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom))) ? 0 : BLUR_MAX_VP, {
-          fractionStops: edgeBlurStopsEx(this.listViewH, 780, 0, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
-          direction: GradientDirection.Bottom
-        })
+        .attributeModifier(this.edgeBlur.bind((this.scrollActive || !(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom))) ? 0 : BLUR_MAX_VP, this.listViewH, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
         .clip(false)
         .onAreaChange((_o: Area, n: Area): void => {
           const h: number = n.height as number;

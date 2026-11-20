@@ -13567,6 +13567,14 @@
     {
       "name": "cp_channel_direct_unavailable",
       "value": "Unable to open channel messages. Please try again later."
+    },
+    {
+      "name": "cl_archive_pull",
+      "value": "Pull down to show archive"
+    },
+    {
+      "name": "cl_archive_release",
+      "value": "Release to show archive"
     }
   ]
 }

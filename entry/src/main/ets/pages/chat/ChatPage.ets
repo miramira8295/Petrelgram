@@ -234,11 +234,7 @@ import { viewerFullScreenWanted, viewerHidesTitleBar } from '../../util/navFullS
 import { allocChatDestToken, markChatDestHidden, markChatDestShown } from '../../util/chatDestTracker';
 import { isSystemTopBarReady, restoreViewerSystemBars } from '../../util/systemBarsWindow';
 import { publishViewerCoversWindow } from '../../util/viewerWindowCover';
-import {
-  HdsNavDestination, HdsNavDestinationTitleMode, TitleBarContentOptions,
-  HdsNavigationTitleBarOptions
-} from '@kit.UIDesignKit';
-import { titleBarStyle } from '../../util/hdsTitleBar';
+import { HdsNavDestination } from '@kit.UIDesignKit';
 import { navigateToChatProfile, navigateToProfile } from '../../util/profileNav';
 import { endLinkNav } from '../../util/linkTapGuard';
 import { copyPlainText } from '../../util/clipboard';
@@ -267,7 +263,7 @@ import {
 import {
   RememberedChatViewport, isResumeFragment, rememberChatPosition, rememberedChatViewport
 } from '../../util/chatResume';
-import { conversationScopeId } from '../../util/messageTopicScope';
+import { conversationScopeId, conversationScopeKey } from '../../util/messageTopicScope';
 import { navigateToSearch } from '../../util/searchNav';
 import { navigateToSetting } from '../../util/settingsNav';
 import { getActiveTdUserId } from '../../tdkit/Globals';
@@ -1317,6 +1313,7 @@ export struct ChatPage {
     this.pendingResumeItemY = 0;
     this.timeline.resumeDividerId = 0;
     this.timeline.resumeDividerItemY = 0;
+    this.timeline.initialJumpTargetId = 0;
     // 原 `this.pendingFileOpenId = 0; this.fileOpenInFlightId = 0;` 两行（B15）。
     // 这是本簇六个字段里**只有这一对**会在换会话时单独清空的地方，另外四个在这
     // 条路径上从来不动——所以 MediaSaveState 单开了 resetFileOpenIntent()，
@@ -1472,16 +1469,19 @@ export struct ChatPage {
 
   private captureScrollResume(): void {
     this.resumeScrollPending = false;
-    if (!this.timeline.didInitialScroll || this.timeline.groups.length === 0 ||
-      this.timeline.curStartIdx < 0 || this.timeline.curStartIdx >= this.timeline.groups.length) {
+    if (!this.timeline.didInitialScroll || this.timeline.groups.length === 0) {
+      return;
+    }
+    const anchorIdx: number = this.timeline.firstVisibleRowIndex();
+    if (anchorIdx < 0 || anchorIdx >= this.timeline.groups.length) {
       return;
     }
     this.resumeScrollChatId = this.chatId;
     this.resumeScrollThreadId = conversationScopeId(
       this.threadRootId, this.forumTopicId, this.directMessagesTopicId);
-    this.resumeScrollMessageId = this.timeline.groups[this.timeline.curStartIdx].head.id;
-    const itemY: number = this.timeline.anchorItemY(this.timeline.curStartIdx);
-    this.resumeScrollItemY = Number.isNaN(itemY) ? 0 : itemY;
+    this.resumeScrollMessageId = this.timeline.groups[anchorIdx].head.id;
+    const itemY: number = this.timeline.anchorItemY(anchorIdx);
+    this.resumeScrollItemY = Number.isNaN(itemY) ? this.headerChromeHeight() : itemY;
     this.resumeScrollAtBottom = this.timeline.atBottom;
     // 同一份位置也记到模块级表里：页面销毁后（退出会话再进来）还能落回去，
     // issue #98。在底部的不记——那种情况下次该跟到最新。
@@ -1562,6 +1562,8 @@ export struct ChatPage {
       ensureUser: (id: number): void => { getUserStore().ensure(id); },
       currentUserId: (): number => getActiveTdUserId(),
       threadRootId: (): number => this.threadRootId,
+      forumTopicId: (): number => this.forumTopicId,
+      directMessagesTopicId: (): number => this.directMessagesTopicId,
       forwardIds: (ids: number[]): number[] => this.selection.forwardIds(ids),
       openForwardPicker: (ids: number[]): void => { this.overlayState.openForwardPicker(ids); },
       closeContextMenu: (): void => { closeContextMenu(); },
@@ -1702,7 +1704,14 @@ export struct ChatPage {
       // scroller 是页面独有的（不变量 10），所以这条动作回调把
       // 「怎么滚到那一行」（现在是居中，见 scrollToJumpTarget）这个细节挡在控制器之外，
       // 顺带让 ArkUI 的滚动类型不必进那个文件。
-      scrollToIndex: (index: number): void => { this.timeline.scrollToJumpTarget(index); },
+      scrollToIndex: (index: number): void => {
+        const targetId: number = this.timeline.groups[index]?.head.id ?? 0;
+        if (targetId > 0) {
+          this.scrollAndSettleJumpTarget(index, targetId, false, 0, false, false);
+        } else {
+          this.timeline.scrollToJumpTarget(index);
+        }
+      },
       flashAtIndex: (index: number): void => { this.flash.flashAtIndex(index); },
       jumpToPinned: (messageId: number): void => { this.jumpToPinned(messageId); }
     });
@@ -2413,7 +2422,8 @@ export struct ChatPage {
     // 会话已经开着时，navigateToChat 只出栈不传参，跳转目标走旁路送进来
     // （issue #80、#102，见 util/chatJumpChannel 的说明）。
     this.subscriptions.set('jump', subscribeChatJump(this.chatId,
-      (messageId: number): void => { this.jumpToMessageId(messageId); }));
+      (messageId: number): void => { this.jumpToMessageId(messageId); },
+      conversationScopeKey(this.threadRootId, this.forumTopicId, this.directMessagesTopicId)));
     // ForwardSheet subscribes to the chat list itself while it is open, so this
     // no longer has to push updates into it.
     // 主列表订阅**不能删**：返回键上的未读徽标是「其他会话的未读总数」，要靠主列表
@@ -3042,6 +3052,57 @@ export struct ChatPage {
   // 三个私有方法）整体搬进了 MediaSaveState.onSnapshot/内部私有方法，逐字
   // 未改；调用点见 onMessagesSnapshot 里的 `this.mediaSave.onSnapshot(...)`。
 
+  private scrollAndSettleJumpTarget(
+    initialIdx: number,
+    targetId: number,
+    resume: boolean,
+    itemY: number,
+    withFlash: boolean,
+    isAsyncLoad: boolean
+  ): void {
+    const jumpSeq: number = ++this.jumpLayoutSeq;
+    const touchSeq: number = this.timeline.userTouchSeq;
+    if (resume) {
+      this.timeline.scrollToTimelineIndexAtY(initialIdx, itemY);
+    } else {
+      this.timeline.scrollToJumpTarget(initialIdx);
+    }
+    if (withFlash && !isAsyncLoad) {
+      this.flash.flashAtIndex(initialIdx, targetId);
+    }
+    const stillOwned = (): boolean =>
+      jumpSeq === this.jumpLayoutSeq &&
+      touchSeq === this.timeline.userTouchSeq &&
+      !this.timeline.listTouchActive &&
+      this.timeline.pageVisible;
+    const settleDelays: number[] = isAsyncLoad ? [80, 220, 420] : [60, 180];
+    for (let i = 0; i < settleDelays.length; i++) {
+      const delayMs: number = settleDelays[i];
+      const isPrimaryAsyncPass: boolean = isAsyncLoad && i === 0;
+      setTimeout((): void => {
+        if (!stillOwned()) {
+          return;
+        }
+        const curIdx: number = groupIndexOf(this.timeline.groups, targetId);
+        if (curIdx < 0) {
+          return;
+        }
+        if (isPrimaryAsyncPass) {
+          if (resume) {
+            this.timeline.scrollToTimelineIndexAtY(curIdx, itemY);
+          } else {
+            this.timeline.scrollToJumpTarget(curIdx);
+          }
+          if (withFlash) {
+            this.flash.flashAtIndex(curIdx, targetId);
+          }
+        } else {
+          this.timeline.correctJumpLanding(curIdx, resume, itemY);
+        }
+      }, delayMs);
+    }
+  }
+
   private landPendingJump(groups: AlbumGroup[]): void {
     // A pinned/quoted jump target that had to be loaded has now arrived — scroll to it.
     if (this.pendingJumpId !== 0) {
@@ -3065,34 +3126,7 @@ export struct ChatPage {
         // 「让路给跳转」的判据同时失效（util/jumpLandingOwner 文件头）。
         this.beginJumpLanding();
         this.topCard.finishPinnedJump();
-        if (resume) {
-          this.timeline.scrollToTimelineIndexAtY(jg, itemY);
-        } else {
-          this.timeline.scrollToJumpTarget(jg);
-        }
-        // loadAround 可能整片换掉窗口（list RELOAD）——立刻发出的那次滚动会在
-        // 新行布局之前被吞掉。
-        // 【2026-09-22 更正】原文写的是 "replaces the window wholesale"，**不对**：
-        // around 页默认是**合进**现有窗口的，只有它和窗口断开时才换窗口
-        // （issue #213，判据见 util/historyWindowJoin）。这句错注释很可能就是
-        // 当初没给 around 补那道连续性检查的原因。
-        // Re-issue once layout settles (index recomputed: prepends may have
-        // shifted it) and flash after that.
-        const jumpSeq: number = ++this.jumpLayoutSeq;
-        setTimeout(() => {
-          if (jumpSeq !== this.jumpLayoutSeq) {
-            return;
-          }
-          const jg2: number = groupIndexOf(this.timeline.groups, jumpTargetId);
-          if (jg2 >= 0) {
-            if (resume) {
-              this.timeline.scrollToTimelineIndexAtY(jg2, itemY);
-            } else {
-              this.timeline.scrollToJumpTarget(jg2);
-            }
-            this.flash.flashAtIndex(jg2, jumpTargetId);
-          }
-        }, 80);
+        this.scrollAndSettleJumpTarget(jg, jumpTargetId, resume, itemY, true, true);
       }
     }
   }
@@ -3149,11 +3183,13 @@ export struct ChatPage {
       // 导的日志看不出断在哪一步。开→加载→落点→高亮各记一行。
       logW(`[Jump80] open chat=${this.chatId} jumpTo=${jumpTo} search=${this.search.mode}`);
       this.timeline.didInitialScroll = true;
+      this.timeline.initialJumpTargetId = jumpTo;
       this.pendingJumpId = jumpTo;
       store.open(jumpTo);
     } else if (this.threadRootId > 0) {
       // Comment thread: start at the TOP — the root post — not the newest reply.
       this.timeline.didInitialScroll = true;
+      this.timeline.initialJumpTargetId = this.threadRootId;
       this.pendingJumpId = this.threadRootId;
       store.open(this.threadRootId);
     } else {
@@ -4322,6 +4358,7 @@ export struct ChatPage {
   private prepareUserJump(): void {
     this.timeline.clearFloatingDate();
     this.timeline.stayAtUnread = false;
+    this.timeline.initialJumpTargetId = 0;
     this.jumpLayoutSeq++;
     this.flash.cancelFlash();
   }
@@ -4556,14 +4593,14 @@ export struct ChatPage {
     logW(`[MsgLink] jump chat=${this.chatId} msg=${messageId} inGroups=${gidx >= 0}` +
       ` rows=${this.timeline.groups.length}`);
     if (gidx >= 0) {
-      this.timeline.scrollToJumpTarget(gidx);
-      this.flash.flashAtIndex(gidx, messageId);
+      this.scrollAndSettleJumpTarget(gidx, messageId, false, 0, true, false);
     } else {
       this.pendingJumpId = messageId;
       if (this.store !== null) {
         const targetId: number = messageId;
-        this.store.loadAround(targetId, (found: boolean): void => {
-          if (!found && this.pendingJumpId === targetId) {
+        const store = this.store;
+        store.loadAround(targetId, (found: boolean): void => {
+          if (this.store === store && !found && this.pendingJumpId === targetId) {
             logW(`[MsgLink] loadAround miss chat=${this.chatId} msg=${targetId}`);
             this.pendingJumpId = 0;
             showToast($r('app.string.cp_cannot_locate'), 1500);
@@ -4595,8 +4632,7 @@ export struct ChatPage {
     this.beginJumpLanding();
     const gidx = groupIndexOf(this.timeline.groups, messageId);
     if (gidx >= 0) {
-      this.timeline.scrollToJumpTarget(gidx);
-      this.flash.flashAtIndex(gidx, messageId);
+      this.scrollAndSettleJumpTarget(gidx, messageId, false, 0, true, false);
     } else if (this.store !== null) {
       this.pendingJumpId = messageId;
       this.store.loadAround(messageId, (found: boolean): void => {
@@ -5979,8 +6015,7 @@ export struct ChatPage {
     const gidx: number = groupIndexOf(this.timeline.groups, targetId);
     logW(`[Jump80] jumpToMessageId target=${targetId} idxInLoaded=${gidx} rows=${this.timeline.groups.length}`);
     if (gidx >= 0) {
-      this.timeline.scrollToJumpTarget(gidx);
-      this.flash.flashAtIndex(gidx, targetId);
+      this.scrollAndSettleJumpTarget(gidx, targetId, false, 0, true, false);
       return;
     }
     this.pendingJumpId = targetId;
@@ -6740,7 +6775,8 @@ export struct ChatPage {
         });
       }
     }
-    .width('100%');
+    .width('100%')
+    .hitTestBehavior(HitTestMode.None);
   }
 
   @Builder
@@ -6776,73 +6812,8 @@ export struct ChatPage {
       onActionBarDismiss: (): void => { dismissActionBar(this.chatId); }
       });
     }
-    .width('100%');
-  }
-
-  // 传给 HdsNavDestination 的 .titleBar()。**引用必须稳定。**
-  //
-  // 【为什么】(2026-09-11 帧 trace) 原来这里每次 ChatPage.build() 都现 new 一个
-  // options、外带一个新的 stackBuilder 闭包交给 HDS，于是整条标题栏跟着销毁重建：
-  // ChatHeader 4.05ms + TopBanners 2.15ms + AvatarView + CachedImage，一次录制里
-  // **22 次，其中 17 次落在卡顿帧上**。chatTitleBarBottom 上面那句「千万不要在这里
-  // 现场 new 任何对象传下去」说的就是这件事，只是漏了它自己这一层。
-  //
-  // 栏里的内容照样会更新：两个 builder 的**函数体**在各自的渲染上下文里读
-  // selection/search/topCard 这些 @Trace，值变了由它们自己刷新，与外面这个 options
-  // 对象的身份无关。这里只在**结构**真的变了（横幅出现/消失/改高）时才换新对象。
-  private titleBarContentCache: TitleBarContentOptions | null = null;
-  private titleBarBannerHeight: number = -1;
-
-  // 整份 titleBar 选项也缓存：style 里那三个字面量是常量，而 $r() 每调一次都
-  // 是一个新 Resource 对象，光稳住 content 还不够。结构变了（content 换新）
-  // 才重建。
-  private titleBarOptionsCache: HdsNavigationTitleBarOptions | null = null;
-
-  private chatTitleBarOptions(): HdsNavigationTitleBarOptions {
-    const content: TitleBarContentOptions = this.chatTitleBarContent();
-    const cached: HdsNavigationTitleBarOptions | null = this.titleBarOptionsCache;
-    if (cached !== null && cached.content === content) {
-      return cached;
-    }
-    const options: HdsNavigationTitleBarOptions = {
-      avoidLayoutSafeArea: true,
-      // 消息 List 自己用 contentStartOffset 保留稳定锚点；这里不重复挤内容区。
-      enableComponentSafeArea: false,
-      // 第三个参数 false = 静态栏：滑动时不变；第四个参数 false = 不挂 HDS 整条栏系统材质与
-      // BlurStrategy.ENABLE（顶栏三颗胶囊已在 ChatHeader 里自绘毛玻璃，避免再挂整页滤镜节点）。
-      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false, false),
-      content: content
-    };
-    this.titleBarOptionsCache = options;
-    return options;
-  }
-
-  private chatTitleBarContent(): TitleBarContentOptions {
-    // 操作条要单独算进来：topCard.shouldShow() 只看置顶和直播（它是那两样的控制器），
-    // 陌生人私聊恰好两样都没有，槽高被算成 0，操作条的数据到了也没地方画
-    // （2026-09-29 实测：页面拿到 chatActionBarReportAddBlock，顶上什么都没有）。
-    const bannerHeight: number =
-      this.timeline.initialMessageTransitionSettled && (this.topCard.shouldShow() || this.actionBarKind !== '')
-        ? this.topBannerHeight() : 0;
-    // 槽里现在装两样：话题横条（在上）+ 置顶/直播/操作条（在下）。缓存键必须用
-    // **两者之和**，否则话题出现或消失时槽不会重新量高，横条会被裁掉或留下空白。
-    const slotHeight: number = chatTopicBarHeight(this.chromeGeometryInput()) + bannerHeight;
-    const cached: TitleBarContentOptions | null = this.titleBarContentCache;
-    if (cached !== null && this.titleBarBannerHeight === slotHeight) {
-      return cached;
-    }
-    const content: TitleBarContentOptions = {
-      stackBuilder: (): void => { this.chatTitleBar(); }
-    };
-    if (slotHeight > 0) {
-      content.bottomBuilder = {
-        builder: (): void => { this.chatTitleBarBottom(); },
-        height: slotHeight
-      };
-    }
-    this.titleBarContentCache = content;
-    this.titleBarBannerHeight = slotHeight;
-    return content;
+    .width('100%')
+    .hitTestBehavior(HitTestMode.None);
   }
 
   @Builder
@@ -7020,7 +6991,7 @@ export struct ChatPage {
   // Keep navigation, the fullscreen viewer and root events at the page boundary.
   build() {
     HdsNavDestination() {
-    Stack() {
+    Stack({ alignContent: Alignment.TopStart }) {
       ChatPageSurface({
         timeline: this.timeline,
         viewer: this.viewer,
@@ -7064,6 +7035,21 @@ export struct ChatPage {
           this.handleResizeAreaChange(oldH, newH);
         }
       });
+
+      // 自绘顶栏与顶部横幅（ChatHeader / SearchHeader / SelectionHeader + ChatTopicBar + TopBanners）。
+      // 移出 HdsNavDestination.titleBar() 后，无论置顶条/话题条/搜索条如何展开收起，
+      // 都不再触发 HDS Navigation-Measure 销毁重建整条顶栏（单次省去 5~6ms 测量 + 2.6ms 节点重建）。
+      Column() {
+        this.chatTitleBar();
+        if (this.timeline.initialMessageTransitionSettled) {
+          this.chatTitleBarBottom();
+        }
+      }
+      .width('100%')
+      .padding({ top: this.topSafe })
+      .hitTestBehavior(HitTestMode.None)
+      .visibility(viewerHidesTitleBar(this.viewerOpen() || this.viewer.titleBarRestoring)
+        ? Visibility.Hidden : Visibility.Visible);
 
       // Fullscreen media viewer. The page owns which message is open and the
       // hero transition anchored to the tapped thumbnail; the overlay owns
@@ -7114,27 +7100,12 @@ export struct ChatPage {
       }
     });
     }
-    .titleBar(this.chatTitleBarOptions())
-    .titleMode(HdsNavDestinationTitleMode.MINI)
-    // **HDS 自己的返回键和菜单一颗都不用**，三个胶囊全部由 stackBuilder 自绘
-    // ——理由见 ChatHeader 文件头（玻璃/按压/动画 HDS 那三个字段都给不了，
-    // 且把展开态接进 TitleBarContentOptions 会让整条栏按点击重建）。
-    // 首页 ChatListPage 早就是这个结构。
-    .hideBackButton(true)
+    // 顶栏（三胶囊 + 话题条 + 置顶/直播横幅）全部自绘在根 Stack 顶部，关闭 HDS 框架标题栏，
+    // 彻底消除横幅高度变化或页面刷新时 HDS Navigation-Measure 销毁重建 ChatHeader 的开销。
+    .hideTitleBar(true)
     // 统一背景在 MainScreen 底下；框架默认的目的页底色也必须让位。
     .backgroundColor(Color.Transparent)
     .onTouchIntercept((event: TouchEvent): HitTestMode => { return this.interceptKeyboardDismiss(event); })
-    // 查看器在内容区里，盖不住框架标题栏：开着就收（见 navFullScreen.viewerHidesTitleBar）。
-    // animated 取 true：查看器根节点是 300ms 的黑底渐入，第 0 帧直接摘掉顶栏会
-    // 在还透着的黑底上闪一下。退出查看器时若状态栏安全区还在恢复，先保持收起直到
-    // TYPE_SYSTEM 恢复，避免 HDS 标题栏在 TYPE_SYSTEM=0 期间先画在 y=0 再跳回状态栏下方。
-    .hideTitleBar(viewerHidesTitleBar(this.viewerOpen() || this.viewer.titleBarRestoring), true)
-    // **不绑定 Scroller 到 HdsNavDestination**：
-    // 聊天页顶栏是 scrollEffect=false 且 glass=false 的静态自绘三胶囊（ChatHeader），不需要
-    // HDS 根据滚动位置驱动标题栏收缩或渐变模糊。若把 Scroller 传给 bindToScrollable，
-    // HdsNavDestination 会为整页挂一个 1378×2832 的离屏滤镜节点；一旦会话内有动态头像
-    // 或动态贴纸/表情按 30~60fps 刷新，该整页滤镜缓存就会每帧失效（`forceClearCache_:1, hashChange`），
-    // 导致整页离屏重绘并把 GPU 负载推高到 90%~100%。
     .bindToScrollable([])
     // 查看器**不走 bindContentCover**：全模态里视频画面显示不出来（#201，平板分栏黑屏）。
     // 分栏下盖满窗口改由收左栏 + 侧边页签实现，见 util/viewerWindowCover。
