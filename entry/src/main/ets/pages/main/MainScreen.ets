@@ -1,3 +1,4 @@
+import { navigationHaptics } from '../../services/NavigationHaptics';
 import { KEY_IMMERSIVE_BARS_HIDDEN } from '../../util/immersiveBars';
 import { DrawnHomeWarmup } from './DrawnHomeWarmup';
 import { PressFollowBox } from './PressFollowBox';
@@ -257,6 +258,7 @@ export struct MainScreen {
   }
 
   aboutToAppear(): void {
+    navigationHaptics.prepare();
     this.dockActive = true;
     this.syncWallpaperFlag();
     this.unsubNowPlaying = subscribeNowPlaying((state: NowPlaying | null): void => {
@@ -1112,6 +1114,7 @@ export struct MainScreen {
         barVisible: this.dockBarOpen && !this.leftFloatingDock() && !this.immersiveDockHidden()
       }))
       .scrollable(false)
+      .onTabBarClick((_index: number): void => { navigationHaptics.play('dock'); })
       .animationDuration(powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, DOCK_SWITCH_DURATION))
       .onAnimationStart((_currentIndex: number, targetIndex: number) => {
         const target: number = logicalTabIndex(targetIndex, this.showContactsTab);
@@ -1181,6 +1184,7 @@ export struct MainScreen {
           barVisible: this.dockVisible()
         }))
         .scrollable(false)
+        .onTabBarClick((_index: number): void => { navigationHaptics.play('dock'); })
         .onChange((index: number) => {
           const logical: number = logicalTabIndex(index, this.showContactsTab);
           if (this.tab !== logical) {

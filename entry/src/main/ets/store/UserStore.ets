@@ -1,3 +1,5 @@
+import { isDeletedUser } from '../util/deletedUser';
+import { str } from '../util/strings';
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { logE } from '../util/log';
@@ -10,6 +12,7 @@ import { invalidateSenderAnimation } from '../util/senderAnimationChannel';
 // for users TDLib never pushed, by asking for them once (see ensure).
 export class UserStore {
   private client: TdClient;
+  private deleted: Set<number> = new Set<number>();
   private names: Map<number, string> = new Map();
   private photos: Map<number, number> = new Map();
   private accents: Map<number, number> = new Map(); // accent_color_id per user
@@ -26,8 +29,10 @@ export class UserStore {
   }
 
   displayName(userId: number): string {
-    return this.names.get(userId) ?? '';
+    return this.deleted.has(userId) ? str('deleted_account') : this.names.get(userId) ?? '';
   }
+
+  isDeleted(userId: number): boolean { return this.deleted.has(userId); }
 
   // Small profile-photo file id for a user (0 if none / not yet known).
   photoFileId(userId: number): number {
@@ -95,10 +100,11 @@ export class UserStore {
     if (id === undefined) {
       return;
     }
+    if (isDeletedUser(user)) { this.deleted.add(id); } else { this.deleted.delete(id); }
     const first = (user['first_name'] as string | undefined) ?? '';
     const last = (user['last_name'] as string | undefined) ?? '';
     this.names.set(id, `${first} ${last}`.trim());
-    const profilePhoto = user['profile_photo'] as TdObject | undefined;
+    const profilePhoto = this.deleted.has(id) ? undefined : user['profile_photo'] as TdObject | undefined;
     const photoId: number = this.smallFileId(profilePhoto);
     const previousPhotoId: number | undefined = this.photos.get(id);
     this.photos.set(id, photoId);

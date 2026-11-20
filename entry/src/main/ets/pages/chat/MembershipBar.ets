@@ -54,6 +54,8 @@ export struct MembershipBar {
   @Param state: string = '';
   @Param restrictedUntil: number = 0;
   @Param isMuted: boolean = false;
+  @Param directMessagesAvailable: boolean = false;
+  @Event onDirectMessages: () => void = (): void => {};
   @Param joining: boolean = false;
   @Param joinByRequest: boolean = false;
   // 密聊是不是自己发起的。等待期两侧话术不同（见 util/secretChat）。
@@ -69,6 +71,7 @@ export struct MembershipBar {
   // 这颗胶囊的 id 给选单做锚点（见 JoinFolderMenu）。
   @Event onJoinToFolder: (anchorId: string) => void = (): void => {};
   private readonly joinFolderAnchorId: string = `join_folder_anchor_${nextJoinFolderAnchor++}`;
+  @Event onDeleteChat: () => void = (): void => {};
   @Event onStartBot: () => void = (): void => {};
   @Event onToggleMute: () => void = (): void => {};
 
@@ -86,7 +89,9 @@ export struct MembershipBar {
   private surface() {
     SystemGlassSurface({ effectsEnabled: false, radius: bottomPillRadius() }) {
     Row({ space: 8 }) {
-      if (this.state === MEMBERSHIP_READONLY) {
+      if (this.state === 'deletedUser') {
+        Text($r('app.string.ca_delete_chat')).fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
+      } else if (this.state === MEMBERSHIP_READONLY) {
         SymbolGlyph($r(this.isMuted ? 'sys.symbol.bell' : 'sys.symbol.bell_slash'))
           .fontSize(17).fontColor([COLOR_PRIMARY]).width(17);
         Text(this.isMuted ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'))
@@ -187,6 +192,25 @@ export struct MembershipBar {
         .constraintSize({ minHeight: 48 })
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center);
+      } else if (this.state === MEMBERSHIP_READONLY && this.directMessagesAvailable) {
+        Row({ space: BOTTOM_PILL_GAP }) {
+          SystemGlassSurface({ effectsEnabled: false, radius: bottomPillRadius() }) {
+            Row({ space: 8 }) {
+              SymbolGlyph($r('sys.symbol.message')).fontSize(20).fontColor([COLOR_PRIMARY]);
+              Text($r('app.string.cp_channel_direct_messages'))
+                .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
+                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).flexShrink(1);
+            }
+            .pillSurface()
+            .accessibilityText(str('cp_channel_direct_messages'))
+            .onClick((): void => { this.onDirectMessages(); });
+          }
+          Row() { this.surface(); }
+            .flexShrink(1)
+            .onClick((): void => { this.onToggleMute(); });
+        }
+        .width('100%').constraintSize({ minHeight: 48 })
+        .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center);
       } else {
         Row() {
           this.surface();
@@ -200,9 +224,11 @@ export struct MembershipBar {
         // 都不可点：前者点了没意义，后者点了只会失败。
         // 照抄原式的正面枚举，而不是反过来排除——反写在遇到意外状态时行为会翻转。
         .enabled((this.state === MEMBERSHIP_JOINABLE && !this.joining) ||
-          this.state === MEMBERSHIP_READONLY || this.state === MEMBERSHIP_BOT_START)
+          this.state === MEMBERSHIP_READONLY || this.state === MEMBERSHIP_BOT_START || this.state === 'deletedUser')
         .onClick((): void => {
-          if (this.state === MEMBERSHIP_READONLY) {
+          if (this.state === 'deletedUser') {
+            this.onDeleteChat();
+          } else if (this.state === MEMBERSHIP_READONLY) {
             this.onToggleMute();
           } else if (this.state === MEMBERSHIP_BOT_START) {
             this.onStartBot();

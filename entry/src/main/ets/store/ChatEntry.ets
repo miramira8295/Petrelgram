@@ -10,6 +10,7 @@ export interface ChatEntry {
   // embedding every mutable field (and the row index) in its identity.
   revision: number;
   title: string;
+  isDeletedUser?: boolean;
   isMuted: boolean;
   // 是否跟随作用域默认静音设置（见 effectiveMuted）。
   usesDefaultMute: boolean;
@@ -33,6 +34,9 @@ export interface ChatEntry {
   lastMessageDate: number;
   lastMessageId: number;   // newest message — 标记为已读 reads up to it
   lastSenderName: string;
+  lastSenderId?: number;
+  lastSenderIsUser?: boolean;
+  lastMessageOutgoing?: boolean;
   photoFileId: number;
   avatarPath: string;
   initials: string;
@@ -66,7 +70,7 @@ export interface ChatEntry {
 export function cloneEntry(e: ChatEntry): ChatEntry {
   return {
     id: e.id, revision: e.revision + 1,
-    title: e.title, isMuted: e.isMuted, usesDefaultMute: e.usesDefaultMute,
+    title: e.title, isDeletedUser: e.isDeletedUser ?? false, isMuted: e.isMuted, usesDefaultMute: e.usesDefaultMute,
     unreadCount: e.unreadCount, unreadMentionCount: e.unreadMentionCount,
     rawUnreadCount: e.rawUnreadCount, lastReadInboxId: e.lastReadInboxId,
     lastReadOutboxId: e.lastReadOutboxId ?? 0,
@@ -75,6 +79,8 @@ export function cloneEntry(e: ChatEntry): ChatEntry {
     lastMessageText: e.lastMessageText, lastMessageThumb: e.lastMessageThumb,
     lastMessageDate: e.lastMessageDate,
     lastMessageId: e.lastMessageId,
+    lastSenderId: e.lastSenderId ?? 0, lastSenderIsUser: e.lastSenderIsUser ?? true,
+    lastMessageOutgoing: e.lastMessageOutgoing ?? false,
     lastSenderName: e.lastSenderName, photoFileId: e.photoFileId,
     avatarPath: e.avatarPath, initials: e.initials, autoDeleteTime: e.autoDeleteTime,
     kind: e.kind, isMarkedUnread: e.isMarkedUnread,

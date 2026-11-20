@@ -134,5 +134,11 @@
   "test-reaction-first-frame.mjs",
   "test-background-sharp.mjs",
   "test-surface-tint-alignment.mjs",
-  "test-pr-session-integration.mjs"
+  "test-pr-session-integration.mjs",
+  "test-deleted-user.mjs",
+  "test-chat-preview-senders.mjs",
+  "test-attach-panel.mjs",
+  "test-navigation-haptics.mjs",
+  "test-channel-direct-messages.mjs",
+  "test-message-sender-navigation.mjs"
 ]

@@ -404,8 +404,8 @@ export struct DrawnContentRow {
             if (this.data.isGroup && !this.msg.isOutgoing && this.group.showAvatar) {
               MessageSenderAvatar({ spec: this.senderAvatarSpec() }).margin({ right: BUBBLE_AVATAR_GAP_VP })
                 .onClick((): void => {
-                  if (!this.context.gestureClaimed && this.msg.senderIsUser && this.msg.senderId > 0) {
-                    this.actions.onAvatarTap(this.msg.senderId);
+                  if (!this.context.gestureClaimed) {
+                    this.actions.onAvatarTap(this.msg.senderId, this.msg.senderIsUser);
                   }
                 })
                 .gesture(LongPressGesture().onAction((): void => {

@@ -392,7 +392,8 @@ export struct ChatRow {
     }
     if (this.row.snapshot.chat.unreadMentionCount > 0) { parts.push(str('cp_unread_mentions')); }
     if (this.row.snapshot.chat.lastMessageText !== '') {
-      parts.push(this.row.snapshot.chat.lastMessageText);
+      const sender = this.senderLabel();
+      parts.push(sender === '' ? this.row.snapshot.chat.lastMessageText : `${sender}: ${this.row.snapshot.chat.lastMessageText}`);
     }
     return parts.join('，');
   }

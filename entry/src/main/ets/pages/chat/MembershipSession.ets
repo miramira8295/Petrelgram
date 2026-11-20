@@ -1,3 +1,4 @@
+import { isDeletedUser } from '../../util/deletedUser';
 import { GroupPermissions, allPermissions } from '../../util/chatPermissions';
 import { effectiveSendPermissions, anySendPermission } from '../../util/sendPermissions';
 // 2026-10-14: join() now owns join submission/approval state; ChatPage is thin wiring.
@@ -188,6 +189,8 @@ export interface MembershipSessionHost {
   onJoinRequested?: () => void;
   onJoinFailed?: () => void;
   setSendPermissions?: (value: GroupPermissions) => void;
+  onContextReset?: () => void;
+  onSupergroup?: (group: TdObject) => void;
 }
 
 export class MembershipSession {
@@ -209,9 +212,13 @@ export class MembershipSession {
   private lastStatus: TdObject | undefined = undefined;
   private permissionsRevision: number = 0;
   private statusRevision: number = 0;
+  private peerDeleted: boolean = false;
+  private peerResolved: boolean = false;
+  private peerRevision: number = 0;
   private contextChatId: number = 0;
   private contextClient: TdClient | null = null;
   private disposed: boolean = false;
+  private directMessagesWithoutJoin: boolean = false;
 
   // 未 bind 时的空宿主：字段类型非空，且控制器在 aboutToAppear 之前就已经
   // 被构造出来（页面的字段初始化器 new）。取值器返回的都是「什么都还没有」
@@ -245,11 +252,15 @@ export class MembershipSession {
     const chatId: number = this.host.chatId();
     const client: TdClient = this.host.client();
     if (chatId === this.contextChatId && client === this.contextClient) { return; }
+    this.host.onContextReset?.();
+    this.peerDeleted = false; this.peerResolved = false;
+    this.peerRevision++;
     this.contextChatId = chatId;
     this.contextClient = client;
     this.membershipSeq++;
     this.permissionsRevision = 0;
     this.statusRevision = 0;
+    this.directMessagesWithoutJoin = false;
     this.lastStatus = undefined;
     this.chatCanSendBasic = true;
     this.chatPermissions = undefined;
@@ -276,7 +287,31 @@ export class MembershipSession {
     if (changed && this.lastStatus !== undefined) { this.renderStatus(this.lastStatus); }
   }
 
+  onUserUpdate(update: TdObject): void {
+    if (this.disposed) { return; }
+    const user = update['user'] as TdObject | undefined;
+    if (user === undefined || user['id'] !== this.host.chatId() || this.host.chatId() <= 0) { return; }
+    this.syncContext();
+    this.peerRevision++;
+    this.applyPrivateUser(user);
+  }
+
+  private applyPrivateUser(user: TdObject): void {
+    const deleted = isDeletedUser(user), changed = !this.peerResolved || this.peerDeleted !== deleted;
+    this.peerDeleted = deleted; this.peerResolved = true;
+    this.host.setSendPermissions?.(allPermissions(!this.peerDeleted));
+    this.host.setMembershipState(this.peerDeleted ? 'deletedUser' : 'writable');
+    if (changed) {
+      this.host.commitTimelineSnapshot();
+      if (this.peerDeleted) { this.host.closeComposerSurfaces(); }
+    }
+  }
+
   private recoverReadFailure(): void {
+    if (this.peerDeleted) {
+      this.host.setSendPermissions?.(allPermissions(false));
+      this.host.setMembershipState('deletedUser'); return;
+    }
     if (this.lastStatus !== undefined) {
       this.renderStatus(this.lastStatus);
       return;
@@ -298,6 +333,7 @@ export class MembershipSession {
     const client: TdClient = this.host.client();
     const permissionsRevision: number = this.permissionsRevision;
     const statusRevision: number = this.statusRevision;
+    const peerRevision = this.peerRevision;
     const active = (): boolean => !this.disposed && seq === this.membershipSeq &&
       chatId === this.host.chatId() && client === this.host.client();
     this.host.setJoinByRequest?.(false);
@@ -315,6 +351,19 @@ export class MembershipSession {
       if (permissionsRevision === this.permissionsRevision) {
         this.chatPermissions = chatPerms;
         this.chatCanSendBasic = (chatPerms?.['can_send_basic_messages'] as boolean | undefined) ?? true;
+      }
+      if (typeName === 'chatTypePrivate') {
+        this.membershipSupergroupId = 0; this.membershipBasicGroupId = 0;
+        if (!this.peerDeleted) { this.host.setMembershipState('checking'); }
+        const userReq: TdRequest = { '@type': 'getUser' };
+        userReq['user_id'] = type!['user_id'];
+        client.send(userReq, 15000).then((user: TdObject): void => {
+          if (active() && peerRevision === this.peerRevision) { this.applyPrivateUser(user); }
+        }).catch((e: TdError): void => {
+          if (active()) { this.recoverReadFailure(); }
+          logE(`MembershipSession.getUser failed: ${e.message}`);
+        });
+        return;
       }
       if (typeName === 'chatTypeSupergroup') {
         this.membershipSupergroupId = (type?.['supergroup_id'] as number | undefined) ?? 0;
@@ -413,6 +462,11 @@ export class MembershipSession {
     if ((next === 'restricted' || next === 'groupReadonly') && anySendPermission(capabilities)) {
       next = 'writable';
     }
+    // Channel DMs do not have a subscriber join operation. TDLib may report
+    // Left before the first message; only this explicit chat kind skips joining.
+    if (type === 'chatMemberStatusLeft' && this.directMessagesWithoutJoin) {
+      next = anySendPermission(capabilities) ? 'writable' : 'groupReadonly';
+    }
     // 截止时间是秒级时间戳；0 表示永久。每次状态推送都刷新，解除限制时清零。
     const until: number = (status?.['restricted_until_date'] as number | undefined) ?? 0;
     this.host.setRestrictedUntil?.(next === 'restricted' && Number.isFinite(until) && until > 0 ? until : 0);
@@ -447,6 +501,16 @@ export class MembershipSession {
   // 私有化后补的只读取值器，读点不丢（见文件头专项说明）。
   applySupergroup(supergroup: TdObject): void {
     if (this.disposed) { return; }
+    this.directMessagesWithoutJoin = supergroup['is_direct_messages_group'] === true &&
+      supergroup['is_administered_direct_messages_group'] !== true &&
+      supergroup['join_to_send_messages'] === false;
+    // Reconcile authoritative group metadata before evaluating permissions.
+    const isChannel = supergroup['is_channel'] as boolean | undefined;
+    if (isChannel !== undefined && isChannel !== this.host.isChannel()) {
+      this.host.setIsChannel(isChannel);
+      this.host.commitTimelineSnapshot();
+    }
+    this.host.onSupergroup?.(supergroup);
     this.host.setJoinByRequest?.((supergroup['join_by_request'] as boolean | undefined) ?? false);
     this.applyStatus(supergroup['status'] as TdObject | undefined);
   }

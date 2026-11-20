@@ -1,3 +1,4 @@
+import { ChatPreviewSenders } from './ChatPreviewSenders';
 import { ChatListSubscription, ChatListPublicationMode } from './ChatListSubscription';
 import { OrderSnapshot } from './chatListOrder';
 import { ChatMirror } from './chatMirror';
@@ -103,6 +104,7 @@ export class ChatStore {
   private entryShadowMatch: number = 0;
   // B4b-3 的镜像：按"将来要当权威"的规则维护（见 store/chatMirror）。UI 目前
   // 仍以 chats 为准，镜像先跑起来对账，切换时直接换读点。
+  private previewSenders: ChatPreviewSenders = new ChatPreviewSenders();
   private mirror: ChatMirror = new ChatMirror();
   private pinEpochs: Map<string, number> = new Map<string, number>();
   // V2：worker 送来的列表成员与置顶。V1 关闭时，界面读的是这两份而不是 positions。
@@ -447,8 +449,54 @@ export class ChatStore {
   //
   // 一致的字段集合见 compareChatEntries 的注释（revision/头像/发送者名等
   // 本来就各算各的，不参与比较）。
+  // UI owns user metadata; normalize every worker batch before equality checks
+  // so a delayed title/photo update cannot resurrect a deleted identity.
+  private normalizePeer = (entry: ChatEntry): void => {
+    const senderId = entry.lastSenderId ?? 0;
+    if (entry.lastMessageId === 0 || entry.isSavedMessages) { entry.lastSenderName = ''; }
+    else if (entry.lastMessageOutgoing === true || (senderId === this.selfId && this.selfId > 0 && entry.lastSenderIsUser !== false)) {
+      entry.lastSenderName = str('sm_you');
+    } else if (senderId !== 0) {
+      entry.lastSenderName = entry.lastSenderIsUser === false ? this.mirror.get(senderId)?.title ?? '' :
+        this.users.displayName(senderId);
+    }
+    if (entry.kind !== 'private' || !this.users.knows(entry.id)) { return; }
+    const wasDeleted = entry.isDeletedUser === true;
+    entry.isDeletedUser = this.users.isDeleted(entry.id);
+    if (entry.isDeletedUser) {
+      entry.title = this.users.displayName(entry.id);
+      entry.initials = '👻'; entry.photoFileId = 0; entry.avatarPath = ''; entry.typingText = '';
+    } else if (wasDeleted) {
+      entry.title = this.users.displayName(entry.id);
+      entry.initials = computeInitials(entry.title);
+      entry.photoFileId = this.users.photoFileId(entry.id); entry.avatarPath = '';
+    }
+  };
+
   compareWorkerEntries(entries: ChatEntry[]): void {
-    const changed: number[] = this.mirror.apply(entries);
+    const titleCandidates: Set<number> = new Set<number>();
+    for (const entry of entries) {
+      if (this.mirror.get(entry.id)?.title !== entry.title) { titleCandidates.add(entry.id); }
+      this.previewSenders.bind(entry);
+      const senderId = entry.lastSenderId ?? 0;
+      if (senderId > 0 && entry.lastSenderIsUser !== false && !this.users.knows(senderId)) {
+        this.users.ensure(senderId);
+      }
+    }
+    const changed: number[] = this.mirror.apply(entries, this.normalizePeer);
+    // Resolve chat-sender names after the entire batch lands, regardless of
+    // whether the channel title arrived before or after its dependent row.
+    const senderDependents: Set<number> = new Set<number>();
+    for (const id of changed) {
+      if (titleCandidates.has(id)) { this.previewSenders.collect(id, false, senderDependents); }
+    }
+    const changedSet: Set<number> = new Set<number>(changed);
+    for (const id of senderDependents) {
+      const entry = this.mirror.get(id);
+      if (entry !== undefined && this.mirror.apply([entry], this.normalizePeer).length > 0 && !changedSet.has(id)) {
+        changed.push(id); changedSet.add(id);
+      }
+    }
     if (changed.length === 0) {
       return;
     }
@@ -981,6 +1029,17 @@ export class ChatStore {
     if (uid <= 0) {
       return;
     }
+    // Private chat IDs equal user IDs in TDLib. One lookup, no chat scan.
+    const affected: Set<number> = new Set<number>();
+    this.previewSenders.collect(uid, true, affected);
+    const peer = this.mirror.get(uid);
+    if (peer?.kind === 'private') { affected.add(uid); }
+    const entries: ChatEntry[] = [];
+    for (const id of affected) {
+      const entry = this.mirror.get(id);
+      if (entry !== undefined) { entries.push(entry); }
+    }
+    if (entries.length > 0) { this.compareWorkerEntries(entries); }
     this.chatActions.forEach((senders: Map<number, TypingAction>, chatId: number): void => {
       if (senders.has(uid)) {
         this.publishTypingText(chatId);

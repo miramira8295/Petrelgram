@@ -5,6 +5,11 @@ const message=group('visible secret link',[{offset:8,length:6,type:{'@type':'tex
 Object.assign(message.head,{senderName:'Sender',isOutgoing:true});
 const plan=new ctx.DrawnTextLayouts().prepare(ui,message,data,style);
 const view=Object.assign(Object.create(ctx.DrawnRowAccessibility.prototype),{plan,msg:message.head,sendState:'sending'});
+view.plan={...plan,avatar:{x:0,y:0,width:38,height:38}};
+view.msg={...message.head,senderId:-100,senderIsUser:false,senderName:'Anonymous group'};
+assert.ok(view.targets.some(t=>t.key==='avatar' && t.label==='Anonymous group'));
+view.msg={...view.msg,senderId:0};assert.ok(!view.targets.some(t=>t.key==='avatar'));
+view.plan=plan;view.msg=message.head;
 const targets=view.targets;
 assert.ok(targets[0].label.includes('a11y_message_sending'));
 assert.ok(!targets[0].label.includes('secret'),'spoken body must not reveal concealed text');

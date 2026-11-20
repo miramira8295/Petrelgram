@@ -602,7 +602,7 @@ export struct DrawnMessageRow {
     }
     const m = this.rowGroup.head;
     if (p.avatar.width > 0 && albumRectContains(p.avatar, hitX, hitY)) {
-      if (m.senderIsUser && m.senderId > 0) { this.actions.onAvatarTap(m.senderId); }
+      this.actions.onAvatarTap(m.senderId, m.senderIsUser);
       return;
     }
     for (const tile of p.tiles) {
@@ -784,12 +784,18 @@ export struct DrawnMessageRow {
     const t = event.changedTouches[0] ?? event.touches[0];
     if (event.type === TouchType.Down && t !== undefined) {
       this.claimed = false; this.edge = isEdgeSwipeStart(t.windowX, this.env.screenWidthVp);
+      // The canvas owns its tap even when a retained ancestor does not receive
+      // the same Down. Keep the identity guard local; never accept a stale click.
+      this.touchRowId = this.rowGroup.head.rowId; this.touchChatId = this.rowData.chatId;
       this.touchPlan = this.plan; this.touchX = t.x; this.touchY = t.y;
       this.touchLink = this.linkAt(t.x, t.y);
       this.touchReaction = this.reactionAt(t.x, t.y);
       this.foreground.setPress(this.touchLink, this.plan?.density ?? 1);
       if (!this.rowData.selectionActive) { this.foreground.pressReaction(this.touchReaction); }
     } else if (event.type === TouchType.Cancel || event.touches.length > 1 || this.touchPlan !== this.plan) {
+      if (event.type === TouchType.Cancel || event.touches.length > 1) {
+        this.claimed = true; this.touchRowId = 0; this.touchChatId = 0;
+      }
       this.touchLink = null; this.foreground.press(null);
       this.touchReaction = null;
     } else if (event.type === TouchType.Move || event.type === TouchType.Up) {
@@ -870,11 +876,15 @@ export struct DrawnMessageRow {
     this.canvasTransitionFrame = transitionFrame;
     this.canvasTransition.begin(index, tile.cell.messageId, (): boolean => {
       const current = this.nativeTiles[index];
-      return this.active && this.presentationReady() && this.albumCanvas.state.ready &&
+      return this.active && this.presentationReady() &&
         this.rowData.chatId === chatId && this.rowGroup.head.rowId === rowId && current !== undefined &&
-        source !== undefined && current.cell.messageId === tile.cell.messageId &&
+        current.cell.messageId === tile.cell.messageId;
+    }, (): void => { this.actions.onMediaTap(tile.cell.messageId, windowX, windowY); }, (): boolean => {
+      const current = this.nativeTiles[index];
+      return this.albumCanvas.state.ready && transitionFrame !== undefined && current !== undefined &&
+        source !== undefined &&
         current.x === source.x && current.y === source.y && current.width === source.width && current.height === source.height;
-    }, (): void => { this.actions.onMediaTap(tile.cell.messageId, windowX, windowY); });
+    });
   }
 
   private gridRadii(): BorderRadiuses {
@@ -1036,6 +1046,19 @@ export struct DrawnMessageRow {
         DrawnBusyLink({ plan: this.plan?.caption ?? null, url: this.env.linkNavBusy })
           .position({ x: this.plan?.captionX ?? 0, y: this.plan?.captionY ?? 0 });
       }
+      // Static/TGS/video stickers share the canvas transform and capture host.
+      // The existing non-hit-test foreground draws time AFTER the native content.
+      if (this.rowGroup.head.contentType === 'sticker') {
+        StickerMessageBubble({ msg: this.rowGroup.head, group: this.rowGroup, data: this.rowData,
+          actions: this.actions, contentOnly: true,
+          contentMax: Math.max(this.plan?.caption?.widgets[0]?.width ?? 0, this.plan?.caption?.widgets[0]?.height ?? 0),
+          onClaim: (): boolean => {
+            const widget = this.plan?.caption?.widgets[0]?.widget;
+            if (this.claimed || widget === undefined) { return false; }
+            return this.claimDocumentWidget(widget);
+          } }).position({ x: (this.plan?.captionX ?? 0) + (this.plan?.caption?.widgets[0]?.x ?? 0),
+            y: (this.plan?.captionY ?? 0) + (this.plan?.caption?.widgets[0]?.y ?? 0) });
+      }
       Row().width(this.plan?.width ?? 0).height(this.plan?.height ?? 0)
         .drawModifier(this.foreground.bind(this.plan, this.sendState, this.footerPaintKey))
         .hitTestBehavior(HitTestMode.None);
@@ -1167,12 +1190,14 @@ export struct DrawnMessageRow {
             if ((this.plan?.caption?.widgets.length ?? 0) > 0) {
               ForEach(this.plan?.caption?.widgets ?? this.emptyWidgets, (item: DrawnDocumentWidgetPlacement) => {
                 if (item.widget.kind === 'message-sticker') {
-                  StickerMessageBubble({ msg: this.rowGroup.head, group: this.rowGroup, data: this.rowData,
-                    actions: this.actions, contentOnly: true, contentMax: Math.max(item.width, item.height),
-                    onClaim: (): boolean => {
-                      if (this.claimed) { return false; }
-                      return this.claimDocumentWidget(item.widget);
-                    } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                  if (this.rowGroup.head.contentType !== 'sticker') {
+                    StickerMessageBubble({ msg: this.rowGroup.head, group: this.rowGroup, data: this.rowData,
+                      actions: this.actions, contentOnly: true, contentMax: Math.max(item.width, item.height),
+                      onClaim: (): boolean => {
+                        if (this.claimed) { return false; }
+                        return this.claimDocumentWidget(item.widget);
+                      } }).position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
+                  }
                 } else if (item.widget.kind === 'message-giveaway') {
                   DrawnGiveawayMessage({ chatId: this.rowData.chatId, msg: this.rowGroup.head, actions: this.actions, widget: item.widget, boxWidth: item.width,
                     onClaim: (): boolean => {

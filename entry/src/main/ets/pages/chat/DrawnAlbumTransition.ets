@@ -9,6 +9,7 @@ export class DrawnAlbumTransition {
   private scheduled: boolean = false;
   private timeout: number = -1;
   private valid: () => boolean = (): boolean => false;
+  private anchorValid: () => boolean = (): boolean => false;
   private open: () => void = (): void => {};
   private messageId: number = 0;
   private publish: (index: number) => void;
@@ -18,10 +19,11 @@ export class DrawnAlbumTransition {
     this.publish = publish; this.schedule = schedule;
   }
 
-  begin(index: number, messageId: number, valid: () => boolean, open: () => void): void {
+  begin(index: number, messageId: number, valid: () => boolean, open: () => void,
+    anchorValid: () => boolean = (): boolean => true): void {
     this.cancel();
     const generation = this.generation;
-    this.messageId = messageId; this.valid = valid; this.open = open;
+    this.messageId = messageId; this.valid = valid; this.open = open; this.anchorValid = anchorValid;
     this.pending = true;
     this.publish(index);
     // A layout callback is not guaranteed on a disappearing/hidden node. Never
@@ -41,12 +43,15 @@ export class DrawnAlbumTransition {
     this.pending = false;
     if (this.timeout !== -1) { clearTimeout(this.timeout); this.timeout = -1; }
     if (!this.valid()) { this.cancel(); return; }
+    // Message ownership is mandatory; a shared-element source is optional.
+    // A cover/geometry update may remove that source after a legitimate tap.
+    const useAnchor = anchored && this.anchorValid();
     const open = this.open, messageId = this.messageId;
     // Do not retain row input/event closures for the viewer lifetime.
-    this.valid = (): boolean => false; this.open = (): void => {};
+    this.valid = (): boolean => false; this.open = (): void => {}; this.anchorValid = (): boolean => false;
     const release = (): void => { if (generation === this.generation) { this.cancel(); } };
     try {
-      if (anchored) {
+      if (useAnchor) {
         if (!withAlbumCanvasAnchor(messageId, release, open)) { release(); }
       } else {
         release(); withAlbumCanvasTransition(messageId, open);
@@ -57,7 +62,7 @@ export class DrawnAlbumTransition {
   cancel(): void {
     this.generation++; this.pending = false; this.scheduled = false;
     if (this.timeout !== -1) { clearTimeout(this.timeout); this.timeout = -1; }
-    this.valid = (): boolean => false; this.open = (): void => {};
+    this.valid = (): boolean => false; this.open = (): void => {}; this.anchorValid = (): boolean => false;
     this.publish(-1);
   }
 }

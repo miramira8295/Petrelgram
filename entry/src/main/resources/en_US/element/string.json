@@ -13523,6 +13523,50 @@
     {
       "name": "chat_settings_bubble_tint_sub",
       "value": "Adjust fill opacity, without background blur"
+    },
+    {
+      "name": "checklist_type",
+      "value": "Checklist"
+    },
+    {
+      "name": "checklist_progress_by",
+      "value": "%1$s / %2$s completed by %3$s"
+    },
+    {
+      "name": "user_status_long_ago",
+      "value": "last seen a long time ago"
+    },
+    {
+      "name": "ix_folder_haptic",
+      "value": "Folder switching haptics"
+    },
+    {
+      "name": "ix_dock_haptic",
+      "value": "Bottom navigation haptics"
+    },
+    {
+      "name": "ix_haptic_strength",
+      "value": "Haptic strength: %s"
+    },
+    {
+      "name": "ix_haptic_strength_label",
+      "value": "Haptic strength"
+    },
+    {
+      "name": "ix_haptic_preview",
+      "value": "Try haptic"
+    },
+    {
+      "name": "ix_haptic_note",
+      "value": "Each switch and strength is saved independently. Respects system haptic settings. Some devices may feel the same at different strength levels."
+    },
+    {
+      "name": "cp_channel_direct_messages",
+      "value": "Message channel"
+    },
+    {
+      "name": "cp_channel_direct_unavailable",
+      "value": "Unable to open channel messages. Please try again later."
     }
   ]
 }

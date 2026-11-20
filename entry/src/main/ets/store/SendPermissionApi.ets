@@ -1,3 +1,4 @@
+import { isDeletedUser } from '../util/deletedUser';
 import { showToast } from '../util/toast';
 import { promptAction } from '@kit.ArkUI';
 import { TdClient } from '../tdkit/TdClient';
@@ -38,7 +39,12 @@ export async function readSendPermissions(port: SendPermissionPort, chatId: numb
   const chat: TdObject = await port(chatRequest);
   const type = chat['type'] as TdObject | undefined;
   const name: string = (type?.['@type'] as string | undefined) ?? '';
-  if (name === 'chatTypePrivate' || name === 'chatTypeSecret') { return allPermissions(true); }
+  if (name === 'chatTypePrivate') {
+    const userRequest: TdRequest = { '@type': 'getUser' };
+    userRequest['user_id'] = type!['user_id'];
+    return allPermissions(!isDeletedUser(await port(userRequest)));
+  }
+  if (name === 'chatTypeSecret') { return allPermissions(true); }
   if (name !== 'chatTypeSupergroup' && name !== 'chatTypeBasicGroup') {
     throw new SendPermissionError(str('cp_send_permission_check_failed'));
   }

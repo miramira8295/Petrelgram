@@ -46,13 +46,13 @@ const method=rowClass.members.find(n=>ts.isMethodDeclaration(n)&&n.name.getText(
 vm.runInContext(ts.transpileModule(`class RowProbe {${method.getText(rowFile)}};globalThis.RowProbe=RowProbe;`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);
 ctx.cornerPx=v=>Number(v)||0;
 ctx.OneShotFrameCallback=class{constructor(task){this.onFrame=task;}};
-const row=new ctx.RowProbe(),frames=[],taps=[];
+const row=new ctx.RowProbe(),frames=[],taps=[],fades=[];
 Object.assign(row,{canvasTransition:null,canvasTransitionIndex:-1,active:true,presentationReady:()=>true,
  rowData:{chatId:7},rowGroup:{head:{rowId:22}},albumCanvas:{state:{ready:true}},
  nativeTiles:[{x:0,y:0,width:100,height:200,cell:{idx:0,messageId:42}}],
  mediaFrames:[{width:100,height:200,position:{x:0,y:0},backdrop:'#ddd',radius:4,transition:'media_7_42',messageId:42,chatId:7}],
  gridRadii:()=>({topLeft:13,topRight:13,bottomLeft:13,bottomRight:13}),
- rowContext:()=>({postFrameCallback:f=>frames.push(f)}),actions:{onMediaTap:(...args)=>{taps.push(args);underlay.holdSource(ctx.take(42));}}});
+ rowContext:()=>({postFrameCallback:f=>frames.push(f)}),actions:{onMediaTap:(...args)=>{taps.push(args);fades.push(ctx.fade(42));underlay.holdSource(ctx.take(42));}}});
 row.openCanvasMedia(row.nativeTiles[0],{windowX:25,windowY:90});
 assert.equal(row.canvasTransitionIndex,0);assert.equal(taps.length,0);
 row.canvasTransition.ready();frames.shift().onFrame();
@@ -61,6 +61,34 @@ row.openCanvasMedia(row.nativeTiles[0],{windowX:25,windowY:90});row.canvasTransi
 row.rowGroup={head:{rowId:23}};frames.shift().onFrame();assert.equal(taps.length,1);
 assert.equal(row.canvasTransitionIndex,-1);assert.equal(timers.size,0);
 console.log('PASS: compiled row uses selected source index and event coordinates; reuse cancels the pending open.');
+
+// A live row can switch renderer or move its source while waiting for the
+// temporary transition node. Losing an animation source must not lose a tap.
+row.rowGroup={head:{rowId:22}};
+for(const change of ['renderer','geometry']) {
+ row.albumCanvas.state.ready=true;
+ const start=taps.length;
+ row.openCanvasMedia(row.nativeTiles[0],{windowX:25,windowY:90});
+ if(change==='renderer')row.albumCanvas.state.ready=false;
+ else row.nativeTiles=[{...row.nativeTiles[0],width:104}];
+ row.canvasTransition.ready();frames.shift().onFrame();
+ assert.equal(taps.length,start+1,change+' change must still open the current message');
+ assert.equal(fades.at(-1),true,'use the existing fade path when the shared source changed');
+ assert.equal(row.canvasTransitionIndex,-1,'invalid animation source falls back without retaining an anchor');
+ assert.equal(timers.size,0);
+}
+row.albumCanvas.state.ready=true;
+let count=taps.length;
+row.openCanvasMedia(row.nativeTiles[0],{windowX:25,windowY:90});
+row.albumCanvas.state.ready=false;[...timers.values()][0]();
+assert.equal(taps.length,count+1,'watchdog also opens after renderer changes');
+assert.equal(fades.at(-1),true);
+row.albumCanvas.state.ready=true;count=taps.length;
+row.openCanvasMedia(row.nativeTiles[0],{windowX:25,windowY:90});
+row.nativeTiles=[{...row.nativeTiles[0],cell:{idx:0,messageId:99}}];
+[...timers.values()][0]();assert.equal(taps.length,count,'reassigned tile remains forbidden');
+assert.equal(timers.size,0);assert.equal(row.canvasTransitionIndex,-1);
+console.log('PASS: renderer/geometry races degrade animation only; watchdog opens once, reused tile IDs remain rejected.');
 
 const effective=ctx.drawnAlbumTransitionFrame(row.mediaFrames[0],{width:100,height:200,edgeMask:11,corners:{topLeft:0,topRight:4,bottomLeft:0,bottomRight:4}},row.gridRadii());
 assert.equal(JSON.stringify(effective.radius),JSON.stringify({topLeft:13,topRight:4,bottomLeft:13,bottomRight:4}));

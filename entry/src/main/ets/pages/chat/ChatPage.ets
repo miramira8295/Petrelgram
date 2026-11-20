@@ -1,3 +1,5 @@
+import { openMessageSender } from '../../util/messageSenderNavigation';
+import { ChannelDirectMessagesSession } from './ChannelDirectMessagesSession';
 import { PlaySlotChannel } from './PlaySlotChannel';
 import { taskpool } from '@kit.ArkTS';
 import { requestOutcomeUncertain } from '../../util/tdRequestTimeout';
@@ -207,7 +209,7 @@ import { VoiceRecorder } from '../../services/VoiceRecorder';
 import { MediaSaveState } from './MediaSaveState';
 import { MembershipSession } from './MembershipSession';
 import { ScrollAnchorController } from './ScrollAnchorController';
-import { leaveChatFully, setInFolder, showChatFolderPicker } from '../../store/ChatActions';
+import { leaveOrDeleteChat, leaveChatFully, setInFolder, showChatFolderPicker } from '../../store/ChatActions';
 import { openJoinFolderMenu } from './JoinFolderMenu';
 import { openReactorsMenu } from './ReactorsMenu';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
@@ -521,9 +523,8 @@ export struct ChatPage {
         onMediaTap: (messageId: number, _x: number, _y: number): void => {
           this.openViewer(messageId);
         },
-        onAvatarTap: (userId: number): void => {
-          const params: Record<string, Object> = { 'userId': userId };
-          navigateToProfile(params);
+        onAvatarTap: (senderId: number, senderIsUser: boolean = true): void => {
+          openMessageSender(senderId, senderIsUser, this.chatId);
         },
         onAvatarLongPress: (userId: number, name: string): void => {
           this.mentionSender(userId, name);
@@ -914,6 +915,7 @@ export struct ChatPage {
   // readable history while the current user is still outside the chat.
   // writable = normal composer, joinable = bottom "加入" action,
   // blocked = banned/unavailable, checking = waiting for the group object.
+  @Local private channelDirect: ChannelDirectMessagesSession = new ChannelDirectMessagesSession();
   @Local membershipState: string = 'writable';
   @Local membershipRestrictedUntil: number = 0;
   @Local joiningChat: boolean = false;
@@ -2045,6 +2047,8 @@ export struct ChatPage {
     // MembershipSession.ets 文件头【client() 注入缝】节）。本批一共两处刻意
     // 偏离逐字搬迁：这条缝，以及三条 logE 的前缀改名（见那边文件头）。
     this.membership.bind({
+      onContextReset: (): void => { this.channelDirect.dispose(); },
+      onSupergroup: (group: TdObject): void => { this.channelDirect.sync(getTdClient(), this.chatId, group); },
       setSendPermissions: (value: GroupPermissions): void => { this.sendAccess.update(value); },
       chatId: (): number => this.chatId,
       isChannel: (): boolean => this.isChannel,
@@ -2399,7 +2403,9 @@ export struct ChatPage {
     this.subscriptions.set('chatAction', getTdClient().onUpdate('updateChatAction',
       (u: TdObject): void => this.typing.onChatAction(u)));
     this.subscriptions.set('chatActionUser', getTdClient().onUpdate('updateUser',
-      (u: TdObject): void => this.typing.onUserUpdate(u)));
+      (u: TdObject): void => {
+        this.typing.onUserUpdate(u); this.header.onUserUpdate(u); this.membership.onUserUpdate(u);
+      }));
     this.subscriptions.set('chatActionNewMsg', getTdClient().onUpdate('updateNewMessage',
       (u: TdObject): void => this.typing.onNewMessage(u)));
     this.subscriptions.set('chatAutoDelete', getTdClient().onUpdate('updateChatMessageAutoDeleteTime',
@@ -3639,6 +3645,7 @@ export struct ChatPage {
       'pinned', 'headerAvatar', 'headerTitle', 'replyKeyboard'
     ]);
     // 先作废成员资格请求和权限缓存，再统一退订身份、默认权限推送。
+    this.channelDirect.dispose();
     this.membership.dispose();
     this.subscriptions.clearInOrder([
       'membershipSupergroup', 'membershipBasicGroup', 'membershipPermissions', 'videoChat', 'groupCall'
@@ -5019,19 +5026,23 @@ export struct ChatPage {
   }
 
   private confirmLeaveChat(): void {
+    const chatId = this.chatId, deleted = this.header.deletedPeer || this.membershipState === 'deletedUser';
     this.getUIContext().showAlertDialog({
-      message: str('cp_leave_confirm', this.header.title),
+      message: str(deleted ? 'ca_confirm_delete_chat' : 'cp_leave_confirm',
+        deleted ? str('deleted_account') : this.header.titleTextOf()),
       autoCancel: true,
       primaryButton: {
         value: $r('app.string.cancel'),
         action: (): void => {}
       },
       secondaryButton: {
-        value: $r('app.string.cp_leave'),
+        value: deleted ? $r('app.string.ca_delete_chat') : $r('app.string.cp_leave'),
         fontColor: '#FF3B30',
         action: (): void => {
-          leaveChatFully(this.chatId).then(() => {
-            this.goBack();
+          const result = deleted ? leaveOrDeleteChat(chatId, 'private', true, false) :
+            leaveChatFully(chatId).then((): boolean => true);
+          result.then((removed: boolean): void => {
+            if (removed && this.chatId === chatId) { this.goBack(); }
           }).catch((e: TdError) => {
             logE(`ChatPage.leaveChat failed: ${e.message}`);
             showToast($r('app.string.cp_leave_failed'), 2000);
@@ -6373,6 +6384,8 @@ export struct ChatPage {
       state: this.composerSlot(),
       restrictedUntil: this.membershipRestrictedUntil,
       isMuted: this.header.isMuted,
+      directMessagesAvailable: this.channelDirect.targetChatId !== 0,
+      onDirectMessages: (): void => { this.channelDirect.open(); },
       joining: this.joiningChat,
       joinByRequest: this.joinByRequest,
       secretOutbound: this.header.secretOutbound,
@@ -6384,6 +6397,7 @@ export struct ChatPage {
         });
       },
       onToggleMute: (): void => { this.header.toggleMute(); },
+      onDeleteChat: (): void => { this.confirmLeaveChat(); },
       onStartBot: (): void => { this.sendBotCommand(BOT_START_COMMAND); }
     });
   }
@@ -6512,6 +6526,7 @@ export struct ChatPage {
         chatId: this.chatId,
         isGroup: this.isGroup,
         isChannel: this.isChannel,
+        privatePollAllowed: this.isBotChat || (this.chatId > 0 && this.chatId === getActiveTdUserId()),
         onAttachPick: (key: string): void => { this.attach.runAttachAction(key); },
         onEmojiPick: (emoji: string): void => { this.insertEmoji(emoji); },
         onCustomEmojiPick: (emoji: string, customEmojiId: string): void => {

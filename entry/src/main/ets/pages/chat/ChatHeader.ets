@@ -298,7 +298,7 @@ export struct ChatHeader {
   }
 
   private activeSubtitleText(): string {
-    if (this.typing.label !== '' && this.header.state !== 'error') {
+    if (!this.header.deletedPeer && this.typing.label !== '' && this.header.state !== 'error') {
       return headerTypingTextOf(this.typing.label);
     }
     return this.header.subtitleTextOf();
@@ -451,7 +451,7 @@ export struct ChatHeader {
         // 重跑一遍页面的 chatTitleBar 闭包。本组件直接持有控制器引用，这里现读
         // 它的 @Trace 自己合成，翻转只刷新这一个 Text 节点，页面一个字都不读——
         // 这是本批性能收益的关键。
-        if (this.typing.label !== '' && this.header.state !== 'error') {
+        if (!this.header.deletedPeer && this.typing.label !== '' && this.header.state !== 'error') {
           Row() {
             Row({ space: 2.5 }) {
               Circle({ width: 4.5, height: 4.5 })

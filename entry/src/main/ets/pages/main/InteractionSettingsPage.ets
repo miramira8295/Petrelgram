@@ -1,3 +1,4 @@
+import { NavigationHapticSettings } from './NavigationHapticSettings';
 import {
   KEY_EXTERNAL_LINK_ACTION, KEY_FOLDER_BAR_SCROLL_HIDE, KEY_MSG_GESTURE, KEY_ROW_SWIPE_ACTIONS,
   KEY_SHOW_CONTACTS_TAB, KEY_VIEWER_CONTINUOUS_HOP, setBoolean, setString
@@ -322,6 +323,7 @@ export struct InteractionSettingsPage {
           this.linkCard();
           this.linkNote();
           this.tabsCard();
+          NavigationHapticSettings();
         }
         .width('100%')
         .padding({ left: 14, right: 14, top: EDGE_OVERLAY_VP, bottom: this.bottomSafe + 20 });

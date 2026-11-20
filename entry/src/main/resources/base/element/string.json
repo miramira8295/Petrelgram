@@ -13583,6 +13583,50 @@
     {
       "name": "chat_settings_bubble_tint_sub",
       "value": "调节底色不透明度，不使用背景模糊"
+    },
+    {
+      "name": "checklist_type",
+      "value": "核对清单"
+    },
+    {
+      "name": "checklist_progress_by",
+      "value": "%1$s / %2$s 已由 %3$s 完成"
+    },
+    {
+      "name": "user_status_long_ago",
+      "value": "很久没上线"
+    },
+    {
+      "name": "ix_folder_haptic",
+      "value": "文件夹切换触感"
+    },
+    {
+      "name": "ix_dock_haptic",
+      "value": "底部功能按钮触感"
+    },
+    {
+      "name": "ix_haptic_strength",
+      "value": "触感强度：%s"
+    },
+    {
+      "name": "ix_haptic_strength_label",
+      "value": "触感强度"
+    },
+    {
+      "name": "ix_haptic_preview",
+      "value": "试振"
+    },
+    {
+      "name": "ix_haptic_note",
+      "value": "两个开关与强度独立保存，遵循系统触感设置。部分设备不支持强度调节，实际触感可能相同。"
+    },
+    {
+      "name": "cp_channel_direct_messages",
+      "value": "私信频道"
+    },
+    {
+      "name": "cp_channel_direct_unavailable",
+      "value": "暂时无法打开频道私信，请稍后重试"
     }
   ]
 }

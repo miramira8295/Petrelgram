@@ -128,6 +128,17 @@ for(const t of p.tiles){
 row.rowTouch(down);
 console.log('PASS: all six gray/loading cells dispatch media opens without decoded pixels; native hit testing remains a device check.');
 
+// The canvas must establish its own gesture owner after retained-node reuse,
+// without relying on the ancestor's touch callback being dispatched too.
+row.touchRowId=0;row.touchChatId=0;row.claimed=true;
+let directCount=events.length;
+row.touch(down);row.click(click);
+assert.equal(events.length,directCount+1);assert.deepEqual(events.at(-1),['onMediaTap',102,100,200]);
+row.touch({...down,type:3});directCount=events.length;row.click(click);
+assert.equal(events.length,directCount,'local cancellation suppresses click even without ancestor delivery');
+row.touch(down);row.click(click);assert.equal(events.length,directCount+1,'next gesture recovers after cancellation');
+console.log('PASS: canvas-local Down/Cancel/next Down preserve current owner and recover without ancestor events.');
+
 row.data.selectionActive=true;row.click(click);assert.deepEqual(events.at(-1),['onToggleSelectedMessage',102]);row.data.selectionActive=false;
 const eventCount=events.length;row.group={...row.group,head:{...row.group.head,rowId:11}};row.click(click);assert.equal(events.length,eventCount,'late click cannot open recycled message');
 row.rowTouch(down);row.swipe(-60);row.endSwipe();assert.equal(events.at(-1)[0],'onReplyTo');

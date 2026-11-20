@@ -53,6 +53,7 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
   private units: DrawnTextUnits = new DrawnTextUnits();
   private outlines: DrawnBubbleOutlineCache = new DrawnBubbleOutlineCache();
   private quoteShapes: DrawnRoundRectCache = new DrawnRoundRectCache();
+  private footerShapes: DrawnRoundRectCache = new DrawnRoundRectCache();
   private previews: DrawnWebPreviewSource = new DrawnWebPreviewSource();
   private stickerSource: DrawnStickerSource | null = null;
   private giveawaySource: DrawnGiveawaySource | null = null;
@@ -208,7 +209,10 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
       this.tagText, this.tagFill, style.textEnvironment, style.environment) : null;
     const quote = m.replyToMessageId !== 0 ? this.quotes.prepare(ui, m.replySenderName, m.replyText, maxPx,
       COLOR_PRIMARY, this.quoteText, this.quoteFill, style.textEnvironment, style.environment, m.replyThumbPath !== '' || m.replyDiceLayers.length > 0) : null;
-    const secondary = drawnColor(COLOR_TEXT_SECONDARY);
+    // A sticker has one immutable native widget. Anchor its time to that widget,
+    // not the wider sender/reply/reaction area; no scan or second measurement.
+    const sticker = m.contentType === 'sticker' ? body.widgets[0] : undefined;
+    const secondary = drawnColor(sticker !== undefined ? Color.White : COLOR_TEXT_SECONDARY);
     const footer = this.footers.prepare(ui, formatClockTime(m.date), m.editDate > 0 ? str('mb_edited') : '',
       style.views, m.isOutgoing, maxPx, secondary, style.environment);
     const chrome = this.chrome.prepare(ui, m, data.isChannel, maxPx / d, style.environment, !data.isGroup && !data.isChannel);
@@ -223,7 +227,7 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
     const placed = placeDrawnFooter({ maxWidthPx: maxPx, bodyWidthPx: body.widthVp * d,
       bodyHeightPx: body.heightVp * d, lastLineRightPx: chrome.hasReactions ? Number.NaN : last.right, lastLineTopPx: last.top,
       chromeWidthPx: Math.max(header?.widthPx ?? 0, quote?.widthPx ?? 0, chrome.width * d,
-        chrome.hasReactions ? Math.min(maxPx, chrome.reactionWidth * d + footer.widthPx + 6 * d) : 0), footerWidthPx: footer.widthPx,
+        chrome.hasReactions && sticker === undefined ? Math.min(maxPx, chrome.reactionWidth * d + footer.widthPx + 6 * d) : 0), footerWidthPx: footer.widthPx,
       footerHeightPx: footer.heightPx, gapPx: 4 * d, bottomGapPx: 2 * d });
     const p = new DrawnBubblePlan();
     p.chrome = new DrawnBubbleChrome(chrome);
@@ -255,13 +259,29 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
     p.footerX = left + contentWidth - p.footerWidth;
     p.footerY = y + placed.footerYPx / d;
     let bottom = y + placed.heightPx / d;
-    if (chrome.hasReactions) {
+    if (sticker !== undefined) {
+      p.onMedia = true;
+      const stickerRight = left + sticker.x + sticker.width;
+      const stickerBottom = y + sticker.y + sticker.height;
+      const fits = sticker.width >= p.footerWidth + 12 && sticker.height >= footer.heightPx / d + 8;
+      p.footerX = Math.max(left + sticker.x + 4, stickerRight - 8 - p.footerWidth);
+      p.footerY = fits ? stickerBottom - 4 - footer.heightPx / d : stickerBottom + 4;
+      // Extremely narrow/short stickers retain a readable footer below instead
+      // of clipping text or distorting the sticker's aspect ratio.
+      bottom = fits ? stickerBottom : p.footerY + footer.heightPx / d + 2;
+      p.footerBackdrop = this.footerShapes.prepare((p.footerX - 4) * d, (p.footerY - 2) * d,
+        (p.footerX + p.footerWidth + 4) * d, (p.footerY + footer.heightPx / d + 2) * d, 12 * d);
+    }
+    if (chrome.hasReactions && sticker !== undefined) {
+      placeChromeReactions(p.chrome, this.chrome.reactionFlow(contentWidth), left, bottom, contentWidth, 0, 0);
+      bottom = p.chrome.reactionsY + (p.chrome.reactions?.height ?? 0);
+    } else if (chrome.hasReactions) {
       const reactionFooter = placeChromeReactions(p.chrome, this.chrome.reactionFlow(contentWidth),
         left, y + body.heightVp, contentWidth, p.footerWidth, footer.heightPx / d);
       p.footerY = reactionFooter.footerY; bottom = reactionFooter.bottom;
     }
     p.statusSize = footer.iconPx / d;
-    p.statusX = left + contentWidth - p.statusSize * 4 / 3;
+    p.statusX = p.footerX + p.footerWidth - p.statusSize * 4 / 3;
     p.statusY = p.footerY + (footer.heightPx - footer.iconPx) / (2 * d);
     if (p.views) {
       p.footerEye = { left: p.footerX * d, top: (p.footerY + 3) * d,

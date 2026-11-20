@@ -47,10 +47,35 @@ const compactEngine=new ctx.DrawnTextLayouts();
 const compact=compactEngine.prepare(ui,empty,data,style),card=compact.caption.widgets[0];
 assert.equal(compact.caption.source.blocks.length,1,'no phantom empty caption paragraph');
 assert.ok(card.height<80,'file slot is measured from actual controls');
-assert.equal(compact.caption.heightVp,card.height+6,'only inter-block spacing remains');
+assert.equal(compact.caption.heightVp,card.height,'terminal file has no phantom inter-block spacing');
 assert.ok(compact.height<100,'ordinary file plus time fits a compact bubble');
 const compactCounts=layoutCounters();
 for(let i=0;i<1000;i++)assert.equal(compactEngine.prepare(ui,{...empty,head:{...empty.head,photoPath:'/cover'+i,videoProgress:i%100}},data,style),compact);
 assert.deepEqual(layoutCounters(),compactCounts,'thumbnail/progress never reshape filename or bubble');
 const captionPlan=compactEngine.prepare(ui,g,data,style);assert.ok(captionPlan.height>compact.height,'real caption is retained');
 console.log('PASS: captionless files have one measured control block, compact footer and no blank paragraph; 1000 cover updates retain complete geometry.');
+
+vm.runInContext('globalThis.fileCardFor=fileCardFor;',ctx);
+let checked=0;
+for(const scale of [1,1.5,2]) for(const contentWidth of [240,400,800])
+for(const preview of [false,true]) for(const outgoing of [false,true]) for(const longName of [false,true]) {
+ const testUi={vp2px:n=>n*2,fp2px:n=>n*2*scale};
+ const testGroup={...empty,head:{...empty.head,isOutgoing:outgoing,
+  videoFileName:longName?'a long document filename with many words.pdf':'file.pdf',
+  photoFileId:preview?71:0,photoMini:''}};
+ const plan=new ctx.DrawnTextLayouts().prepare(testUi,testGroup,{...data,contentWidth},style);
+ assert.ok(plan);const slot=plan.caption.widgets[0],file=ctx.fileCardFor(slot.widget);
+ const timeTop=plan.footerY-plan.captionY-slot.y;
+ assert.equal(plan.caption.heightVp,slot.height);
+ assert.ok(timeTop>=file.footerTop-1e-6,'time clears both filename/status and download/save button');
+ if(timeTop<slot.height)assert.ok(plan.footerX-plan.captionX>=file.footerLeft+4-1e-6,'inline time clears the preview tile');
+ assert.ok(plan.footerY+plan.footerSlot.heightPx/plan.density<=plan.height-8+1e-6,'footer stays inside the bubble');
+ const oldHeight=plan.captionY+slot.height+6+plan.footerSlot.heightPx/plan.density+2+8;
+ assert.ok(plan.height<=oldHeight-6+1e-6,'never restore the trailing block gap');
+ if(preview&&scale===1&&contentWidth>=400&&!longName)
+  assert.ok(timeTop+plan.footerSlot.heightPx/plan.density<=slot.height,'preview and timestamp share the card height');
+ checked++;
+}
+// A genuine caption still has its 6vp separation and owns the footer layout.
+assert.equal(captionPlan.caption.widgets[0].height+6,captionPlan.caption.paragraph.parts[0].y/captionPlan.density);
+console.log(`PASS: ${checked} file footer geometries across covers, long names, send direction, width and font scale; no overlap or progress-dependent row layout.`);

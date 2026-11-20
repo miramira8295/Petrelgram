@@ -36,6 +36,7 @@
       }
     ],
     "requestPermissions": [
+      { "name": "ohos.permission.VIBRATE" },
       {
         "name": "ohos.permission.FILE_ACCESS_PERSIST",
         "reason": "$string:FILE_ACCESS_PERSIST_reason",

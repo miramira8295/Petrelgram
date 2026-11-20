@@ -22,6 +22,7 @@ struct DrawnChecklistTaskRow {
   @Require @Param layout: DrawnChecklistTaskLayout;
   @Param task: ChecklistTask | undefined = undefined;
   @Param allowed: boolean = false;
+  @Param interactive: boolean = false;
   @Param pending: boolean = false;
   @Event onClaim: () => boolean = (): boolean => false;
   @Event onToggle: (taskId: number, completed: boolean) => void = (): void => {};
@@ -55,8 +56,7 @@ struct DrawnChecklistTaskRow {
           }
         }
         .width(this.layout.checkboxHitWidth).height(this.layout.height)
-        .drawModifier(this.decoration.bind(this.getUIContext(), this.environment, this.layout.checkboxHitWidth,
-          this.layout.checkboxSize, this.layout.checkboxY, this.task.completed, this.pending, this.allowed))
+
         .enabled(this.allowed && !this.pending).focusable(this.allowed && !this.pending)
         .accessibilityLevel('yes').accessibilityRole(AccessibilityRoleType.BUTTON)
         .accessibilityText(this.accessibilityLabel())
@@ -64,13 +64,16 @@ struct DrawnChecklistTaskRow {
         // A separate text surface owns links/emoji/spoilers. It has no parent
         // row toggle, so opening a link can never also complete the task.
         DrawnPollText({ msg: this.msg, preparedLayout: this.layout.label, content: this.task.text,
-          entities: this.task.entities, boxWidth: this.layout.label.widthVp, textSize: 13.5,
+          entities: this.task.entities, boxWidth: this.layout.label.widthVp, textSize: 16,
           textColor: COLOR_TEXT_PRIMARY, onBeforeLink: (): boolean => this.onClaim(),
           onLink: (url: string, hidesUrl: boolean): void => this.onLink(url, hidesUrl) })
           .opacity(this.task.completed ? .65 : 1)
           .position({ x: this.layout.textX, y: this.layout.textY });
       }
-    }.width(this.layout.width).height(this.layout.height);
+    }.width(this.layout.width).height(this.layout.height)
+      .drawModifier(this.decoration.bind(this.getUIContext(), this.environment, this.layout.checkboxHitWidth,
+        this.layout.checkboxSize, this.layout.checkboxY, this.task?.completed ?? false, this.pending,
+        this.allowed, this.interactive, this.layout.width, this.layout.height));
   }
 }
 
@@ -113,6 +116,7 @@ export struct DrawnChecklistMessage {
   }
   @Event onClaim: () => boolean = (): boolean => false;
   private env = chatEnv;
+  private subtitle: DrawnCardBar = new DrawnCardBar();
   private footer: DrawnCardBar = new DrawnCardBar();
   @Computed private get environment(): string {
     return `${this.env.appearanceEpoch}:${this.env.langEpoch}:${textMeasureEnvironment.epoch}`;
@@ -120,18 +124,29 @@ export struct DrawnChecklistMessage {
   @Computed private get layout(): DrawnChecklistLayout | null { return checklistLayoutFor(this.widget); }
   private footerLabel(): string {
     const error = this.error !== '' ? this.error : this.actionState.error;
-    return error !== '' ? error : str('checklist_progress', this.msg.checklist?.completedCount ?? 0, this.msg.checklist?.tasks.length ?? 0);
+    if (error !== '') { return error; }
+    const model = this.msg.checklist;
+    const done = `${model?.completedCount ?? 0}`, total = `${model?.tasks.length ?? 0}`;
+    return !this.msg.isOutgoing && this.chatId > 0 && model?.othersCanMarkTasksAsDone === false && this.msg.senderName !== ''
+      ? str('checklist_progress_by', done, total, this.msg.senderName)
+      : str('checklist_progress', done, total);
   }
   build() {
     if (this.layout !== null) {
       Column() {
         DrawnPollText({ msg: this.msg, preparedLayout: this.layout.title, content: this.msg.checklist?.title.text ?? '',
-          entities: this.msg.checklist?.title.entities ?? [], boxWidth: this.layout.width, textSize: 15,
+          entities: this.msg.checklist?.title.entities ?? [], boxWidth: this.layout.width, textSize: 16,
           textColor: COLOR_TEXT_PRIMARY, bold: true, onBeforeLink: (): boolean => this.active && this.onClaim(),
           onLink: (url: string, hidesUrl: boolean): void => this.actions.onLinkTap(url, hidesUrl) })
-          .margin({ bottom: 8 });
+          .margin({ bottom: 4 });
+        Row().width(this.layout.width).height(this.layout.subtitleHeight)
+          .drawModifier(this.subtitle.bind(this.getUIContext(), {
+            width: this.layout.width, height: this.layout.subtitleHeight, environment: this.environment,
+            leftPrepared: this.layout.subtitle, paddingBottom: 12
+          })).accessibilityText(str('checklist_type'));
         ForEach(this.layout.rows, (row: DrawnChecklistTaskLayout) => {
           DrawnChecklistTaskRow({ msg: this.msg, layout: row, task: this.msg.checklist?.taskById.get(row.id),
+            interactive: this.msg.checklist?.canMarkTasksAsDone === true,
             allowed: this.allowed(), pending: this.pending(row.id),
             onClaim: (): boolean => this.active && this.onClaim(),
             onToggle: (id: number, completed: boolean): void => this.actions.onChecklistToggle(this.msg.id, id, completed),
@@ -140,8 +155,8 @@ export struct DrawnChecklistMessage {
         Row().width(this.layout.width).height(this.layout.footerHeight)
           .drawModifier(this.footer.bind(this.getUIContext(), {
             width: this.layout.width, height: this.layout.footerHeight, environment: this.environment,
-            left: this.footerLabel(), leftFont: 10.5, leftColor: this.error !== '' || this.actionState.error !== '' ? '#D9514E' : COLOR_TEXT_SECONDARY,
-            paddingRight: 62, paddingBottom: 10
+            center: this.footerLabel(), centerFont: 11, centerColor: this.error !== '' || this.actionState.error !== '' ? '#D9514E' : COLOR_TEXT_SECONDARY,
+            paddingBottom: 4
           })).accessibilityText(this.footerLabel());
       }.width(this.layout.width).height(this.layout.height).alignItems(HorizontalAlign.Start);
     }

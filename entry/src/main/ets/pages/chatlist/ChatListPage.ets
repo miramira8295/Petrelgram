@@ -1,3 +1,4 @@
+import { navigationHaptics } from '../../services/NavigationHaptics';
 import { SplitPanePlaceholder } from '../common/SplitPanePlaceholder';
 import { navigateToSetting } from '../../util/settingsNav';
 import { NewSessionBanner, NEW_SESSION_BAR_HEIGHT } from './NewSessionBanner';
@@ -304,6 +305,13 @@ export struct ChatListPage {
   // 避免自己触发自己。
   @StorageLink('chatFolderIndex') @Watch('onFolderExternallyChanged') selectedIndex: number = 0;
   private appliedFolder: number = 0;
+  // Only user gestures arm this marker; restoring/reordering folders stays silent.
+  private hapticGestureStart: number = -1;
+  private finishFolderHaptic(index: number): void {
+    const start = this.hapticGestureStart;
+    this.hapticGestureStart = -1;
+    if (start >= 0 && start !== index) { navigationHaptics.play('folder'); }
+  }
   // TDLib connection state as a small status hint beside the title
   // ('' when connectionStateReady — nothing shown).
   // The connection state itself, not its label. Keeping the token rather than
@@ -474,6 +482,7 @@ export struct ChatListPage {
   // AppStorage 侧被外部改写（返回键递退回"所有"）时，真正把 Tabs 切过去。
   private onFolderExternallyChanged(): void {
     if (this.selectedIndex !== this.appliedFolder) {
+      this.hapticGestureStart = -1;
       this.appliedFolder = this.selectedIndex;
       this.controller.changeIndex(this.selectedIndex);
     }
@@ -702,6 +711,7 @@ export struct ChatListPage {
   // Preserve the selected folder by id when folders are reordered, and fall
   // back to "所有" if the selected folder was deleted.
   private reconcileSelectedFolder(selectedKey: string, previousTabs: TabSpec[]): void {
+    this.hapticGestureStart = -1;
     const previousXs = this.tabXs;
     const previousWs = this.tabWs;
     const xByKey: Map<string, number> = new Map();
@@ -959,6 +969,7 @@ export struct ChatListPage {
   private qrScanner: TelegramQrScanner = new TelegramQrScanner();
 
   aboutToDisappear(): void {
+    this.hapticGestureStart = -1;
     AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, false);
     this.unsubSessionSecurity?.();
     this.unsubSessionSecurity = null;
@@ -1498,6 +1509,8 @@ export struct ChatListPage {
     // 里，chip 这层的绑定读不到它的变化。
     .accessibilityText(spec.plainTitle)
     .onClick(() => {
+      this.hapticGestureStart = -1;
+      if (index !== this.selectedIndex) { navigationHaptics.play('folder'); }
       if (AppStorage.get<boolean>(KEY_ACTIVE_FORUM_OPEN) === true) {
         closeForumDrawer();
       }
@@ -1752,6 +1765,7 @@ export struct ChatListPage {
       // Content swipe in progress: convert the swipe offset into a fractional
       // tab position so the selection pill tracks the finger continuously.
       .onGestureSwipe((index: number, event: TabsAnimationEvent) => {
+        if (this.hapticGestureStart < 0) { this.hapticGestureStart = index; }
         // 手指还在页签上拖：这一帧本来就紧，别让排好的预载凑热闹。
         this.cancelTabPreload();
         this.tabAnimationActive = true;
@@ -1773,6 +1787,7 @@ export struct ChatListPage {
       // Finger released / tab tapped: settle the pill on the target tab and
       // scroll the strip if that tab sits outside the visible range.
       .onAnimationStart((_index: number, targetIndex: number) => {
+        this.finishFolderHaptic(targetIndex);
         this.cancelTabPreload();
         if (_index !== targetIndex && AppStorage.get<boolean>(KEY_ACTIVE_FORUM_OPEN) === true) {
           closeForumDrawer();
@@ -1797,6 +1812,7 @@ export struct ChatListPage {
         this.revealTab(targetIndex);
       })
       .onAnimationEnd((_index: number) => {
+        this.finishFolderHaptic(_index);
         // 兜底：拖了不到一页又回弹这种情况，不一定会走 onAnimationStart。
         this.settleFolderBarDrag();
         this.tabAnimationActive = false;
@@ -1811,6 +1827,7 @@ export struct ChatListPage {
         this.scheduleTabPreload(TAB_PRELOAD_AFTER_SETTLE_MS);
       })
       .onChange((index: number) => {
+        this.finishFolderHaptic(index);
         // onAnimationStart already drives animated changes. Avoid starting the
         // same settle animation twice when onChange fires at the end.
         const switched: boolean = this.selectedIndex !== index;

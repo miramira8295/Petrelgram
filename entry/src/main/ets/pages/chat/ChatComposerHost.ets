@@ -181,6 +181,7 @@ export struct ChatBottomDrawerHost {
   @Param chatId: number = 0;
   @Param isGroup: boolean = false;
   @Param isChannel: boolean = false;
+  @Param privatePollAllowed: boolean = false;
   @Param menuEffectDuration: (duration: number) => number = (duration: number): number => duration;
 
   @Event onAttachPick: (key: string) => void = (_key: string): void => {};
@@ -196,7 +197,7 @@ export struct ChatBottomDrawerHost {
   @LocalBuilder
   attachDrawerContent() {
     AttachPanel({
-      actions: attachActions(this.isGroup, this.isChannel),
+      actions: attachActions(this.isGroup, this.isChannel, this.privatePollAllowed),
       disabledKeys: this.sendAccess.disabledAttachments(),
       onPick: (key: string): void => { this.onAttachPick(key); },
       effectDuration: this.menuEffectDuration

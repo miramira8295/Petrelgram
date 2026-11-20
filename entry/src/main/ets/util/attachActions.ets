@@ -2,7 +2,7 @@
 //
 // 抽出来是因为原先 ChatPage.attachMenuItems() 把三件事揉在一起：有哪些项、
 // 每项显示什么、点了做什么。改成面板之后前两件要给一个纯展示组件用，第三件
-// 留在 ChatPage；顺带这份"私聊不能发投票"的规则也就能脱离 UI 单测了。
+// 留在 ChatPage；会话类型和投票能力也能脱离 UI 单测。
 
 // 面板格子的标识。分发靠它，所以这份表是全集——列表里冒出表外的 key，
 // 就是一个点了没反应的格子。
@@ -39,16 +39,16 @@ const ORDER: AttachAction[] = [
   { key: 'dice', icon: 'sys.symbol.gamecontroller', label: $r('app.string.cp_dice'), tint: '#FAA774' }
 ];
 
-// 投票仅群/频道可发——这是 Telegram 的限制，不是本端的选择。
-function allowed(action: AttachAction, isGroup: boolean, isChannel: boolean): boolean {
+// TDLib 允许群、频道、机器人私聊及收藏夹发投票；普通私聊仍不允许。
+function allowed(action: AttachAction, isGroup: boolean, isChannel: boolean, privatePollAllowed: boolean): boolean {
   if (action.key === 'checklist') { return !isChannel; }
   if (action.key === 'poll') {
-    return isGroup || isChannel;
+    return isGroup || isChannel || privatePollAllowed;
   }
   return true;
 }
 
 // 这个会话能用的格子，按固定顺序。
-export function attachActions(isGroup: boolean, isChannel: boolean): AttachAction[] {
-  return ORDER.filter((a: AttachAction): boolean => allowed(a, isGroup, isChannel));
+export function attachActions(isGroup: boolean, isChannel: boolean, privatePollAllowed: boolean = false): AttachAction[] {
+  return ORDER.filter((a: AttachAction): boolean => allowed(a, isGroup, isChannel, privatePollAllowed));
 }

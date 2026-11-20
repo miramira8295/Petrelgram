@@ -176,6 +176,16 @@ row.avatarAnimated=true;
 row.touch(touch(0,1,p.avatar.y+1));row.rowTouch(touch(0,1,p.avatar.y+1));
 row.click({x:1,y:p.avatar.y+1,source:1});
 assert.equal(events.at(-1)[0],'onAvatarTap');assert.equal(events.at(-1)[1],g.head.senderId);
+// Anonymous/group/channel identities must survive the row action contract.
+row.group={...g,head:{...g.head,senderId:-10001,senderIsUser:false}};
+row.click({x:1,y:p.avatar.y+1,source:2});
+assert.deepEqual(events.at(-1),['onAvatarTap',-10001,false]);
+row.avatarAnimated=true;row.touch(touch(0,1,p.avatar.y+1));row.rowTouch(touch(0,1,p.avatar.y+1));
+row.click({x:1,y:p.avatar.y+1,source:1});
+assert.deepEqual(events.at(-1),['onAvatarTap',-10001,false]);
+row.claimed=true;const claimedAvatarCount=events.length;
+row.click({x:1,y:p.avatar.y+1,source:2});assert.equal(events.length,claimedAvatarCount);
+row.claimed=false;row.group=g;
 const avatarTapCount=events.length;
 row.group={...g,head:{...g.head,rowId:g.head.rowId+1}};
 row.click({x:1,y:p.avatar.y+1,source:1});assert.equal(events.length,avatarTapCount,'stale avatar tap rejected after reuse');

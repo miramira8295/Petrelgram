@@ -1,4 +1,5 @@
 import { DrawnDocumentCardLayouts, rememberDocumentCard, offsetDocumentWidget } from './DrawnDocumentCardLayout';
+import { fileCardFor } from './DrawnFileCardLayout';
 import { drawnExpandedBlockSet } from '../../util/drawnExpandedBlocks';
 import { buildDrawnDeepBlocks, DrawnDeepLayoutHost } from './DrawnRichDeepBlocks';
 import { DrawnTableColumnGeometry, DrawnTableRowGeometry } from '../../util/drawnTableGeometry';
@@ -274,8 +275,14 @@ export class DrawnRichTextLayouts {
         const placement: DrawnDocumentWidgetPlacement = { widget, x: 0, y, width: widget.kind === 'message-contact' ? widget.width : widget.kind === 'message-sticker' ? Math.min(widget.width, spec.maxWidthVp) : (widget.kind === 'message-video-note' || widget.kind === 'message-dice') ? height : spec.maxWidthVp, height };
         widgets.push(placement);
         if (card !== undefined) { rememberDocumentCard(placement, card); }
-        y += height + 6; width = widget.kind === 'message-contact' ? widget.width : widget.kind === 'message-sticker' ? Math.min(widget.width, spec.maxWidthVp) : (widget.kind === 'message-video-note' || widget.kind === 'message-dice') ? height : spec.maxWidthVp;
-        document.lastLine = { left: 0, width: width * density, baseline: y * density, ascent: 0 };
+        // Android file cells share their lower-right corner with the timestamp.
+        // Keep the gap before a real caption, but never append an inter-block gap
+        // after a terminal file. The cached safe corner clears labels and actions
+        // in every transfer state; no download-progress-dependent row layout.
+        const footerCard = widget.kind === 'message-file' && i === lastContentIndex ? fileCardFor(widget) : undefined;
+        y += height + (footerCard === undefined ? 6 : 0); width = widget.kind === 'message-contact' ? widget.width : widget.kind === 'message-sticker' ? Math.min(widget.width, spec.maxWidthVp) : (widget.kind === 'message-video-note' || widget.kind === 'message-dice') ? height : spec.maxWidthVp;
+        document.lastLine = { left: 0, width: (footerCard?.footerLeft ?? width) * density,
+          baseline: (footerCard !== undefined ? placement.y + footerCard.footerTop : y) * density, ascent: 0 };
         continue;
       }
       if (block.gallery !== undefined && block.gallery.length > 0) {

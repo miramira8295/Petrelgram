@@ -92,7 +92,7 @@ const REPLY_QUOTE_LINE_H: number = 16;
 // object is structurally compatible with this subset.
 export interface LightweightPlainTextActions {
   rowLeave: RowLeaveChannel;
-  onAvatarTap: (userId: number) => void;
+  onAvatarTap: (senderId: number, senderIsUser?: boolean) => void;
   onAvatarLongPress: (userId: number, name: string) => void;
   onReplyTap: (messageId: number, fromId: number) => void;
   onSetReaction: (messageId: number, emoji: string, chosen: boolean) => void;
@@ -1343,8 +1343,8 @@ export struct LightweightPlainTextBubble {
             LightweightSenderAvatar({ spec: this.senderAvatarSpec() })
               .margin({ right: BUBBLE_AVATAR_GAP_VP })
               .onClick((): void => {
-                if (!this.gestureClaimed && this.msg.senderIsUser && this.msg.senderId > 0) {
-                  this.actions.onAvatarTap(this.msg.senderId);
+                if (!this.gestureClaimed) {
+                  this.actions.onAvatarTap(this.msg.senderId, this.msg.senderIsUser);
                 }
               })
               .gesture(LongPressGesture().onAction((): void => {

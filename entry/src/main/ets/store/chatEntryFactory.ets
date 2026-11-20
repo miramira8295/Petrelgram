@@ -88,6 +88,8 @@ export function buildChatEntry(input: ChatEntryBuildInput): ChatEntry {
   const isSavedMessages: boolean = input.selfId !== 0 && id === input.selfId;
   const kind: ChatKind = chatKindOf(chat['type'] as TdObject | undefined);
   const lastMessageId: number = messageIdOf(lastMsg);
+  const sender = lastMsg?.['sender_id'] as TdObject | undefined;
+  const senderIsUser = sender?.['@type'] !== 'messageSenderChat';
   const entry: ChatEntry = {
     id,
     revision: previous !== undefined ? previous.revision + 1 : 0,
@@ -109,6 +111,9 @@ export function buildChatEntry(input: ChatEntryBuildInput): ChatEntry {
     lastMessageDate: lastMsg !== null ? ((lastMsg['date'] as number | undefined) ?? 0) : 0,
     lastMessageId,
     lastSenderName: isSavedMessages ? '' : input.senderName(lastMsg ?? undefined),
+    lastSenderId: (sender?.[senderIsUser ? 'user_id' : 'chat_id'] as number | undefined) ?? 0,
+    lastSenderIsUser: senderIsUser,
+    lastMessageOutgoing: lastMsg?.['is_outgoing'] === true,
     photoFileId,
     avatarPath: samePhoto ? previous!.avatarPath : '',
     initials: computeInitials(title),
@@ -142,6 +147,7 @@ export function buildChatEntry(input: ChatEntryBuildInput): ChatEntry {
 //   isLive / isRtmpLive —— 来自通话状态，不在这条数据链上。
 // 其余字段必须逐字相同，否则说明工厂在两边的输入或规则分叉了。
 export function compareChatEntries(local: ChatEntry, remote: ChatEntry): string {
+  if ((local.isDeletedUser ?? false) !== (remote.isDeletedUser ?? false)) { return 'isDeletedUser'; }
   if (local.title !== remote.title) { return `title local=${local.title} worker=${remote.title}`; }
   if (local.isMuted !== remote.isMuted) { return 'isMuted'; }
   if (local.usesDefaultMute !== remote.usesDefaultMute) { return 'usesDefaultMute'; }
@@ -155,6 +161,9 @@ export function compareChatEntries(local: ChatEntry, remote: ChatEntry): string 
   if ((local.lastMessageSendState ?? '') !== (remote.lastMessageSendState ?? '')) {
     return 'lastMessageSendState';
   }
+  if ((local.lastSenderId ?? 0) !== (remote.lastSenderId ?? 0) ||
+    (local.lastSenderIsUser ?? true) !== (remote.lastSenderIsUser ?? true) ||
+    (local.lastMessageOutgoing ?? false) !== (remote.lastMessageOutgoing ?? false)) { return 'lastSender'; }
   if (local.lastMessageText !== remote.lastMessageText) { return 'lastMessageText'; }
   if (local.lastMessageThumb !== remote.lastMessageThumb) { return 'lastMessageThumb'; }
   if (local.lastMessageDate !== remote.lastMessageDate) { return 'lastMessageDate'; }

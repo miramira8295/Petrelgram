@@ -40,7 +40,7 @@ export interface MessageBubbleActions {
   onCommentTap: (messageId: number) => void;
   onMiniApp: (messageId: number, url: string) => void;
   onBotCallback: (messageId: number, data: string) => void;
-  onAvatarTap: (userId: number) => void;
+  onAvatarTap: (senderId: number, senderIsUser?: boolean) => void;
   onAvatarLongPress: (userId: number, name: string) => void;
   onReplyTap: (messageId: number, fromId: number) => void;
   onFileTap: (messageId: number) => void;

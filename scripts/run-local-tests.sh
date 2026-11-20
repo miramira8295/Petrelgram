@@ -84,7 +84,7 @@ set -u
 # 补5项清晰缓存/纹理保真验证，净减8项（4262→4254）。非为通过测试降低门槛。
 # 2026-11-19：整体材质改纯填色，SurfaceGlass的12项旧模糊/薄纱用例重组为
 # 10项RGBA与独立档位/开关验证，净减2项（4254→4252）。旧渲染规则已删除。
-MIN_TESTS="${MIN_TESTS:-4252}"
+MIN_TESTS="${MIN_TESTS:-4254}"
 # ---------------------------------------------------------------------------
 
 # Defaults are the macOS install. On Windows (git-bash) DevEco lives elsewhere,

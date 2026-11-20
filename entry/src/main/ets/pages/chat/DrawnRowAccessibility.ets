@@ -32,7 +32,7 @@ export struct DrawnRowAccessibility {
         str(this.sendState === 'sending' ? 'a11y_message_sending' : this.sendState === 'failed' ? 'a11y_message_failed' :
           this.sendState === 'read' ? 'a11y_message_read' : 'a11y_message_sent') : ''), menu: true,
       x: p.bubbleX, y: p.bubbleY, width: Math.max(1, p.width - p.bubbleX), height: p.height });
-    if (p.avatar.width > 0 && this.msg.senderIsUser) {
+    if (p.avatar.width > 0 && this.msg.senderId !== 0) {
       targets.push({ key: 'avatar', label: this.msg.senderName, menu: false,
         x: p.avatar.x, y: p.avatar.y, width: p.avatar.width, height: p.avatar.height });
     }

@@ -1,3 +1,5 @@
+import { KEY_FOLDER_HAPTIC_ON, KEY_DOCK_HAPTIC_ON, KEY_FOLDER_HAPTIC_STRENGTH, KEY_DOCK_HAPTIC_STRENGTH,
+  NAVIGATION_HAPTIC_DEFAULT, normalizeNavigationHapticStrength } from '../util/navigationHapticSettings';
 import { KEY_DEBUG_TIMELINE_LAZY } from '../util/debugTimelineRenderer';
 import { drawnStageMetrics } from '../util/drawnStageMetrics';
 import { DEBUG_DRAWN_KEYS, KEY_DEBUG_DRAWN_TRACE, KEY_DEBUG_DRAWN_HOME_WARMUP } from '../util/debugDrawnRenderer';
@@ -423,6 +425,7 @@ export const KEY_MUSIC_CENTER_ON: string = 'musicCenterOn';
 export const KEY_FOLDER_BAR_SCROLL_HIDE: string = 'folderBarScrollHide';
 
 const DATA_BOOLEAN_TRUE_DEFAULTS: string[] = [
+  KEY_FOLDER_HAPTIC_ON, KEY_DOCK_HAPTIC_ON,
   KEY_VIDEO_AUTO_PRELOAD,
   KEY_BG_CACHE_WIFI_ONLY,
   KEY_CRASH_UPLOAD,
@@ -544,6 +547,10 @@ export async function initSettings(context: common.Context): Promise<void> {
   try {
     store = await preferences.getPreferences(context, STORE_NAME);
     const s = store as preferences.Preferences;
+    AppStorage.setOrCreate(KEY_FOLDER_HAPTIC_STRENGTH, normalizeNavigationHapticStrength(
+      await s.get(KEY_FOLDER_HAPTIC_STRENGTH, NAVIGATION_HAPTIC_DEFAULT) as number));
+    AppStorage.setOrCreate(KEY_DOCK_HAPTIC_STRENGTH, normalizeNavigationHapticStrength(
+      await s.get(KEY_DOCK_HAPTIC_STRENGTH, NAVIGATION_HAPTIC_DEFAULT) as number));
     AppStorage.setOrCreate(KEY_TEXT_SIZE, await s.get(KEY_TEXT_SIZE, TEXT_SIZE_DEFAULT) as number);
     AppStorage.setOrCreate(KEY_SPLIT_NAV_WIDTH, await s.get(KEY_SPLIT_NAV_WIDTH, 0) as number);
     AppStorage.setOrCreate(KEY_BUBBLE_RADIUS, await s.get(KEY_BUBBLE_RADIUS, RADIUS_DEFAULT) as number);
@@ -743,6 +750,9 @@ function persist(key: string, value: preferences.ValueType): void {
 }
 
 export function setNumber(key: string, value: number): void {
+  if (key === KEY_FOLDER_HAPTIC_STRENGTH || key === KEY_DOCK_HAPTIC_STRENGTH) {
+    value = normalizeNavigationHapticStrength(value);
+  }
   if (key === KEY_HOLD_SPEED_LIMIT) { value = normalizeHoldSpeedLimit(value); }
   AppStorage.setOrCreate(key, value);
   mirrorChatEnvKey(key, value);

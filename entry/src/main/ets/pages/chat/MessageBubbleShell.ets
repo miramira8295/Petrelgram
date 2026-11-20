@@ -1917,10 +1917,7 @@ export struct MessageBubbleShell {
           .margin({ right: BUBBLE_AVATAR_GAP_VP })
           .onClick(() => {
             if (this.context.gestureClaimed) { return; }
-            // Group message avatar → that user's profile page.
-            if (this.msg.senderIsUser && this.msg.senderId > 0) {
-              this.actions.onAvatarTap(this.msg.senderId);
-            }
+            this.actions.onAvatarTap(this.msg.senderId, this.msg.senderIsUser);
           })
           .gesture(LongPressGesture().onAction(() => {
             if (this.msg.senderIsUser && this.msg.senderId > 0) {

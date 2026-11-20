@@ -19,6 +19,9 @@ export interface DrawnFileCardLayout {
   width: number;
   height: number;
   tileSize: number;
+  // Immutable safe corner for the row footer. Transfer updates must not move it.
+  footerLeft: number;
+  footerTop: number;
   labels: DrawnMediaTexts;
   environment: string;
 }
@@ -43,7 +46,12 @@ export class DrawnFileCardLayouts {
     const labels = this.labels.prepare(ui, environment, fileCardTextWidth(width, tileSize), displayFileName(fileName),
       14.5, COLOR_TEXT_PRIMARY, fileStatusText(1, '', 0, false, 0, false), 11, COLOR_TEXT_SECONDARY, 2, true, 4, tileSize);
     this.ui = ui; this.name = fileName; this.environment = environment;
-    this.current = { width, tileSize, height: labels.height + FILE_CARD_TOP + FILE_CARD_BOTTOM, labels: this.labels, environment };
+    const textBottom = labels.top + labels.primary.height / labels.density + labels.gap +
+      (labels.secondary?.height ?? 0) / labels.density;
+    const actionBottom = (labels.height + 28) / 2;
+    this.current = { width, tileSize, height: labels.height + FILE_CARD_TOP + FILE_CARD_BOTTOM,
+      footerLeft: tileSize + 10, footerTop: FILE_CARD_TOP + Math.max(textBottom, actionBottom) + 2,
+      labels: this.labels, environment };
     return this.current;
   }
 }

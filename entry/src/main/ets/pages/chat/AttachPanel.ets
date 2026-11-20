@@ -12,7 +12,6 @@ import { BOTTOM_DRAWER_HEIGHT } from '../../util/drawerMetrics';
 // 之前就确定，否则第一帧会先塌一下再弹开。数值和表情抽屉共用一处，见
 // util/drawerMetrics。
 
-const COLUMNS: number = 4;
 const ICON_SIZE: number = 52;
 
 @Component
@@ -34,15 +33,14 @@ export struct AttachPanel {
       }, (action: AttachAction): string => action.key)
     }
     .columnsTemplate('1fr 1fr 1fr 1fr')
-    // 两行等分整块高度。不给 rowsTemplate 时行高按内容走、顶对齐，卡片下方
-    // 空出一大片（实测截图）。
-    .rowsTemplate('1fr 1fr')
+    // 固定抽屉内按入口数量分配两行或三行，避免新增入口超出八格后消失。
+    .rowsTemplate(this.actions.length > 8 ? '1fr 1fr 1fr' : '1fr 1fr')
     .rowsGap(6)
     .columnsGap(0)
     .width('100%')
     .height(BOTTOM_DRAWER_HEIGHT)
     .padding({ top: 14, bottom: 14 })
-    // 八项固定两行，不该滚；给了滚动条反而会在两行的网格上出现一条多余的轨道。
+    // 所有入口在一屏内，按稳定业务 key 分发。
     .scrollBar(BarState.Off);
   }
 
@@ -58,7 +56,7 @@ export struct AttachPanel {
           .fontColor([action.tint]);
       }
       .width(ICON_SIZE)
-      .height(ICON_SIZE);
+      .height(this.actions.length > 8 ? 40 : ICON_SIZE);
       // 这里**不挂材质**。挂了就是一块玻璃砖：有圆角时是个圆底，去掉圆角后
       // 直接变成方块底——两种都不是"没有底色"。光感属于抽屉卡片那一层，
       // 格子只负责按压反馈。

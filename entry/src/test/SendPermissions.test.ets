@@ -19,6 +19,7 @@ class PermissionPort {
   channel: boolean = false;
   groupType: string = 'chatTypeSupergroup';
   fail: boolean = false;
+  deleted: boolean = false;
   types: string[] = ['messagePhoto', 'messageAnimation'];
   requests: TdRequest[] = [];
   send = async (request: TdRequest): Promise<TdObject> => {
@@ -26,7 +27,10 @@ class PermissionPort {
     if (this.fail) { throw new TdError(-1, 'request timeout'); }
     if (request['@type'] === 'getChat') {
       return { '@type': 'chat', 'permissions': permissionsToTd(this.value), 'type': {
-        '@type': this.groupType, 'is_channel': this.channel, 'supergroup_id': 5, 'basic_group_id': 6 } as TdObject };
+        '@type': this.groupType, 'is_channel': this.channel, 'supergroup_id': 5, 'basic_group_id': 6, 'user_id': 7 } as TdObject };
+    }
+    if (request['@type'] === 'getUser') {
+      return { '@type': 'user', 'id': 7, 'type': { '@type': this.deleted ? 'userTypeDeleted' : 'userTypeRegular' } as TdObject };
     }
     if (request['@type'] === 'getMessages') {
       return { '@type': 'messages', 'messages': this.types.map((type: string): TdObject =>
@@ -124,7 +128,15 @@ export default function sendPermissionsTest() {
     });
     it('私聊不套用群默认媒体权限', 0, async () => {
       const port = new PermissionPort(); port.groupType = 'chatTypePrivate'; port.value = allPermissions(false);
-      expect((await readSendPermissions(port.send, 10)).sendPhotos).assertTrue(); expect(port.requests.length).assertEqual(1);
+      expect((await readSendPermissions(port.send, 10)).sendPhotos).assertTrue(); expect(port.requests.length).assertEqual(2);
+      expect(port.requests[1]['@type']).assertEqual('getUser');
+    });
+    it('已删除用户拒绝文本和媒体发送，空名正常用户不误判', 0, async () => {
+      const port = new PermissionPort(); port.groupType = 'chatTypePrivate'; port.deleted = true;
+      expect(await denied(() => requireSendPermissions(port.send, 10, ['sendMessages']))).assertTrue();
+      expect(await denied(() => requireSendPermissions(port.send, 10, ['sendPhotos']))).assertTrue();
+      port.deleted = false;
+      expect((await readSendPermissions(port.send, 10)).sendMessages).assertTrue();
     });
     it('预检失败不误报为消息发送结果未知', 0, async () => {
       const port = new PermissionPort(); port.fail = true;

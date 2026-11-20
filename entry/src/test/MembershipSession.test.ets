@@ -166,7 +166,7 @@ function basicGroupChat(basicGroupId: number): TdObject {
 }
 
 function privateChat(): TdObject {
-  const type: TdObject = { '@type': 'chatTypePrivate' };
+  const type: TdObject = { '@type': 'chatTypePrivate', 'user_id': 123 };
   const chat: TdObject = { '@type': 'chat' };
   chat['type'] = type;
   return chat;
@@ -460,6 +460,9 @@ export default function membershipSessionTest() {
         // 阳性对照：应答第 2 次（当前），确实会写 writable——证明上面那句
         // "哨兵没变"不是因为响应本身天生不会写，而是守卫真的生效了。
         host.wired.respond(1, privateChat());
+        await sleep(0);
+        expect(host.membershipStateValue).assertEqual('checking');
+        host.wired.respond(2, { '@type': 'user', 'id': 123, 'type': { '@type': 'userTypeRegular' } as TdObject });
         await sleep(0);
         expect(host.membershipStateValue).assertEqual('writable');
       });

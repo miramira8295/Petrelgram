@@ -14,8 +14,7 @@ import { TdBridge, TdObject } from '../main/ets/tdkit/TdTypes';
 // 附件面板是肌肉记忆：用户记的是"左上角是图库、右下角是骰子"，不是标签文字。
 // 所以这份列表的**顺序**是要钉住的东西，比内容更重要。
 //
-// 唯一会变的是投票——Telegram 不允许私聊发投票。它排在倒数第二正是为此：
-// 缺席时只有骰子一个格子挪位。
+// 普通私聊不允许投票；机器人和收藏夹例外，必须与清单同时保留。
 function keysOf(items: AttachAction[]): string[] {
   return items.map((a: AttachAction): string => a.key);
 }
@@ -42,6 +41,14 @@ export default function attachActionsTest() {
       const group: string[] = keysOf(attachActions(true, false));
       const priv: string[] = keysOf(attachActions(false, false));
       expect(group.filter((k: string): boolean => k !== 'poll')).assertDeepEquals(priv);
+    });
+
+    it('keeps polls and checklists together for bots and Saved Messages', 0, () => {
+      const keys: string[] = keysOf(attachActions(false, false, true));
+      expect(keys.includes('poll')).assertTrue();
+      expect(keys.includes('checklist')).assertTrue();
+      expect(keys.length).assertEqual(10);
+      expect(keysOf(attachActions(false, false, false)).includes('poll')).assertFalse();
     });
 
     it('is stable across calls', 0, () => {
@@ -446,11 +453,16 @@ export function attachActionsControllerTest(): void {
       const check: TdObject = JSON.parse(wired.bridge.sent[0]) as TdObject;
       expect(check['@type']).assertEqual('getChat');
       const chat: TdObject = { '@type': 'chat' };
-      chat['type'] = { '@type': 'chatTypePrivate' } as TdObject;
+      chat['type'] = { '@type': 'chatTypePrivate', 'user_id': 7 } as TdObject;
       chat['@extra'] = check['@extra'];
       wired.bridge.onReceive(JSON.stringify(chat));
       await new Promise<void>((resolve: () => void): void => { setTimeout(resolve, 0); });
-      const sent: TdObject = JSON.parse(wired.bridge.sent[1]) as TdObject;
+      const userCheck: TdObject = JSON.parse(wired.bridge.sent[1]) as TdObject;
+      expect(userCheck['@type']).assertEqual('getUser');
+      wired.bridge.onReceive(JSON.stringify({ '@type': 'user', 'id': 7,
+        'type': { '@type': 'userTypeRegular' } as TdObject, '@extra': userCheck['@extra'] } as TdObject));
+      await new Promise<void>((resolve: () => void): void => { setTimeout(resolve, 0); });
+      const sent: TdObject = JSON.parse(wired.bridge.sent[2]) as TdObject;
       expect(sent['@type']).assertEqual('sendMessage');
       // 光断言"发出了一条 sendMessage"够不上用例名说的"把骰子发给 store"：
       // 把 store.sendDice(emoji) 写成硬编码 sendDice('🎲')、或者干脆漏传参数，

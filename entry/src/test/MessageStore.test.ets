@@ -21,6 +21,12 @@ async function allowSendChecks(bridge: FakeBridge): Promise<void> {
   bridge.onReceive(JSON.stringify({ '@type': 'chat', 'id': request!['chat_id'],
     'type': { '@type': 'chatTypePrivate', 'user_id': 1 } as TdObject, '@extra': request!['@extra'] } as TdObject));
   await new Promise<void>((resolve: () => void): void => { setTimeout(resolve, 0); });
+  const peer = bridge.sent.map((json: string): TdObject => JSON.parse(json) as TdObject)
+    .filter((req: TdObject): boolean => req['@type'] === 'getUser').pop();
+  expect(peer !== undefined).assertTrue();
+  bridge.onReceive(JSON.stringify({ '@type': 'user', 'id': 1,
+    'type': { '@type': 'userTypeRegular' } as TdObject, '@extra': peer!['@extra'] } as TdObject));
+  await new Promise<void>((resolve: () => void): void => { setTimeout(resolve, 0); });
 }
 function setup(chatId: number, historyPageSize: number = 30): Array<Object> {
   const b = new FakeBridge(); const c = new TdClient(b); const u = new UserStore(c);

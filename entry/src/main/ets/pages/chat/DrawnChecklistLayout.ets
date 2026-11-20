@@ -5,7 +5,7 @@ import { DrawnDocumentWidget } from '../../util/drawnDocumentWidget';
 import { PollRichSource } from '../../util/pollRichSource';
 import { DrawnRichSourceCache } from '../../util/drawnRichTextPolicy';
 import { DrawnRichTextLayout, DrawnRichTextLayouts } from './DrawnRichTextLayout';
-import { DrawnTextLineCache, drawnColor } from './DrawnTextLine';
+import { DrawnTextLine, DrawnTextLineCache, drawnColor } from './DrawnTextLine';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 import { TdObject } from '../../tdkit/TdTypes';
@@ -27,6 +27,8 @@ export interface DrawnChecklistLayout {
   title: DrawnRichTextLayout;
   rows: DrawnChecklistTaskLayout[];
   footerHeight: number;
+  subtitle: DrawnTextLine;
+  subtitleHeight: number;
 }
 const remembered: WeakMap<DrawnDocumentWidget, DrawnChecklistLayout> = new WeakMap<DrawnDocumentWidget, DrawnChecklistLayout>();
 export function rememberChecklistLayout(widget: DrawnDocumentWidget, layout: DrawnChecklistLayout): void { remembered.set(widget, layout); }
@@ -45,7 +47,7 @@ class ChecklistLabelLayouts {
     if (source === null) { source = this.plain.prepare(content, EMPTY_CHECKLIST_LAYOUT_ENTITIES); }
     if (source === null) { throw new Error('invalid checklist label'); }
     return this.layouts.prepare(ui, { source, maxWidthVp: Math.max(1, width), minWidthVp: 0,
-      fontSize: title ? 15 : 13.5, foreground: COLOR_TEXT_PRIMARY, accent: COLOR_PRIMARY, environment, reserve: '' });
+      fontSize: 16, foreground: COLOR_TEXT_PRIMARY, accent: COLOR_PRIMARY, environment, reserve: '' });
   }
 }
 
@@ -54,6 +56,7 @@ class ChecklistLabelLayouts {
 export class DrawnChecklistLayouts {
   private title: ChecklistLabelLayouts = new ChecklistLabelLayouts();
   private labels: Map<number, ChecklistLabelLayouts> = new Map<number, ChecklistLabelLayouts>();
+  private subtitle: DrawnTextLineCache = new DrawnTextLineCache();
   private footer: DrawnTextLineCache = new DrawnTextLineCache();
   private units: DrawnTextUnits = new DrawnTextUnits();
   private ui: UIContext | null = null;
@@ -61,7 +64,7 @@ export class DrawnChecklistLayouts {
   private geometry: ChecklistGeometry | null = null;
   private current: DrawnChecklistLayout | null = null;
   prepare(ui: UIContext, model: ChecklistModel, maxWidth: number, environment: string): DrawnChecklistLayout {
-    const width = Math.max(1, maxWidth);
+    const width = Math.max(1, Math.min(310, maxWidth));
     if (this.current !== null && this.current.width === width && this.ui === ui &&
       this.environment === environment && this.geometry === model.geometry) { return this.current; }
     const title = this.title.prepare(ui, model.geometry.title, width, environment, true);
@@ -76,24 +79,27 @@ export class DrawnChecklistLayouts {
       next.set(task.id, engine);
       const rightPadding = Math.min(4, Math.max(0, width - textX - 1));
       const label = engine.prepare(ui, task.label, width - textX - rightPadding, environment, false);
-      const height = Math.max(40, label.heightVp + 16), before = this.current?.rows[index];
+      const height = Math.max(44, label.heightVp + 24), before = this.current?.rows[index];
       const row: DrawnChecklistTaskLayout = before !== undefined && before.id === task.id && before.label === label &&
-        before.height === height && before.textX === textX && before.width === width ? before : { id: task.id, width, label, height, textX, textY: 8,
-        checkboxSize, checkboxY: 8, checkboxHitWidth: hitWidth };
+        before.height === height && before.textX === textX && before.width === width ? before : { id: task.id, width, label, height, textX, textY: 12,
+        checkboxSize, checkboxY: 12, checkboxHitWidth: hitWidth };
       if (before !== row) { changed = true; }
       rows.push(row); contentHeight += height; index++;
     }
     this.labels = next;
     const units = this.units.prepare(ui, environment);
-    const footerHeight = Math.max(24, this.footer.prepare(str('checklist_progress', 0, 0),
-      Math.max(1, width - 62) * units.density, units.fp2px(10.5), drawnColor(COLOR_TEXT_SECONDARY), environment).heightPx / units.density + 10);
+    const subtitle = this.subtitle.prepare(str('checklist_type'), width * units.density,
+      units.fp2px(12), drawnColor(COLOR_TEXT_SECONDARY), environment);
+    const subtitleHeight = subtitle.heightPx / units.density + 12;
+    const footerHeight = Math.max(30, this.footer.prepare(str('checklist_progress', '0', '0'),
+      Math.max(1, width) * units.density, units.fp2px(10.5), drawnColor(COLOR_TEXT_SECONDARY), environment).heightPx / units.density + 10);
     const before = this.current;
-    if (before !== null && before.width === width && before.title === title && !changed && before.footerHeight === footerHeight) {
+    if (before !== null && before.width === width && before.title === title && !changed && before.footerHeight === footerHeight && before.subtitle === subtitle) {
       this.geometry = model.geometry; this.ui = ui; this.environment = environment; return before;
     }
-    const height = title.heightVp + 8 + contentHeight + footerHeight;
+    const height = title.heightVp + 4 + subtitleHeight + contentHeight + footerHeight;
     if (!Number.isFinite(height) || height <= 0) { throw new Error('invalid checklist prelayout'); }
     this.geometry = model.geometry; this.ui = ui; this.environment = environment;
-    this.current = { width, height, title, rows, footerHeight }; return this.current;
+    this.current = { width, height, title, rows, footerHeight, subtitle, subtitleHeight }; return this.current;
   }
 }

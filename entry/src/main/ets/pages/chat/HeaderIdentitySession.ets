@@ -1,3 +1,4 @@
+import { isDeletedUser } from '../../util/deletedUser';
 // 顶栏身份解析与展示态（标题/头像/静音/密聊副标题/表情状态/资料跳转/Mini App
 // 入口）的状态机。从 ChatPage 整体搬出（B8 批）。
 //
@@ -166,6 +167,8 @@ export class HeaderIdentitySession {
   // ——— 显示态：ChatHeader 直接读这些 @Trace ———
 
   @Trace title: string = '';
+  @Trace deletedPeer: boolean = false;
+  private userRevision: number = 0;
   @Trace avatarPath: string = '';
   // 聊天页头部的动态头像（MP4 循环）。issue #63：资料页会动、对话里不动——
   // 头部一直只拿静态图。动画文件挂在 full info 的 chatPhoto.animation 里，
@@ -264,6 +267,8 @@ export class HeaderIdentitySession {
   reset(cached: ChatEntry | undefined): void {
     this.resolveSeq++;
     this.state = 'loading';
+    this.deletedPeer = cached?.isDeletedUser === true;
+    this.userRevision++;
     this.loadError = '';
     this.peerUserId = 0;
     this.kind = '';
@@ -464,6 +469,7 @@ export class HeaderIdentitySession {
     // Don't clobber a MessageStore-resolved avatar (channels/folders) with an empty one.
     if (e.avatarPath !== '') { this.avatarPath = e.avatarPath; }
     this.initials = e.initials;
+    if (e.kind === 'private') { this.applyDeletedPeer(e.isDeletedUser === true); }
     this.autoDeleteTime = e.autoDeleteTime;
     if (!this.muteUpdating) {
       this.isMuted = e.isMuted;
@@ -499,7 +505,7 @@ export class HeaderIdentitySession {
 
   // store.subscribeHeaderTitle 的回调体（原样保留"话题/评论区不覆盖标题"这条判据）。
   applyTitle(t: string): void {
-    if (t === '') {
+    if (this.deletedPeer || t === '') {
       return;
     }
     if (this.host.threadRootId() === 0 && this.host.forumTopicId() === 0 &&
@@ -515,7 +521,7 @@ export class HeaderIdentitySession {
   // （MessageStore 解析头像独立于 ChatStore/FileService，backfill 一下列表项，
   // 让会话列表不必再单独走一条下载路径）。
   applyAvatar(p: string): void {
-    if (p === '') {
+    if (this.deletedPeer || p === '') {
       return;
     }
     this.avatarPath = p;
@@ -560,10 +566,27 @@ export class HeaderIdentitySession {
 
   // Header title/subtitle wording lives in chatHeaderPresentation, where the
   // "cached title beats a pending load" and error-fallback rules are tested.
+  onUserUpdate(update: TdObject): void {
+    const user = update['user'] as TdObject | undefined;
+    const id = (user?.['id'] as number | undefined) ?? 0;
+    if (id <= 0 || id !== (this.peerUserId || this.host.chatId())) { return; }
+    this.userRevision++;
+    this.applyDeletedPeer(isDeletedUser(user));
+  }
+
+  private applyDeletedPeer(deleted: boolean): void {
+    this.deletedPeer = deleted;
+    if (deleted) {
+      this.title = str('deleted_account'); this.state = 'ready'; this.loadError = '';
+      this.initials = '👻'; this.avatarPath = ''; this.avatarAnimPath = '';
+      this.emojiPath = ''; this.emojiUid = ''; this.emojiFormat = '';
+    }
+  }
+
   private presentation(): ChatHeaderPresentation {
     const input: ChatHeaderInput = {
-      title: this.title,
-      subtitle: this.secretSubtitle !== '' ? this.secretSubtitle : this.subtitle,
+      title: this.deletedPeer ? str('deleted_account') : this.title,
+      subtitle: this.deletedPeer ? str('user_status_long_ago') : this.secretSubtitle !== '' ? this.secretSubtitle : this.subtitle,
       state: this.state,
       loadError: this.loadError,
       kind: this.kind
@@ -659,7 +682,7 @@ export class HeaderIdentitySession {
 
   // Private chat: the peer's emoji status appears beside the header title.
   fetchEmojiStatus(): void {
-    if (this.emojiFetched) {
+    if (this.deletedPeer || this.emojiFetched) {
       return;
     }
     const store: MessageStore | null = this.host.store();
@@ -677,7 +700,7 @@ export class HeaderIdentitySession {
         const currentStore: MessageStore | null = this.host.store();
         const currentUid = this.peerUserId > 0
           ? this.peerUserId : (currentStore !== null ? currentStore.getPeerUserId() : 0);
-        if (resolveSeq !== this.resolveSeq || uid !== currentUid) {
+        if (this.deletedPeer || resolveSeq !== this.resolveSeq || uid !== currentUid) {
           return;
         }
         this.emojiPath = path;
@@ -706,7 +729,7 @@ export class HeaderIdentitySession {
       return;
     }
     fetchPhotoAnimationPath(req, true, HEADER_ANIMATION_PRIORITY, 'header').then((path: string): void => {
-      if (path !== '' && this.host.chatId() === chatId) {
+      if (!this.deletedPeer && path !== '' && this.host.chatId() === chatId) {
         this.avatarAnimPath = path; // 期间换了会话就丢掉
       }
     });
@@ -725,12 +748,14 @@ export class HeaderIdentitySession {
     if (userId <= 0) {
       return;
     }
+    const userRevision = this.userRevision;
     const req: TdRequest = { '@type': 'getUser' };
     req['user_id'] = userId;
     getTdClient().send(req).then((user: TdObject): void => {
       if (seq !== this.resolveSeq) {
         return;
       }
+      if (userRevision === this.userRevision) { this.applyDeletedPeer(isDeletedUser(user)); }
       const type = user['type'] as TdObject | undefined;
       const typeName: string = type !== undefined ? ((type['@type'] as string | undefined) ?? '') : '';
       const isBot: boolean = typeName === 'userTypeBot';

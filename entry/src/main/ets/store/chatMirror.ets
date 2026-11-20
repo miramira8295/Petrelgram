@@ -38,7 +38,7 @@ export class ChatMirror {
   // 只在 worker 那条实体已经存在时才写，避免先造出一条空实体。
   setAvatarPath(chatId: number, path: string): void {
     const entry: ChatEntry | undefined = this.entries.get(chatId);
-    if (entry === undefined || entry.avatarPath === path) {
+    if (entry === undefined || entry.isDeletedUser === true || entry.avatarPath === path) {
       return;
     }
     const next: ChatEntry = cloneEntry(entry);
@@ -82,7 +82,7 @@ export class ChatMirror {
 
   // 合并一批 worker 实体，返回**真正变化**的会话 id（按 B4b 的可比字段口径，
   // revision 不计）。没变化的条目保持原对象身份，避免下游白刷。
-  apply(remote: ChatEntry[]): number[] {
+  apply(remote: ChatEntry[], normalize?: (entry: ChatEntry) => void): number[] {
     const changed: number[] = [];
     for (const incoming of remote) {
       const previous: ChatEntry | undefined = this.entries.get(incoming.id);
@@ -96,11 +96,13 @@ export class ChatMirror {
           merged.isLive = previous.isLive;
           merged.isRtmpLive = previous.isRtmpLive;
         }
-        if (compareChatEntries(previous, merged) === '') {
+        normalize?.(merged);
+        if (compareChatEntries(previous, merged) === '' && previous.lastSenderName === merged.lastSenderName) {
           continue;
         }
         merged.revision = previous.revision + 1;
       } else {
+        normalize?.(merged);
         merged.revision = 0;
       }
       this.entries.set(incoming.id, merged);
