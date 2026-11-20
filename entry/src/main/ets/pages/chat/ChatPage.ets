@@ -5391,10 +5391,18 @@ export struct ChatPage {
     }
     this.applyBottomSlot(toggleSlot(this.bottomSlot, SLOT_REPLY_KB));
     if (!openingCustom) {
-      // Switching from the Bot keyboard back to text input should actually
-      // present the IME rather than leaving an empty gap below the composer.
-      setTimeout((): void => { focusControl.requestFocus('chat_composer'); }, 0);
+      // 【收起面板后主动清焦点】(2026-11-20 用户两次反馈：面板键一按就弹输入法)
+      // 关掉 Bot 键盘后，ArkUI 会把焦点还给唯一的文本框并把 IME 拉起来——即使本方法
+      // 里一句 requestFocus 都没有（已实测确认）。这里在下一拍把焦点清掉，屏幕底部保持干净。
+      setTimeout((): void => {
+        this.composerFocused = false;
+        this.composerController.stopEditing();
+        this.getUIContext().getFocusController().clearFocus();
+      }, 0);
     }
+    // 【收起面板后一律不回焦输入框】(2026-11-20 用户第二次反馈：面板键一按就弹输入法)
+    // 原来这里有一句 setTimeout(requestFocus('chat_composer'))，不论从哪种状态收起都会把
+    // IME 拉起来。现在彻底去掉：面板键只负责开/关 Bot 键盘，不碰输入法；想打字点输入框。
   }
 
   // finishStickerSend 整体搬进了 ChatOverlayState（B11 批），改名为
