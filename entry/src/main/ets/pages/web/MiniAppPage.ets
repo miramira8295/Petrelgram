@@ -9,7 +9,8 @@ import { refreshWebBridge } from '../../store/ProxyApi';
 import { MiniAppLaunch, MiniAppSession, miniAppOrigin, miniAppTheme } from '../../util/miniAppModel';
 import {
   MiniAppBridge, MiniAppEvent, MiniAppButton, miniAppButton, miniAppBootstrap,
-  miniAppBridgePermission, miniAppReceiveScript, miniAppString, miniAppColor
+  miniAppBridgePermission, miniAppReceiveScript, miniAppString, miniAppColor,
+  miniAppUrlWithFullscreenSupport
 } from '../../util/miniAppBridge';
 import { openTelegramLink } from '../../util/openTelegramLink';
 import { normalizeTelegramLink } from '../../util/linkNav';
@@ -49,6 +50,7 @@ struct MiniAppPage {
   @State private secondaryButton: MiniAppButton = miniAppButton({});
   @State private headerColor: string = '';
   @State private pageBackground: string = '';
+  @State private fullscreen: boolean = false;
   private controller: webview.WebviewController = new webview.WebviewController();
   private bridge: MiniAppBridge = new MiniAppBridge((event: MiniAppEvent): void => this.onEvent(event));
   private session: MiniAppSession = new MiniAppSession(
@@ -116,7 +118,7 @@ struct MiniAppPage {
       const result = await this.session.open(this.launch, this.appDark);
       if (result === null || this.disposed) { return; }
       this.origin = miniAppOrigin(result.url);
-      this.appUrl = result.url;
+      this.appUrl = miniAppUrlWithFullscreenSupport(result.url);
       this.armLoadTimer();
     } catch (_) {
       if (!this.disposed) { this.failed = true; this.loading = false; }
@@ -187,7 +189,25 @@ struct MiniAppPage {
   private safeAreaChanged(): void {
     const bottom = this.mainButton.visible || this.secondaryButton.visible ? 0 : this.bottomSafe;
     this.emit('safe_area_changed', { 'top': 0, 'bottom': bottom, 'left': 0, 'right': 0 });
-    this.emit('content_safe_area_changed', { 'top': 0, 'bottom': bottom, 'left': 0, 'right': 0 });
+    // 对齐 Telegram Android：content_safe_area 只报 top，bottom 恒 0。
+    this.emit('content_safe_area_changed', { 'top': 0, 'bottom': 0, 'left': 0, 'right': 0 });
+  }
+
+  // Bot API 8.0 全屏。nmBot 这类页面在 fullscreen compact 模式下会自己
+  // 收起顶部那条按键行、并把底部页签按 --tg-safe-area-inset-bottom 抬高；
+  // 原生侧只切状态并重报安全区，不加 padding、不注入脚本。
+  private requestFullscreen(data: Record<string, Object>): void {
+    if (this.fullscreen) { this.emit('fullscreen_failed', { 'error': 'ALREADY_FULLSCREEN' }); return; }
+    this.fullscreen = true;
+    this.emit('fullscreen_changed', { 'is_fullscreen': true, 'blur_enabled': data['blur'] !== false });
+    this.viewportChanged();
+  }
+
+  private exitFullscreen(): void {
+    const wasFullscreen = this.fullscreen;
+    this.fullscreen = false;
+    this.emit('fullscreen_changed', { 'is_fullscreen': false });
+    if (wasFullscreen) { this.viewportChanged(); }
   }
 
   private async close(): Promise<void> {
@@ -308,8 +328,8 @@ struct MiniAppPage {
         this.emit('clipboard_text_received', { 'req_id': miniAppString(data, 'req_id') }); break;
       case 'web_app_invoke_custom_method':
         this.emit('custom_method_invoked', { 'req_id': miniAppString(data, 'req_id'), 'error': 'UNSUPPORTED_METHOD' }); break;
-      case 'web_app_request_fullscreen': this.emit('fullscreen_failed', { 'error': 'UNSUPPORTED' }); break;
-      case 'web_app_exit_fullscreen': this.emit('fullscreen_changed', { 'is_fullscreen': false }); break;
+      case 'web_app_request_fullscreen': this.requestFullscreen(data); break;
+      case 'web_app_exit_fullscreen': this.exitFullscreen(); break;
       case 'web_app_data_send':
       case 'web_app_switch_inline_query':
         this.unsupported(); break;
@@ -391,7 +411,7 @@ struct MiniAppPage {
             .javaScriptOnDocumentStart([{ script: miniAppBootstrap(), scriptRules: [this.origin] }])
             .onLoadIntercept((event): boolean => event.data.isMainFrame() && this.intercept(event.data.getRequestUrl()))
             .onPageBegin((): void => {
-              this.failed = false; this.loading = true; this.progress = 0;
+              this.failed = false; this.loading = true; this.progress = 0; this.fullscreen = false;
               this.backVisible = false; this.mainButton = miniAppButton({}); this.secondaryButton = miniAppButton({});
               this.needsCloseConfirmation = false;
               this.armLoadTimer();
