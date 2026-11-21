@@ -858,6 +858,32 @@ export struct ProfilePage {
     .onClick(onTap);
   }
 
+  // 与输入栏那个小程序键同一套图形：圆角程序框 + 顶边一条实心横条
+  // （读起来是一扇应用窗口）。这里原来用 sys.symbol.square_grid_2x2，
+  // 是 2×2 点阵、更像菜单，跟输入栏对不上（2026-11-20 用户要求统一）。
+  @Builder
+  miniAppGlyph(size: number) {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Row().width('100%').height(size * 0.28).backgroundColor(COLOR_PRIMARY);
+      Row().width(size).height(size).borderRadius(size * 0.275)
+        .border({ width: size * 0.07, color: COLOR_PRIMARY });
+    }
+    .width(size).height(size).borderRadius(size * 0.275).clip(true);
+  }
+
+  @Builder
+  actionButtonMiniApp(label: string, onTap: () => void) {
+    Column({ space: 7 }) {
+      this.miniAppGlyph(24);
+      Text(label).fontSize(13).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+    }
+    .layoutWeight(1).height(86)
+    .justifyContent(FlexAlign.Center)
+    .glassTile()
+    .onClick(onTap);
+  }
+
   @Builder
   actionButton(symbol: string, label: string, onTap: () => void) {
     Column({ space: 7 }) {
@@ -932,7 +958,7 @@ export struct ProfilePage {
       this.actionButton('sys.symbol.message', str('cps_messages'), () => { this.sendMessage(); });
       if (this.hasMainApp) {
         // 机器人打不了电话，电话/视频两格换成「打开应用」，按钮数不变。
-        this.actionButton('sys.symbol.square_grid_2x2', str('pp_open_app'), () => { this.openMainApp(); });
+        this.actionButtonMiniApp(str('pp_open_app'), () => { this.openMainApp(); });
       }
       this.actionButton('sys.symbol.bell', str('cp_mute'), () => { this.toggleMute(); });
       if (!this.hasMainApp) {

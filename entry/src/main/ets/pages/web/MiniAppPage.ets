@@ -9,16 +9,15 @@ import { refreshWebBridge } from '../../store/ProxyApi';
 import { MiniAppLaunch, MiniAppSession, miniAppOrigin, miniAppTheme } from '../../util/miniAppModel';
 import {
   MiniAppBridge, MiniAppEvent, MiniAppButton, miniAppButton, miniAppBootstrap,
-  miniAppBridgePermission, miniAppReceiveScript, miniAppString, miniAppColor
+  miniAppBridgePermission, miniAppReceiveScript, miniAppString, miniAppColor,
+  miniAppUrlWithFullscreenSupport
 } from '../../util/miniAppBridge';
 import { openTelegramLink } from '../../util/openTelegramLink';
 import { normalizeTelegramLink } from '../../util/linkNav';
 import { openWebUrl } from '../../util/webBrowserNav';
 import { str } from '../../util/strings';
 import { relativeLuminance } from '../../util/colorMath';
-import { MATERIAL_EPOCH, materialOff, plainGlassFill, plainBackdropBlur } from '../../util/overlayMaterial';
-import { NativeGlassHost } from '../chat/NativeGlassHost';
-import { SystemGlassSurface } from '../chat/SystemGlassSurface';
+import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_SURFACE,
   COLOR_PAGE_BG, KEY_APP_DARK } from '../../util/theme';
 
@@ -29,6 +28,9 @@ const MINI_APP_LOAD_TIMEOUT_MS: number = 60000;
 const MINI_APP_AUTO_RETRY_DELAY_MS: number = 2000;
 // 连续自动重试的上限。成功加载一次就归零，所以「开一次页面」最多刷 3 次。
 const MINI_APP_AUTO_RETRY_LIMIT: number = 3;
+// 全屏顶部条的内容高度（不含状态栏）。对齐官方 dp(8+30+8)=46：web 顶边本来就在
+// 状态栏下方，顶部条以透明浮层叠在那里，页面按 safe-top(状态栏) + content-top(此值) 预留。
+const MINI_APP_FULLSCREEN_BAR_HEIGHT: number = 46;
 
 @Entry
 @Component
@@ -49,6 +51,9 @@ struct MiniAppPage {
   @State private secondaryButton: MiniAppButton = miniAppButton({});
   @State private headerColor: string = '';
   @State private pageBackground: string = '';
+  @State private fullscreen: boolean = false;
+  // 全屏顶部条右侧「⋮」弹出的菜单（刷新/关闭），对齐官方 Telegram 的更多按钮。
+  @State private chromeMenuShown: boolean = false;
   private controller: webview.WebviewController = new webview.WebviewController();
   private bridge: MiniAppBridge = new MiniAppBridge((event: MiniAppEvent): void => this.onEvent(event));
   private session: MiniAppSession = new MiniAppSession(
@@ -99,10 +104,23 @@ struct MiniAppPage {
     return relativeLuminance(this.headerColor) > 0.179 ? '#000000' : '#ffffff';
   }
 
-  private headerGlassFill(): ResourceColor {
-    if (this.headerColor === '') { return plainGlassFill(COLOR_SURFACE); }
-    // Keep the Mini App's header tint and its matching foreground together.
-    return materialOff() ? this.headerColor : '#8C' + this.headerColor.substring(1);
+  @Builder
+  chromeMenu() {
+    Column() {
+      Text(str('web_reload')).fontSize(15).fontColor(this.headerInk()).width('100%').height(44)
+        .padding({ left: 16, right: 16 }).textAlign(TextAlign.Start)
+        .onClick((): void => { this.chromeMenuShown = false; this.reload(); });
+      Text(str('tglink_close')).fontSize(15).fontColor(this.headerInk()).width('100%').height(44)
+        .padding({ left: 16, right: 16 }).textAlign(TextAlign.Start)
+        .onClick((): void => { this.chromeMenuShown = false; this.close(); });
+    }.width(160).backgroundColor(Color.White).borderRadius(12)
+      .padding({ top: 4, bottom: 4 });
+  }
+
+  // 全屏顶部条上的灰色胶囊：对齐官方 Telegram 的 secondary 按钮（半透明灰底 +
+  // 白色字形），浅色取 30% 黑、深色取 32% 白（20% 太淡，白字压不住）。
+  private chromePillFill(): ResourceColor {
+    return this.appDark ? '#52FFFFFF' : '#4D000000';
   }
 
   // 头部的三块自绘玻璃已改为系统沉浸材质承载（2026-11-18 全应用统一），
@@ -116,7 +134,7 @@ struct MiniAppPage {
       const result = await this.session.open(this.launch, this.appDark);
       if (result === null || this.disposed) { return; }
       this.origin = miniAppOrigin(result.url);
-      this.appUrl = result.url;
+      this.appUrl = miniAppUrlWithFullscreenSupport(result.url);
       this.armLoadTimer();
     } catch (_) {
       if (!this.disposed) { this.failed = true; this.loading = false; }
@@ -186,8 +204,47 @@ struct MiniAppPage {
 
   private safeAreaChanged(): void {
     const bottom = this.mainButton.visible || this.secondaryButton.visible ? 0 : this.bottomSafe;
-    this.emit('safe_area_changed', { 'top': 0, 'bottom': bottom, 'left': 0, 'right': 0 });
-    this.emit('content_safe_area_changed', { 'top': 0, 'bottom': bottom, 'left': 0, 'right': 0 });
+    // 全屏时 web 内容铺到屏幕最顶、原生顶部条改成浮层压在它上面（对齐 Telegram
+    // Android 的 fullscreen chrome）。expandSafeArea 之后整页从 y=0 开始，所以
+    // safe top 报状态栏高度、content top 报顶部条内容高度(46)：页面预留的
+    // 状态栏+46 正好被原生条完整盖住，不会再露出被裁掉一半的标题；
+    // 非全屏（legacy 页面）保持 0。
+    const top = this.fullscreen ? this.topSafe : 0;
+    const contentTop = this.fullscreen ? MINI_APP_FULLSCREEN_BAR_HEIGHT : 0;
+    this.emit('safe_area_changed', { 'top': top, 'bottom': bottom, 'left': 0, 'right': 0 });
+    // 对齐 Telegram Android：content_safe_area 只报 top，bottom 恒 0。
+    this.emit('content_safe_area_changed', { 'top': contentTop, 'bottom': 0, 'left': 0, 'right': 0 });
+  }
+
+  // Bot API 8.0 全屏。nmBot 这类页面在 fullscreen compact 模式下会自己
+  // 收起顶部那条按键行、并把底部页签按 --tg-safe-area-inset-bottom 抬高；
+  // 原生侧只切状态并重报安全区，不加 padding、不注入脚本。
+  // 页面在 load 完成前就可能读过一次安全区、之后不再重读；全屏切换后补发几次，
+  // 避免首次进入时少算 content_safe_area 那 46vp（商业页顶部图标会被多裁一截）。
+  private armSafeAreaRepeats(): void {
+    const delays: number[] = [200, 700, 1600];
+    for (let i = 0; i < delays.length; i++) {
+      const delay: number = delays[i];
+      setTimeout((): void => {
+        if (this.disposed || !this.fullscreen) { return; }
+        this.safeAreaChanged();
+      }, delay);
+    }
+  }
+
+  private requestFullscreen(data: Record<string, Object>): void {
+    if (this.fullscreen) { this.emit('fullscreen_failed', { 'error': 'ALREADY_FULLSCREEN' }); return; }
+    this.fullscreen = true;
+    this.emit('fullscreen_changed', { 'is_fullscreen': true, 'blur_enabled': data['blur'] !== false });
+    this.viewportChanged();
+    this.armSafeAreaRepeats();
+  }
+
+  private exitFullscreen(): void {
+    const wasFullscreen = this.fullscreen;
+    this.fullscreen = false;
+    this.emit('fullscreen_changed', { 'is_fullscreen': false });
+    if (wasFullscreen) { this.viewportChanged(); }
   }
 
   private async close(): Promise<void> {
@@ -308,8 +365,8 @@ struct MiniAppPage {
         this.emit('clipboard_text_received', { 'req_id': miniAppString(data, 'req_id') }); break;
       case 'web_app_invoke_custom_method':
         this.emit('custom_method_invoked', { 'req_id': miniAppString(data, 'req_id'), 'error': 'UNSUPPORTED_METHOD' }); break;
-      case 'web_app_request_fullscreen': this.emit('fullscreen_failed', { 'error': 'UNSUPPORTED' }); break;
-      case 'web_app_exit_fullscreen': this.emit('fullscreen_changed', { 'is_fullscreen': false }); break;
+      case 'web_app_request_fullscreen': this.requestFullscreen(data); break;
+      case 'web_app_exit_fullscreen': this.exitFullscreen(); break;
       case 'web_app_data_send':
       case 'web_app_switch_inline_query':
         this.unsupported(); break;
@@ -318,48 +375,102 @@ struct MiniAppPage {
     }
   }
 
+  // 普通（非全屏）小程序顶栏对齐官方 Telegram Android 的标准动作栏：
+  // 左「✕ 关闭」（有历史时变「← 返回」）、中间居中标题、右「˅ + ⋮」菜单。
+  // 官方从不显示网址；站点把 document.title 设成 URL 时这里也退回通用标题。
+  private headerTitleText(): string {
+    const raw = this.title.trim();
+    if (raw === '' || raw.indexOf('://') >= 0) { return str('gs_mini_app'); }
+    return raw;
+  }
+
   @Builder
   header() {
-    Row({ space: 10 }) {
-      if (this.backVisible) {
-        Stack() {
-          NativeGlassHost({ hostWidth: 40, hostHeight: 40, hostRadius: 20, dark: this.appDark });
-          Button() { SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(20).fontColor([this.headerInk()]); }
-            .width(40).height(40).borderRadius(20)
-            .backgroundColor(Color.Transparent)
-            .onClick((): void => this.back());
-        }
-        .width(40).height(40);
+    Row() {
+      Button() {
+        SymbolGlyph(this.backVisible ? $r('sys.symbol.chevron_left') : $r('sys.symbol.xmark'))
+          .fontSize(20).fontColor([this.headerInk()]);
       }
-      Stack() {
-        SystemGlassSurface({ radius: 21, fill: true, dark: this.appDark }) {
-          Column({ space: 2 }) {
-            Text(this.title || $r('app.string.gs_mini_app')).fontSize(16).fontWeight(FontWeight.Medium)
-              .fontColor(this.headerInk()).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-            Text(this.origin === '' ? $r('app.string.gs_mini_app') : this.origin.substring(8))
-              .fontSize(11).fontColor(this.headerInk()).opacity(0.65).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+      .width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
+      .accessibilityText(str(this.backVisible ? 'back' : 'tglink_close'))
+      .onClick((): void => { if (this.backVisible) { this.back(); } else { this.close(); } });
+
+      Text(this.headerTitleText())
+        .layoutWeight(1).textAlign(TextAlign.Center).fontSize(17).fontWeight(FontWeight.Medium)
+        .fontColor(this.headerInk()).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        .padding({ left: 8, right: 8 })
+        .hitTestBehavior(HitTestMode.None);
+
+      Row({ space: 2 }) {
+        Button() { SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(20).fontColor([this.headerInk()]); }
+          .width(38).height(40).borderRadius(19).backgroundColor(Color.Transparent)
+          .accessibilityText(str('tglink_close'))
+          .onClick((): void => { this.close(); });
+        Button() {
+          Column({ space: 3.5 }) {
+            Row().width(4).height(4).borderRadius(2).backgroundColor(this.headerInk());
+            Row().width(4).height(4).borderRadius(2).backgroundColor(this.headerInk());
+            Row().width(4).height(4).borderRadius(2).backgroundColor(this.headerInk());
           }
-          .width('100%').height('100%').padding({ left: 14, right: 14 })
-          .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Start);
         }
+        .width(38).height(40).borderRadius(19).backgroundColor(Color.Transparent)
+        .accessibilityText(str('web_reload'))
+        .onClick((): void => { this.chromeMenuShown = !this.chromeMenuShown; })
+        .bindPopup(this.chromeMenuShown, {
+          builder: this.chromeMenu,
+          placement: Placement.BottomRight,
+          onStateChange: (e: PopupStateChangeParam): void => {
+            if (!e.isVisible) { this.chromeMenuShown = false; }
+          }
+        });
       }
-      .layoutWeight(1).height(42);
-      Stack() {
-        SystemGlassSurface({ radius: 20, dark: this.appDark }) {
-      Row() {
-        Button() { SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(18).fontColor([this.headerInk()]); }
-          .width(42).height(40).backgroundColor(Color.Transparent)
-          .accessibilityText(str('web_reload')).enabled(!this.loading).onClick((): void => this.reload());
-        Divider().vertical(true).height(16).color(this.headerInk()).opacity(0.25);
-        Button() { SymbolGlyph($r('sys.symbol.xmark')).fontSize(18).fontColor([this.headerInk()]); }
-          .width(42).height(40).backgroundColor(Color.Transparent)
-          .accessibilityText(str('tglink_close')).onClick((): void => { this.close(); });
-      }.height(40);
-        }
-      }
-      .height(40);
-    }.height(54 + this.topSafe).padding({ top: this.topSafe, left: 16, right: 12 }).width('100%')
+    }.width('100%').height(54 + this.topSafe)
+      .padding({ top: this.topSafe, left: 6, right: 6 })
       .backgroundColor(this.headerColor || COLOR_SURFACE);
+  }
+
+  // 全屏顶部条对齐官方 Telegram Android（BotWebViewSheet 里 actionBar 是
+  // setBackgroundColor(Color.TRANSPARENT) 的透明浮层）：只有左右两颗灰色胶囊，
+  // 条本身不刷底色、中间也不画标题——页面自己的大图/标题就画在这条带里，
+  // 一旦刷底色就会把它们切掉（商业、Copilot 页顶部被截断就是这么来的）。
+  // 只有状态栏那一条刷页面头色，避免与下面的页面底色出现接缝。
+  @Builder
+  fullscreenHeader() {
+    Column() {
+      Row().width('100%').height(this.topSafe).backgroundColor(this.headerColor || COLOR_SURFACE);
+      Row() {
+        Row({ space: 7 }) {
+          SymbolGlyph($r('sys.symbol.xmark')).fontSize(16).fontColor([Color.White]);
+          Text(str('tglink_close')).fontSize(15).fontWeight(FontWeight.Medium).fontColor(Color.White).maxLines(1);
+        }.height(37).padding({ left: 15, right: 18 }).borderRadius(18.5)
+          .backgroundColor(this.chromePillFill())
+          .accessibilityText(str('tglink_close'))
+          .onClick((): void => { this.close(); });
+
+        Blank();
+
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(19).fontColor([Color.White])
+            .accessibilityText(str('tglink_close'))
+            .onClick((): void => { this.close(); });
+          Column({ space: 3.5 }) {
+            Row().width(4.5).height(4.5).borderRadius(2.25).backgroundColor(Color.White);
+            Row().width(4.5).height(4.5).borderRadius(2.25).backgroundColor(Color.White);
+            Row().width(4.5).height(4.5).borderRadius(2.25).backgroundColor(Color.White);
+          }.padding({ left: 19 })
+            .accessibilityText(str('web_reload'))
+            .onClick((): void => { this.chromeMenuShown = !this.chromeMenuShown; })
+            .bindPopup(this.chromeMenuShown, {
+              builder: this.chromeMenu,
+              placement: Placement.BottomRight,
+              onStateChange: (e: PopupStateChangeParam): void => {
+                if (!e.isVisible) { this.chromeMenuShown = false; }
+              }
+            });
+        }.height(37).padding({ left: 16, right: 16 }).borderRadius(18.5)
+          .backgroundColor(this.chromePillFill());
+      }.width('100%').height(MINI_APP_FULLSCREEN_BAR_HEIGHT).padding({ left: 8, right: 8 });
+    }.width('100%');
   }
 
   @Builder
@@ -375,11 +486,14 @@ struct MiniAppPage {
   }
 
   build() {
-    Column() {
-      this.header();
-      Progress({ value: this.loading ? this.progress : 100, total: 100, type: ProgressType.Linear })
-        .height(2).width('100%').color(COLOR_PRIMARY).opacity(this.loading ? 1 : 0);
-      Stack() {
+    Stack({ alignContent: Alignment.Top }) {
+      Column() {
+        if (!this.fullscreen) {
+          this.header();
+          Progress({ value: this.loading ? this.progress : 100, total: 100, type: ProgressType.Linear })
+            .height(2).width('100%').color(COLOR_PRIMARY).opacity(this.loading ? 1 : 0);
+        }
+        Stack() {
         if (this.appUrl !== '') {
           Web({ src: this.appUrl, controller: this.controller })
             .javaScriptAccess(true).domStorageAccess(true).onlineImageAccess(true).multiWindowAccess(false)
@@ -391,14 +505,14 @@ struct MiniAppPage {
             .javaScriptOnDocumentStart([{ script: miniAppBootstrap(), scriptRules: [this.origin] }])
             .onLoadIntercept((event): boolean => event.data.isMainFrame() && this.intercept(event.data.getRequestUrl()))
             .onPageBegin((): void => {
-              this.failed = false; this.loading = true; this.progress = 0;
+              this.failed = false; this.loading = true; this.progress = 0; this.fullscreen = false;
               this.backVisible = false; this.mainButton = miniAppButton({}); this.secondaryButton = miniAppButton({});
               this.needsCloseConfirmation = false;
               this.armLoadTimer();
             })
             .onPageEnd((): void => {
               this.loaded(); this.emit('theme_changed', { 'theme_params': miniAppTheme(this.appDark) });
-              this.viewportChanged(); this.visibilityChanged();
+              this.viewportChanged(); this.visibilityChanged(); this.armSafeAreaRepeats();
             })
             .onTitleReceive((event): void => {
               if (event && this.launch?.title === '') { this.title = event.title; }
@@ -431,7 +545,7 @@ struct MiniAppPage {
             Button($r('app.string.settings_reload')).onClick((): void => this.reload());
           }.width('100%').height('100%').justifyContent(FlexAlign.Center).backgroundColor(COLOR_PAGE_BG);
         }
-      }.layoutWeight(1).width('100%').onAreaChange((_old: Area, area: Area): void => {
+        }.layoutWeight(1).width('100%').onAreaChange((_old: Area, area: Area): void => {
         this.viewportHeight = Number(area.height); this.viewportChanged();
       });
       if (!this.failed && (this.mainButton.visible || this.secondaryButton.visible)) {
@@ -440,6 +554,11 @@ struct MiniAppPage {
           if (this.mainButton.visible) { this.actionButton(this.mainButton, 'main_button_pressed'); }
         }.width('100%').padding({ left: 12, right: 12, top: 10, bottom: 10 + this.bottomSafe })
           .backgroundColor(COLOR_SURFACE);
+      }
+      }.width('100%').height('100%');
+      // 全屏：原生顶部条改为浮层，盖住页面自己的全屏 header，web 内容铺到屏幕最顶。
+      if (this.fullscreen) {
+        this.fullscreenHeader();
       }
     }.width('100%').height('100%').backgroundColor(this.pageBackground || COLOR_PAGE_BG)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
