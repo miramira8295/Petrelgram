@@ -176,11 +176,15 @@ export struct ChatComposerInput {
     .scale({ x: 1, y: 1 })
   }
 
+  // 【按下反馈只压透明度】(2026-11-20 用户：几个按键按下去会闪一下，很难看)
+  // 原来按下去会叠一块 surface_alt 的圆盘并把整颗键缩到 0.9：在玻璃胶囊里那块
+  // 圆盘出现/消失得很突兀，缩放又让 1.4 的描边在 0.9 倍下亚像素化，观感就是闪。
+  // 现在只把不透明度压到 0.62，不换底色、不缩放，和 Telegram Android 的图标键一致。
   @Styles
   composerIconPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
-    .opacity(0.72)
-    .scale({ x: 0.9, y: 0.9 })
+    .backgroundColor(Color.Transparent)
+    .opacity(0.62)
+    .scale({ x: 1, y: 1 })
   }
 
   @Styles
@@ -629,6 +633,41 @@ export struct ChatComposerInput {
             .animation({ duration: this.smoothEffectDuration(120), curve: Curve.EaseOut })
             .onClick((): void => { this.onFinishRecording(); });
           } else {
+            // 【小程序键搬到最前方】(2026-11-20 用户要求)
+            // 原来它在输入行尾部、命令键左边；现在挪到文字输入区左边，
+            // 也就是输入栏的第一个位置（Telegram Android 的 Bot 菜单/小程序入口就在输入框左端）。
+            // 图标改成「圆角程序框」：外圈圆角矩形 + 靠近顶边的一条横线，
+            // 读起来是一扇应用窗口，而不是原来的 2×2 点阵（那个更像菜单）。
+            if (this.botMiniAppUrlValue !== '') {
+              Row() {
+                Stack({ alignContent: Alignment.TopStart }) {
+                  // 顶部实心条：整宽、自身不带圆角，交给外层 20×20 的圆角 + clip 裁成与外框同弧。
+                  // 原来这条自带 4.1 圆角，而圆角半径会被按 min(1, 高/(上左+上右)) 缩放
+                  // （5.4/(4.1+4.1)≈0.66 → 实际只剩 2.7），圆弧缩进描边内弧里侧，
+                  // 右上角就露出一道细缝。整宽条 + 外层裁切没有这个量化误差。
+                  Row()
+                    .width('100%').height(5.6)
+                    .backgroundColor(this.accentColor);
+                  // 描边后画：圆角外沿干净；内侧实心条与描边同色，看上去是整片填充。
+                  Row()
+                    .width(20).height(20).borderRadius(5.5)
+                    .border({ width: 1.4, color: this.accentColor });
+                }
+                .width(20).height(20)
+                .borderRadius(5.5)
+                .clip(true);
+              }
+              .width(32).height(32).borderRadius(16)
+              .justifyContent(FlexAlign.Center)
+              .stateStyles({
+                normal: this.composerIconNormalStyle,
+                pressed: this.composerIconPressedStyle
+              })
+              .animation({ duration: this.smoothEffectDuration(110), curve: Curve.EaseOut })
+              .accessibilityText($r('app.string.cp_open_miniapp'))
+              .margin({ bottom: this.trailingInset() })
+              .onClick((): void => { this.onOpenMiniApp(); });
+            }
             if (this.composerEditorReady) {
               TextArea({
                 text: this.editorText!!,
@@ -724,31 +763,6 @@ export struct ChatComposerInput {
                 .onClick((): void => { this.onActivateEditor(); })
                 .onAppear((): void => { this.onScheduleEditorMount(); });
             }
-            if (this.replyKeyboard !== null) {
-              Row() {
-                SymbolGlyph($r('sys.symbol.keyboard'))
-                  .fontSize(21)
-                  .fontColor([this.replyKbCollapsed ? COLOR_ICON_SECONDARY : this.accentColor]);
-              }
-              .width(34).height(34).borderRadius(17)
-              .justifyContent(FlexAlign.Center)
-              .stateStyles({
-                normal: this.composerIconNormalStyle,
-                pressed: this.composerIconPressedStyle
-              })
-              .animation({ duration: this.smoothEffectDuration(110), curve: Curve.EaseOut })
-              .accessibilityText(this.replyKbCollapsed
-                ? $r('app.string.cp_open_bot_keyboard') : $r('app.string.cp_switch_to_text'))
-              .margin({ bottom: this.trailingInset() })
-              .onClick((): void => { this.onToggleReplyKeyboard(); });
-            }
-            if (this.botMiniAppUrlValue !== '') {
-              SymbolGlyph($r('sys.symbol.square_grid_2x2'))
-                .fontSize(22).fontColor([this.accentColor])
-                .accessibilityText($r('app.string.cp_open_miniapp'))
-                .margin({ bottom: this.trailingInset() })
-                .onClick((): void => { this.onOpenMiniApp(); });
-            }
             // 命令入口：Telegram Android 那颗「方框里一道斜杠」的机器人键，
             // 挨着表情钮的左边，只在当前会话有可用 Bot 命令时出现
             // （botMenuAvailable 由 CommandSuggestionState 维护，@Trace 会自动刷新）。
@@ -768,15 +782,53 @@ export struct ChatComposerInput {
             // 收进 space:0 的子 Row 后点击区直接贴在一起，视觉空隙回到 13 左右；
             // 子 Row 仍是输入行最后一个孩子，表情键右沿仍在「胶囊宽 − 6」。
             Row({ space: 0 }) {
+              // 【面板键换形象】(2026-11-20 用户要求)
+              // Bot 回复键盘的开关原来是系统键盘符号，看着像「收起键盘」，容易误导。
+              // 改成「圆角大方框里四个小方块」，与命令键、表情键同一个 34×34 盒子、
+              // 同一条 space:0 的子 Row，三颗键的视觉间距因此一致（约 13~15vp），
+              // 既不会挤在一起，也不像单独摆开那样占地方。
+              if (this.replyKeyboard !== null && !this.canSendText()) {
+                Row() {
+                  Column({ space: 2.6 }) {
+                    Row({ space: 2.6 }) {
+                      Row().width(5.2).height(5.2).borderRadius(1.1)
+                        .border({ width: 1.3, color: this.replyKbCollapsed ? COLOR_ICON_SECONDARY : this.accentColor });
+                      Row().width(5.2).height(5.2).borderRadius(1.1)
+                        .border({ width: 1.3, color: this.replyKbCollapsed ? COLOR_ICON_SECONDARY : this.accentColor });
+                    }
+                    Row({ space: 2.6 }) {
+                      Row().width(5.2).height(5.2).borderRadius(1.1)
+                        .border({ width: 1.3, color: this.replyKbCollapsed ? COLOR_ICON_SECONDARY : this.accentColor });
+                      Row().width(5.2).height(5.2).borderRadius(1.1)
+                        .border({ width: 1.3, color: this.replyKbCollapsed ? COLOR_ICON_SECONDARY : this.accentColor });
+                    }
+                  }
+                  .width(20).height(20).borderRadius(5.5)
+                  .border({ width: 1.4, color: this.replyKbCollapsed ? COLOR_ICON_SECONDARY : this.accentColor })
+                  .justifyContent(FlexAlign.Center)
+                  .alignItems(HorizontalAlign.Center);
+                }
+                .width(32).height(32).borderRadius(16)
+                .justifyContent(FlexAlign.Center)
+                .stateStyles({
+                  normal: this.composerIconNormalStyle,
+                  pressed: this.composerIconPressedStyle
+                })
+                .animation({ duration: this.smoothEffectDuration(110), curve: Curve.EaseOut })
+                .accessibilityText(this.replyKbCollapsed
+                  ? $r('app.string.cp_open_bot_keyboard') : $r('app.string.cp_switch_to_text'))
+                .margin({ bottom: this.trailingInset() })
+                .onClick((): void => { this.onToggleReplyKeyboard(); });
+              }
               if (this.commandSuggestion.botMenuAvailable && !this.canSendText()) {
                 Row() {
                   Row() {
                     Row()
-                      .width(1.6).height(10).borderRadius(0.8)
+                      .width(1.5).height(10.5).borderRadius(0.75)
                       .backgroundColor(this.commandSuggestion.commandMenuOpen ? this.accentColor : this.chromeIconColor)
                       .rotate({ angle: 20 })
                   }
-                  .width(18).height(18).borderRadius(4.5)
+                  .width(20).height(20).borderRadius(5.5)
                   .border({
                     width: 1.4,
                     color: this.commandSuggestion.commandMenuOpen ? this.accentColor : this.chromeIconColor,
@@ -784,7 +836,7 @@ export struct ChatComposerInput {
                   .justifyContent(FlexAlign.Center)
                   .alignItems(VerticalAlign.Center)
                 }
-                .width(34).height(34).borderRadius(17)
+                .width(32).height(32).borderRadius(16)
                 .justifyContent(FlexAlign.Center)
                 .stateStyles({
                   normal: this.composerIconNormalStyle,
@@ -803,10 +855,10 @@ export struct ChatComposerInput {
               // 看着一高一低。包成同尺寸盒子、内容居中，两键中线天然对齐。
               Row() {
                 SymbolGlyph($r(this.showEmojiPanel ? 'sys.symbol.keyboard' : 'sys.symbol.face_smiling'))
-                  .fontSize(24)
+                  .fontSize(21)
                   .fontColor([this.showEmojiPanel ? this.accentColor : this.chromeIconColor]);
               }
-              .width(34).height(34).borderRadius(17)
+              .width(32).height(32).borderRadius(16)
               .justifyContent(FlexAlign.Center)
               .stateStyles({
                 normal: this.composerIconNormalStyle,
@@ -823,7 +875,7 @@ export struct ChatComposerInput {
         .width('100%')
         .constraintSize({ minHeight: this.rowMinHeight(), maxHeight: this.rowMaxHeight() })
         .padding({
-          left: 12, right: 6,
+          left: 8, right: 8,
           top: COMPOSER_ROW_PADDING, bottom: COMPOSER_ROW_PADDING
         })
         // 【为什么必须 Bottom】(2026-11-19 用户：表情键应固定在最底下一行)
@@ -850,7 +902,7 @@ export struct ChatComposerInput {
               SymbolGlyph($r('sys.symbol.arrow_up_left_and_arrow_down_right'))
                 .fontSize(19).fontColor([COLOR_ICON_SECONDARY]);
             }
-            .width(34).height(34).borderRadius(17)
+            .width(32).height(32).borderRadius(16)
             .justifyContent(FlexAlign.Center)
             .stateStyles({
               normal: this.composerIconNormalStyle,

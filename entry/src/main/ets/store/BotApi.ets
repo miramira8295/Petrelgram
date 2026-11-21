@@ -1,7 +1,7 @@
 import { sendWithChatPermissions } from './SendPermissionApi';
 import { getTdClient } from '../tdkit/Globals';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
-import { webAppUrlOf } from '../util/webAppUrl';
+import { miniAppUrlOf } from '../util/webAppUrl';
 
 // Inline bots (@bot query) and Mini Apps (Web Apps). Result parsing stays with
 // the caller so it can decide how much of each result type to render.
@@ -133,5 +133,5 @@ export async function botMiniAppUrl(botUserId: number): Promise<string> {
   const botInfo = info['bot_info'] as TdObject | undefined;
   if (botInfo === undefined) { return ''; }
   const menuButton = botInfo['menu_button'] as TdObject | undefined;
-  return menuButton !== undefined ? webAppUrlOf(menuButton['url']) : '';
+  return menuButton !== undefined ? miniAppUrlOf(menuButton['url']) : '';
 }
