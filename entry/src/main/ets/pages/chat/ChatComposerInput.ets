@@ -6,14 +6,12 @@ import { chromeOutline } from '../../util/chromeOutline';
 import { showToast } from '../../util/toast';
 import { ComposerFullscreenSheet } from './ComposerFullscreenSheet';
 import { composerLineProbe } from '../../util/composerLineProbe';
-import { ComposerLayoutMeasurement, composerMeasuredHeight } from '../../util/composerLayout';
 import { ComposerLayoutFrame } from './ComposerLayoutFrame';
 import { shouldOfferFullscreenEdit } from '../../util/composerExpand';
 import { pushSheetDismiss } from '../../util/sheetDismissStack';
 import { promptAction } from '@kit.ArkUI';
 import { str } from '../../util/strings';
 import { ReplyKeyboard } from '../../store/ReplyKeyboard';
-import { logE } from '../../util/log';
 import { PendingMediaItem, hasPendingMedia } from '../../util/pendingMedia';
 import { COLOR_ICON_SECONDARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { containerBlur, immersiveMaterialAvailable, overlayMaterial, plainBackdropBlur } from '../../util/overlayMaterial';
@@ -99,12 +97,6 @@ export struct ChatComposerInput {
   @Local editorText: string = '';
   @Param composerPlaceholder: string = '';
   @Param composerController: TextAreaController = new TextAreaController();
-  // 输入框的真实宽度，editorHeight() 拿它做排版约束。原来是绕一圈的：本组件
-  // onAreaChange 量到 → @Event 送回 ChatPage 存进 @Local composerEditorW →
-  // 页面算好高度 → 再作为 @Param composerEditorHeight 传回本组件。中间那一圈
-  // 页面什么也没做，第二轮第 9 项把它收回原地（三个几何常量本来就定义在本文件）。
-  @Local private editorW: number = 0;
-  @Local private editorLayout: ComposerLayoutMeasurement | undefined = undefined;
   // 全屏编辑入口保留最近行数；其出现会改变宽度，不能随几何快照失效而反复收起。
   @Local private editorLines: number = 0;
   // 全屏编辑面板。挂在本组件而不是页面：它编辑的就是这里的草稿，页面只通过
@@ -283,7 +275,7 @@ export struct ChatComposerInput {
   //
   // 【为什么要算而不是写死】原来是 `{ minHeight: 48, maxHeight: 120 }` 两个字面量
   // ——48 正好是 22 + 9×2 + 4×2，也就是按字号缩放 1.0 手算出来的一行高。而
-  // editorHeight() 现在按**真实行高**（fp，跟随系统字号）算，两边就会打架：缩放
+  // 上下限现在按**真实行高**（fp，跟随系统字号）算，两边就会打架：缩放
   // 1.3 时四行要 4×28.6+18 = 132vp，容器却只给得起 120−8 = 112vp，第四行连同
   // 光标被硬生生切掉——用户报的"还是有文字被隐藏"就是这个。
   // 现在两个数都从同一个 lineHeightVp() 推出来，不可能再不一致。
@@ -291,14 +283,15 @@ export struct ChatComposerInput {
     return this.lineHeightVp() + COMPOSER_EDITOR_PADDING * 2 + COMPOSER_ROW_PADDING * 2;
   }
 
+  // 【上限只由字体行高决定，不看实测内容】(2026-11-21 用户：输入框满 7 行时，
+  // 每敲/删一个字符，整条输入栏都往上顶一下再缩回来)
+  // 旧写法在「采样还是上一份文本」的那一帧按 1.35 倍兜底（7 行 × 1.35 ≈ 9.5 行），
+  // 下一帧拿到实测又落回 7 行。每敲/删一个字符都会重演这两帧：卡片先长高约两行、
+  // 再缩回，外面看到的就是整条输入框连同上面的消息区被顶一下。
+  // 上限只跟字体行高有关后逐帧稳定；TextArea 超过 7 行照旧自己滚动。
   private rowMaxHeight(): number {
     const lineVp: number = this.lineHeightVp();
-    const measured: number = this.measuredEditorHeight(lineVp);
-    // 四行的闸门。量得到真实排版就用真实值；量不到时（文本刚变过的那一帧，
-    // 采样必然对不上）按 1.35 倍余量估——宁可多留一截，也不能把真实行盒卡在
-    // 闸门外，那正是 09-11 写死行高、11-19 写死高度两次"字被裁没"的形状。
-    const budget: number = measured > 0 ? measured : lineVp * COMPOSER_MAX_LINES * 1.35;
-    return Math.max(lineVp * COMPOSER_MAX_LINES, budget) +
+    return Math.ceil(lineVp * COMPOSER_MAX_LINES) +
       COMPOSER_EDITOR_PADDING * 2 + COMPOSER_ROW_PADDING * 2;
   }
 
@@ -327,55 +320,6 @@ export struct ChatComposerInput {
     return this.composerEditorReady && shouldOfferFullscreenEdit(this.draft, this.editorLines);
   }
 
-  private measuredEditorHeight(lineVp: number): number {
-    return composerMeasuredHeight(this.editorLayout, this.editorText, this.editorW,
-      lineVp, COMPOSER_MAX_LINES);
-  }
-
-  private editorHeight(): number {
-    const lineVp: number = this.lineHeightVp();
-    const oneLine: number = lineVp + COMPOSER_EDITOR_PADDING * 2;
-    const measured: number = this.measuredEditorHeight(lineVp);
-    const cap: number = Math.max(lineVp * COMPOSER_MAX_LINES, measured) + COMPOSER_EDITOR_PADDING * 2;
-    if (this.draft === '' || this.editorW <= 0) {
-      return oneLine;
-    }
-    // 真实测量，不再按"每行 18 个字"硬估。
-    //
-    // 那个 18 是拍的：一行能装多少字取决于屏宽、字号缩放和中英文混排，在宽屏
-    // 上实际只装得下约 15 个，于是第 16 个字文本已经换行、而 ceil(16/18) 仍是
-    // 1，盒子要等到第 19 个字才长高——表现为"输到第二行第 4 个字才展开"
-    // （Mate 80 Pro Max 稳定复现）。
-    //
-    // TextArea 本身是自适应内容高度的（不设 height 时），这里之所以还锁着
-    // 高度，是因为它的固有最小高度在某些机型/字号下比一行还高，空输入框会
-    // 变胖（见下方 .height 调用点的原注释）。所以保留显式高度，只把估算换成
-    // measureTextSize —— 它按给定的约束宽度做真实排版，返回的高度已经算好了
-    // 换行。
-    let estimatedLines: number = 1;
-    try {
-      const size: SizeOptions = this.getUIContext().getMeasureUtils().measureTextSize({
-        textContent: this.draft,
-        fontSize: 15,
-        // 同样不带 lineHeight：要和 TextArea 的实际排版用同一套参数，
-        // 否则估算和真实换行位置从一开始就对不上。
-        // 左右各 3 的内边距要从可用宽度里扣掉，否则会少算一行。
-        constraintWidth: Math.max(1, this.editorW - 6)
-      });
-      // measureTextSize 返回的是 px。
-      // 除的是量出来的真实行高，不是那个 fp 常量。
-      estimatedLines = Math.ceil(this.getUIContext().px2vp(size.height as number) / lineVp);
-    } catch (e) {
-      // 量不出来就退回一行，宁可矮也不要抖：TextArea 超出部分自己能滚。
-      logE(`editorHeight measure failed: ${(e as Error).message}`);
-    }
-    // 估算用于即时响应；帧后同时用真实行数和文本区域高度纠偏。
-    // 只校正行数不足以覆盖系统字体与 emoji 混排造成的行高差异。
-    const lines: number = Math.max(1, Math.min(COMPOSER_MAX_LINES, estimatedLines));
-    return Math.max(oneLine,
-      Math.min(cap, Math.max(lines * lineVp, measured) + COMPOSER_EDITOR_PADDING * 2));
-  }
-
   aboutToDisappear(): void {
     this.onEditorAreaChange(undefined);
     this.layoutActive = false;
@@ -401,7 +345,6 @@ export struct ChatComposerInput {
   aboutToAppear(): void {
     this.editorText = this.draft;
     this.layoutActive = true;
-    this.editorLayout = undefined;
     this.editorLines = 0;
     this.scheduleLinesRefresh();
   }
@@ -410,7 +353,6 @@ export struct ChatComposerInput {
   onEditorReadyChanged(): void {
     this.layoutGeneration++;
     this.layoutRefreshPending = false;
-    this.editorLayout = undefined;
     this.editorLines = 0;
     this.scheduleLinesRefresh();
   }
@@ -470,13 +412,14 @@ export struct ChatComposerInput {
     }
   }
 
-  // 帧后读取 TextArea 的完整文字区域，不使用其滚动偏移作为高度。
-  // 内容/宽度不变时不重复写状态，避免「测量 → 改高度」持续请求渲染。
+  // 帧后只读行数，供全屏编辑入口的判据用。
+  // 【不再读内容矩形高度】(2026-11-21) 那个几何快照存在的唯一目的是给
+  // rowMaxHeight() 报实测高度，而它正是每敲一个字顶一下的来源（见该方法注释）。
+  // 上限改成只跟字体行高有关之后，这里只剩行数一个消费者。
   private refreshEditorLines(): void {
     if (this.editorText === '') {
-      this.editorLines = 0;
-      if (this.editorLayout !== undefined) {
-        this.editorLayout = undefined;
+      if (this.editorLines !== 0) {
+        this.editorLines = 0;
       }
       return;
     }
@@ -485,26 +428,6 @@ export struct ChatComposerInput {
       if (Number.isFinite(lines) && lines > 0 && this.editorLines !== lines) {
         this.editorLines = lines;
       }
-      const rect = this.composerController.getTextContentRect();
-      if (rect === undefined || lines <= 0 || this.editorW <= 0) {
-        return;
-      }
-      const height: number = this.getUIContext().px2vp(rect.height);
-      if (!Number.isFinite(height) || height < 0) {
-        return;
-      }
-      const lineVp: number = this.lineHeightVp();
-      const previous: ComposerLayoutMeasurement | undefined = this.editorLayout;
-      if (previous !== undefined && previous.text === this.editorText &&
-        previous.lines === lines && Math.abs(previous.widthVp - this.editorW) <= 0.5 &&
-        Math.abs(previous.probeLineVp - lineVp) <= 0.01 &&
-        Math.abs(previous.contentHeightVp - height) <= 0.5) {
-        return;
-      }
-      this.editorLayout = {
-        text: this.editorText, widthVp: this.editorW, probeLineVp: lineVp,
-        contentHeightVp: height, lines: lines
-      };
     } catch (e) {
       // 首帧/重建期问不到是正常的，保持上一次的值。
     }
@@ -755,12 +678,6 @@ export struct ChatComposerInput {
                 .allowDrop(null)
                 .onAreaChange((old: Area, area: Area): void => {
                   this.onEditorAreaChange(area);
-                  const next: number = area.width as number;
-                  // 0.5vp 以内的抖动不写：宽度是排版约束，写一次就要重算一次高度。
-                  if (Math.abs(next - this.editorW) > 0.5) {
-                    this.editorW = next;
-                    this.scheduleLinesRefresh();
-                  }
                   // 盒子高度刚变过 = 刚重排过，这时问到的行数才是新的。
                   if (Math.abs((area.height as number) - (old.height as number)) > 0.5) {
                     this.scheduleLinesRefresh();
