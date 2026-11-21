@@ -51,6 +51,14 @@ const FLUSH_BYPASS_DEFER_MS: number = 32;
 export struct ChatListView {
   // Homepage shares one surface; standalone archive retains individual cards.
   @Prop continuousPanel: boolean = false;
+  @Prop @Watch('onOpenChatChanged') openChatId: number = 0;
+  @State private fixedChannel: ChatListRowState | undefined = undefined;
+  private fixedScroller: ListScroller = new ListScroller();
+
+  private onOpenChatChanged(): void {
+    this.chatsData.setOpenChat(this.openChatId);
+    this.fixedChannel = this.chatsData.fixedChannel;
+  }
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
   // 会话行档位，判据与 MainTabBody 一致（见 util/chatRowMetrics）。
   @StorageProp('screenWidthVp') private screenW: number = 360;
@@ -78,7 +86,7 @@ export struct ChatListView {
     if ((AppStorage.get<number>(TAB_RETAP_INDEX) ?? 0) !== 0) {
       return;
     }
-    const unread: boolean[] = this.chats.map((c: ChatEntry): boolean =>
+    const unread: boolean[] = this.chats.filter((item: ChatEntry): boolean => item.id !== this.fixedChannel?.id).map((c: ChatEntry): boolean =>
       isPriorityUnread(c.unreadCount, c.isMarkedUnread, this.rowMuted(c)));
     const action: string = reTapAction(this.topVisible,
       unread.some((u: boolean): boolean => u));
@@ -135,6 +143,7 @@ export struct ChatListView {
     setTimeout((): void => {
       action();
       this.listScroller.closeAllSwipeActions();
+      if (this.fixedChannel !== undefined) { this.fixedScroller.closeAllSwipeActions(); }
     }, CHAT_SWIPE_COMMIT_DELAY_MS);
   }
 
@@ -201,6 +210,7 @@ export struct ChatListView {
     .backgroundColor(visual.background)
     .onClick((): void => {
       this.listScroller.closeAllSwipeActions();
+      if (this.fixedChannel !== undefined) { this.fixedScroller.closeAllSwipeActions(); }
       action();
     });
   }
@@ -377,6 +387,7 @@ export struct ChatListView {
   }
 
   aboutToAppear(): void {
+    this.onOpenChatChanged();
     this.active = true;
     const store = getChatStore();
     this.listSubscription = store.subscribeList((list: ChatEntry[]) => {
@@ -432,6 +443,7 @@ export struct ChatListView {
   private publishChats(next: ChatEntry[]): void {
     this.chats = next;
     this.chatsData.update(next, this.keysFor(next), this.flagsFor(next));
+    this.fixedChannel = this.chatsData.fixedChannel;
     this.chatsEmpty = next.length === 0;
   }
 
@@ -687,7 +699,63 @@ export struct ChatListView {
     return edgeBlurRadiusOf(this.edgeBlurTopEnabled() || this.edgeBlurBottomEnabled());
   }
 
+  @Builder
+  chatItem(item: ChatListRowState) {
+    ListItem() {
+      ChatRow({
+        openInDetail: this.openChatId !== 0 && this.openChatId === item.snapshot.chat.id,
+        compact: !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
+        continuousPanel: this.continuousPanel,
+        row: item,
+        listKey: this.listKey,
+        liveEffects: this.liveEffects(),
+        loadImages: this.imagesActive
+      });
+    }
+    // 左右滑快捷操作（issue #96/#132）。动作都是聊天菜单里现成的那几个，
+    // 不放删除：滑动误触的代价太大，删除留在长按菜单里。
+    .swipeAction(this.rowSwipeEnabled ? {
+      start: {
+        builder: (): void => { this.readSwipe(item); },
+        actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
+        onAction: (): void => {
+          this.commitSwipeAction((): void => this.toggleRead(item.snapshot.chat));
+        }
+      },
+      end: {
+        builder: (): void => { this.endSwipe(item); },
+        actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
+        onAction: (): void => {
+          this.commitSwipeAction((): void => this.toggleArchive(item.snapshot.chat));
+        }
+      },
+      edgeEffect: CHAT_SWIPE_EDGE_EFFECT
+    } as SwipeActionOptions : {} as SwipeActionOptions)
+    .transition(
+      TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: 12 })).animation({
+        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+        curve: Curve.EaseOut
+      })
+    );
+  }
+
   build() {
+    Column() {
+      if (this.fixedChannel !== undefined) {
+        List({ scroller: this.fixedScroller }) {
+          ForEach([this.fixedChannel], (row: ChatListRowState) => {
+            this.chatItem(row);
+          }, (row: ChatListRowState): string => row.id.toString());
+        }
+        .width('100%').edgeEffect(EdgeEffect.None).scrollBar(BarState.Off)
+        .onTouch((event: TouchEvent): void => { updateTouchHold(event.type); });
+      }
+      this.listBody();
+    }.width('100%').layoutWeight(1);
+  }
+
+  @Builder
+  listBody() {
     if (this.chatsEmpty) {
       this.emptyState();
     } else {
@@ -720,41 +788,7 @@ export struct ChatListView {
         // 迁过去了，:128 的注释记着当时实测 Ids.size[424]）。
         // 上面那个 .cachedCount(8) 配 ForEach 本来是空转的，现在才真正生效。
         LazyForEach(this.chatsData, (item: ChatListRowState) => {
-          ListItem() {
-            ChatRow({
-              compact: !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
-              continuousPanel: this.continuousPanel,
-            row: item,
-              listKey: this.listKey,
-              liveEffects: this.liveEffects(),
-              loadImages: this.imagesActive
-            });
-          }
-          // 左右滑快捷操作（issue #96/#132）。动作都是聊天菜单里现成的那几个，
-          // 不放删除：滑动误触的代价太大，删除留在长按菜单里。
-          .swipeAction(this.rowSwipeEnabled ? {
-            start: {
-              builder: (): void => { this.readSwipe(item); },
-              actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
-              onAction: (): void => {
-                this.commitSwipeAction((): void => this.toggleRead(item.snapshot.chat));
-              }
-            },
-            end: {
-              builder: (): void => { this.endSwipe(item); },
-              actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
-              onAction: (): void => {
-                this.commitSwipeAction((): void => this.toggleArchive(item.snapshot.chat));
-              }
-            },
-            edgeEffect: CHAT_SWIPE_EDGE_EFFECT
-          } as SwipeActionOptions : {} as SwipeActionOptions)
-          .transition(
-            TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: 12 })).animation({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-              curve: Curve.EaseOut
-            })
-          )
+          this.chatItem(item);
         }, (_item: ChatListRowState, index: number) =>
           guardKey(this.chatsData.keyTableId, index, this.chatsData.getKey(index)));
         if (this.paging) {

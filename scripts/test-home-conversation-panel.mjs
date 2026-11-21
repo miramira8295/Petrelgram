@@ -169,7 +169,12 @@ for(const count of [0,1,20]){
  assert.equal(frames.length,1,'coalesce data + size notifications');
  assert.equal(main.archivePositionInitialized,false);
  frames.shift().onFrame();
- assert.equal(snap.yOffset,62);assert.equal(snap.animation,false);assert.equal(main.archivePositionInitialized,true);
+ if(count===0){
+  assert.equal(snap.yOffset,62);assert.equal(snap.animation,false);
+ }else{
+  assert.deepEqual(jumps.at(-1),[1,false,ctx.ScrollAlign.START]);
+ }
+ assert.equal(main.archivePositionInitialized,true);
  main.scheduleArchiveInitialPosition();assert.equal(frames.length,0,'never repositions normal scrolling');
 }
 Object.assign(main,{archivePositionInitialized:false,archiveInitialChatIndex:7,chatCount:20});
@@ -203,7 +208,7 @@ for(const widthBp of [0,1,2]){
  row.continuousPanel=false;assert.equal(row.cardGutter(),[6,10,14][widthBp]);
 }
 // Folder/standalone-archive builder must use the same policy as the main list.
-const folder=make('ChatListView',['initialRender','edgeBlurTopEnabled','edgeBlurBottomEnabled','edgeBlurRadius']);
+const folder=make('ChatListView',['initialRender','listBody','edgeBlurTopEnabled','edgeBlurBottomEnabled','edgeBlurRadius']);
 Object.assign(folder,{edgeBlur:new ctx.ScrollEdgeBlurBinder(),chatsEmpty:false,listKey:'archive',loadFailed:false,chatsData:{},paging:false,pagingFailed:false,menuOpen:false,contentTopInset:0,listViewH:500,edgeBlurOn:true,edgeBlurTopOn:true,edgeBlurBottomOn:true,edgeBlurListTop:'follow',edgeBlurListBottom:'follow',endInset:()=>100});
 for(const continuousPanel of [true,false]){
  reset();folder.continuousPanel=continuousPanel;folder.initialRender();const list=nodes.find(n=>n.name==='List');
@@ -235,6 +240,19 @@ for(const probe of [main,folder])for(const continuousPanel of [true,false]){
 // Switching tabs must no longer query possibly unbound controllers to collapse
 // the folder bar. Width publication uses the outer pane, not the inset viewport.
 const page=source('ChatListPage').text;
+run(fs.readFileSync('entry/src/main/ets/util/splitMetrics.ets','utf8').replace(/\bexport /g,''));
+const listPage=make('ChatListPage',['conversationPanelHeader','folderRailShown','navBarMinWidth']);
+ctx.HorizontalAlign={Start:0};
+for(const split of [false,true])for(const width of [1119,1120,1297])for(const count of [0,2]){
+ const headerParts=[];
+ Object.assign(listPage,{isSplitLayout:()=>split,screenW:width,newSessionCount:0,folders:Array(count),
+  titleBarActions:()=>headerParts.push('actions'),tabBar:()=>headerParts.push('folders')});
+ reset();listPage.conversationPanelHeader();
+ const rail=split&&width>=1120&&count>0;
+ assert.equal(listPage.folderRailShown(),rail);
+ if(rail)assert.ok(listPage.navBarMinWidth()>=400);
+ assert.deepEqual(headerParts,[...(split?['actions']:[]),...(count&&!rail?['folders']:[])]);
+}
 assert.doesNotMatch(page,/noteFolderBarScroll|syncFolderBarWithActiveList|FolderChipAnchor/);
 assert.doesNotMatch(page,/linearGradientBlur|homeTopBlurRadius|homeViewH/);
 assert.match(page,/HomeConversationPanel/);assert.match(page,/hideTitleBar\(true, false\)/);

@@ -39,7 +39,7 @@ import { AvatarView } from './AvatarView';
 import { formatTime } from '../../util/formatTime';
 import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
-  COLOR_MUTED_BADGE, mainCardFill, ROW_PAD_H, ROW_PAD_V
+  COLOR_MUTED_BADGE, accentSoftOf, mainCardFill, ROW_PAD_H, ROW_PAD_V
 } from '../../util/theme';
 import { A11Y_EPOCH, screenReaderOn } from '../../util/a11yState';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
@@ -77,6 +77,7 @@ export const CHAT_ROW_VERTICAL_GUTTER: number = CHAT_SWIPE_VERTICAL_GUTTER_VP;
 export struct ChatRow {
   // Homepage shares one surface; standalone archive retains individual cards.
   @Prop continuousPanel: boolean = false;
+  @Prop openInDetail: boolean = false;
   // 卡片外沿按系统横向断点取值（util/pageMargin）；滑动操作背景复用同一个值。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
@@ -573,6 +574,7 @@ export struct ChatRow {
   }
 
   private rowFill(pressed: boolean): ResourceColor {
+    if (!pressed && !this.compact && this.openInDetail) { return accentSoftOf(this.accent()); }
     if (this.continuousPanel) { return pressed ? '#14000000' : Color.Transparent; }
     if (!this.rowGlassEnabled()) {
       // 关闭整体材质时始终使用不透明底色。
@@ -962,6 +964,7 @@ export struct ChatRow {
         pressed: this.rowPressedStyle
       })
       .accessibilityText(this.accessibilitySummary())
+      .accessibilitySelected(!this.compact && this.openInDetail)
       .onClick(() => {
         if (this.pressConsumedByMenu || this.contextMenuShown) {
           this.pressConsumedByMenu = false;

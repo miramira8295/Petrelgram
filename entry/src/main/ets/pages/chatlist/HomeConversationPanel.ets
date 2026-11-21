@@ -4,7 +4,7 @@ import {
   KEY_SURFACE_GLASS_ON, SURFACE_GLASS_ON_DEFAULT, SURFACE_GLASS_EPOCH, surfaceGlassFill
 } from '../../util/surfaceGlass';
 
-// One stationary surface for folders and the lazy list; the title stays outside.
+// The header and the lazy list share a stationary surface.
 // Settings repaint only this shell. Scrolling never changes its fill or geometry.
 @Component
 export struct HomeConversationPanel {

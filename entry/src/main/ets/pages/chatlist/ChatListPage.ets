@@ -17,6 +17,8 @@ import { flushPendingNavs } from '../../util/pendingNavFlush';
 import { getSessionSecurityStore, getFolderStore, getUnreadCountStore, getChatStore, getConnectionState, getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { FolderInfo } from '../../store/FolderStore';
+import { folderSymbol } from '../../util/FolderVisuals';
+import { GLASS_OUTLINE_COLOR } from '../../util/bubbleTail';
 import { ChatListView } from './ChatListView';
 import { MainTabBody } from './MainTabBody';
 import { FORUM_LEFT_RAIL_WIDTH, ForumSplitView, ForumTopHeaderBar } from './ForumSplitView';
@@ -41,12 +43,14 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayMaterial } from '../../util/overlayMaterial';
 import { TopGlassAction } from './TopGlassAction';
-import { navigateToChat } from '../../util/chatNav';
+import { CHAT_DEST_NAME, navigateToChat } from '../../util/chatNav';
+import { DIRECT_MESSAGES_TOPICS_DEST_NAME, FORUM_TOPICS_DEST_NAME } from '../../util/profileNav';
 import { logE } from '../../util/log';
 import { nextTabPreloadIndex, pruneBuiltKeys } from '../../util/tabPreload';
 import { FolderBadge, badgeLabel, folderBadge, setFolderBadge } from '../../util/folderBadges';
 import { registerStack, NavStackLike } from '../../util/navStacks';
-import { splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth } from '../../util/splitMetrics';
+import { splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth, showSplitFolderRail,
+  FOLDER_RAIL_WIDTH, FOLDER_RAIL_GAP, FOLDER_RAIL_NAV_MIN, FOLDER_RAIL_INSET_KEY } from '../../util/splitMetrics';
 import { mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
@@ -62,6 +66,7 @@ import { rememberSplitNavWidth, resolveSplitNavWidth } from '../../util/splitNav
 
 interface TabSpec {
   key: string;
+  iconName: string;
   // 文件夹名来自服务器（不翻译），只有「全部」是本地文案。它用 ResourceStr：
   // $r() 由框架在渲染时解析，切语言立刻生效；原来存 str() 出来的普通字符串，
   // 要重启才更新。
@@ -204,6 +209,7 @@ export struct ChatListPage {
   }
 
   private chatStack: NavPathStack = new NavPathStack();
+  @State private openChatId: number = 0;
   // 右栏空态。ComponentContent 是节点实体，建一次留着——每次 build 都 new 一个
   // 等于每帧重建一棵子树。
   private splitPlaceholder: SplitPlaceholderHolder = new SplitPlaceholderHolder();
@@ -276,6 +282,7 @@ export struct ChatListPage {
   private tabsWidth: number = 0; // Tabs (content) width, for swipe-progress ratio
   private tabViewW: number = 0;  // tab strip viewport width, for keep-visible scrolling
   private tabScroller: Scroller = new Scroller();
+  private folderRailScroller: ListScroller = new ListScroller();
   private controller: TabsController = new TabsController();
   private unsubFolders: (() => void) | null = null;
   private unsubUnread: (() => void) | null = null;
@@ -354,6 +361,7 @@ export struct ChatListPage {
   // Place the pill at a (possibly fractional) tab position: 1.4 = 40% of the
   // way between tab 1 and tab 2, interpolating both position and width.
   private moveIndicatorTo(pos: number): void {
+    if (this.folderRailShown()) { return; }
     const n = this.tabs().length;
     if (n === 0 || this.tabWs.length === 0) {
       return;
@@ -393,12 +401,17 @@ export struct ChatListPage {
 
   // 切换了分组：滚到新选中的那个，忘掉用户之前滑到的位置。
   private revealTab(index: number): void {
+    if (this.folderRailShown()) {
+      this.folderRailScroller.scrollToIndex(index, false, ScrollAlign.AUTO);
+      return;
+    }
     this.stripUserMoved = false;
     this.ensureTabVisible(index);
   }
 
   // 布局变了（不是换分组）：用户滑过就原地恢复，没滑过照旧让选中的可见。
   private keepOrRevealStrip(): void {
+    if (this.folderRailShown()) { return; }
     if (!this.stripUserMoved) {
       this.ensureTabVisible(this.selectedIndex);
       return;
@@ -524,6 +537,20 @@ export struct ChatListPage {
     // 深链、通知点击、账号切换都在页面之外触发跳转，拿不到组件上下文，
     // 只能靠全局注册表取栈。见 util/navStacks.ets 的说明。
     registerStack('chat', this.chatStack as NavStackLike);
+    this.chatStack.setInterception({
+      didShow: (_from: NavDestinationContext | NavBar, to: NavDestinationContext | NavBar): void => {
+        let chatId: number = 0;
+        if (typeof to !== 'string') {
+          const path = to.pathInfo;
+          if (path.name === CHAT_DEST_NAME || path.name === FORUM_TOPICS_DEST_NAME ||
+            path.name === DIRECT_MESSAGES_TOPICS_DEST_NAME) {
+            const params = path.param as Record<string, Object> | undefined;
+            chatId = (params?.['chatId'] as number | undefined) ?? 0;
+          }
+        }
+        this.openChatId = chatId;
+      }
+    });
     // 栈没注册时被挂起的跳转（冷启动点通知、登录前的深链）在这里放出去。
     // **延一拍**：官方明确"不建议在 aboutToAppear 中操作栈，此时页面还未构建
     // 完成"，而这里正是 aboutToAppear。见 util/pendingNav 的事故说明。
@@ -856,6 +883,7 @@ export struct ChatListPage {
   private qrScanner: TelegramQrScanner = new TelegramQrScanner();
 
   aboutToDisappear(): void {
+    this.chatStack.setInterception({});
     this.hapticGestureStart = -1;
     AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, false);
     this.unsubSessionSecurity?.();
@@ -885,11 +913,11 @@ export struct ChatListPage {
     const specs: TabSpec[] = [];
     for (const f of this.folders) {
       // 服务器给的文件夹名本就不翻译，两个字段同值。
-      specs.push({ key: `folder:${f.id}`, title: f.title, plainTitle: f.title });
+      specs.push({ key: `folder:${f.id}`, title: f.title, plainTitle: f.title, iconName: f.iconName });
     }
     const position = Math.max(0, Math.min(specs.length, this.mainListPosition));
     specs.splice(position, 0, {
-      key: 'main', title: $r('app.string.cl_all'), plainTitle: str('cl_all')
+      key: 'main', title: $r('app.string.cl_all'), plainTitle: str('cl_all'), iconName: 'All'
     });
     return specs;
   }
@@ -1105,7 +1133,8 @@ export struct ChatListPage {
   // 算法搬到 util/splitMetrics.ets，理由见那里的文件头。这三个方法只剩把
   // 当前窗口宽度喂进去。
   private navBarMinWidth(): number {
-    return splitNavMinWidth(this.screenW);
+    const min = splitNavMinWidth(this.screenW);
+    return this.folderRailShown() ? Math.max(min, FOLDER_RAIL_NAV_MIN) : min;
   }
 
   private navBarMaxWidth(): number {
@@ -1178,23 +1207,65 @@ export struct ChatListPage {
     // 未读部分的读屏文案跟着角标子组件走（FolderChipBadge）：计数在旁路模型
     // 里，chip 这层的绑定读不到它的变化。
     .accessibilityText(spec.plainTitle)
-    .onClick(() => {
-      this.hapticGestureStart = -1;
-      if (index !== this.selectedIndex) { navigationHaptics.play('folder'); }
-      if (AppStorage.get<boolean>(KEY_ACTIVE_FORUM_OPEN) === true) {
-        closeForumDrawer();
-      }
-      this.controller.changeIndex(index);
-    });
+    .onClick((): void => { this.selectFolder(index); });
+  }
+
+  private selectFolder(index: number): void {
+    this.hapticGestureStart = -1;
+    if (index !== this.selectedIndex) { navigationHaptics.play('folder'); }
+    if (AppStorage.get<boolean>(KEY_ACTIVE_FORUM_OPEN) === true) { closeForumDrawer(); }
+    this.controller.changeIndex(index);
+  }
+
+  private folderRailShown(): boolean {
+    return showSplitFolderRail(this.screenW, this.isSplitLayout(), this.folders.length);
   }
 
   @Builder
-  titleBarBottom() {
+  verticalFolderRail() {
+    List({ scroller: this.folderRailScroller, initialIndex: this.selectedIndex, space: 4 }) {
+      ForEach(this.tabs(), (spec: TabSpec, index: number) => {
+        ListItem() {
+          Column({ space: 2 }) {
+            Stack({ alignContent: Alignment.TopEnd }) {
+              Row() {
+                SymbolGlyph(folderSymbol(spec.iconName)).fontSize(22)
+                  .fontColor([this.selectedIndex === index ? COLOR_TAB_SELECTED : COLOR_ICON_SECONDARY]);
+              }.width('100%').height(30).justifyContent(FlexAlign.Center);
+              FolderChipBadge({ badge: folderBadge(spec.key), selected: this.selectedIndex === index,
+                plainTitle: spec.plainTitle });
+            }.width('100%').height(30);
+            Text(spec.title).fontSize(11).maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+              .textAlign(TextAlign.Center).fontColor(this.selectedIndex === index ? COLOR_TAB_SELECTED : COLOR_TAB_UNSELECTED);
+          }
+          .width('100%').height(66).justifyContent(FlexAlign.Center)
+          .backgroundColor(this.selectedIndex === index ? COLOR_TAB_PILL_BG : Color.Transparent)
+          .borderRadius(12)
+          .id(`homeFolderRailItem-${spec.key}`)
+          .accessibilityText(spec.plainTitle)
+          .accessibilitySelected(this.selectedIndex === index)
+          .onClick((): void => { this.selectFolder(index); });
+        }
+      }, (spec: TabSpec): string => JSON.stringify([spec.key, spec.iconName, spec.plainTitle]));
+    }
+    .id('homeFolderRail').width(FOLDER_RAIL_WIDTH).height('100%')
+    .padding({ top: 6, bottom: 6, left: 4, right: 4 }).scrollBar(BarState.Off)
+    .backgroundColor(this.homeChromeFill(this.surfaceGlassEpoch, this.appDark))
+    .borderRadius(16).border({ width: this.surfaceGlass ? 0.5 : 0, color: GLASS_OUTLINE_COLOR }).clip(true)
+    .onAppear((): void => { AppStorage.setOrCreate<number>(FOLDER_RAIL_INSET_KEY, FOLDER_RAIL_WIDTH + FOLDER_RAIL_GAP); })
+    .onDisAppear((): void => { AppStorage.setOrCreate<number>(FOLDER_RAIL_INSET_KEY, 0); });
+  }
+
+  @Builder
+  conversationPanelHeader() {
     Column() {
+      if (this.isSplitLayout()) {
+        this.titleBarActions();
+      }
       if (this.newSessionCount > 0) {
         NewSessionBanner({ count: this.newSessionCount });
       }
-      if (this.folders.length > 0) {
+      if (this.folders.length > 0 && !this.folderRailShown()) {
         this.tabBar();
       }
     }
@@ -1279,13 +1350,21 @@ export struct ChatListPage {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
   }
 
-  // ⋮ 菜单锚点距 Stack 右缘的距离：单栏下 navBar 就是整个窗口，得 8；分栏下
-  // 要跨过右栏，落在 navBar 右缘往里 8。navBar 宽度还没量到（0）时按单栏处理。
+  private isSplitLayout(): boolean {
+    return isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait);
+  }
+
+  // 分栏时按钮位于卡片内，菜单锚点也要算上卡片的右边距。
   private moreMenuRightInset(): number {
     if (this.navBarW <= 0 || this.navBarW >= this.screenW) {
       return 8;
     }
-    return this.screenW - this.navBarW + 8;
+    return this.screenW - this.navBarW + 8 + (this.isSplitLayout() ? homeCardMarginVp(this.widthBp) : 0);
+  }
+
+  private splitOpenChatId(): number {
+    return isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait)
+      ? this.openChatId : 0;
   }
 
   @Builder
@@ -1301,6 +1380,7 @@ export struct ChatListPage {
             Column() {
               if (spec.key === 'main') {
                 MainTabBody({
+                  openChatId: this.splitOpenChatId(),
                   contentTopInset: 0,
                   continuousPanel: true,
                   listScroller: this.scrollerFor(spec.key),
@@ -1310,6 +1390,7 @@ export struct ChatListPage {
                 }).layoutWeight(1);
               } else {
                 ChatListView({
+                  openChatId: this.splitOpenChatId(),
                   listKey: spec.key,
                   contentTopInset: 0,
                   continuousPanel: true,
@@ -1351,7 +1432,7 @@ export struct ChatListPage {
           this.companionImageTabIndex !== companionIndex) {
           this.companionImageTabIndex = companionIndex;
         }
-        if (this.tabsWidth > 0) {
+        if (this.tabsWidth > 0 && !this.folderRailShown()) {
           // 拖动期间关掉胶囊的隐式动画：每帧一个新目标再配 250ms 缓动，胶囊会
           // 一直追着手指屁股后面跑，而不是贴着手指走。
           this.setPillAnimate(false);
@@ -1440,13 +1521,20 @@ export struct ChatListPage {
     Stack({ alignContent: Alignment.TopEnd }) {
       HdsNavigation(this.chatStack) {
         Column() {
-          this.titleBarActions();
-          HomeConversationPanel({
-            header: (): void => { this.titleBarBottom(); },
-            content: (): void => { this.conversationTabs(); }
-          })
-          .width(`calc(100% - ${homeCardMarginVp(this.widthBp) * 2}vp)`)
-          .layoutWeight(1);
+          if (!this.isSplitLayout()) {
+            this.titleBarActions();
+          }
+          Row({ space: FOLDER_RAIL_GAP }) {
+            if (this.folderRailShown()) {
+              this.verticalFolderRail();
+            }
+            HomeConversationPanel({
+              header: (): void => { this.conversationPanelHeader(); },
+              content: (): void => { this.conversationTabs(); }
+            }).layoutWeight(1);
+          }
+          .padding({ left: homeCardMarginVp(this.widthBp), right: homeCardMarginVp(this.widthBp) })
+          .width('100%').layoutWeight(1);
         }
         .width('100%').height('100%')
         .padding({
@@ -1468,7 +1556,7 @@ export struct ChatListPage {
       // 一级页签，没有返回键。
       .hideBackButton(true)
       // Explicit breakpoints keep landscape phones in one column.
-      .mode(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) ? NavigationMode.Split : NavigationMode.Stack)
+      .mode(this.isSplitLayout() ? NavigationMode.Split : NavigationMode.Stack)
       // 分栏下查看器开着：Split + hideNavBar(true) 的实际效果是单栏，右栏会话页铺满窗口（#201）。
       .hideNavBar(this.viewerHidesNavBar())
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
@@ -1487,7 +1575,6 @@ export struct ChatListPage {
       // 而它自己就有 showForwardSheet / showReactionSheet 两个全模态——联动打开
       // 的话，一开转发面板音视频就停了，这是迁移前没有的行为。
       .attributeModifier(SHEET_LIFECYCLE_MODIFIER)
-      // The title stays outside; folders and the clipped list share one panel.
       .hideTitleBar(true, false)
       // The header stays fixed; no HDS scroll filter or title collapse.
       .bindToScrollable([])

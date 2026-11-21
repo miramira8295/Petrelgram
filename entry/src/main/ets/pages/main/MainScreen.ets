@@ -18,7 +18,7 @@ import { KEY_APP_DARK } from '../../util/theme';
 import { navigateToSetting } from '../../util/settingsNav';
 import { KEY_CHAT_VIEWER_COVERS_WINDOW } from '../../util/viewerWindowCover';
 import { appWallpaperActive, KEY_SPLIT_UNIFIED_BG } from '../../util/localWallpaper';
-import { DOCK_MODE_LEFT_FLOATING } from '../../util/splitMetrics';
+import { DOCK_MODE_LEFT_FLOATING, FOLDER_RAIL_INSET_KEY } from '../../util/splitMetrics';
 
 import { router } from '@kit.ArkUI';
 import { getTdClient, getUnreadCountStore, getCallSession, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
@@ -131,6 +131,7 @@ export struct MainScreen {
   // 聊天页签分栏时左栏的实际宽度（vp，0 = 还没量到）。由 ChatListPage 在自己的
   // 布局回调里写入——HdsNavigation 不回调宽度，拖分割线又会改它，只能这么拿。
   @StorageProp(NAV_BAR_WIDTH_KEY) private navBarWidth: number = 0;
+  @StorageProp(FOLDER_RAIL_INSET_KEY) private folderRailInset: number = 0;
   // 聊天页签的 navBar 此刻可不可见。false 只可能出现在「单栏 **且** 聊天栈非空」
   // ——也就是手机上打开了会话/资料/话题列表/归档的时候。见 CHAT_NAV_BAR_VISIBLE_KEY。
   @StorageProp(CHAT_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private chatNavBarVisible: boolean = false;
@@ -675,7 +676,7 @@ export struct MainScreen {
 
   private dockWidth(): Length {
     if (this.tab === 0) {
-      return this.navBarWidth > 0 ? this.navBarWidth : '100%';
+      return this.navBarWidth > 0 ? this.navBarWidth - this.folderRailInset : '100%';
     }
     if (this.tab === 1) {
       return this.contactsNavBarWidth > 0 ? this.contactsNavBarWidth : '100%';
@@ -1189,6 +1190,7 @@ export struct MainScreen {
           }
         })
         .width(this.dockWidth())
+        .offset({ x: this.tab === 0 ? this.folderRailInset : 0 })
         .height(DOCK_H + this.dockBottomGap() + 8)
         // 保留 HDS 页签与音乐胶囊状态；全屏媒体期间整条隐藏并禁用交互。
         .visibility(this.dockVisible() ? Visibility.Visible : Visibility.Hidden)

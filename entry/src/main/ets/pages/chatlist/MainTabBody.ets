@@ -76,6 +76,15 @@ const FLUSH_BYPASS_DEFER_MS: number = 32;
 export struct MainTabBody {
   // Homepage shares one surface; standalone archive retains individual cards.
   @Prop continuousPanel: boolean = false;
+  @Prop @Watch('onOpenChatChanged') openChatId: number = 0;
+  @State private fixedChannel: ChatListRowState | undefined = undefined;
+  private fixedScroller: ListScroller = new ListScroller();
+
+  private onOpenChatChanged(): void {
+    this.chatsData.setOpenChat(this.openChatId);
+    this.fixedChannel = this.chatsData.fixedChannel;
+    this.chatCount = this.chatsData.totalCount();
+  }
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
   // 归档入口要和会话卡片长一样，就得订阅同样这两个：壁纸开关决定给不给玻璃，
   // 材质纪元让用户改厚度/光感后这一行跟着重绘（同 ChatRow）。
@@ -236,7 +245,7 @@ export struct MainTabBody {
     if ((AppStorage.get<number>(TAB_RETAP_INDEX) ?? 0) !== 0) {
       return;
     }
-    const unread: boolean[] = this.chats.map((chat: ChatEntry): boolean =>
+    const unread: boolean[] = this.chats.filter((item: ChatEntry): boolean => item.id !== this.fixedChannel?.id).map((chat: ChatEntry): boolean =>
       isPriorityUnread(chat.unreadCount, chat.isMarkedUnread, this.rowMuted(chat)));
     const action: string = reTapAction(this.topVisible,
       unread.some((value: boolean): boolean => value));
@@ -382,6 +391,7 @@ export struct MainTabBody {
   }
 
   aboutToAppear(): void {
+    this.onOpenChatChanged();
     const store = getChatStore();
     this.listSubscription = store.subscribeList((list: ChatEntry[]) => {
       // “所有”可被服务器配置到非首位，并作为隐藏页首次预载。先允许它发布
@@ -453,8 +463,9 @@ export struct MainTabBody {
 
   private publishChats(next: ChatEntry[]): void {
     this.chats = next;
-    if (this.chatCount !== next.length) { this.chatCount = next.length; }
     this.chatsData.update(next, this.keysFor(next), this.flagsFor(next));
+    this.fixedChannel = this.chatsData.fixedChannel;
+    this.chatCount = this.chatsData.totalCount();
     this.scheduleArchiveInitialPosition();
   }
 
@@ -516,6 +527,7 @@ export struct MainTabBody {
     setTimeout((): void => {
       action();
       this.listScroller.closeAllSwipeActions();
+      if (this.fixedChannel !== undefined) { this.fixedScroller.closeAllSwipeActions(); }
     }, CHAT_SWIPE_COMMIT_DELAY_MS);
   }
 
@@ -576,6 +588,7 @@ export struct MainTabBody {
     .backgroundColor(visual.background)
     .onClick((): void => {
       this.listScroller.closeAllSwipeActions();
+      if (this.fixedChannel !== undefined) { this.fixedScroller.closeAllSwipeActions(); }
       action();
     });
   }
@@ -623,8 +636,10 @@ export struct MainTabBody {
       if (epoch !== this.archivePositionEpoch) { return; }
       this.archivePositionScheduled = false;
       if (this.archivePositionInitialized && !this.archiveInitialRestorePending) { return; }
-      this.archiveInitialRestorePending = this.chatCount === 0 && this.archiveInitialChatIndex > 0;
-      if (this.chatCount > 0 && this.archiveInitialChatIndex > 0) {
+      // An empty LazyForEach can clamp the initial scroll back to the archive.
+      // Restore even logical index zero when the first chat actually arrives.
+      this.archiveInitialRestorePending = this.chatCount === 0;
+      if (this.chatCount > 0) {
         const index = Math.min(this.archiveInitialChatIndex, this.chatCount - 1);
         this.listScroller.scrollToIndex(index + 1, false, ScrollAlign.START);
       } else {
@@ -823,6 +838,38 @@ export struct MainTabBody {
   }
 
   @Builder
+  chatItem(item: ChatListRowState) {
+    ListItem() {
+      ChatRow({
+        openInDetail: this.openChatId !== 0 && this.openChatId === item.snapshot.chat.id,
+        compact: !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
+        continuousPanel: this.continuousPanel,
+        row: item,
+        listKey: 'main',
+        liveEffects: this.liveEffects(),
+        loadImages: this.imagesActive
+      });
+    }
+      .swipeAction(this.rowSwipeEnabled ? {
+        start: {
+          builder: (): void => { this.readSwipe(item); },
+          actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
+          onAction: (): void => {
+            this.commitSwipeAction((): void => this.toggleRead(item.snapshot.chat));
+          }
+        },
+        end: {
+          builder: (): void => { this.endSwipe(item); },
+          actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
+          onAction: (): void => {
+            this.commitSwipeAction((): void => this.toggleArchive(item.snapshot.chat));
+          }
+        },
+        edgeEffect: CHAT_SWIPE_EDGE_EFFECT
+      } as SwipeActionOptions : {} as SwipeActionOptions);
+  }
+
+  @Builder
   chatList() {
     // initialIndex：「所有」页签也可能被 Tabs.cachedMaxCount 释放（用户滑到
     // 3 个文件夹以外时），重建时回到原来的行。见 util/chatListPosition。
@@ -831,39 +878,14 @@ export struct MainTabBody {
         if (this.archiveRowShown()) { this.archiveHeader(); }
       }
       .height(this.archiveExtent())
-      .visibility(this.archivePositionInitialized ? Visibility.Visible : Visibility.Hidden)
+      .visibility(this.archivePositionInitialized && (!this.archiveInitialRestorePending || this.archivePulling)
+        ? Visibility.Visible : Visibility.Hidden)
       .accessibilityLevel(this.archiveRowShown() && this.archiveRevealed ? 'auto' : 'no-hide-descendants');
       // LazyForEach, not ForEach: ForEach builds every row up front, which for
       // a real account meant hundreds of live ChatRow components for the eight
       // that are visible.
       LazyForEach(this.chatsData, (item: ChatListRowState) => {
-        ListItem() {
-          ChatRow({
-          compact: !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
-            continuousPanel: this.continuousPanel,
-            row: item,
-            listKey: 'main',
-            liveEffects: this.liveEffects(),
-            loadImages: this.imagesActive
-          });
-        }
-          .swipeAction(this.rowSwipeEnabled ? {
-            start: {
-              builder: (): void => { this.readSwipe(item); },
-              actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
-              onAction: (): void => {
-                this.commitSwipeAction((): void => this.toggleRead(item.snapshot.chat));
-              }
-            },
-            end: {
-              builder: (): void => { this.endSwipe(item); },
-              actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
-              onAction: (): void => {
-                this.commitSwipeAction((): void => this.toggleArchive(item.snapshot.chat));
-              }
-            },
-            edgeEffect: CHAT_SWIPE_EDGE_EFFECT
-          } as SwipeActionOptions : {} as SwipeActionOptions)
+        this.chatItem(item);
       }, (_item: ChatListRowState, index: number) =>
         guardKey(this.chatsData.keyTableId, index, this.chatsData.getKey(index)));
     }
@@ -977,6 +999,15 @@ export struct MainTabBody {
 
   build() {
     Column() {
+      if (this.fixedChannel !== undefined) {
+        List({ scroller: this.fixedScroller }) {
+          ForEach([this.fixedChannel], (row: ChatListRowState) => {
+            this.chatItem(row);
+          }, (row: ChatListRowState): string => row.id.toString());
+        }
+        .width('100%').edgeEffect(EdgeEffect.None).scrollBar(BarState.Off)
+        .onTouch((event: TouchEvent): void => { updateTouchHold(event.type); });
+      }
       // Fixed viewport: archive and chats move together inside the same list.
       Stack() {
         this.chatList();

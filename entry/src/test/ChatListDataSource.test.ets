@@ -227,6 +227,29 @@ export default function chatListDataSourceTest() {
   });
 
   describe('ChatListDataSource', () => {
+    it('分栏固定频道跟随选择和文件夹成员变化，取消后恢复最新顺序', 0, () => {
+      const ds = new ChatListDataSource();
+      const items = chats([1, 2, 3]);
+      items[1].kind = 'channel';
+      items[2].kind = 'channel';
+      ds.setOpenChat(2);
+      ds.update(items, keysOf([1, 2, 3]));
+      expect(ds.fixedChannel?.id).assertEqual(2);
+      expect(ds.totalCount()).assertEqual(2);
+      expect(ds.getData(1).id).assertEqual(3);
+      ds.setOpenChat(3);
+      expect(ds.fixedChannel?.id).assertEqual(3);
+      expect(ds.getData(1).id).assertEqual(2);
+      ds.update([items[1], items[0]], keysOf([2, 1]));
+      expect(ds.fixedChannel === undefined).assertTrue();
+      ds.update([items[2], items[1], items[0]], keysOf([3, 2, 1]));
+      ds.reload(keysOf([3, 2, 1]));
+      expect(ds.getData(0).id).assertEqual(2);
+      ds.setOpenChat(1);
+      expect(ds.fixedChannel === undefined).assertTrue();
+      expect(ds.totalCount()).assertEqual(3);
+      expect(ds.getData(0).id).assertEqual(3);
+    });
     it('内容刷新保留行对象和身份键，只替换变化行快照', 0, () => {
       const ds = seeded([1, 2]); const first = ds.getData(0); const second = ds.getData(1);
       const snapshot = first.snapshot; const oldSecond = second.snapshot; const identity = ds.getKey(1);

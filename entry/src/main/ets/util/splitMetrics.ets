@@ -59,6 +59,16 @@ const SPLIT_DRAG_SPAN_VP: number = 40;
 // 「minContentWidth 打架」都好。
 const SPLIT_NAV_HARD_MIN_VP: number = 200;
 
+export const FOLDER_RAIL_WIDTH: number = 72;
+export const FOLDER_RAIL_GAP: number = 8;
+export const FOLDER_RAIL_INSET_KEY: string = 'chatFolderRailInset';
+
+// Reserve 300vp for the conversation card and 14vp for each outer margin.
+export const FOLDER_RAIL_NAV_MIN: number = 300 + 28 + FOLDER_RAIL_WIDTH + FOLDER_RAIL_GAP;
+export function showSplitFolderRail(windowWidthVp: number, split: boolean, folderCount: number): boolean {
+  return split && windowWidthVp >= 1120 && folderCount > 0;
+}
+
 // 右栏（内容区）最小宽度。
 //
 // 老版本这里是写死的 400：在 600–667vp 区间它和左栏的 40% 上限加起来超过窗口
