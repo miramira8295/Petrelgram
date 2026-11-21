@@ -28,6 +28,8 @@ import { NativeGlassHost } from './NativeGlassHost';
 
 @ComponentV2
 export struct SystemGlassSurface {
+  // 顶部边缘模糊关闭时仅保留内容，整个标题栏底板透明。
+  @Param showBackdrop: boolean = true;
   // 圆角：照抄调用方原来的 borderRadius（材质层要圆角才不会露出方角）。
   @Param effectsEnabled: boolean = true;
   @Param plainOutline: boolean = false;
@@ -63,7 +65,7 @@ export struct SystemGlassSurface {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      if (this.effectsEnabled && this.glassOn()) {
+      if (this.showBackdrop && this.effectsEnabled && this.glassOn()) {
         NativeGlassHost({
           effectsEnabled: this.effectsEnabled,
           hostWidth: this.w(),
@@ -78,9 +80,9 @@ export struct SystemGlassSurface {
     // fill：铺满父容器；否则按 fixed* / 自量尺寸（'auto' 与不写等价）。
     .width(this.fill ? '100%' : (this.fixedWidth > 0 ? this.fixedWidth : 'auto'))
     .height(this.fill ? '100%' : (this.fixedHeight > 0 ? this.fixedHeight : 'auto'))
-    .backgroundColor(this.effectsEnabled ? Color.Transparent : $r('app.color.chat_overlay'))
+    .backgroundColor(this.showBackdrop && !this.effectsEnabled ? $r('app.color.chat_overlay') : Color.Transparent)
     .borderRadius(this.radius)
-    .border({ width: !this.effectsEnabled && this.plainOutline ? 0.5 : 0, color: $r('app.color.divider') })
+    .border({ width: this.showBackdrop && !this.effectsEnabled && this.plainOutline ? 0.5 : 0, color: $r('app.color.divider') })
     .onAreaChange((_old: Area, area: Area): void => {
       // Plain surfaces paint directly on this container: no second measurement publication or material child.
       if (!this.effectsEnabled) { return; }

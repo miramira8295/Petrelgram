@@ -64,7 +64,7 @@ console.log('PASS: real disabled glass host retains fill and delegated clicks wi
 
 run(`class SharedGlass {${['initialRender','w','h','glassOn'].map(n=>method('SystemGlassSurface',n)).join('\n')}} globalThis.SharedGlass=SharedGlass;`);
 const plain=init(new ctx.SharedGlass());
-Object.assign(plain,{effectsEnabled:false,plainOutline:true,radius:18,fixedWidth:0,fixedHeight:0,mw:0,mh:0,fill:false,content:()=>{}});
+Object.assign(plain,{showBackdrop:true,effectsEnabled:false,plainOutline:true,radius:18,fixedWidth:0,fixedHeight:0,mw:0,mh:0,fill:false,content:()=>{}});
 calls.length=0;glassHosts.length=0;plain.initialRender();
 assert.equal(glassHosts.length,0,'plain surface must not create a second material/measurement subtree');
 assert.ok(calls.some(c=>c[1]==='border'&&c[2].width===0.5));
@@ -73,6 +73,12 @@ for(let i=0;i<1000;i++)area({}, {width:300+i,height:48});
 assert.equal(plain.mw,0);assert.equal(plain.mh,0,'disabled material geometry never publishes local size');
 assert.ok(calls.some(c=>c[1]==='backgroundColor'&&c[2]?.type===10001));
 console.log('PASS: plain shared surface paints in its existing container with outline, no material child and no size-state writes.');
+
+Object.assign(plain,{showBackdrop:false,effectsEnabled:true,fixedWidth:360,fixedHeight:60});
+calls.length=0;glassHosts.length=0;plain.initialRender();
+assert.equal(glassHosts.length,0,'turning off top blur removes the full-width title backdrop');
+assert.ok(calls.some(c=>c[1]==='backgroundColor'&&c[2]===ctx.Color.Transparent));
+assert.ok(calls.some(c=>c[1]==='border'&&c[2].width===0));
 
 // Hidden pinned banner used to produce height -2 and leave a full-parent
 // translucent surface alive. Replay real bindings, not just the height helper.

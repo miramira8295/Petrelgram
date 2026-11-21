@@ -73,7 +73,8 @@ export function avatarFramePlan(buffer: ArrayBuffer, pixels: number): AvatarFram
     const duration = v.getUint32(mdhd.start + 24);
     if (scale === 0 || duration === 0 || duration * 1000 / scale > 1500) { return null; }
     const stbl = child(v, child(v, mdia, 'minf'), 'stbl');
-    if (boxes(v, stbl.start + 8, stbl.end).some((b: Box): boolean => b.type === 'ctts')) { return null; }
+    const tables = boxes(v, stbl.start + 8, stbl.end);
+    if (tables.some((b: Box): boolean => b.type === 'ctts')) { return null; }
     const stsd = child(v, stbl, 'stsd');
     need(stsd, 16);
     if (v.getUint32(stsd.start + 12) !== 1) { return null; }
@@ -106,6 +107,19 @@ export function avatarFramePlan(buffer: ArrayBuffer, pixels: number): AvatarFram
     const stsz = child(v, stbl, 'stsz');
     need(stsz, 20);
     if (times.length < 2 || v.getUint32(stsz.start + 16) !== times.length || ticks !== duration) { return null; }
+    // Thumbnail extraction seeks independently at each timestamp. Keep this path
+    // for independently decodable samples; AVPlayer decodes dependent frames in order.
+    // In MP4, absence of stss means every sample is a sync sample.
+    const syncTables = tables.filter((b: Box): boolean => b.type === 'stss');
+    if (syncTables.length > 0) {
+      const sync = syncTables[0];
+      need(sync, 16);
+      if (syncTables.length !== 1 || v.getUint32(sync.start + 12) !== times.length) { return null; }
+      need(sync, 16 + 4 * times.length);
+      for (let i = 0; i < times.length; i++) {
+        if (v.getUint32(sync.start + 16 + 4 * i) !== i + 1) { return null; }
+      }
+    }
     const bytes = size * size * 4 * times.length;
     return bytes <= AVATAR_FRAME_MAX_BYTES ? { size: size, timesUs: times, durationsMs: durations, bytes: bytes } : null;
   } catch (_) { return null; }

@@ -7,7 +7,8 @@ function box(type: string, payload: number[]): number[] {
   return u32(payload.length + 8).concat(Array.from(type).map((c: string): number => c.charCodeAt(0)), payload);
 }
 function zeros(n: number): number[] { return new Array<number>(n).fill(0); }
-function fixture(deltas: number[] = [30, 30, 30, 30, 30, 30], extra: string = '', width: number = 800): ArrayBuffer {
+function fixture(deltas: number[] = [30, 30, 30, 30, 30, 30], extra: string = '', width: number = 800,
+  syncSamples?: number[]): ArrayBuffer {
   const tkhd = zeros(84);
   [65536, 0, 0, 0, 65536, 0, 0, 0, 1073741824].forEach((n: number, i: number): void => {
     tkhd.splice(40 + i * 4, 4, ...u32(n));
@@ -19,6 +20,11 @@ function fixture(deltas: number[] = [30, 30, 30, 30, 30, 30], extra: string = ''
   deltas.forEach((d: number): void => { timing = timing.concat(u32(1), u32(d)); });
   const tables = stsd.concat(box('stts', timing), box('stsz', zeros(8).concat(u32(deltas.length))),
     extra === 'ctts' ? box('ctts', zeros(8)) : []);
+  if (syncSamples !== undefined) {
+    let sync = zeros(4).concat(u32(syncSamples.length));
+    for (const sample of syncSamples) { sync = sync.concat(u32(sample)); }
+    tables.push(...box('stss', sync));
+  }
   const media = box('mdia', box('mdhd', mdhd).concat(
     box('hdlr', zeros(8).concat([118, 105, 100, 101])), box('minf', box('stbl', tables))));
   const track = box('trak', box('tkhd', tkhd).concat(media, extra === 'edts' ? box('edts', []) : []));
@@ -32,6 +38,11 @@ async function turns(): Promise<void> { await Promise.resolve(); await Promise.r
 
 export default function avatarFramesTest() {
   describe('AvatarFramePlan', () => {
+    it('按帧间依赖选择原生播放或自绘缓存', 0, () => {
+      expect(avatarFramePlan(fixture(undefined, '', 800, [1]), 96) === null).assertTrue();
+      expect(avatarFramePlan(fixture(undefined, '', 800, [1, 2, 3, 4, 5, 6]), 96) !== null).assertTrue();
+      expect(avatarFramePlan(fixture(undefined, '', 800, [1, 2, 3, 4, 5, 5]), 96) === null).assertTrue();
+    });
     it('六帧头像保持180ms原始节奏和微秒提帧时间', 0, () => {
       const p = avatarFramePlan(fixture(), 133);
       expect(p !== null).assertTrue();

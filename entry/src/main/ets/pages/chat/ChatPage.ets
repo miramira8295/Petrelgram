@@ -108,6 +108,7 @@ import {
 import { IReusePool, LengthMetrics, UIUtils } from '@kit.ArkUI';
 import { ChatPageSurface } from './ChatPageSurface';
 import { SystemGlassSurface } from './SystemGlassSurface';
+import { edgeBlurPageTopOn, edgeBlurSwitch } from '../../util/edgeBlurSetting';
 import { ChatHeader } from './ChatHeader';
 import { HeaderIdentitySession, ResolvedChatKind } from './HeaderIdentitySession';
 import {
@@ -7041,7 +7042,10 @@ export struct ChatPage {
       // 移出 HdsNavDestination.titleBar() 后，无论置顶条/话题条/搜索条如何展开收起，
       // 都不再触发 HDS Navigation-Measure 销毁重建整条顶栏（单次省去 5~6ms 测量 + 2.6ms 节点重建）。
       Column() {
-        SystemGlassSurface({ radius: 0, surface: 'bar', dark: this.appDark }) {
+        SystemGlassSurface({
+          radius: 0, surface: 'bar', dark: this.appDark,
+          showBackdrop: edgeBlurPageTopOn(edgeBlurSwitch.master, edgeBlurSwitch.top, edgeBlurSwitch.chatTop)
+        }) {
           Column() {
             this.chatTitleBar();
           }.width('100%').padding({ top: this.topSafe });
