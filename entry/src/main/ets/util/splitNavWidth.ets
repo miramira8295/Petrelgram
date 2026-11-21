@@ -8,13 +8,10 @@ import { KEY_SPLIT_NAV_WIDTH, setNumber } from '../store/AppSettings';
 
 // 启动时该给 navBarWidth 的值。
 //
-// 没记过（saved ≤ 0）时给 min：HdsNavigation 内部默认 240vp，被 range 一夹落在
-// 离 240 最近的那一端，宽屏上就是 min——这正是此前的静息宽度，行为不变。
-// 记过则夹进当前区间：窗口尺寸变了（转屏、分屏）区间跟着变，上次的值可能
-// 越界，越界直接喂进去 HDS 会按默认值处理，等于白记。
+// 未设置时取窗口的 40%，已有宽度则限制在当前窗口的可拖范围内。
 export function resolveSplitNavWidth(savedVp: number, minVp: number, maxVp: number): number {
   if (!(savedVp > 0)) {
-    return minVp;
+    return maxVp;
   }
   return Math.max(minVp, Math.min(maxVp, savedVp));
 }
@@ -24,21 +21,25 @@ export function resolveSplitNavWidth(savedVp: number, minVp: number, maxVp: numb
 // 打架。停 400ms 没再变才算松手。
 const SETTLE_MS: number = 400;
 let settleTimer: number = -1;
-let lastSeen: number = 0;
 
 // 只在分栏下记：单栏时 navBar 铺满整个窗口，那个宽度不是用户选的。
-export function rememberSplitNavWidth(widthVp: number, splitLayout: boolean): void {
+export function rememberSplitNavWidth(widthVp: number, splitLayout: boolean, minVp: number, maxVp: number): void {
   if (!splitLayout || !(widthVp > 0)) {
     return;
   }
-  lastSeen = Math.round(widthVp);
   if (settleTimer !== -1) {
     clearTimeout(settleTimer);
+    settleTimer = -1;
   }
+  const measured = Math.round(widthVp);
+  const saved = AppStorage.get<number>(KEY_SPLIT_NAV_WIDTH) ?? 0;
+  // 自适应布局也会触发测量，只有偏离指定宽度才是新的拖动位置。
+  if (measured < minVp || measured > maxVp ||
+    Math.abs(widthVp - resolveSplitNavWidth(saved, minVp, maxVp)) < 1) { return; }
   settleTimer = setTimeout((): void => {
     settleTimer = -1;
-    if (AppStorage.get<number>(KEY_SPLIT_NAV_WIDTH) !== lastSeen) {
-      setNumber(KEY_SPLIT_NAV_WIDTH, lastSeen);
+    if (AppStorage.get<number>(KEY_SPLIT_NAV_WIDTH) !== measured) {
+      setNumber(KEY_SPLIT_NAV_WIDTH, measured);
     }
   }, SETTLE_MS);
 }

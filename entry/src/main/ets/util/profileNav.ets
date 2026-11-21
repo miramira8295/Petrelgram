@@ -160,3 +160,6 @@ export function navigateToDirectMessagesTopics(
 export function navigateToArchive(): void {
   pushInto(ARCHIVE_DEST_NAME, ARCHIVE_PAGE_URL, undefined, 'navbar', 'chat');
 }
+
+// Transient navigation state for the archive inside the split chat-list pane.
+export const KEY_ARCHIVE_PANE_OPEN: string = 'chatArchivePaneOpen';

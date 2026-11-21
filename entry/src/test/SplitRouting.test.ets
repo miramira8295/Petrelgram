@@ -234,6 +234,7 @@ export default function splitRoutingTest(): void {
     // content，叠在它上面。
     it('chatListRowOrigin_archive_stacks_home_replaces', 0, (): void => {
       expect(chatListRowOrigin('archive')).assertEqual('content');
+      expect(chatListRowOrigin('archive', true)).assertEqual('navbar');
       expect(chatListRowOrigin('main')).assertEqual('navbar');
       expect(chatListRowOrigin('folder:3')).assertEqual('navbar');
       // 连到栈决策上验机制：栈上压着归档页时，归档的 origin 必须保留它。

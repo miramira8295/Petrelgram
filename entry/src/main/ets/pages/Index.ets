@@ -24,6 +24,7 @@ import { getTdClient } from '../tdkit/Globals';
 import { resumeBackgroundCachesOnce } from '../services/BackgroundCache';
 import { DOWNLOAD_CENTER_DEST, KEY_PENDING_DOWNLOAD_CENTER } from '../util/downloadCenterWant';
 import { navigateToSetting } from '../util/settingsNav';
+import { KEY_ARCHIVE_PANE_OPEN } from '../util/profileNav';
 import { TdObject } from '../tdkit/TdTypes';
 import { logE, logW } from '../util/log';
 import { StartupSplash } from './common/StartupSplash';
@@ -382,6 +383,10 @@ struct Index {
       return true;
     }
     if (closeForumDrawer()) {
+      return true;
+    }
+    if (AppStorage.get<boolean>(KEY_ARCHIVE_PANE_OPEN)) {
+      AppStorage.setOrCreate<boolean>(KEY_ARCHIVE_PANE_OPEN, false);
       return true;
     }
     const folder: number = AppStorage.get<number>('chatFolderIndex') ?? 0;

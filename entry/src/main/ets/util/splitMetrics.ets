@@ -36,7 +36,7 @@ export const DOCK_MODE_LEFT_FLOATING: string = 'leftFloating';
 // 分栏判据（会不会分栏、dock 用哪种）已迁到 util/layoutBreakpoint，改读系统断点。
 // 本文件只剩「分栏成立时两栏各多宽」这几道算式。
 
-// 左栏想要的比例。窗口越宽，左栏越宽——但只按比例走，不按定值。
+// 左栏拖拽下限的基准比例。
 const SPLIT_NAV_RATIO: number = 1 / 3;
 // 官方 40% 上限。maxWidth 永远不越它，minWidth 因此也不会。
 const SPLIT_NAV_CAP_RATIO: number = 0.4;
@@ -45,8 +45,6 @@ const SPLIT_NAV_CAP_RATIO: number = 0.4;
 // 注意这两个数只约束「想要的值」，最终仍要过 40% 上限和拖拽行程两道夹。
 const SPLIT_NAV_MIN_VP: number = 320;
 const SPLIT_NAV_MAX_VP: number = 480;
-// 拖分割线能把左栏拉到的最宽处。
-const SPLIT_NAV_DRAG_MAX_VP: number = 560;
 // 右栏想要的最小宽度。窄窗口下让位（见 splitContentMinWidth）。
 const SPLIT_CONTENT_MIN_VP: number = 400;
 // 窄窗口下右栏最小宽度退成窗口的这个比例。取 0.6 不是随手定的：它正好是
@@ -81,13 +79,10 @@ export function splitContentMinWidth(windowWidthVp: number): number {
 // 左栏拖拽上限。floor 而不是 round：与 splitContentMinWidth 一样向下取整，
 // 两者相加才能保证不超过窗口宽（各自 round 时最多能溢出 1vp）。
 export function splitNavMaxWidth(windowWidthVp: number): number {
-  return Math.floor(Math.min(SPLIT_NAV_DRAG_MAX_VP, windowWidthVp * SPLIT_NAV_CAP_RATIO));
+  return Math.floor(windowWidthVp * SPLIT_NAV_CAP_RATIO);
 }
 
-// 左栏下限——**这才是真正决定观感的那个数**：HdsNavigation 没有开放 navBarWidth
-// 设置项，内部默认 240vp，被 range 一夹就落在离 240 最近的那一端。宽屏上
-// minWidth 远大于 240，静息宽度就等于 minWidth；窄窗口上 240 落在区间内部，
-// 静息宽度就是 240（正好是 600vp 下的 40%）。
+// 默认左栏占窗口的 40%，分割线可以向左拖到这个下限。
 export function splitNavMinWidth(windowWidthVp: number): number {
   const byRatio: number = Math.round(Math.min(
     SPLIT_NAV_MAX_VP,

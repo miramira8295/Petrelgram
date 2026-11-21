@@ -241,7 +241,7 @@ for(const probe of [main,folder])for(const continuousPanel of [true,false]){
 // the folder bar. Width publication uses the outer pane, not the inset viewport.
 const page=source('ChatListPage').text;
 run(fs.readFileSync('entry/src/main/ets/util/splitMetrics.ets','utf8').replace(/\bexport /g,''));
-const listPage=make('ChatListPage',['conversationPanelHeader','folderRailShown','navBarMinWidth']);
+const listPage=make('ChatListPage',['conversationPanelHeader','folderRailShown','navBarMinWidth','openArchive','onSplitModeChanged']);
 ctx.HorizontalAlign={Start:0};
 for(const split of [false,true])for(const width of [1119,1120,1297])for(const count of [0,2]){
  const headerParts=[];
@@ -253,6 +253,22 @@ for(const split of [false,true])for(const width of [1119,1120,1297])for(const co
  if(rail)assert.ok(listPage.navBarMinWidth()>=400);
  assert.deepEqual(headerParts,[...(split?['actions']:[]),...(count&&!rail?['folders']:[])]);
 }
+let archiveDestinations=0;
+ctx.closeForumDrawer=()=>{};
+ctx.navigateToArchive=()=>{archiveDestinations++;};
+Object.assign(listPage,{isSplitLayout:()=>true,archivePaneOpen:false});
+listPage.openArchive();
+assert.equal(listPage.archivePaneOpen,true);
+assert.equal(archiveDestinations,0,'opening the list must preserve the right-hand destination');
+let archiveHeaders=0;
+listPage.archivePaneHeader=()=>{archiveHeaders++;};
+reset();listPage.conversationPanelHeader();
+assert.equal(archiveHeaders,1);
+listPage.isSplitLayout=()=>false;
+listPage.onSplitModeChanged();
+assert.equal(listPage.archivePaneOpen,false);
+listPage.openArchive();
+assert.equal(archiveDestinations,1,'single-column archive keeps its navigation destination');
 assert.doesNotMatch(page,/noteFolderBarScroll|syncFolderBarWithActiveList|FolderChipAnchor/);
 assert.doesNotMatch(page,/linearGradientBlur|homeTopBlurRadius|homeViewH/);
 assert.match(page,/HomeConversationPanel/);assert.match(page,/hideTitleBar\(true, false\)/);

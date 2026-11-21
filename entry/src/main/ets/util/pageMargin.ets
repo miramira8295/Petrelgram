@@ -25,3 +25,7 @@ export function pageMarginVp(widthBp: number): number {
 export function homeCardMarginVp(widthBp: number): number {
   return HOME_CARD_MARGIN.getValue(widthBp);
 }
+
+export function homeCardBottomMarginVp(widthBp: number, bottomSafeVp: number): number {
+  return Math.max(homeCardMarginVp(widthBp), bottomSafeVp - 8);
+}

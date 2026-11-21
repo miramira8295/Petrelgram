@@ -3,17 +3,14 @@ import {
   splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth
 } from '../main/ets/util/splitMetrics';
 
+import { resolveSplitNavWidth } from '../main/ets/util/splitNavWidth';
+
 // 分栏起作用的最窄窗口（NavigationMode.Auto 的断点）。
 const SPLIT_MIN_W: number = 600;
-// HdsNavigation 内部的默认 navBar 宽度。它被 navBarWidthRange 一夹，落在哪里
-// 就是用户不拖分割线时看到的静息宽度。
-const HDS_DEFAULT_NAV_W: number = 240;
-
-// 静息宽度 = 内部默认值被区间夹一次的结果。
 function restingWidth(w: number): number {
   const min: number = splitNavMinWidth(w);
   const max: number = splitNavMaxWidth(w);
-  return Math.min(Math.max(HDS_DEFAULT_NAV_W, min), max);
+  return resolveSplitNavWidth(0, min, max);
 }
 
 export default function splitMetricsTest(): void {
@@ -64,33 +61,31 @@ export default function splitMetricsTest(): void {
       expect(splitNavMinWidth(667)).assertEqual(226);
       expect(splitNavMaxWidth(667)).assertEqual(266);
       expect(splitContentMinWidth(667)).assertEqual(400);
-      expect(restingWidth(667)).assertEqual(240);
+      expect(restingWidth(667)).assertEqual(266);
     });
 
     it('W=720', 0, (): void => {
       expect(splitNavMinWidth(720)).assertEqual(248);
       expect(splitNavMaxWidth(720)).assertEqual(288);
       expect(splitContentMinWidth(720)).assertEqual(400);
-      expect(restingWidth(720)).assertEqual(248);
+      expect(restingWidth(720)).assertEqual(288);
     });
 
     it('W=800', 0, (): void => {
       expect(splitNavMinWidth(800)).assertEqual(280);
       expect(splitNavMaxWidth(800)).assertEqual(320);
       expect(splitContentMinWidth(800)).assertEqual(400);
-      expect(restingWidth(800)).assertEqual(280);
+      expect(restingWidth(800)).assertEqual(320);
     });
 
-    // 平板不许退化：Task 8 在 1137vp 真机上确认的是左栏 33%，静息宽度 379。
-    // 新取值必须一模一样地落回 379。
-    it('W=1137（平板真机）静息宽度仍是 379，占 33%', 0, (): void => {
-      expect(restingWidth(1137)).assertEqual(379);
+    it('W=1137（平板真机）默认左栏占 40%', 0, (): void => {
+      expect(restingWidth(1137)).assertEqual(454);
       expect(splitContentMinWidth(1137)).assertEqual(400);
     });
 
-    it('超宽屏被 480/560 兜住，不会一路拉白边', 0, (): void => {
-      expect(restingWidth(2560)).assertEqual(480);
-      expect(splitNavMaxWidth(2560)).assertEqual(560);
+    it('超宽屏的默认宽度也取 40%，支持向左拖窄', 0, (): void => {
+      expect(restingWidth(2560)).assertEqual(1024);
+      expect(splitNavMinWidth(2560)).assertEqual(480);
     });
 
     // 分栏判据（会不会分栏、dock 形态）已迁到 util/layoutBreakpoint 改读系统断点，

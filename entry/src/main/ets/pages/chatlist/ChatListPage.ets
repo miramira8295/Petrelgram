@@ -33,7 +33,7 @@ import { ComponentContent, FrameCallback, LengthMetrics } from '@kit.ArkUI';
 import { HdsNavigation } from '@kit.UIDesignKit';
 import { HomeConversationPanel } from './HomeConversationPanel';
 import { KEY_SURFACE_GLASS_ON, SURFACE_GLASS_ON_DEFAULT, SURFACE_GLASS_EPOCH, surfaceGlassFill } from '../../util/surfaceGlass';
-import { homeCardMarginVp } from '../../util/pageMargin';
+import { homeCardBottomMarginVp, homeCardMarginVp } from '../../util/pageMargin';
 import { APPEARANCE_EPOCH, KEY_STATUS_FOLLOW_TITLE, currentAccentHex } from '../../util/appearance';
 import { COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_BADGE_BG, COLOR_TAB_PILL_BG } from '../../util/theme';
 import { router } from '@kit.ArkUI';
@@ -44,7 +44,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayMaterial } from '../../util/overlayMaterial';
 import { TopGlassAction } from './TopGlassAction';
 import { CHAT_DEST_NAME, navigateToChat } from '../../util/chatNav';
-import { DIRECT_MESSAGES_TOPICS_DEST_NAME, FORUM_TOPICS_DEST_NAME } from '../../util/profileNav';
+import { DIRECT_MESSAGES_TOPICS_DEST_NAME, FORUM_TOPICS_DEST_NAME, KEY_ARCHIVE_PANE_OPEN, navigateToArchive } from '../../util/profileNav';
 import { logE } from '../../util/log';
 import { nextTabPreloadIndex, pruneBuiltKeys } from '../../util/tabPreload';
 import { FolderBadge, badgeLabel, folderBadge, setFolderBadge } from '../../util/folderBadges';
@@ -210,6 +210,7 @@ export struct ChatListPage {
 
   private chatStack: NavPathStack = new NavPathStack();
   @State private openChatId: number = 0;
+  @StorageLink(KEY_ARCHIVE_PANE_OPEN) private archivePaneOpen: boolean = false;
   // 右栏空态。ComponentContent 是节点实体，建一次留着——每次 build 都 new 一个
   // 等于每帧重建一棵子树。
   private splitPlaceholder: SplitPlaceholderHolder = new SplitPlaceholderHolder();
@@ -253,7 +254,7 @@ export struct ChatListPage {
   @StorageProp(NAV_BAR_WIDTH_KEY) private navBarW: number = 0;
   @StorageProp('screenWidthVp') @Watch('onWindowResized') screenW: number = 360;
   // 设置里的「强制单栏」（宽屏也当手机用）。
-  @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
+  @StorageProp(KEY_FORCE_SINGLE_COLUMN) @Watch('onSplitModeChanged') forceSingleColumn: boolean = false;
   // 分栏下会话页的媒体查看器开着：收左栏，让右栏里的查看器盖满窗口（见 util/viewerWindowCover）。
   // 复用 onWindowResized：它按定义重算 navBar 可见性，这里只是多了一个输入。
   @StorageProp(KEY_CHAT_VIEWER_COVERS_WINDOW) viewerCoversWindow: boolean = false;
@@ -263,9 +264,9 @@ export struct ChatListPage {
   // 手机一转横屏就被当成平板（#125）。
   @StorageProp('screenHeightVp') @Watch('onWindowResized') screenH: number = 780;
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
-  @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
-  @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
-  @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
+  @StorageProp(KEY_WIDTH_BREAKPOINT) @Watch('onSplitModeChanged') widthBp: number = WIDTH_BP_SM;
+  @StorageProp(KEY_HEIGHT_BREAKPOINT) @Watch('onSplitModeChanged') heightBp: number = HEIGHT_BP_LG;
+  @StorageProp(KEY_WINDOW_PORTRAIT) @Watch('onSplitModeChanged') windowPortrait: boolean = true;
   // 平板分栏下记住的左栏宽度（issue #106），见 util/splitNavWidth。
   @StorageProp(KEY_SPLIT_NAV_WIDTH) private savedNavW: number = 0;
   // Sliding selection pill: position/size interpolated between tab frames so it
@@ -382,6 +383,7 @@ export struct ChatListPage {
 
   // AppStorage 侧被外部改写（返回键递退回"所有"）时，真正把 Tabs 切过去。
   private onFolderExternallyChanged(): void {
+    this.archivePaneOpen = false;
     if (this.selectedIndex !== this.appliedFolder) {
       this.hapticGestureStart = -1;
       this.appliedFolder = this.selectedIndex;
@@ -883,6 +885,7 @@ export struct ChatListPage {
   private qrScanner: TelegramQrScanner = new TelegramQrScanner();
 
   aboutToDisappear(): void {
+    this.archivePaneOpen = false;
     this.chatStack.setInterception({});
     this.hapticGestureStart = -1;
     AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, false);
@@ -1126,12 +1129,6 @@ export struct ChatListPage {
     return made;
   }
 
-  // 左栏宽度按窗口宽度取比例。**minWidth 才是真正决定观感的那个数**：
-  // HdsNavigation 没有开放 navBarWidth 设置项，内部默认 240vp，被 range 一夹就
-  // 落在 minWidth 上——这正是上一版在 1440vp 屏上稳稳停在 320（22%）的原因。
-  // maxWidth 只是 enableDragBar 拖分割线时的上限。
-  // 算法搬到 util/splitMetrics.ets，理由见那里的文件头。这三个方法只剩把
-  // 当前窗口宽度喂进去。
   private navBarMinWidth(): number {
     const min = splitNavMinWidth(this.screenW);
     return this.folderRailShown() ? Math.max(min, FOLDER_RAIL_NAV_MIN) : min;
@@ -1211,6 +1208,7 @@ export struct ChatListPage {
   }
 
   private selectFolder(index: number): void {
+    this.archivePaneOpen = false;
     this.hapticGestureStart = -1;
     if (index !== this.selectedIndex) { navigationHaptics.play('folder'); }
     if (AppStorage.get<boolean>(KEY_ACTIVE_FORUM_OPEN) === true) { closeForumDrawer(); }
@@ -1257,9 +1255,33 @@ export struct ChatListPage {
   }
 
   @Builder
+  archivePaneHeader() {
+    Row({ space: 8 }) {
+      this.topAction('sys.symbol.chevron_left', $r('app.string.back'), (): void => { this.archivePaneOpen = false; });
+      Text($r('app.string.ap_title')).fontSize(20).fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.text_primary')).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+    }.id('archivePaneHeader').width('100%').height(TOP_BAR_HEIGHT).padding({ left: 8, right: 16 });
+  }
+
+  private onSplitModeChanged(): void {
+    if (this.archivePaneOpen && !this.isSplitLayout()) { this.archivePaneOpen = false; }
+  }
+
+  private openArchive(): void {
+    if (this.isSplitLayout()) {
+      closeForumDrawer();
+      this.archivePaneOpen = true;
+    } else {
+      navigateToArchive();
+    }
+  }
+
+  @Builder
   conversationPanelHeader() {
     Column() {
-      if (this.isSplitLayout()) {
+      if (this.archivePaneOpen) {
+        this.archivePaneHeader();
+      } else if (this.isSplitLayout()) {
         this.titleBarActions();
       }
       if (this.newSessionCount > 0) {
@@ -1380,14 +1402,22 @@ export struct ChatListPage {
             Column() {
               if (spec.key === 'main') {
                 MainTabBody({
+                  onOpenArchive: (): void => { this.openArchive(); },
                   openChatId: this.splitOpenChatId(),
                   contentTopInset: 0,
                   continuousPanel: true,
                   listScroller: this.scrollerFor(spec.key),
-                  effectsActive: this.tabEffectsActive(spec.key),
-                  imagesActive: this.tabVisualsActive(spec.key),
-                  updatesActive: this.tabUpdatesActive(spec.key)
-                }).layoutWeight(1);
+                  effectsActive: !this.archivePaneOpen && this.tabEffectsActive(spec.key),
+                  imagesActive: !this.archivePaneOpen && this.tabVisualsActive(spec.key),
+                  updatesActive: !this.archivePaneOpen && this.tabUpdatesActive(spec.key)
+                }).layoutWeight(1).visibility(this.archivePaneOpen ? Visibility.None : Visibility.Visible);
+                if (this.archivePaneOpen) {
+                  ChatListView({
+                    listKey: 'archive', continuousPanel: true, openChatId: this.splitOpenChatId(),
+                    effectsActive: this.tabEffectsActive(spec.key), imagesActive: this.tabVisualsActive(spec.key),
+                    updatesActive: this.tabUpdatesActive(spec.key)
+                  }).layoutWeight(1);
+                }
               } else {
                 ChatListView({
                   openChatId: this.splitOpenChatId(),
@@ -1539,7 +1569,7 @@ export struct ChatListPage {
         .width('100%').height('100%')
         .padding({
           top: this.topSafe,
-          bottom: Math.max(homeCardMarginVp(this.widthBp), this.bottomSafe - 8)
+          bottom: homeCardBottomMarginVp(this.widthBp, this.bottomSafe)
         })
         .onAreaChange((_old: Area, area: Area): void => {
           // Measure the full navigation pane, not the inset Tabs viewport.
@@ -1547,7 +1577,8 @@ export struct ChatListPage {
           if (paneWidth > 0 && AppStorage.get<number>(NAV_BAR_WIDTH_KEY) !== paneWidth) {
             AppStorage.setOrCreate<number>(NAV_BAR_WIDTH_KEY, paneWidth);
             rememberSplitNavWidth(paneWidth,
-              isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait));
+              isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
+              this.navBarMinWidth(), this.navBarMaxWidth());
           }
         });
       }
@@ -1560,7 +1591,7 @@ export struct ChatListPage {
       // 分栏下查看器开着：Split + hideNavBar(true) 的实际效果是单栏，右栏会话页铺满窗口（#201）。
       .hideNavBar(this.viewerHidesNavBar())
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
-      // 启动时复原上次拖出来的宽度；没记过就是 min（HDS 的静息值）。
+      // 启动时复原上次拖出来的宽度；首次进入时取窗口宽的 40%。
       .navBarWidth(resolveSplitNavWidth(this.savedNavW, this.navBarMinWidth(), this.navBarMaxWidth()))
       // 右栏栈空时的占位。仅分栏模式展示，手机单栏下永不出现。
       .splitPlaceholder(this.placeholderContent())

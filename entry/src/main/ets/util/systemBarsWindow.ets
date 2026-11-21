@@ -2,11 +2,14 @@
 // 这里只负责取窗口、排队、调 setWindowSystemBarEnable。
 import { common } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
+import { deviceInfo } from '@kit.BasicServicesKit';
 import {
   isSystemBarsHiddenApplied, releaseAllViewerSystemBars, requestSystemBarsHidden,
   systemBarsApplyFailed
 } from './systemBarsHidden';
 import { logE } from './log';
+import { KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM } from './layoutBreakpoint';
+import { homeCardBottomMarginVp } from './pageMargin';
 
 // 窗口操作串行排队；序号保证只有最新的决定落地。
 let applyTask: Promise<void> = Promise.resolve();
@@ -17,6 +20,7 @@ let expectedTopSafeVp: number = 0;
 let topAvoidWaiters: Array<() => void> = [];
 
 const TOP_AVOID_RESTORE_TIMEOUT_MS: number = 90;
+let matchBottomMargin: boolean = false;
 
 function barsFor(hidden: boolean): Array<'status' | 'navigation'> {
   return hidden ? [] : ['status', 'navigation'];
@@ -24,16 +28,52 @@ function barsFor(hidden: boolean): Array<'status' | 'navigation'> {
 
 export function setSystemBarsMainWindow(win: window.Window | null): void {
   mainWinRef = win;
+  matchBottomMargin = false;
 }
 
-export function noteSystemTopAvoidHeight(topVp: number, seededSafeTopVp?: number): void {
-  systemTopAvoidVp = topVp;
-  if (seededSafeTopVp !== undefined && seededSafeTopVp > 0) {
-    expectedTopSafeVp = seededSafeTopVp;
-  } else if (topVp > 0) {
-    expectedTopSafeVp = topVp;
+function shouldMatchBottomMargin(): boolean {
+  const win = mainWinRef;
+  if (win === null) { return false; }
+  try {
+    // 平板三键区的放大键在铺满屏幕后也可能上报 MAXIMIZE。
+    const status = win.getWindowStatus();
+    // 浮窗的内容区从系统标题栏下沿开始；在内容区内留出与底部一致的间距。
+    if (status === window.WindowStatusType.FLOATING) {
+      return deviceInfo.sdkApiVersion >= 22 ? win.isInFreeWindowMode()
+        : deviceInfo.deviceType === 'tablet' || deviceInfo.deviceType === '2in1';
+    }
+    if (status !== window.WindowStatusType.FULL_SCREEN && status !== window.WindowStatusType.MAXIMIZE) { return false; }
+    // 平板从浮窗进入全屏后，系统可能已经退出自由窗口状态。
+    if (deviceInfo.deviceType === 'tablet' || deviceInfo.deviceType === '2in1') {
+      return true;
+    }
+    return deviceInfo.sdkApiVersion >= 22 && win.isInFreeWindowMode();
+  } catch (e) {
+    logE(`read window top margin failed: ${(e as Error).message}`);
+    return false;
   }
-  if (topVp > 0 && topAvoidWaiters.length > 0) {
+}
+
+export function refreshWindowTopMargin(): void {
+  if (!matchBottomMargin || isSystemBarsHiddenApplied()) { return; }
+  const widthBp = AppStorage.get<number>(KEY_WIDTH_BREAKPOINT) ?? WIDTH_BP_SM;
+  const bottomSafe = AppStorage.get<number>('bottomSafeHeight') ?? 0;
+  AppStorage.setOrCreate('topSafeHeight', homeCardBottomMarginVp(widthBp, bottomSafe));
+}
+
+export function noteSystemTopAvoidHeight(topVp: number): void {
+  systemTopAvoidVp = topVp;
+  // 查看器或直播临时藏栏时保留底页位置；窗口自身进入全屏时，0 就是新的安全区。
+  if (topVp > 0 || !isSystemBarsHiddenApplied()) {
+    expectedTopSafeVp = topVp;
+    matchBottomMargin = topVp === 0 && shouldMatchBottomMargin();
+    if (matchBottomMargin) {
+      refreshWindowTopMargin();
+    } else {
+      AppStorage.setOrCreate('topSafeHeight', topVp);
+    }
+  }
+  if (isSystemTopBarReady() && topAvoidWaiters.length > 0) {
     const waiters: Array<() => void> = topAvoidWaiters;
     topAvoidWaiters = [];
     for (const resolve of waiters) {

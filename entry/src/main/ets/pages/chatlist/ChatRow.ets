@@ -975,7 +975,7 @@ export struct ChatRow {
             'chatId': this.row.snapshot.chat.id, 'title': this.row.snapshot.chat.title
           };
           navigateToDirectMessagesTopics(
-            directParams, chatListRowOrigin(this.listKey));
+            directParams, chatListRowOrigin(this.listKey, this.continuousPanel));
           return;
         }
         // 论坛超级群：首页列表点击展开「左侧会话头像窄栏 + 右侧话题列表」双栏视图（图 1 形态）；
@@ -985,7 +985,7 @@ export struct ChatRow {
             navigateToForumTopics({
               'chatId': this.row.snapshot.chat.id,
               'title': this.row.snapshot.chat.title
-            }, chatListRowOrigin(this.listKey));
+            }, chatListRowOrigin(this.listKey, this.continuousPanel));
           } else if (this.forumDrawerOpen && this.activeForumChatId === this.row.snapshot.chat.id) {
             closeForumDrawer();
           } else {
@@ -994,7 +994,7 @@ export struct ChatRow {
           return;
         }
         const params: Record<string, Object> = { 'chatId': this.row.snapshot.chat.id };
-        navigateToChat(params, chatListRowOrigin(this.listKey)).catch(logChatNavFailure);
+        navigateToChat(params, chatListRowOrigin(this.listKey, this.continuousPanel)).catch(logChatNavFailure);
       })
       .onTouch((event: TouchEvent): void => {
         if (event.type === TouchType.Down) {

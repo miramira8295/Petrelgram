@@ -1596,7 +1596,9 @@ export struct ContactsPage {
           const w: number = Number(area.width);
           if (w > 0 && AppStorage.get<number>(CONTACTS_NAV_BAR_WIDTH_KEY) !== w) {
             AppStorage.setOrCreate<number>(CONTACTS_NAV_BAR_WIDTH_KEY, w);
-            rememberSplitNavWidth(w, isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait));
+            rememberSplitNavWidth(w,
+              isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
+              this.navBarMinWidth(), this.navBarMaxWidth());
           }
         });
       }
@@ -1625,7 +1627,7 @@ export struct ContactsPage {
       // 显式给 mode 还有一个好处——分栏与否不再依赖某个 SDK 版本的内部阈值。
       .mode(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) ? NavigationMode.Split : NavigationMode.Stack)
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
-      // 启动时复原上次拖出来的宽度；没记过就是 min（HDS 的静息值）。
+      // 启动时复原上次拖出来的宽度；首次进入时取窗口宽的 40%。
       .navBarWidth(resolveSplitNavWidth(this.savedNavW, this.navBarMinWidth(), this.navBarMaxWidth()))
       // 右栏栈空时的占位。仅分栏模式展示，手机单栏下永不出现。
       .splitPlaceholder(this.placeholderContent())

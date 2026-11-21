@@ -50,8 +50,7 @@ import { initA11yState } from '../util/a11yState';
 import { flushDiagLog, logE, logW } from '../util/log';
 import { ColorModeBaseline } from '../util/configChange';
 import { bumpMaterialEpoch } from '../util/overlayMaterial';
-import { isSystemBarsHiddenApplied } from '../util/systemBarsHidden';
-import { noteSystemTopAvoidHeight, setSystemBarsMainWindow } from '../util/systemBarsWindow';
+import { noteSystemTopAvoidHeight, refreshWindowTopMargin, setSystemBarsMainWindow } from '../util/systemBarsWindow';
 import {
   KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, KEY_WINDOW_PORTRAIT, heightBreakpointOfSize, widthBreakpointOfVp
 } from '../util/layoutBreakpoint';
@@ -375,6 +374,27 @@ export default class EntryAbility extends UIAbility {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
+  private refreshWindowInsets(win: window.Window, modeChanged: boolean = false): void {
+    try {
+      const ui = win.getUIContext();
+      const normalWindow = win.getWindowStatus() === window.WindowStatusType.FULL_SCREEN &&
+        (deviceInfo.sdkApiVersion < 22 || !win.isInFreeWindowMode());
+      if (normalWindow) {
+        // 窗口布局完成后的密度可能与启动时不同。用当前窗口重新换算系统栏的像素高度。
+        const bottomPx = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR).bottomRect.height;
+        if (bottomPx > 0) {
+          AppStorage.setOrCreate('bottomSafeHeight', ui.px2vp(bottomPx));
+        }
+      }
+      if (normalWindow || modeChanged) {
+        const topPx = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM).topRect.height;
+        noteSystemTopAvoidHeight(ui.px2vp(topPx));
+      }
+    } catch (e) {
+      logE(`refresh window insets failed: ${(e as Error).message}`);
+    }
+  }
+
   onWindowStageCreate(windowStage: window.WindowStage): void {
     // Main window is created, set main page for this ability
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
@@ -421,8 +441,6 @@ export default class EntryAbility extends UIAbility {
       this.applyImmersiveStatusBar();
       const avoid = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
       const seedTopSafeVp: number = px2vpUI(avoid.topRect.height);
-      noteSystemTopAvoidHeight(seedTopSafeVp, seedTopSafeVp);
-      AppStorage.setOrCreate('topSafeHeight', seedTopSafeVp);
       // Bottom inset (gesture navigation bar) — pages pad their bottom bars by this.
       const navAvoid = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
       AppStorage.setOrCreate('bottomSafeHeight', px2vpUI(navAvoid.bottomRect.height));
@@ -436,6 +454,7 @@ export default class EntryAbility extends UIAbility {
       const seedW: number = px2vpUI(win.getWindowProperties().windowRect.width);
       const seedH: number = px2vpUI(win.getWindowProperties().windowRect.height);
       AppStorage.setOrCreate(KEY_WIDTH_BREAKPOINT, widthBreakpointOfVp(seedW));
+      noteSystemTopAvoidHeight(seedTopSafeVp);
       mirrorChatEnvKey(KEY_WIDTH_BREAKPOINT, widthBreakpointOfVp(seedW));
       AppStorage.setOrCreate(KEY_HEIGHT_BREAKPOINT, heightBreakpointOfSize(seedW, seedH));
       AppStorage.setOrCreate(KEY_WINDOW_PORTRAIT, !(seedW > seedH));
@@ -464,19 +483,11 @@ export default class EntryAbility extends UIAbility {
         if (data.type === window.AvoidAreaType.TYPE_SYSTEM) {
           const topVp: number = px2vpUI(data.area.topRect.height);
           noteSystemTopAvoidHeight(topVp);
-          // 媒体查看器/直播全屏调 setWindowSystemBarEnable([]) 隐藏状态栏时，系统会推一次
-          // topRect.height=0 的 avoidAreaChange。不把 0 写进 topSafeHeight：否则底下的
-          // ChatPage / 首页等 60+ 处 @StorageProp('topSafeHeight') 会集体少掉状态栏高度
-          // 向上跳并在退出时整页同步重排卡顿。
-          if (topVp > 0 || !isSystemBarsHiddenApplied()) {
-            if (topVp > 0) {
-              AppStorage.setOrCreate('topSafeHeight', topVp);
-            }
-          }
         } else if (data.type === window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR) {
           const bottomVp: number = px2vpUI(data.area.bottomRect.height);
           if (bottomVp > 0) {
             AppStorage.setOrCreate('bottomSafeHeight', bottomVp);
+            refreshWindowTopMargin();
           }
         } else if (data.type === window.AvoidAreaType.TYPE_CUTOUT) {
           AppStorage.setOrCreate('cutoutTopSafeHeight', px2vpUI(data.area.topRect.height));
@@ -493,9 +504,10 @@ export default class EntryAbility extends UIAbility {
       // 悬浮小窗 ↔ 全屏来回时系统会重置状态栏的内容色，而上面那套只在启动和
       // 配置变更时设过一次——从小窗恢复后图标就不是白的了（issue #136）。
       // 窗口模式一变就再设一遍。
-      win.on('windowStatusChange', (status: window.WindowStatusType): void => {
+      win.on('windowStatusDidChange', (status: window.WindowStatusType): void => {
         logW(`windowStatus ${status}`);
         this.applyImmersiveStatusBar();
+        this.refreshWindowInsets(win, true);
       });
       win.on('windowSizeChange', (size) => {
         // px2vp 依赖当前显示密度。灭屏/亮屏那一瞬间这个回调会带着尚未恢复的
@@ -533,6 +545,7 @@ export default class EntryAbility extends UIAbility {
         mirrorChatEnvKey('screenWidthVp', candidate);
         mirrorChatEnvKey('screenHeightVp', px2vpUI(size.height));
       });
+      win.on('systemDensityChange', () => { this.refreshWindowInsets(win); });
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Failed to set full-screen layout. Cause: %{public}s', JSON.stringify(err));
     }
@@ -557,6 +570,7 @@ export default class EntryAbility extends UIAbility {
         const loadedWin: window.Window = windowStage.getMainWindowSync();
         const rect: window.Rect = loadedWin.getWindowProperties().windowRect;
         this.publishBreakpoints(loadedWin);
+        this.refreshWindowInsets(loadedWin);
         AppStorage.setOrCreate('screenWidthVp', px2vpUI(rect.width));
         AppStorage.setOrCreate('screenHeightVp', px2vpUI(rect.height));
         mirrorChatEnvKey('screenWidthVp', px2vpUI(rect.width));
@@ -596,9 +610,10 @@ export default class EntryAbility extends UIAbility {
     }
     try {
       win.off('windowSizeChange');
-      win.off('windowStatusChange');
+      win.off('windowStatusDidChange');
       win.off('avoidAreaChange');
       win.off('keyboardHeightChange');
+      win.off('systemDensityChange');
     } catch (e) {
       logE(`window listener teardown failed: ${(e as Error).message}`);
     }
@@ -614,6 +629,7 @@ export default class EntryAbility extends UIAbility {
       const widthBp: number = ui.getWindowWidthBreakpoint() as number;
       const heightBp: number = ui.getWindowHeightBreakpoint() as number;
       AppStorage.setOrCreate(KEY_WIDTH_BREAKPOINT, widthBp);
+      refreshWindowTopMargin();
       // 会话环境镜像按它放大消息字号（util/textScale）。
       mirrorChatEnvKey(KEY_WIDTH_BREAKPOINT, widthBp);
       AppStorage.setOrCreate(KEY_HEIGHT_BREAKPOINT, heightBp);

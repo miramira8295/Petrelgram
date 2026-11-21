@@ -50,7 +50,6 @@ import {
 } from '../../util/theme';
 import { SCOPE_MUTE_EPOCH, scopeMutedForKind } from '../../store/ScopeMuteStore';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { navigateToArchive } from '../../util/profileNav';
 import { rememberListPosition, recallListPosition } from '../../util/chatListPosition';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 import {
@@ -76,6 +75,7 @@ const FLUSH_BYPASS_DEFER_MS: number = 32;
 export struct MainTabBody {
   // Homepage shares one surface; standalone archive retains individual cards.
   @Prop continuousPanel: boolean = false;
+  onOpenArchive: () => void = (): void => {};
   @Prop @Watch('onOpenChatChanged') openChatId: number = 0;
   @State private fixedChannel: ChatListRowState | undefined = undefined;
   private fixedScroller: ListScroller = new ListScroller();
@@ -706,12 +706,6 @@ export struct MainTabBody {
     return this.showArchive || this.archiveLoadFailed;
   }
 
-  private openArchive(): void {
-    // 曾经是 this.getUIContext().getRouter().pushUrl('pages/chatlist/ArchivePage')——归档页已迁成
-    // HdsNavDestination 并从 main_pages.json 摘出，整页路由跳不动，走漏斗。
-    navigateToArchive();
-  }
-
   private retryArchive(): void {
     this.archiveLoadFailed = false;
     getChatStore().ensureLoaded('archive').then((success: boolean): void => {
@@ -833,7 +827,7 @@ export struct MainTabBody {
     .stateStyles({ normal: this.archiveNormalStyle, pressed: this.archivePressedStyle })
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
-      if (this.archiveLoadFailed) { this.retryArchive(); } else { this.openArchive(); }
+      if (this.archiveLoadFailed) { this.retryArchive(); } else { this.onOpenArchive(); }
     });
   }
 

@@ -3,10 +3,10 @@ import { resolveSplitNavWidth } from '../main/ets/util/splitNavWidth';
 
 export default function splitNavWidthTest() {
   describe('splitNavWidth', () => {
-    it('没记过时给 min——正是 HDS 的静息宽度，行为不变', 0, (): void => {
-      expect(resolveSplitNavWidth(0, 480, 560)).assertEqual(480);
-      expect(resolveSplitNavWidth(-1, 480, 560)).assertEqual(480);
-      expect(resolveSplitNavWidth(Number.NaN, 480, 560)).assertEqual(480);
+    it('未保存拖动位置时取 40% 对应的上限', 0, (): void => {
+      expect(resolveSplitNavWidth(0, 480, 560)).assertEqual(560);
+      expect(resolveSplitNavWidth(-1, 480, 560)).assertEqual(560);
+      expect(resolveSplitNavWidth(Number.NaN, 480, 560)).assertEqual(560);
     });
     it('记过就复原（issue #106）', 0, (): void => {
       expect(resolveSplitNavWidth(530, 480, 560)).assertEqual(530);
