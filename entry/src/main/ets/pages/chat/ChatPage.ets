@@ -107,6 +107,7 @@ import {
 } from './AlbumGroupDataSource';
 import { IReusePool, LengthMetrics, UIUtils } from '@kit.ArkUI';
 import { ChatPageSurface } from './ChatPageSurface';
+import { SystemGlassSurface } from './SystemGlassSurface';
 import { ChatHeader } from './ChatHeader';
 import { HeaderIdentitySession, ResolvedChatKind } from './HeaderIdentitySession';
 import {
@@ -220,7 +221,7 @@ import {
   reachedLatest
 } from '../../util/readingReturn';
 import {
-  chatOverlayFillHex, containerBlur, overlayMaterial, overlayGlassFill
+  glassTintHex, containerBlur, overlayMaterial, overlayGlassFill
 } from '../../util/overlayMaterial';
 import { BOT_START_COMMAND, composerSlotState } from '../../util/botStart';
 import { getAdministrators, AdminRow } from '../../store/ChatAdminApi';
@@ -810,9 +811,9 @@ export struct ChatPage {
   //
   // 判据、叠加公式与真机对比度数字全部住在 util/chatChrome.ets，由
   // entry/src/test/ChatChrome.test.ets 钉住；这里只剩「读字段 → 调纯函数」的
-  // 薄包装。chatOverlayFillHex(true) 留在页面侧：聊天浮层使用固定80%底色，必须与实际绘制保持一致。
+  // 薄包装。
   private chromeOnLightBg(): boolean {
-    return chromeOnLightBgOf(this.appDark, this.chromeBackground().colors, chatOverlayFillHex(true),
+    return chromeOnLightBgOf(this.appDark, this.chromeBackground().colors, glassTintHex(true),
       this.chromeDarkMask());
   }
 
@@ -827,7 +828,7 @@ export struct ChatPage {
   // 浅色模式 + 暗壁纸的那一半（用户 2026-09-18：黑壁纸上按钮图标还是黑的）。
   // tint 要传**浅色**那档的玻璃色——合成的是浅色模式下那层玻璃。
   private chromeOnDarkBg(): boolean {
-    return chromeOnDarkBgOf(this.appDark, this.chromeBackground().colors, chatOverlayFillHex(false),
+    return chromeOnDarkBgOf(this.appDark, this.chromeBackground().colors, glassTintHex(false),
       this.chromeDarkMask());
   }
 
@@ -7040,13 +7041,16 @@ export struct ChatPage {
       // 移出 HdsNavDestination.titleBar() 后，无论置顶条/话题条/搜索条如何展开收起，
       // 都不再触发 HDS Navigation-Measure 销毁重建整条顶栏（单次省去 5~6ms 测量 + 2.6ms 节点重建）。
       Column() {
-        this.chatTitleBar();
+        SystemGlassSurface({ radius: 0, surface: 'bar', dark: this.appDark }) {
+          Column() {
+            this.chatTitleBar();
+          }.width('100%').padding({ top: this.topSafe });
+        }
         if (this.timeline.initialMessageTransitionSettled) {
           this.chatTitleBarBottom();
         }
       }
       .width('100%')
-      .padding({ top: this.topSafe })
       .hitTestBehavior(HitTestMode.None)
       .visibility(viewerHidesTitleBar(this.viewerOpen() || this.viewer.titleBarRestoring)
         ? Visibility.Hidden : Visibility.Visible);

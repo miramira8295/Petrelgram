@@ -1,20 +1,18 @@
-// Chat header capsules paint a fixed 80% tint and thin outline directly.
-// No background sampling, material host, shadow or size-feedback state.
-import { chatOverlayFillHex } from '../../util/overlayMaterial';
 import { AvatarView } from '../chatlist/AvatarView';
 import { TgsStickerView } from './TgsStickerView';
 import { WebmStickerView } from './WebmStickerView';
 import { COLOR_PRIMARY } from '../../util/theme';
+import { chromeIconColorOf, chromeTextColorOf } from '../../util/chatChrome';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+import { NativeGlassHost } from './NativeGlassHost';
+import { SystemGlassSurface } from './SystemGlassSurface';
 import { str } from '../../util/strings';
 import { HeaderIdentitySession } from './HeaderIdentitySession';
 import { TypingIndicatorState } from './TypingIndicatorState';
 import { headerTypingTextOf } from '../../util/typingIndicator';
 import { emojiStatusVisible } from '../../util/emojiStatus';
 
-// 顶栏按钮、身份胶囊使用相同的普通底色。按压和菜单展开仍保持局部反馈，
-// 不把这些高频状态放进 HDS 的 TitleBarContentOptions。
-
+// Each capsule owns its material and press feedback within the page's custom title bar.
 export const CHAT_HEADER_ACTION_SIZE: number = 42;
 export const CHAT_HEADER_RADIUS: number = 22;
 
@@ -49,8 +47,10 @@ export struct ChatHeader {
   // B2 迁移：原来是 @StorageProp(MATERIAL_EPOCH) private，见上面那条——改成由
   // ChatPage 透传的 @Param，private 去掉（@Param 要由父组件构造传参）。
   @Param materialEpoch: number = 0;
-  // 保留父层参数兼容；顶栏前景现在由高遮挡面板的主题决定，不读取壁纸亮度。
+  // 顶栏浮在聊天壁纸上：深色模式 + 浅色壁纸时它其实坐在亮底上，白色前景会掉到
+  // 2.22:1。由 ChatPage 算好传进来（判据见 util/chatChrome），这里只按它选前景。
   @Param onLightBg: boolean = false;
+  // 浅色模式 + 暗壁纸那一侧，见 util/chatChrome.chromeOnDarkBgOf。
   @Param onDarkBg: boolean = false;
   // B2 迁移前是 @StorageProp(KEY_APP_DARK)，同样改成 ChatPage 透传。
   @Param appDark: boolean = false;
@@ -104,7 +104,8 @@ export struct ChatHeader {
   // CustomNodeUpdate ChatHeader → JSAnimation duration:120 → Text paint → SetSymbolAnimation）。
   // 现在 animateTo 只包按压 / 展开这一个状态，别的更新不再进动画。
   //
-  // 按压反馈仍由 opacity + scale 表达，静止时使用统一的高遮挡底色。
+  // 低于 API 26 自己画玻璃时底色必须半透明，否则 backdropBlur 被盖死；按下时也留在玻璃上（换成不透明的
+  // surface_alt 会让玻璃"闪一下变实心"），按压反馈由 opacity + scale 表达。
   @Local private backPressed: boolean = false;
   @Local private menuPressed: boolean = false;
   @Local private menuIconOpen: boolean = false;
@@ -285,18 +286,27 @@ export struct ChatHeader {
       LoadingProgress().width(14).height(14).color(this.fgSecondary()).margin({ left: 4 });
     } else if (this.header.isMuted) {
       SymbolGlyph($r('sys.symbol.bell_slash'))
-        .fontSize(14).fontColor([this.foreground()]).margin({ left: 4 });
+        .fontSize(14).fontColor([chromeIconColorOf(this.onLightBg, this.appDark, this.onDarkBg)]).margin({ left: 4 });
     }
   }
 
-  // 0xCC = 80%：保留背景透色，颜色按主题 O(1) 选择。
-  private panelFill(): ResourceColor { return chatOverlayFillHex(this.appDark); }
-  private panelOutline(): ResourceColor { return this.appDark ? '#24FFFFFF' : '#14000000'; }
-  private foreground(): ResourceColor { return this.appDark ? '#F0F2F5' : '#18212B'; }
+  // B8（顺手去重，记在 B3 抽出 chromeTextColorOf/chromeIconColorOf 时留下的账）：
+  // 这两个方法原来在这里各自重写了一遍 util/chatChrome 里同名纯函数逐字相同的
+  // if/else——B3 把判据抽出去时漏了这一处调用点。现在直接调
+  // chromeTextColorOf(this.onLightBg, this.onDarkBg) / chromeIconColorOf(this.onLightBg,
+  // this.appDark) 取代，本文件不再维护第二份判据。
 
   private fgSecondary(): ResourceColor {
-    // 标题和副标题共用高对比前景，通过字号和字重体现层次。
-    return this.foreground();
+    // **和主标题同色，深浅色模式都是。** 这条规则原本只在 onLightBg 那一支生效，
+    // 而 onLightBg 自己带着 `appDark &&` 的闸（见 ChatPage.chromeOnLightBg）——于是
+    // 浅色模式下这整套对比度机制是关着的：副标题拿到 #8E8E93，压在「25% 白胶囊 +
+    // 深色壁纸」的合成底上只有约 1:1，屏幕上就是一行看不见的字（真机
+    // 2026-09-03 截图，用户报「标题下面字体颜色根本看不清」）。
+    //
+    // 顶栏浮在用户自己挑的壁纸上，底色**事先不可知**，所以这一层就不该出现
+    // "次级灰"这种预设了底色的颜色。副标题（成员数/在线数）本来就短，和主标题
+    // 同色不会喧宾夺主——层次交给字号和字重（12 常规 vs 16 加粗）。
+    return chromeTextColorOf(this.onLightBg, this.onDarkBg);
   }
 
   private activeSubtitleText(): string {
@@ -308,23 +318,28 @@ export struct ChatHeader {
 
   @Builder
   backButton() {
-    // 普通底板独立于命中层，保留原有圆角和按压反馈。
+    // 玻璃交给系统沉浸材质（Toggle 承载层）：原来那身自绘玻璃——半透明底 +
+    // backdropBlur + materialModifier + visualEffect + chromeOutline 描边——在
+    // 内容区一件都画不出来，只剩一圈白描边，正是用户说的"白色轮廓线很怪"。
     Stack() {
-      Row()
-        .width(CHAT_HEADER_ACTION_SIZE).height(CHAT_HEADER_ACTION_SIZE)
-        .backgroundColor(this.panelFill()).borderRadius(CHAT_HEADER_RADIUS)
-        .border({ width: 0.5, color: this.panelOutline() })
-        .hitTestBehavior(HitTestMode.None).accessibilityLevel('no-hide-descendants');
+      NativeGlassHost({
+        hostWidth: CHAT_HEADER_ACTION_SIZE,
+        hostHeight: CHAT_HEADER_ACTION_SIZE,
+        hostRadius: CHAT_HEADER_RADIUS,
+        dark: this.appDark,
+        surface: 'control'
+      });
       Row() {
         SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(22)
-          .fontColor([this.foreground()]);
+          .fontColor([chromeTextColorOf(this.onLightBg, this.onDarkBg)]);
       }
       .width(CHAT_HEADER_ACTION_SIZE)
       .height(CHAT_HEADER_ACTION_SIZE)
       .justifyContent(FlexAlign.Center)
       .hitTestBehavior(HitTestMode.None)
       .accessibilityText($r('app.string.cp_back_to_chat'));
-      // 命中层：透明 Button 接管点击。它自己的 stateEffect 关掉——系统按压态只让底色
+      // 命中层：材质承载层是 enabled(false) 的 Toggle，收不到触摸，这里用一颗透明
+      // Button 接管点击。它自己的 stateEffect 关掉——真机上那颗系统按压态只让玻璃
       // 变暗、不改变外框，看着像闪了一下；按压反馈统一交给外层 Stack 做位移，
       // 和已提交版本（PR #21：按下 0.9 缩放 + 78% 不透明）同一个观感。
       Button({ type: ButtonType.Circle })
@@ -355,13 +370,14 @@ export struct ChatHeader {
 
   @Builder
   menuButton() {
-    // 与返回键共用配色，图标行只管点击与按压反馈。
+    // 与返回键同一副：材质垫底，图标行只管点击与按压反馈。
     Stack() {
-      Row()
-        .width(CHAT_HEADER_ACTION_SIZE).height(CHAT_HEADER_ACTION_SIZE)
-        .backgroundColor(this.panelFill()).borderRadius(CHAT_HEADER_RADIUS)
-        .border({ width: 0.5, color: this.panelOutline() })
-        .hitTestBehavior(HitTestMode.None).accessibilityLevel('no-hide-descendants');
+      NativeGlassHost({
+        hostWidth: CHAT_HEADER_ACTION_SIZE,
+        hostHeight: CHAT_HEADER_ACTION_SIZE,
+        hostRadius: CHAT_HEADER_RADIUS,
+        dark: this.appDark
+      });
       Row() {
       // 菜单展开时汉堡变叉。两个图标叠着做交叉淡入淡出 + 反向旋转，比直接
       // 替换更像"同一个东西转过去了"。SVG 是位图路径、没法真正形变，这是
@@ -372,14 +388,14 @@ export struct ChatHeader {
       Stack() {
         Image($r('app.media.ic_header_menu'))
           .width(18).height(18)
-          .fillColor(this.foreground())
+          .fillColor(chromeTextColorOf(this.onLightBg, this.onDarkBg))
           .draggable(false)
           // 交叉淡入 + 反向旋转由 onMenuShowChanged 的 animateTo 驱动，图标上不挂常驻 .animation()
           // （理由见本组件开头按压态那段）。
           .opacity(this.menuIconOpen ? 0 : 1)
           .rotate({ angle: this.menuIconOpen ? 90 : 0 });
         SymbolGlyph($r('sys.symbol.xmark'))
-          .fontSize(19).fontColor([this.foreground()])
+          .fontSize(19).fontColor([chromeTextColorOf(this.onLightBg, this.onDarkBg)])
           .opacity(this.menuIconOpen ? 1 : 0)
           .rotate({ angle: this.menuIconOpen ? 0 : -90 });
       }
@@ -416,13 +432,16 @@ export struct ChatHeader {
   build() {
     Row({ space: 8 }) {
       this.backButton();
-      // 身份胶囊直接填满确定尺寸的父容器，无需测量回写。
+      // 身份胶囊：宽度自适应（layoutWeight 1），所以用铺满模式让外壳跟住父容器，
+      // 材质层再由外壳自己量到的像素铺。
       Stack() {
-        Stack({ alignContent: Alignment.TopStart }) {
+        SystemGlassSurface({ radius: CHAT_HEADER_RADIUS, fill: true, dark: this.appDark }) {
           Row({ space: 10 }) {
       AvatarView({
         avatarPath: this.header.avatarPath,
-        // 顶栏保持静态头像，资料页再播放动态头像，避免额外常驻播放器。
+        // 顶栏身份胶囊自身带 backdropBlur('bar')，内部若挂载 30fps XComponent 视频纹理
+        // 会每帧作废毛玻璃 FilterCache 并迫使整屏退出硬件直接合成（与 ChatRow 同理保持静态，
+        // 点进资料页 ChatProfilePage 才播放大图动态头像）。
         animPath: '',
         animationPaused: !this.animationsAllowed,
         initials: this.header.initials,
@@ -440,7 +459,7 @@ export struct ChatHeader {
             .fontSize(16)
             // Medium 与会话列表行的标题同一档（issue #169 第 4 条：从列表点进来群名「变粗了」）。
             .fontWeight(FontWeight.Medium)
-            .fontColor(this.foreground())
+            .fontColor(chromeTextColorOf(this.onLightBg, this.onDarkBg))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .flexShrink(1);
@@ -512,7 +531,7 @@ export struct ChatHeader {
               Row() {
                 SymbolGlyph($r(this.pinnedBarShown ? 'sys.symbol.chevron_up' : 'sys.symbol.chevron_down'))
                   .fontSize(18)
-                  .fontColor([this.foreground()]);
+                  .fontColor([chromeTextColorOf(this.onLightBg, this.onDarkBg)]);
               }
               .width(30)
               .height('100%')
@@ -555,13 +574,10 @@ export struct ChatHeader {
             }
           });
         }
-        .width('100%').height('100%')
-        .backgroundColor(this.panelFill()).borderRadius(CHAT_HEADER_RADIUS)
-        .border({ width: 0.5, color: this.panelOutline() });
       }
       .layoutWeight(1)
       .height(CHAT_HEADER_ACTION_SIZE)
-      // 底色和内容一起缩放，保持整颗胶囊的按压反馈。
+      // 玻璃层（SystemGlassSurface 的材质承载）跟着一起缩，才是整颗胶囊的按压反馈。
       .opacity(this.identityPressed ? 0.78 : 1)
       .scale({ x: this.identityPressed ? 0.985 : 1, y: this.identityPressed ? 0.96 : 1 })
       .animation({

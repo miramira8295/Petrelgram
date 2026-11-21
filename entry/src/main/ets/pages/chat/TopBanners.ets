@@ -376,7 +376,7 @@ export struct TopBanners {
     // No content means no background, including during collapse. A percentage
     // surface must never survive under an empty/invalid-height wrapper.
     if (this.hasContent()) {
-    SystemGlassSurface({ effectsEnabled: false, radius: 14, fill: true, dark: this.appDark }) {
+    SystemGlassSurface({ radius: 14, fill: true, dark: this.appDark }) {
     Column() {
         if (this.actionBarKind !== '') {
           ChatActionBarView({

@@ -38,7 +38,7 @@ const fab=init(new ctx.Fab());Object.assign(fab,{active:false,busy:false,mention
 for(const active of [false,true])for(const busy of [false,true]){
  fab.active=active;fab.busy=busy;calls.length=0;glassHosts.length=0;fab.initialRender();
  assert.equal(glassHosts.length,1);
- assert.equal(glassHosts[0].effectsEnabled,false,'chat glass host must preserve disabled blur/shadow');
+ assert.equal(glassHosts[0].effectsEnabled ?? true,true,'return control uses the shared material policy');
  assert.ok(!calls.some(c=>['backdropBlur','backgroundEffect','shadow'].includes(c[1])));
  assert.ok(calls.some(c=>c[1]==='visibility'&&c[2]===(active?'Visible':'Hidden')));
  assert.ok(calls.some(c=>c[1]==='accessibilityLevel'&&c[2]===(active?'auto':'no-hide-descendants')));
@@ -48,7 +48,7 @@ for(const active of [false,true])for(const busy of [false,true]){
 const date=method('FloatingDateOverlay','initialRender');
 assert.doesNotMatch(date,/ifElseBranchUpdateFunction/,'date subtree is resident even before first label');
 assert.match(date,/no-hide-descendants/);assert.match(date,/state\.shown/);
-console.log('PASS: retained return control, mention-only/both positions, drawer/search/emoji gates; disabled effects/accessibility/click guards including badge; resident date subtree.');
+console.log('PASS: retained return control, mention-only/both positions, drawer/search/emoji gates; material host and accessibility/click guards including badge; resident date subtree.');
 
 run(`class Glass {${method('NativeGlassHost','initialRender')}} globalThis.Glass=Glass;`);
 for(const tapHost of [false,true]) {

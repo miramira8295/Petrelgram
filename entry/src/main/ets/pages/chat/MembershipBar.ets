@@ -87,7 +87,7 @@ export struct MembershipBar {
   // 玻璃交给系统沉浸材质：SystemGlassSurface 垫一层 Toggle 材质，内容再画上面。
   @Builder
   private surface() {
-    SystemGlassSurface({ effectsEnabled: false, radius: bottomPillRadius() }) {
+    SystemGlassSurface({ radius: bottomPillRadius() }) {
     Row({ space: 8 }) {
       if (this.state === 'deletedUser') {
         Text($r('app.string.ca_delete_chat')).fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
@@ -160,7 +160,7 @@ export struct MembershipBar {
   @Builder
   private joinPill(label: Resource, anchorId: string, onTap: () => void) {
     Stack() {
-      SystemGlassSurface({ effectsEnabled: false, radius: bottomPillRadius() }) {
+      SystemGlassSurface({ radius: bottomPillRadius() }) {
         Row() {
           Text(label)
             .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
@@ -194,7 +194,7 @@ export struct MembershipBar {
         .alignItems(VerticalAlign.Center);
       } else if (this.state === MEMBERSHIP_READONLY && this.directMessagesAvailable) {
         Row({ space: BOTTOM_PILL_GAP }) {
-          SystemGlassSurface({ effectsEnabled: false, radius: bottomPillRadius() }) {
+          SystemGlassSurface({ radius: bottomPillRadius() }) {
             Row({ space: 8 }) {
               SymbolGlyph($r('sys.symbol.message')).fontSize(20).fontColor([COLOR_PRIMARY]);
               Text($r('app.string.cp_channel_direct_messages'))
