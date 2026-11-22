@@ -77,15 +77,16 @@ export struct DrawnDocumentFile {
   }
   private tap(save: boolean): void {
     if (!this.onClaim() || this.widget.file === undefined) { return; }
-    if (this.path !== '') { this.open(save); return; }
+    const state = documentFileState(this.widget.file);
+    if (state.path !== '') { this.path = state.path; this.pending = ''; this.open(save); return; }
     if (save) {
       this.pending = '';
       downloadSaveService.saveRemoteFile(this.getUIContext().getHostContext() as common.UIAbilityContext,
         documentFileId(this.widget.file), this.chatId, this.messageId, this.widget.name);
       return;
     }
-    if (this.downloading) { this.pending = ''; cancelDocumentFile(this.widget.file); return; }
-    this.pending = save ? 'save' : 'open';
+    if (state.active) { this.pending = ''; cancelDocumentFile(this.widget.file); return; }
+    this.pending = 'open';
     requestDocumentFile(this.widget.file, MEDIA_USER_PRIORITY, true);
   }
   build() {
@@ -95,7 +96,7 @@ export struct DrawnDocumentFile {
       mini: this.widget.thumbnailMini ?? '', preparedCard: this.preparedCard?.file,
       downloadProgress: this.progress, downloadFailed: this.failed, downloadActive: this.downloading,
       maxWidth: this.boxWidth, fitAvailableWidth: true,
-      onOpen: (): void => this.tap(false), onPause: (): void => this.tap(false), onSave: (): void => this.tap(true) })
+      onOpen: (): void => this.tap(false), onSave: (): void => this.tap(true) })
       .onVisibleAreaChange([0], (visible: boolean): void => { if (this.visible !== visible) { this.visible = visible; this.bind(); } });
   }
 }

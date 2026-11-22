@@ -52,7 +52,7 @@ v.msg={...msg,photoFileId:0};v.changed();posters.at(-1)('/no-file-poster');asser
 const pos=v.positionCallback();v.data={...v.data,playSlotKey:''};v.changed();v.data={...v.data,playSlotKey:'10:-1'};v.changed();const n=events.length;pos(999);assert.equal(events.length,n);
 const late=posters.at(-1);v.aboutToRecycle();const len=localPaths.length;late('/after-recycle');v.changed();assert.equal(localPaths.length,len);assert.equal(v.binding,'');
 assert.match(fs.readFileSync(compiled+'pages/chat/DrawnMessageRow.ts','utf8'),/new SenderAnimatedLayer\(/);
-assert.match(fs.readFileSync(compiled+'pages/chat/SingleMediaBubble.ts','utf8'),/kind: 'single'/);
+assert.match(fs.readFileSync(compiled+'pages/chat/ReusableMessageBubble.ts','utf8'),/new DrawnMessageRow\(this,\s*\{\s*kind: 'single'/);
 console.log('PASS: compiled single video callbacks reject A/B/A, detached and expired playback-slot events; stable subscription; fileId=0 generated poster; single transition route and local animated avatar mounted.');
 
 load(root+'util/animationSlotPool.ets');

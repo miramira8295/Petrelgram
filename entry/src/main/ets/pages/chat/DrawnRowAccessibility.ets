@@ -1,4 +1,5 @@
 import { MessageEntry } from '../../store/MessageEntry';
+import { drawnPlacementKey } from '../../util/drawnPlacementKey';
 import { DrawnBubblePlan } from './DrawnBubblePlan';
 import { DrawnAlbumRect } from '../../util/drawnAlbumPolicy';
 import { formatClockTime } from '../../util/formatTime';
@@ -79,7 +80,7 @@ export struct DrawnRowAccessibility {
           .accessibilityText(target.label).accessibilitySelected(target.selected === true).accessibilityLevel('yes')
           .accessibilityRole(AccessibilityRoleType.BUTTON)
           .onClick((event: ClickEvent): void => { this.activate(target, event); });
-      }, (target: DrawnSemanticTarget): string => `${this.msg.rowId}:${target.key}` + (target.key.startsWith('reaction:') ? `:${target.label}:${target.selected}:${target.x}:${target.y}:${target.width}:${target.height}` : ''));
+      }, (target: DrawnSemanticTarget): string => drawnPlacementKey(target));
     }.width(this.plan?.width ?? 0).height(this.plan?.height ?? 0).accessibilityGroup(false);
   }
 }

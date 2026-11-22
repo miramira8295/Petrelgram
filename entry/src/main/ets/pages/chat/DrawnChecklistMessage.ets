@@ -1,3 +1,4 @@
+import { drawnPlacementKey } from '../../util/drawnPlacementKey';
 import { ChecklistActionState, IDLE_CHECKLIST_ACTION, checklistActionState, subscribeChecklistAction } from '../../util/checklistStateChannel';
 import { getTdClient, isReady } from '../../tdkit/Globals';
 import { ChecklistTask } from '../../util/checklistModel';
@@ -151,7 +152,7 @@ export struct DrawnChecklistMessage {
             onClaim: (): boolean => this.active && this.onClaim(),
             onToggle: (id: number, completed: boolean): void => this.actions.onChecklistToggle(this.msg.id, id, completed),
             onLink: (url: string, hidesUrl: boolean): void => this.actions.onLinkTap(url, hidesUrl) });
-        }, (row: DrawnChecklistTaskLayout): string => `${row.id}`);
+        }, (row: DrawnChecklistTaskLayout): string => drawnPlacementKey(row));
         Row().width(this.layout.width).height(this.layout.footerHeight)
           .drawModifier(this.footer.bind(this.getUIContext(), {
             width: this.layout.width, height: this.layout.footerHeight, environment: this.environment,

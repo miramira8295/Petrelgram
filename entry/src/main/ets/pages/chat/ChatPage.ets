@@ -543,7 +543,6 @@ export struct ChatPage {
         },
         onFileTap: (messageId: number): void => { this.mediaSave.onFileTap(messageId); },
         onFileSave: (messageId: number): void => { this.mediaSave.onFileSave(messageId); },
-        onFilePause: (messageId: number): void => { this.store?.pauseFileDownload(messageId); },
         onBackgroundCache: (messageIds: number[]): void => {
           cacheMessagesInBackground(this.getUIContext().getHostContext() as common.UIAbilityContext, this.timeline.messages, messageIds, this.chatId);
         },
@@ -2047,7 +2046,8 @@ export struct ChatPage {
       store: (): MessageStore | null => this.store,
       chatId: (): number => this.chatId,
       findMsg: (messageId: number): MessageEntry | undefined =>
-        this.timeline.messages.find((x: MessageEntry): boolean => x.id === messageId),
+        this.store?.getMessages().find((m: MessageEntry): boolean => m.id === messageId) ??
+        this.timeline.messages.find((m: MessageEntry): boolean => m.id === messageId),
       latestMessages: (): MessageEntry[] => this.timeline.messages
     });
     // 成员资格状态机接上宿主（第二轮 R2-A 批）。isChannel 是双重用途取值器

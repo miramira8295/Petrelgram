@@ -55,6 +55,12 @@ card.bind();card.tap(false);assert.equal(card.pending,'open');
 card.widget=attachment(21);card.onSourceChanged();update({file:file(20,'/wrong')});assert.equal(opened.length,0);
 card.tap(false);update({file:file(21,'/right')});await Promise.resolve();assert.deepEqual(opened,['/right']);
 card.widget=attachment(22);card.onSourceChanged();card.tap(true);assert.deepEqual(saved,[[22,3,45]]);
+card.downloading = true;
+card.tap(false);
+assert.equal(requests.at(-1).request['@type'], 'downloadFile', 'idle file with a stale active indicator');
+card.downloading = false;
+card.tap(false);
+assert.equal(requests.at(-1).request['@type'], 'cancelDownloadFile', 'active file with a stale idle indicator');
 card.aboutToDisappear();assert.equal(card.pending,'');
 console.log('PASS: map single-flight/cache/account boundaries, zero-coordinate validation, file activity-only notifications, cancel generation, reuse-safe open intent and background-save delegation.');
 // Embedded voice uses a disjoint playback namespace without relaxing the

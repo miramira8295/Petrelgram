@@ -356,10 +356,6 @@ export struct MessageBubble {
         onSave: (): void => {
           if (this.context.gestureClaimed) { return; }
           this.actions.onFileSave(this.msg.id);
-        },
-        onPause: (): void => {
-          if (this.context.gestureClaimed) { return; }
-          this.actions.onFilePause(this.msg.id);
         }
       });
       if (this.displayedMessageText(this.msg.text) !== '') {

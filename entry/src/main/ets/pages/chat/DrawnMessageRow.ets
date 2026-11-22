@@ -1,3 +1,4 @@
+import { drawnPlacementKey } from '../../util/drawnPlacementKey';
 import { DrawnMenuMedia, DrawnMenuSticker, DrawnMenuPaintState } from './DrawnMenuPreview';
 import { StaticMiniThumbnail } from '../common/StaticMiniThumbnail';
 import { documentCardFor } from './DrawnDocumentCardLayout';
@@ -719,17 +720,17 @@ export struct DrawnMessageRow {
     });
   }
   private claimDocumentWidget(widget: DrawnDocumentWidget): boolean {
-    this.claimed = true;
     if (!this.presentationReady() || !this.plan?.caption?.widgetOwners.has(widget)) { return false; }
+    this.claimed = true;
     if (this.rowData.selectionActive) { this.actions.onToggleSelectedMessage(this.rowGroup.head.id); return false; }
     return true;
   }
   private openDocumentMedia(media: DrawnDocumentMedia): void {
-    this.claimed = true;
     if (!this.presentationReady()) { return; }
-    if (this.rowData.selectionActive) { this.actions.onToggleSelectedMessage(this.rowGroup.head.id); return; }
     const items = this.plan?.caption?.source.mediaItems;
     if (items === undefined || items[media.index] !== media) { return; }
+    this.claimed = true;
+    if (this.rowData.selectionActive) { this.actions.onToggleSelectedMessage(this.rowGroup.head.id); return; }
     const session: DocumentMediaSession = { media: items, chatId: this.rowData.chatId,
       messageId: this.rowGroup.head.id, date: this.rowGroup.head.date, senderName: this.rowGroup.head.senderName };
     const params: Record<string, Object> = { 'documentMedia': session, 'startIndex': media.index };
@@ -1268,7 +1269,7 @@ export struct DrawnMessageRow {
               onClaim: (): boolean => this.claimDocumentWidget(item.widget) })
               .position({ x: (this.plan?.captionX ?? 0) + item.x, y: (this.plan?.captionY ?? 0) + item.y });
           }
-        }, (item: DrawnDocumentWidgetPlacement): string => `${this.rowData.chatId}:${this.rowGroup.head.id}:${item.widget.key}`);
+        }, (item: DrawnDocumentWidgetPlacement): string => `${this.rowData.chatId}:${this.rowGroup.head.id}:${drawnPlacementKey(item)}`);
       }
       if ((this.plan?.caption?.media.length ?? 0) > 0) {
         ForEach(this.plan?.caption?.media ?? this.emptyDocumentMedia, (asset: DrawnDocumentMediaPlacement) => {
@@ -1283,21 +1284,23 @@ export struct DrawnMessageRow {
             } })
             .position({ x: (this.plan?.captionX ?? 0) + asset.x, y: (this.plan?.captionY ?? 0) + asset.y });
           }
-        }, (asset: DrawnDocumentMediaPlacement): string => `${this.rowData.chatId}:${this.rowGroup.head.id}:${asset.key}`);
+        }, (asset: DrawnDocumentMediaPlacement): string => `${this.rowData.chatId}:${this.rowGroup.head.id}:${drawnPlacementKey(asset)}`);
       }
       if ((this.plan?.caption?.tables.length ?? 0) > 0) {
         ForEach(this.plan?.caption?.tables ?? this.emptyTables, (table: DrawnTablePlacement) => {
           DrawnTableIsland({ msg: this.rowGroup.head, placement: table, onMetricsChanged: (): void => { this.mathRevision++; },
             onClaimTouch: (): void => {
+              if (!this.presentationReady() || !this.plan?.caption?.tables.includes(table)) { return; }
               if (!this.claimed && this.rowData.selectionActive) { this.actions.onToggleSelectedMessage(this.rowGroup.head.id); }
               this.claimed = true;
             },
             onLinkTap: (link: DrawnRichLink): void => {
+              if (!this.presentationReady() || !this.plan?.caption?.tables.includes(table)) { return; }
               if (this.rowData.selectionActive) { this.claimed = true; this.actions.onToggleSelectedMessage(this.rowGroup.head.id); }
               else { this.claimed = true; if (!this.openDocumentLink(link.url)) { this.actions.onLinkTap(link.url, link.hidesUrl); } }
             } })
             .position({ x: (this.plan?.captionX ?? 0) + table.x, y: (this.plan?.captionY ?? 0) + table.y });
-        }, (table: DrawnTablePlacement): string => table.key);
+        }, (table: DrawnTablePlacement): string => `${this.rowData.chatId}:${this.rowGroup.head.id}:${drawnPlacementKey(table)}`);
       }
     }
     .attributeModifier((preview ? this.menuPaint().attributes : this.canvasAttributes).bind(this.plan?.width ?? 0, this.plan?.height ?? 0,

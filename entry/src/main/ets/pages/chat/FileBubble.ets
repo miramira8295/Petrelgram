@@ -42,8 +42,6 @@ export struct FileBubble {
   @Param fitAvailableWidth: boolean = false;
   @Param onOpen: () => void = (): void => {};
   @Param onSave: () => void = (): void => {};
-  // 下载中点一下 = 暂停（issue #93）。已下的那部分留着，再点继续断点续传。
-  @Param onPause: () => void = (): void => {};
 
   @Styles
   private cardNormalStyle(): void {
@@ -188,10 +186,6 @@ export struct FileBubble {
       .animation({ duration: 110, curve: Curve.EaseOut })
       .onClick((): void => {
         if (this.sourceUnavailable() || this.uploading) {
-          return;
-        }
-        if (this.downloadActive) {
-          this.onPause();
           return;
         }
         this.onOpen();

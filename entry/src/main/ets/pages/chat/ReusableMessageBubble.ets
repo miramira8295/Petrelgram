@@ -45,8 +45,6 @@ export interface MessageBubbleActions {
   onReplyTap: (messageId: number, fromId: number) => void;
   onFileTap: (messageId: number) => void;
   onFileSave: (messageId: number) => void;
-  // 下载中点文件卡片 = 暂停（issue #93）。
-  onFilePause: (messageId: number) => void;
   onStickerRetry: (messageId: number) => void;
   onLinkPreviewRetry: (messageId: number) => void;
   onContactOpen: (userId: number, phone: string, vcard: string) => void;
@@ -173,7 +171,6 @@ const EMPTY_ACTIONS: MessageBubbleActions = {
   onAvatarLongPress: (_id: number, _name: string): void => {},
   onReplyTap: (_id: number, _fromId: number): void => {},
   onFileTap: (_id: number): void => {}, onFileSave: (_id: number): void => {},
-  onFilePause: (_id: number): void => {},
   onStickerRetry: (_id: number): void => {}, onLinkPreviewRetry: (_id: number): void => {},
   onContactOpen: (_id: number, _phone: string, _vcard: string): void => {},
   onPhoneOpen: (_phone: string): void => {},

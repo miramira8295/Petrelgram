@@ -45,8 +45,7 @@ export struct DrawnFileMessage {
       thumbnailId: this.msg.photoFileId, thumbnailPath: this.msg.photoPath, mini: this.msg.photoMini,
       preparedCard: fileCardFor(this.widget), maxWidth: this.boxWidth, fitAvailableWidth: true,
       onOpen: (): void => { if (this.onClaim()) { this.actions.onFileTap(this.msg.id); } },
-      onSave: (): void => { if (this.onClaim()) { this.actions.onFileSave(this.msg.id); } },
-      onPause: (): void => { if (this.onClaim()) { this.actions.onFilePause(this.msg.id); } }
+      onSave: (): void => { if (this.onClaim()) { this.actions.onFileSave(this.msg.id); } }
     });
   }
 }

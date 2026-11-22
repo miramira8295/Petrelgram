@@ -79,3 +79,102 @@ for(const preview of [false,true]) for(const outgoing of [false,true]) for(const
 // A genuine caption still has its 6vp separation and owns the footer layout.
 assert.equal(captionPlan.caption.widgets[0].height+6,captionPlan.caption.paragraph.parts[0].y/captionPlan.density);
 console.log(`PASS: ${checked} file footer geometries across covers, long names, send direction, width and font scale; no overlap or progress-dependent row layout.`);
+
+// Replay the generated ForEach keys and click handlers. A retained key keeps
+// its original closure, exactly the case that lost file taps after relayout.
+const ts = (await import(process.env.TYPESCRIPT_MODULE || 'typescript')).default;
+function compiledTree(name) {
+  const path = compiled + 'pages/chat/' + name + '.ts';
+  return ts.createSourceFile(path, fs.readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true);
+}
+function matchingNodes(tree, predicate) {
+  const matches = [];
+  function visit(node) {
+    if (predicate(node)) matches.push(node);
+    ts.forEachChild(node, visit);
+  }
+  visit(tree);
+  return matches;
+}
+function binding(expression, parameter = '') {
+  const fn = '(function(' + parameter + '){ return (' + expression.getText() + '); })';
+  return vm.runInContext(ts.transpileModule(fn, {compilerOptions: {target: ts.ScriptTarget.ES2020}}).outputText, ctx);
+}
+const rowTree = compiledTree('DrawnMessageRow');
+const rowLists = matchingNodes(rowTree, n => ts.isCallExpression(n) && n.expression.getText() === 'this.forEachUpdateFunction');
+const rowHost = Object.create(ctx.DrawnMessageRow.prototype);
+let activePlan = p;
+const selected = [];
+Object.defineProperties(rowHost, {
+  rowGroup: {value: g}, rowData: {value: {...data, selectionActive: false}},
+  plan: {get: () => activePlan}, presentationReady: {value: () => true},
+  actions: {value: {onToggleSelectedMessage: id => selected.push(id)}}
+});
+function placementKey(list) {
+  const call = rowLists.find(n => n.arguments[1].getText().includes('caption?.' + list));
+  return binding(call.arguments[3]).call(rowHost);
+}
+const fileKey = placementKey('widgets');
+const fileChild = matchingNodes(rowTree, n => ts.isNewExpression(n) && n.expression.getText() === 'DrawnFileMessage')[0];
+const bindFile = binding(fileChild.arguments[1], 'item');
+const retained = new Map();
+function renderFile(plan) {
+  activePlan = plan;
+  const placement = plan.caption.widgets[0], key = fileKey(placement);
+  if (!retained.has(key)) retained.set(key, bindFile.call(rowHost, placement));
+  return retained.get(key);
+}
+const firstButton = renderFile(p);
+const relayout = engine.prepare(ui, g, {...data, contentWidth: 180}, style);
+assert.notEqual(p.caption.widgets[0].widget, relayout.caption.widgets[0].widget);
+const visibleButton = renderFile(relayout);
+rowHost.claimed = false;
+assert.ok(visibleButton.onClaim(), 'visible file must accept a tap after reflow');
+assert.equal(visibleButton.onClaim(), false, 'already consumed gesture');
+rowHost.claimed = false;
+rowHost.rowData.selectionActive = true;
+assert.equal(firstButton.onClaim(), false, 'late event from old layout');
+assert.equal(rowHost.claimed, false);
+assert.equal(visibleButton.onClaim(), false);
+assert.deepEqual(selected, [g.head.id], 'only current card can select the message');
+const progressOnly = engine.prepare(ui, {...g, head: {...g.head, videoProgress: 42}},
+  {...data, contentWidth: 180}, style);
+assert.equal(renderFile(progressOnly), visibleButton, 'progress keeps the existing controls');
+for (const list of ['media', 'tables']) {
+  const key = placementKey(list), asset = {key: 'same logical item'};
+  assert.equal(key(asset), key(asset));
+  assert.notEqual(key(asset), key({...asset}), list + ' must replace stale geometry and events');
+}
+for (const component of ['DrawnChecklistMessage', 'DrawnRowAccessibility']) {
+  const lists = matchingNodes(compiledTree(component),
+    n => ts.isCallExpression(n) && n.expression.getText() === 'this.forEachUpdateFunction');
+  assert.equal(lists.length, 1);
+  const key = binding(lists[0].arguments[3]).call({msg: g.head});
+  const target = {key: 'body', id: 7};
+  assert.equal(key(target), key(target));
+  assert.notEqual(key(target), key({...target}), component + ' must bind the current hit target');
+}
+
+const clicks = matchingNodes(compiledTree('FileBubble'), n => ts.isCallExpression(n) && n.expression.getText() === 'Row.onClick');
+assert.equal(clicks.length, 2);
+load(root + 'pages/chat/MediaSaveState.ets', ['MediaSaveState']);
+const transfer = Object.create(ctx.MediaSaveState.prototype);
+const operations = [];
+const current = {...g.head};
+ctx.showToast = () => {};
+transfer.host = {findMsg: id => id === current.id ? current : undefined, store: () => ({
+  pauseFileDownload: id => operations.push(['pause', id]),
+  requestVideoDownload: id => operations.push(['download', id])
+})};
+transfer.openDownloadedFile = msg => operations.push(['open', msg.id]);
+const displayedCard = {downloadActive: true, uploading: false, filePath: '', sourceUnavailable: () => false,
+  onOpen: () => transfer.onFileTap(current.id), onSave: () => operations.push(['save', current.id])};
+const body = binding(clicks[0].arguments[0]).call(displayedCard);
+const arrow = binding(clicks[1].arguments[0]).call(displayedCard);
+body(); // The UI still shows an active transfer, but the store has paused it.
+current.mediaDownloadActive = true; displayedCard.downloadActive = false; body();
+current.videoPath = '/ready'; body();
+displayedCard.filePath = '/ready'; arrow();
+displayedCard.uploading = true; body();
+assert.deepEqual(operations, ['download', 'pause', 'open', 'save'].map(action => [action, current.id]));
+console.log('PASS: retained file taps after reflow, stale-owner rejection, selection, stable progress and live download/pause/open decisions.');
