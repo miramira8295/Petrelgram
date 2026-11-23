@@ -1,3 +1,4 @@
+import { SYSTEM_MATERIAL_DEFAULT, KEY_SYSTEM_MATERIAL, applySystemMaterial, normalizeSystemMaterial } from '../util/systemMaterialSetting';
 import { KEY_FOLDER_HAPTIC_ON, KEY_DOCK_HAPTIC_ON, KEY_FOLDER_HAPTIC_STRENGTH, KEY_DOCK_HAPTIC_STRENGTH,
   NAVIGATION_HAPTIC_DEFAULT, normalizeNavigationHapticStrength } from '../util/navigationHapticSettings';
 import { KEY_DEBUG_TIMELINE_LAZY } from '../util/debugTimelineRenderer';
@@ -18,7 +19,7 @@ import {
   applyEdgeBlurPageValue, seedEdgeBlurOn, seedEdgeBlurPages, setEdgeBlurBottom, setEdgeBlurMaster, setEdgeBlurTop
 } from '../util/edgeBlurSetting';
 import { setCrashUploadOptOut } from '../services/crashRecordStore';
-import { LIGHT_DEFAULT, THICKNESS_DEFAULT } from '../util/materialTuning';
+import { LIGHT_DEFAULT } from '../util/materialTuning';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { batteryInfo, commonEventManager } from '@kit.BasicServicesKit';
 import { CACHE_LIMIT_DEFAULT } from './CacheLimit';
@@ -33,7 +34,7 @@ import {
 } from '../util/debugListPerf';
 import {
   APPEARANCE_HEX_KEYS, KEY_ACCENT_CUSTOM_ON, KEY_BUBBLE_MATERIAL_ON, KEY_MATERIAL_LIGHT_DARK,
-  KEY_MATERIAL_THICKNESS_DARK, KEY_STATUS_FOLLOW_TITLE, recomputeAppearance
+  KEY_STATUS_FOLLOW_TITLE, recomputeAppearance
 } from '../util/appearance';
 import {
   normalizeProxySwitchDelay, PROXY_SWITCH_DELAY_DEFAULT
@@ -128,12 +129,6 @@ export const KEY_BG_CACHE_WIFI_ONLY: string = 'bgCacheWifiOnly';
 // 缓存上限（字节）。0 = 不限，见 CacheLimit.ets。
 export const KEY_CACHE_LIMIT: string = 'cacheLimit';
 
-// 浮层材质厚度与光感等级——沉浸光感的两个用户档位。取值语义、四档单调性
-// 与降级路径的映射都在 util/materialTuning.ets，那边有单测钉着。
-//
-// 厚度存的是**相对偏移**（-2..2，0 = 出厂手感），不是绝对档位：每个面的厚度
-// 是分别调过的，绝对档位会把弹窗和顶栏压成同一厚度。
-export const KEY_MATERIAL_THICKNESS: string = 'materialThickness';
 // 全局界面模糊质感（联系人/设置/我的，往后还有会话列表与气泡）。
 // 定义、默认值与取值范围都在 util/surfaceGlass，这里只负责落盘与镜像。
 export {
@@ -597,11 +592,10 @@ export async function initSettings(context: common.Context): Promise<void> {
     AppStorage.setOrCreate(KEY_DEBUG_DRAWN_TRACE, drawnTrace); drawnStageMetrics.setEnabled(drawnTrace);
     AppStorage.setOrCreate(KEY_DEBUG_LIST_CACHED,
       normalizeListCachedCount(await s.get(KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT) as number));
-    AppStorage.setOrCreate(KEY_MATERIAL_THICKNESS,
-      await s.get(KEY_MATERIAL_THICKNESS, THICKNESS_DEFAULT) as number);
     // 屏幕上下边缘的渐变虚化：默认全开，低性能设备可关。V1 走 AppStorage、V2 走 @Trace 单例，
     // seed* 一次写两处（见 util/edgeBlurSetting）。三个子键必须一起播种：只写总开关会让
     // 上次单独关掉的顶部/底部在重启后被默认值盖回开启。
+    applySystemMaterial(await s.get(KEY_SYSTEM_MATERIAL, SYSTEM_MATERIAL_DEFAULT) as number);
     seedEdgeBlurOn(
       await s.get(KEY_EDGE_BLUR_ON, EDGE_BLUR_ON_DEFAULT) as boolean,
       await s.get(KEY_EDGE_BLUR_TOP_ON, EDGE_BLUR_TOP_ON_DEFAULT) as boolean,
@@ -629,8 +623,6 @@ export async function initSettings(context: common.Context): Promise<void> {
       await s.get(KEY_BUBBLE_GLASS_LEVEL, SURFACE_GLASS_LEVEL_DEFAULT) as number);
     AppStorage.setOrCreate(KEY_MATERIAL_LIGHT,
       await s.get(KEY_MATERIAL_LIGHT, LIGHT_DEFAULT) as string);
-    AppStorage.setOrCreate(KEY_MATERIAL_THICKNESS_DARK,
-      await s.get(KEY_MATERIAL_THICKNESS_DARK, THICKNESS_DEFAULT) as number);
     AppStorage.setOrCreate(KEY_MATERIAL_LIGHT_DARK,
       await s.get(KEY_MATERIAL_LIGHT_DARK, LIGHT_DEFAULT) as string);
     AppStorage.setOrCreate(KEY_ACCENT_CUSTOM_ON, await s.get(KEY_ACCENT_CUSTOM_ON, false) as boolean);
@@ -684,9 +676,8 @@ export async function initSettings(context: common.Context): Promise<void> {
     AppStorage.setOrCreate(KEY_PREFER_IPV6, false);
     AppStorage.setOrCreate(KEY_SEND_BY_ENTER, false);
     AppStorage.setOrCreate(KEY_IN_APP_BROWSER, true);
-    AppStorage.setOrCreate(KEY_MATERIAL_THICKNESS, THICKNESS_DEFAULT);
+    applySystemMaterial(SYSTEM_MATERIAL_DEFAULT);
     AppStorage.setOrCreate(KEY_MATERIAL_LIGHT, LIGHT_DEFAULT);
-    AppStorage.setOrCreate(KEY_MATERIAL_THICKNESS_DARK, THICKNESS_DEFAULT);
     AppStorage.setOrCreate(KEY_MATERIAL_LIGHT_DARK, LIGHT_DEFAULT);
     AppStorage.setOrCreate(KEY_ACCENT_CUSTOM_ON, false);
     AppStorage.setOrCreate(KEY_BUBBLE_MATERIAL_ON, false);
@@ -747,6 +738,14 @@ function persist(key: string, value: preferences.ValueType): void {
   s.put(key, value).then(() => s.flush()).catch((e: Object) => {
     logE(`AppSettings.persist(${key}) failed: ${JSON.stringify(e)}`);
   });
+}
+
+export function setSystemMaterialLevel(level: number): void {
+  const normalized: number = normalizeSystemMaterial(level);
+  applySystemMaterial(normalized);
+  persist(KEY_SYSTEM_MATERIAL, normalized);
+  bumpMaterialEpoch();
+  recomputeAppearance();
 }
 
 export function setNumber(key: string, value: number): void {

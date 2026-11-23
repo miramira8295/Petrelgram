@@ -84,7 +84,7 @@ export struct SelectionHeader {
   capsule(symbol: string, tint: ResourceColor, onTap: () => void) {
     Stack() {
       // 玻璃由系统沉浸材质承载（Toggle 承载层），内容只画图标。
-      SystemGlassSurface({ effectsEnabled: false, plainOutline: true,
+      SystemGlassSurface({ surface: 'control', effectsEnabled: false, plainOutline: true,
         radius: CHAT_HEADER_RADIUS,
         fixedWidth: CHAT_HEADER_ACTION_SIZE,
         fixedHeight: CHAT_HEADER_ACTION_SIZE

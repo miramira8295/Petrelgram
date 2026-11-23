@@ -1,3 +1,4 @@
+import { systemMaterialState } from '../../util/systemMaterialSetting';
 import { openMessageSender } from '../../util/messageSenderNavigation';
 import { ChannelDirectMessagesSession } from './ChannelDirectMessagesSession';
 import { PlaySlotChannel } from './PlaySlotChannel';
@@ -7085,7 +7086,7 @@ export struct ChatPage {
       Column() {
         SystemGlassSurface({
           radius: 0, surface: 'bar', dark: this.appDark,
-          showBackdrop: edgeBlurPageTopOn(edgeBlurSwitch.master, edgeBlurSwitch.top, edgeBlurSwitch.chatTop)
+          showBackdrop: systemMaterialState.chatEnabled && edgeBlurPageTopOn(edgeBlurSwitch.master, edgeBlurSwitch.top, edgeBlurSwitch.chatTop)
         }) {
           Column() {
             this.chatTitleBar();

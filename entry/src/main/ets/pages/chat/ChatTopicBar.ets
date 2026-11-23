@@ -1,3 +1,4 @@
+import { systemMaterialState } from '../../util/systemMaterialSetting';
 // Overlay shadow disabled for the scroll comparison; keep geometry, fill and interactions.
 // Background blur is disabled by chatOverlayBackdropBlur for the scroll comparison; translucent fills remain.
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
@@ -134,7 +135,7 @@ export struct ChatTopicBar {
     // 外层 Stack 只负责定位：自定义组件带尾随闭包时不能再链 .margin()。
     Stack() {
       // 系统沉浸材质玻璃外壳：材质层要绝对尺寸，卡片自己只负责排版。
-      SystemGlassSurface({ radius: 14, fixedHeight: CARD_HEIGHT }) {
+      SystemGlassSurface({ effectsEnabled: systemMaterialState.chatEnabled, surface: 'control', radius: 14, fixedHeight: CARD_HEIGHT }) {
         List({ space: 6, scroller: this.scroller }) {
       LazyForEach(this.source, (row: ForumTopicRow) => {
         ListItem() {

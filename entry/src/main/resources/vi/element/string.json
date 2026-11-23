@@ -1,6 +1,10 @@
 {
   "string": [
     {
+      "name": "material_app_default",
+      "value": "Mặc định ứng dụng"
+    },
+    {
       "name": "a11y_selected",
       "value": ", đã chọn"
     },
@@ -11218,11 +11222,11 @@
     },
     {
       "name": "chat_settings_material_thickness",
-      "value": "Độ dày vật liệu lớp phủ"
+      "value": "Chất liệu hệ thống"
     },
     {
       "name": "chat_settings_material_thickness_sub",
-      "value": "Kính mờ trên thanh, ô soạn, menu và hộp thoại"
+      "value": "Dùng chung cho chế độ sáng và tối. Mặc định giữ kiểu hiện tại, không làm mờ phần trên và dưới cuộc trò chuyện."
     },
     {
       "name": "material_thickness_ultra_thin",
@@ -11878,7 +11882,7 @@
     },
     {
       "name": "chat_settings_surface_glass_ui",
-      "value": "Giao diện"
+      "value": "Chất liệu danh sách"
     },
     {
       "name": "chat_settings_surface_glass_ui_sub",

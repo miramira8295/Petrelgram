@@ -54,7 +54,7 @@ export struct MusicCollectionDetailView {
   actionButton(icon: string, label: ResourceStr, filled: boolean, action: () => void) {
     Stack() {
       if (!filled) {
-        SystemGlassSurface({ radius: 22, fill: true }) {
+        SystemGlassSurface({ radius: 22, fill: true, surface: 'control' }) {
           Row().width('100%').height('100%');
         }
       }

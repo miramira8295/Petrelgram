@@ -1,3 +1,4 @@
+import { systemMaterialState } from '../../util/systemMaterialSetting';
 import { AvatarView } from '../chatlist/AvatarView';
 import { TgsStickerView } from './TgsStickerView';
 import { WebmStickerView } from './WebmStickerView';
@@ -322,7 +323,7 @@ export struct ChatHeader {
     // backdropBlur + materialModifier + visualEffect + chromeOutline 描边——在
     // 内容区一件都画不出来，只剩一圈白描边，正是用户说的"白色轮廓线很怪"。
     Stack() {
-      NativeGlassHost({
+      NativeGlassHost({ effectsEnabled: systemMaterialState.chatEnabled,
         hostWidth: CHAT_HEADER_ACTION_SIZE,
         hostHeight: CHAT_HEADER_ACTION_SIZE,
         hostRadius: CHAT_HEADER_RADIUS,
@@ -372,11 +373,12 @@ export struct ChatHeader {
   menuButton() {
     // 与返回键同一副：材质垫底，图标行只管点击与按压反馈。
     Stack() {
-      NativeGlassHost({
+      NativeGlassHost({ effectsEnabled: systemMaterialState.chatEnabled,
         hostWidth: CHAT_HEADER_ACTION_SIZE,
         hostHeight: CHAT_HEADER_ACTION_SIZE,
         hostRadius: CHAT_HEADER_RADIUS,
-        dark: this.appDark
+        dark: this.appDark,
+        surface: 'control'
       });
       Row() {
       // 菜单展开时汉堡变叉。两个图标叠着做交叉淡入淡出 + 反向旋转，比直接
@@ -435,7 +437,8 @@ export struct ChatHeader {
       // 身份胶囊：宽度自适应（layoutWeight 1），所以用铺满模式让外壳跟住父容器，
       // 材质层再由外壳自己量到的像素铺。
       Stack() {
-        SystemGlassSurface({ radius: CHAT_HEADER_RADIUS, fill: true, dark: this.appDark }) {
+        // 三颗胶囊共用 control 基准：厚度随设置变化，材质外投阴影统一关闭。
+        SystemGlassSurface({ effectsEnabled: systemMaterialState.chatEnabled, radius: CHAT_HEADER_RADIUS, fill: true, dark: this.appDark, surface: 'control' }) {
           Row({ space: 10 }) {
       AvatarView({
         avatarPath: this.header.avatarPath,

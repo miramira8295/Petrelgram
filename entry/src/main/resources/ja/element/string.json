@@ -1,6 +1,10 @@
 {
   "string": [
     {
+      "name": "material_app_default",
+      "value": "アプリの既定"
+    },
+    {
       "name": "a11y_selected",
       "value": "、選択済み"
     },
@@ -11218,11 +11222,11 @@
     },
     {
       "name": "chat_settings_material_thickness",
-      "value": "オーバーレイ素材の厚さ"
+      "value": "システムマテリアル"
     },
     {
       "name": "chat_settings_material_thickness_sub",
-      "value": "バー、入力欄、メニュー、ダイアログのすりガラス"
+      "value": "ライト・ダークで共通の設定です。アプリの既定では現在のスタイルを保ち、チャットの上下はぼかしません。"
     },
     {
       "name": "material_thickness_ultra_thin",
@@ -11878,7 +11882,7 @@
     },
     {
       "name": "chat_settings_surface_glass_ui",
-      "value": "インターフェース"
+      "value": "リストのマテリアル"
     },
     {
       "name": "chat_settings_surface_glass_ui_sub",

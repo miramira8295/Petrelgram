@@ -7,7 +7,7 @@ function method(file,name){const s=fs.readFileSync(root+file+'.ts','utf8'),a=ts.
 const calls=[],children=[],glassHosts=[];let tapped=0;
 const ui=name=>new Proxy({}, {get:(_,key)=>(...args)=>calls.push([name,key,...args])});
 const enums=new Proxy({}, {get:(_,k)=>k});
-const ctx=vm.createContext({Context:{animation(){}},__Common__:ui('__Common__'),Stack:ui('Stack'),Row:ui('Row'),Column:ui('Column'),Text:ui('Text'),If:ui('If'),
+const ctx=vm.createContext({Monitor:()=>()=>{},systemMaterialState:{chatEnabled:false},chatMaterialEnabled:level=>level>=-2&&level<=2,Context:{animation(){}},__Common__:ui('__Common__'),Stack:ui('Stack'),Row:ui('Row'),Column:ui('Column'),Text:ui('Text'),If:ui('If'),
  Button:ui('Button'),SymbolGlyph:ui('SymbolGlyph'),LoadingProgress:ui('LoadingProgress'),
  Visibility:enums,HitTestMode:enums,Alignment:enums,FlexAlign:enums,FontWeight:enums,TextAlign:enums,VerticalAlign:enums,
  Color:enums,ButtonType:enums,Curve:enums,EffectScope:enums,EffectDirection:enums,
@@ -34,11 +34,12 @@ for(const gate of ['search','emoji','drawer']){
  children.length=0;surface.floatingActions();assert.equal(children.length,1);assert.equal(children[0].active,false);
 }
 run(`class Fab {${method('ScrollFab','initialRender')}} globalThis.Fab=Fab;`);
-const fab=init(new ctx.Fab());Object.assign(fab,{active:false,busy:false,mention:false,unreadCount:3,iconColor:'ink',onTap:()=>tapped++});
-for(const active of [false,true])for(const busy of [false,true]){
+const fab=init(new ctx.Fab());Object.assign(fab,{active:false,busy:false,mention:false,unreadCount:3,iconColor:'ink',systemMaterialLevel:-4,onTap:()=>tapped++});
+for(const material of [false,true])for(const active of [false,true])for(const busy of [false,true]){
+ fab.systemMaterialLevel=material?0:-4;
  fab.active=active;fab.busy=busy;calls.length=0;glassHosts.length=0;fab.initialRender();
  assert.equal(glassHosts.length,1);
- assert.equal(glassHosts[0].effectsEnabled ?? true,true,'return control uses the shared material policy');
+ assert.equal(glassHosts[0].effectsEnabled,material,'return control follows the opt-in in both directions');
  assert.ok(!calls.some(c=>['backdropBlur','backgroundEffect','shadow'].includes(c[1])));
  assert.ok(calls.some(c=>c[1]==='visibility'&&c[2]===(active?'Visible':'Hidden')));
  assert.ok(calls.some(c=>c[1]==='accessibilityLevel'&&c[2]===(active?'auto':'no-hide-descendants')));
@@ -62,7 +63,7 @@ for(const tapHost of [false,true]) {
 }
 console.log('PASS: real disabled glass host retains fill and delegated clicks without filters or material allocation.');
 
-run(`class SharedGlass {${['initialRender','w','h','glassOn'].map(n=>method('SystemGlassSurface',n)).join('\n')}} globalThis.SharedGlass=SharedGlass;`);
+run(`class SharedGlass {${['initialRender','w','h','glassOn','restoreMaterialSize'].map(n=>method('SystemGlassSurface',n)).join('\n')}} globalThis.SharedGlass=SharedGlass;`);
 const plain=init(new ctx.SharedGlass());
 Object.assign(plain,{showBackdrop:true,effectsEnabled:false,plainOutline:true,radius:18,fixedWidth:0,fixedHeight:0,mw:0,mh:0,fill:false,content:()=>{}});
 calls.length=0;glassHosts.length=0;plain.initialRender();
@@ -72,7 +73,15 @@ const area=calls.find(c=>c[1]==='onAreaChange')[2];
 for(let i=0;i<1000;i++)area({}, {width:300+i,height:48});
 assert.equal(plain.mw,0);assert.equal(plain.mh,0,'disabled material geometry never publishes local size');
 assert.ok(calls.some(c=>c[1]==='backgroundColor'&&c[2]?.type===10001));
-console.log('PASS: plain shared surface paints in its existing container with outline, no material child and no size-state writes.');
+// The same area need not be reported again when enabling glass. Restore from
+// non-reactive measurements; switching off again never publishes size changes.
+plain.effectsEnabled=true;plain.restoreMaterialSize();
+assert.equal(plain.mw,1299);assert.equal(plain.mh,48);
+plain.effectsEnabled=false;area({}, {width:320,height:64});
+assert.equal(plain.mw,1299);assert.equal(plain.mh,48);
+plain.effectsEnabled=true;plain.restoreMaterialSize();
+assert.equal(plain.mw,320);assert.equal(plain.mh,64);
+console.log('PASS: plain shared surface has no material child or size-state writes; on/off/on restores latest geometry without a new layout event.');
 
 Object.assign(plain,{showBackdrop:false,effectsEnabled:true,fixedWidth:360,fixedHeight:60});
 calls.length=0;glassHosts.length=0;plain.initialRender();

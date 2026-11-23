@@ -268,7 +268,7 @@ export struct InitialLoadingHint {
     // 骨架胶囊：宽度随内容、高度固定，普通填充与描边，不创建玻璃材质。
     // 外层 Stack 只承载外边距——带尾随闭包的组件后面不能再链通用属性。
     Stack() {
-      SystemGlassSurface({ radius: 13, fixedHeight: 26, effectsEnabled: false, plainOutline: true }) {
+      SystemGlassSurface({ surface: 'control', radius: 13, fixedHeight: 26, effectsEnabled: false, plainOutline: true }) {
         Row() {
           Row()
             .width(56)
@@ -433,7 +433,7 @@ export struct InitialLoadingHint {
 
       if (this.statusHintShown && initialHintLabelKey(this.connectionState) !== '') {
         Row() {
-          SystemGlassSurface({ radius: 15, fixedHeight: 30, effectsEnabled: false, plainOutline: true }) {
+          SystemGlassSurface({ surface: 'control', radius: 15, fixedHeight: 30, effectsEnabled: false, plainOutline: true }) {
             Row({ space: 6 }) {
               Text(str(initialHintLabelKey(this.connectionState)))
                 .fontSize(12.5)

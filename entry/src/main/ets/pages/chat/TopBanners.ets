@@ -1,3 +1,4 @@
+import { systemMaterialState } from '../../util/systemMaterialSetting';
 import { ChatActionBarView } from './ChatActionBarView';
 import { SystemGlassSurface } from './SystemGlassSurface';
 // 【自绘玻璃，不走组件级系统材质】系统已经把**组件级**的 systemMaterial 收回，
@@ -376,7 +377,7 @@ export struct TopBanners {
     // No content means no background, including during collapse. A percentage
     // surface must never survive under an empty/invalid-height wrapper.
     if (this.hasContent()) {
-    SystemGlassSurface({ radius: 14, fill: true, dark: this.appDark }) {
+    SystemGlassSurface({ effectsEnabled: systemMaterialState.chatEnabled, surface: 'control', radius: 14, fill: true, dark: this.appDark }) {
     Column() {
         if (this.actionBarKind !== '') {
           ChatActionBarView({

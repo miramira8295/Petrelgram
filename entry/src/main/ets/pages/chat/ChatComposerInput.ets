@@ -1,3 +1,4 @@
+import { systemMaterialState } from '../../util/systemMaterialSetting';
 // Background blur is disabled by chatOverlayBackdropBlur for the scroll comparison; translucent fills remain.
 import {
   caretAfterExternalEdit, pasteFitsLimit
@@ -445,7 +446,7 @@ export struct ChatComposerInput {
   // 材质不可用（低于 API 26、设备自报不支持、用户把厚度调到「关闭」）时退回原来的
   // 自绘玻璃：plainGlassFill + plainBackdropBlur，观感与上一版一致。
   private glassHostOn(): boolean {
-    return immersiveMaterialAvailable();
+    return systemMaterialState.chatEnabled && immersiveMaterialAvailable();
   }
 
   // 按下的那一刻记原点，之后每次 Move 只算与原点之差：手指来回拖时元素是黏在
@@ -528,7 +529,7 @@ export struct ChatComposerInput {
       if (!this.recording.isRecording) {
         Stack({ alignContent: Alignment.Top }) {
           if (this.glassHostOn()) {
-            NativeGlassHost({ hostWidth: 46, hostHeight: 46, hostRadius: 23, dark: this.appDark })
+            NativeGlassHost({ surface: 'control', hostWidth: 46, hostHeight: 46, hostRadius: 23, dark: this.appDark })
           }
           Stack() {
           SymbolGlyph($r('sys.symbol.paperclip'))
@@ -562,7 +563,6 @@ export struct ChatComposerInput {
         .alignSelf(ItemAlign.End)
         .margin({ bottom: 1 })
         .backgroundColor(this.glassHostOn() ? Color.Transparent : $r('app.color.chat_overlay'))
-        .backdropBlur(0)
         .visualEffect(hdsVisualEffect('control', !this.appDark))
         // 玻璃模式去掉自绘描边：画布比内容小几像素，这圈 1px 白线会露在玻璃下面变成一条横线。
         .border(this.glassHostOn() ? { width: 0 } : chromeOutline(this.appDark))
@@ -574,7 +574,7 @@ export struct ChatComposerInput {
       // 悬浮玻璃：底层画布 + 上层内容。内容自己不再画底色/模糊/描边，全部交给画布上的系统材质。
       Stack({ alignContent: Alignment.TopStart }) {
         if (this.glassHostOn()) {
-          NativeGlassHost({
+          NativeGlassHost({ surface: 'control',
             hostWidth: this.glassSurfaceW, hostHeight: this.glassSurfaceH, hostRadius: 24, dark: this.appDark
           })
         }
@@ -943,7 +943,6 @@ export struct ChatComposerInput {
       .layoutWeight(1)
       .backgroundColor(this.glassHostOn() ? Color.Transparent : $r('app.color.chat_overlay'))
       .borderRadius(24)
-      .backdropBlur(0)
       // 'card' 档：给点光源、不给按压阴影——整块面板跟着手指变形很怪，
       // 这条判据在 overlayMaterial.interactionBase 里，和材质那条路共用。
       .visualEffect(hdsVisualEffect('card', !this.appDark))
@@ -958,7 +957,7 @@ export struct ChatComposerInput {
         Stack() {
           // 与左侧附件键同一套玻璃：玻璃落在这层 Stack 上，图标由子组件出。
           if (this.glassHostOn()) {
-            NativeGlassHost({ hostWidth: 46, hostHeight: 46, hostRadius: 23, dark: this.appDark })
+            NativeGlassHost({ surface: 'control', hostWidth: 46, hostHeight: 46, hostRadius: 23, dark: this.appDark })
           }
           ComposerSendButton({
             hasDraft: this.canSendText(),
@@ -977,7 +976,6 @@ export struct ChatComposerInput {
         .alignSelf(ItemAlign.End)
         .margin({ bottom: 1 })
         .backgroundColor(this.glassHostOn() ? Color.Transparent : $r('app.color.chat_overlay'))
-        .backdropBlur(0)
         .visualEffect(hdsVisualEffect('control', !this.appDark))
         .border(this.glassHostOn() ? { width: 0 } : chromeOutline(this.appDark))
         .clip(true)

@@ -80,9 +80,7 @@ export struct NativeGlassHost {
           .hitTestBehavior(this.tapHost ? HitTestMode.Default : HitTestMode.None)
           .onClick((): void => { if (this.tapHost) { this.onHostTap(); } })
           .accessibilityLevel('no-hide-descendants')
-          // flat=false：保留材质自带的外投阴影。
-          // 这一层「沿圆角糊出去的白光」正是菜单面板边缘那圈光晕，用户认的 19:13 版就带着它；
-          // 之前用 flat=true 去掉后整体变成一块扁平塑料片，才被判定为「搞回去了」。
+          // 公共材质入口统一关闭外投阴影，保留当前面的厚度与光感设置。
           .attributeModifier(materialModifierWhen(this.surface, true, false));
       } else if (materialOff()) {
         // 用户把厚度调到「关闭」：按 materialTuning 文件头的约定，不挂材质、不模糊、

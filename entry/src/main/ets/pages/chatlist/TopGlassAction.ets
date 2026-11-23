@@ -22,14 +22,7 @@ export struct TopGlassAction {
   label: Resource = $r('app.string.cl_more_actions');
   onTap: () => void = (): void => {};
 
-  // 【圆形玻璃保留，只去掉材质外投的那层阴影】用户 2026-11-19：圆玻璃按钮要留，
-  // 问题只是按钮底部多出一层「像玻璃的阴影」。那层阴影来自材质面自带的
-  // applyShadow（util/overlayMaterial.ets 的 buildMaterial：'menu' 面为 true，
-  // 'control' 面为 false），它会在节点下沿投一块比按钮大一圈的底板，圆边糊出
-  // 一圈白晕——就是「多套了一层玻璃」的观感。
-  // 所以这里改传 surface: 'control'：材质滤镜/染色/圆角/按压反馈全保留，只是不再
-  // 投阴影。聊天页顶栏的返回/菜单圆钮（pages/chat/ChatHeader.ets 的 backButton）
-  // 用的是同一配置，两处顶栏观感一致。
+  // 顶栏圆钮共用 control 基准，厚度随设置变化；所有玻璃面统一不投阴影。
 
   @State private pressed: boolean = false;
   @State private grabDX: number = 0;

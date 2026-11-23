@@ -1,6 +1,10 @@
 {
   "string": [
     {
+      "name": "material_app_default",
+      "value": "По умолчанию"
+    },
+    {
       "name": "a11y_selected",
       "value": ", выбрано"
     },
@@ -11218,11 +11222,11 @@
     },
     {
       "name": "chat_settings_material_thickness",
-      "value": "Толщина материала оверлея"
+      "value": "Системный материал"
     },
     {
       "name": "chat_settings_material_thickness_sub",
-      "value": "Матовое стекло панелей, поля ввода, меню и диалогов"
+      "value": "Один уровень для светлой и тёмной тем. По умолчанию сохраняются текущие стили без размытия верхней и нижней панелей чата."
     },
     {
       "name": "material_thickness_ultra_thin",
@@ -11878,7 +11882,7 @@
     },
     {
       "name": "chat_settings_surface_glass_ui",
-      "value": "Интерфейс"
+      "value": "Материал списков"
     },
     {
       "name": "chat_settings_surface_glass_ui_sub",

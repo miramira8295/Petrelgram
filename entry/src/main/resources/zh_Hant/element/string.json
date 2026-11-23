@@ -1,6 +1,10 @@
 {
   "string": [
     {
+      "name": "material_app_default",
+      "value": "App 預設"
+    },
+    {
       "name": "a11y_selected",
       "value": "，已選中"
     },
@@ -11218,11 +11222,11 @@
     },
     {
       "name": "chat_settings_material_thickness",
-      "value": "浮層材質厚度"
+      "value": "系統材質"
     },
     {
       "name": "chat_settings_material_thickness_sub",
-      "value": "頂欄、輸入框、選單和彈窗的毛玻璃厚度"
+      "value": "淺色與深色共用檔位；App 預設保留目前各區域樣式，聊天頂部與底部不模糊。"
     },
     {
       "name": "material_thickness_ultra_thin",
@@ -11878,7 +11882,7 @@
     },
     {
       "name": "chat_settings_surface_glass_ui",
-      "value": "整體"
+      "value": "列表材質"
     },
     {
       "name": "chat_settings_surface_glass_ui_sub",

@@ -1,6 +1,10 @@
 {
   "string": [
     {
+      "name": "material_app_default",
+      "value": "Default aplikasi"
+    },
+    {
       "name": "a11y_selected",
       "value": ", dipilih"
     },
@@ -11218,11 +11222,11 @@
     },
     {
       "name": "chat_settings_material_thickness",
-      "value": "Ketebalan material overlay"
+      "value": "Material sistem"
     },
     {
       "name": "chat_settings_material_thickness_sub",
-      "value": "Kaca buram pada bilah, kolom tulis, menu, dan dialog"
+      "value": "Sama untuk mode terang dan gelap. Default aplikasi mempertahankan gaya saat ini, tanpa buram di bagian atas dan bawah chat."
     },
     {
       "name": "material_thickness_ultra_thin",
@@ -11878,7 +11882,7 @@
     },
     {
       "name": "chat_settings_surface_glass_ui",
-      "value": "Antarmuka"
+      "value": "Material daftar"
     },
     {
       "name": "chat_settings_surface_glass_ui_sub",

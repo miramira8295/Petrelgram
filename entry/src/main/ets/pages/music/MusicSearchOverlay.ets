@@ -119,7 +119,7 @@ export struct MusicSearchOverlay {
     Column() {
       Row({ space: 10 }) {
         Stack() {
-          SystemGlassSurface({ radius: 22, fill: true }) {
+          SystemGlassSurface({ radius: 22, fill: true, surface: 'control' }) {
         Row({ space: 8 }) {
           SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(18)
             .fontColor([COLOR_TEXT_SECONDARY]);

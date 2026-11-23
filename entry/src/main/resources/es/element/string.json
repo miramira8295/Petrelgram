@@ -1,6 +1,10 @@
 {
   "string": [
     {
+      "name": "material_app_default",
+      "value": "Predeterminado de la app"
+    },
+    {
       "name": "a11y_selected",
       "value": ", seleccionado"
     },
@@ -11218,11 +11222,11 @@
     },
     {
       "name": "chat_settings_material_thickness",
-      "value": "Grosor del material superpuesto"
+      "value": "Material del sistema"
     },
     {
       "name": "chat_settings_material_thickness_sub",
-      "value": "Cristal esmerilado en barras, campo de texto, menús y diálogos"
+      "value": "Compartido por los modos claro y oscuro. El valor predeterminado conserva los estilos actuales, sin desenfoque arriba ni abajo del chat."
     },
     {
       "name": "material_thickness_ultra_thin",
@@ -11878,7 +11882,7 @@
     },
     {
       "name": "chat_settings_surface_glass_ui",
-      "value": "Interfaz"
+      "value": "Material de las listas"
     },
     {
       "name": "chat_settings_surface_glass_ui_sub",

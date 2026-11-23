@@ -1,6 +1,10 @@
 {
   "string": [
     {
+      "name": "material_app_default",
+      "value": "App-Standard"
+    },
+    {
       "name": "a11y_selected",
       "value": ", ausgewählt"
     },
@@ -11218,11 +11222,11 @@
     },
     {
       "name": "chat_settings_material_thickness",
-      "value": "Dicke des Overlay-Materials"
+      "value": "Systemmaterial"
     },
     {
       "name": "chat_settings_material_thickness_sub",
-      "value": "Milchglas für Leisten, Eingabefeld, Menüs und Dialoge"
+      "value": "Gemeinsam für hellen und dunklen Modus. App-Standard behält die bisherigen Stile bei, ohne Unschärfe oben und unten im Chat."
     },
     {
       "name": "material_thickness_ultra_thin",
@@ -11878,7 +11882,7 @@
     },
     {
       "name": "chat_settings_surface_glass_ui",
-      "value": "Oberfläche"
+      "value": "Listenmaterial"
     },
     {
       "name": "chat_settings_surface_glass_ui_sub",

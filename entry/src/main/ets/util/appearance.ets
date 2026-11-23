@@ -20,9 +20,7 @@ export const KEY_BUBBLE_MATERIAL_ON: string = 'bubbleMaterialOn';
 // 按标题栏内容色自己推，标题染了强调色状态栏就跟着变（用户报的），默认钉死
 // 在深浅色上；想要那个联动效果的可以打开。
 export const KEY_STATUS_FOLLOW_TITLE: string = 'statusFollowTitle';
-// 厚度/光感的浅色份沿用 AppSettings 里原有的 materialThickness / materialLight，
-// 深色份加 Dark 后缀——与 bgPatternStrength / bgPatternStrengthDark 同一套约定。
-export const KEY_MATERIAL_THICKNESS_DARK: string = 'materialThicknessDark';
+// 光感仍按主题独立；厚度改由 systemMaterialSetting 的统一选项管理。
 export const KEY_MATERIAL_LIGHT_DARK: string = 'materialLightDark';
 export const APPEARANCE_EPOCH: string = 'appearanceEpoch';
 

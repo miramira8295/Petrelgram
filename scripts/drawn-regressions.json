@@ -148,5 +148,6 @@
   "test-drawn-menu-preview.mjs",
   "test-message-link-scope.mjs",
   "test-media-open-intent.mjs",
-  "test-shatter-frame-budget.mjs"
+  "test-shatter-frame-budget.mjs",
+  "test-chat-chrome-material.mjs"
 ]

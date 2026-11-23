@@ -126,7 +126,7 @@ export struct MusicPlayerView {
         .layoutWeight(1).alignItems(HorizontalAlign.Start);
         // 音源徽标点一下回到那条消息——迷你条原来的「点信息区回消息」搬到了这里。
         Stack() {
-          SystemGlassSurface({ radius: 13, fixedHeight: 26 }) {
+          SystemGlassSurface({ surface: 'control', radius: 13, fixedHeight: 26 }) {
             Row({ space: 5 }) {
               Column()
                 .width(6).height(6).borderRadius(3)
@@ -141,7 +141,7 @@ export struct MusicPlayerView {
         .enabled(this.track !== null)
         .onClick((): void => { this.onOpenInChat(); });
         Stack() {
-          SystemGlassSurface({ radius: 13, fixedHeight: 26 }) {
+          SystemGlassSurface({ surface: 'control', radius: 13, fixedHeight: 26 }) {
             Row({ space: 5 }) {
               SymbolGlyph($r('sys.symbol.superdevice')).fontSize(13).fontColor([COLOR_TEXT_PRIMARY]);
               Text(this.castLabel).fontSize(11).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);

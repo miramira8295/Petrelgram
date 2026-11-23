@@ -57,7 +57,7 @@ export struct MusicCenterTopBar {
   iconButton(icon: string, action: () => void, slot: number) {
     // 玻璃改由系统沉浸材质承载（2026-11-18 全应用统一）。
     Stack() {
-      SystemGlassSurface({ radius: BUTTON / 2, fixedWidth: BUTTON, fixedHeight: BUTTON }) {
+      SystemGlassSurface({ surface: 'control', radius: BUTTON / 2, fixedWidth: BUTTON, fixedHeight: BUTTON }) {
         Row() {
           SymbolGlyph($r(icon)).fontSize(20).fontColor([COLOR_TEXT_PRIMARY]);
         }
@@ -75,7 +75,7 @@ export struct MusicCenterTopBar {
     Row() {
       this.iconButton('sys.symbol.chevron_left', (): void => { this.onBack(); }, 0);
       Stack() {
-        SystemGlassSurface({ radius: 17, fixedHeight: 34 }) {
+        SystemGlassSurface({ surface: 'control', radius: 17, fixedHeight: 34 }) {
       Row({ space: 8 }) {
         Text($r('app.string.mc_title'))
           .fontSize(12).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);

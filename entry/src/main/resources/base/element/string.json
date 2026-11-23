@@ -1,6 +1,10 @@
 {
   "string": [
     {
+      "name": "material_app_default",
+      "value": "App 默认"
+    },
+    {
       "name": "a11y_message_reactions",
       "value": "查看反应"
     },
@@ -11306,11 +11310,11 @@
     },
     {
       "name": "chat_settings_material_thickness",
-      "value": "浮层材质厚度"
+      "value": "系统材质"
     },
     {
       "name": "chat_settings_material_thickness_sub",
-      "value": "顶栏、输入框、菜单和弹窗的毛玻璃厚度"
+      "value": "浅色与深色共用档位；App 默认保留当前各区域样式，聊天顶部与底部不模糊。"
     },
     {
       "name": "material_thickness_ultra_thin",
@@ -11966,7 +11970,7 @@
     },
     {
       "name": "chat_settings_surface_glass_ui",
-      "value": "整体"
+      "value": "列表材质"
     },
     {
       "name": "chat_settings_surface_glass_ui_sub",

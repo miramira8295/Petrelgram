@@ -1,3 +1,5 @@
+import { SYSTEM_MATERIAL_DEFAULT, KEY_SYSTEM_MATERIAL, SYSTEM_MATERIAL_APP_DEFAULT, normalizeSystemMaterial, chatMaterialEnabled } from '../../util/systemMaterialSetting';
+import { setSystemMaterialLevel } from '../../store/AppSettings';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
@@ -29,16 +31,16 @@ import {
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_IN_APP_BROWSER, KEY_HIDE_PINNED_DEFAULT,
   TEXT_SIZE_MIN, TEXT_SIZE_MAX, RADIUS_MIN, RADIUS_MAX,
   NIGHT_SYSTEM, NIGHT_DARK, NIGHT_LIGHT,
-  KEY_MATERIAL_THICKNESS, KEY_MATERIAL_LIGHT,
+  KEY_MATERIAL_LIGHT,
   powerAnimationDuration, setNumber, setBoolean, setString, setNightMode
 } from '../../store/AppSettings';
 import {
   LIGHT_ADAPTIVE, LIGHT_DEFAULT, LIGHT_EXQUISITE, LIGHT_GENTLE, LIGHT_SMOOTH,
-  THICKNESS_DEFAULT, THICKNESS_OFF, THICKNESS_REGULAR, THICKNESS_THICK, THICKNESS_THIN,
+  THICKNESS_OFF, THICKNESS_REGULAR, THICKNESS_THICK, THICKNESS_THIN,
   THICKNESS_ULTRA_THICK, THICKNESS_ULTRA_THIN
 } from '../../util/materialTuning';
 import {
-  APPEARANCE_EPOCH, KEY_MATERIAL_LIGHT_DARK, KEY_MATERIAL_THICKNESS_DARK, recomputeAppearance
+  APPEARANCE_EPOCH, KEY_MATERIAL_LIGHT_DARK, recomputeAppearance
 } from '../../util/appearance';
 import { bumpMaterialEpoch } from '../../util/overlayMaterial';
 import {
@@ -110,9 +112,14 @@ const THICKNESS_OPTIONS: MaterialThicknessOption[] = [
   { label: str('material_thickness_ultra_thick'), value: THICKNESS_ULTRA_THICK }
 ];
 
-// 整体和气泡共用六档，菜单只分配一次，不在 build() 中重复 map。
+// 列表和气泡共用六档，菜单只分配一次，不在 build() 中重复 map。
 const TINT_OPTIONS: SelectOption[] = THICKNESS_OPTIONS.map(
   (option: MaterialThicknessOption): SelectOption => ({ value: option.label } as SelectOption));
+
+// Seven fixed options; no per-build array mapping.
+const SYSTEM_MATERIAL_OPTIONS: SelectOption[] = [
+  { value: str('material_app_default') }, ...TINT_OPTIONS
+];
 
 // 从省到满，四档单调包含（单测钉着）。默认自适应。
 const LIGHT_OPTIONS: MaterialLightOption[] = [
@@ -174,8 +181,8 @@ export struct ChatSettingsPage {
   @StorageLink(KEY_SEND_BY_ENTER) sendByEnter: boolean = false;
   @StorageLink(KEY_IN_APP_BROWSER) inAppBrowser: boolean = true;
   @StorageLink(KEY_HIDE_PINNED_DEFAULT) hidePinnedDefault: boolean = false;
-  // 厚度/光感按浅色/深色各一份，两组并列展示；当前模式那份由 overlayMaterial 自己选。
-  @StorageLink(KEY_MATERIAL_THICKNESS) materialThickness: number = THICKNESS_DEFAULT;
+  // 系统材质共用一个档位；光感仍保留各主题的配置。
+  @StorageProp(KEY_SYSTEM_MATERIAL) systemMaterialLevel: number = SYSTEM_MATERIAL_DEFAULT;
   // **同一个键只能有一条 @StorageLink。** 这里原来还有第二条（带 @Watch 的），
   // 两条双向绑定指向同一个键，页面重建时后初始化的那条会把自己的默认值 false
   // 写回 AppStorage，把用户刚打开的开关冲掉（实测"退出回来开关就关闭了"）。
@@ -190,7 +197,6 @@ export struct ChatSettingsPage {
   @StorageLink(KEY_SURFACE_GLASS_LEVEL) surfaceGlassLevel: number = SURFACE_GLASS_LEVEL_DEFAULT;
   @StorageLink(KEY_BUBBLE_GLASS_LEVEL) bubbleGlassLevel: number = SURFACE_GLASS_LEVEL_DEFAULT;
   @StorageLink(KEY_MATERIAL_LIGHT) materialLight: string = LIGHT_DEFAULT;
-  @StorageLink(KEY_MATERIAL_THICKNESS_DARK) materialThicknessDark: number = THICKNESS_DEFAULT;
   // 气泡色/文字色是 theme 里的活绑定，不是状态；预览读一次 epoch 让 ArkUI 记下依赖。
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
   @StorageLink(KEY_MATERIAL_LIGHT_DARK) materialLightDark: string = LIGHT_DEFAULT;
@@ -461,28 +467,22 @@ export struct ChatSettingsPage {
       }.alignItems(VerticalAlign.Center);
     }
     .width('100%').height(64).padding({ left: 16, right: 13 })
+    .enabled(topKey !== KEY_EDGE_BLUR_CHAT_TOP || chatMaterialEnabled(this.systemMaterialLevel))
+    .opacity(topKey !== KEY_EDGE_BLUR_CHAT_TOP || chatMaterialEnabled(this.systemMaterialLevel) ? 1 : 0.5)
     .alignItems(VerticalAlign.Center);
   }
 
-  // 浮层材质厚度。降级路径（低于 API 26）上它驱动自绘玻璃的高斯模糊半径，
-  // 所以这一档在任何设备上都有效果，永远显示。
+  // System material shares one selection across light and dark modes.
   @Builder
   materialThicknessCard() {
     Column() {
-      this.cardTitle($r('app.string.chat_settings_material_thickness'));
-      Text($r('app.string.chat_settings_material_thickness_sub'))
-        .fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-        .width('100%').padding({ left: 16, right: 16, bottom: 4 });
-      this.thicknessSelectRow(false);
-      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
-      this.thicknessSelectRow(true);
-      // 整体卡片与气泡仅调底色透明度，独立于上面的浮层系统材质。
+      this.systemMaterialSelectRow();
       Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
       this.surfaceGlassCard();
     }.width('100%');
   }
 
-  // 整体与气泡的底色浓度独立保存，统一使用含「关闭」的六档菜单。
+  // 列表与气泡的底色浓度独立保存，统一使用含「关闭」的六档菜单。
   @Builder
   surfaceGlassCard() {
     Column() {
@@ -545,17 +545,12 @@ export struct ChatSettingsPage {
     bumpSurfaceGlassEpoch();
   }
 
-  private thicknessOf(forDark: boolean): number {
-    return forDark ? this.materialThicknessDark : this.materialThickness;
-  }
-
   private lightOf(forDark: boolean): string {
     return forDark ? this.materialLightDark : this.materialLight;
   }
 
-  private thicknessIndex(forDark: boolean): number {
-    const idx = THICKNESS_OPTIONS.findIndex((o: MaterialThicknessOption): boolean => o.value === this.thicknessOf(forDark));
-    return idx < 0 ? 0 : idx;
+  private systemMaterialIndex(): number {
+    return normalizeSystemMaterial(this.systemMaterialLevel) - SYSTEM_MATERIAL_APP_DEFAULT;
   }
 
   private lightIndex(forDark: boolean): number {
@@ -563,26 +558,23 @@ export struct ChatSettingsPage {
     return idx < 0 ? 0 : idx;
   }
 
-  // 一行一个模式：左边「浅色模式 / 深色模式」，右边下拉选档。
   @Builder
-  thicknessSelectRow(forDark: boolean) {
+  systemMaterialSelectRow() {
     Row({ space: 12 }) {
-      Text(forDark ? $r('app.string.appearance_mode_dark') : $r('app.string.appearance_mode_light'))
-        .fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-      Select(THICKNESS_OPTIONS.map((o: MaterialThicknessOption): SelectOption => ({ value: o.label } as SelectOption)))
-        .selected(this.thicknessIndex(forDark))
-        .value(THICKNESS_OPTIONS[this.thicknessIndex(forDark)].label)
+      Column({ space: 2 }) {
+        Text(str('chat_settings_material_thickness')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
+        Text(str('chat_settings_material_thickness_sub')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
+      }.alignItems(HorizontalAlign.Start).layoutWeight(1);
+      Select(SYSTEM_MATERIAL_OPTIONS)
+        .selected(this.systemMaterialIndex()).value(SYSTEM_MATERIAL_OPTIONS[this.systemMaterialIndex()].value)
         .font({ size: 15 }).fontColor(this.accent())
         .onSelect((index: number): void => {
-          const v = THICKNESS_OPTIONS[index].value;
-          if (this.thicknessOf(forDark) !== v) {
-            setNumber(forDark ? KEY_MATERIAL_THICKNESS_DARK : KEY_MATERIAL_THICKNESS, v);
-            bumpMaterialEpoch();
-            recomputeAppearance();
-          }
+          if (!Number.isInteger(index) || index < 0 || index >= SYSTEM_MATERIAL_OPTIONS.length) { return; }
+          const level: number = index + SYSTEM_MATERIAL_APP_DEFAULT;
+          if (level !== this.systemMaterialLevel) { setSystemMaterialLevel(level); }
         });
-    }
-    .width('100%').height(52).padding({ left: 16, right: 8 }).alignItems(VerticalAlign.Center);
+    }.width('100%').padding({ left: 16, right: 8, top: 10, bottom: 10 })
+      .alignItems(VerticalAlign.Center);
   }
 
   // 光感等级。lightEffect / interactive 是 ImmersiveOptions 的字段，没有材质

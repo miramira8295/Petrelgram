@@ -48,6 +48,17 @@ export struct SystemGlassSurface {
 
   @Local private mw: number = 0;
   @Local private mh: number = 0;
+  // Remember plain-mode geometry without publishing reactive size updates.
+  private measuredW: number = 0;
+  private measuredH: number = 0;
+
+  @Monitor('effectsEnabled')
+  private restoreMaterialSize(): void {
+    if (!this.effectsEnabled) { return; }
+    // Enabling glass need not change layout, so onAreaChange may not fire again.
+    if (Math.abs(this.measuredW - this.mw) > 0.5) { this.mw = this.measuredW; }
+    if (Math.abs(this.measuredH - this.mh) > 0.5) { this.mh = this.measuredH; }
+  }
 
   @BuilderParam content: () => void;
 
@@ -85,9 +96,11 @@ export struct SystemGlassSurface {
     .border({ width: this.showBackdrop && !this.effectsEnabled && this.plainOutline ? 0.5 : 0, color: $r('app.color.divider') })
     .onAreaChange((_old: Area, area: Area): void => {
       // Plain surfaces paint directly on this container: no second measurement publication or material child.
-      if (!this.effectsEnabled) { return; }
       const w: number = area.width as number;
       const h: number = area.height as number;
+      this.measuredW = w;
+      this.measuredH = h;
+      if (!this.effectsEnabled) { return; }
       // 差值小于半像素不写回，避免测量抖动引起的重建风暴。
       if (Math.abs(w - this.mw) > 0.5) {
         this.mw = w;

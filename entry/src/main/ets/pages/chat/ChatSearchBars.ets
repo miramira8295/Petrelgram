@@ -127,7 +127,7 @@ export struct SearchHeader {
     // 玻璃交给系统沉浸材质：外层 Stack 管宽度/高度/外边距/进出场，材质层由
     // SystemGlassSurface 按量到的像素铺，内容再画在最上面。
     Stack() {
-    SystemGlassSurface({ effectsEnabled: false, plainOutline: true, radius: 23, fill: true }) {
+    SystemGlassSurface({ surface: 'control', effectsEnabled: false, plainOutline: true, radius: 23, fill: true }) {
     Row({ space: 4 }) {
       Row() {
         SymbolGlyph($r('sys.symbol.chevron_left'))
@@ -272,7 +272,7 @@ export struct SearchBottomBar {
     // 固定尺寸的圆钮：材质层尺寸已知，直接给，省掉一帧测量。
     // 外壳 Stack 承接透明度与点击（自定义组件带尾随闭包后不能再链通用属性）。
     Stack() {
-    SystemGlassSurface({ effectsEnabled: false, plainOutline: true,
+    SystemGlassSurface({ surface: 'control', effectsEnabled: false, plainOutline: true,
       radius: bottomPillRadius(),
       fixedWidth: BOTTOM_PILL_HEIGHT,
       fixedHeight: BOTTOM_PILL_HEIGHT
@@ -298,7 +298,7 @@ export struct SearchBottomBar {
       // 标签搜索那一行仍然是整条——它是一句可点的话，切成胶囊会很怪。
       if (hashtagQueryOf(this.search.keywords()) !== '') {
         Stack() {
-          SystemGlassSurface({ effectsEnabled: false, plainOutline: true, radius: 22, fill: true }) {
+          SystemGlassSurface({ surface: 'control', effectsEnabled: false, plainOutline: true, radius: 22, fill: true }) {
             Row() {
               this.publicPostsRow(hashtagQueryOf(this.search.keywords()));
             }
@@ -315,7 +315,7 @@ export struct SearchBottomBar {
       // （用户 2026-09-08：「显示总结果数量和定位，右侧两个圆形按钮上下跳转」）。
       Row({ space: BOTTOM_PILL_GAP }) {
         // 计数胶囊：内容宽的胶囊，材质层由外壳自量（高度已知，先给上）。
-        SystemGlassSurface({ effectsEnabled: false, plainOutline: true, radius: bottomPillRadius(), fixedHeight: BOTTOM_PILL_HEIGHT }) {
+        SystemGlassSurface({ surface: 'control', effectsEnabled: false, plainOutline: true, radius: bottomPillRadius(), fixedHeight: BOTTOM_PILL_HEIGHT }) {
         Row() {
           this.label();
         }

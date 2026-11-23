@@ -1,3 +1,4 @@
+import { systemMaterialThickness } from './systemMaterialSetting';
 // Immersive system material (沉浸光感, API 26+) for the app's overlay surfaces.
 //
 // This module is the single place that decides, per surface, between the new
@@ -29,13 +30,13 @@ import { hdsMaterial } from '@kit.UIDesignKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { logW } from './log';
 import {
-  LIGHT_DEFAULT, THICKNESS_DEFAULT, fallbackBlurRadius, interactiveOn,
-  isThicknessOff, lightEffectOn, normalizeLightLevel, normalizeThickness, shiftedStyleIndex
+  LIGHT_DEFAULT, fallbackBlurRadius, interactiveOn,
+  isThicknessOff, lightEffectOn, normalizeLightLevel, shiftedStyleIndex
 , hdsLevelIndexOf
 , fallbackBlurForIndex
 } from './materialTuning';
-import { KEY_MATERIAL_LIGHT_DARK, KEY_MATERIAL_THICKNESS_DARK, appIsDark } from './appearance';
-import { KEY_MATERIAL_LIGHT, KEY_MATERIAL_THICKNESS, KEY_POWER_ACTIVE } from '../store/AppSettings';
+import { KEY_MATERIAL_LIGHT_DARK, appIsDark } from './appearance';
+import { KEY_MATERIAL_LIGHT, KEY_POWER_ACTIVE } from '../store/AppSettings';
 
 // The API version that introduced ImmersiveMaterial. Below this the material
 // does not exist and every surface stays exactly as it shipped.
@@ -45,15 +46,9 @@ const IMMERSIVE_MATERIAL_API: number = 26;
 // 值一致，所以老设备上观感不变；新设备上它整个让位给材质。
 const VIEWER_GLASS_FALLBACK: string = '#6e3e3e40';
 
-// 用户的两个档位。这是个 util 而不是组件，订阅不了 @StorageProp，所以每次
-// 取值都现读 AppStorage——这些 getter 只在组件 build 时跑，不在每帧路径上。
-//
-// 读不到（设置还没落地、或者键不存在）就用出厂值，由 materialTuning 那边的
-// normalize 兜底，不让脏值把档位推到边上。
-// 厚度/光感按浅色/深色各存一份，读当前模式那份（appIsDark 由 EntryAbility 维护）。
+// 厚度统一读取系统材质选项；光感仍按当前主题选择。
 function thicknessOffset(): number {
-  const key = appIsDark() ? KEY_MATERIAL_THICKNESS_DARK : KEY_MATERIAL_THICKNESS;
-  return normalizeThickness(AppStorage.get<number>(key) ?? THICKNESS_DEFAULT);
+  return systemMaterialThickness();
 }
 
 // 用户把厚度调到「关闭」：所有面都不挂材质、不模糊，纯色兜底。
@@ -351,19 +346,6 @@ function styleOf(surface: OverlaySurface): uiMaterial.ImmersiveStyle {
   return styleByIndex(shiftedStyleIndex(baseStyleIndex(surface), thicknessOffset()));
 }
 
-// The material draws its own shadow, and it is tuned to go with the material,
-// so almost every surface takes it — an existing `.shadow()` is overridden
-// rather than drawn twice. The exception is the glass bars, whose shadow is
-// part of a floating look deliberately tuned against a translucent fill
-// (MainScreen.ets:296); those keep theirs and switch the material's off, which
-// is the documented way to run a custom shadow under a material.
-function usesOwnShadow(surface: OverlaySurface): boolean {
-  // 'bubble'：材质自带的阴影/高光边是按**节点矩形**画的，而气泡整块是按轮廓
-  // （圆角矩形 + 三角尾巴）裁剪的，两者对不上——底边和右侧会多出几条亮线
-  // （真机可见）。关掉它自绘的那层，边缘交给裁剪。
-  return surface === 'bar' || surface === 'bubble';
-}
-
 // Auto-invert only takes effect on THIN and ULTRA_THIN materials, and it costs
 // a colour computation per resource-set colour in the subtree — so it is scoped
 // to the one surface thin enough for it to apply and whose contrast is at risk.
@@ -480,8 +462,9 @@ export function pointLightOn(surface: OverlaySurface): boolean {
   return !materialOff() && usesLightEffect(surface);
 }
 
-export function pressShadowOn(surface: OverlaySurface): boolean {
-  return !materialOff() && usesInteraction(surface);
+export function pressShadowOn(_surface: OverlaySurface): boolean {
+  // 玻璃的独立 visualEffect 路径也不叠加按压阴影。
+  return false;
 }
 
 export function plainGlassFill(solid: ResourceColor): ResourceColor {
@@ -576,7 +559,7 @@ function cacheKey(surface: OverlaySurface, flat: boolean): string {
   return `${surface}_${thicknessOffset()}_${lightLevel()}_${powerSavingNow() ? 'p' : 'n'}${flat ? '_f' : ''}`;
 }
 
-function buildMaterial(surface: OverlaySurface, flat: boolean = false): uiMaterial.Material {
+function buildMaterial(surface: OverlaySurface): uiMaterial.Material {
   return new uiMaterial.ImmersiveMaterial({
     style: styleOf(surface),
     // **材质退化时唯一还看得见的东西**（用户报：升到 HarmonyOS 7.0.0.105 后顶栏、
@@ -599,14 +582,8 @@ function buildMaterial(surface: OverlaySurface, flat: boolean = false): uiMateri
     // 要调浓淡改 resources/{base,dark}/element/color.json 的 material_tint 一处。
     materialColor: $r('app.color.material_tint'),
     colorInvert: usesColorInvert(surface),
-    // 【control 面不画材质阴影】材质会在节点下沿投一层很淡的底板，宽高都比节点
-    // 大一圈——首页文件夹胶囊下方那条灰带就是它（真机实测：y≈274~282、x∈[30,200]，
-    // 最深比背景暗 16 级）。它和胶囊白底同源，出自 systemMaterial 本身，
-    // 组件上的 clip 裁不掉（材质在独立图层）；HDS 侧也没有只关阴影的公开开关。
-    // ImmersiveMaterial 的 applyShadow 就是那个开关：保留材质滤镜、底色、圆角、
-    // 交互，只让它不再往外投这层底板。control 面全是浮在纯色背景上的小胶囊，
-    // 阴影本来就不显眼，关掉之后观感更干净。bar/bubble 早就自己画边缘，一并沿用。
-    applyShadow: !flat && !usesOwnShadow(surface) && surface !== 'control',
+    // 所有玻璃面统一关闭外投阴影；厚度、染色、光效和交互仍由各自设置控制。
+    applyShadow: false,
     // 这两个和材质本体不同：官方注明它们「takes effect for devices with all
     // levels of computing power」，低算力设备上不会被降级掉。
     interactive: usesInteraction(surface),
@@ -627,7 +604,7 @@ export function overlayMaterial(surface: OverlaySurface, flat: boolean = false):
   if (hit !== undefined) {
     return hit;
   }
-  const built = buildMaterial(surface, flat);
+  const built = buildMaterial(surface);
   cache.set(key, built);
   return built;
 }

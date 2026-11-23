@@ -803,7 +803,7 @@ export struct MainScreen {
   albumBallBody() {
     Stack() {
       // 玻璃垫层：内容区拿不到系统材质，靠 Toggle 承载层（2026-11-18 全应用统一）。
-      NativeGlassHost({
+      NativeGlassHost({ surface: 'control',
         hostWidth: MINI_BALL,
         hostHeight: MINI_BALL,
         hostRadius: MINI_BALL / 2,
@@ -863,7 +863,7 @@ export struct MainScreen {
   miniPlayerBody() {
     Row({ space: 8 }) {
       Stack() {
-        NativeGlassHost({
+        NativeGlassHost({ surface: 'control',
           hostWidth: MINI_COVER,
           hostHeight: MINI_COVER,
           hostRadius: MINI_COVER / 2,
@@ -906,7 +906,7 @@ export struct MainScreen {
       // 没曲目时没东西可控，收起来（见 DockMiniBar 同处）。
       if (this.nowPlaying !== null) {
       Stack() {
-        NativeGlassHost({ hostWidth: 32, hostHeight: 32, hostRadius: 16, dark: this.appDark });
+        NativeGlassHost({ surface: 'control', hostWidth: 32, hostHeight: 32, hostRadius: 16, dark: this.appDark });
         Row() {
           SymbolGlyph($r(this.musicPaused ? 'sys.symbol.play_fill' : 'sys.symbol.pause_fill'))
             .fontSize(18).fontColor([COLOR_TEXT_PRIMARY]);
@@ -916,7 +916,7 @@ export struct MainScreen {
       .width(32).height(32)
       .onClick((): void => { this.toggleMiniPlayback(); });
       Stack() {
-        NativeGlassHost({ hostWidth: 30, hostHeight: 30, hostRadius: 15, dark: this.appDark });
+        NativeGlassHost({ surface: 'control', hostWidth: 30, hostHeight: 30, hostRadius: 15, dark: this.appDark });
         Row() {
           SymbolGlyph($r('sys.symbol.xmark')).fontSize(15).fontColor([COLOR_TAB_UNSELECTED]);
         }
@@ -977,7 +977,7 @@ export struct MainScreen {
       // 外面那层 Stack（唯一作用是给药丸定位）也一并去掉了。
       // 胶囊玻璃：内容区拿不到系统材质，走 Toggle 承载层（2026-11-18 全应用统一）。
       Stack() {
-        SystemGlassSurface({ radius: DOCK_H / 2, fill: true, dark: this.appDark }) {
+        SystemGlassSurface({ surface: 'control', radius: DOCK_H / 2, fill: true, dark: this.appDark }) {
       Row() {
         // 三态：无播放=四格；在播放未展开=四格 + 专辑球；已展开=头像 + 播放条。
         // 判据是纯函数，见 util/dockMiniBar。
@@ -1004,8 +1004,7 @@ export struct MainScreen {
       }
       .width('100%').height(DOCK_H)
       .borderRadius(DOCK_H / 2)
-      .clip(true)
-      .shadow({ radius: 14, color: '#24000000', offsetX: 0, offsetY: 4 });
+      .clip(true);
     }
     .width(this.dockWidth())
     // 两侧留白 16 → 28 → 40，胶囊再窄一档。四个格子是 layoutWeight 均分的，

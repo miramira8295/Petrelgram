@@ -1,6 +1,10 @@
 {
   "string": [
     {
+      "name": "material_app_default",
+      "value": "앱 기본값"
+    },
+    {
       "name": "a11y_selected",
       "value": ", 선택됨"
     },
@@ -11218,11 +11222,11 @@
     },
     {
       "name": "chat_settings_material_thickness",
-      "value": "오버레이 재질 두께"
+      "value": "시스템 재질"
     },
     {
       "name": "chat_settings_material_thickness_sub",
-      "value": "바, 입력창, 메뉴, 대화상자의 유리 질감"
+      "value": "밝은 모드와 어두운 모드가 같은 단계를 사용합니다. 앱 기본값은 현재 스타일을 유지하며 채팅 상단과 하단을 흐리게 하지 않습니다."
     },
     {
       "name": "material_thickness_ultra_thin",
@@ -11878,7 +11882,7 @@
     },
     {
       "name": "chat_settings_surface_glass_ui",
-      "value": "인터페이스"
+      "value": "목록 재질"
     },
     {
       "name": "chat_settings_surface_glass_ui_sub",

@@ -1,3 +1,4 @@
+import { systemMaterialState } from '../../util/systemMaterialSetting';
 // Background blur is disabled by chatOverlayBackdropBlur for the scroll comparison; translucent fills remain.
 // 【自绘玻璃，不走组件级系统材质】系统已经把**组件级**的 systemMaterial 收回，
 // 只有 HDS 导航级的栏（HdsNavigation 的 titleBar、HdsTabs 的 barFloatingStyle）
@@ -87,7 +88,7 @@ export struct MembershipBar {
   // 玻璃交给系统沉浸材质：SystemGlassSurface 垫一层 Toggle 材质，内容再画上面。
   @Builder
   private surface() {
-    SystemGlassSurface({ radius: bottomPillRadius() }) {
+    SystemGlassSurface({ effectsEnabled: systemMaterialState.chatEnabled, surface: 'control', radius: bottomPillRadius() }) {
     Row({ space: 8 }) {
       if (this.state === 'deletedUser') {
         Text($r('app.string.ca_delete_chat')).fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
@@ -160,7 +161,7 @@ export struct MembershipBar {
   @Builder
   private joinPill(label: Resource, anchorId: string, onTap: () => void) {
     Stack() {
-      SystemGlassSurface({ radius: bottomPillRadius() }) {
+      SystemGlassSurface({ effectsEnabled: systemMaterialState.chatEnabled, surface: 'control', radius: bottomPillRadius() }) {
         Row() {
           Text(label)
             .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
@@ -194,7 +195,7 @@ export struct MembershipBar {
         .alignItems(VerticalAlign.Center);
       } else if (this.state === MEMBERSHIP_READONLY && this.directMessagesAvailable) {
         Row({ space: BOTTOM_PILL_GAP }) {
-          SystemGlassSurface({ radius: bottomPillRadius() }) {
+          SystemGlassSurface({ effectsEnabled: systemMaterialState.chatEnabled, surface: 'control', radius: bottomPillRadius() }) {
             Row({ space: 8 }) {
               SymbolGlyph($r('sys.symbol.message')).fontSize(20).fontColor([COLOR_PRIMARY]);
               Text($r('app.string.cp_channel_direct_messages'))

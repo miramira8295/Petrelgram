@@ -1,3 +1,4 @@
+import { systemMaterialState } from '../../util/systemMaterialSetting';
 import { MessageRowClock } from '../../util/messageRowClock';
 import { TimelineLazyEntry } from './TimelineLazyDataSource';
 import { MessageListStateCard } from './MessageListState';
@@ -399,12 +400,12 @@ export struct ChatTimelineHost {
 
   // 聊天页顶部：总开关最高，其次是「聊天页」的顶部开关，没单独设过用全局顶部。
   private edgeBlurTopEnabled(): boolean {
-    return edgeBlurPageTopOn(edgeBlurSwitch.master, edgeBlurSwitch.top, edgeBlurSwitch.chatTop);
+    return systemMaterialState.chatEnabled && edgeBlurPageTopOn(edgeBlurSwitch.master, edgeBlurSwitch.top, edgeBlurSwitch.chatTop);
   }
 
   // 聊天页底部。
   private edgeBlurBottomEnabled(): boolean {
-    return edgeBlurPageBottomOn(edgeBlurSwitch.master, edgeBlurSwitch.bottom, edgeBlurSwitch.chatBottom);
+    return systemMaterialState.chatEnabled && edgeBlurPageBottomOn(edgeBlurSwitch.master, edgeBlurSwitch.bottom, edgeBlurSwitch.chatBottom);
   }
 
   // 两侧都关时半径取 0：滤镜不参与渲染，不做离屏合成，也不做每帧背景采样。

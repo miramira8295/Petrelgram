@@ -825,11 +825,11 @@ export struct ProfilePage {
   }
 
   private profileAvatarShadowRadius(): number {
-    return this.profileEffectsReady ? GLASS_SHADOW_RADIUS : 0;
+    return !this.glassOn() && this.profileEffectsReady ? GLASS_SHADOW_RADIUS : 0;
   }
 
   private profileAvatarShadowY(): number {
-    return this.profileEffectsReady ? GLASS_SHADOW_Y : 0;
+    return !this.glassOn() && this.profileEffectsReady ? GLASS_SHADOW_Y : 0;
   }
 
   @Styles
@@ -924,7 +924,7 @@ export struct ProfilePage {
       .justifyContent(FlexAlign.Center)
       .backgroundColor(this.profileGlassFill())
       .border({ width: 0.7, color: $r('app.color.divider') })
-      .shadow({ radius: this.profileAvatarShadowRadius(), color: GLASS_SHADOW_COLOR,
+      .shadow({ radius: this.profileAvatarShadowRadius(), color: this.glassOn() ? Color.Transparent : GLASS_SHADOW_COLOR,
         offsetX: 0, offsetY: this.profileAvatarShadowY() })
         // 没有头像文件时（仅首字母占位）点击无意义，不给反馈。
         // 记下点击处的屏幕坐标，查看器据此决定放大/缩回的中心点。

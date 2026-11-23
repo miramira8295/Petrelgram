@@ -1572,7 +1572,7 @@ export struct StickerPicker {
           if (this.allowSearch) {
             Row() {
               Stack() {
-                NativeGlassHost({ effectsEnabled: false, hostWidth: 32, hostHeight: 32, hostRadius: 16 });
+                NativeGlassHost({ surface: 'control', effectsEnabled: false, hostWidth: 32, hostHeight: 32, hostRadius: 16 });
                 Column() {
                   SymbolGlyph(this.searchOpen ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'))
                     .fontSize(17)

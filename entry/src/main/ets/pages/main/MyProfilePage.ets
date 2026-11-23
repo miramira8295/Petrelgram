@@ -1396,8 +1396,8 @@ export struct MyProfilePage {
         .backgroundColor(this.cardFill())
         .borderRadius(54)
         .shadow({
-          radius: this.avatarPressed ? 5 : 12,
-          color: this.avatarPressed ? '#1C000000' : '#28000000',
+          radius: this.glassOn() ? 0 : (this.avatarPressed ? 5 : 12),
+          color: this.glassOn() ? Color.Transparent : (this.avatarPressed ? '#1C000000' : '#28000000'),
           offsetX: 0,
           offsetY: this.avatarPressed ? 1 : 4
         });

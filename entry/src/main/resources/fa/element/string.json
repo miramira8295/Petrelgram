@@ -1,6 +1,10 @@
 {
   "string": [
     {
+      "name": "material_app_default",
+      "value": "پیش‌فرض برنامه"
+    },
+    {
       "name": "a11y_selected",
       "value": "، انتخاب شده"
     },
@@ -11218,11 +11222,11 @@
     },
     {
       "name": "chat_settings_material_thickness",
-      "value": "ضخامت متریال لایه رویی"
+      "value": "جنس سیستم"
     },
     {
       "name": "chat_settings_material_thickness_sub",
-      "value": "شیشه مات نوارها، کادر نوشتن، منوها و پنجره‌ها"
+      "value": "مشترک بین حالت روشن و تیره. پیش‌فرض برنامه سبک‌های فعلی را بدون تاری بالا و پایین گفتگو حفظ می‌کند."
     },
     {
       "name": "material_thickness_ultra_thin",
@@ -11878,7 +11882,7 @@
     },
     {
       "name": "chat_settings_surface_glass_ui",
-      "value": "رابط"
+      "value": "جنس فهرست‌ها"
     },
     {
       "name": "chat_settings_surface_glass_ui_sub",

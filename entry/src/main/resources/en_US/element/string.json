@@ -1,6 +1,10 @@
 {
   "string": [
     {
+      "name": "material_app_default",
+      "value": "App default"
+    },
+    {
       "name": "a11y_message_reactions",
       "value": "View reactions"
     },
@@ -11246,11 +11250,11 @@
     },
     {
       "name": "chat_settings_material_thickness",
-      "value": "Overlay material thickness"
+      "value": "System material"
     },
     {
       "name": "chat_settings_material_thickness_sub",
-      "value": "Frosted glass on bars, composer, menus and dialogs"
+      "value": "Shared by light and dark modes. App default keeps current styles, with no blur on chat headers or footers."
     },
     {
       "name": "material_thickness_ultra_thin",
@@ -11906,7 +11910,7 @@
     },
     {
       "name": "chat_settings_surface_glass_ui",
-      "value": "Interface"
+      "value": "List material"
     },
     {
       "name": "chat_settings_surface_glass_ui_sub",

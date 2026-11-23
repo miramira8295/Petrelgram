@@ -1,3 +1,4 @@
+import { systemMaterialState } from '../../util/systemMaterialSetting';
 // Overlay shadow disabled for the scroll comparison; keep geometry, fill and interactions.
 // Background blur is disabled by chatOverlayBackdropBlur for the scroll comparison; translucent fills remain.
 import { chatOverlayBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
@@ -138,8 +139,8 @@ export struct FloatingDateOverlay {
     // instead of constructing its subtree. Hidden state already disables blur,
     // effects and hit testing; the overlay does not size the message List.
     Row() {
-      // 系统沉浸材质玻璃（Toggle 承载层）：与输入栏、右上角功能菜单同一套材质参数。
-      SystemGlassSurface({ radius: 14, fixedHeight: 28 }) {
+      // 系统沉浸材质玻璃（Toggle 承载层）：与输入栏、顶栏胶囊共用 control 材质参数。
+      SystemGlassSurface({ effectsEnabled: systemMaterialState.chatEnabled, surface: 'control', radius: 14, fixedHeight: 28 }) {
         Row() {
           Text(this.state.label)
             .fontSize(12)

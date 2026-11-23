@@ -132,7 +132,7 @@ export struct MusicCollectionsView {
         }
         .layoutWeight(1).alignItems(HorizontalAlign.Start);
         Stack() {
-          SystemGlassSurface({ radius: 18, fixedHeight: 36 }) {
+          SystemGlassSurface({ surface: 'control', radius: 18, fixedHeight: 36 }) {
             Row({ space: 6 }) {
               SymbolGlyph($r('sys.symbol.plus')).fontSize(16).fontColor([COLOR_TEXT_PRIMARY]);
               Text($r('app.string.mc_new_collection'))

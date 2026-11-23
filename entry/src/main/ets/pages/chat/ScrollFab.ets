@@ -1,3 +1,4 @@
+import { SYSTEM_MATERIAL_DEFAULT, KEY_SYSTEM_MATERIAL, chatMaterialEnabled } from '../../util/systemMaterialSetting';
 // Overlay shadow disabled for the scroll comparison; keep geometry, fill and interactions.
 // Background blur is disabled by chatOverlayBackdropBlur for the scroll comparison; translucent fills remain.
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ON_PRIMARY
@@ -23,6 +24,7 @@ import { NativeGlassHost } from './NativeGlassHost';
 
 @Component
 export struct ScrollFab {
+  @StorageProp(KEY_SYSTEM_MATERIAL) private systemMaterialLevel: number = SYSTEM_MATERIAL_DEFAULT;
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -67,7 +69,7 @@ export struct ScrollFab {
       // 提交版（PR #21 前）玻璃就画在按钮自身，这两者天然同层；拆成 NativeGlassHost
       // 之后玻璃变成了兄弟节点，所以要把变换上提到这层包壳。
       Stack() {
-      NativeGlassHost({ hostWidth: 46, hostHeight: 46, hostRadius: 23 });
+      NativeGlassHost({ effectsEnabled: chatMaterialEnabled(this.systemMaterialLevel), surface: 'control', hostWidth: 46, hostHeight: 46, hostRadius: 23 });
       Button({ type: ButtonType.Circle }) {
         if (this.busy) {
           LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
