@@ -144,13 +144,30 @@ export interface ShatterPrepared {
   handle: number;
   width: number;
   height: number;
+  offsetX?: number;
+  offsetY?: number;
   surfaceWidth: number;
   surfaceHeight: number;
   top: number;
+  tileCount?: number;
+  bufferWidth?: number;
+  bufferHeight?: number;
 }
+export const shatterWarm: (cacheDir?: string) => void;
 export const shatterPrepare: (snapshot: image.PixelMap, density: number,
   particleBudget: number) => Promise<ShatterPrepared | null>;
 // event: 0 = 首帧已提交，1 = 动画完成，-1 = 渲染失败。无逐帧 ArkTS 回调。
 export const shatterAttach: (handle: number, surfaceId: string, onEvent: (event: number) => void) => boolean;
 export const shatterBegin: (handle: number, durationMs: number) => void;
 export const shatterClose: (handle: number) => void;
+// 共享舞台（单 XComponent / 单 EGLSurface 批渲染多个消息气泡删除粒子）。
+// onEvent(layerHandle, event): event 0 = 首帧就绪, 1 = 该层动画完成, -1 = 舞台失败。
+export const shatterStageOpen: (
+  surfaceId: string, stageWidth: number, stageHeight: number,
+  bufferWidth: number, bufferHeight: number,
+  onEvent: (layerHandle: number, event: number) => void
+) => number;
+export const shatterStageAdd: (stageId: number, sceneHandle: number, stageX: number, stageY: number) => boolean;
+export const shatterStageBegin: (stageId: number, sceneHandle: number, durationMs: number) => void;
+export const shatterStageRemove: (stageId: number, sceneHandle: number) => void;
+export const shatterStageClose: (stageId: number) => void;

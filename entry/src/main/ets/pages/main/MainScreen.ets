@@ -722,7 +722,8 @@ export struct MainScreen {
   }
 
   private dockVisible(): boolean {
-    if (this.chatViewerCoversWindow && this.wallpaperSplit()) {
+    // 查看器占用整个窗口；旋转中断点/导航可见回调不同步也不能露出 Dock。
+    if (this.chatViewerCoversWindow) {
       return false;
     }
     return this.dockActive && this.appIsForeground && !(this.tab === 0 && this.chatDetailHiding) && this.storedNavBarFlag(this.tab);

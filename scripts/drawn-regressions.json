@@ -140,6 +140,7 @@
   "test-attach-panel.mjs",
   "test-navigation-haptics.mjs",
   "test-dock-visibility.mjs",
+  "test-viewer-window-rotation.mjs",
   "test-root-back-navigation.mjs",
   "test-remote-message-delete.mjs",
   "test-channel-direct-messages.mjs",

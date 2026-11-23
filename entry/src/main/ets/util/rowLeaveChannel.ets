@@ -12,6 +12,28 @@
 export interface DeleteRowGroup { head: DeleteRowHead; memberIds: number[]; }
 interface DeleteRowHead { rowId: number; contentType?: string; }
 
+// 可选的页面级共享粒子舞台接口（由 ShatterStageController 实现，不把 ArkUI/NAPI 引入纯工具层）。
+export interface ShatterStageLayerRequest {
+  handle: number;
+  nodeId: string;
+  snapScale: number;
+  offsetX: number;
+  offsetY: number;
+  surfaceWidth: number;
+  surfaceHeight: number;
+  top: number;
+  singleMode: boolean;
+  onFirstFrame: () => void;
+  onFinish: () => void;
+  onFail: (reason: string) => void;
+}
+
+export interface ShatterStageHost {
+  attachLayer(ui: object, req: ShatterStageLayerRequest): boolean;
+  beginLayer(handle: number, durationMs: number): void;
+  detachLayer(handle: number): void;
+}
+
 // 相册只删部分成员时不能隐藏整组，保留原行由数据更新重排。
 export function wholeDeleteRowIds(groups: DeleteRowGroup[], ids: number[]): number[] {
   const selected = new Set(ids);
@@ -26,6 +48,7 @@ export class RowLeaveChannel {
   private listeners: Map<number, Set<(strength: number) => void>> = new Map();
   private pending: Map<number, () => void> = new Map();
   private budget: number = 8000;
+  stage: ShatterStageHost | null = null;
 
   particleBudget(): number { return this.budget; }
   mounted(rowId: number): boolean { return (this.listeners.get(rowId)?.size ?? 0) > 0; }

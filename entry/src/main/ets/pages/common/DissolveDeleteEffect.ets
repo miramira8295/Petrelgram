@@ -41,6 +41,7 @@ export struct DissolveDeleteEffect {
         ShatterDeleteOverlay({
           nodeId: this.nodeKey(),
           particleBudget: this.channel.particleBudget(),
+          stage: this.channel.stage,
           onCaptured: this.capturedFor(this.nodeKey()),
           onFinish: this.finishedFor(this.rowId, this.channel)
         }).position({ x: 0, y: 0 });

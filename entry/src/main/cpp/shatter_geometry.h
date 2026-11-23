@@ -16,6 +16,7 @@ struct Tile {
 
 struct Geometry {
     int width = 0, height = 0;
+    int offsetX = 0, offsetY = 0;
     int surfaceWidth = 0, surfaceHeight = 0, top = 0;
     int bufferWidth = 0, bufferHeight = 0;
     std::vector<Tile> tiles;
@@ -27,18 +28,52 @@ inline size_t StartedTileCount(const std::vector<float> &delays, float progress)
 }
 
 // 与原 Canvas 随机二分、波前和运动参数一致。seed 仅用于可重复的宿主验证。
-inline Geometry MakeGeometry(int width, int height, float density, int budget, uint32_t seed) {
+// 传入 rgba（预乘 RGBA 像素，尺寸 width*height*4）时会用二维前缀和 O(1) 剔除
+// alpha 全为 0 的纯透明区域，既不浪费粒子预算也不撑大透明合成表面。
+inline Geometry MakeGeometry(int width, int height, float density, int budget, uint32_t seed,
+                             const uint8_t *rgba = nullptr) {
     Geometry result;
     if (width <= 0 || height <= 0 || !std::isfinite(density) || density <= 0 || budget <= 0) {
         return result;
     }
     result.width = width;
     result.height = height;
+    const size_t stride = size_t(width) + 1;
+    std::vector<uint32_t> alphaSum;
+    uint64_t opaquePixels = uint64_t(width) * height;
+    if (rgba != nullptr) {
+        alphaSum.assign(stride * (size_t(height) + 1), 0);
+        for (int y = 0; y < height; ++y) {
+            uint32_t rowSum = 0;
+            const uint8_t *srcRow = rgba + size_t(y) * size_t(width) * 4;
+            uint32_t *dstRow = alphaSum.data() + size_t(y + 1) * stride;
+            const uint32_t *prevRow = alphaSum.data() + size_t(y) * stride;
+            for (int x = 0; x < width; ++x) {
+                rowSum += srcRow[size_t(x) * 4 + 3] > 0 ? 1u : 0u;
+                dstRow[x + 1] = prevRow[x + 1] + rowSum;
+            }
+        }
+        opaquePixels = alphaSum[size_t(height) * stride + size_t(width)];
+        if (opaquePixels == 0) {
+            return result;
+        }
+    }
+    auto hasOpaque = [&](int x, int y, int w, int h) -> bool {
+        if (rgba == nullptr) {
+            return true;
+        }
+        const size_t x0 = size_t(x), y0 = size_t(y);
+        const size_t x1 = size_t(x + w), y1 = size_t(y + h);
+        const uint32_t count = alphaSum[y1 * stride + x1] - alphaSum[y0 * stride + x1] -
+                               alphaSum[y1 * stride + x0] + alphaSum[y0 * stride + x0];
+        return count > 0;
+    };
     std::mt19937 random(seed);
     auto unit = [&]() { return std::generate_canonical<double, 32>(random); };
-    const size_t limit = std::min(budget, 8000);
-    const double target = std::max(1.0, std::max(2.475 * density,
-        std::sqrt(2.0 * width * height / limit)));
+    const size_t limit = rgba != nullptr ? size_t(std::min(budget, 2400)) : size_t(std::min(budget, 8000));
+    const double minTilePx = rgba != nullptr ? 2.9 * density : 2.475 * density;
+    const double target = std::max(1.0, std::max(minTilePx,
+        std::sqrt(2.0 * double(opaquePixels) / double(limit))));
     struct Region { int x, y, w, h; };
     std::vector<Region> pending{{0, 0, width, height}};
     // Breadth first keeps fragments balanced at the strict budget. At most
@@ -46,18 +81,29 @@ inline Geometry MakeGeometry(int width, int height, float density, int budget, u
     size_t next = 0;
     while (next < pending.size()) {
         const auto r = pending[next++];
+        if (!hasOpaque(r.x, r.y, r.w, r.h)) {
+            continue;
+        }
         if ((r.w > target || r.h > target) &&
             result.tiles.size() + pending.size() - next + 1 < limit) {
             const bool vertical = r.w > target && (r.h <= target || r.w * (0.7 + unit() * 0.6) > r.h);
             const double ratio = 0.36 + unit() * 0.28;
             if (vertical) {
                 const int cut = std::max(1, std::min(r.w - 1, int(std::round(r.w * ratio))));
-                pending.push_back({r.x, r.y, cut, r.h});
-                pending.push_back({r.x + cut, r.y, r.w - cut, r.h});
+                if (hasOpaque(r.x, r.y, cut, r.h)) {
+                    pending.push_back({r.x, r.y, cut, r.h});
+                }
+                if (hasOpaque(r.x + cut, r.y, r.w - cut, r.h)) {
+                    pending.push_back({r.x + cut, r.y, r.w - cut, r.h});
+                }
             } else {
                 const int cut = std::max(1, std::min(r.h - 1, int(std::round(r.h * ratio))));
-                pending.push_back({r.x, r.y, r.w, cut});
-                pending.push_back({r.x, r.y + cut, r.w, r.h - cut});
+                if (hasOpaque(r.x, r.y, r.w, cut)) {
+                    pending.push_back({r.x, r.y, r.w, cut});
+                }
+                if (hasOpaque(r.x, r.y + cut, r.w, r.h - cut)) {
+                    pending.push_back({r.x, r.y + cut, r.w, r.h - cut});
+                }
             }
             continue;
         }

@@ -1388,6 +1388,7 @@ export struct DrawnMessageRow {
             });
             if (this.leaving > 0 && this.deleteCaptureSupported) {
               ShatterDeleteOverlay({ nodeId: this.deleteNodeKey, particleBudget: this.actions.rowLeave.particleBudget(),
+                stage: this.actions.rowLeave.stage ?? null,
                 onCaptured: this.leaveCapture.captured(),
                 onFinish: this.leaveCapture.finished(this.rowGroup.head.rowId, this.actions.rowLeave) })
                 .position({ x: 0, y: 0 }).hitTestBehavior(HitTestMode.None);

@@ -1,3 +1,4 @@
+import { shatterWarm } from 'libentry.so';
 import { DrawnStage, drawnStageMetrics } from '../../util/drawnStageMetrics';
 import { KEY_DEBUG_TIMELINE_LAZY } from '../../util/debugTimelineRenderer';
 import { TimelineLazyDataSource } from './TimelineLazyDataSource';
@@ -122,6 +123,7 @@ const TRIM_TRIGGER_ROWS: number = 500;
 // row-by-row verification on every publish adds O(n) work to the hot path;
 // keep it opt-in for focused diagnostics.
 const VERIFY_TIMELINE_ROW_INVARIANTS: boolean = false;
+let shatterWarmRequested: boolean = false;
 
 // 消息流的数据发布、行准备和视口状态。List/Repeat 的 UI 归 ChatTimelineHost。
 // 跨域操作只接已有控制器或固定接口，不保存 ChatPage 实例。
@@ -1516,6 +1518,13 @@ export class ChatTimelineSession {
       this.chatTgsResumeTimer = -1;
       this.chatTgsStageSettling = false;
       this.bindings!.syncChatTgsGate();
+      if (!shatterWarmRequested) {
+        shatterWarmRequested = true;
+        try {
+          const cacheDir: string = this.bindings?.getUIContext().getHostContext()?.cacheDir ?? '';
+          shatterWarm(cacheDir);
+        } catch (_e) {}
+      }
     }, delayMs);
   }
 

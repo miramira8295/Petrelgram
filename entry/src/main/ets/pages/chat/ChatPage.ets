@@ -1,3 +1,4 @@
+import { shatterWarm } from 'libentry.so';
 import { systemMaterialState } from '../../util/systemMaterialSetting';
 import { openMessageSender } from '../../util/messageSenderNavigation';
 import { ChannelDirectMessagesSession } from './ChannelDirectMessagesSession';
@@ -41,6 +42,7 @@ import { primeFavoriteStickers } from '../../store/FavoriteStickers';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { PROFILE_TAB_MEDIA } from '../../store/ChatProfileStore';
 import { RowLeaveChannel, wholeDeleteRowIds } from '../../util/rowLeaveChannel';
+import { ShatterStageController, ShatterStageOverlay } from '../common/ShatterStageHost';
 import { RemoteMessageDeleteEffects } from '../../util/remoteMessageDeleteEffects';
 import { saveableEntries, SaveablePlan } from '../../util/selectionSave';
 import { ActionBarContext, dismissActionBar, handleActionBar } from './ChatActionBarActions';
@@ -234,7 +236,7 @@ import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { hasPrefetchedPage } from '../../util/chatPrefetch';
 import { subscribeChatJump } from '../../util/chatJumpChannel';
 import { clearNowPlaying, NowPlaying, publishNowPlaying } from '../../util/nowPlayingChannel';
-import { viewerFullScreenWanted, viewerHidesTitleBar } from '../../util/navFullScreen';
+import { viewerHidesTitleBar } from '../../util/navFullScreen';
 import { allocChatDestToken, markChatDestHidden, markChatDestShown } from '../../util/chatDestTracker';
 import { isSystemTopBarReady, restoreViewerSystemBars } from '../../util/systemBarsWindow';
 import { publishViewerCoversWindow } from '../../util/viewerWindowCover';
@@ -985,6 +987,7 @@ export struct ChatPage {
   // 删除动画的旁路通道（issue #149）。不做模块级单例：平板分栏时多个 ChatPage
   // 同时活着，各自的淡出不能互相影响。
   private rowLeave: RowLeaveChannel = new RowLeaveChannel();
+  private shatterStage: ShatterStageController = new ShatterStageController();
   private remoteDelete: RemoteMessageDeleteEffects = new RemoteMessageDeleteEffects(this.rowLeave);
   // 会话操作条（issue #201 第 8 条），从 ChatEntry 镜像过来，空串 = 没有。
   // 音频卡片上「收藏」胶囊的目标消息；0 = 面板不显示。面板本体在
@@ -1318,6 +1321,7 @@ export struct ChatPage {
     this.timeline.resumeDividerId = 0;
     this.timeline.resumeDividerItemY = 0;
     this.timeline.initialJumpTargetId = 0;
+    this.shatterStage.reset();
     // 原 `this.pendingFileOpenId = 0; this.fileOpenInFlightId = 0;` 两行（B15）。
     // 这是本簇六个字段里**只有这一对**会在换会话时单独清空的地方，另外四个在这
     // 条路径上从来不动——所以 MediaSaveState 单开了 resetFileOpenIntent()，
@@ -1684,6 +1688,7 @@ export struct ChatPage {
       }
     };
     this.timeline.bind(timelineBindings);
+    this.rowLeave.stage = this.shatterStage;
 
     // 目标会话正是自己时把分享取走。放在最前：它只是登记一个回调，
     // 不依赖下面任何初始化。
@@ -3490,6 +3495,7 @@ export struct ChatPage {
   aboutToDisappear(): void {
     scheduleClearChatDetailHiding();
     markChatDestHidden(this.chatDestToken, true);
+    this.shatterStage.dispose();
     this.messageActionsState.reset();
     this.sessionLifecycle.dispose();
   }
@@ -4186,9 +4192,9 @@ export struct ChatPage {
   // 查看器显式通知目标切换，页面协调动画闸门和窗口覆盖。
   private onViewerTargetChanged(): void {
     this.syncChatTgsGate();
-    // 分栏下查看器开着：收左栏和侧边页签，让页面内的查看器盖满窗口（见 util/viewerWindowCover）。
-    publishViewerCoversWindow(viewerFullScreenWanted(
-      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.viewerOpen()));
+    // 发布查看器对整个窗口的占用，不锁定打开瞬间的断点。
+    // 视频可在打开后才转横屏；布局层会按最新断点收起左栏。
+    publishViewerCoversWindow(this.viewerOpen());
   }
 
   // 查看器上点"保存"：entry 在这里取，取不到就不调。
@@ -5916,6 +5922,12 @@ export struct ChatPage {
   // 弹窗走 ComponentContent + UIContext.openCustomDialog，不再走
   // CustomDialogController：后者官方明写只在状态管理 V1 中使用，而本页要迁 V2。
   private openDeleteConfirm(ids: number[]): void {
+    if (this.deleteAnimationEnabled()) {
+      try {
+        const cacheDir: string = (this.getUIContext().getHostContext() as common.UIAbilityContext).cacheDir;
+        shatterWarm(cacheDir);
+      } catch (_e) {}
+    }
     this.messageDelete.open(ids, this.timeline.messages.concat(this.selection.entries()),
       this.isGroup || this.isChannel ? '' : this.header.titleTextOf(), this.isGroup && !this.isChannel)
       .catch((e: Object): void => { logE(`ChatPage.openDeleteConfirm failed: ${e}`); });
@@ -6933,6 +6945,7 @@ export struct ChatPage {
         this.timelineStateRetry(mode);
       }
     });
+    ShatterStageOverlay({ stage: this.shatterStage });
   }
 
   @Builder

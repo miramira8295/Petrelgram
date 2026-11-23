@@ -20,6 +20,7 @@ class ShatterCaptureFrame extends FrameCallback {
 @Component
 export struct ShatterCanvasFallback {
   pixels: image.PixelMap | undefined = undefined;
+  snapshotScale: number = 1;
   canDraw: () => boolean = (): boolean => true;
   onCaptured: () => void = (): void => {};
   onFinish: () => void = (): void => {};
@@ -68,10 +69,11 @@ export struct ShatterCanvasFallback {
       if (pixels === undefined || !this.canDraw()) { this.finish(); return; }
       const info = await pixels.getImageInfo();
       if (!this.active || this.finished || !this.canDraw()) { return; }
+      const scale: number = this.snapshotScale > 0 ? this.snapshotScale : 1;
       this.widthPx = info.size.width;
       this.heightPx = info.size.height;
-      this.widthVp = this.getUIContext().px2vp(this.widthPx);
-      this.heightVp = this.getUIContext().px2vp(this.heightPx);
+      this.widthVp = this.getUIContext().px2vp(this.widthPx) / scale;
+      this.heightVp = this.getUIContext().px2vp(this.heightPx) / scale;
       this.snapshot = pixels;
     } catch (_error) {
       this.finish();
@@ -81,7 +83,12 @@ export struct ShatterCanvasFallback {
   private start(): void {
     if (!this.active || this.finished || !this.canDraw() || this.started || this.snapshot === undefined) { return; }
     this.started = true;
-    this.ctx.drawImage(this.snapshot, 0, 0);
+    const scale: number = this.snapshotScale > 0 ? this.snapshotScale : 1;
+    if (scale < 0.999) {
+      this.ctx.drawImage(this.snapshot, 0, 0, this.widthPx / scale, this.heightPx / scale);
+    } else {
+      this.ctx.drawImage(this.snapshot, 0, 0);
+    }
     this.getUIContext().postFrameCallback(new ShatterCaptureFrame((): void => this.animate()));
   }
 
