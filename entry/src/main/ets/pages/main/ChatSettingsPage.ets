@@ -1029,15 +1029,16 @@ export struct ChatSettingsPage {
             this.materialThicknessCard();
           }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
 
-          Column() {
-            this.edgeBlurCard();
-          }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
-
-          // 光感等级任何 API 上都有东西可管：API 20 起的 hdsEffect 点光 / 按压阴影（util/hdsPointLight）读的
+          // 光感等级紧跟浮层材质厚度：两者是同一套沉浸材质档位，放一起才看得出它们是一组。
+          // 任何 API 上都有东西可管：API 20 起的 hdsEffect 点光 / 按压阴影（util/hdsPointLight）读的
           // 就是它。以前按材质可用与否藏起来，老设备（和没报沉浸材质的设备）上档位照样生效却调不了。
           Column() {
             this.materialLightCard();
           }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
+
+          Column() {
+            this.edgeBlurCard();
+          }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
 
           Column() {
             this.toggleRow(str('chat_settings_hide_pinned'), str('chat_settings_hide_pinned_sub'), KEY_HIDE_PINNED_DEFAULT);

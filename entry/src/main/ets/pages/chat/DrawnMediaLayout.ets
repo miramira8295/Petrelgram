@@ -14,7 +14,7 @@ import { DrawnBubbleChrome, DrawnChromeLayouts, placeChromeComments, placeChrome
 import { placeDrawnFooter } from '../../util/drawnFooterPlacement';
 import { BubbleCornerCache } from '../../util/messageBubblePresentation';
 import { cornerPx, senderLeadInset } from '../../util/bubbleCornerInset';
-import { mediaThumbWidth, inlineMaxWidth, BUBBLE_AVATAR_GUTTER_VP } from '../../util/mediaBox';
+import { mediaThumbWidth, BUBBLE_AVATAR_GUTTER_VP } from '../../util/mediaBox';
 import { DrawnRichTextLayout, DrawnRichTextLayouts } from './DrawnRichTextLayout';
 import { DrawnSenderHeaderCache } from './DrawnSenderHeader';
 import { DrawnReplyQuoteCache } from './DrawnReplyQuote';
@@ -107,8 +107,8 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
     if (this.cached !== null && this.cachedUi === ui && this.cachedGroup === group && this.cachedSelection === data.selectedMemberIds &&
       this.cachedTranslation === (style.translationStatus ?? null) && this.cachedReplace === (style.replaceTranslation === true) && this.cachedKey === key && this.cachedViews === style.views && this.cachedMathRevision === style.mathRevision && this.cachedExpanded === style.expandedBlocks && (this.cachedSpoilers === true) === (style.spoilersRevealed === true)) { return this.cached; }
     const avatarSpace = data.isGroup && !m.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0;
-    const maxWidth = this.single ? inlineMaxWidth(data.contentWidth, avatarSpace)
-      : mediaThumbWidth(data.contentWidth, avatarSpace);
+    // 单张与相册统一走媒体口径（官方照片宽度独立于文本气泡宽，见 util/mediaBox）。
+    const maxWidth = mediaThumbWidth(data.contentWidth, avatarSpace);
     let gridWidth = maxWidth;
     if (!(gridWidth > 20) || !(d > 0)) { this.failureReason = DrawnRouteReason.InvalidGeometry; return null; }
     const captionText = this.single ? m.text : group.caption;

@@ -85,6 +85,8 @@ export struct SearchHeader {
   // @Trace。
   @Require @Param search: SearchSession;
   @Param topSafe: number = 0;
+  // 深色底（深色壁纸/深色主题）时材质要按深色调绘制，由页面传入。
+  @Param dark: boolean = false;
 
   // 函数型入参一律 @Event：调用点传的是内联箭头函数，页面每重建一次都是一个新
   // 闭包，若留作 @Param，那个 `!==` 恒不相等会让本层跟着页面的每次重建白刷；
@@ -211,6 +213,8 @@ export struct SearchBottomBar {
   @Require @Param search: SearchSession;
   // 输入区底部让出的高度，由页面按键盘/抽屉状态算好传进来。
   @Param bottomGap: number = 0;
+  // 深色底时材质按深色调绘制（理由见 SearchHeader.dark）。
+  @Param dark: boolean = false;
 
   // 两个翻页动作同样一律 @Event（理由见 SearchHeader）。
   @Event onOlder: () => void = (): void => {};
@@ -268,28 +272,46 @@ export struct SearchBottomBar {
 
   // 一颗圆钮。两个翻页键长得一样，只有图标/可用性/回调不同。
   @Builder
-  stepButton(icon: Resource, enabled: boolean, bounce: boolean, action: () => void) {
+  stepButton(icon: Resource, older: boolean, bounce: boolean, action: () => void) {
     // 固定尺寸的圆钮：材质层尺寸已知，直接给，省掉一帧测量。
-    // 外壳 Stack 承接透明度与点击（自定义组件带尾随闭包后不能再链通用属性）。
+    // 外壳 Stack 只承接点击：玻璃与图标是它的两个兄弟层，各自成形。
+    // 不要写成 Stack().opacity(...) —— 那会把整颗玻璃一起压暗。
     Stack() {
     SystemGlassSurface({ surface: 'control', effectsEnabled: false, plainOutline: true,
       radius: bottomPillRadius(),
       fixedWidth: BOTTOM_PILL_HEIGHT,
       fixedHeight: BOTTOM_PILL_HEIGHT
     }) {
-      Row() {
-        if (bounce) {
-          SymbolGlyph(icon).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
-            .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
-        } else {
-          SymbolGlyph(icon).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
-        }
+      // 玻璃层只放静态占位：见上方注释，图标必须画在它外面才能跟着 enabled 变色。
+      Row() {}
+      .width(BOTTOM_PILL_HEIGHT).height(BOTTOM_PILL_HEIGHT);
+    }
+    // 【为什么图标画在材质组件外面】SystemGlassSurface 是 @ComponentV2，尾随闭包是
+    // @BuilderParam，只有它自己的 @Param（radius / dark / fixedWidth / fixedHeight /
+    // surface）变化时才会重建；enabled 变了闭包不会重新求值，图标就永久停在进入时
+    // 的灰度（用户 2026-11-23：「向下的按钮不会从浅灰色变成深色，即使已经可以用了
+    // 也不切换」）。所以玻璃只留占位，图标作为兄弟层由父组件重算。
+    Row() {
+      if (bounce) {
+        SymbolGlyph(icon).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
+          .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
+      } else {
+        SymbolGlyph(icon).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
       }
-      .width(BOTTOM_PILL_HEIGHT).height(BOTTOM_PILL_HEIGHT)
-      .justifyContent(FlexAlign.Center);
     }
+    .width(BOTTOM_PILL_HEIGHT).height(BOTTOM_PILL_HEIGHT)
+    .justifyContent(FlexAlign.Center)
+    // 不可用时只压暗图标，不压暗整颗胶囊：玻璃是背景材质，翻到头了它也该在，
+    // 否则同一排两颗圆钮一颗有材质一颗只剩描边，看起来像坏了一个
+    // （用户 2026-11-23：「搜索页还缺了一个向下的按钮没有显示材质效果」）。
+    .hitTestBehavior(HitTestMode.None)
+    // 【为什么这里不接 enabled 参数】ArkUI 的 @Builder 参数按值传递，参数变了不会
+    // 触发 builder 重算（官方文档明写：值传递的参数变化不会引起 UI 刷新）。所以
+    // 可用性必须在 builder 内部直接读状态，让依赖登记到承载组件上。
+    .opacity((older
+      ? canStepOlder(this.search.results.length, this.search.idx, this.search.total)
+      : canStepNewer(this.search.idx)) ? 1 : 0.35);
     }
-    .opacity(enabled ? 1 : 0.4)
     .onClick((): void => { action(); });
   }
 
@@ -333,12 +355,8 @@ export struct SearchBottomBar {
         Blank().layoutWeight(1);
 
         if (this.search.results.length > 0) {
-          this.stepButton($r('sys.symbol.chevron_up'),
-            canStepOlder(this.search.results.length, this.search.idx, this.search.total),
-            false, (): void => { this.onOlder(); });
-          this.stepButton($r('sys.symbol.chevron_down'),
-            canStepNewer(this.search.idx),
-            true, (): void => { this.onNewer(); });
+          this.stepButton($r('sys.symbol.chevron_up'), true, false, (): void => { this.onOlder(); });
+          this.stepButton($r('sys.symbol.chevron_down'), false, true, (): void => { this.onNewer(); });
         }
       }
       .width('100%')

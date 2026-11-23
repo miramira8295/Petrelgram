@@ -36,8 +36,13 @@ export const BUBBLE_AVATAR_SIZE_VP: number = 38;
 export const BUBBLE_AVATAR_GAP_VP: number = 3;
 // 群聊来信给头像留的位。
 export const BUBBLE_AVATAR_GUTTER_VP: number = BUBBLE_AVATAR_SIZE_VP + BUBBLE_AVATAR_GAP_VP;
-// 气泡对侧必须留出的最小空白。没有它，长消息会顶到另一边，一眼看不出是"谁发的"。
-export const BUBBLE_OPPOSITE_MIN_GAP_VP: number = 28;
+// 气泡两侧合计要让出多少。官方 Android 是 80（两侧各 40），见 bubbleMaxWidth 的注释。
+export const BUBBLE_SIDE_RESERVE_VP: number = 40;
+// 照片两侧合计让出多少。官方 Android 照片是 64（两侧各 32），比文本窄一档让出来。
+export const BUBBLE_PHOTO_SIDE_RESERVE_VP: number = 32;
+// 超宽屏兜底。手机上永远碰不到（390 宽内容列算出来只有 310），只有平板分栏/
+// 横屏那种「内容列 800vp」的布局才会生效，避免一条消息横贯整列。
+export const BUBBLE_MAX_WIDTH_VP: number = 600;
 
 // 气泡最宽能到多少。
 //
@@ -53,11 +58,21 @@ export const BUBBLE_OPPOSITE_MIN_GAP_VP: number = 28;
 // 【默认值为什么是「有头像位」】util/initialMessageStage 那个首屏高度估算拿不到
 // 逐行的会话类型，只能按最窄的一档估。估窄 ⇒ 估出的行数偏多 ⇒ 高度偏高，
 // 这是安全的方向（占位比真实高，落地时收缩，不会出现内容被裁掉）。
+// 【2026-11-23 对齐 Android 官方】此前只让出 4(行边距) + 28(对侧留白) = 32vp，
+// 长消息几乎顶满整行，平板上尤其难看。官方 ChatMessageCell.java:6911-6913 的
+// 两套分支最终都是「可用宽度 − dp(80) − 头像位」：
+//   手机  min(getParentWidth(), displaySize.y) − dp(80 + (群聊来信 ? 42 : 0))
+//   平板  getMinTabletSide()                     − dp(80 + (群聊来信 ? 42 : 0))
+// 其中 80 是两侧各 40 的屏幕边距，drawAvatar 就是群聊来信的头像列。我们的
+// avatarGutter(41) 与它的 42 基本等价，所以只把 32 换成官方的 80 即可。
+//
+// 额外一条 600vp 的绝对上限：官方平板分支以屏幕短边为基准（13 寸能到 700+），
+// 而我们是分栏后的内容列，按 −80 算仍有 790 左右，一眼还是「横贯整列」。
+// 600 约等于手机（310）的两倍，接近桌面版 Telegram 的气泡观感；手机上碰不到。
 export function bubbleMaxWidth(screenW: number,
   avatarGutter: number = BUBBLE_AVATAR_GUTTER_VP): number {
-  const reserved: number = BUBBLE_ROW_SIDE_VP + Math.max(0, avatarGutter) +
-    BUBBLE_OPPOSITE_MIN_GAP_VP;
-  return Math.max(0, screenW - reserved);
+  const reserved: number = BUBBLE_SIDE_RESERVE_VP * 2 + Math.max(0, avatarGutter);
+  return Math.max(0, Math.min(screenW - reserved, BUBBLE_MAX_WIDTH_VP));
 }
 
 export function inlineMaxWidth(screenW: number,
@@ -92,12 +107,18 @@ export function hitSenderAvatarColumn(localX: number, isGroup: boolean,
   return localX >= left && localX <= right;
 }
 
-// 手机媒体铺满可用气泡宽；其他设备保留原来的 280vp 上限。
+// 手机媒体铺满官方照片宽；其他设备保留原来的 280vp 上限。
 // 展示、预取、估高及源图档位统一走这里，避免同一媒体出现两套目标尺寸。
+//
+// 【不要从 inlineMaxWidth 推】那是「文本气泡宽 − 16」，文本按官方收窄到 −80 之后，
+// 手机上照片会跟着从 342 掉到 294，比官方（短边 − 64 = 326）还小一圈。官方照片
+// 宽度是独立算的（ChatMessageCell.java:23274：短边 − dp(64)），不扣头像位、
+// 也不吃文本那 80 的边距。avatarGutter 因此不再参与（保留形参兼容调用方）。
 export function mediaThumbWidth(screenW: number,
-  avatarGutter: number = BUBBLE_AVATAR_GUTTER_VP,
+  _avatarGutter: number = BUBBLE_AVATAR_GUTTER_VP,
   deviceType: string = MEDIA_DEVICE_TYPE): number {
-  const available: number = inlineMaxWidth(screenW, avatarGutter);
+  const available: number = Math.max(0, Math.min(
+    screenW - BUBBLE_PHOTO_SIDE_RESERVE_VP * 2, BUBBLE_MAX_WIDTH_VP));
   return deviceType === 'phone' ? available : Math.min(MEDIA_MAX_WIDTH, available);
 }
 

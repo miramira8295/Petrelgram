@@ -6459,6 +6459,7 @@ export struct ChatPage {
     SearchBottomBar({
       search: this.search,
       bottomGap: this.composerBottomGap(),
+      dark: this.appDark,
       onOlder: (): void => { this.search.older(); },
       onNewer: (): void => { this.search.newer(); },
       onPublicPosts: (tag: string): void => {
@@ -6797,6 +6798,7 @@ export struct ChatPage {
         SearchHeader({
           search: this.search,
           topSafe: 0,
+          dark: this.appDark,
           onExit: (): void => { this.search.exit(); },
           onQueryChange: (v: string): void => { this.search.updateQuery(v); },
           onSubmit: (): void => { this.search.run(0, 0); }
