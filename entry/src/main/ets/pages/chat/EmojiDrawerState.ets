@@ -20,12 +20,15 @@ export function emojiDrawerHeight(viewport: number, header: number, composer: nu
   // 硬约束：输入栏本身（哪怕已经涨到十几行）必须还能完整放进上方视口，否则输入框
   // 会被 Stack 裁掉。只有这一条能把紧凑态面板压回去，草稿行数本身不再影响它。
   const byComposer: number = viewport - measured - inset - 8;
-  // 目标高度：量到过键盘就与键盘等高（卡片下沿那条安全区由 totalHeight 补回来），
-  // 这样键盘与表情面板互相切换时两者上沿对齐、不出现高度跳变；没量到键盘时沿用固定高度。
-  const wanted: number = Number.isFinite(imeHeight) && imeHeight > 0
-    ? Math.max(0, imeHeight - inset)
-    : EMOJI_DRAWER_HEIGHT;
-  return Math.max(0, Math.min(wanted, byBase, byComposer));
+  // 目标「总高」= max(固定面板高 + 安全区, 量到的键盘高)。
+  //
+  // 键盘更高时面板与键盘等高（切换时上沿对齐）；键盘不高于固定面板时**用固定值**，
+  // 这样「直接点表情键」和「键盘→表情键」两条路径算出的是同一个数——真机上键盘是
+  // 333.9vp，若直接沿用键盘高，面板会比固定档矮 6vp，两条路径就差出一次可见的位移，
+  // 用户看到的就是「切一下表情框就沉下去一块」（2026-11-24 反馈）。
+  const keyboardTotal: number = Number.isFinite(imeHeight) && imeHeight > 0 ? imeHeight : 0;
+  const wantTotal: number = Math.max(EMOJI_DRAWER_HEIGHT + inset, keyboardTotal);
+  return Math.max(0, Math.min(wantTotal - inset, byBase, byComposer));
 }
 
 // 抽屉外壳向上叠入输入栏的那一截。
@@ -84,13 +87,19 @@ export class EmojiDrawerState {
     if (Number.isFinite(height) && height > 0 && Math.abs(height - this.composer) > 0.5) { this.composer = height; }
   }
   height(header: number, bottomSafe: number): number {
+    // **只能用整屏视口**。键盘起来时 onSizeChange 报的是被键盘压小的尺寸，拿它再减
+    // header/composer 等于把键盘高度又扣一遍：真机实测键盘态 vp=509.9（整屏 843.9），
+    // 面板被算成 262.4 而不是 312，于是「打开」时的动画目标（290.4）和随后按整屏重算的
+    // 卡片高度（306.0）对不上，卡片比外壳高、被外壳 clip 掉一截——用户看到的就是
+    // 「键盘切表情后表情框下沉、内容变少」（2026-11-24 真机日志证据）。
     // Until the first layout there is no viewport to clamp against; still follow the
     // measured keyboard so the very first open already matches the IME height.
-    if (this.viewport > 0) {
-      return emojiDrawerHeight(this.viewport, header, this.composer, bottomSafe, this.expanded, this.imeHeight);
+    const vp: number = this.fullViewportH > 0 ? this.fullViewportH : this.viewport;
+    if (vp > 0) {
+      return emojiDrawerHeight(vp, header, this.composer, bottomSafe, this.expanded, this.imeHeight);
     }
     return this.imeHeight > 0
-      ? Math.max(0, this.imeHeight - drawerBottomInset(bottomSafe))
+      ? Math.max(EMOJI_DRAWER_HEIGHT, this.imeHeight - drawerBottomInset(bottomSafe))
       : EMOJI_DRAWER_HEIGHT;
   }
   totalHeight(header: number, bottomSafe: number): number {
