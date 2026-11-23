@@ -30,6 +30,12 @@ interface StatusEmoji {
   fallback: string;
 }
 
+// 上次成功取到的表情状态列表。设置子页在分栏右栏里会被反复换入换出，
+// 没有缓存时每次进入都要重新问 TDLib 并逐个下载表情，于是先是一片空白；
+// 有缓存就先用它渲染，再在后台静默刷新一次。
+let cachedRecent: StatusEmoji[] | null = null;
+let cachedSuggested: StatusEmoji[] | null = null;
+
 // 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
 // 并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router 页和
 // NavDestination。形状与试点的 PowerUsagePageBuilder 一致。
@@ -59,6 +65,16 @@ export struct EmojiStatusPage {
 
   aboutToAppear(): void {
     this.active = true;
+    const cached: StatusEmoji[] | null = cachedRecent;
+    if (cached !== null) {
+      // 有缓存：立刻出内容（不经过加载态），同时静默刷新。
+      const cachedSug: StatusEmoji[] | null = cachedSuggested;
+      this.recent = cached;
+      this.suggested = cachedSug !== null ? cachedSug : [];
+      this.loadState = 'ready';
+      this.load(true);
+      return;
+    }
     this.load();
   }
 
@@ -120,20 +136,52 @@ export struct EmojiStatusPage {
     }).catch((): void => {});
   }
 
-  private load(): void {
-    this.loadState = 'loading';
+  // 刷新时把已经下载好的图片路径按 customEmojiId 带过来，避免图标闪一下空白。
+  private carryPaths(prev: StatusEmoji[], next: StatusEmoji[]): StatusEmoji[] {
+    if (prev.length === 0) { return next; }
+    const byId: Map<string, StatusEmoji> = new Map<string, StatusEmoji>();
+    for (const row of prev) {
+      if (row.thumbPath !== '' || row.srcPath !== '') { byId.set(row.customEmojiId, row); }
+    }
+    if (byId.size === 0) { return next; }
+    return next.map((row: StatusEmoji): StatusEmoji => {
+      const old: StatusEmoji | undefined = byId.get(row.customEmojiId);
+      if (old === undefined) { return row; }
+      return {
+        customEmojiId: row.customEmojiId,
+        thumbPath: old.thumbPath,
+        srcPath: old.srcPath,
+        format: row.format,
+        fallback: row.fallback
+      };
+    });
+  }
+
+  // silent=true 表示屏幕上已经有内容（缓存或旧数据），刷新期间不要退回加载态。
+  private load(silent: boolean = false): void {
+    const hasContent: boolean = this.loadState === 'ready';
+    if (!silent && !hasContent) {
+      this.loadState = 'loading';
+    }
     Promise.all([getRecentEmojiStatuses(), getDefaultEmojiStatuses()])
       .then((lists: string[][]): Promise<StatusEmoji[][]> =>
         Promise.all([this.resolve(lists[0]), this.resolve(lists[1])]))
       .then((resolved: StatusEmoji[][]): void => {
         if (!this.active) { return; }
-        this.recent = resolved[0];
-        this.suggested = resolved[1];
+        const nextRecent: StatusEmoji[] = this.carryPaths(this.recent, resolved[0]);
+        const nextSuggested: StatusEmoji[] = this.carryPaths(this.suggested, resolved[1]);
+        cachedRecent = nextRecent;
+        cachedSuggested = nextSuggested;
+        this.recent = nextRecent;
+        this.suggested = nextSuggested;
         this.loadState = 'ready';
       }).catch((error: TdError): void => {
         if (!this.active) { return; }
         logE(`EmojiStatusPage.load failed: ${error.message}`);
-        this.loadState = 'error';
+        // 已经有内容（缓存/旧数据）时不要让一次刷新失败清空整页。
+        if (this.loadState !== 'ready') {
+          this.loadState = 'error';
+        }
       });
   }
 

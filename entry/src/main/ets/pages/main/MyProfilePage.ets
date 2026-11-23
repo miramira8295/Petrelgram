@@ -132,6 +132,14 @@ export struct MyProfilePage {
   }
 
   @Prop active: boolean = false;
+  // 左栏壳：多栏时第 4 个 dock 槽不再切页签，而是把同一份资料铺在会话列表栏里，
+  // 中栏保持当前聊天（用户 2026-11-24 明确「平板个人资料页改为左栏显示」）。
+  // 组件本身、导航结构、子页（编辑信息）全部复用；差别只有三处：
+  //   1. 不去注册全局 'profile' 栈——页签壳已经注册了，两个实例互相顶会让
+  //      pushEditor / 深链打到看不见的那条栈上；pane 壳直接用自己这条。
+  //   2. 不写页签级的 PROFILE_NAV_BAR_VISIBLE_KEY（理由见 onNavBarStateChange）。
+  //   3. 不在这里 flushPendingNavs：待办跳转属于页签壳。
+  @Prop paneMode: boolean = false;
   onOpenSettings: () => void = (): void => {};
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -208,6 +216,12 @@ export struct MyProfilePage {
     // 全局注册表取栈：与聊天/联系人/设置三个页签同构。本页目前只有一个入口
     //（openEditor），注册进去主要是为了让 openEditor 和将来页面之外的触发点
     // 共用同一条栈。见 util/navStacks.ets 的说明。
+    if (this.paneMode) {
+      // 左栏壳：不接管全局 'profile' 栈（页签壳已经注册，两个实例互相顶会让
+      // pushEditor 与深链打到看不见的那条栈上），也不碰页签级的可见键。
+      this.loadProfile();
+      return;
+    }
     registerStack('profile', this.profileStack as NavStackLike);
     // 栈没注册时被挂起的跳转（冷启动点通知、登录前的深链）在这里放出去。
     // **延一拍**：官方明确"不建议在 aboutToAppear 中操作栈，此时页面还未构建
@@ -275,7 +289,9 @@ export struct MyProfilePage {
   private qrScanner: TelegramQrScanner = new TelegramQrScanner();
 
   aboutToDisappear(): void {
-    AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY, false);
+    if (!this.paneMode) {
+      AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY, false);
+    }
     this.qrScanner.cancel();
     this.closeQr();
     this.profileLoadSequence++;
@@ -362,7 +378,11 @@ export struct MyProfilePage {
   // 里刚注册过、此刻必然在树上，所以那一支不该发生；仍然接住，让调用方把连点锁
   // 解掉并给用户一条提示。
   private pushEditor(): boolean {
-    const stack: NavStackLike | undefined = stackOf('profile');
+    // 左栏壳优先用自己这条栈：全局注册表里那条属于页签壳，推进去的东西在
+    // 左栏里永远看不见（多栏下页签壳可能还在保活、也存在）。
+    const stack: NavStackLike | undefined = this.paneMode
+      ? this.profileStack as NavStackLike
+      : stackOf('profile');
     if (stack === undefined) {
       return false;
     }
@@ -2175,7 +2195,12 @@ export struct MyProfilePage {
 
     .onNavBarStateChange((isVisible: boolean): void => {
       if (!isVisible) { this.closeQr(); }
-      AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY, isVisible);
+      // 左栏壳不写页签级的「资料栏可见」键。这个键是 MainScreen 用来判第 4 个
+      // 页签的胶囊宽度/显隐的；左栏壳和页签壳此刻是**两个实例**，后触发的那个
+      // 会覆盖先触发的，页签那边的胶囊就会按错误的值去算。
+      if (!this.paneMode) {
+        AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY, isVisible);
+      }
     })
     // 关掉全模态联动：默认 true 时，bindSheet / bindContentCover 一拉起就会触发
     // 栈顶 HdsNavDestination 的 onHidden。**此刻它是个空操作**——本页自己没有

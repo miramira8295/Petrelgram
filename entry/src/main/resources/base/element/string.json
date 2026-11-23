@@ -11637,6 +11637,10 @@
       "value": "选择一项设置"
     },
     {
+      "name": "split_pick_a_profile",
+      "value": "编辑信息以修改你的资料"
+    },
+    {
       "name": "app_icon_title",
       "value": "应用图标"
     },

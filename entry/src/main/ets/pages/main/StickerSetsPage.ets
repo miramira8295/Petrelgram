@@ -45,6 +45,12 @@ function stickerSetKey(item: StickerSetItem): string {
   return `${item.id}_${item.title}_${item.count}_${item.canMoveUp}`;
 }
 
+// 上次成功取到的贴纸包列表。设置子页在分栏右栏里会被反复换入换出，
+// 没有缓存时每次进入都要等 TDLib 回来，于是每点一次都先转一圈圈；
+// 有缓存就先用它渲染，再在后台静默刷新一次。
+let cachedInstalled: StickerSetRow[] | null = null;
+let cachedArchived: StickerSetRow[] | null = null;
+
 // 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
 // 并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router 页和
 // NavDestination。形状与试点的 PowerUsagePageBuilder 一致。
@@ -80,6 +86,16 @@ export struct StickerSetsPage {
 
   aboutToAppear(): void {
     this.active = true;
+    const cached: StickerSetRow[] | null = cachedInstalled;
+    if (cached !== null) {
+      // 有缓存：立刻出内容（不经过加载态），同时静默刷新。
+      const cachedArch: StickerSetRow[] | null = cachedArchived;
+      this.installed = cached;
+      this.archived = cachedArch !== null ? cachedArch : [];
+      this.loadState = 'ready';
+      this.load(true);
+      return;
+    }
     this.load();
   }
 
@@ -97,21 +113,32 @@ export struct StickerSetsPage {
     };
   }
 
-  private load(): void {
-    this.loadState = 'loading';
+  // silent=true 表示屏幕上已经有内容（缓存或旧数据），刷新期间不要退回加载态。
+  private load(silent: boolean = false): void {
+    const hasContent: boolean = this.loadState === 'ready';
+    if (!silent && !hasContent) {
+      this.loadState = 'loading';
+    }
     const req: TdRequest = { '@type': 'getInstalledStickerSets' };
     req['sticker_type'] = { '@type': 'stickerTypeRegular' } as TdObject;
     Promise.all([getTdClient().send(req), getArchivedStickerSets()])
       .then((results: Object[]): void => {
         if (!this.active) { return; }
         const installedRaw = ((results[0] as TdObject)['sets'] as TdObject[] | undefined) ?? [];
-        this.installed = installedRaw.map((s: TdObject): StickerSetRow => this.rowOf(s));
-        this.archived = (results[1] as TdObject[]).map((s: TdObject): StickerSetRow => this.rowOf(s));
+        const next: StickerSetRow[] = installedRaw.map((s: TdObject): StickerSetRow => this.rowOf(s));
+        const nextArchived: StickerSetRow[] = (results[1] as TdObject[]).map((s: TdObject): StickerSetRow => this.rowOf(s));
+        cachedInstalled = next;
+        cachedArchived = nextArchived;
+        this.installed = next;
+        this.archived = nextArchived;
         this.loadState = 'ready';
       }).catch((error: TdError): void => {
         if (!this.active) { return; }
         logE(`StickerSetsPage.load failed: ${error.message}`);
-        this.loadState = 'error';
+        // 已经有内容（缓存/旧数据）时不要让一次刷新失败清空整页。
+        if (this.loadState !== 'ready') {
+          this.loadState = 'error';
+        }
       });
   }
 
