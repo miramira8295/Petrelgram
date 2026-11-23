@@ -18,6 +18,30 @@ export default function emojiDrawerTest() {
     it('composer_growth_reduces_expanded_height', 0, (): void => {
       expect(emojiDrawerHeight(800, 100, 176, 24, true)).assertEqual(492);
     });
+    // 回归：草稿变多行、输入栏变高时，紧凑态面板高度不能再跟着缩水。
+    it('compact_ignores_composer_growth', 0, (): void => {
+      expect(emojiDrawerHeight(600, 100, 76, 24, false)).assertEqual(312);
+      expect(emojiDrawerHeight(600, 100, 176, 24, false)).assertEqual(312);
+    });
+    // 但输入栏真长到放不下时，面板必须让位，不能把输入框挤出视口。
+    it('compact_yields_when_composer_no_longer_fits', 0, (): void => {
+      expect(emojiDrawerHeight(600, 100, 420, 24, false)).assertEqual(148);
+    });
+    // 键盘↔表情切换不跳：抽屉总高（卡片 + 安全区）与键盘占用的高度一致。
+    it('compact_matches_ime_height', 0, (): void => {
+      const state = new EmojiDrawerState();
+      state.measureViewport(800);
+      state.measureComposer(76);
+      state.setImeHeight(400);
+      expect(state.height(100, 24)).assertEqual(376);
+      expect(state.totalHeight(100, 24)).assertEqual(400);
+      state.setImeHeight(0);
+      expect(state.height(100, 24)).assertEqual(312);
+    });
+    // 键盘再高也不能把抽屉顶出可视区。
+    it('ime_height_never_overflows_window', 0, (): void => {
+      expect(emojiDrawerHeight(500, 100, 76, 24, false, 600)).assertEqual(292);
+    });
     it('uses_pane_width_for_columns', 0, (): void => {
       expect(mediaPanelColumns(380, 'sticker')).assertEqual(5);
       expect(mediaPanelColumns(740, 'sticker')).assertEqual(10);

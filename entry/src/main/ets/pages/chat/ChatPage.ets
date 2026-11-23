@@ -1994,7 +1994,22 @@ export struct ChatPage {
         this.pendingImeBridgeFromEmoji = false;
       },
       prepareEditor: (): void => { this.prepareComposerEditor(); },
-      focusEditor: (): void => { focusControl.requestFocus('chat_composer'); }
+      focusEditor: (): void => {
+        // 【面板→键盘按钮点了只收起、不弹键盘】根因是时序：prepareEditor() 刚把
+        // composerEditorReady 置 true，真正的 TextArea 要到下一帧才挂上，而
+        // ComposerInputSwitch 的回调是 setTimeout(0)——同一帧内 requestFocus 找不到
+        // 'chat_composer' 这个节点，静默失败，键盘自然不来。这里在下一帧和 120ms
+        // 后各补一次，且只在键盘确实没起来时补，避免和系统抢焦点。
+        focusControl.requestFocus('chat_composer');
+        const retry = (): void => {
+          if (this.showEmojiPanel || this.keyboardH > 0 || this.currentImeOverlap() > 1) {
+            return;
+          }
+          focusControl.requestFocus('chat_composer');
+        };
+        setTimeout(retry, 0);
+        setTimeout(retry, 120);
+      }
     });
     this.command.bind({
       chatId: (): number => this.chatId,
@@ -3998,6 +4013,8 @@ export struct ChatPage {
     const overlap: number = Math.max(0, this.fullViewportH - newH);
     if (overlap > this.knownImeH) {
       this.knownImeH = overlap;
+      // 表情面板与键盘等高：键盘占多少，抽屉总高就多少，切换时上沿不动。
+      this.emojiDrawer.setImeHeight(this.knownImeH);
     }
     if (this.emojiDrawer.closingImeToDrawer && overlap <= 1 && this.keyboardH <= 0) {
       this.imeClosingToDrawer = false;
@@ -4059,6 +4076,7 @@ export struct ChatPage {
     const visible: boolean = this.keyboardH > 0;
     if (this.keyboardH > this.knownImeH) {
       this.knownImeH = this.keyboardH;
+      this.emojiDrawer.setImeHeight(this.knownImeH);
     }
     if (wasVisible !== visible) {
       holdPlayerJobs(KEYBOARD_SETTLE_MS);
@@ -5327,9 +5345,14 @@ export struct ChatPage {
   }
 
   private composerBottomGap(): number {
-    const tightForIme: boolean = (this.keyboardH > 0 && this.emojiDrawer.activeSlot === '') ||
-      this.drawerClosingToIme;
-    if (tightForIme) {
+    // 键盘起来、或底部抽屉（表情/附件）打开/正在开合时，一律贴住下方那条边。
+    // **面板打开时也要走 6vp**：抽屉不再向上叠（drawerTopOverlap 恒 0），面板
+    // 卡片顶沿与键盘顶沿落在同一条线上，如果这时候还用 25vp 的悬浮导航栏基准，
+    // 输入栏到面板的缝就比到键盘的缝宽 19vp，来回切时会一跳一跳。
+    const drawerActive: boolean = this.emojiDrawer.shellHeight > 0 ||
+      this.emojiDrawer.activeSlot !== '' || this.drawerClosingToIme ||
+      this.emojiDrawer.closingImeToDrawer;
+    if (this.keyboardH > 0 || drawerActive) {
       // 键盘/抽屉起来时贴住它们，不留安全区（原因见 util/composerChrome 的注释）。
       return COMPOSER_GAP_TIGHT;
     }
@@ -5472,6 +5495,7 @@ export struct ChatPage {
         } else if (this.keyboardH > this.knownImeH) {
           this.knownImeH = this.keyboardH;
         }
+        this.emojiDrawer.setImeHeight(this.knownImeH);
         this.emojiDrawer.closingImeToDrawer = true;
         this.armImeBridgeTimer(Math.max(320, settle + 120));
       } else {
