@@ -9,7 +9,8 @@ const children=[],draws=[],players=[];
 for(const name of ['DrawnRowAccessibility','DrawnMenuMedia','DrawnMenuSticker','DrawnChecklistMessage','DrawnPollMessage','DrawnVideoNoteMessage','StickerMessageBubble','DrawnSingleMediaVideo','DrawnAlbumVideo']) {
   ctx[name]=class {constructor(_parent,params){this.name=name;this.params=params;}};
 }
-ctx.ViewV2.create=child=>{children.push(child);if(['StickerMessageBubble','DrawnSingleMediaVideo','DrawnAlbumVideo','DrawnVideoNoteMessage'].includes(child.name))players.push(child);};
+ctx.DrawnMenuViewport=class {constructor(_parent,params){this.name='DrawnMenuViewport';this.params=params;}};
+ctx.ViewV2.create=child=>{if(child.name==='DrawnMenuViewport'){assert.equal(child.params.sourceWidth,plan.width);assert.equal(child.params.sourceHeight,plan.height);Reflect.apply(child.params.content,undefined,[]);return;}children.push(child);if(['StickerMessageBubble','DrawnSingleMediaVideo','DrawnAlbumVideo','DrawnVideoNoteMessage'].includes(child.name))players.push(child);};
 for(const type of ['Stack','Row','Column','__Common__','If','ForEach'])ctx[type]=new Proxy({}, {get:(_t,k)=>(...args)=>{if(k==='drawModifier')draws.push(args[0]);}});
 const liveBackground={},liveForeground={},previewBackground={},previewForeground={};
 const previewPaint={background:{bind:()=>previewBackground},foreground:{bind:()=>previewForeground},attributes:{bind:()=>({})}};
@@ -67,6 +68,7 @@ assert.ok(options,'existing capture Row owns the menu, no extra normal-row wrapp
 const getter=vm.runInContext(ts.transpileModule(`(function(){return ${options.getText(ast)};})`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);
 Object.assign(host,{menuFx:{preview:()=>({}),menu:()=>({})},menuOffset:0});
 ctx.menuPreviewCompact=()=>false;ctx.drawnLiveSurface=()=>false;
+assert.equal(getter.call(host).previewScaleMode,ctx.PreviewScaleMode.MAINTAIN);
 g.head.contentType='checklist';assert.equal(getter.call(host).preview,ctx.MenuPreviewMode.IMAGE);
 // ArkUI invokes the preview as a detached callback. Direct host.menuPreview()
 // above alone cannot detect a lost component receiver (device TypeError).
@@ -92,3 +94,56 @@ const media=Object.assign(Object.create(ctx.DrawnMenuMedia.prototype),{path:'/th
 ctx.ImageFit={Contain:1,Cover:0};const spec=media.spec();for(let i=0;i<1000;i++)assert.equal(media.spec(),spec);
 assert.equal(spec.opaque,false);assert.equal(spec.fit,ctx.ImageFit.Contain);media.sourceKey='B';assert.notEqual(media.spec(),spec);
 console.log('PASS: complete checklist/poll capture; static sticker/video/mixed-album previews; independent lazy painters; no repeat layout or second player; compact-menu policy, dismissal and source ownership.');
+
+// Preserve the intrinsic child box even when the system gives the popup only
+// a fraction of the original height. Native clipping/layout pixels still need
+// device QA; these tests exercise the compiled sizing and callback wiring.
+load(compiled+'pages/chat/DrawnMenuViewport.ts',['DrawnMenuIntrinsic','DrawnMenuViewport','menuPreviewFitScale']);
+const intrinsic=Object.assign(Object.create(ctx.DrawnMenuIntrinsic.prototype),{sourceWidth:320,sourceHeight:1200});
+let measureCalls=0,placed=null,measured=null;
+const constrained=intrinsic.onMeasureSize({},[{measure:constraint=>{measureCalls++;measured=constraint;return {width:320,height:1200};}}],{maxWidth:160,maxHeight:240});
+assert.equal(constrained.width,320);assert.equal(constrained.height,1200);
+assert.equal(measured.minWidth,320);assert.equal(measured.maxWidth,320);assert.equal(measured.minHeight,1200);assert.equal(measured.maxHeight,1200);
+intrinsic.onPlaceChildren({},[{layout:position=>{placed=position;}}],{});
+assert.equal(placed.x,0);assert.equal(placed.y,0);assert.equal(measureCalls,1);
+let fitCases=0;
+for(const w of [160,320,700])for(const h of [80,400,1200,4000])
+for(const aw of [80,240,800])for(const ah of [100,300,800]){
+ const scale=ctx.menuPreviewFitScale(w,h,aw,ah);
+ assert.ok(scale>0&&scale<=1);assert.ok(w*scale<=aw+1e-8);assert.ok(h*scale<=ah+1e-8);
+ assert.ok(Math.abs((w*scale)/(h*scale)-w/h)<1e-8,'whole preview keeps its aspect ratio');fitCases++;
+}
+assert.equal(ctx.menuPreviewFitScale(320,1200,160,240),.2);
+assert.equal(ctx.menuPreviewFitScale(0,1200,160,240),0);
+assert.equal(ctx.menuPreviewFitScale(320,1200,0,240),0);
+const viewport=Object.assign(Object.create(ctx.DrawnMenuViewport.prototype),{sourceWidth:320,sourceHeight:1200,viewportWidth:-1,viewportHeight:-1});
+const viewportAst=ts.createSourceFile('viewport',fs.readFileSync(compiled+'pages/chat/DrawnMenuViewport.ts','utf8'),ts.ScriptTarget.Latest,true);
+let sizeCallback,scaleExpression;
+function findViewport(n){
+ if(ts.isCallExpression(n)&&n.expression.getText(viewportAst)==='Stack.onSizeChange')sizeCallback=n.arguments[0];
+ if(ts.isCallExpression(n)&&n.expression.getText(viewportAst)==='__Common__.scale')scaleExpression=n.arguments[0];
+ ts.forEachChild(n,findViewport);
+}
+findViewport(viewportAst);assert.ok(sizeCallback);assert.ok(scaleExpression);
+const createCallback=vm.runInContext(ts.transpileModule(`(function(){return ${sizeCallback.getText(viewportAst)};})`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);
+const getScale=vm.runInContext(ts.transpileModule(`(function(){return ${scaleExpression.getText(viewportAst)};})`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);
+let writes=0;
+const tracked=new Proxy(viewport,{set(obj,key,value){writes++;obj[key]=value;return true;}});
+const resized=createCallback.call(tracked);resized({}, {width:160,height:240});
+assert.equal(writes,2);assert.equal(viewport.fitScale,.2);
+let nativeScale=getScale.call(viewport);assert.equal(nativeScale.x,.2);assert.equal(nativeScale.y,.2);assert.equal(nativeScale.centerX,0);assert.equal(nativeScale.centerY,0);
+for(let i=0;i<1000;i++)resized({}, {width:160,height:240});assert.equal(writes,2,'unchanged layout does not publish state again');
+resized({}, {width:320,height:1200});assert.equal(viewport.fitScale,1,'re-expansion uses intrinsic geometry, never accumulates scale');
+
+const policyCode=fs.readFileSync(root+'util/drawnContentPolicy.ets','utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/\bexport /g,'');
+vm.runInContext(ts.transpileModule(`(()=>{${policyCode}; globalThis.drawnLiveSurface=drawnLiveSurface;})()`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);
+for(const contentType of ['file','audio','voice','text','checklist','poll']){
+ const nonVideo={head:{contentType,id:7,videoFileId:31,videoPath:'/file',isAnimation:false},photoIsVideo:[],memberIds:[7]};
+ assert.equal(ctx.drawnLiveSurface(nonVideo,{playSlotKey:''},true),false);
+ assert.equal(ctx.drawnLiveSurface(nonVideo,{playSlotKey:'7:-1'},false),false);
+}
+for(const contentType of ['video','videoNote']){
+ const video={head:{contentType,id:7,videoFileId:31,videoPath:'',isAnimation:false},photoIsVideo:[],memberIds:[7]};
+ assert.equal(ctx.drawnLiveSurface(video,{playSlotKey:''},true),true);
+}
+console.log(`PASS: ${fitCases} contain geometries; compiled intrinsic measurement, placement and viewport resize; 1000 unchanged callbacks cause no writes; document/audio/voice are not video surfaces.`);

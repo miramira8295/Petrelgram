@@ -128,7 +128,7 @@ for(const name of ['__Common__','Column','Row','Stack','If','Text','Image','Gest
  if(k==='create'){const n={type:name,parent:stack.at(-1),attrs:{}};nodes.push(n);stack.push(n);}
  else if(k==='pop')stack.pop();else if(stack.length)stack.at(-1).attrs[k]=args;
 }});
-for(const name of ['SheetSize','Alignment','FlexAlign','PanDirection','GesturePriority','GestureMode','SourceType','MenuPreviewMode','BlurStyle','ModalMode','HapticFeedbackMode'])ctx[name]=new Proxy({}, {get:(_t,k)=>k});
+for(const name of ['SheetSize','Alignment','FlexAlign','PanDirection','GesturePriority','GestureMode','SourceType','MenuPreviewMode','PreviewScaleMode','BlurStyle','ModalMode','HapticFeedbackMode'])ctx[name]=new Proxy({}, {get:(_t,k)=>k});
 ctx.menuPreviewCompact=()=>false;ctx.drawnLiveSurface=()=>false;ctx.containerBlur=()=>0;ctx.overlayMaterial=()=>0;
 ctx.TransitionEffect={IDENTITY:0};ctx.DRAWN_BUBBLE_PRESS={name:'press'};ctx.DRAWN_BUBBLE_PRESS_NONE={name:'none'};
 ctx.ShatterDeleteOverlay=class {constructor(_owner,params){native.push(params);}};

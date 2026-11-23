@@ -8,6 +8,7 @@ precision highp int;
 layout(location = 0) in vec4 rect;
 layout(location = 1) in vec4 motion;
 uniform vec2 viewportSize;
+uniform vec2 bufferScale;
 uniform float topPadding;
 uniform float progress;
 uniform int moving;
@@ -33,7 +34,7 @@ void main() {
     vec2 origin = rect.xy + rect.zw * (1.0 - scale) * 0.5 + vec2(motion.x, -motion.y) * travel;
     tileSize = rect.zw * scale;
     // 静止块严格贴合整数像素；运动块在边缘留半像素做解析抗锯齿。
-    float edge = moving == 0 ? 0.0 : 0.5;
+    vec2 edge = moving == 0 ? vec2(0.0) : 0.5 / bufferScale;
     localPixel = corners[gl_VertexID] * (tileSize + 2.0 * edge) - edge;
     vec2 position = origin + localPixel + vec2(0, topPadding);
     gl_Position = vec4(position.x / viewportSize.x * 2.0 - 1.0,
@@ -49,6 +50,7 @@ precision highp float;
 precision highp int;
 uniform sampler2D snapshot;
 uniform vec2 imageSize;
+uniform vec2 bufferScale;
 uniform int moving;
 in vec2 sourcePixel;
 in vec2 localPixel;
@@ -61,7 +63,7 @@ void main() {
                             sourceRect.xy + sourceRect.zw - 0.5);
     float coverage = 1.0;
     if (moving == 1) {
-        vec2 edges = clamp(min(localPixel, tileSize - localPixel) + 0.5, 0.0, 1.0);
+        vec2 edges = clamp(min(localPixel, tileSize - localPixel) * bufferScale + 0.5, 0.0, 1.0);
         // 与 Canvas 的 quad 边缘 AA 一样取最近边，避免四角相乘导致碎片变淡。
         coverage = min(edges.x, edges.y);
     }

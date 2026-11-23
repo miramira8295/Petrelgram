@@ -319,7 +319,13 @@ assert.equal(JSON.stringify(native),snapshotBefore,'old immutable grid must rema
 Object.defineProperty(replay,'plan',{configurable:true,value:scopePlan});assert.equal(replay.nativeTiles,native);
 Object.defineProperty(replay,'plan',{configurable:true,value:null});const emptyNative=replay.nativeTiles;
 assert.equal(emptyNative.length,0);assert.equal(replay.nativeTiles,emptyNative);
-const tileMethod=code.slice(code.indexOf('    mediaTile('),code.indexOf('    canvasContent('));
+// Select the exact method: menu-preview builders can appear between mediaTile
+// and canvasContent and legitimately read the whole preview plan.
+const sharedSource=ts.createSourceFile('DrawnMessageRow.ts',code,ts.ScriptTarget.Latest,true);
+const sharedClass=sharedSource.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='DrawnMessageRow');
+const tileMember=sharedClass.members.find(n=>ts.isMethodDeclaration(n)&&n.name.getText(sharedSource)==='mediaTile');
+assert.ok(tileMember,'compiled mediaTile method must exist');
+const tileMethod=tileMember.getText(sharedSource);
 assert.doesNotMatch(tileMethod,/this\.plan\b/,'compiled tile observers must not subscribe to the entire row plan');
 console.log('PASS: 1000 footer/shell changes preserve native grid identity; header movement preserves local geometry; rotation/selection/playback/photo updates stay live; no compiled tile observer reads whole plan.');
 
@@ -347,8 +353,6 @@ for(const [contentType,photos,kind] of [['photo',6,'album'],['photo',1,'single']
 assert.doesNotMatch(render.getText(routeSource),/new\s+(TextMessageBubble|AlbumMessageBubble|SingleMediaBubble)\b/);
 console.log('PASS: compiled album/photo/video/plain/rich routes instantiate staged album/shared single-text rows and preserve data/actions/focus/delete/translation opacity.');
 
-const sharedSource=ts.createSourceFile('DrawnMessageRow.ts',code,ts.ScriptTarget.Latest,true);
-const sharedClass=sharedSource.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='DrawnMessageRow');
 const sharedRender=sharedClass.members.find(n=>ts.isMethodDeclaration(n)&&n.name.getText(sharedSource)==='initialRender');
 const legacyCalls=[];
 function legacy(name){return class {constructor(_owner,params){legacyCalls.push({name,params});}};}

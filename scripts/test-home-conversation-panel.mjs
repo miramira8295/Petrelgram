@@ -251,7 +251,7 @@ for(const split of [false,true])for(const width of [1119,1120,1297])for(const co
  const rail=split&&width>=1120&&count>0;
  assert.equal(listPage.folderRailShown(),rail);
  if(rail)assert.ok(listPage.navBarMinWidth()>=400);
- assert.deepEqual(headerParts,[...(split?['actions']:[]),...(count&&!rail?['folders']:[])]);
+ assert.deepEqual(headerParts,['actions',...(count&&!rail?['folders']:[])]);
 }
 let archiveDestinations=0;
 ctx.closeForumDrawer=()=>{};

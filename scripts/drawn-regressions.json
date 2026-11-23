@@ -139,9 +139,14 @@
   "test-chat-preview-senders.mjs",
   "test-attach-panel.mjs",
   "test-navigation-haptics.mjs",
+  "test-dock-visibility.mjs",
+  "test-root-back-navigation.mjs",
+  "test-remote-message-delete.mjs",
   "test-channel-direct-messages.mjs",
   "test-message-sender-navigation.mjs",
   "test-video-stream-seek.mjs",
   "test-drawn-menu-preview.mjs",
-  "test-message-link-scope.mjs"
+  "test-message-link-scope.mjs",
+  "test-media-open-intent.mjs",
+  "test-shatter-frame-budget.mjs"
 ]

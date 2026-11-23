@@ -1281,7 +1281,7 @@ export struct ChatListPage {
     Column() {
       if (this.archivePaneOpen) {
         this.archivePaneHeader();
-      } else if (this.isSplitLayout()) {
+      } else {
         this.titleBarActions();
       }
       if (this.newSessionCount > 0) {
@@ -1551,9 +1551,6 @@ export struct ChatListPage {
     Stack({ alignContent: Alignment.TopEnd }) {
       HdsNavigation(this.chatStack) {
         Column() {
-          if (!this.isSplitLayout()) {
-            this.titleBarActions();
-          }
           Row({ space: FOLDER_RAIL_GAP }) {
             if (this.folderRailShown()) {
               this.verticalFolderRail();

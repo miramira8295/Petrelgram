@@ -6,7 +6,17 @@
 
 static void Check(int w, int h, float density, int budget, uint32_t seed) {
     const auto g = shatter::MakeGeometry(w, h, density, budget, seed);
-    assert(!g.tiles.empty() && g.tiles.size() <= 15360 && g.tiles.size() <= size_t(budget * 2));
+    assert(!g.tiles.empty() && g.tiles.size() <= size_t(std::min(budget, 8000)));
+    assert(g.bufferWidth > 0 && g.bufferHeight > 0);
+    assert(g.bufferWidth <= g.surfaceWidth && g.bufferHeight <= g.surfaceHeight);
+    assert(int64_t(g.bufferWidth) * g.bufferHeight <= 1048576);
+    std::vector<float> delays;
+    for (const auto &tile : g.tiles) { delays.push_back(tile.delay); }
+    for (float p : {0.f, .1f, .3f, .52f, .75f, .95f, 1.f}) {
+        const size_t started = shatter::StartedTileCount(delays, p);
+        assert(started == size_t(std::count_if(delays.begin(), delays.end(),
+            [p](float delay) { return delay < p; })));
+    }
     std::vector<uint8_t> coverage(size_t(w) * h, 0);
     double previousDelay = -1;
     for (const auto &tile : g.tiles) {
@@ -38,6 +48,10 @@ static void Check(int w, int h, float density, int budget, uint32_t seed) {
 }
 
 int main(int argc, char **argv) {
+    assert(shatter::StartedTileCount({}, .5f) == 0);
+    assert(shatter::StartedTileCount({0.f, .5f, .5f, .8f}, .5f) == 1);
+    const auto single = shatter::MakeGeometry(900, 1800, 3, 1, 42);
+    assert(single.tiles.size() == 1 && single.tiles[0].width == 900 && single.tiles[0].height == 1800);
     int scenarios = 0;
     for (uint32_t seed = 0; seed < 20; ++seed) {
         for (int budget : {128, 800, 3200, 4000, 8000}) {

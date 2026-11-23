@@ -139,15 +139,15 @@ export class ChatViewerSession {
     if (!mediaEntryIsPhoto(entry) && !mediaEntryIsVideo(entry)) {
       return;
     }
-    if (mediaEntryIsPhoto(entry) && entry.photoPath === '' && entry.photoFailed) {
-      this.host.store()?.retryPhoto(messageId);
-      showToast($r('app.string.cp_reloading_thumb'), 1200);
-      return;
-    }
     if (mediaEntryIsPhoto(entry) && entry.photoPath === '' &&
       entry.photoFullPath === '' && entry.photoFileId === 0 && entry.photoFullFileId === 0) {
       showToast($r('app.string.cp_photo_unavailable'), 1500);
       return;
+    }
+    // A missing/failed thumbnail says nothing about the original's availability.
+    // Retry quietly, including failed full-photo downloads, and still open now.
+    if (mediaEntryIsPhoto(entry) && entry.photoPath === '' && entry.photoFailed) {
+      this.host.store()?.retryPhoto(messageId);
     }
     if (mediaEntryIsVideo(entry)) {
       if (entry.videoFileId === 0 && entry.videoPath === '') {

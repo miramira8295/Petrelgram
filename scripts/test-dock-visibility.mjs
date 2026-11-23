@@ -61,7 +61,7 @@ function setup() {
     requestChatListFlush: () => {},
     isSplitByBreakpoint: (w, _h, force, portrait) => !force && !portrait && w >= 2
   });
-  const methods = ['syncDock', 'dockVisible', 'storedNavBarFlag', 'onTabExternallyChanged',
+  const methods = ['syncDock', 'syncDockLayout', 'dockVisible', 'storedNavBarFlag', 'onTabExternallyChanged',
     'aboutToDisappear', 'onAppForegroundChanged'].map(name => method(main, name)).join('\n');
   const fields = ['dockShown', 'dockMounted', 'dockBarOpen', 'dockRevealSeq', 'dockRevealPending', 'dockActive']
     .map(name => {
@@ -73,7 +73,8 @@ function setup() {
   dock = new ctx.DockProbe();
   Object.assign(dock, {
     drawnWarmup: { update() {}, cancel() {} },
-    tab: 0, appliedTab: 0, appIsForeground: true,
+    tab: 0, appliedTab: 0, appIsForeground: true, dockModeFloating: false,
+    floating: false, leftFloatingDock() { return this.floating; },
     chatNavBarVisible: false, contactsNavBarVisible: false, settingsNavBarVisible: false, profileNavBarVisible: false,
     getUIContext: () => ({ postDelayedFrameCallback: cb => frames.push(cb.task), animateTo: (_, fn) => fn() }),
     miniBarHolder: { dispose() {} }, unsubNowPlaying: null, unsubVoice: null, unsubUnread: null,
@@ -195,5 +196,29 @@ check('spurious visible=true on router.back() from GroupAdminPage stays hidden u
   stackDepth = 1; s.chatPage.onChatDetailShownChanged(); s.flush(); hidden(s.dock);
   stackDepth = 0; s.chatPage.chatDetailShown = false;
   s.chatPage.onChatDetailShownChanged(); s.flush(); visible(s.dock);
+});
+for (const frameCount of [0, 1, 2]) {
+  check(`layout switch after ${frameCount} reveal frames cancels the previous renderer`, () => {
+    const s = setup(); s.mount(); s.handlers[0](true);
+    for (let i = 0; i < frameCount; i++) s.frames.shift()();
+    const oldCallbacks = s.frames.splice(0);
+    s.dock.floating = true; s.dock.syncDockLayout();
+    hidden(s.dock);
+    for (const callback of oldCallbacks) callback();
+    hidden(s.dock);
+    s.flush(); visible(s.dock);
+    const seq = s.dock.dockRevealSeq;
+    for (let i = 0; i < 1000; i++) s.dock.syncDockLayout();
+    assert.equal(s.dock.dockRevealSeq, seq, 'same mode must not restart the reveal');
+    assert.equal(s.frames.length, 0, 'no extra frame work during resize within one mode');
+    s.dock.floating = false; s.dock.syncDockLayout();
+    hidden(s.dock); s.flush(); visible(s.dock);
+  });
+}
+check('changing layout while detail is visible cannot reveal the dock', () => {
+  const s = setup(); s.mount();
+  for (const floating of [true, false, true]) {
+    s.dock.floating = floating; s.dock.syncDockLayout(); s.flush(); hidden(s.dock);
+  }
 });
 console.log(`Dock visibility: ${passed} scenarios passed (native callbacks and frame scheduling are simulated).`);

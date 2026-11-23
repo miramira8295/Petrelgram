@@ -40,6 +40,7 @@ import { primeFavoriteStickers } from '../../store/FavoriteStickers';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { PROFILE_TAB_MEDIA } from '../../store/ChatProfileStore';
 import { RowLeaveChannel, wholeDeleteRowIds } from '../../util/rowLeaveChannel';
+import { RemoteMessageDeleteEffects } from '../../util/remoteMessageDeleteEffects';
 import { saveableEntries, SaveablePlan } from '../../util/selectionSave';
 import { ActionBarContext, dismissActionBar, handleActionBar } from './ChatActionBarActions';
 import { actionBarButtons } from '../../util/chatActionBar';
@@ -983,6 +984,7 @@ export struct ChatPage {
   // 删除动画的旁路通道（issue #149）。不做模块级单例：平板分栏时多个 ChatPage
   // 同时活着，各自的淡出不能互相影响。
   private rowLeave: RowLeaveChannel = new RowLeaveChannel();
+  private remoteDelete: RemoteMessageDeleteEffects = new RemoteMessageDeleteEffects(this.rowLeave);
   // 会话操作条（issue #201 第 8 条），从 ChatEntry 镜像过来，空串 = 没有。
   // 音频卡片上「收藏」胶囊的目标消息；0 = 面板不显示。面板本体在
   // pages/chat/AudioFavoriteFlow（本页只留接线，见 [[no-new-code-in-chatpage]]）。
@@ -1411,6 +1413,7 @@ export struct ChatPage {
   }
 
   private resetMessageActionSession(): void {
+    this.remoteDelete.cancel();
     this.selection.reset();
     // 原 showReactionSheet=false; reactionTargetId=0; reactionPendingKey='' 三行
     // 搬进了 this.overlayState.resetSession()（B11 批）。第四行 closeForwardSheet()
@@ -2199,7 +2202,14 @@ export struct ChatPage {
     this.registerChatLevelSubscriptions();
     const store: MessageStore = this.createMessageStore();
     this.subscriptions.set('messages', store.subscribe((list: MessageEntry[]) => {
-      this.onMessagesSnapshot(store, list);
+      const kind: string = store.getCurrentNotifyKind();
+      if (this.remoteDelete.active()) {
+        this.remoteDelete.defer((): void => {
+          if (this.store === store) { this.onMessagesSnapshot(store, store.getMessages(), kind); }
+        });
+        return;
+      }
+      this.onMessagesSnapshot(store, list, kind);
     }));
     this.registerHeaderDerivedSubscriptions(store);
     this.openStoreForRoute(store, ctx);
@@ -2389,7 +2399,10 @@ export struct ChatPage {
   private registerChatLevelSubscriptions(): void {
     this.subscribeChatLevelUpdates();
     this.subscriptions.set('selectionDeleted', getTdClient().onUpdate('updateDeleteMessages',
-      (update: TdObject): void => { this.selection.applyDeletion(this.chatId, update); }));
+      (update: TdObject): void => {
+        this.selection.applyDeletion(this.chatId, update);
+        this.animateRemoteDeletion(update);
+      }));
     this.startChatBackgroundStore();
     this.subscribeMembershipUpdates();
     this.subscribeLiveCallUpdatesAndTimers();
@@ -2552,7 +2565,7 @@ export struct ChatPage {
 
   // 阶段 B：messages 订阅的回调体。store 逐层按参数传递（而不是读 this.store），
   // scheduleNewerTailRefresh 里的 this.store === store 身份判定要靠它。
-  private onMessagesSnapshot(store: MessageStore, list: MessageEntry[]): void {
+  private onMessagesSnapshot(store: MessageStore, list: MessageEntry[], notifyKind: string): void {
     const historyState: string = store.getInitialHistoryState();
     this.timeline.olderLoadState = store.getOlderLoadState();
     this.timeline.newerLoadState = store.getNewerLoadState();
@@ -2575,7 +2588,6 @@ export struct ChatPage {
     if (this.routeResumeWaiting && (list.length === 0 || fragment)) {
       return;
     }
-    const notifyKind: string = store.getCurrentNotifyKind();
     const maxId: number = list.length > 0 ? list[list.length - 1].id : 0;
     const groups: AlbumGroup[] = this.groupsWithClientJoinNotice(list);
     const resumeLandingPrepared: boolean = this.resolveResumeLandingChoice(store, groups);
@@ -3385,6 +3397,7 @@ export struct ChatPage {
   }
 
   private handleHidden(): void {
+    this.remoteDelete.flush();
     scheduleClearChatDetailHiding();
     markChatDestHidden(this.chatDestToken);
     this.surfaceActive = false;
@@ -3409,6 +3422,7 @@ export struct ChatPage {
   }
 
   private handleWillHide(): void {
+    this.remoteDelete.flush();
     cancelClearChatDetailHiding(true);
     this.inputSwitch.cancel();
     this.hiddenSinceMs = Date.now();
@@ -3582,6 +3596,7 @@ export struct ChatPage {
     // ++seq 作废在途的 searchChatMessages 响应，再清 entryTimer。
     this.search.dispose();
     this.messageDelete.dispose();
+    this.remoteDelete.cancel();
     this.unreadMentions.dispose();
     // 多选控制器的退场（B7）。本簇没有定时器/序号守卫，dispose() 只是裸清
     // active/ids——与其余控制器统一 bind/dispose 生命周期，同样没有对应的
@@ -4711,6 +4726,7 @@ export struct ChatPage {
 
   @Monitor('appIsForeground')
   private onAppForegroundChanged(): void {
+    if (!this.appIsForeground) { this.remoteDelete.flush(); }
     if (!this.appIsForeground) { this.dropReceiver.cancel(); }
     // 栈内隐藏页也会收到前后台通知，不能由它覆盖当前可见会话的动画总闸。
     if (this.timeline.pageVisible) {
@@ -5907,7 +5923,24 @@ export struct ChatPage {
   // 消息 id → 行 id（相册整组共用一个 rowId），退场和完成等待交给独立通道。
   private markRowsLeaving(ids: number[]): Promise<void> {
     const rowIds = wholeDeleteRowIds(this.timeline.groups, ids);
-    return this.rowLeave.play(rowIds, powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 550) > 0);
+    return this.rowLeave.play(rowIds, this.deleteAnimationEnabled());
+  }
+
+  private deleteAnimationEnabled(): boolean {
+    return this.powerParticles && !powerSavingActive() &&
+      powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 550) > 0;
+  }
+
+  private animateRemoteDeletion(update: TdObject): void {
+    const store = this.store;
+    const start: number = this.timeline.curStartIdx;
+    const end: number = this.timeline.curEndIdx;
+    if (store === null || update['chat_id'] !== this.chatId || !this.timeline.pageVisible ||
+      !this.appIsForeground || this.viewerOpen() || !this.deleteAnimationEnabled() ||
+      !this.timeline.anchorIndexFresh() || start < 0 || end < start) { return; }
+    this.remoteDelete.begin(update, this.chatId, this.timeline.groups.slice(start, end + 1), true, (): void => {
+      if (this.store === store) { this.onMessagesSnapshot(store, store.getMessages(), 'update'); }
+    });
   }
 
   private copyMessageText(messageId: number): void {

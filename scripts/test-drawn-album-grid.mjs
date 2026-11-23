@@ -73,8 +73,8 @@ const early=grid.clickCallback(grid.plan.tiles[0]);early(tap);assert.equal(event
 grid.aboutToAppear();grid.touchedGeneration=grid.bindIdentity();early(tap);assert.deepEqual(events.at(-1),['onMediaTap',100,4,5]);
 grid.context.gestureClaimed=true;let before=events.length;early(tap);assert.equal(events.length,before);grid.context.gestureClaimed=false;
 grid.data={...data,selectionActive:true};grid.inputChanged();early(tap);assert.deepEqual(events.at(-1),['onToggleSelectedMessage',100]);
-// Same native key, but latest failure data and live path must be read.
-grid.data=data;grid.group={...g,photoFailed:[true],photoPaths:Array(6).fill('')};grid.inputChanged();early(tap);assert.deepEqual(events.at(-1),['onSpecialPhotoRetry',100]);
+// A failed thumbnail must not swallow an open intent on a retained native cell.
+grid.data=data;grid.group={...g,photoFailed:[true],photoPaths:Array(6).fill('')};grid.inputChanged();early(tap);assert.deepEqual(events.at(-1),['onMediaTap',100,4,5]);
 grid.group={...g,head:{...g.head,rowId:200}};grid.inputChanged();grid.group=g;grid.inputChanged();
 before=events.length;early(tap);assert.equal(events.length,before,'old ABA handler rejected');
 const fresh=grid.clickCallback(grid.plan.tiles[0]);fresh({...tap,source:2});assert.equal(events.at(-1)[0],'onMediaTap','accessibility/mouse needs no touch-down');

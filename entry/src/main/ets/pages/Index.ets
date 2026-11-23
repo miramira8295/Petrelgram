@@ -37,6 +37,7 @@ import {
 import { resetShareTargets } from '../services/ShareTargetService';
 import { clearRecentOutgoing } from '../util/recentOutgoing';
 import { closeForumDrawer } from '../util/forumDrawerState';
+import { stackOf, TabKind } from '../util/navStacks';
 import { SharedPayload, previewOf } from '../util/sharedContent';
 
 // 冷启动时等连接就绪的上限。超过就照常放行——离线时压着链接不处理更糟。
@@ -372,12 +373,20 @@ struct Index {
     if (this.stage !== AuthStage.Ready) {
       return false;
     }
+    // Navigation 未消费、落到根页面的返回事件，先退出当前页签的目的页。
+    // 不切页签、不关闭归档或文件夹；一次事件只弹一层。
+    const tab: number = AppStorage.get<number>('mainTabIndex') ?? 0;
+    const kind: TabKind = tab === 1 ? 'contacts' : tab === 2 ? 'settings' : tab === 3 ? 'profile' : 'chat';
+    const currentStack = stackOf(kind);
+    if (currentStack !== undefined && currentStack.size() > 0) {
+      currentStack.pop(true);
+      return true;
+    }
     // 主屏返回键两级递退：设置/联系人/个人资料 → 聊天页签；聊天页签在别的
     // 文件夹 → 先回"所有"；都在原位了就放行，应用直接退到后台。
     //
     // 2026-10-30：原来还有第三级「两秒内再按一次才退出」（issue #71/#48 的防误触）。
     // 用户要求去掉——回到原位后按一下就该走，不要停在这儿弹提示。
-    const tab: number = AppStorage.get<number>('mainTabIndex') ?? 0;
     if (tab !== 0) {
       AppStorage.setOrCreate<number>('mainTabIndex', 0);
       return true;

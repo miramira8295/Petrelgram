@@ -20,11 +20,14 @@ function setup({ duration = 1100 } = {}) {
   const timers = new Map(), frames = [], closed = [], begun = [];
   let event, released = 0, captured = 0, finished = 0, attached = true, nextTimer = 1, draws = 0, canvasDuration = 0;
   const pixels = { release: () => { released++; }, getImageInfo: async () => ({ size: { width: 100, height: 40 } }) };
-  const animator = { play() {}, cancel() {}, onFrame() {}, onFinish() {} };
+  const animator = { onFinish() {} };
   const ui = { getComponentSnapshot: () => ({ get: () => capture.promise }), vp2px: n => n * 3, px2vp: n => n / 3,
-    postFrameCallback: frame => frames.push(frame), createAnimator: options => { canvasDuration = options.duration; return animator; } };
+    postFrameCallback: frame => frames.push(frame), animateTo: (options, update) => {
+      canvasDuration = options.duration; animator.onFinish = options.onFinish; update();
+    } };
   const context = vm.createContext({
     FrameCallback: class {}, XComponentController: class { getXComponentSurfaceId() { return '123'; } },
+    Curve: { Linear: 0 },
     CanvasRenderingContext2D: class {
       clearRect() {} drawImage() { draws++; } save() {} restore() {} beginPath() {} rect() {} clip() {}
     }, RenderingContextSettings: class {}, LengthMetricsUnit: { PX: 0 },
@@ -136,10 +139,11 @@ function setup({ duration = 1100 } = {}) {
   s.prepare.resolve(null); await flush();
   const child = s.mountFallback(); await flush(); child.start();
   assert.equal(s.draws, 1); assert.equal(s.captured, 0);
-  s.frames[0].onIdle(0); assert.equal(s.canvasDuration, 1100); s.animator.onFrame(.6);
-  assert(s.draws > 1); assert.equal(s.captured, 1); assert.equal(s.finished, 0);
+  s.frames[0].onIdle(0); assert.equal(s.canvasDuration, 220);
+  assert.equal(child.fadeOpacity, 0); child.start(); child.animate();
+  assert.equal(s.draws, 1); assert.equal(s.captured, 1); assert.equal(s.finished, 0);
   s.animator.onFinish(); child.aboutToDisappear(); s.overlay.aboutToDisappear();
-  const draws = s.draws; s.animator.onFrame(.8);
+  const draws = s.draws; child.start(); child.animate();
   assert.equal(s.draws, draws); assert.equal(s.finished, 1); assert.equal(s.released, 1);
 }
 console.log('Shatter lifecycle: 14 scenarios passed');

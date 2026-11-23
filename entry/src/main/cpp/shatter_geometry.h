@@ -17,8 +17,14 @@ struct Tile {
 struct Geometry {
     int width = 0, height = 0;
     int surfaceWidth = 0, surfaceHeight = 0, top = 0;
+    int bufferWidth = 0, bufferHeight = 0;
     std::vector<Tile> tiles;
 };
+
+// Sorted once during preparation. No per-particle CPU animation/update/upload.
+inline size_t StartedTileCount(const std::vector<float> &delays, float progress) {
+    return std::lower_bound(delays.begin(), delays.end(), progress) - delays.begin();
+}
 
 // 与原 Canvas 随机二分、波前和运动参数一致。seed 仅用于可重复的宿主验证。
 inline Geometry MakeGeometry(int width, int height, float density, int budget, uint32_t seed) {
@@ -30,14 +36,18 @@ inline Geometry MakeGeometry(int width, int height, float density, int budget, u
     result.height = height;
     std::mt19937 random(seed);
     auto unit = [&]() { return std::generate_canonical<double, 32>(random); };
-    const double target = std::max(1.0, std::max(2.475 * density, std::sqrt(double(width) * height / budget)));
-    const size_t limit = std::min(15359, std::min(budget, 8000) * 2 - 1);
+    const size_t limit = std::min(budget, 8000);
+    const double target = std::max(1.0, std::max(2.475 * density,
+        std::sqrt(2.0 * width * height / limit)));
     struct Region { int x, y, w, h; };
     std::vector<Region> pending{{0, 0, width, height}};
-    while (!pending.empty()) {
-        const auto r = pending.back();
-        pending.pop_back();
-        if ((r.w > target || r.h > target) && result.tiles.size() + pending.size() < limit) {
+    // Breadth first keeps fragments balanced at the strict budget. At most
+    // 2*limit-1 regions, one linear pass, no shifting/splicing a queue.
+    size_t next = 0;
+    while (next < pending.size()) {
+        const auto r = pending[next++];
+        if ((r.w > target || r.h > target) &&
+            result.tiles.size() + pending.size() - next + 1 < limit) {
             const bool vertical = r.w > target && (r.h <= target || r.w * (0.7 + unit() * 0.6) > r.h);
             const double ratio = 0.36 + unit() * 0.28;
             if (vertical) {
@@ -72,6 +82,12 @@ inline Geometry MakeGeometry(int width, int height, float density, int budget, u
     result.top = int(std::ceil(-topEdge)) + 1; // 留 1px 抗锯齿余量，不缩放截图。
     result.surfaceWidth = int(std::ceil(rightEdge)) + 1;
     result.surfaceHeight = height + result.top + 1;
+    // Keep original layout/texture coordinates. Only the transient animated
+    // buffer uses <=2px/vp and <=1M pixels; static chat remains full-resolution.
+    const double scale = std::min({1.0, 2.0 / density,
+        std::sqrt(1048576.0 / (double(result.surfaceWidth) * result.surfaceHeight))});
+    result.bufferWidth = std::max(1, int(std::floor(result.surfaceWidth * scale)));
+    result.bufferHeight = std::max(1, int(std::floor(result.surfaceHeight * scale)));
     return result;
 }
 } // namespace shatter

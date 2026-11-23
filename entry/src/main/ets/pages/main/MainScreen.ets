@@ -240,6 +240,7 @@ export struct MainScreen {
   // WrappedBuilder<[]>，而迷你条自己订阅通道、不需要传参。
   private miniBarHolder: SplitPlaceholderHolder = new SplitPlaceholderHolder();
   private callPagePushed: boolean = false;
+  private dockModeFloating: boolean = false;
 
   private wallpaperSplit(): boolean {
     return isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait);
@@ -248,6 +249,22 @@ export struct MainScreen {
   private syncWallpaperFlag(): void {
     const path: string = this.wallpaperDark ? this.appBgDark : this.appBgLight;
     AppStorage.setOrCreate(KEY_APP_BG_ON, appWallpaperActive(path, this.wallpaperSplit()));
+    this.syncDockLayout();
+  }
+
+  // 只复用现有断点判断。换到另一条 Dock 渲染路径时，旧路径的延迟帧不能
+  // 再发布显示状态；新路径重新走两拍揭示。尺寸变化但形态不变时不重建。
+  private syncDockLayout(): void {
+    const floating: boolean = this.leftFloatingDock();
+    if (floating !== this.dockModeFloating) {
+      this.dockModeFloating = floating;
+      this.dockRevealSeq++;
+      this.dockRevealPending = false;
+      this.dockShown = false;
+      this.dockMounted = false;
+      this.dockBarOpen = false;
+    }
+    this.syncDock();
   }
 
   aboutToAppear(): void {

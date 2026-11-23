@@ -147,6 +147,7 @@ export class MediaSaveState {
   // 文档下载后自动打开的等待句柄 + in-flight 闸门。
   private pendingFileOpenId: number = 0;
   private fileOpenInFlightId: number = 0;
+  private fileOpenGeneration: number = 0;
 
   // 未 bind 时的空宿主：字段类型非空，且控制器在 aboutToAppear 之前就已经被
   // 构造出来（页面的字段初始化器 new）。取值器返回的都是「什么都还没有」的
@@ -296,26 +297,29 @@ export class MediaSaveState {
   }
 
   private openDownloadedFile(message: MessageEntry): void {
-    if (message.videoPath === '' || this.fileOpenInFlightId !== 0) {
+    if (message.videoPath === '') {
+      return;
+    }
+    if (this.fileOpenInFlightId !== 0) {
+      showToast($r('app.string.opening'), 1200);
       return;
     }
     const messageId: number = message.id;
+    const generation: number = ++this.fileOpenGeneration;
     this.fileOpenInFlightId = messageId;
     openLocalFile(
       this.host.context(),
       message.videoPath,
       fileOpenMimeType(message.videoFileName, message.videoMimeType)
     ).then((opened: boolean): void => {
-      if (this.fileOpenInFlightId === messageId) {
-        this.fileOpenInFlightId = 0;
-      }
+      if (generation !== this.fileOpenGeneration) { return; }
+      this.fileOpenInFlightId = 0;
       if (!opened) {
         showToast($r('app.string.cp_no_app_for_file'), 2200);
       }
     }).catch((caught: Object): void => {
-      if (this.fileOpenInFlightId === messageId) {
-        this.fileOpenInFlightId = 0;
-      }
+      if (generation !== this.fileOpenGeneration) { return; }
+      this.fileOpenInFlightId = 0;
       logE(`MediaSaveState.openDownloadedFile failed: ${JSON.stringify(caught)}`);
       showToast($r('app.string.cp_file_open_failed'), 1800);
     });
@@ -490,6 +494,7 @@ export class MediaSaveState {
   // musicQueue.reset() 那一句）——见文件头「dispose() 的 8 行 vs 7 行」
   // 一节，逐字对应，不新增（本簇没有定时器句柄可清）、不少做。
   dispose(): void {
+    this.fileOpenGeneration++;
     this.pendingGallerySaveId = 0;
     this.pendingGallerySaveProgress?.dispose();
     this.pendingGallerySaveProgress = null;
@@ -517,6 +522,7 @@ export class MediaSaveState {
   // 拉起一个用户从没点过的文件。fileOpenInFlightId 同理，会把新会话第一次
   // "已下载→打开"无声吞掉。
   resetFileOpenIntent(): void {
+    this.fileOpenGeneration++;
     this.pendingFileOpenId = 0;
     this.fileOpenInFlightId = 0;
   }

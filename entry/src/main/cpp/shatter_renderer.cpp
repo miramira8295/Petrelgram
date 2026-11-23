@@ -29,6 +29,7 @@ using Clock = std::chrono::steady_clock;
 struct Scene {
     Geometry geometry;
     std::vector<uint8_t> pixels;
+    std::vector<float> delays;
     napi_env owner = nullptr;
     napi_threadsafe_function callback = nullptr; // 仅渲染线程持有/释放。
     OHNativeWindow *window = nullptr;
@@ -171,6 +172,7 @@ private:
         if (!ok) { glDeleteProgram(program); return false; }
         program_ = program;
         viewport_ = glGetUniformLocation(program_, "viewportSize");
+        bufferScale_ = glGetUniformLocation(program_, "bufferScale");
         imageSize_ = glGetUniformLocation(program_, "imageSize");
         top_ = glGetUniformLocation(program_, "topPadding");
         progress_ = glGetUniformLocation(program_, "progress");
@@ -199,7 +201,7 @@ private:
             return false;
         }
         if (OH_NativeWindow_NativeWindowHandleOpt(scene.window, SET_BUFFER_GEOMETRY,
-                                                 g.surfaceWidth, g.surfaceHeight) != 0) { return false; }
+                                                 g.bufferWidth, g.bufferHeight) != 0) { return false; }
         EGLint format = 0;
         if (!eglGetConfigAttrib(display_, config_, EGL_NATIVE_VISUAL_ID, &format) ||
             OH_NativeWindow_NativeWindowHandleOpt(scene.window, SET_FORMAT, format) != 0) { return false; }
@@ -230,6 +232,8 @@ private:
             glVertexAttribDivisor(i, 1);
         }
         scene.count = static_cast<GLsizei>(g.tiles.size());
+        scene.delays.reserve(g.tiles.size());
+        for (const auto &tile : g.tiles) { scene.delays.push_back(tile.delay); }
         std::vector<uint8_t>().swap(scene.pixels);
         std::vector<Tile>().swap(scene.geometry.tiles);
         return glGetError() == GL_NO_ERROR;
@@ -237,25 +241,38 @@ private:
     bool Draw(Scene &scene, float progress) {
         if (!eglMakeCurrent(display_, scene.surface, scene.surface, context_)) { return false; }
         const auto &g = scene.geometry;
-        glViewport(0, 0, g.surfaceWidth, g.surfaceHeight);
+        glViewport(0, 0, g.bufferWidth, g.bufferHeight);
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
         if (progress < 1) {
             glUseProgram(program_);
             glBindVertexArray(scene.vao);
+            glBindBuffer(GL_ARRAY_BUFFER, scene.buffer);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, scene.texture);
             glUniform2f(viewport_, g.surfaceWidth, g.surfaceHeight);
+            glUniform2f(bufferScale_, float(g.bufferWidth) / g.surfaceWidth,
+                        float(g.bufferHeight) / g.surfaceHeight);
             glUniform2f(imageSize_, g.width, g.height);
             glUniform1f(top_, g.top);
             glUniform1f(progress_, progress);
             // 整数像素切口共享边，无多重采样：静止区域不会出现拼片缝隙。
-            glUniform1i(moving_, 0);
-            glDrawArraysInstanced(GL_TRIANGLES, 0, 6, scene.count);
-            glUniform1i(moving_, 1);
-            glDrawArraysInstanced(GL_TRIANGLES, 0, 6, scene.count);
+            const GLsizei started = static_cast<GLsizei>(StartedTileCount(scene.delays, progress));
+            DrawRange(started, scene.count - started, 0);
+            DrawRange(0, started, 1);
         }
         return eglSwapBuffers(display_, scene.surface) == EGL_TRUE;
+    }
+    void DrawRange(GLsizei first, GLsizei count, int moving) {
+        if (count == 0) { return; }
+        // ES3.0 has no base-instance draw: offset immutable attributes instead.
+        // Constant GL command count, no buffer rewrite, each tile submitted once.
+        for (GLuint i = 0; i < 2; ++i) {
+            glVertexAttribPointer(i, 4, GL_FLOAT, GL_FALSE, sizeof(Tile),
+                reinterpret_cast<void *>(size_t(first) * sizeof(Tile) + i * 4 * sizeof(float)));
+        }
+        glUniform1i(moving_, moving);
+        glDrawArraysInstanced(GL_TRIANGLES, 0, 6, count);
     }
     void Release(Scene &scene) {
         if (context_ != EGL_NO_CONTEXT && parking_ != EGL_NO_SURFACE &&
@@ -347,7 +364,7 @@ private:
     EGLSurface parking_ = EGL_NO_SURFACE;
     EGLConfig config_ = nullptr;
     GLuint program_ = 0;
-    GLint viewport_ = -1, imageSize_ = -1, top_ = -1, progress_ = -1, moving_ = -1;
+    GLint viewport_ = -1, bufferScale_ = -1, imageSize_ = -1, top_ = -1, progress_ = -1, moving_ = -1;
     OH_NativeVSync *vsync_ = nullptr;
     std::thread thread_; // 最后初始化，避免线程先读到尚未初始化的状态。
 };

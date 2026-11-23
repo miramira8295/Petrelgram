@@ -53,6 +53,7 @@ try {
     }
     gl.uniform1i(gl.getUniformLocation(program, 'snapshot'), 0);
     gl.uniform2f(gl.getUniformLocation(program, 'viewportSize'), sw, sh);
+    gl.uniform2f(gl.getUniformLocation(program, 'bufferScale'), 1, 1);
     gl.uniform2f(gl.getUniformLocation(program, 'imageSize'), width, height);
     gl.uniform1f(gl.getUniformLocation(program, 'topPadding'), top);
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.disable(gl.DITHER);
@@ -69,6 +70,21 @@ try {
       const actual = new Uint8Array(sw * sh * 4);
       gl.readPixels(0, 0, sw, sh, gl.RGBA, gl.UNSIGNED_BYTE, actual);
       if (gl.getError() !== gl.NO_ERROR) throw Error('GL error');
+      // Same immutable buffer, two disjoint instance ranges. Must reproduce
+      // the original full submissions byte-for-byte, including overlap order.
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      let started = tiles.findIndex(tile => tile[6] >= progress);
+      if (started < 0) started = tiles.length;
+      for (const [first, count, moving] of [[started, tiles.length - started, 0], [0, started, 1]]) {
+        if (count === 0) continue;
+        for (let i = 0; i < 2; i++) gl.vertexAttribPointer(i, 4, gl.FLOAT, false, 32, first * 32 + i * 16);
+        gl.uniform1i(gl.getUniformLocation(program, 'moving'), moving);
+        gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, count);
+      }
+      const ranged = new Uint8Array(actual.length);
+      gl.readPixels(0, 0, sw, sh, gl.RGBA, gl.UNSIGNED_BYTE, ranged);
+      if (!ranged.every((value, i) => value === actual[i])) throw Error('Ranged draw changed pixels');
+      for (let i = 0; i < 2; i++) gl.vertexAttribPointer(i, 4, gl.FLOAT, false, 32, i * 16);
       // 独立重放原 Canvas 路径，用同一组 native 碎片比较视觉偏差。
       ctx.resetTransform(); ctx.clearRect(0, 0, sw, sh); ctx.globalAlpha = 1;
       ctx.save(); ctx.beginPath();
@@ -109,6 +125,34 @@ try {
         actualAlpha, expectedAlpha, exactInitial, channelDeltas: channelDeltas.map(n => n / Math.max(1, activePixels)),
         gpu: images && progress === 0.52 ? canvas.toDataURL() : undefined,
         reference: images && progress === 0.52 ? reference.toDataURL() : undefined });
+      // Reduced buffers retain original layout coordinates and scale AA by
+      // physical output pixels. Compare full/ranged submissions at both sizes.
+      for (const scale of [.5, .667]) {
+        const bw = Math.floor(sw * scale), bh = Math.floor(sh * scale);
+        gl.viewport(0, 0, bw, bh);
+        gl.uniform2f(gl.getUniformLocation(program, 'bufferScale'), bw / sw, bh / sh);
+        const render = ranges => {
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          for (const [first, count, moving] of ranges) {
+            if (count === 0) continue;
+            for (let i = 0; i < 2; i++) gl.vertexAttribPointer(i, 4, gl.FLOAT, false, 32, first * 32 + i * 16);
+            gl.uniform1i(gl.getUniformLocation(program, 'moving'), moving);
+            gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, count);
+          }
+          const pixels = new Uint8Array(bw * bh * 4);
+          gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+          if (gl.getError() !== gl.NO_ERROR) throw Error('Reduced-buffer GL error');
+          return pixels;
+        };
+        const full = render([[0, tiles.length, 0], [0, tiles.length, 1]]);
+        const split = render([[started, tiles.length - started, 0], [0, started, 1]]);
+        if (!full.every((v, i) => v === split[i])) throw Error('Reduced-buffer range mismatch');
+        if (progress === 0 && !split.some(v => v !== 0)) throw Error('Missing reduced first frame');
+        if (progress === 1 && split.some(v => v !== 0)) throw Error('Uncleared reduced last frame');
+      }
+      gl.viewport(0, 0, sw, sh);
+      gl.uniform2f(gl.getUniformLocation(program, 'bufferScale'), 1, 1);
+      for (let i = 0; i < 2; i++) gl.vertexAttribPointer(i, 4, gl.FLOAT, false, 32, i * 16);
     }
     return result;
   }, { g: fixture, shaders, images: Boolean(process.env.SHATTER_IMAGE_DIR) });
@@ -126,5 +170,5 @@ try {
     if (row.expectedAlpha) assert(Math.abs(row.actualAlpha / row.expectedAlpha - 1) < .03,
       `Alpha coverage changed at progress ${row.progress}`);
   }
-  console.log('Shatter shaders: compiled and 7 frames verified');
+  console.log('Shatter shaders: compiled; 7 frames at 3 buffer scales verified; ranged submissions pixel-identical');
 } finally { await browser.close(); }

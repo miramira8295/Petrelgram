@@ -83,7 +83,7 @@ export struct DrawnAlbumGrid {
         (event.source === SourceType.TouchScreen && this.touchedGeneration !== generation)) { return; }
       const cell = current.cell;
       if (cell.selectionActive) { this.actions.onToggleSelectedMessage(cell.messageId); }
-      else if (cell.failed && cell.thumbFileId !== 0 && this.missing(index)) { this.actions.onSpecialPhotoRetry(cell.messageId); }
+      // Opening/retrying originals belongs to the viewer, not thumbnail state.
       else { this.actions.onMediaTap(cell.messageId, event.windowX, event.windowY); }
     };
   }

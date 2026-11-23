@@ -88,7 +88,7 @@ export struct ShatterDeleteOverlay {
 
   private useFallback(reason: string): void {
     if (!this.active || this.finished || this.fallback) { return; }
-    logW(`[Shatter] Canvas fallback: ${reason}`);
+    logW(`[Shatter] snapshot fade fallback: ${reason}`);
     if (this.snapshot === undefined) { this.finish(); return; }
     this.clearNativeTimeout();
     // 先切后端，XComponent 的 onDestroy 和迟到的 native 事件不能结束回退动画。
@@ -171,7 +171,6 @@ export struct ShatterDeleteOverlay {
       if (this.fallback) {
         ShatterCanvasFallback({
           pixels: this.snapshot,
-          particleBudget: this.particleBudget,
           canDraw: (): boolean => this.active && !this.finished && this.fallback,
           onCaptured: (): void => this.markCaptured(),
           onFinish: (): void => this.finish()

@@ -99,7 +99,7 @@ ctx.DrawnMessageRow.prototype.albumCanvas = {state:{ready:false},bind(){},reset(
 const ui={vp2px:n=>{unitConversions++;return n*2;},fp2px:n=>{unitConversions++;return n*2;}};
 const data={playSlotKey:'',chatId:9,isGroup:false,isChannel:false,contentWidth:400,themeBubbleOut:'',selectionActive:false,selectedMemberIds:[],canReply:true,lightweightPlainText:true};
 const style={radius:20,fontSize:16,environment:'1',textEnvironment:'1',role:'',views:''};
-function group(content='hello',entities=[]){return{head:{id:10,rowId:10,contentType:'text',text:content,textEntities:entities,date:1,editDate:0,isOutgoing:false,senderId:5,senderName:'',senderInitials:'AB',senderIsUser:true,senderAvatarPath:'',senderTag:'',sendState:'sent',translatedText:'',reactions:[],inlineButtons:[],forwardFrom:'',commentCount:0,replyToMessageId:0,replySenderName:'',replyText:'',replyThumbPath:'',replyDiceLayers:[],linkPreviewType:'',linkUrl:'',linkTitle:'',linkSiteName:'',linkDescription:'',linkPhotoFileId:0},memberIds:[10],showAvatar:true,showSenderName:true,dateLabel:''};}
+function group(content='hello',entities=[]){return{head:{id:10,rowId:10,contentType:'text',text:content,textEntities:entities,date:1,editDate:0,isOutgoing:false,senderId:5,senderName:'',senderInitials:'AB',senderIsUser:true,senderAvatarPath:'',senderTag:'',sendState:'sent',translatedText:'',reactions:[],inlineButtons:[],forwardFrom:'',commentCount:0,replyToMessageId:0,replySenderName:'',replyText:'',replyThumbPath:'',replyDiceLayers:[],linkPreviewType:'',linkUrl:'',linkTitle:'',linkSiteName:'',linkDescription:'',linkPhotoFileId:0},memberIds:[10],photoIsVideo:[],showAvatar:true,showSenderName:true,dateLabel:''};}
 const layouts=new ctx.DrawnTextLayouts();let g=group(),p=layouts.prepare(ui,g,data,style);
 assert.ok(ctx.drawnTextRowEligible(g,data,false,false));assert.equal(p.tiles.length,0);assert.equal(p.caption.source.content,'hello');
 assert.ok(p.footerY<p.captionY+p.caption.heightVp,'short last line shares footer');
@@ -201,7 +201,7 @@ row.planCheck=true;
 // Published native bindings remain safe when the plan disappears on reuse.
 const callbacks=[],created=[];
 for(const n of ['Stack','Row','Image','If','ForEach','Column','Text','SymbolGlyph'])ctx[n]=new Proxy({},{get:(_t,k)=>(...a)=>{if(k==='create')created.push(n);}});
-for(const n of ['Alignment','HitTestMode','MenuPreviewMode','BlurStyle','ModalMode','HapticFeedbackMode'])ctx[n]=enumMock;
+for(const n of ['Alignment','HitTestMode','MenuPreviewMode','PreviewScaleMode','BlurStyle','ModalMode','HapticFeedbackMode'])ctx[n]=enumMock;
 ctx.JUMP_FOCUS_SCALE=.01;ctx.JUMP_FOCUS_BRIGHTNESS=.01;ctx.menuPreviewCompact=()=>false;ctx.containerBlur=()=>0;ctx.overlayMaterial=()=>0;
 row.observeComponentCreation2=fn=>{callbacks.push(fn);fn(1,true);};row.ifElseBranchUpdateFunction=(_id,fn)=>fn();row.forEachUpdateFunction=(_id,items,fn)=>items.forEach(fn);
 row.painter={bind:()=>({})};row.foreground.bind=()=>({});row.menuFx={preview:()=>({}),menu:()=>({})};row.canvasContent();

@@ -81,9 +81,7 @@ export struct DrawnSingleMediaSurface {
       if (!this.active || generation !== this.generation || this.msg.id !== id || this.data.chatId !== chatId ||
         this.context.gestureClaimed || (event.source === SourceType.TouchScreen && this.touchedGeneration !== generation)) { return; }
       if (this.data.selectionActive) { this.actions.onToggleSelectedMessage(id); }
-      else if (this.msg.photoPath === '' && this.msg.photoFailed && this.msg.photoFileId !== 0) {
-        this.actions.onSpecialPhotoRetry(id);
-      } else if (this.msg.isAnimation) {
+      else if (this.msg.isAnimation) {
         if (drawnAnimationPlaying(this.msg, this.data, this.env, true)) {
           this.context.recordMenuOffset(event.x, Number(event.target.area.width)); this.context.msgContextMenuShown = true;
         } else { this.actions.onAnimationTap(id, false); }

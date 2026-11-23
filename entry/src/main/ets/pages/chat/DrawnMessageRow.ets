@@ -1,5 +1,6 @@
 import { drawnPlacementKey } from '../../util/drawnPlacementKey';
 import { DrawnMenuMedia, DrawnMenuSticker, DrawnMenuPaintState } from './DrawnMenuPreview';
+import { DrawnMenuViewport } from './DrawnMenuViewport';
 import { StaticMiniThumbnail } from '../common/StaticMiniThumbnail';
 import { documentCardFor } from './DrawnDocumentCardLayout';
 import { DrawnChecklistMessage } from './DrawnChecklistMessage';
@@ -599,7 +600,9 @@ export struct DrawnMessageRow {
   }
   private click(event: ClickEvent, hitX: number = event.x, hitY: number = event.y, semantic: boolean = false): void {
     const p = this.plan;
-    if (this.claimed || p === null || (!semantic && event.source === SourceType.TouchScreen &&
+    // Virtual accessibility activation is a new operation, not a continuation
+    // of the last physical gesture. Its target is validated by the semantic layer.
+    if ((!semantic && this.claimed) || p === null || (!semantic && event.source === SourceType.TouchScreen &&
       (this.touchRowId !== this.rowGroup.head.rowId || this.touchChatId !== this.rowData.chatId))) {
       return;
     }
@@ -611,10 +614,9 @@ export struct DrawnMessageRow {
     for (const tile of p.tiles) {
       if (albumRectContains(tile, hitX, hitY)) {
         if (this.rowData.selectionActive) { this.actions.onToggleSelectedMessage(tile.cell.messageId); }
-        else if (tile.cell.failed && (this.kind === 'single' ? m.photoPath === ''
-          : this.imageSlot(tile.cell.idx)?.path === '') && tile.cell.thumbFileId !== 0) {
-          this.actions.onSpecialPhotoRetry(tile.cell.messageId);
-        } else if (this.kind === 'single' && m.isAnimation) {
+        // A failed poster never consumes the open intent. The viewer validates
+        // the original and retries its poster independently of row rendering.
+        else if (this.kind === 'single' && m.isAnimation) {
           if (drawnAnimationPlaying(m, this.rowData, this.env, true)) { this.openMenu(hitX); }
           else { this.actions.onAnimationTap(m.id, false); }
         } else if (this.albumCanvas.state.ready) {
@@ -1030,7 +1032,10 @@ export struct DrawnMessageRow {
     return this.menuPaintState;
   }
   @Builder
-  menuPreview() { this.canvasContent(true); }
+  menuPreview() {
+    DrawnMenuViewport({ sourceWidth: this.plan?.width ?? 0, sourceHeight: this.plan?.height ?? 0,
+      content: (): void => { this.canvasContent(true); } });
+  }
 
   // Snapshot ownership includes native card/widget islands. The custom preview
   // reuses prepared geometry but owns its painters and uses posters, never a
@@ -1373,6 +1378,7 @@ export struct DrawnMessageRow {
               preview: menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp) ? MenuPreviewMode.NONE
                 : (this.transparentSticker() || drawnLiveSurface(this.rowGroup, this.rowData, this.actions.playback !== undefined))
                   ? (): void => { this.menuPreview(); } : MenuPreviewMode.IMAGE,
+              previewScaleMode: PreviewScaleMode.MAINTAIN,
               previewAnimationOptions: { scale: [0.98, 1.035], transition: this.menuFx.preview() },
               borderRadius: 16, backgroundColor: Color.Transparent,
               backgroundBlurStyle: containerBlur('menu'), systemMaterial: overlayMaterial('menu'),

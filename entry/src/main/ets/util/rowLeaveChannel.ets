@@ -28,14 +28,15 @@ export class RowLeaveChannel {
   private budget: number = 8000;
 
   particleBudget(): number { return this.budget; }
+  mounted(rowId: number): boolean { return (this.listeners.get(rowId)?.size ?? 0) > 0; }
 
   // 仅等待已挂载的行；离屏回收、取消或超时都必须释放删除请求。
   async play(rowIds: number[], enabled: boolean): Promise<void> {
     if (!enabled) { return; }
     const visible = Array.from(new Set(rowIds)).filter((id: number): boolean =>
-      (this.listeners.get(id)?.size ?? 0) > 0);
+      !this.leaving.has(id) && this.mounted(id));
     if (visible.length === 0) { return; }
-    this.budget = Math.max(128, Math.floor(8000 / visible.length));
+    this.budget = Math.max(128, Math.floor(8000 / (this.pending.size + visible.length)));
     const waits: Promise<void>[] = visible.map((id: number): Promise<void> => new Promise<void>((resolve) => {
       this.pending.set(id, resolve);
     }));
