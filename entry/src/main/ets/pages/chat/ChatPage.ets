@@ -2033,7 +2033,10 @@ export struct ChatPage {
         this.composerController.stopEditing();
       },
       setComposerFocused: (value: boolean): void => { this.composerFocused = value; },
-      afterSent: (): void => { this.timeline.atBottom = true; },
+      afterSent: (): void => {
+        this.timeline.atBottom = true;
+        this.timeline.armSelfSendFollow();
+      },
       // 与搬之前 start() 里那句 `new VoiceRecorder()` 逐字等价；开成宿主取值器
       // 只是为了让单测能注入一个可手动兑现的假录音器，把 recordingSeq 那道
       // 守卫钉住（理由写在 VoiceRecordingState 的接口上方）。
@@ -2981,10 +2984,18 @@ export struct ChatPage {
     // 新消息到达且最后一条已在底部可见：跟随，并解除未读闩。闩防的是缩略图
     // 这类原地通知把分界线贴底滑走（下面那一支仍受它约束）；新消息把内容往上
     // 顶是官方行为，不该被它挡住——真机日志：atBottom=true stayAtUnread=true 不跟随。
+    // 自己刚发出的那条消息：即使此刻 atBottom 是假（列表略离底）也要跟随——发送
+    // 是显式动作，官方行为就是立刻把自己发的那条顶到视口里。
+    const selfSendRecent: boolean = this.timeline.selfSendFollowActive();
+    // 别人发来的新消息：atBottom 是零容差判定，键盘/输入栏高度变化、亚像素取整、
+    // 新行还没把列表顶到位都会让它差几 vp 就翻假，现象就是「新消息落在输入栏
+    // 下面不往上顶」。band 内的偏移（压住输入栏一角、留一小段空隙）仍算在底部。
+    const nearBottom: boolean = !this.viewerOpen() && this.timeline.nearBottomFollow();
     if (notifyKind === 'update' &&
-      bottomFollowShouldSchedule(this.timeline.atBottom, this.timeline.bottomFollowPending, this.viewerOpen())) {
+      (selfSendRecent || nearBottom ||
+        bottomFollowShouldSchedule(this.timeline.atBottom, this.timeline.bottomFollowPending, this.viewerOpen()))) {
       this.timeline.stayAtUnread = false;
-      this.scheduleBottomAfterLayout('L1242');
+      this.scheduleBottomAfterLayout(selfSendRecent ? 'L1242_send' : 'L1242');
     }
   }
 
@@ -5678,6 +5689,7 @@ export struct ChatPage {
           if (this.draft === draft) { this.draft = ''; this.mention.clearPendingNameMentions(); }
           if (this.composer.replyToId === replyId) { this.composer.clearReply(); }
           this.timeline.atBottom = true;
+          this.timeline.armSelfSendFollow();
         }
       } catch (error) {
         if (!submitted && lease !== null) {
@@ -5716,6 +5728,7 @@ export struct ChatPage {
     if (!needsLatestWindow) {
       this.timeline.atBottom = true;
       this.timeline.stayAtUnread = false;
+      this.timeline.armSelfSendFollow();
     }
     this.withSendLock((): Promise<void> => store.sendMedia(items, caption, replyId).then((): void => {
       this.pendingMedia = clearPendingMedia();
@@ -5769,6 +5782,9 @@ export struct ChatPage {
     if (!needsLatestWindow) {
       this.timeline.atBottom = true;
       this.timeline.stayAtUnread = false;
+      // 发送是显式动作：接下来这条自己发的消息必须被看见，哪怕此刻列表只差几像素
+      // 没贴到底（isAtEnd() 会因此判「不在底部」）。窗口内跟随不再问 atBottom。
+      this.timeline.armSelfSendFollow();
     }
     // 按名字提及的实体在这里生成：偏移必须相对**实际发出去的那串文本**，
     // 所以用 trim 之后的 text，不是原始草稿。

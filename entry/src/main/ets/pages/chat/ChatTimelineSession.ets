@@ -26,7 +26,7 @@ import { HeaderIdentitySession } from './HeaderIdentitySession';
 import { FloatingDateState } from './FloatingDateOverlay';
 import { firstRowBelowChrome, floatDateNeedsRescan, floatDateScrollMovedEnough } from '../../util/floatDateGate';
 import { isInteriorRowRemoval } from '../../util/rowRemoval';
-import { AT_BOTTOM_KEEP, AT_BOTTOM_YES, atBottomVerdict } from '../../util/atBottom';
+import { AT_BOTTOM_KEEP, AT_BOTTOM_NO, AT_BOTTOM_YES, atBottomVerdict } from '../../util/atBottom';
 import { stackFromEndWanted } from '../../util/stackFromEnd';
 import { messageSelectionContentWidth } from '../../util/messageSelection';
 import { groupIndexOf, AlbumGroup, RunHeadHints } from '../../util/collapseAlbums';
@@ -288,6 +288,10 @@ export class ChatTimelineSession {
   curStartIdx: number = -1; // topmost visible row index (from onScrollIndex)
 
   curEndIdx: number = -1;   // bottom visible row index (from onScrollIndex)
+  // 用户离底部还有几行（按可见末行算）。新消息刚追加时最后一行还没布局，像素量不到，
+  // 这个行数口径是那一刻唯一还可信的「离底多远」——它就是「别人发消息不往上顶」的判据。
+  // 初值取大：首屏还没滚动事件之前不能假定自己在底部。
+  private bottomGapRows: number = 999;
 
   // Cumulative signed sum of user-originated scroll frames. A history page can
   // land while the finger/fling is still moving; anchor restoration subtracts
@@ -310,6 +314,18 @@ export class ChatTimelineSession {
   // atBottom 是假的，是因为上一条还没贴过去，不是用户离开了底部
   //（判据与真机证据见 util/bottomFollow）。
   bottomFollowPending: boolean = false;
+
+  // 自己刚发完消息的强制贴底窗口（截止时间戳，0 表示没有）。用户停在略微离底的
+  // 位置发送时，isAtEnd() 会判「不在底部」→ 跟随链整段被跳过 → 新气泡落在输入栏
+  // 下方/后面（2026-11-23 用户真机复现：列表往上滑一点点再发消息）。发送是显式
+  // 动作，官方行为就是立刻看到自己刚发的那条，所以给一个短窗口，期间跟随不再
+  // 问 atBottom；窗口外的行为完全不变。
+  private selfSendFollowUntil: number = 0;
+
+  // 最近一次贴底的时刻。滚动回调紧跟在 glueBottom 之后跑，这时 isAtEnd() 可能还
+  // 没落地（布局/offset 未刷新），会把刚贴好的 atBottom 又翻回假，进而挡掉下一次
+  // 跟随。给 250ms 的容错窗，只影响「维持贴底」，不影响「翻成贴底」。
+  private lastGlueAt: number = 0;
 
   // onScrollIndex 上报那一刻的 groups.length。行号只有配上它才有意义。
   indexGroupsLen: number = -1;
@@ -928,6 +944,8 @@ export class ChatTimelineSession {
       this.finishInitialMessageStageForInteraction();
       this.bindings!.cancelImeFollow();
       this.listTouchActive = true;
+      // 手指按到列表上＝位置归用户所有，撤掉刚发送时那条强制贴底窗口。
+      this.clearSelfSendFollow();
       this.keyboardUpAtTouchDown = this.bindings!.keyboardVisible();
       this.olderArmed = true;
       this.bindings!.flash.cancelFlash();
@@ -953,9 +971,15 @@ export class ChatTimelineSession {
     const traced = drawnStageMetrics.begin(DrawnStage.ScrollIndex);
     try {
       this.bindings!.playSlot.armSettle();
+      const rowsMoved: boolean = start !== this.curStartIdx || end !== this.curEndIdx;
       this.curStartIdx = start;
       this.curEndIdx = end;
       this.indexGroupsLen = this.groups.length;
+      // 新消息追加也会触发 onScrollIndex，但可见区间不变；这时把刚追加的行算成
+      // 「用户离开了底部」就永远跟不上了。只有区间真变了才重算行数。
+      if (rowsMoved) {
+        this.bottomGapRows = Math.max(0, this.groups.length - 1 - end);
+      }
       if (this.bindings!.imeTailPinned()) {
         return;
       }
@@ -1154,6 +1178,11 @@ export class ChatTimelineSession {
           try { this.flushQueuedOlderLoad(); } finally { drawnStageMetrics.end(history); }
         });
       } finally { drawnStageMetrics.end(schedule); }
+      // 自己刚发完消息，但那条消息到达时列表还在滑动（点火被 takeover 挡掉了）：
+      // 停稳后补一次贴底，否则它会留在输入栏下方（2026-11-23 用户报的现象）。
+      if (this.selfSendFollowActive() && !this.bindings!.viewerOpen()) {
+        this.glueBottom('L_selfSend');
+      }
     } finally { drawnStageMetrics.end(stop); }
   }
 
@@ -1278,7 +1307,23 @@ export class ChatTimelineSession {
     if (verdict === AT_BOTTOM_KEEP) {
       return;
     }
+    // 容错（2026-11-23 用户报「发送后消息落在输入栏下方」）：判定原本是零容差的
+    // ——差一像素 isAtEnd() 就是假。两种「假」不该翻掉状态：
+    //   ① 自己刚发完消息的窗口内：发送是显式动作，用户就是要看自己刚发的那条；
+    //   ② 刚 glueBottom 完的这一拍：isAtEnd() 还没跟上，翻假会挡掉下一次跟随。
+    // 手指按着列表时不适用——那是用户接管位置，必须如实翻假。
+    if (verdict === AT_BOTTOM_NO && !this.listTouchActive &&
+      (this.selfSendFollowActive() || Date.now() - this.lastGlueAt < 250)) {
+      return;
+    }
     const next: boolean = verdict === AT_BOTTOM_YES;
+    // 行数口径与像素口径同步维护：refreshAtBottom 是"用户滚到哪"的权威读数，
+    // 用它兜住 onScrollIndex 没覆盖到的时机（键盘弹出、内容变高等不改变可见区间的重排）。
+    if (next) {
+      this.bottomGapRows = 0;
+    } else if (this.curEndIdx >= 0) {
+      this.bottomGapRows = Math.max(0, this.groups.length - 1 - this.curEndIdx);
+    }
     if (this.atBottom !== next) {
       // 诊断（issue #62）：报告人给的复现极精确——点右下角箭头到底之后，新消息
       // 会自动跟随；自己手滑到底就不会。两条路的差别只可能落在这四个输入之一，
@@ -2332,8 +2377,119 @@ export class ChatTimelineSession {
         ` rows=${this.groups.length} stayUnread=${this.stayAtUnread}`);
     }
     this.scroller.scrollEdge(Edge.Bottom);
+    this.lastGlueAt = Date.now();
+    // 贴到底了，行数口径也归零（新行还没布局时它是唯一可用的「在底部」信号）。
+    this.bottomGapRows = 0;
+    // 贴到底了，强制窗口的使命结束；之后用户再滚动就按他自己的位置算。
+    this.selfSendFollowUntil = 0;
   }
 
+  // 自己发出一条消息后调用：在 windowMs 内让跟随链不再问 atBottom。
+  armSelfSendFollow(windowMs: number = 1500): void {
+    this.selfSendFollowUntil = Date.now() + windowMs;
+  }
+
+  selfSendFollowActive(): boolean {
+    return this.selfSendFollowUntil > 0 && Date.now() < this.selfSendFollowUntil;
+  }
+
+  clearSelfSendFollow(): void {
+    this.selfSendFollowUntil = 0;
+  }
+
+  // 贴底判定（给跟随链用）：isAtEnd() 是零容差判定，键盘弹出、输入栏高度变化、
+  // 亚像素取整、新行还没把列表顶到位，都会让它差几 vp 就报「不在底部」，于是
+  // 别人发来的新消息不跟随——现象就是「新消息落在输入栏下面不往上顶」。
+  //
+  // 带宽 NEAR_BOTTOM_BAND_VP 取 160vp：覆盖用户描述的两档状态——①最后一条被
+  // 输入栏压住一角；②最后一条完全露出、与输入栏之间还有一段空隙。超过这个距离
+  // 就是在翻历史，不跟随。量不到（未布局的行 getItemRect 返回全 0 矩形）时退回
+  // 零容差行为，不做猜测。
+  nearBottomEpsilon(): boolean {
+    if (this.bindings === null || this.groups.length <= 0) {
+      return false;
+    }
+    try {
+      if (this.scroller.isAtEnd()) {
+        return true;
+      }
+      const BAND: number = 160;
+      const bottom: number = this.rowBottomVp(this.groups.length - 1);
+      if (!Number.isFinite(bottom)) {
+        return false;
+      }
+      // 贴底时最后一行的下沿落在「屏高 − contentEndOffset」上（List 是全屏的，
+      // contentEndOffset = bottomChromeH + 2）。
+      const target: number = this.bindings.screenH() - this.bindings.bottomChromeH() - 2;
+      return Math.abs(target - bottom) <= BAND;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // 跟随判据（行数口径 + 像素口径）。
+  //
+  // 为什么不能只看像素：新消息刚追加的那一拍，最后一行还没布局，getItemRect 返回
+  // 全 0 矩形 → rowBottomVp(last) = NaN，任何像素带宽都判不出「在底部」（真机日志
+  // 实测：新消息到达那一拍 bottom=NaN）。而「可见末行离末尾还有几行」
+  // onScrollIndex 当场就给了，不需要等布局。
+  //
+  // limitRows = 2：最后 1–2 行在视口外也算在底部——用户描述的「输入框盖住最新
+  // 一条」「留一点空隙」正是这一档；再多就是在翻历史了，不跟随。
+  nearBottomFollow(limitRows: number = 2): boolean {
+    if (this.bindings === null || this.groups.length <= 0) {
+      return false;
+    }
+    try {
+      if (this.scroller.isAtEnd()) {
+        return true;
+      }
+    } catch (e) {
+      return false;
+    }
+    if (this.bottomGapRows <= limitRows && this.tailRowsShort()) {
+      return true;
+    }
+    return this.nearBottomEpsilon();
+  }
+
+  // 行数口径只对「单行短消息」生效：两条长文、图片或引用气泡在数据里同样各算 1 行，
+  // 但它们可能比视口还高——只看行数会把「离底部 1-2 行」当成「几乎在底部」，新消息
+  // 一到整屏往上跳。所以行数口径必须再过一道「尾巴这几行是不是矮气泡」。
+  private tailRowsShort(): boolean {
+    if (this.curEndIdx < 0 || this.curEndIdx >= this.groups.length) {
+      return false;
+    }
+    for (let i: number = this.curEndIdx + 1; i < this.groups.length; i++) {
+      if (!this.shortTailRow(this.groups[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // 矮气泡 = 单行文本：没有相册/图片/视频、没有日期分隔、没有引用块、没有链接预览、
+  // 没有转发头、没有表情回应与内联按钮，正文不换行且不超过一行。判不准就当不矮，
+  // 退回像素口径（只有真正贴底才跟随）——宁可少跟一次，也不让整屏乱跳。
+  private shortTailRow(group: AlbumGroup): boolean {
+    if (group.photoPaths.length > 0 || group.dateLabel !== '') {
+      return false;
+    }
+    const m: MessageEntry = group.head;
+    if (m.contentType !== 'text') {
+      return false;
+    }
+    if (m.text.indexOf('\n') >= 0 || m.text.length > 48) {
+      return false;
+    }
+    if (m.replyToMessageId !== 0 || m.linkSiteName !== '' || m.forwardFrom !== '') {
+      return false;
+    }
+    if (m.reactions.length > 0 || m.inlineButtons.length > 0) {
+      return false;
+    }
+    return true;
+  }
   cancelInitialMessageTransitionSettle(): void {
     if (this.initialMessageReleaseTimer !== -1) {
       clearTimeout(this.initialMessageReleaseTimer);
