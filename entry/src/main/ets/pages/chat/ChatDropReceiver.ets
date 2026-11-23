@@ -6,16 +6,15 @@ import { logI, logE } from '../../util/log';
 import { common } from '@kit.AbilityKit';
 import { unifiedDataChannel as udc } from '@kit.ArkData';
 import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
-import { promptAction, UIContext } from '@kit.ArkUI';
+import { UIContext } from '@kit.ArkUI';
 import { DropArrivalSession } from '../../util/dropArrival';
 import { SharedPayload } from '../../util/sharedContent';
-import { ShareArrivalHost, sendShareDirectly, remainingDirectShare } from '../../util/shareArrival';
+import { ShareArrivalHost, sendShareDirectly } from '../../util/shareArrival';
 import { ShareMediaGeometry } from '../../util/shareLivePhoto';
 import { SendProgress } from '../../util/sendProgress';
 import { str } from '../../util/strings';
 import { decodeDrop } from '../../services/DropData';
 import { ensureStagingDir, sweepStaging } from '../../util/sendStagingFs';
-import { openDropPreview, DropSendResult } from './DropPreviewDialog';
 import { SendPermissionError } from '../../store/SendPermissionApi';
 
 const DROP_STAGING = 'drop-staging';
@@ -25,15 +24,14 @@ export class ChatDropReceiver {
   private generation: number = 0;
   private pending: boolean = false;
   private abort: (() => void) | null = null;
-  private preview: (() => void) | null = null;
 
   cancel(): void {
     this.generation++; this.arrival.cancel(); this.abort?.(); this.abort = null;
-    this.preview?.(); this.preview = null; this.pending = false;
+    this.pending = false;
   }
 
   receive(event: DragEvent, context: common.Context, ui: UIContext, host: ShareArrivalHost,
-    active: () => boolean, target: string, chatId: number, extraParams?: string): void {
+    active: () => boolean, chatId: number, extraParams?: string): void {
     const account: string = getActiveTdAccountSlot();
     if (isSameChatMessageDragExtra(extraParams, account, chatId)) {
       event.setResult(DragResult.DRAG_CANCELED);
@@ -97,7 +95,7 @@ export class ChatDropReceiver {
         });
       } catch (error) { logE(`[Drop] deferred start failed code=${(error as BusinessError).code ?? 0}`); fail(); }
     });
-    // The system accepts the drop asynchronously; no message is sent here.
+    // 系统异步确认落点；真正的发送在下面的 deliver 里立刻开始，不再弹确认框。
     event.dragBehavior = DragBehavior.COPY;
     event.setResult(DragResult.DRAG_SUCCESSFUL);
     this.arrival.receive(load, {
@@ -105,27 +103,22 @@ export class ChatDropReceiver {
       check: async (payload: SharedPayload): Promise<void> => { await host.checkPermissions?.(payload); },
       draft: host.draftText,
       setDraft: host.setDraft,
-      preview: (payload: SharedPayload): void => {
-        let sent = false;
-        this.preview = openDropPreview(ui, payload, target, current,
-            async (pending: SharedPayload): Promise<DropSendResult> => {
-              if (!current()) { return { remaining: null, uncertain: false, error: '' }; }
-              sent = true;
-              const progress = new SendProgress();
-              try {
-                await sendShareDirectly(pending, host, new Map<string, ShareMediaGeometry>(), progress, current);
-                return { remaining: null, uncertain: false, error: '' };
-              } catch (error) {
-                if (!current()) { return { remaining: null, uncertain: false, error: '' }; }
-                return { remaining: remainingDirectShare(pending, progress), uncertain: progress.hasUncertain(),
-                  error: progress.hasUncertain() ? '' : (error instanceof SendPermissionError ? error.message : str('fw_failed')) };
-              }
-            },
-            (): void => {
-              if (!sent) { cleanup(); }
-              if (generation === this.generation) { this.preview = null; this.pending = false; }
-            });
+      deliver: (payload: SharedPayload): void => {
+        // 文件已经在暂存目录里了。这里 retained 置真：sendShareDirectly 只把请求
+        // 交给 TDLib，上传在后台继续读这些文件，发送完成也不能立刻删目录——
+        // 交给 sweepStaging 按 TTL 清（一个进程只扫一次）。
         retained = true;
+        const progress = new SendProgress();
+        sendShareDirectly(payload, host, new Map<string, ShareMediaGeometry>(), progress, current)
+          .catch((error: Object): void => {
+            if (!current()) { return; }
+            showToast(error instanceof SendPermissionError ? error.message : str('fw_failed'), 2500);
+          })
+          .finally((): void => {
+            // 拖拽不再弹窗，pending 必须在这里释放：否则本会话后续的拖拽会被
+            // pending 守卫一直挡掉。
+            if (generation === this.generation) { this.pending = false; }
+          });
       }
     }).catch((error: Object): void => {
       logE(`[Drop] receive failed code=${(error as BusinessError).code ?? 0} current=${current()}`);

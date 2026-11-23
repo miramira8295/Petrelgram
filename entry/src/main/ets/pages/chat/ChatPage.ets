@@ -272,7 +272,9 @@ import {
 import { conversationScopeId, conversationScopeKey } from '../../util/messageTopicScope';
 import { navigateToSearch } from '../../util/searchNav';
 import { navigateToSetting } from '../../util/settingsNav';
-import { getActiveTdUserId } from '../../tdkit/Globals';
+import { getActiveTdAccountSlot, getActiveTdUserId } from '../../tdkit/Globals';
+import { isSameChatMessageDragExtra } from '../../util/messageDragOrigin';
+import { DropHoverOverlay, DropHoverState } from './DropHoverOverlay';
 import {
   chatChromeHeight, ChatChromeGeometryInput, chatTopBannerHeight, chatTopicBarHeight
 } from '../../util/ChatChromeGeometry';
@@ -1360,6 +1362,7 @@ export struct ChatPage {
 
   private resetComposerSession(): void {
     this.dropReceiver.cancel();
+    this.dropHover.setVisible(false);
     // 原文四行 `this.recordingSeq++; if (this.voiceRec !== null ||
     // this.isRecording || this.recordingStarting) { this.cancelRecording();
     // }` 收成这一次 `this.recording.cancel()` 调用——voiceRec/recordingSeq
@@ -1627,7 +1630,7 @@ export struct ChatPage {
     });
     this.sessionLifecycle.bind({
       invalidateScrollWork: (): void => { this.timeline.invalidateScrollWork(); },
-      cancelDropReceiver: (): void => { this.dropReceiver.cancel(); },
+      cancelDropReceiver: (): void => { this.dropReceiver.cancel(); this.dropHover.setVisible(false); },
       publishViewerCovered: (): void => { publishViewerCoversWindow(false); },
       disposeShareTargeted: (): void => {
         if (this.offShareTargeted !== null) {
@@ -2333,6 +2336,45 @@ export struct ChatPage {
   }
 
   // 分享落地要用到的页面能力。两档共用一份。
+  // 拖拽悬停提示的显隐。应用内拖消息也会走到这里，那种拖拽的意思是「搬动这条
+  // 消息」，不能提示「松手即发送」——和 ChatDropReceiver 里的排除判据一致。
+  private setDropHover(visible: boolean, extraParams?: string, sendMode: boolean = true): void {
+    if (this.dropHoverHideTimer >= 0) { clearTimeout(this.dropHoverHideTimer); this.dropHoverHideTimer = -1; }
+    if (visible && isSameChatMessageDragExtra(extraParams, getActiveTdAccountSlot(), this.chatId)) {
+      visible = false;
+    }
+    if (this.dropHover.sendMode !== sendMode) { this.dropHover.sendMode = sendMode; }
+    this.dropHover.setVisible(visible);
+  }
+
+  // 拖进来的东西松手后会不会真的「直接发出」。纯文字/链接拖进来只放进输入框，
+  // 这时提示层不能写「松手即发送」。本地拖拽（含中转站）在进入时就能读到数据；
+  // 系统延迟拖拽这里会抛错，读不到就按「文件」提示——绝大多数情况就是文件。
+  private dropSendsDirectly(event: DragEvent): boolean {
+    try {
+      const records = event.getData().getRecords();
+      if (records.length === 0) { return true; }
+      for (const record of records) {
+        const type = record.getType();
+        if (type !== 'general.plain-text' && type !== 'general.hyperlink' && type !== 'general.html') {
+          return true;
+        }
+      }
+      return false;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  // 此刻拖拽是否真的能被接收。比 onDrop 的谓词少一层「拖拽开始时的 store/client
+  // 快照」——这里只决定要不要给提示，最坏情况是提示出现但松手被拒，而提示本身
+  // 不改变任何数据。
+  private dropHoverAllowed(): boolean {
+    return this.timeline.pageVisible && this.appIsForeground && !this.viewerOpen() &&
+      !this.search.mode && !this.selection.active && this.composer.editingId === 0 &&
+      !this.recording.isRecording && this.membershipState === 'writable';
+  }
+
   private shareHost(store: MessageStore): ShareArrivalHost {
     return {
       checkPermissions: (payload: SharedPayload): Promise<void> => store.checkSharePermissions(payload),
@@ -3498,6 +3540,8 @@ export struct ChatPage {
     this.shatterStage.dispose();
     this.messageActionsState.reset();
     this.sessionLifecycle.dispose();
+    if (this.dropHoverHideTimer >= 0) { clearTimeout(this.dropHoverHideTimer); this.dropHoverHideTimer = -1; }
+    this.dropHover.dispose();
   }
 
   private disposeInitialStageAndTgs(): void {
@@ -5170,6 +5214,12 @@ export struct ChatPage {
   @Local panelContentReady: boolean = false;
   private emojiDrawer: EmojiDrawerState = new EmojiDrawerState();
   private dropReceiver: ChatDropReceiver = new ChatDropReceiver();
+  // 拖拽悬停提示层的显隐状态。放在 @ObservedV2 类里由提示层自己订阅：让页面 build
+  // 直接读它的话，拖拽每次进出都会重跑整页 build。
+  private dropHover: DropHoverState = new DropHoverState();
+  // 拖拽在页面子节点之间移动时 enter/leave 可能连续抖动；离开只在停住 160ms 后
+  // 才收起提示层，避免提示闪一下。
+  private dropHoverHideTimer: number = -1;
   private inputSwitch: ComposerInputSwitch = new ComposerInputSwitch();
   private panelReadySeq: number = 0;
 
@@ -7120,6 +7170,13 @@ export struct ChatPage {
       if (this.viewerOpen()) {
         this.mediaViewer();
       }
+      // 拖拽悬停提示层。放在根 Stack 最后一个：盖住顶栏与输入栏，自身
+      // hitTestBehavior(None)，不参与命中也不吃点击。
+      DropHoverOverlay({
+        state: this.dropHover,
+        target: this.header.titleTextOf(),
+        dark: this.appDark
+      });
     }
     .width('100%').height('100%')
     .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
@@ -7130,6 +7187,8 @@ export struct ChatPage {
     })
     .allowDrop(CHAT_DROP_TYPES)
     .onDrop((event: DragEvent, extraParams?: string): void => {
+      // 松手：提示立刻收起，接收器在同一帧里开始读暂存文件并直接发出。
+      this.dropHover.setVisible(false);
       const store = this.store;
       if (store === null) { event.setResult(DragResult.DRAG_FAILED); return; }
       const client = getTdClient();
@@ -7139,7 +7198,19 @@ export struct ChatPage {
         (): boolean => this.store === store && getTdClient() === client && this.chatId === chatId && this.threadRootId === threadId &&
           this.timeline.pageVisible && this.appIsForeground && !this.viewerOpen() && !this.search.mode && !this.selection.active &&
           this.composer.editingId === 0 && !this.recording.isRecording && this.membershipState === 'writable',
-        this.header.titleTextOf(), chatId, extraParams);
+        chatId, extraParams);
+    })
+    // 悬停提示：拖拽进入页面就亮出「松手即发送」，离开或松手收起。onDragEnter
+    // 只在组件上已有 onDrop 时才会回调。
+    .onDragEnter((event: DragEvent, extraParams?: string): void => {
+      this.setDropHover(this.dropHoverAllowed(), extraParams, this.dropSendsDirectly(event));
+    })
+    .onDragLeave((): void => {
+      if (this.dropHoverHideTimer >= 0) { return; }
+      this.dropHoverHideTimer = setTimeout((): void => {
+        this.dropHoverHideTimer = -1;
+        this.setDropHover(false);
+      }, 160);
     })
     // 贴纸合集面板挂在页面根 Stack 上：这个节点还没有别的 bindSheet（骰子那张
     // 挂 dock），同一节点上串两个只有最后一个生效。

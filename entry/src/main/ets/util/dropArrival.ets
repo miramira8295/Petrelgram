@@ -5,10 +5,11 @@ export interface DropArrivalHost {
   check: (payload: SharedPayload) => Promise<void>;
   draft: () => string;
   setDraft: (text: string) => void;
-  preview: (payload: SharedPayload) => void;
+  // 媒体拖拽落到这里就代表"现在发出去"（2026-11-23 去掉了松手后的确认弹框）。
+  // 纯文本仍然只接进草稿，由用户自己按发送。
+  deliver: (payload: SharedPayload) => void;
 }
 
-// This interface intentionally has no send method: dropping cannot send a message.
 export class DropArrivalSession {
   private generation: number = 0;
   private busy: boolean = false;
@@ -24,7 +25,7 @@ export class DropArrivalSession {
       if (payload.media.length === 0 && payload.caption === '') { throw new Error('empty drop'); }
       await host.check(payload);
       if (!current()) { return false; }
-      if (payload.media.length > 0) { host.preview(payload); }
+      if (payload.media.length > 0) { host.deliver(payload); }
       else {
         const existing = host.draft();
         host.setDraft(existing === '' ? payload.caption : `${existing}\n${payload.caption}`);
