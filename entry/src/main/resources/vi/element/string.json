@@ -13367,6 +13367,22 @@
     {
       "name": "cp_search_newer_result",
       "value": "Kết quả tìm kiếm mới hơn"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "Ảnh và chú thích"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "Chỉ ảnh"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "Video và chú thích"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "Chỉ video"
     }
   ]
 }

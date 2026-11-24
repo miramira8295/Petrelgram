@@ -13371,6 +13371,22 @@
     {
       "name": "cp_search_newer_result",
       "value": "較新的搜尋結果"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "圖片＋文字"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "僅圖片"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "影片＋文字"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "僅影片"
     }
   ]
 }

@@ -13367,6 +13367,22 @@
     {
       "name": "cp_search_newer_result",
       "value": "Hasil carian lebih baharu"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "Foto + kapsyen"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "Foto sahaja"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "Video + kapsyen"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "Video sahaja"
     }
   ]
 }

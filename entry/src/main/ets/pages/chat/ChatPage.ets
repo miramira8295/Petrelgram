@@ -7038,6 +7038,7 @@ export struct ChatPage {
       },
       initIdx: this.viewer.viewerInitIdx,
       initStartPositionMs: this.viewer.viewerStartPositionMs,
+      threadRootId: this.threadRootId,
       store: this.store,
       chatId: this.chatId,
       chatTitle: this.header.title,

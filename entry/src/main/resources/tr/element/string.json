@@ -13367,6 +13367,22 @@
     {
       "name": "cp_search_newer_result",
       "value": "Daha yeni arama sonucu"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "Fotoğraf ve açıklama"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "Yalnızca fotoğraf"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "Video ve açıklama"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "Yalnızca video"
     }
   ]
 }

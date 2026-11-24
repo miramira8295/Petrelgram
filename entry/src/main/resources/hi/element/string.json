@@ -13367,6 +13367,22 @@
     {
       "name": "cp_search_newer_result",
       "value": "नया खोज परिणाम"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "फ़ोटो और कैप्शन"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "केवल फ़ोटो"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "वीडियो और कैप्शन"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "केवल वीडियो"
     }
   ]
 }

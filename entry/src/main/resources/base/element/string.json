@@ -13663,6 +13663,22 @@
     {
       "name": "cp_search_newer_result",
       "value": "较新的搜索结果"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "图片＋文字"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "仅图片"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "视频＋文字"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "仅视频"
     }
   ]
 }

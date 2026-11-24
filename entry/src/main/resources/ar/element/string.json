@@ -13367,6 +13367,22 @@
     {
       "name": "cp_search_newer_result",
       "value": "نتيجة بحث أحدث"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "صورة مع تعليق"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "الصورة فقط"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "فيديو مع تعليق"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "الفيديو فقط"
     }
   ]
 }

@@ -13367,6 +13367,22 @@
     {
       "name": "cp_search_newer_result",
       "value": "Новіший результат пошуку"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "Фото з підписом"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "Лише фото"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "Відео з підписом"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "Лише відео"
     }
   ]
 }

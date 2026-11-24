@@ -13367,6 +13367,22 @@
     {
       "name": "cp_search_newer_result",
       "value": "新しい検索結果"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "写真＋説明文"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "写真のみ"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "動画＋説明文"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "動画のみ"
     }
   ]
 }

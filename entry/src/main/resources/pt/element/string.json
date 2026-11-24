@@ -13367,6 +13367,22 @@
     {
       "name": "cp_search_newer_result",
       "value": "Resultado mais recente"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "Foto com legenda"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "Somente foto"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "Vídeo com legenda"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "Somente vídeo"
     }
   ]
 }

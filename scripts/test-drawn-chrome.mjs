@@ -165,7 +165,8 @@ row.painter={bind:()=>({})};row.foreground.bind=()=>({});row.menuFx={preview:()=
 row.canvasContent();assert.equal(created.filter(n=>n==='Stack').length,1);assert.equal(created.filter(n=>n==='Row').length,1);
 assert.equal(created.filter(n=>n==='Text'||n==='Image').length,0);
 const r0=plainChrome.chrome.reactions.chips[0];down(plainChrome.chrome.reactionsX+r0.x+2,plainChrome.chrome.reactionsY+r0.y+2);
-assert.equal(row.allowBodyDrag,false);const beforeDrag=events.length;listeners.get('onDragStart')({});assert.equal(events.length,beforeDrag);
+ctx.DragResult={DRAG_CANCELED:2};let rejectedDrag=false;
+assert.equal(row.allowBodyDrag,false);const beforeDrag=events.length;listeners.get('onDragStart')({setResult(result){assert.equal(result,2);rejectedDrag=true;}});assert.equal(events.length,beforeDrag);assert.equal(rejectedDrag,true,'chip hold cancels the native drag, not just its payload');
 down(plainChrome.captionX+2,plainChrome.captionY+2);assert.equal(row.allowBodyDrag,true);
 listeners.get('onDragStart')({});assert.equal(events.at(-1)[0],'drag');
 console.log('PASS: ordinary reaction+forward row still uses two paint nodes; chip drag exports no message while body drag remains available.');

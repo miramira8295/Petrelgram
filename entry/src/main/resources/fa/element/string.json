@@ -13367,6 +13367,22 @@
     {
       "name": "cp_search_newer_result",
       "value": "نتیجهٔ جستجوی جدیدتر"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "عکس با توضیح"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "فقط عکس"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "ویدیو با توضیح"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "فقط ویدیو"
     }
   ]
 }

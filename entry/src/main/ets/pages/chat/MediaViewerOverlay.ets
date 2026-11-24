@@ -51,6 +51,10 @@ import { VideoStatsPanel } from './VideoStatsPanel';
 import { VideoStatsSnapshot } from '../../util/videoStats';
 import { ViewerUnderlay } from '../../util/viewerUnderlay';
 import { formatSpeed } from '../../util/playerChrome';
+import { getTdClient } from '../../tdkit/Globals';
+import { TdObject, TdRequest } from '../../tdkit/TdTypes';
+import { ForwardSheet } from './ForwardSheet';
+import { ViewerForwardSession, ViewerForwardSource } from './ViewerForwardSession';
 
 // 控制层的底色。材质接管时它会被 overlayGlassFill 清成透明（不透明底色会盖在
 // 材质层之上，官方常见问题写死），只有低于 API 26 时才真正画出来——那时
@@ -160,6 +164,9 @@ export struct MediaViewerOverlay {
   // 从下载中心打开（pages/main/DownloadPreviewPage）：成员是下载中心拼的临时相册，id 是 1…N 的临时编号、chatId 为 0。
   // 这时「所有媒体」「后台缓存」没有意义，缓存登记也必须跳过——否则会按临时 id 往 CacheRegistry 里写假记录。
   @Param downloadsMode: boolean = false;
+  @Param threadRootId: number = 0;
+  @Event resolveForwardSource: (viewerId: number) => ViewerForwardSource | null = (): null => null;
+  @Local private forwarding: ViewerForwardSession = new ViewerForwardSession();
   // 这一条能不能「在聊天中显示」。判据与列表长按菜单一致（downloadCenterRowVM 的
   // canJump：chatId !== 0 && messageId !== 0）——下载中心磁盘扫出来的条目两者都是 0，
   // 菜单还照常列出来的话，点了就是**静默无反应**（用户 2026-09-16 报）。
@@ -296,6 +303,7 @@ export struct MediaViewerOverlay {
   onClosingChanged(): void {
     if (this.closing) {
       this.disappearing = true;
+      this.forwarding.close(false);
       this.cancelInitialBarsTimer();
       this.cancelLoadingHoldTimer();
       this.clearThumbUnsubs();
@@ -402,6 +410,7 @@ export struct MediaViewerOverlay {
 
   private requestClose(): void {
     this.disappearing = true;
+    this.forwarding.close(false);
     this.cancelInitialBarsTimer();
     this.cancelLoadingHoldTimer();
     this.clearThumbUnsubs();
@@ -448,6 +457,7 @@ export struct MediaViewerOverlay {
   // Leaving the viewer in landscape would strand the chat page sideways.
   aboutToDisappear(): void {
     this.disappearing = true;
+    this.forwarding.close(false);
     this.cancelInitialBarsTimer();
     this.cancelLoadingHoldTimer();
     this.clearThumbUnsubs();
@@ -881,6 +891,7 @@ export struct MediaViewerOverlay {
     // 旧播放器卸载兜不住——livePlaying 住在本组件上，而新播放器在预热模式下
     // 从头到尾不会报一次 true。
     this.livePlaying = false;
+    this.forwarding.close(false);
     this.viewerMsgId = landing;
     this.onViewerMsgIdChange(landing);
     this.rebuildViewerSources();
@@ -1273,6 +1284,7 @@ export struct MediaViewerOverlay {
     // 其实是静止的。
     this.livePlaying = false;
     this.pageIdx = index;
+    this.forwarding.close(false);
     this.viewerMsgId = id;
     this.onViewerMsgIdChange(id);
     this.rebuildViewerSources();
@@ -1321,6 +1333,70 @@ export struct MediaViewerOverlay {
       return e.videoPath !== '';
     }
     return e.photoFullFileId !== 0 ? e.photoFullPath !== '' : e.photoPath !== '';
+  }
+
+  private forwardSource(): ViewerForwardSource | null {
+    if (this.downloadsMode) { return this.resolveForwardSource(this.viewerMsgId); }
+    const entry: MessageEntry | null = this.entry();
+    if (this.chatId === 0 || entry === null || entry.id <= 0 ||
+      entry.sendState === 'sending' || entry.sendState === 'failed') { return null; }
+    return { chatId: this.chatId, messageId: entry.id, threadRootId: this.threadRootId,
+      // The viewer shows media, even if this snapshot has no caption yet.
+      canRemoveCaption: true };
+  }
+
+  private forwardCurrent(messageId: number): void {
+    if (messageId !== this.viewerMsgId || this.closing || this.disappearing ||
+      this.dismissY !== 0 || this.hopSlideX !== 0) { return; }
+    const client = getTdClient();
+    const source: ViewerForwardSource | null = this.forwardSource();
+    this.forwarding.open(source, {
+      choose: (): Promise<boolean | null> => this.getUIContext().getPromptAction().showActionMenu({
+        title: $r('app.string.mb_forward'),
+        buttons: [
+          { text: this.isVideo() ? $r('app.string.mv_forward_video_caption') : $r('app.string.mv_forward_photo_caption'), color: '#3390EC' },
+          { text: this.isVideo() ? $r('app.string.mv_forward_video_only') : $r('app.string.mv_forward_photo_only'), color: '#3390EC' }
+        ]
+      }).then((result: promptAction.ActionMenuSuccessResponse): boolean | null =>
+        result.index === 0 ? false : (result.index === 1 ? true : null))
+        .catch((): null => null),
+      properties: (target: ViewerForwardSource): Promise<TdObject> => {
+        const request: TdRequest = { '@type': 'getMessageProperties' };
+        request['chat_id'] = target.chatId;
+        request['message_id'] = target.messageId;
+        return client.send(request, 15000);
+      },
+      isCurrent: (): boolean => {
+        if (this.disappearing || this.closing || this.viewerMsgId !== messageId || getTdClient() !== client) {
+          return false;
+        }
+        const current: ViewerForwardSource | null = this.forwardSource();
+        return current !== null && source !== null && current.chatId === source.chatId &&
+          current.messageId === source.messageId;
+      },
+      controls: (): VideoPlaybackControls | null => this.playbackControls,
+      denied: (): void => { showToast($r('app.string.cp_cannot_forward'), 1500); },
+      failed: (error: Object): void => {
+        logE(`MediaViewer.forward properties failed: ${error}`);
+        showToast($r('app.string.action_failed_retry'), 1800);
+      }
+    });
+  }
+
+  @Builder
+  forwardPicker(source: ViewerForwardSource) {
+    ForwardSheet({
+      show: true,
+      sourceChatId: source.chatId,
+      messageIds: [source.messageId],
+      threadRootId: source.threadRootId,
+      canRemoveCaption: source.canRemoveCaption,
+      defaultRemoveCaption: this.forwarding.removeCaption,
+      topInset: this.videoLandscape ? 0 : this.topSafe,
+      effectDuration: (key: string, ms: number): number => this.effectDuration(key, ms),
+      onShowChange: (show: boolean): void => { if (!show) { this.forwarding.close(); } },
+      onSent: (): void => { this.forwarding.close(); }
+    });
   }
 
   // 右上角「⋮」菜单。从下载中心打开时去掉「所有媒体」「后台缓存」：前者没有会话可去，后者本来就在下载中心里。
@@ -1942,6 +2018,8 @@ export struct MediaViewerOverlay {
             // 双击根本没有机会成立，进放大只能靠双指捏合。）
             .gesture(
               GestureGroup(GestureMode.Parallel,
+                LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+                  .onAction((): void => { this.forwardCurrent(vm.id); }),
                 TapGesture({ count: 2, fingers: 1 })
                   .onAction((event: GestureEvent) => { this.onPhotoDoubleTap(event); }),
                 TapGesture({ count: 1, fingers: 1 })
@@ -2251,6 +2329,17 @@ export struct MediaViewerOverlay {
         }
         // No download indicator up here: the seek bar's lighter track shows
         // the downloaded span, and a stalled player draws a centered ring.
+        if (this.forwardSource() !== null) {
+          Button({ type: ButtonType.Circle }) {
+            SymbolGlyph($r('sys.symbol.arrowshape_turn_up_right')).fontSize(18).fontColor([Color.White]);
+          }
+          .width(this.videoLandscape ? 36 : 40)
+          .height(this.videoLandscape ? 36 : 40)
+          .backgroundColor(Color.Transparent)
+          .enabled(!this.forwarding.checking)
+          .accessibilityText($r('app.string.mb_forward'))
+          .onClick((): void => { this.forwardCurrent(this.viewerMsgId); });
+        }
         // "⋮" menu — 保存到相册 etc.
         Stack() {
           SymbolGlyph($r('sys.symbol.more')).fontSize(18).fontColor([Color.White]);
@@ -2383,6 +2472,11 @@ export struct MediaViewerOverlay {
             duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 180),
             curve: Curve.EaseOut
           }));
+      }
+      // Above both the viewer chrome and native video surface. Cancelling the
+      // picker leaves the same photo/zoom or video position on screen.
+      if (this.forwarding.source !== null) {
+        this.forwardPicker(this.forwarding.source);
       }
     }
     .width('100%').height('100%')

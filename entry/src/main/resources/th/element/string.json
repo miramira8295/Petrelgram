@@ -13367,6 +13367,22 @@
     {
       "name": "cp_search_newer_result",
       "value": "ผลการค้นหาที่ใหม่กว่า"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "รูปภาพพร้อมคำบรรยาย"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "เฉพาะรูปภาพ"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "วิดีโอพร้อมคำบรรยาย"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "เฉพาะวิดีโอ"
     }
   ]
 }
