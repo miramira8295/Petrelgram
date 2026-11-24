@@ -48,7 +48,7 @@ import { logE } from '../../util/log';
 import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { readableContentWidth } from '../../util/contentWidth';
 import { registerStack, NavStackLike } from '../../util/navStacks';
-import { navigateToSetting } from '../../util/settingsNav';
+import { navigateToSetting, navigateToSettingInChat } from '../../util/settingsNav';
 import { splitContentMinWidth, splitNavMaxWidth, splitNavMinWidth } from '../../util/splitMetrics';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
@@ -243,6 +243,9 @@ export struct SettingsPage {
   @StorageProp('screenWidthVp') screenW: number = 360;
   // 设置里的「强制单栏」（宽屏也当手机用）。
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
+  // 左栏壳（分栏时铺在会话列表栏里，见 util/leftPaneState）：同一份 settingsBody、
+  // 另一副壳——不注册页签级栈、不写 NAV_BAR 显隐键，子页交给页签实例接。
+  @Prop paneMode: boolean = false;
   // 分栏判据读系统横向 + 纵向断点（util/layoutBreakpoint.isSplitByBreakpoint）——只看宽的话
   // 手机一转横屏就被当成平板（#125）。
   @StorageProp('screenHeightVp') screenH: number = 780;
@@ -309,6 +312,13 @@ export struct SettingsPage {
 
 
   aboutToAppear(): void {
+    // 左栏壳：栈与 NAV_BAR 键都是页签级的东西，壳里不该有第二份（注册进去会
+    // 把 settingsNav 的目的地推到一个看不见的栈上）。只做数据加载。
+    if (this.paneMode) {
+      this.reloadAccounts();
+      this.loadProfile();
+      return;
+    }
     // 全局注册表取栈：设置子页的跳转不止本页这一个入口——tg://settings/... 深链
     // 在页面之外触发，拿不到组件上下文（openTelegramLink.openSettingsSection）。
     // 见 util/navStacks.ets 的说明。
@@ -329,7 +339,7 @@ export struct SettingsPage {
   }
 
   aboutToDisappear(): void {
-    AppStorage.setOrCreate<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY, false);
+    if (!this.paneMode) { AppStorage.setOrCreate<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY, false); }
     // ComponentContent 是脱离组件树管理的节点实体，得自己释放。
     this.splitPlaceholder.dispose();
     this.profileLoadSequence++;
@@ -570,12 +580,27 @@ export struct SettingsPage {
   }
 
   private openSetting(item: SettingItem): void {
-    if (this.switchingSlotId !== '' || this.openingSettingPage !== '' ||
-      this.accountNavigationLocked) {
+    if (this.switchingSlotId !== '' || this.accountNavigationLocked) {
       return;
     }
     if (item.page === '') {
       showToast(str('settings_not_supported', item.title), 1500);
+      return;
+    }
+    // 分栏（左栏壳）下**不上连点锁**：右栏是会话栈上的原地替换
+    // （navigateToSettingInChat → replacePath(animated=false)），不建栈、没有推栈
+    // 动画，连点不同子项应当立刻生效。上了锁的后果是三重"看起来在等"：
+    //   ① 第二次点击被下面那个 openingSettingPage !== '' 直接 early-return 吞掉；
+    //   ② 整页十来处 .enabled() 一起关掉，行变成灰的、点了完全没反应；
+    //   ③ 被点那一行换成 LoadingProgress 转 800ms（见 settingRow 里
+    //      openingSettingPage === item.title 的分支），而页面 200~300ms 就画完了。
+    // 三者叠起来就是用户报的「连续切换子菜单要等两秒以上」，其实不是渲染慢。
+    // 单栏（手机）那条路仍保留锁：那边是整页 push，锁防的是重复推栈。
+    if (this.paneMode && item.dest !== undefined) {
+      this.pushSettingDestination(item, item.dest);
+      return;
+    }
+    if (this.openingSettingPage !== '') {
       return;
     }
     this.openingSettingPage = item.title;
@@ -615,6 +640,14 @@ export struct SettingsPage {
     if (this.settingsSearchOpen) {
       this.settingsSearchOpen = false;
       this.settingsQuery = '';
+    }
+    if (this.paneMode) {
+      // 左栏壳：分栏只有一份右栏（会话栈），子页推进那里；页签不动，右栏被
+      // 替换成这个子页并一直留着（2026-11-24 报的第 2 个问题）。
+      // 注意：不能 closeLeftPane()——那样左栏会跳回会话列表，看起来像「点设置子项跑到聊天页」。
+      if (navigateToSettingInChat(dest)) {
+        return;
+      }
     }
     if (navigateToSetting(dest)) {
       return;
@@ -1503,7 +1536,7 @@ export struct SettingsPage {
     // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
     .alignItems(HorizontalAlign.Center)
     // 内容区已贴屏幕顶（标题栏不再占布局位置），这里补回状态栏+标题栏那一截。
-    .padding({ top: EDGE_OVERLAY_VP, bottom: this.bottomSafe + 88 });
+    .padding({ top: this.paneMode ? 0 : EDGE_OVERLAY_VP, bottom: this.bottomSafe + 88 });
   }
 
   // 页面边距（util/pageMargin，SPEC-07）：手机 12，折叠屏 16，平板 20。
@@ -1535,7 +1568,23 @@ export struct SettingsPage {
       }
       .width('100%').height('100%')
       .backgroundColor(PAGE_BG)
-      .padding({ top: this.topSafe });
+      .padding({ top: this.paneMode ? 0 : this.topSafe });
+    } else if (this.paneMode) {
+      // 左栏壳：同一份 settingsBody，不包 HdsNavigation（那带着页签级分栏模式、
+      // navBar 宽度键）。标题/搜索入口仍保留，安全区由外层会话面板负责。
+      Column() {
+        this.topBar();
+        Scroll(this.settingsScroller) {
+          this.settingsBody();
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .align(Alignment.Top)
+        .edgeEffect(EdgeEffect.Spring)
+        .scrollBar(BarState.Off);
+      }
+      .width('100%').height('100%')
+      .padding({ top: 0 });
     } else {
       HdsNavigation(this.settingsStack) {
         Scroll(this.settingsScroller) {

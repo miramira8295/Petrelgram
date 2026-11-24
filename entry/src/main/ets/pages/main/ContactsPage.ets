@@ -54,7 +54,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE, logW } from '../../util/log';
 import { registerStack, NavStackLike } from '../../util/navStacks';
-import { navigateToProfile } from '../../util/profileNav';
+import { navigateToProfile, navigateToProfileInRightPane } from '../../util/profileNav';
 import { splitContentMinWidth, splitNavMaxWidth, splitNavMinWidth } from '../../util/splitMetrics';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
@@ -175,6 +175,9 @@ export struct ContactsPage {
   @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   // 平板分栏下记住的左栏宽度（issue #106），见 util/splitNavWidth。
   @StorageProp(KEY_SPLIT_NAV_WIDTH) private savedNavW: number = 0;
+  // 左栏壳（分栏时铺在会话列表栏里，见 util/leftPaneState）：同一份内容、另一副
+  // 壳——不注册页签级栈、不写 NAV_BAR 显隐键、行点击交给页签去接。
+  @Prop paneMode: boolean = false;
   @State @Watch('onContactListInputChanged') contacts: ContactItem[] = [];
   @State loading: boolean = true;
   @State loadError: string = '';
@@ -262,6 +265,13 @@ export struct ContactsPage {
 
 
   aboutToAppear(): void {
+    // 左栏壳：栈与 NAV_BAR 键都是页签级的东西，壳里不该有第二份（注册进去会
+    // 把 profileNav 的目的地推到一个看不见的栈上）。只做数据加载。
+    if (this.paneMode) {
+      this.releaseActionLock();
+      this.bindContactsStore();
+      return;
+    }
     // 全局注册表取栈：与聊天/设置两个页签同构。本页目前只有一个入口
     // （openContact），但注册进去之后 profileNav 才能按 tab 参数推进来，
     // 也才有可能在页面之外触发（将来的「联系人」深链）。
@@ -273,6 +283,10 @@ export struct ContactsPage {
 
     AppStorage.setOrCreate<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY, false);
     this.releaseActionLock();
+    this.bindContactsStore();
+  }
+
+  private bindContactsStore(): void {
     const store = new ContactsStore(getTdClient());
     this.store = store;
     this.unsub = store.subscribe(() => {
@@ -288,7 +302,11 @@ export struct ContactsPage {
   }
 
   aboutToDisappear(): void {
-    AppStorage.setOrCreate<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY, false);
+    // 壳里不动页签级显隐键：本壳与页签实例可能同时存在，写 false 会把页签那
+    // 一页的 NAV_BAR 状态（dock 宽度跟着它）弄坏。
+    if (!this.paneMode) {
+      AppStorage.setOrCreate<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY, false);
+    }
     this.alphabet.clear();
     this.orderedContacts = [];
     // ComponentContent 是脱离组件树管理的节点实体，得自己释放。
@@ -673,9 +691,17 @@ export struct ContactsPage {
     }
     // 资料页只吃 userId，没有 createPrivateChat 那一步异步——所以既不需要
     // openingContactId 的 spinner，也不需要 chatOpenSequence 的乱序保护。
+    // 左栏壳下**不能 closeLeftPane()**：右栏是会话栈上的一次原地替换，
+    // 左栏本来就该停在联系人列表（和设置子项同一条规则）。收掉左栏的后果是
+    // 左栏变成会话列表——用户看到的就是「点开一个联系人，页面自己跳到聊天」。
     const params: Record<string, Object> = { 'userId': contact.id };
-    // 'contacts' 让 profileNav 推进本页签自己的栈（默认仍是 'chat'，聊天线的
-    // 八个调用点不受影响），并按 'navbar' 语义清栈——连点两个联系人是替换右栏，
+    if (this.paneMode) {
+      // 左栏壳：右栏只有会话栈这一份，资料页替换上去。不传 'contacts'——那条
+      // 路会把目的地推进联系人页签的栈，而分栏下没有第二个右栏可放它。
+      navigateToProfileInRightPane(params);
+      return;
+    }
+    // 页签本体（窄屏/单栏）：仍按 'navbar' 语义清栈，连点两个联系人是替换右栏，
     // 不是叠第二层。
     navigateToProfile(params, 'contacts');
   }
@@ -1577,8 +1603,27 @@ export struct ContactsPage {
     .clip(true);
   }
 
+  @Builder
+  contactsPaneBody() {
+    // 左栏壳：与页签同一份标题 + 面板（HomeConversationPanel 管虚化头与卡片
+    // 边距），不包 HdsNavigation——那带着页签级分栏模式与 navBar 宽度键。
+    Column() {
+      this.contactsTitle();
+      HomeConversationPanel({
+        header: (): void => { this.searchBox(); },
+        content: (): void => { this.contactsList(); }
+      })
+      .width('100%')
+      .layoutWeight(1);
+    }
+    .width('100%').height('100%');
+  }
+
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
+      if (this.paneMode) {
+        this.contactsPaneBody();
+      } else {
       HdsNavigation(this.contactsStack) {
         Column() {
           this.contactsTitle();
@@ -1645,6 +1690,7 @@ export struct ContactsPage {
       .attributeModifier(SHEET_LIFECYCLE_MODIFIER)
       .bindToScrollable([])
       .width('100%').height('100%');
+      }
     }
     .width('100%').height('100%')
     .backgroundColor(mainPageFill(this.appWallpaperOn))

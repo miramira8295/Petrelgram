@@ -255,6 +255,7 @@ for(const split of [false,true])for(const width of [1119,1120,1297])for(const co
 }
 let archiveDestinations=0;
 ctx.closeForumDrawer=()=>{};
+ctx.closeLeftPane=()=>{};ctx.LEFT_PANE_CHATS='chats';
 ctx.navigateToArchive=()=>{archiveDestinations++;};
 Object.assign(listPage,{isSplitLayout:()=>true,archivePaneOpen:false});
 listPage.openArchive();

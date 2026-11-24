@@ -21,6 +21,9 @@ function setup(tab = 0, depth = 0) {
     closeForumDrawer: () => { const open = forum; forum = false; return open; },
     AppStorage: { get: key => storage.get(key), setOrCreate: (key, value) => { writes.push(key); storage.set(key, value); } }
   });
+  const pane = fs.readFileSync(root + 'util/leftPaneState.ets', 'utf8')
+    .replace(/^import[\s\S]*?;\n/gm, '').replace(/^export /gm, '');
+  vm.runInContext(compile(pane), ctx);
   // Use the production stack registry; the native stack boundary is simulated.
   const registry = fs.readFileSync(root + 'util/navStacks.ets', 'utf8')
     .replace(/^import .*;\n/gm, '').replace(/^export /gm, '');
@@ -62,4 +65,7 @@ assert.equal(s.page.onBackPress(), true); assert.deepEqual(s.writes, []);
 assert.equal(s.page.onBackPress(), true); assert.deepEqual(s.writes, ['archive']);
 assert.equal(s.page.onBackPress(), true); assert.deepEqual(s.writes, ['archive', 'chatFolderIndex']);
 assert.equal(s.page.onBackPress(), false, 'root can still return to the desktop');
+const pane = setup(); pane.storage.set('leftPaneView', 'settings');
+assert.equal(pane.page.onBackPress(),true);assert.deepEqual(pane.writes,['leftPaneView']);
+assert.equal(pane.storage.get('leftPaneView'),'chats');
 console.log('PASS: root back pops one active destination; preserves folder/archive state and existing overlay/auth/root ordering.');

@@ -45,6 +45,10 @@ import { overlayMaterial } from '../../util/overlayMaterial';
 import { TopGlassAction } from './TopGlassAction';
 import { CHAT_DEST_NAME, navigateToChat } from '../../util/chatNav';
 import { DIRECT_MESSAGES_TOPICS_DEST_NAME, FORUM_TOPICS_DEST_NAME, KEY_ARCHIVE_PANE_OPEN, navigateToArchive } from '../../util/profileNav';
+import { KEY_LEFT_PANE_VIEW, LEFT_PANE_CHATS, LEFT_PANE_CONTACTS, LEFT_PANE_PROFILE, LEFT_PANE_SETTINGS, closeLeftPane, showLeftPane } from '../../util/leftPaneState';
+import { MyProfilePage } from '../main/MyProfilePage';
+import { ContactsPage } from '../main/ContactsPage';
+import { SettingsPage } from '../main/SettingsPage';
 import { logE } from '../../util/log';
 import { nextTabPreloadIndex, pruneBuiltKeys } from '../../util/tabPreload';
 import { FolderBadge, badgeLabel, folderBadge, setFolderBadge } from '../../util/folderBadges';
@@ -211,6 +215,10 @@ export struct ChatListPage {
   private chatStack: NavPathStack = new NavPathStack();
   @State private openChatId: number = 0;
   @StorageLink(KEY_ARCHIVE_PANE_OPEN) private archivePaneOpen: boolean = false;
+  // 左栏铺的是哪个视图（'chats' | 'profile' | 'contacts' | 'settings'）：
+  // 与归档同一套页内态做法（见 util/leftPaneState 的说明）。只在分栏下生效——
+  // leftPaneActive() 会再乘 isSplitLayout()，单栏一律走老路。
+  @StorageLink(KEY_LEFT_PANE_VIEW) @Watch('onLeftPaneChanged') private leftPaneView: string = LEFT_PANE_CHATS;
   // 右栏空态。ComponentContent 是节点实体，建一次留着——每次 build 都 new 一个
   // 等于每帧重建一棵子树。
   private splitPlaceholder: SplitPlaceholderHolder = new SplitPlaceholderHolder();
@@ -1208,6 +1216,7 @@ export struct ChatListPage {
   }
 
   private selectFolder(index: number): void {
+    closeLeftPane();
     this.archivePaneOpen = false;
     this.hapticGestureStart = -1;
     if (index !== this.selectedIndex) { navigationHaptics.play('folder'); }
@@ -1264,15 +1273,61 @@ export struct ChatListPage {
   }
 
   private onSplitModeChanged(): void {
-    if (this.archivePaneOpen && !this.isSplitLayout()) { this.archivePaneOpen = false; }
+    if (!this.isSplitLayout()) {
+      // 退化成单栏：左栏就是整页，两种钻取态都必须立刻回会话列表。
+      if (this.archivePaneOpen) { this.archivePaneOpen = false; }
+      if (this.leftPaneView !== LEFT_PANE_CHATS) { this.leftPaneView = LEFT_PANE_CHATS; }
+    }
   }
 
   private openArchive(): void {
     if (this.isSplitLayout()) {
       closeForumDrawer();
+      // 归档与左栏三视图共用左栏，后开的那个说了算。
+      closeLeftPane();
       this.archivePaneOpen = true;
     } else {
       navigateToArchive();
+    }
+  }
+
+  // 左栏资料是否真的在铺：键本身是全局的，单栏（手机/竖屏/强制单栏）必须回老路，
+  // 否则手机上点第 4 格就会把会话列表换成资料——那不是这次要的行为。
+  private leftPaneActive(): boolean {
+    return this.leftPaneView !== LEFT_PANE_CHATS && this.isSplitLayout();
+  }
+
+  private onLeftPaneChanged(): void {
+    if (this.leftPaneView === LEFT_PANE_CHATS) {
+      return;
+    }
+    // 同一块地不能叠：归档让位，文件夹抽屉也收掉（和 openArchive 的动机一样）。
+    this.archivePaneOpen = false;
+    closeForumDrawer();
+  }
+
+  private openSettingsFromProfilePane(): void {
+    showLeftPane(LEFT_PANE_SETTINGS);
+  }
+
+  @Builder
+  leftPaneContent() {
+    // 这个 Stack 的父容器就是 navBar，所以它只盖左栏，中栏的会话页仍留在右边。
+    // 三个视图各自整块复用现有页面（标题栏、搜索框、列表都在页面里），
+    // 联系人与设置传 paneMode：不注册页签级栈、不写页签级 NAV_BAR 键。
+    if (this.leftPaneView === LEFT_PANE_PROFILE) {
+      MyProfilePage({
+        active: true,
+        paneMode: true,
+        onOpenSettings: (): void => { this.openSettingsFromProfilePane(); }
+      })
+        .width('100%').height('100%');
+    } else if (this.leftPaneView === LEFT_PANE_CONTACTS) {
+      ContactsPage({ paneMode: true })
+        .width('100%').height('100%');
+    } else if (this.leftPaneView === LEFT_PANE_SETTINGS) {
+      SettingsPage({ paneMode: true })
+        .width('100%').height('100%');
     }
   }
 
@@ -1407,9 +1462,9 @@ export struct ChatListPage {
                   contentTopInset: 0,
                   continuousPanel: true,
                   listScroller: this.scrollerFor(spec.key),
-                  effectsActive: !this.archivePaneOpen && this.tabEffectsActive(spec.key),
-                  imagesActive: !this.archivePaneOpen && this.tabVisualsActive(spec.key),
-                  updatesActive: !this.archivePaneOpen && this.tabUpdatesActive(spec.key)
+                  effectsActive: !this.archivePaneOpen && !this.leftPaneActive() && this.tabEffectsActive(spec.key),
+                  imagesActive: !this.archivePaneOpen && !this.leftPaneActive() && this.tabVisualsActive(spec.key),
+                  updatesActive: !this.archivePaneOpen && !this.leftPaneActive() && this.tabUpdatesActive(spec.key)
                 }).layoutWeight(1).visibility(this.archivePaneOpen ? Visibility.None : Visibility.Visible);
                 if (this.archivePaneOpen) {
                   ChatListView({
@@ -1555,10 +1610,15 @@ export struct ChatListPage {
             if (this.folderRailShown()) {
               this.verticalFolderRail();
             }
-            HomeConversationPanel({
-              header: (): void => { this.conversationPanelHeader(); },
-              content: (): void => { this.conversationTabs(); }
-            }).layoutWeight(1);
+            // The folder rail is a sibling, never hidden by pane content.
+            Stack({ alignContent: Alignment.TopStart }) {
+              HomeConversationPanel({
+                header: (): void => { this.conversationPanelHeader(); },
+                content: (): void => { this.conversationTabs(); }
+              }).visibility(this.leftPaneActive() ? Visibility.Hidden : Visibility.Visible)
+                .enabled(!this.leftPaneActive());
+              if (this.leftPaneActive()) { this.leftPaneContent(); }
+            }.layoutWeight(1).height('100%').clip(true);
           }
           .padding({ left: homeCardMarginVp(this.widthBp), right: homeCardMarginVp(this.widthBp) })
           .width('100%').layoutWeight(1);

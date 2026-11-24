@@ -56,12 +56,13 @@ function setup() {
     DOCK_REVEAL_FRAME_DELAY_MS: 12, DOCK_FADE_DURATION: 120,
     KEY_POWER_SMOOTH_TRANSITIONS: 'smooth', Curve: { EaseOut: 'easeOut' },
     powerAnimationDuration: (_, duration) => duration,
+    closeLeftPane: () => false,
     getCallSession: () => ({ current: () => ({ phase: 'idle' }) }),
     chatListInForeground: () => true,
     requestChatListFlush: () => {},
     isSplitByBreakpoint: (w, _h, force, portrait) => !force && !portrait && w >= 2
   });
-  const methods = ['syncDock', 'syncDockLayout', 'dockVisible', 'storedNavBarFlag', 'onTabExternallyChanged',
+  const methods = ['wallpaperSplit', 'syncDock', 'syncDockLayout', 'dockVisible', 'storedNavBarFlag', 'onTabExternallyChanged',
     'aboutToDisappear', 'onAppForegroundChanged'].map(name => method(main, name)).join('\n');
   const fields = ['dockShown', 'dockMounted', 'dockBarOpen', 'dockRevealSeq', 'dockRevealPending', 'dockActive']
     .map(name => {

@@ -17,6 +17,7 @@ class FakeStack implements NavStackLike {
   }
   popped: number = 0;
 
+  replacePath(info: NavPathInfoLike, _animated?: boolean): void { this.pop(false); this.pushPath(info); }
   pop(animated?: boolean): void {
     this.popped = this.popped + 1;
     this.names.pop();

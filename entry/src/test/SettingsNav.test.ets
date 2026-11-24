@@ -9,6 +9,7 @@ class FakeSettingsStack implements NavStackLike {
   cleared: number = 0;
   clear(_animated?: boolean): void { this.cleared++; this.names = []; }
   pushPath(info: NavPathInfoLike): void { this.names.push(info.name); }
+  replacePath(info: NavPathInfoLike, _animated?: boolean): void { this.pop(false); this.pushPath(info); }
   pop(_animated?: boolean): void { this.names.pop(); }
   size(): number { return this.names.length; }
   getAllPathName(): string[] { return this.names.slice(); }

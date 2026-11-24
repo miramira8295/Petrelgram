@@ -91,9 +91,14 @@ function pushInto(destName: string, fallbackUrl: string,
   }
   // 与 navigateToChat 同理：推进去的是目标页签的栈，页签不对的话页面就在
   // 屏幕外。深链（openTelegramLink）可以在设置/联系人页签上被触发。
-  // tab === 'contacts' 时这一句通常是同值写入（用户此刻就在联系人页签上），
-  // 无害：MainScreen 的 @Watch 里有 tab !== appliedTab 的守卫。
-  AppStorage.setOrCreate<number>(KEY_MAIN_TAB, tabIndexOf(tab));
+  //
+  // **同值不写**：AppStorage.setOrCreate 即便值相同也会惊动 MainScreen 的
+  // @StorageLink('mainTabIndex') @Watch('onTabExternallyChanged')，而分栏下
+  // 「点一个联系人」本来就在页签 0 上，这一下会白跑一遍 syncDock。写成条件
+  // 与 settingsNav.ets 同一口径。
+  if (AppStorage.get<number>(KEY_MAIN_TAB) !== tabIndexOf(tab)) {
+    AppStorage.setOrCreate<number>(KEY_MAIN_TAB, tabIndexOf(tab));
+  }
   const target: StackFrame = { name: destName, key: profileFrameKey(destName, params) };
   const snap: StackFrame[] = snapshotOf(stack, profileFrameKey);
   const action: StackAction = decidePush(snap, origin, target);
@@ -129,6 +134,16 @@ function pushInto(destName: string, fallbackUrl: string,
 export function navigateToProfile(params: Record<string, Object>, tab: TabKind = 'chat'): void {
   const origin: PushOrigin = tab === 'chat' ? 'content' : 'navbar';
   pushInto(PROFILE_DEST_NAME, PROFILE_PAGE_URL, params, origin, tab);
+}
+
+// 平板分栏：从左栏的联系人列表点一个人，右栏**替换**成资料页。
+//
+// 与 navigateToProfile(params) 的差别只有 origin：'navbar' 让 decidePush 给
+// clearAndPush，右栏不会把资料页叠在会话上面；那正是「选一个联系人 = 换一份
+// 右栏内容」的语义。落在会话栈上（分栏下唯一的右栏），所以切左栏视图不会
+// 把这份资料页换掉（2026-11-24 报的第 2 个问题）。
+export function navigateToProfileInRightPane(params: Record<string, Object>): void {
+  pushInto(PROFILE_DEST_NAME, PROFILE_PAGE_URL, params, 'navbar', 'chat');
 }
 
 // 群/频道资料页。同 navigateToProfile，'content'。

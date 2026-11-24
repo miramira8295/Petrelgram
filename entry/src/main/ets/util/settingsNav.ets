@@ -1,3 +1,4 @@
+import { splitLeftPaneEnabled } from './leftPaneState';
 import { logE, logW } from './log';
 import { queuePendingNav } from './pendingNav';
 import { decidePush, PushOrigin, StackAction, StackFrame } from './splitRouting';
@@ -60,6 +61,10 @@ export function settingFrameKey(name: string, param: Object | undefined): string
 export function navigateToSetting(
   dest: string, param?: Object, origin: PushOrigin = 'navbar'
 ): boolean {
+  // Content navigation keeps its host even after rotating back to one column.
+  if (splitLeftPaneEnabled() || (origin === 'content' && AppStorage.get<number>(KEY_MAIN_TAB) === 0)) {
+    return navigateToSettingInChat(dest, param, origin);
+  }
   const stack: NavStackLike | undefined = stackOf('settings');
   if (stack === undefined) {
     // 设置页签的栈要等 SettingsPage 挂树才注册（Tabs 的子页是首次显示时才建），
@@ -95,3 +100,51 @@ export function navigateToSetting(
   stack.pushPath({ name: dest, param: param });
   return true;
 }
+
+// ——— 分栏右栏专用漏斗 ———
+
+// 平板分栏只有**一份**右栏，而那份右栏是会话页签那条栈（ChatListPage 的
+// NavPathStack 宿主）。设置页签自己那条栈在分栏下不该被当成右栏用：一换页签，
+// 右栏就换成另一份栈，用户看到的是「切个左栏视图，右边跳回去了」（2026-11-24
+// 报的第 2 个问题）。
+//
+// 所以左栏那份设置列表点进子页时走这里：目的地推进会话栈，页签不动（恒为
+// 聊天 0），右栏被替换成这个子页并一直留在那儿，直到再打开别的东西。
+export const CHAT_TAB_INDEX_FOR_PANE: number = 0;
+
+export function navigateToSettingInChat(dest: string, param?: Object, origin: PushOrigin = 'navbar'): boolean {
+  if (AppStorage.get<number>(KEY_MAIN_TAB) !== CHAT_TAB_INDEX_FOR_PANE) {
+    AppStorage.setOrCreate<number>(KEY_MAIN_TAB, CHAT_TAB_INDEX_FOR_PANE);
+  }
+  const stack: NavStackLike | undefined = stackOf('chat');
+  if (stack === undefined) {
+    logW(`navigateToSettingInChat(${dest}): chat stack not registered, queued`);
+    AppStorage.setOrCreate<number>(KEY_MAIN_TAB, CHAT_TAB_INDEX_FOR_PANE);
+    queuePendingNav({
+      tab: 'chat', kind: `settings:${dest}`, dest: dest,
+      params: param !== undefined ? { 'param': param } : {} as Record<string, Object>,
+      origin: origin
+    });
+    return true;
+  }
+  const target: StackFrame = { name: dest, key: settingFrameKey(dest, param) };
+  const snap: StackFrame[] = snapshotOf(stack, settingFrameKey);
+  const action: StackAction = decidePush(snap, origin, target);
+  if (action === 'skip') {
+    return true;
+  }
+  // 分栏右栏只有一层，切子页用 replacePath 把栈顶换成新页：不经过"空栈"那一帧
+  // （clear 之后右栏会短暂落回分栏占位，看起来像点了要等），也没有推栈动画。
+  // 栈深 > 1（在聊天里又钻进资料/二级设置页）仍 clear + push，语义保持
+  // 「右栏被替换成设置子页，不叠在聊天上」。
+  if (action === 'clearAndPush' && stack.size() === 1) {
+    stack.replacePath({ name: dest, param: param }, false);
+    return true;
+  }
+  if (action === 'clearAndPush') {
+    stack.clear(false);
+  }
+  stack.pushPath({ name: dest, param: param });
+  return true;
+}
+

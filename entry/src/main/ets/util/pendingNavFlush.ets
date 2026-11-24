@@ -5,7 +5,7 @@
 import { navigateToChat, logChatNavFailure } from './chatNav';
 import { navigateToSearch, SEARCH_DEST_NAME } from './searchNav';
 import { replayProfileNav } from './profileNav';
-import { navigateToSetting } from './settingsNav';
+import { navigateToSetting, navigateToSettingInChat } from './settingsNav';
 import { PendingNav, takePendingNavs } from './pendingNav';
 import { PushOrigin } from './splitRouting';
 import { TabKind } from './navStacks';
@@ -24,7 +24,8 @@ export function flushPendingNavs(tab: TabKind): void {
     } else if (item.kind === SEARCH_DEST_NAME || item.kind === 'search') {
       navigateToSearch(item.params);
     } else if (item.kind.startsWith('settings:')) {
-      navigateToSetting(item.dest, item.params['param'], origin);
+      if (tab === 'chat') { navigateToSettingInChat(item.dest, item.params['param'], origin); }
+      else { navigateToSetting(item.dest, item.params['param'], origin); }
     } else {
       replayProfileNav(item.dest, item.params, origin, tab);
     }
