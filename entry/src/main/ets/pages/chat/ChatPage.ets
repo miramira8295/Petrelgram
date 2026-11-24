@@ -2383,7 +2383,7 @@ export struct ChatPage {
   // 快照」——这里只决定要不要给提示，最坏情况是提示出现但松手被拒，而提示本身
   // 不改变任何数据。
   private dropHoverAllowed(): boolean {
-    return this.timeline.pageVisible && this.appIsForeground && !this.viewerOpen() &&
+    return !this.dropReceiver.isPending() && this.timeline.pageVisible && this.appIsForeground && !this.viewerOpen() &&
       !this.search.mode && !this.selection.active && this.composer.editingId === 0 &&
       !this.recording.isRecording && this.membershipState === 'writable';
   }

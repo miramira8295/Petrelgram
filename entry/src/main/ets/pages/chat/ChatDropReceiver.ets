@@ -26,6 +26,8 @@ export class ChatDropReceiver {
   private abort: (() => void) | null = null;
   private recovery: (() => void) | null = null;
 
+  isPending(): boolean { return this.pending; }
+
   cancel(): void {
     this.generation++; this.arrival.cancel(); this.abort?.(); this.abort = null;
     this.recovery?.(); this.recovery = null; this.pending = false;
@@ -38,7 +40,12 @@ export class ChatDropReceiver {
       event.setResult(DragResult.DRAG_CANCELED);
       return;
     }
-    if (this.pending || !active()) { event.setResult(DragResult.DRAG_FAILED); return; }
+    if (!active()) { event.setResult(DragResult.DRAG_FAILED); return; }
+    if (this.pending) {
+      event.setResult(DragResult.DRAG_FAILED);
+      showToast($r('app.string.processing'), 2500);
+      return;
+    }
     const generation = ++this.generation;
     const current = (): boolean => generation === this.generation && active();
     const now = Date.now();
@@ -101,7 +108,12 @@ export class ChatDropReceiver {
     event.setResult(DragResult.DRAG_SUCCESSFUL);
     this.arrival.receive(load, {
       active: current,
-      check: async (payload: SharedPayload): Promise<void> => { await host.checkPermissions?.(payload); },
+      check: async (payload: SharedPayload): Promise<void> => {
+        // Media permissions belong to sendDropBatch: even the first check can
+        // fail transiently, and must retain the staged files for recovery.
+        // Text only changes the draft, so keep its check before setDraft.
+        if (payload.media.length === 0) { await host.checkPermissions?.(payload); }
+      },
       draft: host.draftText,
       setDraft: host.setDraft,
       deliver: (payload: SharedPayload): void => {

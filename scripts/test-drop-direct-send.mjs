@@ -13,8 +13,8 @@ const js = source => ts.transpileModule(source.replace(/^import[\s\S]*?;\r?\n/gm
 class TdError extends Error { constructor(code, message) { super(message); this.code = code; } }
 class SendPermissionError extends Error {}
 let animated = true, nextTimer = 0;
-const timers = new Map(), allTimers = new Map(), cleanups = [], dialogs = [];
-const ctx = vm.createContext({ TdError, SendPermissionError, str:x=>x, $r:x=>x, logE:()=>{}, logI:()=>{}, showToast:()=>{},
+const timers = new Map(), allTimers = new Map(), cleanups = [], dialogs = [], toasts = [];
+const ctx = vm.createContext({ TdError, SendPermissionError, str:x=>x, $r:x=>x, logE:()=>{}, logI:()=>{}, showToast:t=>toasts.push(t),
   isAnimationPath:p=>p.endsWith('.gif'), powerAnimationDuration:(_key,d)=>animated?d:0, KEY_POWER_SMOOTH_TRANSITIONS:'animation',
   setTimeout(fn, delay) { const id=++nextTimer;const fire=()=>{timers.delete(id);fn();};timers.set(id,{fn:fire,delay});allTimers.set(id,fire);return id; },
   clearTimeout:id=>timers.delete(id), getActiveTdAccountSlot:()=> 'account',
@@ -94,6 +94,42 @@ await check('successful drop sends immediately without dialog',async()=>{
   const h=host(),r=new ctx.ChatDropReceiver(),count=dialogs.length;
   receive(r,h,payload(item('a')));await tick();assert.equal(h.calls.length,1);assert.equal(dialogs.length,count);assert.equal(r.pending,false);
 });
+await check('receiver retains first permission failure for retry, checking once per attempt',async()=>{
+  const h=host(),r=new ctx.ChatDropReceiver(),p=payload(item('photo','image'),item('document'));
+  const cleanupCount=cleanups.length,dialogCount=dialogs.length;let checks=0,denied=true;
+  h.checkPermissions=async()=>{checks++;if(denied)throw new SendPermissionError('denied');};
+  receive(r,h,p);await tick();
+  assert.equal(checks,1);assert.equal(h.calls.length,0);assert.equal(dialogs.length,dialogCount+1);
+  assert.equal(cleanups.length,cleanupCount);assert.equal(r.isPending(),true);
+  const d=dialogs.at(-1);assert.deepEqual(plain(d.payload),p);assert.equal(d.initial.error,'denied');
+  assert.equal(d.initial.uncertain,false);
+  const stillDenied=await d.send(d.payload);
+  assert.deepEqual(plain(stillDenied.remaining),p);assert.equal(h.calls.length,0);assert.equal(checks,2);
+  denied=false;assert.equal((await d.send(d.payload)).remaining,null);d.closed();
+  assert.equal(checks,3);assert.equal(r.isPending(),false);assert.equal(h.calls.length,2);
+  assert.equal(h.calls[0].caption,'caption');assert.equal(h.calls[1].caption,'');
+});
+await check('permission timeout before any send is safe to retry',async()=>{
+  const h=host(),r=new ctx.ChatDropReceiver(),p=payload(item('file'));
+  h.checkPermissions=async()=>{throw new TdError(-1,'permission query timeout');};
+  receive(r,h,p);await tick();const d=dialogs.at(-1);
+  assert.equal(h.calls.length,0);assert.deepEqual(plain(d.payload),p);assert.equal(d.initial.uncertain,false);
+  r.cancel();assert.equal(d.closedByReceiver,true);assert.equal(r.isPending(),false);
+});
+await check('text permission denial preserves draft and cleans its staging directory',async()=>{
+  const h=host(),r=new ctx.ChatDropReceiver(),dialogCount=dialogs.length,cleanupCount=cleanups.length;
+  h.checkPermissions=async()=>{throw new SendPermissionError('denied');};
+  receive(r,h,{caption:'incoming',media:[]});await tick();
+  assert.equal(h.draft,'existing');assert.equal(h.calls.length,0);assert.equal(dialogs.length,dialogCount);
+  assert.equal(cleanups.length,cleanupCount+1);assert.equal(r.isPending(),false);
+});
+await check('leaving during initial media check prevents send and recovery',async()=>{
+  const h=host(),r=new ctx.ChatDropReceiver(),wait=deferred(),dialogCount=dialogs.length;
+  h.checkPermissions=()=>wait.promise;
+  receive(r,h,payload(item('photo','image')));await tick();assert.equal(r.isPending(),true);
+  r.cancel();wait.resolve();await tick();
+  assert.equal(h.calls.length,0);assert.equal(dialogs.length,dialogCount);assert.equal(r.isPending(),false);
+});
 await check('text only appends draft and self drags are ignored',async()=>{
   const h=host(),r=new ctx.ChatDropReceiver();receive(r,h,{caption:'incoming',media:[]});await tick();
   assert.equal(h.draft,'existing\nincoming');assert.equal(h.calls.length,0);assert.equal(r.pending,false);
@@ -147,6 +183,22 @@ await check('retry double click and closed dialog cannot issue extra send',async
 const page=read('pages/chat/ChatPage');
 const methods=page.slice(page.indexOf('  private setDropHover('),page.indexOf('  private shareHost('));
 vm.runInContext(js('class DropPageHarness { '+methods+' }\nglobalThis.DropPageHarness=DropPageHarness;'),ctx);
+await check('hover and receiver agree during loading, sending, recovery and after dismissal',async()=>{
+  const h=host(),r=new ctx.ChatDropReceiver(),wait=deferred(),send=deferred(),p=new ctx.DropPageHarness();
+  Object.assign(p,{dropReceiver:r,timeline:{pageVisible:true},appIsForeground:true,viewerOpen:()=>false,
+    search:{mode:false},selection:{active:false},composer:{editingId:0},recording:{isRecording:false},membershipState:'writable'});
+  const original=ctx.decodeDrop;ctx.decodeDrop=()=>wait.promise;let sends=0;
+  h.sendDocument=()=>{sends++;return send.promise;};
+  assert.equal(p.dropHoverAllowed(),true);receive(r,h,payload(item('first')));await tick();
+  assert.equal(p.dropHoverAllowed(),false);
+  assert.equal(receive(r,h,payload(item('second'))).result,'failed');assert.equal(toasts.at(-1),'app.string.processing');
+  assert.equal(sends,0);wait.resolve(payload(item('first')));await tick();ctx.decodeDrop=original;
+  assert.equal(p.dropHoverAllowed(),false);assert.equal(sends,1);
+  send.reject(new TdError(500,'failed'));await tick();assert.equal(p.dropHoverAllowed(),false);
+  dialogs.at(-1).closed();assert.equal(p.dropHoverAllowed(),true);
+  h.sendDocument=async()=>{sends++;};receive(r,h,payload(item('third')));await tick();
+  assert.equal(sends,2);assert.equal(p.dropHoverAllowed(),true);
+});
 await check('unknown types stay neutral and fading hint does not change on drop',async()=>{
   const p=new ctx.DropPageHarness();p.dropHover=new ctx.DropHoverState();p.dropHoverHideTimer=-1;p.chatId=1;
   const data=types=>({getData:()=>({getRecords:()=>types.map(type=>({getType:()=>type}))})});
