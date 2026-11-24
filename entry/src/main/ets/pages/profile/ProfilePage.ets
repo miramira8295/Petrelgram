@@ -5,10 +5,17 @@ import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { openMiniAppPage } from '../../util/miniAppNav';
 import { mainAppChatId } from '../../util/botMainApp';
 import { pageMarginVp } from '../../util/pageMargin';
+import { readableContentWidth } from '../../util/contentWidth';
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+  AVATAR_EXPANDED_H, AVATAR_TOP_LIFT, AVATAR_EXPAND_AT, AVATAR_COLLAPSE_AT, AVATAR_SNAP_MS,
+  AVATAR_TEXT_INSET, AVATAR_TEXT_BOTTOM, AVATAR_TEXT_H, AVATAR_HEAD_ROW, AVATAR_HEAD_GAP,
+  AVATAR_BUTTON_INSET, AVATAR_CARD_RADIUS,
+  avatarRatioOf, avatarWidthOf, avatarHeightOf, avatarRadiusOf, avatarRingOf, avatarOffsetYOf
+} from '../../util/avatarMorph';
+import {
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, WIDTH_BP_MD, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
-import { router, promptAction } from '@kit.ArkUI';
+import { router, promptAction, curves } from '@kit.ArkUI';
 import { profileMenuItems } from '../../util/profileMenu';
 import { showProfileMoreMenu } from './ProfileMoreMenu';
 import {
@@ -31,6 +38,7 @@ import {
   overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { AvatarView } from '../chatlist/AvatarView';
+import { NativeGlassHost } from '../chat/NativeGlassHost';
 import { ProfileMediaRow } from './ProfileMediaRow';
 import { ProfileContentRow, profileContentKey } from './ProfileContentRow';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
@@ -43,7 +51,7 @@ import { WebmStickerView } from '../chat/WebmStickerView';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
-  COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_TAB_PILL_BG
+  COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_TAB_PILL_BG, KEY_APP_DARK
 } from '../../util/theme';
 import { AppBackdrop } from '../common/AppBackdrop';
 import { KEY_APP_BG_ON, KEY_FORCE_SINGLE_COLUMN
@@ -141,6 +149,8 @@ export struct ProfilePage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('screenWidthVp') screenW: number = 360;
+  // 顶栏圆钮的系统材质要按深浅色换染色，不订阅它切主题后不会重绘。
+  @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
   // 设置里的「强制单栏」（宽屏也当手机用）。
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
   @StorageProp('screenHeightVp') screenH: number = 780;
@@ -230,6 +240,12 @@ export struct ProfilePage {
   private sharedStore: ChatProfileStore | null = null;
   private sharedUnsub: (() => void) | null = null;
   private tabScroller: Scroller = new Scroller();
+  // 下拉放大头像：整页 List 的滚动器（越界值驱动形变）、形变进度与展开态。
+  private pageScroller: Scroller = new Scroller();
+  @State avatarPull: number = 0;
+  @State avatarExpanded: boolean = false;
+  @State avatarAvailW: number = 0;
+  private avatarSnapAt: number = 0;
   private tabXs: number[] = [];
   private tabWs: number[] = [];
   private tabViewW: number = 0;
@@ -846,16 +862,33 @@ export struct ProfilePage {
     .border({ width: 0.7, color: $r('app.color.divider') })
   }
 
+  // 顶栏圆钮：玻璃交给系统沉浸材质，与聊天页顶栏那两颗同一副画法。
+  // 原来是自绘半透明底 + 0.7 描边，压在纯色页面底上只是一块灰白圆盘
+  // （没有折射也没有光影），用户 2026-11-25 要求换成系统玻璃。
   @Builder
   circleButton(symbol: string, onTap: () => void) {
-    Row() {
-      SymbolGlyph($r(symbol)).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+    Stack() {
+      NativeGlassHost({
+        hostWidth: 44,
+        hostHeight: 44,
+        hostRadius: 22,
+        dark: this.appDark,
+        surface: 'control'
+      });
+      Row() {
+        SymbolGlyph($r(symbol)).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+      }
+      .width(44).height(44)
+      .justifyContent(FlexAlign.Center)
+      .hitTestBehavior(HitTestMode.None);
+      // 材质承载层是 enabled(false) 的 Toggle，收不到触摸：透明圆钮接管点击。
+      Button({ type: ButtonType.Circle })
+        .width(44).height(44)
+        .backgroundColor(Color.Transparent)
+        .stateEffect(false)
+        .onClick(onTap);
     }
-    .width(44).height(44).borderRadius(22)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.profileGlassFill())
-    .border({ width: 0.7, color: $r('app.color.divider') })
-    .onClick(onTap);
+    .width(44).height(44);
   }
 
   // 与输入栏那个小程序键同一套图形：圆角程序框 + 顶边一条实心横条
@@ -908,24 +941,171 @@ export struct ProfilePage {
     .padding({ top: 8, bottom: 8 });
   }
 
-  @Builder
-  header() {
-    Column({ space: 8 }) {
-      // 返回/更多按钮画在 build() 的 Stack 浮层里，这里只留同高占位。
-      Row().width('100%').height(44).padding({ left: this.pageMargin(), right: this.pageMargin() });
-      Column() {
-        AvatarView({
-          avatarPath: this.avatarPath, initials: this.initials,
-          colorSeed: this.userId, avatarSize: 116,
-          animPath: this.avatarAnimPath
+  // ── 下拉放大头像（与「我的资料」共用 util/avatarMorph 的几何）──────────
+  // 与那一页唯一的差别是页面容器：这里是整页 List，头像上方还有一行 44vp 的
+  // 返回/更多占位，所以抵消量里多算「那一行 + 间距」，不含 EDGE_OVERLAY_VP。
+  private avatarRatio(): number {
+    return avatarRatioOf(this.avatarPull, this.avatarExpanded);
+  }
+
+  private avatarMaxWidth(): number {
+    // 分栏（平板）下本页只占右栏，可用宽度比 screenW 窄；量到自身宽度就用它，
+    // 否则展开态照片会按整屏宽拉伸后被右栏裁掉两侧。这里不再套 readableContentWidth：
+    // 那张表在 600vp 以上会向内收，展开态照片就会左右各留一条缝（用户明确不要留白）。
+    return this.avatarAvailW > 0 ? this.avatarAvailW : this.screenW;
+  }
+
+  // 平板（宽屏 ≥600vp）展开态照片按内容卡片宽度内缩、带卡片圆角；手机（窄屏）直接铺满整宽、
+  // 不带圆角（用户 2026-11-25：手机端的图片不需要这样调，直接占满就完事了，平板需要这样子）。
+  private avatarCardInset(): number {
+    return this.widthBp >= WIDTH_BP_MD ? this.pageMargin() : 0;
+  }
+
+  private avatarPhotoW(): number {
+    // 平板：展开态宽度跟本页内容卡片对齐（左右各让出 pageMargin），高度仍是 390——
+    // 分栏右栏比左栏宽得多，铺满整栏就是一条宽横幅（用户 2026-11-25 说和左栏不搭）。
+    // 手机：不内缩，直接铺满整宽。
+    const cardW: number = Math.max(0, this.avatarMaxWidth() - this.avatarCardInset() * 2);
+    return avatarWidthOf(this.avatarPull, this.avatarExpanded, cardW);
+  }
+
+  private avatarPhotoH(): number {
+    return avatarHeightOf(this.avatarPull, this.avatarExpanded);
+  }
+
+  private avatarPhotoRadius(): number {
+    // 手机铺满整宽时不带圆角（贴到屏幕边），平板按卡片圆角。
+    return avatarRadiusOf(this.avatarPull, this.avatarExpanded,
+      this.avatarCardInset() > 0 ? AVATAR_CARD_RADIUS : 0);
+  }
+
+  private avatarRing(): number {
+    return avatarRingOf(this.avatarPull, this.avatarExpanded);
+  }
+
+  private avatarBoxW(): number {
+    return this.avatarPhotoW() + this.avatarRing() * 2;
+  }
+
+  private avatarBoxH(): number {
+    return this.avatarPhotoH() + this.avatarRing() * 2;
+  }
+
+  private avatarBoxRadius(): number {
+    return this.avatarPhotoRadius() + this.avatarRing();
+  }
+
+  // 收起态整体比原来上移 AVATAR_TOP_LIFT（用户：提一点点，不是大幅抬）。
+  private avatarTopPad(): number {
+    return this.topSafe + 8 - AVATAR_TOP_LIFT;
+  }
+
+  // 展开态照片顶边**不要钻进状态栏**：落在安全区下沿，与左栏白卡（会话列表那张卡）的上沿齐平
+  // （用户 2026-11-25：顶部高度超了，与左栏白色框对齐）。
+  private avatarTopInset(): number {
+    // 平板卡片态：照片顶边停在安全区下沿（与左栏白卡齐平）；手机：直接顶到屏幕 0，不能留白条。
+    const align: number = this.avatarCardInset() > 0 ? this.topSafe : 0;
+    return this.avatarTopPad() + AVATAR_HEAD_ROW + AVATAR_HEAD_GAP - align;
+  }
+
+  private avatarOffsetY(): number {
+    return avatarOffsetYOf(this.avatarPull, this.avatarExpanded, this.avatarTopInset());
+  }
+
+  private avatarTextTop(): number {
+    if (this.avatarExpanded) {
+      return this.avatarBoxH() - AVATAR_TEXT_H - AVATAR_TEXT_BOTTOM;
+    }
+    return this.avatarBoxH() + 8;
+  }
+
+  // 形变块在流内要占的高度（外层 Column 的 padding 不算在这里）。
+  private avatarBlockH(): number {
+    const text: number = this.avatarExpanded ? 0 : 8 + AVATAR_TEXT_H;
+    return Math.max(0, this.avatarBoxH() + this.avatarOffsetY() + text);
+  }
+
+  // 解码分辨率只在收起/展开两个稳定态切换，不跟下拉逐帧走。
+  private avatarDecodeW(): number {
+    return Math.round(this.avatarMaxWidth());
+  }
+
+  private avatarDecodeH(): number {
+    return AVATAR_EXPANDED_H;
+  }
+
+  // 逐帧驱动：List 的越界回弹（yOffset<0）就是手指行程。
+  private handlePageScroll(): void {
+    const y: number = this.pageScroller.currentOffset().yOffset;
+    if (y < 0) {
+      const pull: number = Math.abs(y);
+      if (this.avatarPull !== pull) {
+        this.avatarPull = pull;
+      }
+      if (!this.avatarExpanded && pull > AVATAR_EXPAND_AT) {
+        this.getUIContext().animateTo({
+          duration: AVATAR_SNAP_MS,
+          // 高阻尼弹簧：块高收掉的那一段要顺滑收尾但**不过冲**，否则下面那排
+          // 按钮会先弹到照片上再落回去（用户明确说这点很影响观感）。
+          curve: curves.springMotion(0.36, 0.90)
+        }, (): void => {
+          this.avatarExpanded = true;
+          // 不能清 avatarPull：松手后的回弹还在继续，还要靠它抵消越界平移。
+          this.avatarSnapAt = Date.now();
         });
       }
-      .width(130).height(130).padding(7).borderRadius(65)
-      .justifyContent(FlexAlign.Center)
-      .backgroundColor(this.profileGlassFill())
-      .border({ width: 0.7, color: $r('app.color.divider') })
-      .shadow({ radius: this.profileAvatarShadowRadius(), color: this.glassOn() ? Color.Transparent : GLASS_SHADOW_COLOR,
-        offsetX: 0, offsetY: this.profileAvatarShadowY() })
+      return;
+    }
+    if (this.avatarPull !== 0) {
+      this.avatarPull = 0;
+    }
+    if (this.avatarExpanded && y > AVATAR_COLLAPSE_AT &&
+      Date.now() - this.avatarSnapAt > AVATAR_SNAP_MS + 120) {
+      this.getUIContext().animateTo({
+        duration: AVATAR_SNAP_MS + 60,
+        curve: curves.springMotion(0.40, 0.78)
+      }, (): void => {
+        this.avatarExpanded = false;
+      });
+    }
+  }
+
+  @Builder
+  header() {
+    Column({ space: AVATAR_HEAD_GAP }) {
+      // 返回/更多按钮画在 build() 的 Stack 浮层里，这里只留同高占位。
+      Row().width('100%').height(AVATAR_HEAD_ROW).padding({ left: this.pageMargin(), right: this.pageMargin() });
+      // 最外只挂尺寸与上移 —— **绝对不能加 .animation()**，否则下拉会变成橡皮筋。
+      Stack({ alignContent: Alignment.Top }) {
+        Stack({ alignContent: Alignment.Center }) {
+          Stack({ alignContent: Alignment.Center }) {
+            AvatarView({
+              avatarPath: this.avatarPath, initials: this.initials,
+              colorSeed: this.userId, avatarSize: 116,
+              animPath: this.avatarAnimPath,
+              // 绘制尺寸逐帧跟手；解码尺寸只在收起/展开两个稳定态切换。
+              boxWidth: this.avatarPhotoW(),
+              boxHeight: this.avatarPhotoH(),
+              boxRadius: this.avatarPhotoRadius(),
+              decodeWidth: this.avatarDecodeW(),
+              decodeHeight: this.avatarDecodeH()
+            });
+          }
+          .width(this.avatarPhotoW())
+          .height(this.avatarPhotoH())
+          .borderRadius(this.avatarPhotoRadius())
+          .clip(true);
+        }
+        .width('100%')
+        .height('100%')
+        .padding(this.avatarRing())
+        .backgroundColor(this.profileGlassFill())
+        // 展开态环宽与圆角都收成 0 了，只剩这圈 0.7vp 描边压在照片四边——
+        // 屏幕顶部与左右那条白线就是它。跟着环一起淡掉，别裁照片。
+        .border({ width: 0.7 * (1 - this.avatarRatio()), color: $r('app.color.divider') })
+        .borderRadius(this.avatarBoxRadius())
+        .shadow({ radius: this.profileAvatarShadowRadius(), color: this.glassOn() ? Color.Transparent : GLASS_SHADOW_COLOR,
+          offsetX: 0, offsetY: this.profileAvatarShadowY() })
         // 没有头像文件时（仅首字母占位）点击无意义，不给反馈。
         // 记下点击处的屏幕坐标，查看器据此决定放大/缩回的中心点。
         .onClick((event: ClickEvent): void => {
@@ -934,22 +1114,45 @@ export struct ProfilePage {
             this.avatarTapY = event.windowY;
             this.viewerAvatarPath = this.avatarPath;
           }
-        });
-      Row({ space: 5 }) {
-        Text(this.name)
-          .fontSize(24).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-          .flexShrink(1);
-        if (emojiStatusVisible(this.statusEmojiPath, this.statusEmojiUid)) {
-          this.statusEmoji();
+        })
+        .width(this.avatarBoxW())
+        .height(this.avatarBoxH())
+        .offset({ x: 0, y: this.avatarOffsetY() });
+        // 名字 / 状态：展开态变白、压在照片左下（ArkGram 就是这么排的）。
+        Column({ space: 8 }) {
+          Row({ space: 5 }) {
+            Text(this.name)
+              .fontSize(24).fontWeight(FontWeight.Bold)
+              .fontColor(this.avatarExpanded ? Color.White : COLOR_TEXT_PRIMARY)
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+              .flexShrink(1);
+            if (emojiStatusVisible(this.statusEmojiPath, this.statusEmojiUid)) {
+              this.statusEmoji();
+            }
+          }
+          .alignItems(VerticalAlign.Center)
+          .constraintSize({ maxWidth: '86%' });
+          Text(this.statusText).fontSize(13)
+            .fontColor(this.avatarExpanded ? '#E6FFFFFF' : COLOR_TEXT_SECONDARY);
         }
+        .width('100%')
+        .height(AVATAR_TEXT_H)
+        .alignItems(this.avatarExpanded ? HorizontalAlign.Start : HorizontalAlign.Center)
+        .padding({
+          left: this.avatarExpanded ? AVATAR_TEXT_INSET + this.avatarCardInset() : 0,
+          right: this.avatarExpanded ? AVATAR_TEXT_INSET + this.avatarCardInset() : 0
+        })
+        .margin({ top: this.avatarTextTop() })
+        .offset({ x: 0, y: this.avatarOffsetY() })
+        .zIndex(1)
+        .hitTestBehavior(HitTestMode.Transparent);
       }
-      .alignItems(VerticalAlign.Center)
-      .constraintSize({ maxWidth: '86%' });
-      Text(this.statusText).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
+      .width('100%')
+      .height(this.avatarBlockH())
+      .zIndex(1);
     }
     .width('100%')
-    .padding({ top: this.topSafe + 8 });
+    .padding({ top: this.avatarTopPad() });
   }
 
   @Builder
@@ -1632,7 +1835,7 @@ export struct ProfilePage {
       AppBackdrop({ split: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) });
       // 整页是一个 List（原来是 Scroll > Column）：资料部分在第一项、页签条一项，页签内容按行放进
       // List——共同群组、礼物、共享内容/媒体都走 LazyForEach（见 profileTabItems）。
-      List() {
+      List({ scroller: this.pageScroller }) {
         ListItem() {
           Column() {
             if (!this.profileContentReady) {
@@ -1662,6 +1865,13 @@ export struct ProfilePage {
       .cachedCount(PROFILE_LIST_CACHED_COUNT)
       .contentEndOffset(24)
       .clip(false)
+      // 下拉放大头像：越界回弹 + 逐帧回调（与「我的资料」同一套判定）。
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+      .onAreaChange((_o: Area, n: Area): void => {
+        const w: number = n.width as number;
+        if (w > 0 && Math.abs(w - this.avatarAvailW) > 0.5) { this.avatarAvailW = w; }
+      })
+      .onDidScroll((): void => { this.handlePageScroll(); })
 
       // 壁纸生效时整页底必须透明，否则壁纸被这一层盖死（同 util/theme.mainPageFill 的理由）。
       // 卡片自己是毛玻璃（profileGlassFill），压在壁纸上仍然读得清。
@@ -1686,7 +1896,8 @@ export struct ProfilePage {
       }
 
       // 返回 / 更多按钮的浮层：画在 List 之外，不参与列表的边缘虚化。
-      // 位置与原来 header() 里那一行完全一致（topSafe + 8，左右 pageMargin）。
+      // 展开态照片顶边在安全区下沿、左右各让出 pageMargin，两颗钮跟着 ratio 再往里让
+      // AVATAR_BUTTON_INSET，正好落在照片的两个上角里面、不超出（用户 2026-11-25）。
       Row() {
         this.circleButton('sys.symbol.chevron_left', () => { this.goBack(); });
         Blank().layoutWeight(1);
@@ -1696,7 +1907,11 @@ export struct ProfilePage {
       }
       .width('100%')
       .align(Alignment.TopStart)
-      .padding({ left: this.pageMargin(), right: this.pageMargin(), top: this.topSafe + 8 })
+      .padding({
+        left: this.pageMargin() + AVATAR_BUTTON_INSET * this.avatarRatio(),
+        right: this.pageMargin() + AVATAR_BUTTON_INSET * this.avatarRatio(),
+        top: this.topSafe + 8 + AVATAR_BUTTON_INSET * this.avatarRatio()
+      })
       .zIndex(10)
       .hitTestBehavior(HitTestMode.Transparent);
     }.width('100%').height('100%');

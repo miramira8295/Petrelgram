@@ -32,6 +32,17 @@ export struct AvatarView {
   // ——转屏或进出分栏时已经存在的那些行会停在旧尺寸上（HdsSubDestination 的 menuItems
   // 栽过同一个坑）。数字过 @Prop 的深拷贝没有任何代价。
   @Prop @Watch('onAvatarInputChanged') avatarSize: number = AVATAR_SIZE;
+  // 个人资料页「下拉放大头像」用：把「画多大」和「解码多大」拆开传。默认值让
+  // 其余 30 多处调用点**零变化**。
+  //   boxWidth/boxHeight  实际绘制尺寸，下拉过程中逐帧变——所以故意**不带**
+  //                       @Watch：它只影响布局，不该每次触发一遍解码规格重算。
+  //   boxRadius           实际圆角；-1 表示沿用圆形（min(w,h)/2）。
+  //   decodeWidth/Height  解码分辨率，只在收起/展开两个稳定态之间切换一次。
+  @Prop boxWidth: number = 0;
+  @Prop boxHeight: number = 0;
+  @Prop boxRadius: number = -1;
+  @Prop @Watch('onAvatarInputChanged') decodeWidth: number = 0;
+  @Prop @Watch('onAvatarInputChanged') decodeHeight: number = 0;
   // 直接在 V1 @Component 内持有 CachedImageSession 与 @State pixelMap，不再嵌套 V2
   // @ComponentV2 的 CachedImage：ChatRow / ContactRowView / MemberRow 等外层都是
   // V1 @Reusable，复用 V2 子组件会导致 ArkUI AceStateMgmt 报
@@ -83,13 +94,34 @@ export struct AvatarView {
     return !this.savedMessages && !this.shouldAnimate() && this.loadImage && this.avatarPath !== '';
   }
 
+  // 绘制盒尺寸：没传 boxWidth/boxHeight 时就是原来的方/圆 avatarSize。
+  private boxW(): number {
+    return this.boxWidth > 0 ? this.boxWidth : this.avatarSize;
+  }
+
+  private boxH(): number {
+    return this.boxHeight > 0 ? this.boxHeight : this.avatarSize;
+  }
+
+  // -1 = 圆形（与历史行为逐像素相同）；>=0 用调用方给的值。
+  private boxR(): number {
+    if (this.boxRadius >= 0) {
+      return this.boxRadius;
+    }
+    return Math.min(this.boxW(), this.boxH()) / 2;
+  }
+
   private currentImageSpec(): CachedImageSpec {
+    // 解码尺寸与绘制尺寸分开：资料页展开后是 360×390 的大图，但解码只需要按
+    // 那张稳定态要一次；下拉途中的 100→380 由绘制拉伸，不去重解码。
+    const dw: number = this.decodeWidth > 0 ? this.decodeWidth : this.boxW();
+    const dh: number = this.decodeHeight > 0 ? this.decodeHeight : this.boxH();
     return {
       path: this.shouldLoadStaticImage() ? this.avatarPath : '',
       sourceKey: `${this.colorSeed}:${this.avatarPath}`,
-      boxWidth: this.avatarSize,
-      boxHeight: this.avatarSize,
-      radius: this.avatarSize / 2,
+      boxWidth: dw,
+      boxHeight: dh,
+      radius: Math.min(dw, dh) / 2,
       fit: ImageFit.Cover,
       pinBounded: true,
     };
@@ -117,11 +149,11 @@ export struct AvatarView {
     if (this.savedMessages) {
       Row() {
         SymbolGlyph($r('sys.symbol.bookmark_fill'))
-          .fontSize(this.avatarSize * 0.5)
+          .fontSize(this.boxW() * 0.5)
           .fontColor([Color.White]);
       }
-      .width(this.avatarSize).height(this.avatarSize)
-      .borderRadius(this.avatarSize / 2)
+      .width(this.boxW()).height(this.boxH())
+      .borderRadius(this.boxR())
       .backgroundColor(COLOR_PRIMARY)
       .justifyContent(FlexAlign.Center);
     } else if (this.shouldAnimate()) {
@@ -131,12 +163,12 @@ export struct AvatarView {
         AvLoopVideo({
           videoPath: this.animPath,
           paused: this.animationPaused,
-          boxWidth: this.avatarSize,
-          boxHeight: this.avatarSize
+          boxWidth: this.boxW(),
+          boxHeight: this.boxH()
         });
       }
-      .width(this.avatarSize).height(this.avatarSize)
-      .borderRadius(this.avatarSize / 2)
+      .width(this.boxW()).height(this.boxH())
+      .borderRadius(this.boxR())
       .clip(true);
     } else if (this.avatarPath !== '') {
       // Through the PixelMap cache, like chat photos. Avatars are small but
@@ -151,14 +183,14 @@ export struct AvatarView {
         if (this.loadImage) {
           Image(this.pixelMap)
             .draggable(false)
-            .width(this.avatarSize).height(this.avatarSize)
-            .borderRadius(this.avatarSize / 2)
+            .width(this.boxW()).height(this.boxH())
+            .borderRadius(this.boxR())
             .clip(true)
             .interpolation(ImageInterpolation.High)
             .objectFit(ImageFit.Cover);
         }
       }
-      .width(this.avatarSize).height(this.avatarSize);
+      .width(this.boxW()).height(this.boxH());
     } else {
       this.initialsCircle();
     }
@@ -171,11 +203,11 @@ export struct AvatarView {
   @Builder
   initialsCircle() {
     Text(this.initials)
-      .fontColor(Color.White).fontSize(this.avatarSize * 0.4).fontWeight(FontWeight.Medium)
-      .width(this.avatarSize).height(this.avatarSize)
+      .fontColor(Color.White).fontSize(this.boxW() * 0.4).fontWeight(FontWeight.Medium)
+      .width(this.boxW()).height(this.boxH())
       .align(Alignment.Center).textAlign(TextAlign.Center)
       .backgroundColor(AVATAR_PALETTE[Math.abs(this.colorSeed) % AVATAR_PALETTE.length])
-      .borderRadius(this.avatarSize / 2);
+      .borderRadius(this.boxR());
   }
 
   private ttlBadgeSize(): number {
@@ -240,6 +272,6 @@ export struct AvatarView {
         .translate({ x: 1, y: 1 });
       }
     }
-    .width(this.avatarSize).height(this.avatarSize);
+    .width(this.boxW()).height(this.boxH());
   }
 }
