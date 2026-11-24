@@ -103,6 +103,8 @@ export interface VoiceRecordingStateHost {
   setComposerFocused: (value: boolean) => void;
   // finish() 发送成功后的 `this.atBottom = true;`（页面自留字段，跨簇写）。
   afterSent: () => void;
+  // Capture position ownership before the request, not when its response arrives.
+  captureAfterSent?: () => (() => void);
   // 造一个录音器。搬之前 start() 里写的是 `new VoiceRecorder()` 硬编码。
   //
   // 【为什么给它开缝】本批方案点名要钉的那枚钉子是「start→cancel→start，
@@ -232,13 +234,14 @@ export class VoiceRecordingState {
     const store = this.stoppedStore;
     if (store === null || store !== this.host.store() || this.host.canSend?.() === false) { return; }
     this.sendingStopped = true;
+    const afterSent: () => void = this.host.captureAfterSent?.() ?? this.host.afterSent;
     store.sendVoiceNoteAsync(this.stoppedPath, this.stoppedDuration).then((): void => {
       if (seq !== this.recordingSeq) { return; }
       this.stoppedPath = '';
       this.readyToSend = false;
       this.stoppedStore = null;
       this.isRecording = false;
-      this.host.afterSent();
+      afterSent();
     }).catch((error: Error): void => {
       logE(`VoiceRecordingState.send failed: ${error.message}`);
       if (seq === this.recordingSeq && (error as TdError).code === -1) {

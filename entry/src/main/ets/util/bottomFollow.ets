@@ -51,3 +51,24 @@ export function bottomFollowShouldSchedule(
   }
   return atBottom || followPending;
 }
+
+// A measured old tail is authoritative even when isAtEnd is temporarily stale.
+// Missing geometry only accepts the existing exact-bottom state plus fresh indices.
+export interface NearBottomFollowGeometry {
+  bottom: number;
+  target: number;
+  scrollerAtEnd: boolean;
+  indexAtTail: boolean;
+  atBottom: boolean;
+}
+
+export function nearBottomFollowGeometry(input: NearBottomFollowGeometry): boolean {
+  if (!Number.isFinite(input.target) || input.target <= 0) { return false; }
+  if (!Number.isFinite(input.bottom)) {
+    return input.scrollerAtEnd && input.indexAtTail && input.atBottom;
+  }
+  const distance: number = input.bottom - input.target;
+  // A short list can end well above the composer while already at its bottom.
+  if (distance < 0 && input.scrollerAtEnd && input.indexAtTail) { return true; }
+  return Math.abs(distance) <= 160;
+}

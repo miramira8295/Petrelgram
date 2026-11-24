@@ -13343,6 +13343,30 @@
     {
       "name": "cl_archive_release",
       "value": "Arşivi göstermek için bırakın"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "Göndermek için buraya bırakın"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "Hedef: %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "Mesaj alanına eklemek için bırakın"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "İçeriği almak için bırakın"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "Daha eski arama sonucu"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "Daha yeni arama sonucu"
     }
   ]
 }

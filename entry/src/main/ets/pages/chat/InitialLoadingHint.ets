@@ -5,7 +5,7 @@ import {
   COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { INITIAL_HINT_DELAY_MS, initialHintLabelKey } from '../../util/initialLoadingHint';
-import { BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP } from '../../util/mediaBox';
+import { bubbleMaxWidth, BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP } from '../../util/mediaBox';
 import { str } from '../../util/strings';
 import { SystemGlassSurface } from './SystemGlassSurface';
 
@@ -141,6 +141,7 @@ export struct InitialLoadingHint {
   @Param immediate: boolean = true;
   @Param isGroup: boolean = false;
   @Param isChannel: boolean = false;
+  @Param splitLayout: boolean = false;
   @Param screenW: number = 360;
   @Param topInset: number = 56;
   @Param bottomInset: number = 56;
@@ -235,8 +236,11 @@ export struct InitialLoadingHint {
   }
 
   private bubbleWidthVp(spec: SkeletonBubbleSpec): number {
-    const availW: number = Math.max(240, this.screenW - BUBBLE_ROW_SIDE_VP * 2 -
-      (this.showGroupAvatarColumn() ? BUBBLE_AVATAR_GUTTER_VP : 0));
+    const availW: number = this.splitLayout
+      ? bubbleMaxWidth(this.screenW,
+        this.showGroupAvatarColumn() && !this.effectiveIsOut(spec) ? BUBBLE_AVATAR_GUTTER_VP : 0)
+      : Math.max(240, this.screenW - BUBBLE_ROW_SIDE_VP * 2 -
+        (this.showGroupAvatarColumn() ? BUBBLE_AVATAR_GUTTER_VP : 0));
     const ratio: number = this.isChannel ? Math.min(0.84, spec.widthRatio + 0.14) : spec.widthRatio;
     return Math.round(availW * ratio);
   }

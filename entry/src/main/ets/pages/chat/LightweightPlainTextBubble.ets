@@ -26,7 +26,7 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { getAccentColorStore, getTdClient, getUserStore } from '../../tdkit/Globals';
 import {
-  BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth,
+  BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, messageBubbleMaxWidth,
   hitSenderAvatarColumn
 } from '../../util/mediaBox';
 import { editableCached, ensureEditable } from '../../util/messageEditable';
@@ -319,6 +319,7 @@ export struct LightweightPlainTextBubble {
   // 所以这一支保留细粒度字段。**别为了"两边写法一致"把它合了。**
   @Param chatId: number = 0;
   @Param contentWidth: number = 360;
+  @Param splitLayout: boolean = false;
   // 「能不能编辑」到货后触发菜单重绘。判据与理由和 MessageBubble 完全一致，
   // 见 util/messageEditable 文件头（issue #179）。
   // 菜单「能否编辑/删除」的异步答案到达计数。两个用途合成一个：**每多一个
@@ -768,8 +769,8 @@ export struct LightweightPlainTextBubble {
 
   // 判据与 MessageBubble.avatarReserve 一致：只有群聊来信被头像顶开 44vp。
   private bubbleMaxW(): number {
-    return bubbleMaxWidth(this.contentWidth,
-      this.isGroup && !this.msg.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0);
+    return messageBubbleMaxWidth(this.contentWidth,
+      this.isGroup && !this.msg.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0, this.msg, this.splitLayout);
   }
   private inlineMaxW(): number { return this.bubbleMaxW() - 16; }
   private runRadius(): number { return Math.min(this.env.bubbleRadius, 7); }
@@ -1460,7 +1461,7 @@ export struct LightweightPlainTextBubble {
         });
       }
       // 行边距与气泡最大宽同源（util/mediaBox.BUBBLE_ROW_SIDE_VP）。
-      // 【这里原来写死 10】而 bubbleMaxWidth 按 BUBBLE_ROW_SIDE_VP 算，两边
+      // 【这里原来写死 10】而 messageBubbleMaxWidth 按 BUBBLE_ROW_SIDE_VP 算，两边
       // 对不上：纯文本是聊天里最常见的一类，之前几轮收窄留白它一点没吃到。
       .width('100%').padding({
         left: BUBBLE_ROW_SIDE_VP, right: BUBBLE_ROW_SIDE_VP,

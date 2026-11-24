@@ -13343,6 +13343,30 @@
     {
       "name": "cl_archive_release",
       "value": "Lepaskan untuk menampilkan arsip"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "Lepaskan di sini untuk mengirim"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "Tujuan: %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "Lepaskan untuk menyisipkan ke kolom pesan"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "Lepaskan untuk menerima konten"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "Hasil pencarian lebih lama"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "Hasil pencarian lebih baru"
     }
   ]
 }

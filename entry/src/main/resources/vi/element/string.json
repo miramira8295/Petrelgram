@@ -13343,6 +13343,30 @@
     {
       "name": "cl_archive_release",
       "value": "Thả ra để hiện kho lưu trữ"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "Thả vào đây để gửi"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "Đích: %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "Thả để chèn vào ô tin nhắn"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "Thả để nhận nội dung"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "Kết quả tìm kiếm cũ hơn"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "Kết quả tìm kiếm mới hơn"
     }
   ]
 }

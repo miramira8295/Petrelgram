@@ -107,7 +107,7 @@ export class SearchSession {
   @Trace resultMessages: Map<number, TdObject> = new Map();
   @Trace loading: boolean = false;
   @Trace loadFailed: boolean = false;
-  private resultsExhausted: boolean = false;
+  @Trace private resultsExhausted: boolean = false;
   private disposed: boolean = false;
   // 「查看历史」筛的那个发送者；0 = 不按发送者筛（普通关键词搜索）。
   // 按发送者筛时 query 允许为空——TDLib 支持"空 query + sender_id"列出此人
@@ -419,13 +419,22 @@ export class SearchSession {
     }
   }
 
+  // 按钮显示与事件入口共用 O(1) 判定。请求中阻止重复分页，空页后仍可在已加载结果内导航。
+  canNavigate(older: boolean): boolean {
+    if (this.disposed || !this.mode || this.loading || this.results.length === 0) { return false; }
+    if (!older) { return this.idx > 0; }
+    return this.idx + 1 < this.results.length || this.canLoadMoreResults();
+  }
+
   // 搬之前是 ChatPage.searchOlder()。SearchBottomBar.onOlder 调用。
   older(): void {
+    if (!this.canNavigate(true)) { return; }
     this.applySearchStep(stepOlder(this.results, this.idx, this.total));
   }
 
   // 搬之前是 ChatPage.searchNewer()。SearchBottomBar.onNewer 调用。
   newer(): void {
+    if (!this.canNavigate(false)) { return; }
     this.applySearchStep(stepNewer(this.idx));
   }
 

@@ -11,7 +11,7 @@ import { cornerPx, senderLeadInset } from '../../util/bubbleCornerInset';
 import { chatEnv } from '../../util/chatEnvMirror';
 import { rememberLabelWidth, recallLabelWidth } from '../../util/labelWidthMemory';
 import { SenderRoleTag } from './SenderRoleTag';
-import { BUBBLE_AVATAR_GUTTER_VP, bubbleMaxWidth } from '../../util/mediaBox';
+import { BUBBLE_AVATAR_GUTTER_VP, messageBubbleMaxWidth } from '../../util/mediaBox';
 import { formatClockTime } from '../../util/formatTime';
 import { reactionKeyFrom } from '../../util/reactions';
 import { animationDurationFor, scrollActiveNow } from '../../util/scrollEffects';
@@ -96,7 +96,7 @@ export struct BubbleContentLayout {
 
   private bubbleMaxW(): number {
     // 只有群聊来信才有头像位；发出的消息和私聊来信按 0 算，能宽出 44vp。
-    return bubbleMaxWidth(this.data.contentWidth, this.avatarReserve());
+    return messageBubbleMaxWidth(this.data.contentWidth, this.avatarReserve(), this.msg, this.data.splitLayout === true);
   }
 
 

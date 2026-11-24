@@ -210,6 +210,7 @@ export default function searchSessionTest() {
     it('older()/newer() 按下标步进，越界时停住不动', 0, (): void => {
       const host: FakeHost = new FakeHost();
       const controller: SearchSession = controllerOn(host);
+      controller.mode = true;
       controller.results = [500, 400, 300]; // newest → oldest
       controller.total = 3;
       controller.idx = 0;
@@ -243,6 +244,47 @@ export default function searchSessionTest() {
       expect(controller.idx).assertEqual(0);
       expect(host.jumpToMessageArgs.length).assertEqual(callsBeforeUnderrun);
       controller.dispose();
+    });
+
+    it('搜索请求中双向导航禁用，请求完成后恢复', 0, (): void => {
+      const host: FakeHost = new FakeHost();
+      const controller: SearchSession = controllerOn(host);
+      controller.mode = true;
+      controller.results = [500, 400, 300];
+      controller.total = 3;
+      controller.idx = 1;
+      controller.loading = true;
+      expect(controller.canNavigate(true)).assertFalse();
+      expect(controller.canNavigate(false)).assertFalse();
+      controller.older();
+      controller.newer();
+      expect(controller.idx).assertEqual(1);
+      expect(host.jumpToMessageArgs.length).assertEqual(0);
+      controller.loading = false;
+      expect(controller.canNavigate(true)).assertTrue();
+      expect(controller.canNavigate(false)).assertTrue();
+      controller.older();
+      expect(controller.idx).assertEqual(2);
+      controller.dispose();
+    });
+
+    it('搜索未开启或页面释放后拒绝残留点击', 0, (): void => {
+      const host: FakeHost = new FakeHost();
+      const controller: SearchSession = controllerOn(host);
+      controller.results = [500, 400, 300];
+      controller.total = 3;
+      controller.idx = 1;
+      controller.older();
+      controller.newer();
+      expect(host.jumpToMessageArgs.length).assertEqual(0);
+      controller.mode = true;
+      expect(controller.canNavigate(true)).assertTrue();
+      controller.dispose();
+      controller.older();
+      controller.newer();
+      expect(host.jumpToMessageArgs.length).assertEqual(0);
+      expect(controller.canNavigate(true)).assertFalse();
+      expect(controller.canNavigate(false)).assertFalse();
     });
 
     // 防的回归：enterForSender 把三个字段的写入顺序或内容搞错——尤其是忘记清

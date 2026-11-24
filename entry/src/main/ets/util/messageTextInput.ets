@@ -37,6 +37,7 @@ export interface MessageTextLayout {
   // Actual row width after page-local chrome such as the multi-select gutter.
   // Media, albums and both bubble renderers derive every cap from this value.
   contentWidth: number;
+  splitLayout?: boolean;
   isGroup: boolean;
   isChannel: boolean;
 }
@@ -60,12 +61,12 @@ export class MessageTextPresentationCache {
     const previous = this.previous;
     if (previous !== undefined && previous.msg === msg && previous.input === input &&
       previous.showSenderName === showSenderName && previous.layout.contentWidth === layout.contentWidth &&
-      previous.layout.isGroup === layout.isGroup && previous.layout.isChannel === layout.isChannel) {
+      previous.layout.splitLayout === layout.splitLayout && previous.layout.isGroup === layout.isGroup && previous.layout.isChannel === layout.isChannel) {
       return previous;
     }
     const next: MessageTextPresentation = {
       msg, input, showSenderName,
-      layout: { contentWidth: layout.contentWidth, isGroup: layout.isGroup, isChannel: layout.isChannel }
+      layout: { contentWidth: layout.contentWidth, splitLayout: layout.splitLayout, isGroup: layout.isGroup, isChannel: layout.isChannel }
     };
     this.previous = next;
     return next;

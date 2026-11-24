@@ -3,7 +3,7 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SEC
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
   SEARCH_LABEL_COUNTER, SEARCH_LABEL_NONE,
-  canStepNewer, canStepOlder, hashtagQueryOf, searchCounterText, searchLabelKind, searchOpensKeyboard
+  hashtagQueryOf, searchCounterText, searchLabelKind, searchOpensKeyboard
 } from '../../util/searchPaging';
 import { logW } from '../../util/log';
 import { CHAT_SEARCH_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
@@ -266,19 +266,16 @@ export struct SearchBottomBar {
     .onClick((): void => { this.onPublicPosts(tag); });
   }
 
-  // 一颗圆钮。两个翻页键长得一样，只有图标/可用性/回调不同。
+  // 状态在按钮属性中直接读取；底板不跟随禁用态变淡。
   @Builder
-  stepButton(icon: Resource, enabled: boolean, bounce: boolean, action: () => void) {
-    // 固定尺寸的圆钮：材质层尺寸已知，直接给，省掉一帧测量。
-    // 外壳 Stack 承接透明度与点击（自定义组件带尾随闭包后不能再链通用属性）。
+  stepButton(icon: Resource, older: boolean, bounce: boolean) {
     Stack() {
-    SystemGlassSurface({ surface: 'control', effectsEnabled: false, plainOutline: true,
-      radius: bottomPillRadius(),
-      fixedWidth: BOTTOM_PILL_HEIGHT,
-      fixedHeight: BOTTOM_PILL_HEIGHT
-    }) {
-      Row() {
-        if (bounce) {
+      SystemGlassSurface({ surface: 'control', effectsEnabled: false, plainOutline: true,
+        radius: bottomPillRadius(), fixedWidth: BOTTOM_PILL_HEIGHT,
+        fixedHeight: BOTTOM_PILL_HEIGHT
+      }) {}
+      Button({ type: ButtonType.Circle, stateEffect: true }) {
+        if (bounce && this.search.canNavigate(older)) {
           SymbolGlyph(icon).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
             .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
         } else {
@@ -286,11 +283,16 @@ export struct SearchBottomBar {
         }
       }
       .width(BOTTOM_PILL_HEIGHT).height(BOTTOM_PILL_HEIGHT)
-      .justifyContent(FlexAlign.Center);
+      .backgroundColor(Color.Transparent)
+      .enabled(this.search.canNavigate(older))
+      .accessibilityText(older ? $r('app.string.cp_search_older_result') : $r('app.string.cp_search_newer_result'))
+      .onClick((): void => {
+        // 同一帧中请求可能已开始；事件入口再次核验最新状态。
+        if (!this.search.canNavigate(older)) { return; }
+        if (older) { this.onOlder(); } else { this.onNewer(); }
+      });
     }
-    }
-    .opacity(enabled ? 1 : 0.4)
-    .onClick((): void => { action(); });
+    .width(BOTTOM_PILL_HEIGHT).height(BOTTOM_PILL_HEIGHT);
   }
 
   build() {
@@ -333,12 +335,8 @@ export struct SearchBottomBar {
         Blank().layoutWeight(1);
 
         if (this.search.results.length > 0) {
-          this.stepButton($r('sys.symbol.chevron_up'),
-            canStepOlder(this.search.results.length, this.search.idx, this.search.total),
-            false, (): void => { this.onOlder(); });
-          this.stepButton($r('sys.symbol.chevron_down'),
-            canStepNewer(this.search.idx),
-            true, (): void => { this.onNewer(); });
+          this.stepButton($r('sys.symbol.chevron_up'), true, false);
+          this.stepButton($r('sys.symbol.chevron_down'), false, true);
         }
       }
       .width('100%')

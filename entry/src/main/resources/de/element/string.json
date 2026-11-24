@@ -13343,6 +13343,30 @@
     {
       "name": "cl_archive_release",
       "value": "Loslassen, um das Archiv anzuzeigen"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "Hier ablegen zum Senden"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "Ziel: %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "Ablegen, um ins Nachrichtenfeld einzufügen"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "Ablegen, um Inhalte zu empfangen"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "Älteres Suchergebnis"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "Neueres Suchergebnis"
     }
   ]
 }

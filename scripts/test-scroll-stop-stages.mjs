@@ -15,7 +15,8 @@ run(fs.readFileSync(root+'util/drawnStageMetrics.ets','utf8').replace(/^import.*
 const source=fs.readFileSync(compiled+'pages/chat/ChatTimelineSession.ts','utf8');
 const ast=ts.createSourceFile('session',source,ts.ScriptTarget.Latest,true),cls=ast.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='ChatTimelineSession');
 const handler=cls.members.find(n=>n.name?.getText(ast)==='handleTimelineScrollStop').getText(ast);
-run(`class Session {${handler}} globalThis.Session=Session;`);
+const sendActive=cls.members.find(n=>n.name?.getText(ast)==='selfSendFollowActive').getText(ast);
+run(`class Session {selfSendFollowUntil=0; ${sendActive} ${handler}} globalThis.Session=Session;`);
 const session=new ctx.Session();
 Object.defineProperty(session,'timelineScrollActive',{set:action('active')});
 Object.defineProperty(session,'nextDidScrollIsUserDriven',{set:action('user')});

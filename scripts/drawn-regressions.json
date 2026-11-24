@@ -150,5 +150,10 @@
   "test-message-link-scope.mjs",
   "test-media-open-intent.mjs",
   "test-shatter-frame-budget.mjs",
-  "test-chat-chrome-material.mjs"
+  "test-chat-chrome-material.mjs",
+  "test-drop-direct-send.mjs",
+  "test-bottom-follow-geometry.mjs",
+  "test-composer-window-follow.mjs",
+  "test-pr51-search-media.mjs",
+  "test-split-bubble-width.mjs"
 ]

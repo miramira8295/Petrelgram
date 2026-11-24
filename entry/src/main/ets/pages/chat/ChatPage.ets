@@ -21,6 +21,7 @@ import { ChatDropReceiver } from './ChatDropReceiver';
 import { CHAT_DROP_TYPES } from '../../services/DropData';
 import { EmojiDrawerState, drawerTopOverlap } from './EmojiDrawerState';
 import { ComposerInputSwitch } from './ComposerInputSwitch';
+import { ComposerViewportState } from './ComposerViewportState';
 import { StickerItem } from './StickerPicker';
 import { GifItem } from './GifPicker';
 import { ChatSendAccess } from './ChatSendAccess';
@@ -272,7 +273,10 @@ import {
 import { conversationScopeId, conversationScopeKey } from '../../util/messageTopicScope';
 import { navigateToSearch } from '../../util/searchNav';
 import { navigateToSetting } from '../../util/settingsNav';
-import { getActiveTdUserId } from '../../tdkit/Globals';
+import { getActiveTdAccountSlot, getActiveTdUserId } from '../../tdkit/Globals';
+import { isSameChatMessageDragExtra } from '../../util/messageDragOrigin';
+import { DropHoverOverlay } from './DropHoverOverlay';
+import { DropHoverState } from './DropHoverState';
 import {
   chatChromeHeight, ChatChromeGeometryInput, chatTopBannerHeight, chatTopicBarHeight
 } from '../../util/ChatChromeGeometry';
@@ -309,7 +313,7 @@ import {
 import { DICE_CHOICES, DiceChoice } from '../../util/diceChoices';
 import { mediaEntryIsPhoto, mediaEntryIsVideo } from '../../util/mediaEntryKind';
 import { OneShotFrameCallback as ChatPageFrameCallback } from '../../util/oneShotFrameCallback';
-import { bottomFollowShouldApply, bottomFollowShouldSchedule } from '../../util/bottomFollow';
+import { bottomFollowShouldApply } from '../../util/bottomFollow';
 import {
   NO_JUMP_LANDING, chunkPrependAllowed, jumpLandingDeadline, jumpLandingHolds
 } from '../../util/jumpLandingOwner';
@@ -1055,6 +1059,7 @@ export struct ChatPage {
   private imeTailPinned: boolean = false;
   private imeLayoutSeq: number = 0;
   private lastKeyboardH: number = 0;
+  private composerViewport: ComposerViewportState = new ComposerViewportState();
   private fullViewportH: number = 0;
   private curViewportH: number = 0;
   private knownImeH: number = 0;
@@ -1062,6 +1067,7 @@ export struct ChatPage {
   private imeBridgeTimer: number = -1;
   private pendingImeBridgeFromEmoji: boolean = false;
   private drawerAnimSeq: number = 0;
+  private drawerTargetHeight: number = 0;
   private drawerClosingToIme: boolean = false;
   private viewportResizeSettleTimer: number = -1;
   private lastComposerBottomGap: number = -1;
@@ -1249,6 +1255,7 @@ export struct ChatPage {
   @Computed
   get rowPageInputs(): RowPageInputs {
     return buildRowPageInputs({
+      splitLayout: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
       isGroup: this.isGroup,
       isChannel: this.isChannel,
       translationActive: this.translation.active(this.translateChatsEnabled),
@@ -1360,6 +1367,8 @@ export struct ChatPage {
 
   private resetComposerSession(): void {
     this.dropReceiver.cancel();
+    this.setDropHover(false);
+    this.dropHover.dispose();
     // 原文四行 `this.recordingSeq++; if (this.voiceRec !== null ||
     // this.isRecording || this.recordingStarting) { this.cancelRecording();
     // }` 收成这一次 `this.recording.cancel()` 调用——voiceRec/recordingSeq
@@ -1561,6 +1570,8 @@ export struct ChatPage {
   private shareAutoSend: boolean = false;
 
   aboutToAppear(): void {
+    this.composerViewport.setWindow(this.screenW, this.screenH);
+    this.composerViewport.setKeyboard(this.keyboardH);
     this.messageActionsState.bind({
       client: (): TdClient => getTdClient(),
       chatId: (): number => this.chatId,
@@ -1627,7 +1638,7 @@ export struct ChatPage {
     });
     this.sessionLifecycle.bind({
       invalidateScrollWork: (): void => { this.timeline.invalidateScrollWork(); },
-      cancelDropReceiver: (): void => { this.dropReceiver.cancel(); },
+      cancelDropReceiver: (): void => { this.dropReceiver.cancel(); this.setDropHover(false); this.dropHover.dispose(); },
       publishViewerCovered: (): void => { publishViewerCoversWindow(false); },
       disposeShareTargeted: (): void => {
         if (this.offShareTargeted !== null) {
@@ -1932,7 +1943,10 @@ export struct ChatPage {
       draftText: (): string => this.draft,
       sendMarkdown: (): void => this.sendMarkdownPost(),
       clearDraft: (): void => { this.draft = ''; },
-      setAtBottom: (value: boolean): void => { this.timeline.atBottom = value; },
+      setAtBottom: (value: boolean): void => {
+        this.timeline.atBottom = value;
+        if (value) { this.timeline.armSelfSendFollow(); }
+      },
       closeAttachPanel: (): void => { this.closeAttachPanel(); },
       stopEditing: (): void => { this.composerController.stopEditing(); },
       setComposerFocused: (value: boolean): void => { this.composerFocused = value; },
@@ -1977,7 +1991,7 @@ export struct ChatPage {
     const inputClient = getTdClient();
     this.inputSwitch.bind({
       active: (): boolean => this.timeline.pageVisible && this.appIsForeground && !this.viewerOpen() &&
-        !this.recording.isRecording && !membershipLosesComposer(this.membershipState) &&
+        !this.search.mode && !this.selection.active && !this.recording.isRecording && !membershipLosesComposer(this.membershipState) &&
         this.chatId !== 0 && getTdClient() === inputClient,
       contextKey: (): number => this.chatId,
       emojiOpen: (): boolean => this.showEmojiPanel && !this.emojiPanelClosing,
@@ -1994,7 +2008,8 @@ export struct ChatPage {
         this.pendingImeBridgeFromEmoji = false;
       },
       prepareEditor: (): void => { this.prepareComposerEditor(); },
-      focusEditor: (): void => { focusControl.requestFocus('chat_composer'); }
+      keyboardVisible: (): boolean => this.keyboardH > 0 && this.composerFocused,
+      focusEditor: (): void => { this.getUIContext().getFocusController().requestFocus('chat_composer'); }
     });
     this.command.bind({
       chatId: (): number => this.chatId,
@@ -2034,6 +2049,7 @@ export struct ChatPage {
       },
       setComposerFocused: (value: boolean): void => { this.composerFocused = value; },
       afterSent: (): void => { this.timeline.atBottom = true; },
+      captureAfterSent: (): (() => void) => this.captureSendFollow(),
       // 与搬之前 start() 里那句 `new VoiceRecorder()` 逐字等价；开成宿主取值器
       // 只是为了让单测能注入一个可手动兑现的假录音器，把 recordingSeq 那道
       // 守卫钉住（理由写在 VoiceRecordingState 的接口上方）。
@@ -2333,7 +2349,47 @@ export struct ChatPage {
   }
 
   // 分享落地要用到的页面能力。两档共用一份。
+  // 拖拽悬停提示的显隐。应用内拖消息也会走到这里，那种拖拽的意思是「搬动这条
+  // 消息」，不能提示「松手即发送」——和 ChatDropReceiver 里的排除判据一致。
+  private setDropHover(visible: boolean, extraParams?: string, sendMode: boolean | null = null): void {
+    if (this.dropHoverHideTimer >= 0) { clearTimeout(this.dropHoverHideTimer); this.dropHoverHideTimer = -1; }
+    if (visible && isSameChatMessageDragExtra(extraParams, getActiveTdAccountSlot(), this.chatId)) {
+      visible = false;
+    }
+    if (visible && this.dropHover.sendMode !== sendMode) { this.dropHover.sendMode = sendMode; }
+    this.dropHover.setVisible(visible);
+  }
+
+  // 拖进来的东西松手后会不会真的「直接发出」。纯文字/链接拖进来只放进输入框，
+  // 这时提示层不能写「松手即发送」。本地拖拽（含中转站）在进入时就能读到数据；
+  // 系统延迟拖拽读不到类型时保持中性提示，不预告尚未确定的发送行为。
+  private dropSendsDirectly(event: DragEvent): boolean | null {
+    try {
+      const records = event.getData().getRecords();
+      if (records.length === 0) { return null; }
+      for (const record of records) {
+        const type = record.getType();
+        if (type !== 'general.plain-text' && type !== 'general.hyperlink' && type !== 'general.html') {
+          return true;
+        }
+      }
+      return false;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // 此刻拖拽是否真的能被接收。比 onDrop 的谓词少一层「拖拽开始时的 store/client
+  // 快照」——这里只决定要不要给提示，最坏情况是提示出现但松手被拒，而提示本身
+  // 不改变任何数据。
+  private dropHoverAllowed(): boolean {
+    return this.timeline.pageVisible && this.appIsForeground && !this.viewerOpen() &&
+      !this.search.mode && !this.selection.active && this.composer.editingId === 0 &&
+      !this.recording.isRecording && this.membershipState === 'writable';
+  }
+
   private shareHost(store: MessageStore): ShareArrivalHost {
+    const followSent: () => void = this.captureSendFollow();
     return {
       checkPermissions: (payload: SharedPayload): Promise<void> => store.checkSharePermissions(payload),
       appendMedia: (items: MediaSendItem[]): number => {
@@ -2348,7 +2404,7 @@ export struct ChatPage {
       sendMedia: (items: MediaSendItem[], caption: string): Promise<void> =>
         store.sendMedia(items, caption),
       sendText: (text: string): Promise<void> => store.sendAsync(text),
-      scrollToBottom: (): void => { this.timeline.atBottom = true; }
+      scrollToBottom: followSent
     };
   }
 
@@ -2595,6 +2651,10 @@ export struct ChatPage {
       return;
     }
     const maxId: number = list.length > 0 ? list[list.length - 1].id : 0;
+    // Snapshot the old tail before row bindings/publication can change its height
+    // or make the appended last row temporarily unmeasurable.
+    const followBeforePublish: boolean = notifyKind === 'update' && maxId > this.lastMaxId &&
+      !this.routeResumeWaiting && !this.pendingScrollBottom && this.timeline.shouldFollowNewTail();
     const groups: AlbumGroup[] = this.groupsWithClientJoinNotice(list);
     const resumeLandingPrepared: boolean = this.resolveResumeLandingChoice(store, groups);
     const firstMessageStage: boolean = !this.routeResumeWaiting && this.timeline.groups.length === 0 &&
@@ -2606,14 +2666,14 @@ export struct ChatPage {
     const prependAnchor: PrependAnchorSample =
       this.capturePrependAnchorSample(list, groups, notifyKind);
     const appendAnchor: AppendAnchorSample =
-      this.captureAppendAnchorSample(store, groups, prependAnchor);
+      this.captureAppendAnchorSample(store, groups, prependAnchor, followBeforePublish);
     this.publishSnapshotAndChrome(store, list, groups, firstMessageStage);
     this.restoreCapturedAnchors(prependAnchor, appendAnchor);
     const positionHandled: boolean = this.applyResumeLanding(list, groups, maxId);
     this.consumeLiveIncomingMediaAndCommands();
     const fillPending: boolean = this.store !== null && this.store.isInitialFillPending();
     this.applyInitialOrFollowLanding(
-      list, groups, maxId, notifyKind, positionHandled, fillPending);
+      list, groups, maxId, notifyKind, positionHandled, fillPending, followBeforePublish);
     this.consumeJumpToLatestIntent(list, groups, maxId);
     this.scheduleNewerTailRefresh(store, notifyKind);
     // B15 批注：原 `this.landPendingGallerySave(list); this.landPendingFileOpen
@@ -2722,7 +2782,7 @@ export struct ChatPage {
   }
 
   private captureAppendAnchorSample(store: MessageStore, groups: AlbumGroup[],
-    prependAnchor: PrependAnchorSample): AppendAnchorSample {
+    prependAnchor: PrependAnchorSample, followBeforePublish: boolean = false): AppendAnchorSample {
     // ── 向下翻页的锚点复位 ──────────────────────────────────────────
     //
     // 上面那一段的镜像。底部锚定时末尾追加会把可见内容整体往上顶；顶部锚定
@@ -2755,7 +2815,7 @@ export struct ChatPage {
       prependAnchorHeld: prependAnchor.id !== 0,
       appendBreaksAnchor: appendsRows,
       atLiveTail: this.timeline.atBottom,
-      scrollIntentPending: this.pendingJumpId !== 0 || this.pendingScrollBottom ||
+      scrollIntentPending: followBeforePublish || this.pendingJumpId !== 0 || this.pendingScrollBottom ||
         this.jumpLandingHolding()
     });
     if (holdAppendAnchor && this.timeline.anchorIndexFresh()) {
@@ -2894,11 +2954,12 @@ export struct ChatPage {
   // 四条落点分支的互斥链：resume 已定位 / 首屏落点 / 新消息跟随 / 原地增高贴底。
   // if / else-if 结构原样保留，只把两条长分支的方法体搬进各自的方法。
   private applyInitialOrFollowLanding(list: MessageEntry[], groups: AlbumGroup[],
-    maxId: number, notifyKind: string, positionHandled: boolean, fillPending: boolean): void {
+    maxId: number, notifyKind: string, positionHandled: boolean, fillPending: boolean,
+    followBeforePublish: boolean = false): void {
     if (!positionHandled && !this.timeline.didInitialScroll && list.length > 0) {
       this.applyFirstScreenLanding(list, groups, maxId, fillPending);
     } else if (!positionHandled && this.timeline.didInitialScroll && maxId > this.lastMaxId) {
-      this.followNewTailIfAtBottom(maxId, notifyKind);
+      this.followNewTailIfAtBottom(maxId, notifyKind, followBeforePublish);
     } else if (this.timeline.didInitialScroll && (this.timeline.atBottom || this.timeline.bottomFollowPending) &&
       !this.timeline.stayAtUnread && !this.viewerOpen()
       && (this.store === null || !this.store.getHasMoreNewer())) {
@@ -2954,7 +3015,7 @@ export struct ChatPage {
     }
   }
 
-  private followNewTailIfAtBottom(maxId: number, notifyKind: string): void {
+  private followNewTailIfAtBottom(maxId: number, notifyKind: string, followBeforePublish: boolean): void {
     // Only follow to the bottom for genuinely new messages AND only when the
     // user is already near the bottom — never yank them down while they read
     // history or on photo/read-receipt updates.
@@ -2978,22 +3039,37 @@ export struct ChatPage {
       // 报的现象是"手滑到底之后新消息不跟随，点箭头到底就跟随"——两条路
       // 的差别一定落在这三个之一，打出来就不用猜了。
     }
-    // 新消息到达且最后一条已在底部可见：跟随，并解除未读闩。闩防的是缩略图
-    // 这类原地通知把分界线贴底滑走（下面那一支仍受它约束）；新消息把内容往上
-    // 顶是官方行为，不该被它挡住——真机日志：atBottom=true stayAtUnread=true 不跟随。
-    if (notifyKind === 'update' &&
-      bottomFollowShouldSchedule(this.timeline.atBottom, this.timeline.bottomFollowPending, this.viewerOpen())) {
+    if (notifyKind === 'update' && followBeforePublish && this.timeline.canFollowTail()) {
       this.timeline.stayAtUnread = false;
       this.scheduleBottomAfterLayout('L1242');
     }
   }
 
+  // Async send completion must not reclaim the position after a gesture, jump,
+  // page exit or chat switch. The callback is per send, never per row/frame.
+  private captureSendFollow(): () => void {
+    const store: MessageStore | null = this.store;
+    const epoch: number = this.timeline.followIntentEpoch;
+    const action: number = this.timeline.scrollActionSeq;
+    return (): void => {
+      if (store !== this.store || epoch !== this.timeline.followIntentEpoch ||
+        action !== this.timeline.scrollActionSeq || !this.timeline.canFollowTail()) { return; }
+      this.timeline.atBottom = true;
+      this.timeline.stayAtUnread = false;
+      this.timeline.armSelfSendFollow();
+      this.scheduleBottomAfterLayout('sendComplete');
+    };
+  }
+
   private scheduleBottomAfterLayout(tag: string): void {
     const seq: number = ++this.timeline.bottomLayoutFollowSeq;
+    const actionSeq: number = this.timeline.scrollActionSeq;
+    const store: MessageStore | null = this.store;
     this.timeline.bottomFollowPending = true;
     setTimeout((): void => {
-      const superseded: boolean = seq !== this.timeline.bottomLayoutFollowSeq;
-      if (!superseded) {
+      const superseded: boolean = seq !== this.timeline.bottomLayoutFollowSeq ||
+        actionSeq !== this.timeline.scrollActionSeq || store !== this.store || !this.timeline.pageVisible;
+      if (seq === this.timeline.bottomLayoutFollowSeq) {
         // 被取代的那次不清标志：标志归最新的那次排期管。
         this.timeline.bottomFollowPending = false;
       }
@@ -3007,15 +3083,14 @@ export struct ChatPage {
         scrollActive: this.timeline.timelineScrollActive,
         viewerOpen: this.viewerOpen(),
         hasMoreNewer: this.store !== null && this.store.getHasMoreNewer(),
-        jumpLanding: this.jumpLandingHolding()
+        jumpLanding: this.pendingJumpId !== 0 || this.jumpLandingHolding()
       })) {
-        if (!superseded) {
-        }
         return;
       }
       this.timeline.glueBottom(tag);
       setTimeout((): void => {
-        if (seq === this.timeline.bottomLayoutFollowSeq) {
+        if (seq === this.timeline.bottomLayoutFollowSeq && actionSeq === this.timeline.scrollActionSeq &&
+          store === this.store && this.timeline.pageVisible) {
           this.timeline.refreshAtBottom();
         }
       }, 60);
@@ -3403,6 +3478,7 @@ export struct ChatPage {
   }
 
   private handleHidden(): void {
+    this.timeline.invalidateScrollWork();
     this.remoteDelete.flush();
     scheduleClearChatDetailHiding();
     markChatDestHidden(this.chatDestToken);
@@ -3498,6 +3574,8 @@ export struct ChatPage {
     this.shatterStage.dispose();
     this.messageActionsState.reset();
     this.sessionLifecycle.dispose();
+    if (this.dropHoverHideTimer >= 0) { clearTimeout(this.dropHoverHideTimer); this.dropHoverHideTimer = -1; }
+    this.dropHover.dispose();
   }
 
   private disposeInitialStageAndTgs(): void {
@@ -3781,10 +3859,42 @@ export struct ChatPage {
   }
 
   private currentImeOverlap(): number {
-    if (this.fullViewportH > 0 && this.curViewportH > 0) {
-      return Math.max(0, this.fullViewportH - this.curViewportH);
+    return this.composerViewport.overlap();
+  }
+
+  private publishComposerViewport(): void {
+    this.fullViewportH = this.composerViewport.fullHeight;
+    this.curViewportH = this.composerViewport.resizedHeight;
+    this.knownImeH = this.composerViewport.imeHeight;
+    this.emojiDrawer.fullViewportH = this.fullViewportH;
+    this.emojiDrawer.curResizeH = this.curViewportH;
+    this.emojiDrawer.measureViewport(this.fullViewportH);
+    this.emojiDrawer.setImeHeight(this.knownImeH);
+  }
+
+  @Monitor('screenW', 'screenH')
+  private onComposerWindowChanged(): void {
+    if (!this.composerViewport.setWindow(this.screenW, this.screenH)) { return; }
+    this.composerViewport.setKeyboard(this.keyboardH);
+    this.publishComposerViewport();
+    // A native window change invalidates old animation targets and keyboard
+    // dimensions, including when a panel is open during rotation/split resize.
+    this.drawerAnimSeq++;
+    this.clearImeBridge(true);
+    this.imeTailPinned = false;
+    this.emojiDrawer.closingExpanded = false;
+    this.emojiDrawer.cardOffsetY = 0;
+    this.emojiDrawer.cardOpacity = 1;
+    if (this.showEmojiPanel || this.attachPanelOpen) {
+      const slot: string = this.showEmojiPanel ? SLOT_EMOJI : SLOT_ATTACH;
+      this.emojiDrawer.shellHeight = this.targetDrawerLiftHeight(slot);
+    } else {
+      this.emojiDrawer.shellHeight = 0;
+      this.emojiDrawer.activeSlot = '';
+      this.emojiPanelClosing = false;
     }
-    return this.keyboardH > 0 ? this.keyboardH : 0;
+    this.drawerTargetHeight = this.emojiDrawer.shellHeight;
+    this.syncComposerBottomGap();
   }
 
   private refImeHeight(): number {
@@ -3813,6 +3923,21 @@ export struct ChatPage {
       return 0;
     }
     return Math.max(0, total - drawerTopOverlap(this.bottomSafe, false));
+  }
+
+  private syncOpenDrawerHeight(): void {
+    if ((!this.showEmojiPanel && !this.attachPanelOpen) || this.emojiPanelClosing ||
+      this.drawerClosingToIme || this.emojiDrawer.closingImeToDrawer) { return; }
+    const slot: string = this.showEmojiPanel ? SLOT_EMOJI : SLOT_ATTACH;
+    const target: number = this.targetDrawerLiftHeight(slot);
+    // Compare with the animation target, not its current frame. Ordinary
+    // composer growth must not prematurely finish an in-flight opening.
+    if (Math.abs(target - this.drawerTargetHeight) < 0.5) { return; }
+    this.drawerAnimSeq++;
+    this.drawerTargetHeight = target;
+    this.emojiDrawer.shellHeight = target;
+    this.emojiDrawer.cardOffsetY = 0;
+    this.emojiDrawer.cardOpacity = 1;
   }
 
   private finishDrawerToImeBridge(): void {
@@ -3898,6 +4023,7 @@ export struct ChatPage {
     onDone?: () => void
   ): void {
     const seq: number = ++this.drawerAnimSeq;
+    this.drawerTargetHeight = targetH;
     this.drawerClosingToIme = closingToIme;
     this.emojiDrawer.closingToIme = closingToIme;
     if (slot !== '') {
@@ -3985,20 +4111,11 @@ export struct ChatPage {
     if (newH <= 0) {
       return;
     }
-    this.curViewportH = newH;
-    this.emojiDrawer.curResizeH = newH;
-    if (newH > this.fullViewportH ||
-      (this.keyboardH <= 0 && !this.imeTailPinned && !this.emojiDrawer.closingImeToDrawer &&
-        !this.drawerClosingToIme && this.emojiDrawer.shellHeight <= 0)) {
-      this.fullViewportH = Math.max(this.fullViewportH, newH);
-    }
-    if (this.fullViewportH > 0) {
-      this.emojiDrawer.fullViewportH = this.fullViewportH;
-    }
-    const overlap: number = Math.max(0, this.fullViewportH - newH);
-    if (overlap > this.knownImeH) {
-      this.knownImeH = overlap;
-    }
+    this.onComposerWindowChanged();
+    this.composerViewport.resize(newH);
+    this.publishComposerViewport();
+    this.syncOpenDrawerHeight();
+    const overlap: number = this.currentImeOverlap();
     if (this.emojiDrawer.closingImeToDrawer && overlap <= 1 && this.keyboardH <= 0) {
       this.imeClosingToDrawer = false;
       this.emojiDrawer.closingImeToDrawer = false;
@@ -4057,9 +4174,9 @@ export struct ChatPage {
   private onKeyboardHeightChanged(): void {
     const wasVisible: boolean = this.lastKeyboardH > 0;
     const visible: boolean = this.keyboardH > 0;
-    if (this.keyboardH > this.knownImeH) {
-      this.knownImeH = this.keyboardH;
-    }
+    this.onComposerWindowChanged();
+    this.composerViewport.setKeyboard(this.keyboardH);
+    this.publishComposerViewport();
     if (wasVisible !== visible) {
       holdPlayerJobs(KEYBOARD_SETTLE_MS);
     }
@@ -4599,12 +4716,14 @@ export struct ChatPage {
     }
     const replyId = this.composer.replyToId;
     this.timeline.atBottom = true;
+    const followToken: number = this.timeline.armSelfSendFollow();
     this.timeline.stayAtUnread = false;
     this.withSendLock((): Promise<void> => store.sendAsync(command, replyId).then((): void => {
       if (this.composer.replyToId === replyId) {
         this.composer.clearReply();
       }
     }).catch((e: TdError): void => {
+      this.timeline.clearSelfSendFollow(followToken);
       logE(`ChatPage.botCommand failed: ${e.message}`);
       showToast($r('app.string.cp_command_failed'), 1600);
     }));
@@ -4869,11 +4988,12 @@ export struct ChatPage {
   private pickInlineResult(row: InlineResultRow): void {
     if (this.inline.queryId() === '' || !this.sendAccess.check(sendPermissionForType(row.kind))) { return; }
     const replyId = this.composer.replyToId;
+    const followSent: () => void = this.captureSendFollow();
     sendInlineResult(this.chatId, this.inline.queryId(), row.resultId, replyId, false, sendPermissionForType(row.kind)).then((): void => {
       this.draft = '';
       this.inline.clear();
       this.composer.clearReply();
-      this.timeline.atBottom = true;
+      followSent();
     }).catch((e: TdError): void => {
       logE(`ChatPage.sendInlineResult failed: ${e.message}`);
       showToast(e instanceof SendPermissionError ? e.message : $r('app.string.cp_inline_send_failed'), 1600);
@@ -4889,8 +5009,10 @@ export struct ChatPage {
     if (!this.sendAccess.check('sendOtherMessages')) { return; }
     const draft: string = this.draft;
     const store: MessageStore | null = this.store;
+    const followSent: () => void = this.captureSendFollow();
     store?.sendSticker(fileId, 512, 512).then((sent: boolean): void => {
       if (!sent || this.store !== store) { return; }
+      followSent();
       rememberRecentSticker(fileId);
       if (this.draft === draft) { this.draft = ''; }
       this.sticker.clearAfterSend();
@@ -5170,6 +5292,12 @@ export struct ChatPage {
   @Local panelContentReady: boolean = false;
   private emojiDrawer: EmojiDrawerState = new EmojiDrawerState();
   private dropReceiver: ChatDropReceiver = new ChatDropReceiver();
+  // 拖拽悬停提示层的显隐状态。放在 @ObservedV2 类里由提示层自己订阅：让页面 build
+  // 直接读它的话，拖拽每次进出都会重跑整页 build。
+  private dropHover: DropHoverState = new DropHoverState();
+  // 拖拽在页面子节点之间移动时 enter/leave 可能连续抖动；离开只在停住 160ms 后
+  // 才收起提示层，避免提示闪一下。
+  private dropHoverHideTimer: number = -1;
   private inputSwitch: ComposerInputSwitch = new ComposerInputSwitch();
   private panelReadySeq: number = 0;
 
@@ -5327,9 +5455,14 @@ export struct ChatPage {
   }
 
   private composerBottomGap(): number {
-    const tightForIme: boolean = (this.keyboardH > 0 && this.emojiDrawer.activeSlot === '') ||
-      this.drawerClosingToIme;
-    if (tightForIme) {
+    // 键盘起来、或底部抽屉（表情/附件）打开/正在开合时，一律贴住下方那条边。
+    // **面板打开时也要走 6vp**：抽屉不再向上叠（drawerTopOverlap 恒 0），面板
+    // 卡片顶沿与键盘顶沿落在同一条线上，如果这时候还用 25vp 的悬浮导航栏基准，
+    // 输入栏到面板的缝就比到键盘的缝宽 19vp，来回切时会一跳一跳。
+    const drawerActive: boolean = this.emojiDrawer.shellHeight > 0 ||
+      this.emojiDrawer.activeSlot !== '' || this.drawerClosingToIme ||
+      this.emojiDrawer.closingImeToDrawer;
+    if (this.keyboardH > 0 || drawerActive) {
       // 键盘/抽屉起来时贴住它们，不留安全区（原因见 util/composerChrome 的注释）。
       return COMPOSER_GAP_TIGHT;
     }
@@ -5361,6 +5494,8 @@ export struct ChatPage {
     if (height <= 0) {
       return;
     }
+    this.emojiDrawer.measureComposer(height);
+    this.syncOpenDrawerHeight();
     this.lastComposerBottomGap = this.composerBottomGap();
     const wasMeasured: boolean = this.bottomChromeMeasured;
     this.bottomChromeMeasured = true;
@@ -5467,11 +5602,7 @@ export struct ChatPage {
       const fromIme: boolean = overlap > 1 || this.keyboardH > 0;
       const wasDrawerOpen: boolean = this.emojiDrawer.shellHeight > 0;
       if (fromIme) {
-        if (overlap > this.knownImeH) {
-          this.knownImeH = overlap;
-        } else if (this.keyboardH > this.knownImeH) {
-          this.knownImeH = this.keyboardH;
-        }
+        this.composerViewport.holdImeHeight();
         this.emojiDrawer.closingImeToDrawer = true;
         this.armImeBridgeTimer(Math.max(320, settle + 120));
       } else {
@@ -5660,6 +5791,7 @@ export struct ChatPage {
       showToast(str('compose_markdown_finish_edit'), 1800); return;
     }
     const client = getTdClient();
+    const followSent: () => void = this.captureSendFollow();
     this.withSendLock(async (): Promise<void> => {
       const resolver = new MarkdownMediaResolver(this.getUIContext().getHostContext() as common.UIAbilityContext,
         { isCurrent: (): boolean => this.store === store && this.chatId === chatId && getTdClient() === client });
@@ -5677,7 +5809,7 @@ export struct ChatPage {
         if (this.store === store && this.chatId === chatId) {
           if (this.draft === draft) { this.draft = ''; this.mention.clearPendingNameMentions(); }
           if (this.composer.replyToId === replyId) { this.composer.clearReply(); }
-          this.timeline.atBottom = true;
+          followSent();
         }
       } catch (error) {
         if (!submitted && lease !== null) {
@@ -5697,6 +5829,7 @@ export struct ChatPage {
     if (store === null || !hasPendingMedia(this.pendingMedia)) {
       return;
     }
+    if (this.composerSending) { showToast($r('app.string.sending'), 1200); return; }
     // 搬运在 util/pendingMedia：这里曾经是个 `{ path, isVideo }` 字面量，
     // 把实况导出时算好的封面与旋转后宽高在发送前丢了个干净。
     const items: MediaSendItem[] = toMediaSendItems(this.pendingMedia);
@@ -5713,9 +5846,11 @@ export struct ChatPage {
     if (needsLatestWindow) {
       store.deferOutgoingForLatest();
     }
+    let followToken: number = 0;
     if (!needsLatestWindow) {
       this.timeline.atBottom = true;
       this.timeline.stayAtUnread = false;
+      followToken = this.timeline.armSelfSendFollow();
     }
     this.withSendLock((): Promise<void> => store.sendMedia(items, caption, replyId).then((): void => {
       this.pendingMedia = clearPendingMedia();
@@ -5730,6 +5865,7 @@ export struct ChatPage {
         this.scrollToLatest();
       }
     }).catch((e: TdError): void => {
+      this.timeline.clearSelfSendFollow(followToken);
       logE(`ChatPage.sendMedia failed: ${e.message}`);
       showToast(e instanceof SendPermissionError ? e.message : $r('app.string.cp_photo_send_failed'), 2000);
     }));
@@ -5766,9 +5902,13 @@ export struct ChatPage {
     if (needsLatestWindow) {
       store.deferOutgoingForLatest();
     }
+    let followToken: number = 0;
     if (!needsLatestWindow) {
       this.timeline.atBottom = true;
       this.timeline.stayAtUnread = false;
+      // 发送是显式动作：接下来这条自己发的消息必须被看见，哪怕此刻列表只差几像素
+      // 没贴到底（isAtEnd() 会因此判「不在底部」）。窗口内跟随不再问 atBottom。
+      followToken = this.timeline.armSelfSendFollow();
     }
     // 按名字提及的实体在这里生成：偏移必须相对**实际发出去的那串文本**，
     // 所以用 trim 之后的 text，不是原始草稿。
@@ -5792,6 +5932,7 @@ export struct ChatPage {
         this.scrollToLatest();
       }
     }).catch((e: TdError): void => {
+      this.timeline.clearSelfSendFollow(followToken);
       logE(`ChatPage.doSend failed: ${e.message}`);
       // 提示语说的是"草稿已保留"，那就真的还回去。但用户可能已经开始写下
       // 一条了——那种情况不覆盖他的输入，只报错。
@@ -5823,6 +5964,7 @@ export struct ChatPage {
     const oneTime: boolean = this.replyKeyboard !== null && this.replyKeyboard.oneTime;
     this.replyKeyboardSendingKey = key;
     this.timeline.atBottom = true;
+    const followToken: number = this.timeline.armSelfSendFollow();
     this.timeline.stayAtUnread = false;
     store.sendAsync(btn.text, replyId).then((): void => {
       this.replyKeyboardSendingKey = '';
@@ -5836,6 +5978,7 @@ export struct ChatPage {
         this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
       }
     }).catch((e: TdError): void => {
+      this.timeline.clearSelfSendFollow(followToken);
       this.replyKeyboardSendingKey = '';
       logE(`ChatPage.replyKeyboard send failed: ${e.message}`);
       showToast($r('app.string.send_failed_retry_short'), 1600);
@@ -6322,11 +6465,7 @@ export struct ChatPage {
     const fromIme: boolean = overlap > 1 || this.keyboardH > 0;
     const wasDrawerOpen: boolean = this.emojiDrawer.shellHeight > 0;
     if (fromIme) {
-      if (overlap > this.knownImeH) {
-        this.knownImeH = overlap;
-      } else if (this.keyboardH > this.knownImeH) {
-        this.knownImeH = this.keyboardH;
-      }
+      this.composerViewport.holdImeHeight();
       this.emojiDrawer.closingImeToDrawer = true;
       this.armImeBridgeTimer(Math.max(320, settle + 120));
     } else {
@@ -6577,6 +6716,7 @@ export struct ChatPage {
         if (this.keyboardH > 0) { this.syncTailOnImeFrame(); }
       },
       onEditorBlur: (): void => {
+        if (this.composerFocused) { this.inputSwitch.cancel(); }
         this.composerFocused = false;
       },
       onEditorAreaChange: (area: Area | undefined): void => { this.composerEditorArea = area; },
@@ -6623,18 +6763,21 @@ export struct ChatPage {
         onCustomEmojiPick: (emoji: string, customEmojiId: string): void => {
           if (this.store === null || !this.sendAccess.check('sendMessages')) { return; }
           this.timeline.atBottom = true;
+          this.timeline.armSelfSendFollow();
           this.store.sendCustomEmoji(emoji, customEmojiId);
           this.overlayState.flyStickerGhost('', 0, 0);
         },
         onStickerPick: (sticker: StickerItem, x: number, y: number): void => {
           if (!this.sendAccess.check('sendOtherMessages') || this.store === null) { return; }
           this.timeline.atBottom = true;
+          this.timeline.armSelfSendFollow();
           this.store.sendSticker(sticker.fileId, sticker.width, sticker.height);
           this.overlayState.flyStickerGhost(sticker.thumbPath, x, y);
         },
         onGifPick: (gif: GifItem): void => {
           if (!this.sendAccess.check('sendOtherMessages') || this.store === null) { return; }
           this.timeline.atBottom = true;
+          this.timeline.armSelfSendFollow();
           if (gif.resultId !== '') {
             sendInlineResult(this.chatId, gif.queryId, gif.resultId, 0, true)
               .catch((e: TdError): void => { logE(`ChatPage.sendInlineGif failed: ${e.message}`); });
@@ -6999,9 +7142,10 @@ export struct ChatPage {
       onChecklistSubmit: (title: string, tasks: string[], allowAdd: boolean, allowMark: boolean): Promise<void> => {
         const store = this.store, chatId = this.chatId, replyId = this.composer.replyToId;
         if (store === null || !this.sendAccess.check('sendMessages')) { return Promise.reject(new Error(str('checklist_readonly'))); }
+        const followSent: () => void = this.captureSendFollow();
         return store.sendChecklistAsync(title, tasks, allowAdd, allowMark, replyId).then((): void => {
           if (this.store !== store || this.chatId !== chatId) { return; }
-          this.overlayState.showChecklistSheet = false; this.timeline.atBottom = true;
+          this.overlayState.showChecklistSheet = false; followSent();
           if (this.composer.replyToId === replyId) { this.composer.clearReply(); }
         });
       },
@@ -7012,6 +7156,7 @@ export struct ChatPage {
         this.overlayState.showPollSheet = false;
         if (this.store !== null) {
           this.timeline.atBottom = true;
+          this.timeline.armSelfSendFollow();
           this.store.sendPoll(question, options, isAnonymous, quizMode, correctOptionId);
         }
       },
@@ -7023,6 +7168,7 @@ export struct ChatPage {
         this.overlayState.showContactSheet = false;
         if (this.store !== null) {
           this.timeline.atBottom = true;
+          this.timeline.armSelfSendFollow();
           this.store.sendContact(
             contact.phone, contact.firstName, contact.lastName, contact.userId);
         }
@@ -7034,6 +7180,7 @@ export struct ChatPage {
         if (!this.sendAccess.check('sendVideoNotes')) { return; }
         if (this.store !== null) {
           this.timeline.atBottom = true;
+          this.timeline.armSelfSendFollow();
           this.store.sendVideoNote(path, durationSec, length);
         }
       },
@@ -7120,16 +7267,19 @@ export struct ChatPage {
       if (this.viewerOpen()) {
         this.mediaViewer();
       }
+      // 拖拽悬停提示层。放在根 Stack 最后一个：盖住顶栏与输入栏，自身
+      // hitTestBehavior(None)，不参与命中也不吃点击。
+      DropHoverOverlay({
+        state: this.dropHover,
+        target: this.header.titleTextOf(),
+        dark: this.appDark
+      });
     }
     .width('100%').height('100%')
-    .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
-      if (typeof size.height === 'number' &&
-        (this.keyboardH <= 0 || this.emojiDrawer.viewport <= 0 || size.height > this.emojiDrawer.viewport)) {
-        this.emojiDrawer.measureViewport(size.height);
-      }
-    })
     .allowDrop(CHAT_DROP_TYPES)
     .onDrop((event: DragEvent, extraParams?: string): void => {
+      // 松手：提示立刻收起，接收器在同一帧里开始读暂存文件并直接发出。
+      this.setDropHover(false);
       const store = this.store;
       if (store === null) { event.setResult(DragResult.DRAG_FAILED); return; }
       const client = getTdClient();
@@ -7140,6 +7290,18 @@ export struct ChatPage {
           this.timeline.pageVisible && this.appIsForeground && !this.viewerOpen() && !this.search.mode && !this.selection.active &&
           this.composer.editingId === 0 && !this.recording.isRecording && this.membershipState === 'writable',
         this.header.titleTextOf(), chatId, extraParams);
+    })
+    // 悬停提示：拖拽进入页面就亮出「松手即发送」，离开或松手收起。onDragEnter
+    // 只在组件上已有 onDrop 时才会回调。
+    .onDragEnter((event: DragEvent, extraParams?: string): void => {
+      this.setDropHover(this.dropHoverAllowed(), extraParams, this.dropSendsDirectly(event));
+    })
+    .onDragLeave((): void => {
+      if (this.dropHoverHideTimer >= 0) { return; }
+      this.dropHoverHideTimer = setTimeout((): void => {
+        this.dropHoverHideTimer = -1;
+        this.setDropHover(false);
+      }, 160);
     })
     // 贴纸合集面板挂在页面根 Stack 上：这个节点还没有别的 bindSheet（骰子那张
     // 挂 dock），同一节点上串两个只有最后一个生效。

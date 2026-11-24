@@ -13343,6 +13343,30 @@
     {
       "name": "cl_archive_release",
       "value": "Relâchez pour afficher les archives"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "Déposez ici pour envoyer"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "Destination : %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "Déposez pour insérer dans le message"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "Déposez pour recevoir le contenu"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "Résultat plus ancien"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "Résultat plus récent"
     }
   ]
 }

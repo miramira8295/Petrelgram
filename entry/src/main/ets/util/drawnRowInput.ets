@@ -5,7 +5,7 @@ import { MessageBubbleRenderData } from '../pages/chat/ReusableMessageBubble';
 // entities or media arrays. Conservative on replaced arrays, including selection.
 // Host tests audit these fields against the interfaces when they grow.
 export function sameDrawnRowData(a: MessageBubbleRenderData, b: MessageBubbleRenderData): boolean {
-  return a === b || (a.contentWidth === b.contentWidth && a.isGroup === b.isGroup && a.isChannel === b.isChannel &&
+  return a === b || (a.contentWidth === b.contentWidth && a.splitLayout === b.splitLayout && a.isGroup === b.isGroup && a.isChannel === b.isChannel &&
     a.canReply === b.canReply && a.canReport === b.canReport && a.selectionActive === b.selectionActive &&
     a.selectedMemberIds === b.selectedMemberIds && a.chatId === b.chatId && a.liveSharingId === b.liveSharingId &&
     a.themeBubbleOut === b.themeBubbleOut && a.showUnreadDivider === b.showUnreadDivider && a.dividerIsResume === b.dividerIsResume &&
@@ -32,7 +32,7 @@ export function sameDrawnAlbumInput(a: AlbumGroup, b: AlbumGroup): boolean {
 // Interaction/other-media flags still reach the child, but cannot reshape an
 // album. Include every data input read by media/grid/content layout policies.
 export function sameDrawnAlbumGeometryData(a: MessageBubbleRenderData, b: MessageBubbleRenderData): boolean {
-  return a === b || (a.contentWidth === b.contentWidth && a.isGroup === b.isGroup && a.isChannel === b.isChannel &&
+  return a === b || (a.contentWidth === b.contentWidth && a.splitLayout === b.splitLayout && a.isGroup === b.isGroup && a.isChannel === b.isChannel &&
     a.chatId === b.chatId && a.themeBubbleOut === b.themeBubbleOut && a.selectionActive === b.selectionActive &&
     a.selectedMemberIds === b.selectedMemberIds && a.playSlotKey === b.playSlotKey && a.autoplayMuted === b.autoplayMuted &&
     a.playSlotStartMs === b.playSlotStartMs && a.animationPlaybackFailed === b.animationPlaybackFailed);

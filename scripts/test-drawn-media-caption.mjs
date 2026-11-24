@@ -13,7 +13,7 @@ let rtl = false;
 const ctx = vm.createContext({ ViewV2: class {}, ViewPU: class {},
   DRAWN_RICH_TEXT_ENABLED: true, textMeasureEnvironment: { epoch: 0 },
   drawnTextUsesRtlLayout: () => rtl, COLOR_PRIMARY: 'accent', bubbleTextFor: () => 'body',
-  Color: { Transparent: 0 }, bubbleMaxWidth: (width, gutter) => width - gutter - 32,
+  Color: { Transparent: 0 }, messageBubbleMaxWidth: (width, gutter) => width - gutter - 32,
   BUBBLE_AVATAR_GUTTER_VP: 44, logW() {} });
 vm.runInContext(ts.transpileModule(source + '\nglobalThis.Probe = MessageBubbleText;',
   { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText, ctx);

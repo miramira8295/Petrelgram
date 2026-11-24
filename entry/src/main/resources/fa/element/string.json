@@ -13343,6 +13343,30 @@
     {
       "name": "cl_archive_release",
       "value": "برای نمایش بایگانی رها کنید"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "برای ارسال اینجا رها کنید"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "مقصد: %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "برای درج در کادر پیام رها کنید"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "برای دریافت محتوا رها کنید"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "نتیجهٔ جستجوی قدیمی‌تر"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "نتیجهٔ جستجوی جدیدتر"
     }
   ]
 }

@@ -142,7 +142,7 @@ export async function sendShareDirectly(payload: SharedPayload, host: ShareArriv
       }
     });
   }
-  host.scrollToBottom();
+  if (active()) { host.scrollToBottom(); }
 }
 
 function reportShareError(error: Object): void {
