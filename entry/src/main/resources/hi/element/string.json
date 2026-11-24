@@ -13343,6 +13343,46 @@
     {
       "name": "cl_archive_release",
       "value": "संग्रह दिखाने के लिए छोड़ें"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "भेजने के लिए यहाँ छोड़ें"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "गंतव्य: %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "संदेश फ़ील्ड में डालने के लिए छोड़ें"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "सामग्री प्राप्त करने के लिए छोड़ें"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "पुराना खोज परिणाम"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "नया खोज परिणाम"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "फ़ोटो और कैप्शन"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "केवल फ़ोटो"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "वीडियो और कैप्शन"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "केवल वीडियो"
     }
   ]
 }

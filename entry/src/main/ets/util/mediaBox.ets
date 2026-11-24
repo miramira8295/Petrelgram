@@ -10,6 +10,7 @@
 // column in split view), a field of the message, or the fixed device type,
 // never a per-row measurement.
 
+import { MessageEntry } from '../store/MessageEntry';
 import { deviceInfo } from '@kit.BasicServicesKit';
 
 // 设备类型在进程内不变；折叠手机也按系统报告的 phone 处理，不按窗口宽度猜测。
@@ -58,6 +59,24 @@ export function bubbleMaxWidth(screenW: number,
   const reserved: number = BUBBLE_ROW_SIDE_VP + Math.max(0, avatarGutter) +
     BUBBLE_OPPOSITE_MIN_GAP_VP;
   return Math.max(0, screenW - reserved);
+}
+
+// 不解析正文或遍历实体：有任意富文本、引用、网页卡片就保留原几何。
+// Markdown 在收发边界已转为实体/结构化内容，不能只看 contentType === 'text'。
+export function supportsSplitBubbleWidth(msg: MessageEntry, splitLayout: boolean): boolean {
+  return splitLayout && (msg.contentType === 'text' || msg.contentType === 'photo' || msg.contentType === 'video') &&
+    msg.textEntities.length === 0 && msg.richBlocks === undefined &&
+    msg.replyToMessageId === 0 && msg.replyText === '' && msg.replySenderName === '' &&
+    msg.linkUrl === '' && msg.translatedText === '';
+}
+
+// 只收窄分栏纯文本。其余类型继续使用共享旧公式，引用/代码块也不局部挤窄。
+export function messageBubbleMaxWidth(screenW: number, avatarGutter: number,
+  msg: MessageEntry, splitLayout: boolean = false): number {
+  if (msg.contentType !== 'text' || !supportsSplitBubbleWidth(msg, splitLayout)) {
+    return bubbleMaxWidth(screenW, avatarGutter);
+  }
+  return Math.max(0, Math.min(600, screenW - 80 - Math.max(0, avatarGutter)));
 }
 
 export function inlineMaxWidth(screenW: number,

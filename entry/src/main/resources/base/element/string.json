@@ -12045,6 +12045,18 @@
       "value": "移除说明文字"
     },
     {
+      "name": "drop_release_send",
+      "value": "拖拽到此处，松手即发送"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "目标：%1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "松手填入输入框"
+    },
+    {
       "name": "share_to",
       "value": "分享到"
     },
@@ -13639,6 +13651,34 @@
     {
       "name": "cl_archive_release",
       "value": "松开显示归档会话"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "松手接收内容"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "较早的搜索结果"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "较新的搜索结果"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "图片＋文字"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "仅图片"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "视频＋文字"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "仅视频"
     }
   ]
 }

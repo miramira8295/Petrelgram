@@ -1318,10 +1318,17 @@ export struct DrawnMessageRow {
     .accessibilityLevel(preview ? 'no-hide-descendants' : 'no')
     .onTouch((e: TouchEvent): void => { this.touch(e); })
     .onClick((e: ClickEvent): void => { this.click(e); })
+    // The menu owns the long-press preview/mask. Do not let native pre-drag
+    // lifting tear down the same overlay when a small movement ends on Up.
+    .dragPreviewOptions({}, { isLiftingDisabled: true })
     .onDragStart((event: DragEvent): DragItemInfo => {
       // Reaction holds are handled before the system's 500ms drag recognizer.
       // Never export the message when the initial target was a reaction chip.
-      if (!this.touchOnBody || this.claimed) { return {}; }
+      if (preview || !this.canDragMessage() || !this.touchOnBody || this.claimed ||
+        !this.dragGesture.canStartDrag() || this.touchRowId !== this.rowGroup.head.rowId ||
+        this.touchChatId !== this.rowData.chatId || tableScrollTouched()) {
+        event.setResult(DragResult.DRAG_CANCELED); return {};
+      }
       this.dragGesture.claim(); this.draggingMessage = true; this.claimed = true;
       this.menuShown = false; this.foreground.press(null);
       return configureMessageDrag(event, this.rowData.chatId, this.rowGroup.head.id, messageDragType(this.rowGroup.head.contentType));

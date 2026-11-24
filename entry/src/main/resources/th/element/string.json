@@ -13343,6 +13343,46 @@
     {
       "name": "cl_archive_release",
       "value": "ปล่อยเพื่อแสดงแชทที่เก็บถาวร"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "ปล่อยที่นี่เพื่อส่ง"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "ปลายทาง: %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "ปล่อยเพื่อแทรกในช่องข้อความ"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "ปล่อยเพื่อรับเนื้อหา"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "ผลการค้นหาที่เก่ากว่า"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "ผลการค้นหาที่ใหม่กว่า"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "รูปภาพพร้อมคำบรรยาย"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "เฉพาะรูปภาพ"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "วิดีโอพร้อมคำบรรยาย"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "เฉพาะวิดีโอ"
     }
   ]
 }

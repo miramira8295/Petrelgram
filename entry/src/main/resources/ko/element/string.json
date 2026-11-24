@@ -13343,6 +13343,46 @@
     {
       "name": "cl_archive_release",
       "value": "놓아서 보관함 표시"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "여기에 놓아 보내기"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "대상: %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "놓아서 메시지 입력란에 삽입"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "놓아서 콘텐츠 받기"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "이전 검색 결과"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "최신 검색 결과"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "사진 + 설명"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "사진만"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "동영상 + 설명"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "동영상만"
     }
   ]
 }

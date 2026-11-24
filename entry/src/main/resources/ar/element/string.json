@@ -13343,6 +13343,46 @@
     {
       "name": "cl_archive_release",
       "value": "أفلت لإظهار الأرشيف"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "أفلت هنا للإرسال"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "الوجهة: %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "أفلت للإدراج في حقل الرسالة"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "أفلت لاستقبال المحتوى"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "نتيجة بحث أقدم"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "نتيجة بحث أحدث"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "صورة مع تعليق"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "الصورة فقط"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "فيديو مع تعليق"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "الفيديو فقط"
     }
   ]
 }

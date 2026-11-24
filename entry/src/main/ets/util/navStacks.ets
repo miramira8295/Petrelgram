@@ -27,6 +27,10 @@ export interface NavPathInfoLike {
 export interface NavStackLike {
   clear(animated?: boolean): void;
   pushPath(info: NavPathInfoLike): void;
+  // 把栈顶那层换成另一页（不 clear 再 push）。分栏右栏切设置子页时用它：
+  // clear 之后总有一帧右栏是空的（还去重建 navBar），肉眼就是"点了要等一下"。
+  // 真栈的 replacePath(info, animated?) 在结构上满足这个声明。
+  replacePath(info: NavPathInfoLike, animated?: boolean): void;
   // 出栈一层。返回值声明成 void 而不是 NavPathInfoLike：真栈的
   // pop(animated?): NavPathInfo | undefined 在结构上仍然满足 void 返回
   //（返回值更具体是允许的），而 NavPathInfo.param 是 unknown、和

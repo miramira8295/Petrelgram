@@ -25,6 +25,7 @@ import { resumeBackgroundCachesOnce } from '../services/BackgroundCache';
 import { DOWNLOAD_CENTER_DEST, KEY_PENDING_DOWNLOAD_CENTER } from '../util/downloadCenterWant';
 import { navigateToSetting } from '../util/settingsNav';
 import { KEY_ARCHIVE_PANE_OPEN } from '../util/profileNav';
+import { closeLeftPane } from '../util/leftPaneState';
 import { TdObject } from '../tdkit/TdTypes';
 import { logE, logW } from '../util/log';
 import { StartupSplash } from './common/StartupSplash';
@@ -392,6 +393,11 @@ struct Index {
       return true;
     }
     if (closeForumDrawer()) {
+      return true;
+    }
+    // 左栏三视图（资料/联系人/设置）是页内态、不在 Navigation 栈里，所以必须
+    // 先于归档与文件夹处理；一次返回只收一层（左栏视图 → 归档 → 文件夹 → 退后台）。
+    if (closeLeftPane()) {
       return true;
     }
     if (AppStorage.get<boolean>(KEY_ARCHIVE_PANE_OPEN)) {

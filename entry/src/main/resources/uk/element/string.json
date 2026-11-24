@@ -13343,6 +13343,46 @@
     {
       "name": "cl_archive_release",
       "value": "Відпустіть, щоб показати архів"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "Відпустіть тут, щоб надіслати"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "Куди: %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "Відпустіть, щоб вставити в поле повідомлення"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "Відпустіть, щоб отримати вміст"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "Старіший результат пошуку"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "Новіший результат пошуку"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "Фото з підписом"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "Лише фото"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "Відео з підписом"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "Лише відео"
     }
   ]
 }

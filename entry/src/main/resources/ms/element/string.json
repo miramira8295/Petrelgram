@@ -13343,6 +13343,46 @@
     {
       "name": "cl_archive_release",
       "value": "Lepaskan untuk menunjukkan arkib"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "Lepaskan di sini untuk menghantar"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "Destinasi: %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "Lepaskan untuk memasukkan ke medan mesej"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "Lepaskan untuk menerima kandungan"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "Hasil carian lebih lama"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "Hasil carian lebih baharu"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "Foto + kapsyen"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "Foto sahaja"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "Video + kapsyen"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "Video sahaja"
     }
   ]
 }

@@ -14,7 +14,7 @@ import { DrawnBubbleChrome, DrawnChromeLayouts, placeChromeComments, placeChrome
 import { placeDrawnFooter } from '../../util/drawnFooterPlacement';
 import { BubbleCornerCache } from '../../util/messageBubblePresentation';
 import { cornerPx, senderLeadInset } from '../../util/bubbleCornerInset';
-import { mediaThumbWidth, inlineMaxWidth, BUBBLE_AVATAR_GUTTER_VP } from '../../util/mediaBox';
+import { mediaThumbWidth, inlineMaxWidth, supportsSplitBubbleWidth, BUBBLE_AVATAR_GUTTER_VP } from '../../util/mediaBox';
 import { DrawnRichTextLayout, DrawnRichTextLayouts } from './DrawnRichTextLayout';
 import { DrawnSenderHeaderCache } from './DrawnSenderHeader';
 import { DrawnReplyQuoteCache } from './DrawnReplyQuote';
@@ -101,14 +101,15 @@ export class DrawnMediaLayouts implements DrawnRowLayoutEngine {
     this.units.prepare(ui, style.textEnvironment);
     const d = this.units.density;
     const playing = !this.single && drawnLiveSurface(group, data);
-    const key = `${d}:${this.units.fp2px(11)}:${this.units.fp2px(style.fontSize)}:${data.contentWidth}:${data.isGroup}:${data.isChannel}:${data.themeBubbleOut}:` +
+    const key = `${d}:${this.units.fp2px(11)}:${this.units.fp2px(style.fontSize)}:${data.contentWidth}:${data.splitLayout === true}:${data.isGroup}:${data.isChannel}:${data.themeBubbleOut}:` +
       `${data.chatId}:${data.selectionActive}:${playing ? data.playSlotKey : ''}:${playing && data.autoplayMuted}:` +
       `${playing ? data.playSlotStartMs : 0}:${style.radius}:${style.fontSize}:${style.environment}:${style.textEnvironment}:${style.role}`;
     if (this.cached !== null && this.cachedUi === ui && this.cachedGroup === group && this.cachedSelection === data.selectedMemberIds &&
       this.cachedTranslation === (style.translationStatus ?? null) && this.cachedReplace === (style.replaceTranslation === true) && this.cachedKey === key && this.cachedViews === style.views && this.cachedMathRevision === style.mathRevision && this.cachedExpanded === style.expandedBlocks && (this.cachedSpoilers === true) === (style.spoilersRevealed === true)) { return this.cached; }
     const avatarSpace = data.isGroup && !m.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0;
-    const maxWidth = this.single ? inlineMaxWidth(data.contentWidth, avatarSpace)
-      : mediaThumbWidth(data.contentWidth, avatarSpace);
+    // 仅分栏且无富文本/引用的单图采用相册尺寸规则；其他单图保留旧宽度。
+    const maxWidth = this.single && !supportsSplitBubbleWidth(m, data.splitLayout === true)
+      ? inlineMaxWidth(data.contentWidth, avatarSpace) : mediaThumbWidth(data.contentWidth, avatarSpace);
     let gridWidth = maxWidth;
     if (!(gridWidth > 20) || !(d > 0)) { this.failureReason = DrawnRouteReason.InvalidGeometry; return null; }
     const captionText = this.single ? m.text : group.caption;

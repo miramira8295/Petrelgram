@@ -35,7 +35,7 @@ import { BubbleGlassGeometry } from './BubbleGlassGeometry';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { rememberLabelWidth, recallLabelWidth } from '../../util/labelWidthMemory';
 import { SenderRoleTag } from './SenderRoleTag';
-import { BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth, hitSenderAvatarColumn } from '../../util/mediaBox';
+import { BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, messageBubbleMaxWidth, hitSenderAvatarColumn } from '../../util/mediaBox';
 import { formatClockTime } from '../../util/formatTime';
 import { isUnformattedPlainText, messageUrls, parseFormattedText } from '../../util/richText';
 import { inlineButtonKey, inlineButtonRowKey } from '../../util/inlineButtonKey';
@@ -395,7 +395,7 @@ export struct MessageBubbleShell {
 
   private bubbleMaxW(): number {
     // 只有群聊来信才有头像位；发出的消息和私聊来信按 0 算，能宽出 44vp。
-    return bubbleMaxWidth(this.data.contentWidth, this.avatarReserve());
+    return messageBubbleMaxWidth(this.data.contentWidth, this.avatarReserve(), this.msg, this.data.splitLayout === true);
   }
 
   private inlineMaxW(): number {
@@ -491,6 +491,8 @@ export struct MessageBubbleShell {
     if (event.type === TouchType.Down && touch !== undefined) {
       this.dragGesture.begin(touch.windowX, touch.windowY, now);
       this.recordMenuOffset(touch.x, Number(event.target.area.width));
+    } else if (event.type === TouchType.Cancel || event.touches.length > 1) {
+      this.dragGesture.end(now, true);
     } else if (event.type === TouchType.Move && touch !== undefined) {
       this.dragGesture.move(touch.windowX, touch.windowY, now);
     } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
@@ -2012,7 +2014,13 @@ export struct MessageBubbleShell {
       .alignItems(VerticalAlign.Bottom)
       .padding(this.avatarGutterPadding())
       .draggable(this.canDragMessage())
+      // Keep native pre-drag lifting from competing with the menu preview/mask.
+      .dragPreviewOptions({}, { isLiftingDisabled: true })
       .onDragStart((event: DragEvent): DragItemInfo => {
+        if (!this.canDragMessage() || !this.dragGesture.canStartDrag() ||
+          this.context.gestureClaimed || tableScrollTouched()) {
+          event.setResult(DragResult.DRAG_CANCELED); return {};
+        }
         this.dragGesture.claim();
         this.draggingMessage = true;
         this.context.gestureClaimed = true;
@@ -2103,6 +2111,9 @@ export struct MessageBubbleShell {
               this.msg.isOutgoing, this.group.showAvatar)) {
               return;
             }
+            // A draggable body opens its menu on release, like DrawnMessageRow.
+            // Opening here at 500ms races the still-active native drag recognizer.
+            if (this.canDragMessage() && this.dragGesture.prefersDrag(Date.now())) { return; }
             this.recordRowMenuOffset(localX);
             this.onLongPress(event);
           })

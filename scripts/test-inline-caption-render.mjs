@@ -30,7 +30,7 @@ function setup(compiledSource=compiled){
   makeBuilderParameterProxy:(_name,fields)=>new Proxy({},{get:(_target,key)=>fields[key]?.()}),
   chatEnv:{msgTextSize:16,appearanceEpoch:1,linkNavBusy:'',translateReplaceOriginal:false,chatEffects:false,messageEffects:false,powerSaving:false},
   formatClockTime:()=> '09:05',viewsReserve:v=>v?`${v} `:'',timeLayerMinWidth:(max,v)=>Math.min(max,Math.max(v.forwardShown?v.forwardW:0,v.senderShown?v.senderW:0,v.commentsShown?v.commentsW:0)),
-  bubbleMaxWidth:(w,gutter)=>w-gutter-40,BUBBLE_AVATAR_GUTTER_VP:44,
+  messageBubbleMaxWidth:(w,gutter)=>w-gutter-40,BUBBLE_AVATAR_GUTTER_VP:44,
   bubbleTextFor:out=>out?'out-color':'in-color',COLOR_PRIMARY:'accent',
   COLOR_ICON_SECONDARY:'icon',COLOR_TEXT_SECONDARY:'secondary',
   animationDurationFor:(_on,_scroll,d)=>d,persistentAnimationDurationFor:(_a,_b,_c,d)=>d,scrollActiveNow:()=>false,

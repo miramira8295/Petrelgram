@@ -72,7 +72,9 @@ function visit(n){
 visit(mainAst);assert.equal(nativeTaps.length,2,'phone and split bars both bind native taps');
 storage.set('dockHapticOn',true);storage.set('folderHapticOn',false);
 for(const cb of nativeTaps){
- run('globalThis.tap='+cb.getText(mainAst)+';');
+ ctx.logicalTabIndex=(index,show)=>show?index:(index===0?0:index+1);
+ ctx.tapHost={showContactsTab:true,select() {}};
+ run('globalThis.tap=(function(){return '+cb.getText(mainAst)+';}).call(tapHost);');
  for(const tab of [2,0,3,0]){now+=100;const n=starts.length;ctx.tap(tab);assert.equal(starts.length,n+1);assert.equal(starts.at(-1).effect.count,2);}
  storage.set('dockHapticOn',false);now+=100;const n=starts.length;ctx.tap(0);assert.equal(starts.length,n);storage.set('dockHapticOn',true);
 }

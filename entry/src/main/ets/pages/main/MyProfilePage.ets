@@ -1,3 +1,4 @@
+import { navigateToSettingInChat } from '../../util/settingsNav';
 import { showToast } from '../../util/toast';
 import { showProfileStoryActions } from '../../services/ProfileStoryActions';
 import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
@@ -153,6 +154,8 @@ export struct MyProfilePage {
   //   2. 不写页签级的 PROFILE_NAV_BAR_VISIBLE_KEY（理由见 onNavBarStateChange）。
   //   3. 不在这里 flushPendingNavs：待办跳转属于页签壳。
   @Prop paneMode: boolean = false;
+  // 左栏壳实测的内容列宽度：三宫格、限宽都按它算（页签壳下等于 readableContentWidth）。
+  @State private profileContentWidth: number = 0;
   onOpenSettings: () => void = (): void => {};
   @StorageProp('topSafeHeight') topSafe: number = 0;
   // 玻璃按钮的深色染色（只影响材质不可用时的降级路径）。
@@ -403,11 +406,9 @@ export struct MyProfilePage {
   // 里刚注册过、此刻必然在树上，所以那一支不该发生；仍然接住，让调用方把连点锁
   // 解掉并给用户一条提示。
   private pushEditor(): boolean {
-    // 左栏壳优先用自己这条栈：全局注册表里那条属于页签壳，推进去的东西在
-    // 左栏里永远看不见（多栏下页签壳可能还在保活、也存在）。
-    const stack: NavStackLike | undefined = this.paneMode
-      ? this.profileStack as NavStackLike
-      : stackOf('profile');
+    // 左栏壳走右栏那条栈（只有一层，replacePath 不播推栈动画）；页签壳推自己的栈。
+    if (this.paneMode) { return navigateToSettingInChat(EDITOR_DEST_NAME); }
+    const stack: NavStackLike | undefined = stackOf('profile');
     if (stack === undefined) {
       return false;
     }
@@ -911,7 +912,8 @@ export struct MyProfilePage {
   private storyCell(): number {
     // 三宫格铺满的是**内容列**，不是窗口。限宽之后仍拿 screenW 去除，格子会比
     // 内容列宽出一截、右边一列被裁掉。
-    return Math.max(0, (readableContentWidth(this.screenW) - this.pageMargin() * 2 - 2) / 3);
+    return Math.max(0, (Math.min(readableContentWidth(this.screenW),
+      this.profileContentWidth > 0 ? this.profileContentWidth : this.screenW) - this.pageMargin() * 2 - 2) / 3);
   }
 
   private openProfileStory(item: StoryItem, snapshotIds?: number[]): void {
@@ -1476,7 +1478,8 @@ export struct MyProfilePage {
   // 收起态照片顶边距页头容器上沿的留白。整块比原来上移 AVATAR_TOP_LIFT，
   // 所以起步位置比照搬 ArkGram 时高一点点，往上走的行程也短一点点。
   private avatarTopPad(): number {
-    return this.topSafe + 8 - AVATAR_TOP_LIFT;
+    // 左栏壳里页面不从状态栏下沿开始（与页签壳是两种几何），所以不让状态栏那一条。
+    return (this.paneMode ? 0 : this.topSafe) + 8 - AVATAR_TOP_LIFT;
   }
 
   private avatarTopInset(): number {
@@ -2408,13 +2411,15 @@ export struct MyProfilePage {
       // 头像形变期间整片糊带关掉——此时屏幕上半被一张大图占满，糊它只是白付一次全屏模糊。
       .attributeModifier(this.edgeBlur.bind(this.avatarMorphing() ? 0 : edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), this.profileViewH, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
       .onAreaChange((_old: Area, area: Area): void => {
+        // 同一次回调既喂内容列限宽（三宫格），也喂下拉放大头像的展开宽度。
+        const w: number = Number(area.width);
+        if (w > 0) {
+          if (Math.abs(w - this.profileContentWidth) > 0.5) { this.profileContentWidth = w; }
+          if (Math.abs(w - this.avatarAvailW) > 0.5) { this.avatarAvailW = w; }
+        }
         const h: number = Number(area.height);
         if (h > 0 && Math.abs(h - this.profileViewH) > 0.5) {
           this.profileViewH = h;
-        }
-        const w: number = Number(area.width);
-        if (w > 0 && Math.abs(w - this.avatarAvailW) > 0.5) {
-          this.avatarAvailW = w;
         }
       })
       // 不裁剪，头像块才能穿到标题栏底下——渐变模糊模糊的正是这部分。

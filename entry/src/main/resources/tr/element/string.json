@@ -13343,6 +13343,46 @@
     {
       "name": "cl_archive_release",
       "value": "Arşivi göstermek için bırakın"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "Göndermek için buraya bırakın"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "Hedef: %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "Mesaj alanına eklemek için bırakın"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "İçeriği almak için bırakın"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "Daha eski arama sonucu"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "Daha yeni arama sonucu"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "Fotoğraf ve açıklama"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "Yalnızca fotoğraf"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "Video ve açıklama"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "Yalnızca video"
     }
   ]
 }

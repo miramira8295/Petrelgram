@@ -49,6 +49,9 @@ export struct ForwardSheet {
   sourceChatId: number = 0;
   threadRootId: number = 0;
   @Prop canRemoveCaption: boolean = false;
+  // Media viewer passes the user's menu choice. TDLib requires a copy to
+  // remove captions; other forwarding entry points keep their defaults.
+  @Prop defaultRemoveCaption: boolean = false;
   // 页面顶部标题栏 + 横幅的高度（vp）。标题栏是 HdsNavDestination 的 titleBar，画在
   // 内容区之上；本面板在内容区里盖不住它，只能把顶边让到它下面
   // （2026-09-14 用户截图：面板顶部压在标题栏和置顶条底下）。
@@ -135,6 +138,8 @@ export struct ForwardSheet {
   }
 
   aboutToAppear(): void {
+    this.removeCaption = this.defaultRemoveCaption && this.canRemoveCaption;
+    this.sendCopy = this.removeCaption;
     this.startTargetFilter();
     this.unsubFolders = getFolderStore().subscribe((folders: FolderInfo[]): void => {
       this.folders = folders;

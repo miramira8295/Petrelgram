@@ -5,10 +5,11 @@ export interface ComposerInputSwitchHost {
   setEmoji: (open: boolean) => void;
   prepareEditor: () => void;
   focusEditor: () => void;
+  keyboardVisible?: () => boolean;
 }
 
 export interface ComposerSwitchClock {
-  schedule: (callback: () => void) => number;
+  schedule: (callback: () => void, delayMs?: number) => number;
   cancel: (id: number) => void;
 }
 
@@ -22,7 +23,7 @@ export class ComposerInputSwitch {
 
   constructor(clock?: ComposerSwitchClock) {
     this.clock = clock ?? {
-      schedule: (callback: () => void): number => setTimeout(callback, 0),
+      schedule: (callback: () => void, delayMs: number = 0): number => setTimeout(callback, delayMs),
       cancel: (id: number): void => { clearTimeout(id); }
     };
   }
@@ -53,14 +54,31 @@ export class ComposerInputSwitch {
     const contextKey = host.contextKey();
     const generation = ++this.generation;
     this.keyboardPending = true;
+    this.requestFocus(host, contextKey, generation, false);
+  }
+
+  private requestFocus(host: ComposerInputSwitchHost, contextKey: number,
+    generation: number, retry: boolean): void {
     this.timer = this.clock.schedule((): void => {
       if (generation !== this.generation) { return; }
       this.timer = -1;
-      this.keyboardPending = false;
-      if (host === this.host && host.active() && contextKey === host.contextKey() && !host.emojiOpen()) {
-        host.focusEditor();
+      if (host !== this.host || !host.active() || contextKey !== host.contextKey() || host.emojiOpen()) {
+        this.keyboardPending = false;
+        return;
       }
-    });
+      if (retry && host.keyboardVisible?.() === true) { this.keyboardPending = false; return; }
+      try { host.focusEditor(); } catch (_) {
+        // The newly enabled editor may not be on the native tree yet.
+      }
+      if (generation !== this.generation) { return; }
+      if (!retry && host.keyboardVisible !== undefined) {
+        // One bounded retry; cancel()/dispose() own both attempts, including
+        // after the initial request has run. Never leave page-local raw timers.
+        this.requestFocus(host, contextKey, generation, true);
+      } else {
+        this.keyboardPending = false;
+      }
+    }, retry ? 120 : 0);
   }
 
   cancel(): void {

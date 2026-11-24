@@ -35,7 +35,7 @@ import { DrawnTextFooterCache, sameDrawnFooterGeometry } from './DrawnTextFooter
 import { DrawnBubbleChrome, DrawnChromeLayouts, placeChromeComments, placeChromeReactions } from './DrawnBubbleChrome';
 import { BubbleCornerCache } from '../../util/messageBubblePresentation';
 import { cornerPx } from '../../util/bubbleCornerInset';
-import { BUBBLE_AVATAR_GUTTER_VP, bubbleMaxWidth } from '../../util/mediaBox';
+import { BUBBLE_AVATAR_GUTTER_VP, messageBubbleMaxWidth } from '../../util/mediaBox';
 import { drawnTailGutter } from '../../util/drawnPlainTextPolicy';
 import { placeDrawnFooter } from '../../util/drawnFooterPlacement';
 import { formatClockTime } from '../../util/formatTime';
@@ -104,7 +104,7 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
     this.failureReason = DrawnRouteReason.Drawn;
     this.units.prepare(ui, style.textEnvironment);
     const m = group.head, d = this.units.density;
-    const geometry = `${d}:${data.contentWidth}:${data.isGroup}:${data.isChannel}:${data.themeBubbleOut}:${data.chatId}:${data.liveSharingId}:` +
+    const geometry = `${d}:${data.contentWidth}:${data.splitLayout === true}:${data.isGroup}:${data.isChannel}:${data.themeBubbleOut}:${data.chatId}:${data.liveSharingId}:` +
       `${style.radius}:${style.fontSize}:${style.environment}:${style.textEnvironment}:${style.role}:` +
       `${systemFontWeightScale()}`;
     if (this.current !== null && this.cachedUi === ui && this.cachedGroup === group &&
@@ -116,7 +116,7 @@ export class DrawnTextLayouts implements DrawnRowLayoutEngine {
       return this.current;
     }
     const avatarSpace = data.isGroup && !m.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0;
-    const maxPx = Math.floor((bubbleMaxWidth(data.contentWidth, avatarSpace) - 16) * d);
+    const maxPx = Math.floor((messageBubbleMaxWidth(data.contentWidth, avatarSpace, m, data.splitLayout === true) - 16) * d);
     if (!(d > 0) || !(maxPx > 0)) { this.failureReason = DrawnRouteReason.InvalidGeometry; return null; }
     let structuredSource: DrawnRichSource | undefined = undefined;
     if (m.contentType === 'richMessage') {

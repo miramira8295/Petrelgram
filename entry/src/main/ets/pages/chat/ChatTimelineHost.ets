@@ -454,6 +454,7 @@ export struct ChatTimelineHost {
         this.session.initialTimelineMasked ? 'loading' : this.session.timelineSnapshot.messageLoadState
       )) {
         InitialLoadingHint({
+          splitLayout: this.rowPageInputs.splitLayout === true,
           immediate: this.session.timelineSnapshot.messageLoadState === 'loading',
           isGroup: this.session.timelineSnapshot.isGroup,
           isChannel: this.session.timelineSnapshot.isChannel,

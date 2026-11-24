@@ -13343,6 +13343,46 @@
     {
       "name": "cl_archive_release",
       "value": "Solte para mostrar o arquivo"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "Solte aqui para enviar"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "Destino: %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "Solte para inserir na mensagem"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "Solte para receber conteúdo"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "Resultado mais antigo"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "Resultado mais recente"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "Foto com legenda"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "Somente foto"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "Vídeo com legenda"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "Somente vídeo"
     }
   ]
 }

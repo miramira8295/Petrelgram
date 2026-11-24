@@ -17,6 +17,8 @@ import { stackOf } from '../../util/navStacks';
 import { restoreViewerSystemBars } from '../../util/systemBarsWindow';
 import { str } from '../../util/strings';
 import { logE, logI } from '../../util/log';
+import { ViewerForwardSource } from '../chat/ViewerForwardSession';
+import { dismissTopSheet } from '../../util/sheetDismissStack';
 
 @Builder
 export function DownloadPreviewPageBuilder(): void {
@@ -131,6 +133,15 @@ export struct DownloadPreviewPage {
     return it !== null && it.chatId !== 0 && it.messageId !== 0;
   }
 
+  private forwardSource(viewerId: number): ViewerForwardSource | null {
+    const index: number = viewerIndexOf(viewerId);
+    const item: DownloadCenterItem | undefined = this.items[index];
+    if (item === undefined || item.chatId === 0 || item.messageId <= 0) { return null; }
+    return { chatId: item.chatId, messageId: item.messageId, threadRootId: 0,
+      // Download records omit captions; the source message can still have one.
+      canRemoveCaption: true };
+  }
+
   private showInChat(): void {
     const it: DownloadCenterItem | null = this.current();
     if (it === null || it.chatId === 0 || it.messageId === 0) {
@@ -165,6 +176,7 @@ export struct DownloadPreviewPage {
             chatTitle: '',
             nowSec: Math.floor(Date.now() / 1000),
             downloadsMode: true,
+            resolveForwardSource: (viewerId: number): ViewerForwardSource | null => this.forwardSource(viewerId),
             canShowInChat: this.canShowInChat(),
             onRequestClose: (): void => { this.close(); },
             onSaveMedia: (): void => { this.saveCurrent(false); },
@@ -178,6 +190,7 @@ export struct DownloadPreviewPage {
     }
     .hideTitleBar(true)
     .onBackPressed((): boolean => {
+      if (dismissTopSheet()) { return true; }
       if (collapseFloatingVideo()) {
         return true;
       }

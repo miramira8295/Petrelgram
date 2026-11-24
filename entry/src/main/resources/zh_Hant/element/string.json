@@ -13347,6 +13347,46 @@
     {
       "name": "cl_archive_release",
       "value": "放開顯示封存對話"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "拖曳到此處，放開即傳送"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "目標：%1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "放開填入輸入框"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "放開接收內容"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "較早的搜尋結果"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "較新的搜尋結果"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "圖片＋文字"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "僅圖片"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "影片＋文字"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "僅影片"
     }
   ]
 }

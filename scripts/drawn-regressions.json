@@ -141,14 +141,22 @@
   "test-navigation-haptics.mjs",
   "test-dock-visibility.mjs",
   "test-viewer-window-rotation.mjs",
+  "test-viewer-forward.mjs",
   "test-root-back-navigation.mjs",
   "test-remote-message-delete.mjs",
   "test-channel-direct-messages.mjs",
   "test-message-sender-navigation.mjs",
   "test-video-stream-seek.mjs",
   "test-drawn-menu-preview.mjs",
+  "test-menu-drag-ownership.mjs",
   "test-message-link-scope.mjs",
   "test-media-open-intent.mjs",
   "test-shatter-frame-budget.mjs",
-  "test-chat-chrome-material.mjs"
+  "test-chat-chrome-material.mjs",
+  "test-drop-direct-send.mjs",
+  "test-left-pane-routing.mjs",
+  "test-bottom-follow-geometry.mjs",
+  "test-composer-window-follow.mjs",
+  "test-pr51-search-media.mjs",
+  "test-split-bubble-width.mjs"
 ]

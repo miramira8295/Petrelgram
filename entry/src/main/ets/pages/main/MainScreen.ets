@@ -34,6 +34,7 @@ import {
   SettingsPage, SETTINGS_NAV_BAR_VISIBLE_KEY, SETTINGS_NAV_BAR_WIDTH_KEY
 } from './SettingsPage';
 import { MyProfilePage, PROFILE_NAV_BAR_VISIBLE_KEY } from './MyProfilePage';
+import { KEY_LEFT_PANE_VIEW, LEFT_PANE_CHATS, LEFT_PANE_CONTACTS, LEFT_PANE_PROFILE, LEFT_PANE_SETTINGS, closeLeftPane, showLeftPane } from '../../util/leftPaneState';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
   COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TAB_UNSELECTED, COLOR_TEXT_PRIMARY, darkResourceMode
@@ -163,6 +164,9 @@ export struct MainScreen {
   // 同样会翻 false，而那正是要的：单栏下编辑页是整页替换、铺满整屏。
   // 见 PROFILE_NAV_BAR_VISIBLE_KEY。
   @StorageProp(PROFILE_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private profileNavBarVisible: boolean = false;
+  // 分栏时左栏铺的是哪个视图（见 util/leftPaneState）：'chats' 表示没盖。
+  // 这三格（资料/联系人/设置）都不再是页签，选中态要跟着它走，而不是只跟 tab。
+  @StorageProp(KEY_LEFT_PANE_VIEW) private leftPaneView: string = LEFT_PANE_CHATS;
 
   @State private dockShown: boolean = false;
   @State private dockMounted: boolean = false;
@@ -369,6 +373,7 @@ export struct MainScreen {
   }
 
   aboutToDisappear(): void {
+    closeLeftPane();
     this.drawnWarmup.cancel();
     this.dockActive = false;
     this.syncDock();
@@ -396,7 +401,91 @@ export struct MainScreen {
     }
   }
 
+  // 第 4 格的选中态：统一走 dockSelected，分栏资料铺在左栏时也点亮它。
+  private profileSlotSelected(): boolean {
+    return this.dockSelected(3);
+  }
+
+  // 胶囊某一格是否选中（图标主色 + 弹跳 + 无障碍里的「已选中」）。
+  // 分栏下四个格都不是页签：tab 恒为 0（聊天页签不能卸载，否则聊天栈没了），
+  // 直接比 tab 会让「聊天」永远亮着（用户 2026-11-24 报的第 4 个问题）。
+  // 所以分栏时按左栏当前铺着哪个视图判，其余情况仍跟 tab 走。
+  private dockSelected(index: number): boolean {
+    if (this.wallpaperSplit() && this.tab === 0) {
+      if (index === 0) {
+        return this.leftPaneView === LEFT_PANE_CHATS;
+      }
+      if (index === 1) {
+        return this.leftPaneView === LEFT_PANE_CONTACTS;
+      }
+      if (index === 2) {
+        return this.leftPaneView === LEFT_PANE_SETTINGS;
+      }
+      return this.leftPaneView === LEFT_PANE_PROFILE;
+    }
+    return this.tab === index;
+  }
+
+  // 分栏下左栏三视图都不是页签：它们铺在左栏、右栏聊天原样留着，主容器根本
+  // 不该切到对应的 TabContent。所以胶囊的选中下标单独推导——左栏铺着哪个视图
+  // 就点亮哪一格，其余时候跟 tab 走。切主容器会把聊天页签卸载重建，聊天栈就没了。
+  private paneViewFor(logical: number): string {
+    if (logical === 1) {
+      return LEFT_PANE_CONTACTS;
+    }
+    if (logical === 2) {
+      return LEFT_PANE_SETTINGS;
+    }
+    return LEFT_PANE_PROFILE;
+  }
+
+  private railIndex(): number {
+    let logical: number = this.tab;
+    if (!this.wallpaperSplit() || this.tab !== 0) { return physicalTabIndex(logical, this.showContactsTab); }
+    if (this.leftPaneView === LEFT_PANE_PROFILE) {
+      logical = 3;
+    } else if (this.leftPaneView === LEFT_PANE_CONTACTS) {
+      logical = 1;
+    } else if (this.leftPaneView === LEFT_PANE_SETTINGS) {
+      logical = 2;
+    }
+    return physicalTabIndex(logical, this.showContactsTab);
+  }
+
+  // 分栏下把某一格（1 联系人 / 2 设置 / 3 资料）铺进左栏，右栏原样留着。
+  // **右栏是全局唯一的一份内容**（用户 2026-11-24 报的第 2 个问题）：它永远只有
+  // 会话页签那一条栈，切左栏视图只换左栏，绝不换右栏、也不切页签。之前点资料格
+  // 会整页跳到「个人资料」页签（第 3 个问题），根因就是这里按「右栏有没有会话」
+  // 分流到了别的页签——那条回退已经删掉。
+  // 幂等：连点只切到聊天页签并保持该左栏视图，不会来回翻（6574abbe 的同一口径）。
+  private openDockPane(index: number): void {
+    let view: string = LEFT_PANE_PROFILE;
+    if (index === 1) {
+      view = LEFT_PANE_CONTACTS;
+    } else if (index === 2) {
+      view = LEFT_PANE_SETTINGS;
+    }
+    showLeftPane(view);
+    if (this.tab !== 0) {
+      this.appliedTab = 0;
+      this.tab = 0;
+    }
+  }
+
   private select(index: number): void {
+    // 分栏下四个格都不是页签：1/2/3 把对应视图铺进左栏，0 收回会话列表，
+    // 中栏的聊天始终留着。幂等——连点只切到聊天页签、左栏不变。
+    if (this.wallpaperSplit()) {
+      if (index === 0) {
+        const switched: boolean = closeLeftPane() || this.tab !== 0;
+        this.appliedTab = 0;
+        if (this.tab !== 0) { this.tab = 0; }
+        if (!switched) { publishTabReTap(0); }
+        return;
+      }
+      this.openDockPane(index);
+      return;
+    }
     if (index === this.tab) {
       // 点已经选中的页签：交给那一页自己处理（聊天页是回顶 / 跳下一个未读，
       // issue #35）。这里只发信号，不知道也不该知道对方怎么响应。
@@ -515,13 +604,13 @@ export struct MainScreen {
           // 由系统给，和其它系统图标一致。第二个参数是布尔触发器——false→true
           // 的那一刻播一次，所以只有"变成选中"会弹，重复点已选中的不会。
           SymbolGlyph($r(icon)).fontSize(this.dockIconFontSize(index))
-            .fontColor([this.tab === index ? this.accent() : COLOR_TAB_UNSELECTED])
+            .fontColor([this.dockSelected(index) ? this.accent() : COLOR_TAB_UNSELECTED])
             // 双气泡这类多层图标按不透明度分层：前面那只实心，后面那只淡一层。
             // 单层图标（齿轮、联系人）走这条也不变样。
             .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
             .symbolEffect(
               new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.UP),
-              this.tab === index
+              this.dockSelected(index)
             )
             .effectStrategy(SymbolEffectStrategy.NONE)
             .offset({ y: this.dockIconOffsetY(index) });
@@ -547,7 +636,7 @@ export struct MainScreen {
       }
       .width(24).height(24);
       Text(label).fontSize(10)
-        .fontColor(this.tab === index ? this.accent() : COLOR_TAB_UNSELECTED);
+        .fontColor(this.dockSelected(index) ? this.accent() : COLOR_TAB_UNSELECTED);
     }
     // 均分胶囊宽。
     .layoutWeight(1).height('100%')
@@ -561,9 +650,9 @@ export struct MainScreen {
     // 可见文案走上面的 $r()，两者语言一致。
     .accessibilityText(index === 0 && this.unread > 0
       ? str('a11y_tab_unread', this.dockLabel(labelKey), this.unread,
-        this.tab === index ? str('a11y_selected') : '')
+        this.dockSelected(index) ? str('a11y_selected') : '')
       : str('a11y_option_state', this.dockLabel(labelKey),
-        this.tab === index ? str('a11y_selected') : ''))
+        this.dockSelected(index) ? str('a11y_selected') : ''))
     .onClick(() => { this.select(index); });
   }
 
@@ -579,9 +668,9 @@ export struct MainScreen {
       .width(24).height(24).borderRadius(12)
       // 外圈始终保留：选中用强调色，未选中与其它 Dock 图标一样使用灰色。
       // 宽度恒定也避免切换选中态时头像尺寸跳动。
-      .border({ width: 2, color: this.tab === 3 ? this.accent() : COLOR_TAB_UNSELECTED });
+      .border({ width: 2, color: this.profileSlotSelected() ? this.accent() : COLOR_TAB_UNSELECTED });
       Text($r('app.string.tab_profile')).fontSize(10)
-        .fontColor(this.tab === 3 ? this.accent() : COLOR_TAB_UNSELECTED);
+        .fontColor(this.profileSlotSelected() ? this.accent() : COLOR_TAB_UNSELECTED);
     }
     .layoutWeight(1).height('100%')
     .justifyContent(FlexAlign.Center)
@@ -590,7 +679,7 @@ export struct MainScreen {
       normal: this.dockItemNormalStyle,
       pressed: this.dockItemPressedStyle
     })
-    .accessibilityText(str('a11y_option_state', str('tab_profile'), this.tab === 3 ? str('a11y_selected') : ''))
+    .accessibilityText(str('a11y_option_state', str('tab_profile'), this.profileSlotSelected() ? str('a11y_selected') : ''))
     .onClick(() => { this.select(3); })
     .onTouch((e: TouchEvent): void => { this.onProfileTouch(e); })
     .gesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
@@ -725,6 +814,13 @@ export struct MainScreen {
     // 查看器占用整个窗口；旋转中断点/导航可见回调不同步也不能露出 Dock。
     if (this.chatViewerCoversWindow) {
       return false;
+    }
+    // 分栏下左栏是常驻的一列，navBar 永远在——各页签那个 *NavBarVisible 标志
+    // 描述的是「单栏下有没有左栏」，不是「分栏下左栏该不该有」。设置页里点进
+    // 一个子页会把 settings 那个键写成 false，若继续拿它当开关，dock 会跟着
+    // 一起消失（用户 2026-11-24 报的第 1 个问题）。所以分栏下不看那个标志。
+    if (this.wallpaperSplit() && this.tab === 0) {
+      return this.dockActive && this.appIsForeground && !(this.tab === 0 && this.chatDetailHiding);
     }
     return this.dockActive && this.appIsForeground && !(this.tab === 0 && this.chatDetailHiding) && this.storedNavBarFlag(this.tab);
   }
@@ -1040,6 +1136,7 @@ export struct MainScreen {
   // dock 的底色/模糊读一次 materialEpoch：厚度/关闭改了才会重绘。厚度「关闭」
   // 时底色退回实色 surface，否则还是那层玻璃色（材质在的时候压在材质上做染色）。
   onShowContactsTabChanged(): void {
+    if (!this.showContactsTab && this.leftPaneView === LEFT_PANE_CONTACTS) { closeLeftPane(); }
     if (!this.showContactsTab && this.tab === 1) {
       this.tab = 0;
     }
@@ -1165,7 +1262,7 @@ export struct MainScreen {
       // 胶囊（把胶囊糊成一片），又因为 position 的 calc 失效被画到屏幕顶部去糊标题。
       // 渐隐属于可滚动内容，就该画在列表里、只糊列表自己，不在屏幕层压任何东西。
       if (this.leftFloatingDock()) {
-        HdsTabs({ controller: this.railController, index: physicalTabIndex(this.tab, this.showContactsTab) }) {
+        HdsTabs({ controller: this.railController, index: this.railIndex() }) {
           TabContent() { Column().width(0).height(0); }.tabBar(this.tabBarChats())
           if (this.showContactsTab) {
             TabContent() { Column().width(0).height(0); }.tabBar(this.tabBarContacts())
@@ -1198,12 +1295,16 @@ export struct MainScreen {
           barVisible: this.dockVisible()
         }))
         .scrollable(false)
-        .onTabBarClick((_index: number): void => { navigationHaptics.play('dock'); })
-        .onChange((index: number) => {
+        .onTabBarClick((index: number): void => {
+          navigationHaptics.play('dock');
+          this.select(logicalTabIndex(index, this.showContactsTab));
+        })
+        .onChange((index: number): void => {
           const logical: number = logicalTabIndex(index, this.showContactsTab);
-          if (this.tab !== logical) {
-            this.appliedTab = logical;
-            this.tab = logical;
+          // Programmatic rail selection can also emit onChange. Do not turn it
+          // into a repeated-tab action or a second navigation transition.
+          if (!this.dockSelected(logical) || (this.wallpaperSplit() && this.tab !== 0)) {
+            this.select(logical);
           }
         })
         .width(this.dockWidth())

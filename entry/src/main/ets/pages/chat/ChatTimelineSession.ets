@@ -27,6 +27,7 @@ import { FloatingDateState } from './FloatingDateOverlay';
 import { firstRowBelowChrome, floatDateNeedsRescan, floatDateScrollMovedEnough } from '../../util/floatDateGate';
 import { isInteriorRowRemoval } from '../../util/rowRemoval';
 import { AT_BOTTOM_KEEP, AT_BOTTOM_YES, atBottomVerdict } from '../../util/atBottom';
+import { bottomFollowShouldApply, nearBottomFollowGeometry } from '../../util/bottomFollow';
 import { stackFromEndWanted } from '../../util/stackFromEnd';
 import { messageSelectionContentWidth } from '../../util/messageSelection';
 import { groupIndexOf, AlbumGroup, RunHeadHints } from '../../util/collapseAlbums';
@@ -146,6 +147,10 @@ export class ChatTimelineSession {
   bind(bindings: ChatTimelineBindings): void { this.bindings = bindings; }
 
   invalidateScrollWork(): void {
+    this.followIntentEpoch++;
+    this.clearSelfSendFollow();
+    this.bottomLayoutFollowSeq++;
+    this.bottomFollowPending = false;
     this.scrollWorkEpoch++;
     this.scrollWorkTimers.forEach((timer: number): void => { clearTimeout(timer); });
     this.scrollWorkTimers.clear();
@@ -310,6 +315,15 @@ export class ChatTimelineSession {
   // atBottom 是假的，是因为上一条还没贴过去，不是用户离开了底部
   //（判据与真机证据见 util/bottomFollow）。
   bottomFollowPending: boolean = false;
+
+  // Explicit send intent survives a pending layout, but not a newer user action.
+  // Changes only when the user or lifecycle takes ownership of the position.
+  followIntentEpoch: number = 0;
+  private selfSendFollowUntil: number = 0;
+
+  private selfSendFollowToken: number = 0;
+  private selfSendFollowActionSeq: number = 0;
+  private selfSendFollowTouchSeq: number = 0;
 
   // onScrollIndex 上报那一刻的 groups.length。行号只有配上它才有意义。
   indexGroupsLen: number = -1;
@@ -796,7 +810,7 @@ export class ChatTimelineSession {
     // context 的两个计数转发给 …Row，结果必然一致），别再算第二遍。
     const lightweightPlainText: boolean = lightweightRow;
     const data: MessageBubbleRenderData = {
-      chatId: this.bindings!.chatId(), contentWidth, isGroup: page.isGroup, isChannel: page.isChannel,
+      chatId: this.bindings!.chatId(), contentWidth, splitLayout: page.splitLayout === true, isGroup: page.isGroup, isChannel: page.isChannel,
       canReply: page.canReply,
       canReport: !this.bindings!.header().isSecretChat() && !this.bindings!.header().isSavedMessages(),
       selectionActive: page.selectionActive,
@@ -921,6 +935,7 @@ export class ChatTimelineSession {
   handleTimelineTouch(e: TouchEvent): void {
     if (e.type === TouchType.Down) {
       this.userTouchSeq++;
+      this.followIntentEpoch++;
       this.initialJumpTargetId = 0;
       this.bottomLayoutFollowSeq++;
       this.bottomFollowPending = false;
@@ -928,6 +943,8 @@ export class ChatTimelineSession {
       this.finishInitialMessageStageForInteraction();
       this.bindings!.cancelImeFollow();
       this.listTouchActive = true;
+      // 手指按到列表上＝位置归用户所有，撤掉刚发送时那条强制贴底窗口。
+      this.clearSelfSendFollow();
       this.keyboardUpAtTouchDown = this.bindings!.keyboardVisible();
       this.olderArmed = true;
       this.bindings!.flash.cancelFlash();
@@ -996,6 +1013,15 @@ export class ChatTimelineSession {
   }
 
   handleTimelineWillScroll(_offset: number, _state: ScrollState, source: ScrollSource): void {
+    // A new wheel/key/scrollbar gesture takes ownership; an existing fling or
+    // edge spring does not cancel a send explicitly requested during that motion.
+    if (_offset !== 0 && (source === ScrollSource.DRAG || source === ScrollSource.OTHER_USER_INPUT ||
+      source === ScrollSource.SCROLL_BAR)) {
+      this.followIntentEpoch++;
+      this.clearSelfSendFollow();
+      this.bottomLayoutFollowSeq++;
+      this.bottomFollowPending = false;
+    }
     this.nextDidScrollIsUserDriven = source !== ScrollSource.SCROLLER &&
       source !== ScrollSource.SCROLLER_ANIMATION;
   }
@@ -1154,6 +1180,11 @@ export class ChatTimelineSession {
           try { this.flushQueuedOlderLoad(); } finally { drawnStageMetrics.end(history); }
         });
       } finally { drawnStageMetrics.end(schedule); }
+      // 自己刚发完消息，但那条消息到达时列表还在滑动（点火被 takeover 挡掉了）：
+      // 停稳后补一次贴底，否则它会留在输入栏下方（2026-11-23 用户报的现象）。
+      if (this.selfSendFollowActive() && this.canFollowTail()) {
+        this.glueBottom('L_selfSend');
+      }
     } finally { drawnStageMetrics.end(stop); }
   }
 
@@ -2332,6 +2363,58 @@ export class ChatTimelineSession {
         ` rows=${this.groups.length} stayUnread=${this.stayAtUnread}`);
     }
     this.scroller.scrollEdge(Edge.Bottom);
+    this.clearSelfSendFollow();
+  }
+
+  // Explicit send intent is bounded in time and belongs to this position epoch.
+  // Any subsequent touch, wheel movement, jump or page exit relinquishes it.
+  armSelfSendFollow(windowMs: number = 1500): number {
+    this.selfSendFollowUntil = Date.now() + windowMs;
+    this.selfSendFollowActionSeq = this.scrollActionSeq;
+    this.selfSendFollowTouchSeq = this.userTouchSeq;
+    return ++this.selfSendFollowToken;
+  }
+
+  selfSendFollowActive(): boolean {
+    return this.selfSendFollowUntil > Date.now() &&
+      this.selfSendFollowActionSeq === this.scrollActionSeq &&
+      this.selfSendFollowTouchSeq === this.userTouchSeq;
+  }
+
+  clearSelfSendFollow(token?: number): void {
+    if (token === undefined || token === this.selfSendFollowToken) { this.selfSendFollowUntil = 0; }
+  }
+
+  canFollowTail(): boolean {
+    const bindings = this.bindings;
+    return bindings !== null && bindings.store() !== null && this.pageVisible && this.didInitialScroll &&
+      bottomFollowShouldApply({
+        superseded: false, touchActive: this.listTouchActive,
+        scrollActive: this.timelineScrollActive, viewerOpen: bindings.viewerOpen(),
+        hasMoreNewer: bindings.store()?.getHasMoreNewer() ?? false,
+        jumpLanding: bindings.pendingJumpId() !== 0 || bindings.jumpLandingHolding()
+      });
+  }
+
+  // Called BEFORE rows are published: the old last row still has valid geometry.
+  // One native rect read, no tail scan or text-length/line-height heuristics.
+  nearBottomFollow(): boolean {
+    if (!this.canFollowTail() || this.groups.length === 0 || this.stayAtUnread) { return false; }
+    const last = this.groups.length - 1;
+    try {
+      return nearBottomFollowGeometry({
+        bottom: this.rowBottomVp(last),
+        target: this.bindings!.screenH() - this.bindings!.bottomChromeH() - 2,
+        scrollerAtEnd: this.scroller.isAtEnd(),
+        indexAtTail: this.curEndIdx >= last && this.indexGroupsLen === this.groups.length,
+        atBottom: this.atBottom
+      });
+    } catch (_) { return false; }
+  }
+
+  shouldFollowNewTail(): boolean {
+    return this.canFollowTail() && (this.selfSendFollowActive() ||
+      this.bottomFollowPending || this.nearBottomFollow());
   }
 
   cancelInitialMessageTransitionSettle(): void {

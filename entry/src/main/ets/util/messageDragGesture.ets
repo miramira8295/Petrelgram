@@ -33,6 +33,13 @@ export class MessageDragGesture {
     }
   }
   claim(): void { this.claimed = true; }
+  // Native drag callbacks can arrive after Up/Cancel or row reuse. A completed
+  // press must not dismiss the menu opened by end() or export a recycled row.
+  // Motion thresholds belong to the native recognizer: mouse drags do not
+  // require a 500ms hold and may already have set earlyMove.
+  canStartDrag(): boolean {
+    return this.started >= 0 && !this.finished && !this.claimed;
+  }
   end(now: number, canceled: boolean): boolean {
     const held = this.prefersDrag(now);
     const invoke = !this.finished && held && !canceled && !this.claimed && !this.moved;

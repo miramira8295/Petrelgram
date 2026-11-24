@@ -13343,6 +13343,46 @@
     {
       "name": "cl_archive_release",
       "value": "指を離してアーカイブを表示"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "ここにドロップして送信"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "送信先：%1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "ドロップしてメッセージ欄に挿入"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "ドロップして内容を受け取る"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "古い検索結果"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "新しい検索結果"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "写真＋説明文"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "写真のみ"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "動画＋説明文"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "動画のみ"
     }
   ]
 }

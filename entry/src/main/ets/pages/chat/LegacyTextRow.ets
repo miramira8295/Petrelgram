@@ -21,6 +21,7 @@ export struct LegacyTextRow {
         nowSec: this.nowSec,
         chatId: this.data.chatId,
         contentWidth: this.data.contentWidth,
+        splitLayout: this.data.splitLayout === true,
         isGroup: this.data.isGroup,
         themeBubbleOut: this.data.themeBubbleOut,
         showUnreadDivider: this.data.showUnreadDivider,

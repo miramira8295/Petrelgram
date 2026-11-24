@@ -13343,6 +13343,46 @@
     {
       "name": "cl_archive_release",
       "value": "Отпустите, чтобы открыть архив"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "Отпустите здесь, чтобы отправить"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "Куда: %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "Отпустите, чтобы вставить в поле сообщения"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "Отпустите, чтобы получить содержимое"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "Более старый результат поиска"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "Более новый результат поиска"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "Фото с подписью"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "Только фото"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "Видео с подписью"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "Только видео"
     }
   ]
 }

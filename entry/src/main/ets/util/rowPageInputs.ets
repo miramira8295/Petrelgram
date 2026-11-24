@@ -18,6 +18,7 @@
 //     计算属性的依赖按实际读到的登记，条件翻转时依赖跟着变。
 
 export interface RowPageInputsSource {
+  splitLayout?: boolean;
   isGroup: boolean;
   isChannel: boolean;
   translationActive: boolean;
@@ -43,6 +44,7 @@ export interface RowPageInputsSource {
 export interface RowPageInputs {
   // 页面级 cacheKey 片段，接在行级片段后面。
   keyPart: string;
+  splitLayout?: boolean;
   isGroup: boolean;
   isChannel: boolean;
   translationActive: boolean;
@@ -76,12 +78,13 @@ export function rowPageKeyPart(src: RowPageInputsSource): string {
     `|mute${bit(src.autoplayMuted)}` +
     `|appearance${src.appearanceEpoch}|material${src.materialEpoch}|dark${bit(src.appDark)}` +
     `|select${bit(src.selectionActive)}` +
-    `|reply${bit(src.canReply)}`;
+    `|reply${bit(src.canReply)}` + (src.splitLayout === true ? '|split1' : '');
 }
 
 export function buildRowPageInputs(src: RowPageInputsSource): RowPageInputs {
   return {
     keyPart: rowPageKeyPart(src),
+    splitLayout: src.splitLayout === true,
     isGroup: src.isGroup,
     isChannel: src.isChannel,
     translationActive: src.translationActive,

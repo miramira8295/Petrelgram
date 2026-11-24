@@ -13579,6 +13579,46 @@
     {
       "name": "cl_archive_release",
       "value": "Release to show archive"
+    },
+    {
+      "name": "drop_release_send",
+      "value": "Drop here to send"
+    },
+    {
+      "name": "drop_release_to",
+      "value": "Target: %1$s"
+    },
+    {
+      "name": "drop_release_draft",
+      "value": "Drop to insert into the message field"
+    },
+    {
+      "name": "drop_release_unknown",
+      "value": "Drop to receive content"
+    },
+    {
+      "name": "cp_search_older_result",
+      "value": "Older search result"
+    },
+    {
+      "name": "cp_search_newer_result",
+      "value": "Newer search result"
+    },
+    {
+      "name": "mv_forward_photo_caption",
+      "value": "Photo + caption"
+    },
+    {
+      "name": "mv_forward_photo_only",
+      "value": "Photo only"
+    },
+    {
+      "name": "mv_forward_video_caption",
+      "value": "Video + caption"
+    },
+    {
+      "name": "mv_forward_video_only",
+      "value": "Video only"
     }
   ]
 }
