@@ -49,6 +49,7 @@ import {
 import { str } from '../util/strings';
 import { logE, logI, logW } from '../util/log';
 import { proxyAutoSwitchService } from '../services/ProxyAutoSwitchService';
+import { webProxyService } from '../services/WebProxyService';
 
 let client: TdClient | undefined = undefined;
 let auth: AuthService | undefined = undefined;
@@ -254,6 +255,7 @@ function createRuntime(slotId: string): void {
       applyDesiredOnlineState(runtimeClient);
       refreshActiveAccountSummary(runtimeClient);
       proxyAutoSwitchService.runtimeReady(runtimeClient);
+      webProxyService.bootstrap();
     } else if (client === runtimeClient && auth === runtimeAuth && stage !== AuthStage.Init) {
       runtimeReady = false;
     }
@@ -427,6 +429,7 @@ async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
   const currentClient = client;
   const currentReady = runtimeReady;
   runtimeReady = false;
+  webProxyService.suspend();
   files?.close();
   // 通话中切账号/退登：必须真正 stop 原生媒体（麦克风/摄像头）并解绑 callId。
   callSession?.close();

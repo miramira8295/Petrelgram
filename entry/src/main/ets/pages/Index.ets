@@ -37,6 +37,7 @@ import {
 } from '../services/ShareInbox';
 import { resetShareTargets } from '../services/ShareTargetService';
 import { clearRecentOutgoing } from '../util/recentOutgoing';
+import { WebProxyCarrierView } from './common/WebProxyCarrierView';
 import { closeForumDrawer } from '../util/forumDrawerState';
 import { stackOf, TabKind } from '../util/navStacks';
 import { SharedPayload, previewOf } from '../util/sharedContent';
@@ -464,6 +465,9 @@ struct Index {
         .borderRadius(21)
         .onClick((): void => this.returnToOriginalAccount());
       }
+
+      // WEB 代理（tproxy）的隐藏载体页：只有启用 WEB 代理时才会有地址，平时不加载。
+      WebProxyCarrierView()
     }
     .width('100%')
     .height('100%')

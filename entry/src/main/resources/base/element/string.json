@@ -5253,6 +5253,66 @@
       "value": "代理设置"
     },
     {
+      "name": "px_web_section",
+      "value": "WEB 代理"
+    },
+    {
+      "name": "px_web_badge",
+      "value": "网页桥接"
+    },
+    {
+      "name": "px_web_none",
+      "value": "未配置"
+    },
+    {
+      "name": "px_web_root",
+      "value": "根路径"
+    },
+    {
+      "name": "px_web_host",
+      "value": "代理域名"
+    },
+    {
+      "name": "px_web_path",
+      "value": "路径（可选）"
+    },
+    {
+      "name": "px_web_note",
+      "value": "WEB 代理经隐藏网页桥接连接，需要你自己的 tproxy-server 部署。"
+    },
+    {
+      "name": "px_web_saved",
+      "value": "WEB 代理已启用"
+    },
+    {
+      "name": "px_web_state_loading",
+      "value": "连接中…"
+    },
+    {
+      "name": "px_web_state_ready",
+      "value": "已就绪"
+    },
+    {
+      "name": "px_web_state_retry",
+      "value": "重试中"
+    },
+    {
+      "name": "px_web_off_toast",
+      "value": "WEB 代理已关闭"
+    },
+    {
+      "name": "px_web_first",
+      "value": "先填写域名与 Secret"
+    },
+    {
+      "name": "px_web_delete_title",
+      "value": "删除 WEB 代理"
+    },
+    {
+      "name": "px_web_delete_body",
+      "value": "删除后需要重新填写域名与 Secret。"
+    },
+    {
       "name": "px_refresh",
       "value": "刷新代理状态"
     },

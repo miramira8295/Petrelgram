@@ -44,6 +44,14 @@ import {
 import {
   ProxyAutoSwitchEntry, proxyAutoSwitchService
 } from '../../services/ProxyAutoSwitchService';
+import { webProxyService } from '../../services/WebProxyService';
+import {
+  KEY_WEB_PROXY_CARRIER_STATE,
+  parseWebProxyLink,
+  WebProxyConfig,
+  WebProxyLinkInfo,
+  webProxyConfigProblem
+} from '../../services/WebProxyHost';
 
 // 回落的 TCP 握手计时上限。5s 内连不上代理服务器，就按不通处理。
 const REACH_TIMEOUT_MS: number = 5000;
@@ -60,10 +68,15 @@ interface TypeOption {
   value: string;
 }
 
+// WEB 代理只存在本页面这一层：TDLib 1.8.65 没有 proxyTypeWeb，实际跑的是
+// 「本机侧车 + 隐藏载体」那一套，由 services/WebProxyService.ets 编排。
+const PROXY_WEB: string = 'proxyTypeWeb';
+
 const TYPES: TypeOption[] = [
   { label: 'SOCKS5', value: PROXY_SOCKS5 },
   { label: 'MTProto', value: PROXY_MTPROTO },
-  { label: 'HTTP', value: PROXY_HTTP }
+  { label: 'HTTP', value: PROXY_HTTP },
+  { label: 'WEB', value: PROXY_WEB }
 ];
 
 // Proxy settings use native TDLib IDs; HTTPS transport is supplied by the TLS relay.
@@ -115,6 +128,7 @@ export struct ProxyPage {
   @State fUser: string = '';
   @State fPass: string = '';
   @State fSecret: string = '';
+  @State fPath: string = '';
   @State fHttpOnly: boolean = false;
   @State fEnableAfterSave: boolean = true;
   @State fRevealCredential: boolean = false;
@@ -123,6 +137,16 @@ export struct ProxyPage {
   @State formTestMs: number = 0;
   @State saving: boolean = false;
   @State formOutcomeUnknown: boolean = false;
+  // WEB 代理自己的状态。它不进 this.proxies——那份数组直接映射 TDLib 里的代理，
+  // 混进一条 127.0.0.1 的临时条目会被 ping、镜像同步、自动切换当成真的代理来扫。
+  // 隐藏载体当前处于哪一步：idle/loading/session/ready/retrying/stopped。
+  // 用户自查时看这里就知道「卡在连接中」还是「已经就绪」。
+  @StorageProp(KEY_WEB_PROXY_CARRIER_STATE) webCarrierState: string = 'idle';
+  @State webHost: string = '';
+  @State webPath: string = '';
+  @State webSecret: string = '';
+  @State webEnabled: boolean = false;
+  @State webBusy: boolean = false;
 
   private active: boolean = false;
   // 路由参数。router 时代是 aboutToAppear 里 this.getUIContext().getRouter().getParams() 现取，现在由
@@ -213,6 +237,11 @@ export struct ProxyPage {
   private applyRouteParams(): void {
     if (this.paramsApplied) { return; }
     this.paramsApplied = true;
+    // 自愈：任何一次异步回调里提前 return 都可能把这三个「进行中」标志留在原地，
+    // 它们会把「+」和开关永久置灰——真机表现就是「添加面板再也打不开」。
+    this.actionKey = '';
+    this.saving = false;
+    this.webBusy = false;
     this.consumeRouteParams();
     this.load(true);
   }
@@ -295,8 +324,21 @@ export struct ProxyPage {
     const server = (params['proxyServer'] as string | undefined) ?? '';
     const portValue = params['proxyPort'] as number | undefined;
     const port = portValue ?? 0;
-    if (server === '' || port <= 0) { return; }
     const type = (params['proxyType'] as string | undefined) ?? PROXY_SOCKS5;
+    // WEB 代理没有端口：tg://webproxy 深链由 openTelegramLink 自己接住送进来，
+    // 只带域名 / 路径 / secret 三个字段。
+    if (type === PROXY_WEB) {
+      if (server === '') { return; }
+      this.resetForm();
+      this.importedForm = true;
+      this.fType = PROXY_WEB;
+      this.fServer = server;
+      this.fPath = (params['proxyPath'] as string | undefined) ?? '';
+      this.fSecret = (params['proxySecret'] as string | undefined) ?? '';
+      this.sheetOpen = true;
+      return;
+    }
+    if (server === '' || port <= 0) { return; }
     this.resetForm();
     this.importedForm = true;
     this.fType = TYPES.some((item: TypeOption): boolean => item.value === type)
@@ -417,6 +459,7 @@ export struct ProxyPage {
       setString(KEY_PROXY_MIRROR, serializeProxyMirror(syncableOf(list, this.syncOff())));
       const sorted = this.sorted(list);
       this.proxies = sorted;
+      this.hydrateWebProxy();
       proxyAutoSwitchService.proxyListLoaded(target, revision, sorted.map(
         (entry: ProxyEntry): ProxyAutoSwitchEntry => ({ id: entry.id, isEnabled: entry.isEnabled })
       ));
@@ -676,16 +719,16 @@ export struct ProxyPage {
       ? 'connectionStateConnectingToProxy' : 'connectionStateConnecting';
     try {
       if (entry !== null) { await enableProxy(entry.id); } else { await disableProxy(); }
-      if (!this.active || sequence !== this.operationSequence) { return; }
       this.actionKey = '';
+      if (!this.active || sequence !== this.operationSequence) { return; }
       if (entry !== null) { this.preferredProxyId = entry.id; }
       showToast(entry !== null ? str('px_enabled_server', entry.server) : $r('app.string.px_switched_direct'), 1400);
       this.subscribeConnectionState();
       this.load(false);
     } catch (caught) {
+      this.actionKey = '';
       if (!this.active || sequence !== this.operationSequence) { return; }
       const error = caught as TdError;
-      this.actionKey = '';
       this.proxies = snapshot;
       this.publishProxyList();
       this.syncWarning = str('px_state_resyncing');
@@ -724,8 +767,8 @@ export struct ProxyPage {
     this.publishProxyList();
     try {
       await removeProxy(entry.id);
-      if (!this.active || sequence !== this.operationSequence) { return; }
       this.actionKey = '';
+      if (!this.active || sequence !== this.operationSequence) { return; }
       if (this.preferredProxyId === entry.id) { this.preferredProxyId = 0; }
       // **删除必须同时把它从镜像里摘掉，而且要赶在 load() 之前**（issue #195：
       // 「提示删除成功，但是仍旧显示，即使杀掉后台重新进入」）。
@@ -744,9 +787,9 @@ export struct ProxyPage {
       showToast($r('app.string.px_deleted'), 1300);
       this.load(false);
     } catch (caught) {
+      this.actionKey = '';
       if (!this.active || sequence !== this.operationSequence) { return; }
       const error = caught as TdError;
-      this.actionKey = '';
       this.proxies = before;
       this.publishProxyList();
       showToast(proxyActionErrorText(error.message, str('px_delete')), 1800);
@@ -758,24 +801,167 @@ export struct ProxyPage {
     if ((entry.type === PROXY_HTTP) || this.actionKey !== '') { return; }
     this.actionKey = `share_${entry.id}`;
     getProxyShareLink(entry.id).then((url: string): void => {
-      if (!this.active) { return; }
+      if (!this.active) { this.actionKey = ''; return; }
       if (url === '') { throw new TdError(-1, 'empty proxy link'); }
       const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, url);
       pasteboard.getSystemPasteboard().setData(data).then((): void => {
-        if (!this.active) { return; }
         this.actionKey = '';
+        if (!this.active) { return; }
         showToast($r('app.string.px_link_copied'), 1400);
       }).catch((error: Error): void => {
-        if (!this.active) { return; }
         this.actionKey = '';
+        if (!this.active) { return; }
         logE(`ProxyPage.copyProxyLink failed: ${error.message}`);
         showToast($r('app.string.px_copy_failed'), 1600);
       });
     }).catch((error: TdError): void => {
-      if (!this.active) { return; }
       this.actionKey = '';
+      if (!this.active) { return; }
       logE(`ProxyPage.getProxyLink failed: ${error.message}`);
       showToast($r('app.string.px_link_failed'), 1600);
+    });
+  }
+
+  private hydrateWebProxy(): void {
+    this.webEnabled = webProxyService.isEnabled();
+    const cfg: WebProxyConfig | null = webProxyService.savedConfig();
+    if (cfg === null) {
+      return;
+    }
+    this.webHost = cfg.host;
+    this.webPath = cfg.path;
+    this.webSecret = cfg.secret;
+  }
+
+  // 粘进整条分享链接（tg://webproxy?server=&secret= / t.me/webproxy?…）时自动拆字段。
+  // 返回 true 表示这次输入被当作链接吃掉了，调用方不要再把它写进单个字段。
+  private acceptWebLink(value: string): boolean {
+    if (this.fType !== PROXY_WEB) {
+      this.fServer = value;
+      return false;
+    }
+    const link: WebProxyLinkInfo | null = parseWebProxyLink(value);
+    if (link === null) {
+      this.fServer = value;
+      return false;
+    }
+    this.fServer = link.host;
+    if (link.path.length > 0) {
+      this.fPath = link.path;
+    }
+    if (link.secret.length > 0) {
+      this.fSecret = link.secret;
+    }
+    return true;
+  }
+
+  private webStateText(): Resource {
+    if (this.webCarrierState === 'ready') {
+      return $r('app.string.px_web_state_ready');
+    }
+    if (this.webCarrierState === 'retrying' || this.webCarrierState === 'stopped') {
+      return $r('app.string.px_web_state_retry');
+    }
+    if (this.webCarrierState === 'loading' || this.webCarrierState === 'session') {
+      return $r('app.string.px_web_state_loading');
+    }
+    return $r('app.string.px_in_use');
+  }
+
+  private webFormConfig(): WebProxyConfig {
+    return {
+      host: this.fServer.trim(),
+      path: this.fPath.trim(),
+      secret: this.fSecret.trim(),
+      allowInvalidCert: false
+    };
+  }
+
+  private openWebEdit(): void {
+    if (this.sheetOpen) { return; }
+    this.resetForm();
+    this.fType = PROXY_WEB;
+    this.fServer = this.webHost;
+    this.fPath = this.webPath;
+    this.fSecret = this.webSecret;
+    this.sheetOpen = true;
+  }
+
+  private saveWebForm(): void {
+    const cfg: WebProxyConfig = this.webFormConfig();
+    const problem: string = webProxyConfigProblem(cfg);
+    if (problem.length > 0) {
+      this.formError = problem;
+      return;
+    }
+    this.saving = true;
+    this.formError = '';
+    webProxyService.enable(cfg, false).then((): void => {
+      this.saving = false;
+      if (!this.active) { return; }
+      this.sheetOpen = false;
+      this.resetForm();
+      this.hydrateWebProxy();
+      showToast($r('app.string.px_web_saved'), 1600);
+      this.load(false);
+    }).catch((error: Error): void => {
+      this.saving = false;
+      if (!this.active) { return; }
+      this.formError = error.message;
+    });
+  }
+
+  private toggleWebProxy(): void {
+    if (this.webBusy || this.actionKey !== '' || this.saving) { return; }
+    const turningOn: boolean = !webProxyService.isEnabled();
+    const cfg: WebProxyConfig | null = webProxyService.savedConfig();
+    if (turningOn && cfg === null) {
+      showToast($r('app.string.px_web_first'), 1600);
+      return;
+    }
+    this.webBusy = true;
+    const action: Promise<void> = turningOn && cfg !== null
+      ? webProxyService.enable(cfg, false) : webProxyService.disable();
+    action.then((): void => {
+      this.webBusy = false;
+      if (!this.active) { return; }
+      this.hydrateWebProxy();
+      showToast(turningOn ? $r('app.string.px_web_saved') : $r('app.string.px_web_off_toast'), 1600);
+      this.load(false);
+    }).catch((error: Error): void => {
+      this.webBusy = false;
+      if (!this.active) { return; }
+      showToast(error.message, 2100);
+    });
+  }
+
+  private confirmRemoveWebProxy(): void {
+    if (this.webBusy || this.actionKey !== '' || this.saving) { return; }
+    this.getUIContext().getPromptAction().showDialog({
+      title: $r('app.string.px_web_delete_title'),
+      message: $r('app.string.px_web_delete_body'),
+      buttons: [
+        { text: $r('app.string.cancel'), color: COLOR_TEXT_SECONDARY as string },
+        { text: $r('app.string.delete'), color: DANGER }
+      ]
+    }).then((result: promptAction.ShowDialogSuccessResponse): void => {
+      if (result.index !== 1) { return; }
+      this.webBusy = true;
+      webProxyService.disable().then((): void => {
+        if (!this.active) { return; }
+        this.webBusy = false;
+        this.webHost = '';
+        this.webPath = '';
+        this.webSecret = '';
+        this.hydrateWebProxy();
+        this.load(false);
+      }).catch((error: Error): void => {
+        if (!this.active) { return; }
+        this.webBusy = false;
+        showToast(error.message, 2100);
+      });
+    }).catch((error: Object): void => {
+      logE(`ProxyPage.web remove dialog failed: ${JSON.stringify(error)}`);
     });
   }
 
@@ -788,6 +974,7 @@ export struct ProxyPage {
     this.fUser = '';
     this.fPass = '';
     this.fSecret = '';
+    this.fPath = '';
     this.fHttpOnly = false;
     this.fEnableAfterSave = true;
     this.fRevealCredential = false;
@@ -798,13 +985,15 @@ export struct ProxyPage {
   }
 
   private openAdd(): void {
-    if (this.actionKey !== '' || this.saving) { return; }
+    // 打开表单不该被别的操作挡住。saving/actionKey 曾经因为异步回调在 !active 时
+    // 提前 return 而永久卡住，表现就是「+」点了没反应、添加面板再也打不开。
+    if (this.sheetOpen) { return; }
     this.resetForm();
     this.sheetOpen = true;
   }
 
   private openEdit(entry: ProxyEntry): void {
-    if (this.actionKey !== '' || this.saving) { return; }
+    if (this.sheetOpen) { return; }
     this.resetForm();
     this.editingId = entry.id;
     this.fType = entry.type;
@@ -863,6 +1052,8 @@ export struct ProxyPage {
 
   private testForm(): void {
     if (this.formTestState === 'loading' || this.saving) { return; }
+    // WEB 代理没有 TDLib 侧对象可 ping，测速卡对它不显示。
+    if (this.fType === PROXY_WEB) { return; }
     const validation = proxyFormError(this.fServer, this.fPort, this.fType, this.fSecret);
     if (validation !== '') {
       this.formError = validation;
@@ -884,6 +1075,10 @@ export struct ProxyPage {
 
   private saveForm(): void {
     if (this.saving || this.formOutcomeUnknown) { return; }
+    if (this.fType === PROXY_WEB) {
+      this.saveWebForm();
+      return;
+    }
     const validation = proxyFormError(this.fServer, this.fPort, this.fType, this.fSecret);
     if (validation !== '') {
       this.formError = validation;
@@ -908,8 +1103,7 @@ export struct ProxyPage {
     this.formError = '';
     if (this.editingId > 0) {
       editProxy(draft, this.fEnableAfterSave).then((saved: ProxyEntry): void => {
-        if (!this.active || sequence !== this.formSequence) { return; }
-        this.saving = false;
+        if (!this.active || sequence !== this.formSequence) { this.saving = false; return; }
         this.upsertProxy(saved);
         if (saved.isEnabled) {
           this.preferredProxyId = saved.id;
@@ -925,7 +1119,7 @@ export struct ProxyPage {
       return;
     }
     addProxy(draft, false).then((saved: ProxyEntry): void => {
-      if (!this.active || sequence !== this.formSequence) { return; }
+      if (!this.active || sequence !== this.formSequence) { this.saving = false; return; }
       if (saved.id <= 0) {
         this.finishFormFailure(new TdError(-1, 'invalid added proxy result'), sequence, str('px_add'));
         return;
@@ -936,7 +1130,7 @@ export struct ProxyPage {
         return;
       }
       enableProxy(saved.id).then((): void => {
-        if (!this.active || sequence !== this.formSequence) { return; }
+        if (!this.active || sequence !== this.formSequence) { this.saving = false; return; }
         this.applyEnabledProxy(saved.id);
         this.preferredProxyId = saved.id;
         this.finishFormSuccess(str('px_added_enabled'));
@@ -963,8 +1157,8 @@ export struct ProxyPage {
   }
 
   private finishFormFailure(error: TdError, sequence: number, action: string): void {
-    if (!this.active || sequence !== this.formSequence) { return; }
     this.saving = false;
+    if (!this.active || sequence !== this.formSequence) { return; }
     if (error.message.toLowerCase().indexOf('request timeout') >= 0) {
       this.formOutcomeUnknown = true;
       this.formError = str('px_result_unknown', action);
@@ -1216,6 +1410,91 @@ export struct ProxyPage {
   }
 
   @Builder
+  webProxyMenu() {
+    Menu() {
+      MenuItem({ content: $r('app.string.px_edit') }).onClick((): void => this.openWebEdit());
+      MenuItem({ content: $r('app.string.px_delete') }).onClick((): void => this.confirmRemoveWebProxy());
+    }
+  }
+
+  @Builder
+  webProxyCard() {
+    Column() {
+      Row() {
+        Text($r('app.string.px_web_section')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY);
+        Blank();
+        Text($r('app.string.px_web_badge')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+      }.width('100%').height(40).padding({ left: 14, right: 14 });
+      Row({ space: 8 }) {
+        Row({ space: 12 }) {
+          Stack({ alignContent: Alignment.Center }) {
+            Circle({ width: 44, height: 44 }).fill('#163478F6');
+            SymbolGlyph($r('sys.symbol.link')).fontSize(21).fontColor([COLOR_PRIMARY]);
+          }
+          Column({ space: 4 }) {
+            Text(this.webHost.length > 0 ? this.webHost : $r('app.string.px_web_none'))
+              .fontSize(16).fontColor(COLOR_TEXT_PRIMARY)
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+            Row({ space: 7 }) {
+              Text('WEB').fontSize(11).fontColor(COLOR_PRIMARY)
+                .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                .backgroundColor('#163478F6').borderRadius(6);
+              Text(this.webPath.length > 0 ? `/${this.webPath}` : $r('app.string.px_web_root'))
+                .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).layoutWeight(1)
+                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+              if (this.webEnabled) {
+                Text(this.webStateText()).fontSize(12).fontWeight(FontWeight.Medium)
+                  .fontColor(this.webCarrierState === 'ready' ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY);
+              }
+            }.alignItems(VerticalAlign.Center);
+          }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+        }
+        .layoutWeight(1).padding({ left: 12, top: 9, bottom: 9 })
+        .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
+        .onClick((): void => this.openWebEdit());
+
+        Row() {
+          if (this.webBusy) {
+            LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
+          } else {
+            Row() {
+              if (this.webEnabled) {
+                SymbolGlyph($r('sys.symbol.checkmark')).fontSize(14).fontColor([Color.White]);
+              }
+            }
+            .width(24).height(24).borderRadius(12).justifyContent(FlexAlign.Center)
+            .backgroundColor(this.webEnabled ? COLOR_PRIMARY : Color.Transparent)
+            .border({
+              width: this.webEnabled ? 0 : 1.4,
+              color: this.webEnabled ? Color.Transparent : COLOR_TEXT_SECONDARY
+            });
+          }
+        }
+        .width(40).height(40).borderRadius(20).justifyContent(FlexAlign.Center)
+        .backgroundColor(Color.Transparent)
+        .enabled(this.actionKey === '' && !this.saving)
+        .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
+        .accessibilityText($r('app.string.px_web_section'))
+        .onClick((): void => this.toggleWebProxy());
+
+        Row() {
+          SymbolGlyph($r('sys.symbol.more')).fontSize(20).fontColor([COLOR_ICON_SECONDARY]);
+        }
+        .width(40).height(40).borderRadius(20).justifyContent(FlexAlign.Center)
+        .margin({ right: 6 }).enabled(this.actionKey === '' && !this.saving)
+        .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
+        .bindMenu(this.webProxyMenu(), { systemMaterial: overlayMaterial('menu') });
+      }
+      .width('100%').alignItems(VerticalAlign.Center);
+
+      Text($r('app.string.px_web_note'))
+        .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).width('100%')
+        .padding({ left: 14, right: 14, top: 1, bottom: 10 });
+    }
+    .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+  }
+
+  @Builder
   proxyListCard() {
     Column() {
       Row() {
@@ -1348,18 +1627,26 @@ export struct ProxyPage {
   @Builder
   credentialField() {
     Column({ space: 5 }) {
-      Text(this.fType === PROXY_MTPROTO ? $r('app.string.px_secret') : $r('app.string.px_password_optional'))
+      Text(this.fType === PROXY_MTPROTO || this.fType === PROXY_WEB
+        ? $r('app.string.px_secret') : $r('app.string.px_password_optional'))
         .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
       Row({ space: 6 }) {
         TextInput({
-          text: this.fType === PROXY_MTPROTO ? this.fSecret : this.fPass,
-          placeholder: this.fType === PROXY_MTPROTO ? 'MTProto secret' : $r('app.string.px_password')
+          text: this.fType === PROXY_MTPROTO || this.fType === PROXY_WEB ? this.fSecret : this.fPass,
+          placeholder: this.fType === PROXY_MTPROTO ? 'MTProto secret'
+            : (this.fType === PROXY_WEB ? 'dd… 或 16 字节 hex' : $r('app.string.px_password'))
         })
           .layoutWeight(1).height(42).fontSize(16)
           .type(this.fRevealCredential ? InputType.Normal : InputType.Password)
           .backgroundColor(Color.Transparent).padding({ left: 12 }).caretColor(COLOR_PRIMARY)
           .onChange((next: string): void => {
-            if (this.fType === PROXY_MTPROTO) { this.fSecret = next; } else { this.fPass = next; }
+            if (this.fType === PROXY_WEB && this.acceptWebLink(next)) {
+              // 整条分享链接被粘进密钥框：已拆成域名/路径/密钥，不再当密钥用。
+            } else if (this.fType === PROXY_MTPROTO || this.fType === PROXY_WEB) {
+              this.fSecret = next;
+            } else {
+              this.fPass = next;
+            }
             this.onFormChanged();
           });
         Text(this.fRevealCredential ? $r('app.string.hide') : $r('app.string.show')).fontSize(12).fontColor(COLOR_PRIMARY)
@@ -1414,11 +1701,17 @@ export struct ProxyPage {
         this.typeSelector();
 
         Column({ space: 11 }) {
-          this.formField($r('app.string.px_server'), this.fServer, $r('app.string.px_server_hint'), false,
-            (value: string): void => { this.fServer = value; });
-          this.formField($r('app.string.px_port'), this.fPort, '1–65535', true,
-            (value: string): void => { this.fPort = value; });
-          if (this.fType !== PROXY_MTPROTO) {
+          this.formField(this.fType === PROXY_WEB ? $r('app.string.px_web_host') : $r('app.string.px_server'),
+            this.fServer, $r('app.string.px_server_hint'), false,
+            (value: string): void => { this.acceptWebLink(value); });
+          if (this.fType === PROXY_WEB) {
+            this.formField($r('app.string.px_web_path'), this.fPath, 'a/b', false,
+              (value: string): void => { this.fPath = value; });
+          } else {
+            this.formField($r('app.string.px_port'), this.fPort, '1–65535', true,
+              (value: string): void => { this.fPort = value; });
+          }
+          if (this.fType !== PROXY_MTPROTO && this.fType !== PROXY_WEB) {
             this.formField($r('app.string.px_username_optional'), this.fUser, $r('app.string.px_username'), false,
               (value: string): void => { this.fUser = value; });
           }
@@ -1440,19 +1733,24 @@ export struct ProxyPage {
         }
         .width('100%').padding(13).backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
 
-        this.formTestCard();
-
-        Row({ space: 10 }) {
-          Column({ space: 2 }) {
-            Text($r('app.string.px_enable_on_save')).fontSize(14).fontColor(COLOR_TEXT_PRIMARY);
-            Text($r('app.string.px_enable_on_save_sub')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
-          }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-          Toggle({ type: ToggleType.Switch, isOn: this.fEnableAfterSave })
-            .selectedColor(COLOR_PRIMARY).enabled(!this.saving)
-            .onChange((value: boolean): void => { this.fEnableAfterSave = value; });
+        if (this.fType !== PROXY_WEB) {
+          this.formTestCard();
         }
-        .width('100%').padding({ left: 13, right: 13, top: 11, bottom: 11 })
-        .backgroundColor(COLOR_SURFACE).borderRadius(12);
+
+        // WEB 代理保存即启用（侧车 + 载体之间没有「存着不连」的中间态）。
+        if (this.fType !== PROXY_WEB) {
+          Row({ space: 10 }) {
+            Column({ space: 2 }) {
+              Text($r('app.string.px_enable_on_save')).fontSize(14).fontColor(COLOR_TEXT_PRIMARY);
+              Text($r('app.string.px_enable_on_save_sub')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+            }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+            Toggle({ type: ToggleType.Switch, isOn: this.fEnableAfterSave })
+              .selectedColor(COLOR_PRIMARY).enabled(!this.saving)
+              .onChange((value: boolean): void => { this.fEnableAfterSave = value; });
+          }
+          .width('100%').padding({ left: 13, right: 13, top: 11, bottom: 11 })
+          .backgroundColor(COLOR_SURFACE).borderRadius(12);
+        }
 
         if (this.formError !== '') {
           Row({ space: 8 }) {
@@ -1495,6 +1793,7 @@ export struct ProxyPage {
   }
 
   build() {
+    Stack({ alignContent: Alignment.TopStart }) {
     Column() {
       HdsSubDestination({
         title: $r('app.string.px_title'), scroller: this.hdsScroller,
@@ -1509,6 +1808,15 @@ export struct ProxyPage {
         onBackPressed: (): boolean => { return this.onBackPressed(); },
         onRouteParams: (param: Object | undefined): void => {
           this.navParams = param as Record<string, Object> | undefined;
+          const bag: Record<string, Object> | undefined = this.navParams;
+          // 带参数的再次进入必须重放一次。paramsApplied/paramsConsumed 本来是给
+          // 「同一个页面实例被复用、onReady 触发多次」去重的，但它们也会把**新**
+          // 参数一起吞掉：用户从浏览器点 tg://webproxy 时页面实例早就存在，
+          // 结果代理页只是被切出来、表单一个字段都没填（真机实测）。
+          if (bag !== undefined && Object.keys(bag).length > 0) {
+            this.paramsApplied = false;
+            this.paramsConsumed = false;
+          }
           // 必须在这里调而不是等 aboutToAppear：实测 onReady 晚于 aboutToAppear。
           this.applyRouteParams();
         }
@@ -1520,6 +1828,10 @@ export struct ProxyPage {
             this.networkCard();
           }
           this.syncWarningCard();
+          // 没配过的 WEB 代理不占位：用户要求「添加以后才显示」。
+          if (this.webHost !== '' || this.webEnabled) {
+            this.webProxyCard();
+          }
           if (this.loading && this.proxies.length === 0) {
             this.skeletonCard();
           } else if (this.loadError !== '' && this.proxies.length === 0) {
@@ -1553,8 +1865,18 @@ export struct ProxyPage {
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .bindSheet($$this.sheetOpen, this.proxyFormSheet(), {
-      height: '82%', backgroundColor: COLOR_PAGE_BG, dragBar: !this.saving, blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
-    });
+
+
+      // 表单改成页面内覆盖层：平板分栏下 bindSheet 会按窗口坐标落到窗口左上角，
+      // 压住左栏、标题还被切掉（用户实测）。自己画一层就只跟着本页走。
+      if (this.sheetOpen) {
+        Column() {
+          this.proxyFormSheet()
+        }
+        .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
+        .transition(TransitionEffect.OPACITY.animation({ duration: this.animationDuration(160), curve: Curve.EaseOut }))
+      }
+    }
+    .width('100%').height('100%')
   }
 }

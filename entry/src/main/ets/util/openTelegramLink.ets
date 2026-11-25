@@ -21,6 +21,7 @@ import { navigateToSetting } from './settingsNav';
 import { logE, logW } from './log';
 import { navigateToSearch } from './searchNav';
 import { endLinkNavIf } from './linkTapGuard';
+import { parseWebProxyLink, WebProxyLinkInfo } from '../services/WebProxyHost';
 
 // **一律 'content'。** 这条路上的每一次跳转，用户都是"在内容里点了什么"——
 // 消息里的链接、资料页简介里的链接、内置浏览器里的链接。navigateToChat 的默认
@@ -740,6 +741,24 @@ export function openTelegramLink(context: common.UIAbilityContext, url: string,
   const raw = url.trim();
   if (raw === '') {
     return;
+  }
+  // tg://webproxy / t.me/webproxy：TDLib 1.8.65 没有 proxyTypeWeb，交给它会直接回
+  // 「不支持该类型链接」（用户从浏览器拉起实测）。这里先自己接住，拆成域名 /
+  // 路径 / secret 交给代理页预填 WEB 表单，等同于 OpenGram 的一键导入。
+  if (raw.toLowerCase().indexOf('webproxy') >= 0) {
+    const info: WebProxyLinkInfo | null = parseWebProxyLink(raw);
+    if (info !== null && info.host !== '') {
+      const proxyParams: Record<string, Object> = {
+        'proxyType': 'proxyTypeWeb',
+        'proxyServer': info.host,
+        'proxyPath': info.path,
+        'proxySecret': info.secret
+      };
+      if (!navigateToSetting('ProxyPage', proxyParams)) {
+        showToast(str('tglink_use_bottom_bar'), 1700);
+      }
+      return;
+    }
   }
   if (raw.startsWith('tg://user?id=')) {
     const uid = Number(raw.substring('tg://user?id='.length));
