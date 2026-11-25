@@ -1,4 +1,5 @@
 import { socket } from '@kit.NetworkKit';
+import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { logE, logI, logW } from '../util/log';
 
 // Telegram WEB Proxy（tproxy）的**本机侧车**。
@@ -50,7 +51,21 @@ const LISTEN_HOST: string = '127.0.0.1';
 // 端口池：避开常用端口，也避开 WebProxyBridge 的 7891。
 const PORT_POOL_START: number = 47810;
 const PORT_POOL_END: number = 47879;
+const PORT_POOL_SIZE: number = PORT_POOL_END - PORT_POOL_START + 1;
 const WELCOME_TIMEOUT_MS: number = 15000;
+
+// 侧车只认「知道 MTProxy secret」的本地连接：tgnet 连上来先发 64 字节 obfuscated2 头，
+// 头里 0..32 是随机量、32..48 是 IV、48..64 是用 SHA256(init[0..32] + secret) 与 IV 做
+// AES-256-CTR 加密后的 16 字节，明文第 8..11 字节应当是协议 tag。没 secret 的进程
+// （同机其它 App）伪造不出来，这样就不必依赖 /proc 的 uid（本机 SELinux 不给读）。
+const MT_HANDSHAKE_BYTES: number = 64;
+const MT_TAG_ABRIDGED: number = 0xEFEFEFEF;
+const MT_TAG_INTERMEDIATE: number = 0xEEEEEEEE;
+const MT_TAG_PADDED: number = 0xDDDDDDDD;
+// 连上来 8s 还不发握手头（或者发的不是 MTProxy 手势）就关掉，别白占一条 socket。
+const AUTH_WAIT_MS: number = 8000;
+// 校验期间先攒字节：socket 没挂 message 监听会丢数据，tgnet 一连接就发头。
+const PREAUTH_BUFFERS_MAX: number = 256;
 
 // 一条逻辑流的本地状态。两个方向各有独立队列，混在一起会互相踩。
 class SidecarStream {
@@ -120,6 +135,56 @@ function writeU32(view: Uint8Array, offset: number, value: number): void {
   view[offset + 3] = value & 0xff;
 }
 
+function firstBytesOf(parts: ArrayBuffer[], need: number): Uint8Array {
+  const out: Uint8Array = new Uint8Array(need);
+  let at: number = 0;
+  for (let i = 0; i < parts.length && at < need; i++) {
+    const chunk: Uint8Array = new Uint8Array(parts[i]);
+    const take: number = Math.min(chunk.length, need - at);
+    out.set(chunk.subarray(0, take), at);
+    at += take;
+  }
+  return at >= need ? out : out.subarray(0, at);
+}
+
+function handshakeTagOf(plain: Uint8Array): number {
+  if (plain.length < 4) {
+    return 0;
+  }
+  return (((plain[0] << 24) >>> 0) | (plain[1] << 16) | (plain[2] << 8) | plain[3]) >>> 0;
+}
+
+async function sha256Of(bytes: Uint8Array): Promise<Uint8Array> {
+  const md: cryptoFramework.Md = cryptoFramework.createMd('SHA256');
+  await md.update({ data: bytes });
+  const out: cryptoFramework.DataBlob = await md.digest();
+  return new Uint8Array(out.data);
+}
+
+// 按 tdlib ObfuscatedTransport 的构造解密握手尾：客户端生成的 64 字节 header 里，
+// key = SHA256(header[8..40] + proxy_secret)、iv = header[40..56]，整段 64 字节过
+// AES-256-CTR 后只把**最后 8 字节**（56..64）发成密文，前 56 字节是明文。
+// 所以这里先空转 56 字节 keystream，再解那 8 字节，明文前 4 字节应当是协议 tag。
+async function aesCtrDecryptHeaderTail(key: Uint8Array, iv: Uint8Array, tail: Uint8Array): Promise<Uint8Array> {
+  const gen: cryptoFramework.SymKeyGenerator = cryptoFramework.createSymKeyGenerator('AES256');
+  const symKey: cryptoFramework.SymKey = await gen.convertKey({ data: key });
+  const params: cryptoFramework.IvParamsSpec = { algName: 'IvParamsSpec', iv: { data: iv } };
+  const cipher: cryptoFramework.Cipher = cryptoFramework.createCipher('AES256|CTR|NoPadding');
+  await cipher.init(cryptoFramework.CryptoMode.ENCRYPT_MODE, symKey, params);
+  await cipher.update({ data: new Uint8Array(56) });
+  const out: cryptoFramework.DataBlob = await cipher.doFinal({ data: tail });
+  return new Uint8Array(out.data);
+}
+
+// 注意顺序是 header 在前、secret 在后（tdlib 的 fix_key 就是 feed(key) 再 feed(secret)）。
+async function mtSecretMatchesHandshake(init: Uint8Array, secret: Uint8Array): Promise<boolean> {
+  const key: Uint8Array = await sha256Of(concatBytes([init.slice(8, 40), secret]));
+  const iv: Uint8Array = init.slice(40, 56);
+  const plain: Uint8Array = await aesCtrDecryptHeaderTail(key, iv, init.slice(56, 64));
+  const tag: number = handshakeTagOf(plain);
+  return tag === MT_TAG_ABRIDGED || tag === MT_TAG_INTERMEDIATE || tag === MT_TAG_PADDED;
+}
+
 function concatBytes(parts: Uint8Array[]): Uint8Array {
   let total: number = 0;
   for (let i = 0; i < parts.length; i++) {
@@ -150,6 +215,11 @@ export class WebProxyTransport {
   private listening: boolean = false;
   private ready: boolean = false;
   private port: number = 0;
+  // 被拒的本地连接数（只用于日志/排查）。
+  private peerRejects: number = 0;
+  // 本机 tgnet 用的 MTProxy secret（16 字节），用来校验 obfuscated2 头。
+  private secretBytes: Uint8Array = new Uint8Array(0);
+  private secretCheckLogged: boolean = false;
 
   // 发往载体的缓冲。
   private outbox: Uint8Array[] = [];
@@ -177,6 +247,45 @@ export class WebProxyTransport {
     this.sink = sink;
   }
 
+  // 主进程把 MTProxy secret 交进来供握手校验。不给（或给的不是 16 字节）就退回
+  // 「只靠回环地址」的旧行为——宁可少一层校验，也不能把代理打死。
+  configureSecret(secret: Uint8Array): void {
+    // 34 位 hex 的 "dd + 16 字节" 形态在 MTProxy 里表示「带随机填充的变体」，
+    // 派生 obfuscated2 key 只用后面那 16 字节。
+    if (secret.length === 17 && secret[0] === 0xDD) {
+      this.secretBytes = secret.subarray(1, 17);
+    } else {
+      this.secretBytes = secret.length === 16 ? secret.slice(0, 16) : new Uint8Array(0);
+    }
+    this.secretCheckLogged = false;
+  }
+
+  // 返回 false 表示这条连接证明不了自己知道 secret，调用方直接关掉。
+  // crypto 出错、没配置 secret 都按放行处理。
+  private async checkHandshake(init: Uint8Array): Promise<boolean> {
+    if (this.secretBytes.length !== 16) {
+      return true;
+    }
+    let valid: boolean = false;
+    try {
+      valid = await mtSecretMatchesHandshake(init, this.secretBytes);
+    } catch (err) {
+      logE('[WebProxy] obfuscated2 check failed: ' + (err as Error).message);
+      return true;
+    }
+    if (!this.secretCheckLogged) {
+      this.secretCheckLogged = true;
+      logI('[WebProxy] obfuscated2 secret check armed, first local client handshake '
+        + (valid ? 'valid' : 'INVALID'));
+    }
+    if (!valid) {
+      logW('[WebProxy] local client did not prove knowledge of the proxy secret');
+      this.peerRejects++;
+      return false;
+    }
+    return true;
+  }
+
   // 接收载体回传的整批帧（可能是半帧，粘包器会处理）。
   feed(bytes: Uint8Array): void {
     if (!this.listening) {
@@ -200,7 +309,11 @@ export class WebProxyTransport {
     let srv: socket.TCPSocketServer | null = null;
     let bound: number = 0;
     let lastError: string = '';
-    for (let port = PORT_POOL_START; port <= PORT_POOL_END; port++) {
+    // 起点随机：端口池写在代码里，同机进程如果知道「从 47810 起顺序试」就能直接连进来；
+    // 随机起点至少不给这种「扫一下就中」。端口池范围仍与 purgeStaleSidecars 一致。
+    const firstPort: number = Math.floor(Math.random() * PORT_POOL_SIZE);
+    for (let attempt = 0; attempt < PORT_POOL_SIZE; attempt++) {
+      const port: number = PORT_POOL_START + ((firstPort + attempt) % PORT_POOL_SIZE);
       const candidate: socket.TCPSocketServer = socket.constructTCPSocketServerInstance();
       const addr: socket.NetAddress = { address: LISTEN_HOST, port: port, family: 1 };
       try {
@@ -293,24 +406,102 @@ export class WebProxyTransport {
       conn.close().catch((): void => {});
       return;
     }
-    const id: number = this.nextStreamId;
-    // 流号在会话内不复用（PROTOCOL.md）；3 字节用满后回绕。
-    this.nextStreamId = id >= 0xffffff ? 1 : id + 1;
-    const stream: SidecarStream = new SidecarStream(id, conn);
-    this.streams.set(id, stream);
-
+    // 校验期间到达的字节先攒着：socket 没挂 message 监听会丢掉数据，而 tgnet
+    // 一连上就发 obfuscated2 头，丢了开头这段整条连接就废了。
+    const buffered: ArrayBuffer[] = [];
+    let stream: SidecarStream | null = null;
+    let closed: boolean = false;
+    let admitted: boolean = false;
+    let authTimer: number = -1;
+    const clearAuthTimer = (): void => {
+      if (authTimer >= 0) {
+        clearTimeout(authTimer);
+        authTimer = -1;
+      }
+    };
+    // 攒够 64 字节才谈得上校验；校验通过后才注册流并把攒下的字节补喂进去。
+    const admit = (): void => {
+      if (admitted || closed || !this.listening) {
+        return;
+      }
+      const first: Uint8Array = firstBytesOf(buffered, MT_HANDSHAKE_BYTES);
+      if (first.length < MT_HANDSHAKE_BYTES) {
+        return;
+      }
+      admitted = true;
+      this.checkHandshake(first).then((proven: boolean): void => {
+        if (!proven) {
+          clearAuthTimer();
+          conn.close().catch((): void => {});
+          return;
+        }
+        clearAuthTimer();
+        if (closed || !this.listening) {
+          conn.close().catch((): void => {});
+          return;
+        }
+        const registered: SidecarStream | null = this.registerClient(conn);
+        if (registered === null) {
+          return;
+        }
+        stream = registered;
+        // JS 单线程：先把已攒的按序补完再处理后续 message，顺序不会乱。
+        const pending: ArrayBuffer[] = buffered.slice(0);
+        buffered.length = 0;
+        for (let i = 0; i < pending.length; i++) {
+          this.onSocketBytes(registered, pending[i]);
+        }
+      });
+    };
     conn.on('message', (info: socket.SocketMessageInfo): void => {
+      if (stream === null) {
+        if (buffered.length < PREAUTH_BUFFERS_MAX) {
+          buffered.push(info.message);
+        }
+        admit();
+        return;
+      }
       this.onSocketBytes(stream, info.message);
     });
     conn.on('close', (): void => {
-      this.closeStream(stream, true);
+      closed = true;
+      clearAuthTimer();
+      if (stream !== null) {
+        this.closeStream(stream, true);
+      }
     });
+    authTimer = setTimeout((): void => {
+      authTimer = -1;
+      if (!admitted && stream === null && !closed) {
+        logW('[WebProxy] local client sent no MTProxy handshake within ' + AUTH_WAIT_MS + 'ms, closing');
+        this.peerRejects++;
+        conn.close().catch((): void => {});
+      }
+    }, AUTH_WAIT_MS);
+  }
 
+  // 登记成一条逻辑流并返回；流号空间用尽返回 null（会话会被重建）。
+  private registerClient(conn: socket.TCPSocketConnection): SidecarStream | null {
+    // 流号在一个会话内绝不复用（PROTOCOL.md:431；服务端对已关闭的流号会报错）。
+    // 3 字节空间用尽时不能原地回绕，否则等于复用旧流号：直接让会话重来，
+    // 新会话在 relay 侧是全新的流表，才允许从 1 重新分配。
+    if (this.nextStreamId > 0xffffff) {
+      logE('[WebProxy] stream id space exhausted, restarting carrier session');
+      conn.close().catch((): void => {});
+      this.nextStreamId = 1;
+      this.failSession('stream id space exhausted');
+      return null;
+    }
+    const id: number = this.nextStreamId;
+    this.nextStreamId = id + 1;
+    const stream: SidecarStream = new SidecarStream(id, conn);
+    this.streams.set(id, stream);
     // OPEN 只能在 WELCOME 之后发（PROTOCOL.md）。载体还没握上手时先挂着，
     // 已连上来的字节也一起攒着，由 onWelcome() 补发。
     if (this.ready) {
       this.sendOpen(stream);
     }
+    return stream;
   }
 
   // tgnet 发来的字节：能发就切成 DATA 帧，发不动的进 blocked，等 WINDOW 回来补发。
@@ -431,9 +622,14 @@ export class WebProxyTransport {
     } else if (frame.type === FRAME_WELCOME) {
       this.onWelcome();
     } else if (frame.type === FRAME_PING) {
-      // 桥接页把 stream id 0 的帧一律判非法（pushLane 里 if (!id) throw），
-      // 所以 PONG 没法经这条载体回去；tproxy v1 relay 也不发 PING，忽略即可。
-      logW('[WebProxy] relay ping ignored');
+      // PROTOCOL.md:419-420：relay 发 PING（流 0、opaque token），客户端用同一 token
+      // 回 PONG。v1 relay 不发 PING（PROTOCOL.md:451），这里是补全协议。
+      if (frame.payload.length > 64) {
+        logW('[WebProxy] relay ping token too long, ignoring');
+      } else {
+        logI('[WebProxy] relay ping, sending pong');
+        this.sendPong(frame.payload);
+      }
     } else if (frame.type === FRAME_PONG) {
       // v1 我们不主动发 PING，收到就对端在探活，忽略即可。
     } else if (frame.type === FRAME_BYE) {
@@ -444,6 +640,19 @@ export class WebProxyTransport {
     } else {
       logW('[WebProxy] unknown frame type ' + frame.type);
     }
+  }
+
+  // PONG 是流 0 的会话级控制帧，payload 原样回显。注意：tproxy-server 的页面在
+  // https-lanes / websocket-lanes 模式下会把流 0 的非 OPEN 帧判非法（服务端
+  // internal/bridge/page.go 的 queueLane / queueWebSocketLane），那种部署若真发 PING
+  // 会让页面报错；v1 relay 不 PING，且真出错时 P0 的会话恢复会重建载体。
+  private sendPong(token: Uint8Array): void {
+    const frame: Uint8Array = new Uint8Array(HEADER_BYTES + token.length);
+    frame[0] = FRAME_PONG;
+    writeU24(frame, 1, 0);
+    writeU32(frame, 4, token.length);
+    frame.set(token, HEADER_BYTES);
+    this.pushOutbound(frame);
   }
 
   private onWelcome(): void {

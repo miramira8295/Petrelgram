@@ -305,7 +305,11 @@ struct Index {
     if (this.stage !== AuthStage.Ready || this.pendingDeepLink === '') {
       return;
     }
-    if (!this.connReady) {
+    // WEB 代理链接只是打开本地表单，一次网络请求都不需要。原来的实现在这类
+    // 链接上跟着「连接就绪」一起等（最长 8 秒）——而代理本身没连上时恰恰就是
+    // 用户最需要打开这个表单的时刻，表现成"点了没反应"。所以本地链接直接放行。
+    const localOnly: boolean = this.pendingDeepLink.toLowerCase().indexOf('webproxy') >= 0;
+    if (!this.connReady && !localOnly) {
       if (this.deepLinkTimer === -1) {
         this.deepLinkTimer = setTimeout((): void => {
           this.deepLinkTimer = -1;

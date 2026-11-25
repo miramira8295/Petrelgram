@@ -20,6 +20,7 @@ import { navigateToChatProfile, navigateToProfile } from './profileNav';
 import { navigateToSetting } from './settingsNav';
 import { logE, logW } from './log';
 import { navigateToSearch } from './searchNav';
+import { postWebProxyDraft } from './webProxyImport';
 import { endLinkNavIf } from './linkTapGuard';
 import { parseWebProxyLink, WebProxyLinkInfo } from '../services/WebProxyHost';
 
@@ -748,6 +749,9 @@ export function openTelegramLink(context: common.UIAbilityContext, url: string,
   if (raw.toLowerCase().indexOf('webproxy') >= 0) {
     const info: WebProxyLinkInfo | null = parseWebProxyLink(raw);
     if (info !== null && info.host !== '') {
+      // 表单真正被打开靠这条可重放信号——代理页已经在右栏时 navigateToSetting
+      // 会被判成 skip（webproxy 参数的 frameKey 恒为空串），onRouteParams 不触发。
+      postWebProxyDraft(info.host, info.path, info.secret);
       const proxyParams: Record<string, Object> = {
         'proxyType': 'proxyTypeWeb',
         'proxyServer': info.host,
