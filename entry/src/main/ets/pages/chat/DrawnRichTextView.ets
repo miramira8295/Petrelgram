@@ -9,8 +9,10 @@ import { DrawnRichTextLayout } from './DrawnRichTextLayout';
 import { DrawnRichTextPainter } from './DrawnRichTextPainter';
 import { a11yRuntimeState } from '../../util/a11yState';
 
-const VIEW_HOLD_SLOP: number = 6;
-const VIEW_TAP_MOVE_MAX: number = 8;
+const VIEW_TOUCH_SLOP_X: number = 6;
+const VIEW_TOUCH_SLOP_Y: number = 6;
+const VIEW_HOLD_SLOP: number = 8;
+const VIEW_TAP_MOVE_MAX: number = 16;
 
 @Styles
 function drawnLinkIdleStyle() { .backgroundColor(Color.Transparent) }
@@ -38,12 +40,16 @@ export struct DrawnRichTextView {
   private sameLinkTarget(a: DrawnRichHit | null, b: DrawnRichHit | null): boolean {
     if (a === null || b === null) { return false; }
     if (a === b) { return true; }
-    return a.link !== undefined && b.link !== undefined && (a.link.group ?? a.link) === (b.link.group ?? b.link);
+    if (a.link === undefined || b.link === undefined) { return false; }
+    if ((a.link.group ?? a.link) === (b.link.group ?? b.link)) { return true; }
+    return a.link.url !== '' && a.link.url === b.link.url &&
+      ((a.link.action === undefined && b.link.action === 'web-preview') ||
+        (a.link.action === 'web-preview' && b.link.action === undefined));
   }
 
-  private findNear(plan: DrawnRichTextLayout, x: number, y: number, slop: number): DrawnRichHit | null {
-    return slop > 0 && plan.hitIndex.findNear !== undefined
-      ? plan.hitIndex.findNear(x, y, slop, slop)
+  private findNear(plan: DrawnRichTextLayout, x: number, y: number, slopX: number, slopY: number = slopX): DrawnRichHit | null {
+    return (slopX > 0 || slopY > 0) && plan.hitIndex.findNear !== undefined
+      ? plan.hitIndex.findNear(x, y, slopX, slopY)
       : plan.hitIndex.find(x, y);
   }
 
@@ -53,15 +59,16 @@ export struct DrawnRichTextView {
     return (event: ClickEvent): void => {
       if (plan === null || plan !== this.plan) { return; }
       const touchSource = event.source === SourceType.TouchScreen;
-      const hit = touchSource && this.touchPlan === plan && this.touchHit !== null &&
-        Math.hypot(event.x - this.touchX, event.y - this.touchY) <= VIEW_TAP_MOVE_MAX
-        ? this.findNear(plan, event.x, event.y, VIEW_HOLD_SLOP)
+      const withinTapSlop = Math.hypot(event.x - this.touchX, event.y - this.touchY) <= VIEW_TAP_MOVE_MAX;
+      const hit = touchSource && this.touchPlan === plan && this.touchHit !== null
+        ? this.findNear(plan, event.x, event.y, withinTapSlop ? VIEW_HOLD_SLOP : 0)
         : plan.hitIndex.find(event.x, event.y);
       if (hit === null) { return; }
       if (touchSource && (this.touchPlan !== plan || !this.sameLinkTarget(this.touchHit, hit))) { return; }
+      const target = touchSource && this.touchHit !== null && this.touchHit.link.hidesUrl ? this.touchHit.link : hit.link;
       this.touchHit = null;
       this.painter.clearPress();
-      this.onLinkTap(hit.link);
+      this.onLinkTap(target);
     };
   }
 
@@ -71,7 +78,7 @@ export struct DrawnRichTextView {
         this.touchPlan = plan;
         const point = event.changedTouches[0];
         this.touchHit = plan !== null && plan === this.plan && event.touches.length === 1 && point !== undefined ?
-          plan.hitIndex.find(point.x, point.y) : null;
+          this.findNear(plan, point.x, point.y, VIEW_TOUCH_SLOP_X, VIEW_TOUCH_SLOP_Y) : null;
         this.touchX = point?.x ?? 0; this.touchY = point?.y ?? 0;
         if (this.touchHit !== null) { this.painter.press(this.touchHit, this.getUIContext()); }
         else { this.painter.clearPress(); }
@@ -80,14 +87,16 @@ export struct DrawnRichTextView {
         this.touchHit = null; this.painter.clearPress();
       } else if (event.type === TouchType.Move || event.type === TouchType.Up) {
         const point = event.changedTouches[0];
-        const moved = point === undefined || Math.hypot(point.x - this.touchX, point.y - this.touchY) > VIEW_TAP_MOVE_MAX;
-        if (moved) {
-          this.touchHit = null;
-        } else if (this.touchHit !== null && plan !== null && point !== undefined) {
-          const current = this.findNear(plan, point.x, point.y, VIEW_HOLD_SLOP);
-          this.touchHit = this.sameLinkTarget(current, this.touchHit) ? current : null;
+        if (this.touchHit !== null) {
+          if (point === undefined || plan === null) {
+            this.touchHit = null;
+          } else {
+            const slop = Math.hypot(point.x - this.touchX, point.y - this.touchY) <= VIEW_TAP_MOVE_MAX ? VIEW_HOLD_SLOP : 0;
+            const current = this.findNear(plan, point.x, point.y, slop);
+            if (!this.sameLinkTarget(current, this.touchHit)) { this.touchHit = null; }
+          }
         }
-        if (event.type === TouchType.Up || moved || this.touchHit === null) { this.painter.clearPress(); }
+        if (event.type === TouchType.Up || this.touchHit === null) { this.painter.clearPress(); }
       }
       // Keep propagation/native click arbitration: ancestors still own scrolling,
       // long press and swipe. Touch callbacks only provide press feedback.
@@ -134,7 +143,9 @@ export struct DrawnRichTextView {
       } else if ((this.plan?.hits.length ?? 0) > 0) {
         Row()
           .width(this.plan?.widthVp ?? 0).height(this.plan?.heightVp ?? 0)
-          .responseRegion(this.plan?.hitIndex.regions ?? this.emptyRegions)
+          .responseRegion(this.plan?.hitIndex.paddedRegions !== undefined
+            ? this.plan.hitIndex.paddedRegions(VIEW_TOUCH_SLOP_X, VIEW_TOUCH_SLOP_Y)
+            : (this.plan?.hitIndex.regions ?? this.emptyRegions))
           .accessibilityLevel('no')
           .onTouch(this.linkTouch(this.plan))
           .onClick(this.linkClick(this.plan));

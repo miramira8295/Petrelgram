@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 import { parseFormattedText, RichSegment } from '../main/ets/util/richText';
-import { drawnRichSegmentSource, appendDrawnRichHits, sameDrawnRichHitTarget, DrawnRichHit, DrawnRichLink, DrawnRichRect, DrawnRichSourceCache } from '../main/ets/util/drawnRichTextPolicy';
+import { drawnRichSegmentSource, appendDrawnRichHits, isWholeBlockSingleLink, sameDrawnRichHitTarget, DrawnRichHit, DrawnRichLink, DrawnRichRect, DrawnRichSourceCache } from '../main/ets/util/drawnRichTextPolicy';
 
 function richEntity(kind: string, offset: number, length: number, url: string = ''): TdObject {
   const type: TdObject = { '@type': `textEntityType${kind}` };
@@ -246,6 +246,28 @@ export default function drawnRichTextTest(): void {
       appendDrawnRichHits(a, boxes, richTestLink(), 2, 100, 100, 1);
       appendDrawnRichHits(b, boxes, richTestLink(), 2, 100, 100, 2);
       expect(a[0].key === b[0].key).assertFalse();
+    });
+    it('pure link blocks and matching web previews share continuous tap identity', 0, (): void => {
+      const cache = new DrawnRichSourceCache();
+      const pureUrl = cache.prepare('https://github.com/ShixmSimon/orbira-browser', [])!;
+      const mixedUrl = cache.prepare('repo https://github.com/ShixmSimon/orbira-browser', [])!;
+      expect(isWholeBlockSingleLink(pureUrl)).assertTrue();
+      expect(isWholeBlockSingleLink(mixedUrl)).assertFalse();
+      const hits: DrawnRichHit[] = [];
+      appendDrawnRichHits(hits, [{ left: 0, top: 0, right: 80, bottom: 20 }], pureUrl.links[0], 2, 100, 100, 1);
+      const previewHit: DrawnRichHit = {
+        key: 'web-preview', x: 0, y: 26, widthVp: 280, heightVp: 220, accessible: true,
+        link: { action: 'web-preview', start: 0, end: 0, label: 'GitHub', url: 'https://github.com/ShixmSimon/orbira-browser',
+          hidesUrl: false, accessibilityLabel: 'GitHub', accessibilityFirst: true }
+      };
+      const otherPreviewHit: DrawnRichHit = {
+        key: 'web-preview-other', x: 0, y: 26, widthVp: 280, heightVp: 220, accessible: true,
+        link: { action: 'web-preview', start: 0, end: 0, label: 'Other', url: 'https://other.example',
+          hidesUrl: false, accessibilityLabel: 'Other', accessibilityFirst: true }
+      };
+      expect(sameDrawnRichHitTarget(hits[0], previewHit)).assertTrue();
+      expect(sameDrawnRichHitTarget(previewHit, hits[0])).assertTrue();
+      expect(sameDrawnRichHitTarget(hits[0], otherPreviewHit)).assertFalse();
     });
   });
 }

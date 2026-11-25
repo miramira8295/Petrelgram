@@ -1,6 +1,6 @@
 import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
-import { MessageDragGesture } from '../../util/messageDragGesture';
-import { configureMessageDrag } from '../../services/MessageDragSource';
+import { MESSAGE_HOLD_MENU_MS, MessageDragGesture } from '../../util/messageDragGesture';
+import { configureMessageDrag, startMessageTouchDrag } from '../../services/MessageDragSource';
 import { messageDragType } from '../../util/messageDrag';
 import { tableScrollTouched } from '../../util/tableTouchChannel';
 import { JUMP_FOCUS_SCALE } from '../../util/bubbleFocusChannel';
@@ -189,10 +189,22 @@ export struct DrawnContentRow {
     const touch = event.touches[0] ?? event.changedTouches[0];
     const now = Date.now();
     if (event.type === TouchType.Down && touch !== undefined) {
-      this.dragGesture.begin(touch.windowX, touch.windowY, now);
+      this.dragGesture.begin(touch.windowX, touch.windowY, now, event.source === SourceType.TouchScreen);
       this.recordMenuOffset(touch.x, Number(event.target.area.width));
+    } else if (event.type === TouchType.Cancel || event.touches.length > 1) {
+      this.dragGesture.end(now, true);
     } else if (event.type === TouchType.Move && touch !== undefined) {
-      this.dragGesture.move(touch.windowX, touch.windowY, now);
+      if (this.dragGesture.shouldStartTouchDrag(touch.windowX, touch.windowY, now) &&
+        (!this.context.gestureClaimed || this.dragGesture.hasOpenedMenu()) && !tableScrollTouched()) {
+        this.dragGesture.claim();
+        if (startMessageTouchDrag(this.getUIContext(), touch.id ?? 0, this.data.chatId, this.msg.id,
+          messageDragType(this.msg.contentType), `dissolve-delete-message-${this.data.chatId}-${this.msg.rowId}`,
+          (): void => { this.draggingMessage = false; })) {
+          this.draggingMessage = true;
+          this.context.gestureClaimed = true;
+          this.context.msgContextMenuShown = false;
+        }
+      }
     } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
       if (touch !== undefined) { this.dragGesture.move(touch.windowX, touch.windowY, now); }
       if (this.dragGesture.end(now, event.type === TouchType.Cancel)) { this.onLongPress(); }
@@ -427,8 +439,11 @@ export struct DrawnContentRow {
                   this.bubbleFillColor(), `${this.env.appearanceEpoch}`, false, this.getUIContext().vp2px(1)))
                 .scale({ x: 1 + this.jumpFocus * JUMP_FOCUS_SCALE, y: 1 + this.jumpFocus * JUMP_FOCUS_SCALE,
                   centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
-                .parallelGesture(this.canDragMessage() ? undefined : LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
-                  .onAction((e: GestureEvent): void => { this.onLongPress(e); }))
+                .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: MESSAGE_HOLD_MENU_MS })
+                  .onAction((e: GestureEvent): void => {
+                    if (this.canDragMessage()) { this.dragGesture.markMenuOpened(); }
+                    this.onLongPress(e);
+                  }))
                 .onTouch((e: TouchEvent): void => { this.onDragSourceTouch(e); })
                 .onClick((e: ClickEvent): void => {
                   if (!this.context.gestureClaimed && !this.data.selectionActive && messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
@@ -439,7 +454,12 @@ export struct DrawnContentRow {
             }
           }.alignItems(VerticalAlign.Bottom).padding(this.avatarGutterPadding())
           .draggable(this.canDragMessage())
+          .dragPreviewOptions({}, { isLiftingDisabled: true })
           .onDragStart((e: DragEvent): DragItemInfo => {
+            if (!this.canDragMessage() || !this.dragGesture.canStartDrag() ||
+              (this.context.gestureClaimed && !this.dragGesture.hasOpenedMenu()) || tableScrollTouched()) {
+              e.setResult(DragResult.DRAG_CANCELED); return {};
+            }
             this.dragGesture.claim(); this.draggingMessage = true; this.context.gestureClaimed = true;
             this.context.msgContextMenuShown = false;
             return configureMessageDrag(e, this.data.chatId, this.msg.id, messageDragType(this.msg.contentType));
@@ -461,10 +481,11 @@ export struct DrawnContentRow {
         .parallelGesture(PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 8 })
           .onActionUpdate((e: GestureEvent): void => { this.onSwipeReplyUpdate(e.offsetX); })
           .onActionEnd((): void => { this.onSwipeReplyEnd(); }).onActionCancel((): void => { this.onSwipeReplyEnd(); }))
-        .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 }).onAction((e: GestureEvent): void => {
+        .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: MESSAGE_HOLD_MENU_MS }).onAction((e: GestureEvent): void => {
           if (this.context.gestureClaimed) { return; }
           const f = firstFinger(e.fingerList);
           if (f !== undefined && hitSenderAvatarColumn(f.localX, this.data.isGroup, this.msg.isOutgoing, this.group.showAvatar)) { return; }
+          if (this.canDragMessage() && this.dragGesture.prefersDrag(Date.now())) { return; }
           this.recordRowMenuOffset(f?.localX ?? 0); this.onLongPress(e);
         }))
         .onTouch((e: TouchEvent): void => {

@@ -67,5 +67,30 @@ export default function messageDragGestureTest() {
       state.begin(0, 0, 3000); state.move(40, 0, 3100);
       expect(state.end(3600, false)).assertFalse();
     });
+    it('menu_opened_on_hold_suppresses_duplicate_release_menu', 0, (): void => {
+      const state = new MessageDragGesture(); state.begin(20, 30, 1000, true);
+      state.markMenuOpened();
+      expect(state.hasOpenedMenu()).assertTrue();
+      expect(state.end(1550, false)).assertFalse();
+      expect(state.hasOpenedMenu()).assertFalse();
+    });
+    it('touch_drag_requires_large_distance_preserving_open_menu_on_small_motion', 0, (): void => {
+      const state = new MessageDragGesture(); state.begin(100, 200, 1000, true);
+      state.markMenuOpened();
+      expect(state.shouldStartTouchDrag(125, 210, 1500)).assertFalse();
+      expect(state.canStartDrag()).assertFalse();
+      expect(state.hasOpenedMenu()).assertTrue();
+      expect(state.shouldStartTouchDrag(145, 200, 1560)).assertTrue();
+      state.claim();
+      expect(state.hasOpenedMenu()).assertFalse();
+      expect(state.shouldStartTouchDrag(180, 200, 1600)).assertFalse();
+      expect(state.end(1700, false)).assertFalse();
+    });
+    it('early_scroll_or_swipe_blocks_large_touch_drag', 0, (): void => {
+      const state = new MessageDragGesture(); state.begin(50, 50, 1000, true);
+      expect(state.shouldStartTouchDrag(70, 50, 1100)).assertFalse();
+      expect(state.shouldStartTouchDrag(120, 50, 1700)).assertFalse();
+      expect(state.canStartDrag()).assertFalse();
+    });
   });
 }

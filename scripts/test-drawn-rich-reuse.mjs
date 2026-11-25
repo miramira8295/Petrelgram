@@ -80,7 +80,7 @@ const paintRow = [...nodes.keys()].find(id => nodes.get(id).drawModifier);
 const hitRow = [...nodes.keys()].find(id => nodes.get(id).onClick);
 const oldClick = nodes.get(hitRow).onClick, oldTouch = nodes.get(hitRow).onTouch;
 const painter = nodes.get(paintRow).drawModifier;
-assert.equal(nodes.get(hitRow).responseRegion, first.hitIndex.regions, 'reuse cached region array');
+assert.equal(nodes.get(hitRow).responseRegion, first.hitIndex.paddedRegions(6, 6), 'reuse cached padded region array');
 oldClick({ ...mouse, x: 20 }); assert.deepEqual(clicks, [], 'gap is not a link');
 oldClick(mouse); assert.deepEqual(clicks, ['first0']);
 oldTouch(event(0)); painter.drawBehind({ canvas });
@@ -91,9 +91,9 @@ oldTouch(event(0)); oldTouch(event(1, 30)); oldClick(touchClick);
 oldTouch(event(0)); oldTouch(event(3)); oldClick(touchClick);
 oldTouch(event(0)); oldTouch(event(0, 5, 5, 2)); oldClick(touchClick);
 assert.equal(clicks.length, 2, 'move outside, cancel and multitouch reject clicks');
-// Slight finger roll within tap threshold keeps the tap without changing brushCount or plan state.
-oldTouch(event(0, 11, 5)); oldTouch(event(1, 13, 6)); oldTouch(event(2, 13, 6)); oldClick({ x: 13, y: 6, source: 0 });
-assert.equal(clicks.length, 3, 'finger roll within slop completes link tap');
+// Slight edge offset on Down plus >8vp thumb roll within tap threshold completes the link tap without changing brushCount or plan state.
+oldTouch(event(0, -3, 5)); oldTouch(event(1, 9, 8)); oldTouch(event(2, 9, 8)); oldClick({ x: 9, y: 8, source: 0 });
+assert.equal(clicks.length, 3, 'edge slop + finger roll completes link tap');
 clicks.pop();
 oldTouch(event(0));
 view.resetStateVarsOnReuse({ plan: null, onLinkTap: link => clicks.push(link.url) });
@@ -111,7 +111,7 @@ oldClick(mouse); nodes.get(hitRow).onClick(touchClick);
 assert.equal(clicks.length, 2, 'neither old callback nor new callback may finish an old press');
 nodes.get(hitRow).onTouch(event(0)); nodes.get(hitRow).onTouch(event(2)); nodes.get(hitRow).onClick(touchClick);
 assert.equal(clicks.at(-1), 'second0');
-const before = invalidations, regions = second.hitIndex.regions;
+const before = invalidations, regions = second.hitIndex.paddedRegions(6, 6);
 for (let i = 0; i < 1000; i++) { update(root); update(paintRow); update(hitRow); painter.drawBehind({ canvas }); }
 assert.equal(invalidations, before); assert.equal(brushCount, 1);
 assert.equal(nodes.get(hitRow).responseRegion, regions);

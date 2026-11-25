@@ -45,6 +45,7 @@ export interface DrawnRichBlock {
   title?: DrawnRichSource;
   initiallyOpen?: boolean;
   preview?: boolean;
+  previewUrl?: string;
   imageRatio?: number;
   fontSize?: number;
   lineLimit?: number;
@@ -298,10 +299,23 @@ export interface DrawnRichHit {
   accessible: boolean;
 }
 
+export function isWholeBlockSingleLink(source: DrawnRichSource): boolean {
+  if (source.content.length === 0 || source.links.length === 0) { return false; }
+  const first = source.links[0];
+  if (first.start !== 0 || source.links[source.links.length - 1].end !== source.content.length) { return false; }
+  for (let i: number = 1; i < source.links.length; i++) {
+    if ((source.links[i].group ?? source.links[i]) !== first) { return false; }
+  }
+  return true;
+}
+
 export function sameDrawnRichHitTarget(a: DrawnRichHit | null, b: DrawnRichHit | null): boolean {
   if (a === null || b === null) { return false; }
   if (a === b) { return true; }
-  return (a.link.group ?? a.link) === (b.link.group ?? b.link);
+  if ((a.link.group ?? a.link) === (b.link.group ?? b.link)) { return true; }
+  return a.link.url !== '' && a.link.url === b.link.url &&
+    ((a.link.action === undefined && b.link.action === 'web-preview') ||
+      (a.link.action === 'web-preview' && b.link.action === undefined));
 }
 
 // Visits only returned rectangles: across all links this is O(total boxes),

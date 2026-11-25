@@ -10,10 +10,21 @@ const previewHits=first.caption.hits.filter(h=>h.link.action==='web-preview');
 assert.equal(previewHits.length,1,'entire preview card shares one unified hit rectangle');
 const cardHit=previewHits[0];
 assert.equal(cardHit.x,0);
+assert.equal(cardHit.link.url,'https://preview.test','preview card carries canonical preview URL');
 assert.equal(cardHit.widthVp,first.caption.widthVp,'right-side blank space inside preview card remains tappable');
 assert.ok(first.caption.hitIndex.find(first.caption.widthVp-2,cardHit.y+2)?.link.action==='web-preview');
 assert.ok(first.caption.hitIndex.find(2,cardHit.y+cardHit.heightVp-2)?.link.action==='web-preview');
 assert.ok(!first.caption.hits.some(h=>h.link.url==='https://unrelated.test'),'description links cannot hijack the card');
+const singleUrlMsg=group('https://github.com/ShixmSimon/orbira-browser');
+Object.assign(singleUrlMsg.head,{linkUrl:'https://github.com/ShixmSimon/orbira-browser',linkSiteName:'GitHub',
+ linkTitle:'GitHub - ShixmSimon/orbira-browser',linkDescription:'desc https://github.com/miramira8295/chromium-hmos',
+ linkPhotoFileId:88,linkPhotoWidth:400,linkPhotoHeight:300,linkPhotoPath:'',linkPhotoFailed:false});
+const singleUrlPlan=new ctx.DrawnTextLayouts().prepare(ui,singleUrlMsg,data,style);
+const topUrlHits=singleUrlPlan.caption.hits.filter(h=>h.link.action===undefined);
+assert.ok(topUrlHits.length>=1);
+for(const h of topUrlHits){assert.equal(h.x+h.widthVp,singleUrlPlan.caption.widthVp,'wrapped pure-URL header spans full preview bubble width');}
+const previewCardHit=singleUrlPlan.caption.hits.find(h=>h.link.action==='web-preview');
+assert.ok(ctx.sameDrawnRichHitTarget(topUrlHits[0],previewCardHit),'rolling between top URL and its own preview card keeps target');
 const image=first.caption.previewImage;
 assert.ok(image.x>=0&&image.x+image.width<=first.caption.widthVp);
 assert.ok(image.y>=0&&image.y+image.height<=first.caption.heightVp);

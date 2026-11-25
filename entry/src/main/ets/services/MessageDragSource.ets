@@ -1,3 +1,5 @@
+import { UIContext } from '@kit.ArkUI';
+import { image } from '@kit.ImageKit';
 import { unifiedDataChannel as udc } from '@kit.ArkData';
 import { fileUri, fileIo } from '@kit.CoreFileKit';
 import { messageDragOriginTag } from '../util/messageDragOrigin';
@@ -6,9 +8,12 @@ import { TdObject, TdRequest } from '../tdkit/TdTypes';
 import { completedDragFilePath, messageDragPayload } from '../util/messageDrag';
 import { logW } from '../util/log';
 
-// The system owns this one-shot provider after drag start. Do not bind its lifetime
-// to a recycled bubble or to onDragEnd (receivers may still be reading then).
-export function configureMessageDrag(event: DragEvent, chatId: number, messageId: number, type: string): DragItemInfo {
+interface PreparedMessageDrag {
+  dataLoadParams: udc.DataLoadParams;
+  originTag: string;
+}
+
+function prepareMessageDragLoad(chatId: number, messageId: number, type: string): PreparedMessageDrag {
   const client = getTdClient();
   const originTag = messageDragOriginTag(getActiveTdAccountSlot(), chatId);
   let pending: Promise<udc.UnifiedData | null> | undefined = undefined;
@@ -33,7 +38,7 @@ export function configureMessageDrag(event: DragEvent, chatId: number, messageId
       if (path === '' || !await fileIo.access(path) || client !== getTdClient()) { return null; }
       const uri = fileUri.getUriFromPath(path);
       let record: udc.File;
-      if (type === 'general.image') { const image = new udc.Image(); image.imageUri = uri; record = image; }
+      if (type === 'general.image') { const img = new udc.Image(); img.imageUri = uri; record = img; }
       else if (type === 'general.video') { const video = new udc.Video(); video.videoUri = uri; record = video; }
       else if (type === 'general.audio') { const audio = new udc.Audio(); audio.audioUri = uri; record = audio; }
       else { record = new udc.File(); record.uri = uri; }
@@ -43,7 +48,7 @@ export function configureMessageDrag(event: DragEvent, chatId: number, messageId
       return null;
     }
   };
-  event.setDataLoadParams({
+  const dataLoadParams: udc.DataLoadParams = {
     dataLoadInfo: { types: new Set<string>([type]), recordCount: 1 },
     loadHandler: (): udc.UnifiedData | null => null,
     delayedDataLoadHandler: (): Promise<udc.UnifiedData | null> => {
@@ -56,6 +61,43 @@ export function configureMessageDrag(event: DragEvent, chatId: number, messageId
         return data;
       });
     }
-  });
-  return { extraInfo: originTag };
+  };
+  return { dataLoadParams, originTag };
+}
+
+// The system owns this one-shot provider after drag start. Do not bind its lifetime
+// to a recycled bubble or to onDragEnd (receivers may still be reading then).
+export function configureMessageDrag(event: DragEvent, chatId: number, messageId: number, type: string): DragItemInfo {
+  const prepared = prepareMessageDragLoad(chatId, messageId, type);
+  event.setDataLoadParams(prepared.dataLoadParams);
+  return { extraInfo: prepared.originTag };
+}
+
+// Proactive touch drag initiated only after finger travel crosses the large
+// distance threshold, allowing stationary holds to open the context menu immediately.
+export function startMessageTouchDrag(ui: UIContext, pointerId: number, chatId: number,
+  messageId: number, type: string, nodeId: string, onEnd: () => void): boolean {
+  if (type === '' || nodeId === '') { return false; }
+  let pixelMap: image.PixelMap | undefined = undefined;
+  try {
+    pixelMap = ui.getComponentSnapshot().getSync(nodeId);
+  } catch (_) {
+    return false;
+  }
+  const prepared = prepareMessageDragLoad(chatId, messageId, type);
+  const item: DragItemInfo = { pixelMap, extraInfo: prepared.originTag };
+  try {
+    ui.getDragController().executeDrag(item, {
+      pointerId,
+      dataLoadParams: prepared.dataLoadParams,
+      extraParams: JSON.stringify({ extraInfo: prepared.originTag })
+    }).then((): void => {
+      onEnd();
+    }, (): void => {
+      onEnd();
+    });
+    return true;
+  } catch (_) {
+    return false;
+  }
 }

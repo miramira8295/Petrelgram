@@ -7,8 +7,8 @@ import { showToast } from '../../util/toast';
 import { ReactionTransitions } from '../../util/reactionTransitions';
 import { TextMeasureCache, textMeasureEnvironment, sharedTextMeasurements } from '../../util/textMeasureCache';
 import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
-import { MessageDragGesture } from '../../util/messageDragGesture';
-import { configureMessageDrag } from '../../services/MessageDragSource';
+import { MESSAGE_HOLD_MENU_MS, MessageDragGesture } from '../../util/messageDragGesture';
+import { configureMessageDrag, startMessageTouchDrag } from '../../services/MessageDragSource';
 import { messageDragType } from '../../util/messageDrag';
 import { tableScrollTouched } from '../../util/tableTouchChannel';
 import { JUMP_FOCUS_BRIGHTNESS, JUMP_FOCUS_SCALE } from '../../util/bubbleFocusChannel';
@@ -489,12 +489,22 @@ export struct MessageBubbleShell {
     const touch = event.touches[0] ?? event.changedTouches[0];
     const now = Date.now();
     if (event.type === TouchType.Down && touch !== undefined) {
-      this.dragGesture.begin(touch.windowX, touch.windowY, now);
+      this.dragGesture.begin(touch.windowX, touch.windowY, now, event.source === SourceType.TouchScreen);
       this.recordMenuOffset(touch.x, Number(event.target.area.width));
     } else if (event.type === TouchType.Cancel || event.touches.length > 1) {
       this.dragGesture.end(now, true);
     } else if (event.type === TouchType.Move && touch !== undefined) {
-      this.dragGesture.move(touch.windowX, touch.windowY, now);
+      if (this.dragGesture.shouldStartTouchDrag(touch.windowX, touch.windowY, now) &&
+        (!this.context.gestureClaimed || this.dragGesture.hasOpenedMenu()) && !tableScrollTouched()) {
+        this.dragGesture.claim();
+        if (startMessageTouchDrag(this.getUIContext(), touch.id ?? 0, this.data.chatId, this.msg.id,
+          messageDragType(this.msg.contentType), `dissolve-delete-message-${this.data.chatId}-${this.msg.rowId}`,
+          (): void => { this.draggingMessage = false; })) {
+          this.draggingMessage = true;
+          this.context.gestureClaimed = true;
+          this.context.msgContextMenuShown = false;
+        }
+      }
     } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
       if (touch !== undefined) { this.dragGesture.move(touch.windowX, touch.windowY, now); }
       if (this.dragGesture.end(now, event.type === TouchType.Cancel)) { this.onLongPress(); }
@@ -1844,8 +1854,11 @@ export struct MessageBubbleShell {
     // is untouched — PanDirection.Horizontal means a vertical drag simply
     // never satisfies this recognizer and falls through to the List.
     .parallelGesture(
-      this.canDragMessage() ? undefined : LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
-        .onAction((event: GestureEvent): void => { this.onLongPress(event); })
+      LongPressGesture({ fingers: 1, repeat: false, duration: MESSAGE_HOLD_MENU_MS })
+        .onAction((event: GestureEvent): void => {
+          if (this.canDragMessage()) { this.dragGesture.markMenuOpened(); }
+          this.onLongPress(event);
+        })
     )
     .onTouch((event: TouchEvent): void => { this.onDragSourceTouch(event); })
     // 单击出菜单只在新交互下挂。用 .onClick 而不是塞进上面那个
@@ -2018,7 +2031,7 @@ export struct MessageBubbleShell {
       .dragPreviewOptions({}, { isLiftingDisabled: true })
       .onDragStart((event: DragEvent): DragItemInfo => {
         if (!this.canDragMessage() || !this.dragGesture.canStartDrag() ||
-          this.context.gestureClaimed || tableScrollTouched()) {
+          (this.context.gestureClaimed && !this.dragGesture.hasOpenedMenu()) || tableScrollTouched()) {
           event.setResult(DragResult.DRAG_CANCELED); return {};
         }
         this.dragGesture.claim();
@@ -2099,7 +2112,7 @@ export struct MessageBubbleShell {
         this.context.msgContextMenuShown = true;
       })
       .parallelGesture(
-        LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+        LongPressGesture({ fingers: 1, repeat: false, duration: MESSAGE_HOLD_MENU_MS })
           .onAction((event: GestureEvent): void => {
             if (this.context.gestureClaimed) { return; }
             const fingers = event.fingerList;

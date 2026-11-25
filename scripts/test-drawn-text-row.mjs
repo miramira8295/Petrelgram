@@ -68,7 +68,7 @@ const ctx=vm.createContext({StaticMiniThumbnail:class{constructor(_owner,params)
   SourceType:{TouchScreen:1,Mouse:2},TouchType:{Down:0,Up:1,Move:2,Cancel:3},
   firstFinger:list=>list[0],messageGesturePolicy:()=>({tapOpensMenu:true,longPressSelects:false,longPressOpensMenu:true}),
   tableScrollTouched:()=>false,isEdgeSwipeStart:x=>x<36,SWIPE_REPLY_MAX:-70,SWIPE_REPLY_TRIGGER:-40,SWIPE_SELECT_MAX:70,SWIPE_SELECT_TRIGGER:40,
-  Curve:{EaseOut:1},Date:{now:()=>1000},messageDragType:()=> 'general.plain-text'});
+  Curve:{EaseOut:1},Date:{now:()=>1000},messageDragType:()=> 'general.plain-text',startMessageTouchDrag:()=>false});
 function load(path,names=[]){const s=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/@(?:Require|Param|Local|Computed|Event|ObservedV2|Trace)\s*/g,'').replace(/@Monitor\([^)]*\)\s*/g,'').replace(/\bexport /g,'');vm.runInContext(ts.transpileModule(s+names.map(n=>`\nglobalThis.${n}=${n};`).join(''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx,{filename:path});}
 ctx.AppStorage={get:()=>undefined};
 load(root+'util/drawnPlacementKey.ets',['drawnPlacementKey']);
@@ -160,9 +160,10 @@ const hit=p.caption.hits.find(h=>h.link.url==='https://two.test');const x=p.capt
 const touch=(type,x,y)=>({type,touches:[{x,y,windowX:100,windowY:200}],changedTouches:[{x,y,windowX:100,windowY:200}]});
 row.touch(touch(0,x,y));row.rowTouch(touch(0,x,y));row.click({x,y,source:1});assert.equal(events.at(-1)[1],'https://two.test');
 assert.equal(p.caption.paragraph.native.lastHeightStyle,'INCLUDE_LINE_SPACE_MIDDLE','inline links use full line-box height');
-// Slight touch offset and finger roll near link edge still open the link instead of the menu; blank taps still open the menu.
-const nearX=p.captionX+hit.x+1,nearY=p.captionY+hit.y-2;
-row.touch(touch(0,nearX,nearY));row.rowTouch(touch(0,nearX,nearY));row.touch(touch(2,nearX+1,nearY-1));row.click({x:nearX+1,y:nearY-1,source:1});
+// Slight touch offset, thumb roll >8vp inside target, and micro horizontal jitter <16vp still open the link instead of being dropped or stolen by swipe.
+const nearX=p.captionX+hit.x+1,nearY=p.captionY+hit.y-4;
+row.touch(touch(0,nearX,nearY));row.rowTouch(touch(0,nearX,nearY));row.swipe(-11);assert.equal(row.claimed,false,'small horizontal jitter on link does not claim swipe');
+row.touch(touch(2,nearX+11,nearY+4));row.click({x:nearX+11,y:nearY+4,source:1});
 assert.equal(events.at(-1)[1],'https://two.test');assert.equal(row.menuShown,false);
 const lastHit=p.caption.hits.filter(h=>h.link.url==='https://two.test').at(-1);
 const blankX=p.captionX+lastHit.x+lastHit.widthVp+10,blankY=p.captionY+lastHit.y+2;
@@ -170,7 +171,25 @@ row.touch(touch(0,blankX,blankY));row.rowTouch(touch(0,blankX,blankY));row.touch
 assert.equal(row.menuShown,true,'blank tap rolling near link still opens menu');row.menuShown=false;
 row.group={...links,head:{...links.head,rowId:11}};const before=events.length;row.click({x,y,source:1});assert.equal(events.length,before);
 row.group=links;row.touch(touch(0,x,y));row.rowTouch(touch(0,x,y));ctx.Date.now=()=>1600;row.swipe(-60);assert.equal(row.swipeX,0,'held text favors system drag');
-row.touch(touch(1,x,y));assert.equal(row.menuShown,true,'held unmoved text opens menu on release');
+row.touch(touch(1,x,y));assert.equal(row.menuShown,true,'held unmoved text fallback opens menu on release');
+// Real LongPressGesture opens menu immediately while finger is still down, and Up does not reopen or trigger link click.
+row.claimed=false;row.menuShown=false;const clicksBeforeHold=events.length;
+const touchScreen=(type,lx,ly,wx=100,wy=200)=>({type,source:1,touches:[{id:0,x:lx,y:ly,windowX:wx,windowY:wy}],changedTouches:[{id:0,x:lx,y:ly,windowX:wx,windowY:wy}]});
+ctx.Date.now=()=>3000;row.touch(touchScreen(0,x,y,100,200));row.rowTouch(touchScreen(0,x,y,100,200));
+ctx.Date.now=()=>3450;row.longPress({fingerList:[{localX:x+4,localY:y+3}],target:{area:{width:400}}});
+assert.equal(row.menuShown,true,'draggable text bubble opens menu immediately on hold');
+row.touch(touchScreen(2,x+15,y,115,200));assert.equal(row.menuShown,true,'small finger motion (<42vp) keeps menu open');
+row.touch(touchScreen(1,x+15,y,115,200));row.click({x:x+15,y,source:1});
+assert.equal(events.length,clicksBeforeHold,'releasing after immediate hold-menu never activates underlying link');
+assert.equal(row.menuShown,true);
+let proactiveDrags=0;ctx.startMessageTouchDrag=()=>{proactiveDrags++;return true;};
+row.claimed=false;row.menuShown=false;ctx.Date.now=()=>4000;row.touch(touchScreen(0,x,y,100,200));row.rowTouch(touchScreen(0,x,y,100,200));
+ctx.Date.now=()=>4450;row.longPress({fingerList:[{localX:x+4,localY:y+3}],target:{area:{width:400}}});
+assert.equal(row.menuShown,true);
+ctx.Date.now=()=>4550;row.touch(touchScreen(2,x+50,y,150,200));
+assert.equal(proactiveDrags,1,'large finger travel (>=42vp) starts proactive touch drag');
+assert.equal(row.menuShown,false,'large drag dismisses opened menu');
+ctx.startMessageTouchDrag=()=>false;
 row.claimed=false;row.menuShown=false;ctx.Date.now=()=>2000;row.touch(touch(0,x,y));row.rowTouch(touch(0,x,y));row.dragGesture.claim();row.draggingMessage=true;ctx.Date.now=()=>2600;row.touch(touch(1,x,y));assert.equal(row.menuShown,false,'claimed system drag never opens menu');
 
 // Tiny-font avatar rows retain the native bottom-aligned layout.

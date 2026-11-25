@@ -16,14 +16,31 @@ function evaluate(source) {
   } }).outputText, ctx);
 }
 evaluate(fs.readFileSync('entry/src/main/ets/util/messageDragGesture.ets', 'utf8')
-  .replace('export class', 'class') + '\nglobalThis.Gesture = MessageDragGesture;');
+  .replace(/export /g, '') + '\nglobalThis.Gesture = MessageDragGesture;');
 const gesture = () => new ctx.Gesture();
 for (const [dx, dy] of [[0, 0], [3, 4], [6, 6], [10, 0]]) {
   const state = gesture(); state.begin(50, 80, 1000);
   state.move(50 + dx, 80 + dy, 1600);
-  assert.equal(state.end(1700, false), true, 'small motion remains a release-to-menu hold');
+  assert.equal(state.end(1700, false), true, 'small motion remains a release-to-menu fallback');
   assert.equal(state.canStartDrag(), false, 'late native callback cannot close that menu');
   assert.equal(state.end(1701, false), false, 'opens once');
+}
+// Touch immediate hold-menu: small/medium motion (< 42vp) must NOT start drag or close menu; large motion (>= 42vp) does.
+for (const [dx, dy] of [[0, 0], [12, 0], [25, 15], [40, 0]]) {
+  const state = gesture(); state.begin(50, 80, 1000, true);
+  state.markMenuOpened();
+  assert.equal(state.shouldStartTouchDrag(50 + dx, 80 + dy, 1500), false, 'touch wiggle <42vp cannot hijack menu');
+  assert.equal(state.canStartDrag(), false);
+  assert.equal(state.hasOpenedMenu(), true);
+  assert.equal(state.end(1600, false), false, 'already-opened hold menu never opens a second time on Up');
+}
+{
+  const state = gesture(); state.begin(50, 80, 1000, true);
+  state.markMenuOpened();
+  assert.equal(state.shouldStartTouchDrag(95, 80, 1500), true, 'large touch drag (>=42vp) takes over');
+  state.claim();
+  assert.equal(state.hasOpenedMenu(), false);
+  assert.equal(state.end(1600, false), false);
 }
 for (const cancel of [state => state.end(1700, true), state => state.reset(),
   state => state.claim()]) {
@@ -50,12 +67,14 @@ for (const name of ['DrawnMessageRow', 'MessageBubbleShell']) {
   assert.equal(evaluate('(' + options.getText(ast) + ')').isLiftingDisabled, true,
     name + ' lets only the context menu own pre-drag lifting');
   const bind = evaluate('(function(preview) { return ' + start.getText(ast) + '; })');
-  function host() {
-    const state = gesture(); state.begin(0, 0, Date.now() - 600); state.move(40, 0, Date.now());
+  function host(touch = false, dist = 48) {
+    const state = gesture(); state.begin(0, 0, Date.now() - 600, touch);
+    if (touch) { state.markMenuOpened(); }
+    state.move(dist, 0, Date.now());
     return { dragGesture: state, canDragMessage: () => true, touchOnBody: true,
-      claimed: false, touchRowId: 9, touchChatId: 1, rowGroup: { head: { id: 9, rowId: 9, contentType: 'text' } },
+      claimed: touch, touchRowId: 9, touchChatId: 1, rowGroup: { head: { id: 9, rowId: 9, contentType: 'text' } },
       rowData: { chatId: 1 }, data: { chatId: 1 }, msg: { id: 9, contentType: 'text' },
-      context: { gestureClaimed: false, msgContextMenuShown: true }, menuShown: true,
+      context: { gestureClaimed: touch, msgContextMenuShown: true }, menuShown: true,
       foreground: { press() {} } };
   }
   const row = host(), valid = bind.call(row, false);
@@ -65,6 +84,14 @@ for (const name of ['DrawnMessageRow', 'MessageBubbleShell']) {
   assert.equal(exportsStarted, before + 1, name + ' preserves intentional dragging');
   assert.equal(row.dragGesture.end(Date.now(), false), false, 'real drag never opens a menu');
   assert.equal(canceled, 0);
+  const shortTouch = host(true, 18);
+  bind.call(shortTouch, false)(event);
+  assert.equal(shortTouch.menuShown, true, name + ' <42vp touch wiggle keeps opened menu');
+  assert.equal(shortTouch.context.msgContextMenuShown, true);
+  const largeTouch = host(true, 48);
+  const beforeTouch = exportsStarted; bind.call(largeTouch, false)(event);
+  assert.equal(exportsStarted, beforeTouch + 1, name + ' >=42vp touch drag takes over from hold menu');
+  assert.equal(largeTouch.menuShown && largeTouch.context.msgContextMenuShown, false);
   for (const stop of [r => r.dragGesture.end(Date.now(), true), r => r.dragGesture.reset(),
     r => r.dragGesture.end(Date.now(), false), r => { r.canDragMessage = () => false; },
     r => { r.claimed = true; r.context.gestureClaimed = true; }]) {

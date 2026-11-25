@@ -2,7 +2,7 @@ import { offsetDocumentWidget } from './DrawnDocumentCardLayout';
 import { common2D } from '@kit.ArkGraphics2D';
 import { DrawnAlbumRect } from '../../util/drawnAlbumPolicy';
 import { drawnExpandedBlockSet } from '../../util/drawnExpandedBlocks';
-import { DrawnRichBlock, DrawnRichSource, DrawnRichHit, DrawnRichLink, DrawnRichButton, drawnRichBlockPadding } from '../../util/drawnRichTextPolicy';
+import { DrawnRichBlock, DrawnRichSource, DrawnRichHit, DrawnRichLink, DrawnRichButton, drawnRichBlockPadding, isWholeBlockSingleLink } from '../../util/drawnRichTextPolicy';
 import { DrawnRichCompositeParagraph, DrawnRichBlockBackground } from './DrawnRichCompositeParagraph';
 import { DrawnRichTextLayout, DrawnRichTextSpec } from './DrawnRichTextLayout';
 import { drawnColor } from './DrawnTextLine';
@@ -88,7 +88,9 @@ class DrawnDeepBlockCompiler {
   private previewTop: number = -1;
   private previewBottom: number = 0;
   private previewAction: 'web-preview' | undefined = undefined;
+  private previewUrl: string = '';
   private previewLabels: string[] = [];
+  private singleLinkHits: DrawnRichHit[] = [];
   private expanded: ReadonlySet<number>;
   private y: number = 0;
   private order: number = 0;
@@ -168,6 +170,7 @@ class DrawnDeepBlockCompiler {
       if (block.preview) {
         if (this.previewTop < 0) { this.previewTop = this.y; }
         if (block.action === 'web-preview') { this.previewAction = 'web-preview'; }
+        if (this.previewUrl === '' && (block.previewUrl ?? '') !== '') { this.previewUrl = block.previewUrl!; }
         if ((block.kind === 'preview-site' || block.kind === 'preview-action') && block.source.content !== '') {
           this.previewLabels.push(block.source.content);
         }
@@ -179,7 +182,11 @@ class DrawnDeepBlockCompiler {
           maxWidthVp: frame.spec.maxWidthVp, minWidthVp: 0, fontSize: frame.spec.fontSize,
           reserve: index === frame.last ? frame.spec.reserve : '', foreground: frame.spec.foreground,
           accent: frame.spec.accent, environment: frame.spec.environment };
+        const beforeHits = this.hits.length;
         const plan = this.host.prepare(spec); this.append(plan, frame.x, this.y, frame.allowHits, deepSpeaks(block));
+        if (frame === root && block.kind === 'text' && index < frame.last && isWholeBlockSingleLink(block.source)) {
+          for (let h = beforeHits; h < this.hits.length; h++) { this.singleLinkHits.push(this.hits[h]); }
+        }
         this.y += plan.heightVp;
         const resetWidth = block.kind === 'preview-image' || block.article !== undefined || block.widget !== undefined ||
           (block.gallery?.length ?? 0) > 0 || block.kind === 'media' || block.kind === 'buttons' || block.kind === 'divider' ||
@@ -248,12 +255,13 @@ class DrawnDeepBlockCompiler {
         { parent: frame, block, index, padding, top, bodyTop: this.y, background }));
     }
     if (this.previewTop >= 0) {
+      for (const hit of this.singleLinkHits) { hit.widthVp = Math.max(hit.widthVp, this.rootSpec.maxWidthVp - hit.x); }
       const d = this.density;
       this.paragraph.backgrounds.push(new DrawnRichBlockBackground({ left: 0, top: this.previewTop * d,
         right: 3 * d, bottom: this.previewBottom * d }, d, this.accentColor, this.accentColor, 0));
       if (this.previewAction !== undefined && this.previewBottom > this.previewTop) {
         const label = this.previewLabels.length > 0 ? this.previewLabels.join(' · ') : str('mb_web_link');
-        const action: DrawnRichLink = { action: this.previewAction, start: 0, end: 0, label, url: '',
+        const action: DrawnRichLink = { action: this.previewAction, start: 0, end: 0, label, url: this.previewUrl,
           hidesUrl: false, accessibilityFirst: true, accessibilityLabel: label };
         this.hits.push({ key: `deep:web-preview:${this.order++}`, link: action, x: 0, y: this.previewTop,
           widthVp: this.rootSpec.maxWidthVp, heightVp: this.previewBottom - this.previewTop, accessible: true });

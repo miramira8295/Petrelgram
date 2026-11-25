@@ -11,8 +11,8 @@ import { senderLabelWidths } from '../../util/senderLabelWidths';
 import { BubbleGlassGeometry } from './BubbleGlassGeometry';
 import { DissolveDeleteEffect } from '../common/DissolveDeleteEffect';
 import { RowLeaveChannel } from '../../util/rowLeaveChannel';
-import { MessageDragGesture } from '../../util/messageDragGesture';
-import { configureMessageDrag } from '../../services/MessageDragSource';
+import { MESSAGE_HOLD_MENU_MS, MessageDragGesture } from '../../util/messageDragGesture';
+import { configureMessageDrag, startMessageTouchDrag } from '../../services/MessageDragSource';
 import { messageDragType } from '../../util/messageDrag';
 import { JUMP_FOCUS_BRIGHTNESS, JUMP_FOCUS_SCALE } from '../../util/bubbleFocusChannel';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
@@ -490,8 +490,11 @@ export struct LightweightPlainTextBubble {
       .accessibilityGroup(this.msg.replyToMessageId === 0)
       .accessibilityLevel('yes')
       .accessibilityText(this.drawnAccessibilityText())
-      .parallelGesture(this.canDragMessage() ? undefined : LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
-        .onAction((event: GestureEvent): void => { this.onLongPress(event); }))
+      .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: MESSAGE_HOLD_MENU_MS })
+        .onAction((event: GestureEvent): void => {
+          if (this.canDragMessage()) { this.dragGesture.markMenuOpened(); }
+          this.onLongPress(event);
+        }))
       .onTouch((event: TouchEvent): void => { this.onDragSourceTouch(event); })
       .onClick((event: ClickEvent): void => {
         const layout = this.drawnLayout;
@@ -896,10 +899,22 @@ export struct LightweightPlainTextBubble {
     const touch = event.touches[0] ?? event.changedTouches[0];
     const now = Date.now();
     if (event.type === TouchType.Down && touch !== undefined) {
-      this.dragGesture.begin(touch.windowX, touch.windowY, now);
+      this.dragGesture.begin(touch.windowX, touch.windowY, now, event.source === SourceType.TouchScreen);
       this.recordMenuOffset(touch.x, Number(event.target.area.width));
+    } else if (event.type === TouchType.Cancel || event.touches.length > 1) {
+      this.dragGesture.end(now, true);
     } else if (event.type === TouchType.Move && touch !== undefined) {
-      this.dragGesture.move(touch.windowX, touch.windowY, now);
+      if (this.dragGesture.shouldStartTouchDrag(touch.windowX, touch.windowY, now) &&
+        (!this.gestureClaimed || this.dragGesture.hasOpenedMenu())) {
+        this.dragGesture.claim();
+        if (startMessageTouchDrag(this.getUIContext(), touch.id ?? 0, this.chatId, this.msg.id,
+          messageDragType(this.msg.contentType), `dissolve-delete-message-${this.chatId}-${this.msg.rowId}`,
+          (): void => { this.draggingMessage = false; })) {
+          this.draggingMessage = true;
+          this.gestureClaimed = true;
+          this.menuShown = false;
+        }
+      }
     } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
       if (touch !== undefined) { this.dragGesture.move(touch.windowX, touch.windowY, now); }
       if (this.dragGesture.end(now, event.type === TouchType.Cancel)) { this.onLongPress(); }
@@ -1308,8 +1323,11 @@ export struct LightweightPlainTextBubble {
     // 与富气泡一致：内容层高于尾巴，避免尾巴伸入主体的部分盖住文字。
     .zIndex(1)
     // 主体不能单独投影到尾角上，避免连接处出现竖向暗缝（与富气泡壳一致）。
-    .parallelGesture(this.canDragMessage() ? undefined : LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
-      .onAction((event: GestureEvent): void => { this.onLongPress(event); }))
+    .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: MESSAGE_HOLD_MENU_MS })
+      .onAction((event: GestureEvent): void => {
+        if (this.canDragMessage()) { this.dragGesture.markMenuOpened(); }
+        this.onLongPress(event);
+      }))
     .onTouch((event: TouchEvent): void => { this.onDragSourceTouch(event); })
     .onClick((event: ClickEvent): void => {
       if (!this.gestureClaimed && messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
@@ -1431,7 +1449,12 @@ export struct LightweightPlainTextBubble {
         .alignItems(VerticalAlign.Bottom)
         .padding(this.avatarGutterPadding())
         .draggable(this.canDragMessage())
+        .dragPreviewOptions({}, { isLiftingDisabled: true })
         .onDragStart((event: DragEvent): DragItemInfo => {
+          if (!this.canDragMessage() || !this.dragGesture.canStartDrag() ||
+            (this.gestureClaimed && !this.dragGesture.hasOpenedMenu())) {
+            event.setResult(DragResult.DRAG_CANCELED); return {};
+          }
           this.dragGesture.claim();
           this.draggingMessage = true;
           this.gestureClaimed = true;
@@ -1485,23 +1508,17 @@ export struct LightweightPlainTextBubble {
         this.askDeletable();
         this.menuShown = true;
       })
-      .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+      .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: MESSAGE_HOLD_MENU_MS })
         .onAction((event: GestureEvent): void => {
           if (this.gestureClaimed || this.menuShown) { return; }
           const fingers: FingerInfo[] = event.fingerList;
           const x: number = fingers && fingers.length > 0 ? fingers[0].localX : 0;
-          // 这一下按在发送者头像上：整手归头像（长按 = @ 对方），满宽行不弹菜单。
-          // 头像自己的 gesture 拦不住这里的 parallelGesture（父子并行触发）。
           if (fingers && fingers.length > 0
             && hitSenderAvatarColumn(x, this.isGroup, this.msg.isOutgoing, this.showAvatar)) {
             return;
           }
-          // 长按统一交给 messageGesturePolicy：tapFirst 进多选、classic 出菜单。
-          // 这里原先写死了「弹菜单」，tapFirst 下 500ms 就先把菜单弹出来，松手时
-          // 合成的那次长按再进多选 —— 用户看到的是菜单与多选同时出现。
-          // 与 MessageBubbleShell 行级长按（:2276 this.onLongPress(event)）保持一致。
+          if (this.canDragMessage() && this.dragGesture.prefersDrag(Date.now())) { return; }
           this.onLongPress(event);
-          // 偏移换算仍用行坐标：onLongPress 内部按气泡内坐标夹取，靠近气泡边缘会偏。
           this.recordRowMenu(x, Number(event.target.area.width));
         }))
       .onTouch((event: TouchEvent): void => {

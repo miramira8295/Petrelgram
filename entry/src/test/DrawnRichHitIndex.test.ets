@@ -70,5 +70,18 @@ export default function drawnRichHitIndexTest(): void {
       expect(index.findNear(4, 14, 3, 4) === null).assertTrue();
       expect(index.findNear(NaN, 14, 3, 4) === null).assertTrue();
     });
+    it('paddedRegions expands touch slop once and preserves original regions', 0, (): void => {
+      const first = indexedHit('one', 10, 12, 20, 18);
+      const index = new DrawnRichHitIndex([first]);
+      const padded = index.paddedRegions(6, 6);
+      expect(padded.length).assertEqual(1);
+      expect(Number(padded[0].x)).assertEqual(4);
+      expect(Number(padded[0].y)).assertEqual(6);
+      expect(Number(padded[0].width)).assertEqual(32);
+      expect(Number(padded[0].height)).assertEqual(30);
+      expect(index.paddedRegions(6, 6) === padded).assertTrue();
+      expect(Number(index.regions[0].x)).assertEqual(10);
+      expect(index.paddedRegions(0, 0) === index.regions).assertTrue();
+    });
   });
 }

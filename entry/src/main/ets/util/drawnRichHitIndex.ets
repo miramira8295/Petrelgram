@@ -20,6 +20,9 @@ class DrawnRichIntervalNode {
 export class DrawnRichHitIndex {
   readonly regions: Rectangle[] = [];
   private root: DrawnRichIntervalNode | null = null;
+  private cachedPadded: Rectangle[] | null = null;
+  private cachedPadX: number = -1;
+  private cachedPadY: number = -1;
 
   constructor(hits: DrawnRichHit[]) {
     const sorted: DrawnRichIndexedHit[] = [];
@@ -33,6 +36,19 @@ export class DrawnRichHitIndex {
     }
     sorted.sort((a: DrawnRichIndexedHit, b: DrawnRichIndexedHit): number => a.top - b.top);
     this.root = this.build(sorted);
+  }
+
+  paddedRegions(slopX: number, slopY: number): Rectangle[] {
+    if (slopX <= 0 && slopY <= 0) { return this.regions; }
+    if (this.cachedPadded !== null && this.cachedPadX === slopX && this.cachedPadY === slopY) {
+      return this.cachedPadded;
+    }
+    this.cachedPadX = slopX; this.cachedPadY = slopY;
+    this.cachedPadded = this.regions.map((r: Rectangle): Rectangle => ({
+      x: Number(r.x) - slopX, y: Number(r.y) - slopY,
+      width: Number(r.width) + slopX * 2, height: Number(r.height) + slopY * 2
+    }));
+    return this.cachedPadded;
   }
 
   private build(sorted: DrawnRichIndexedHit[]): DrawnRichIntervalNode | null {

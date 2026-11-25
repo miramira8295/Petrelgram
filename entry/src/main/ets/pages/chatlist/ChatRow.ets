@@ -1006,7 +1006,7 @@ export struct ChatRow {
       // Keep List's pan recognizer active. Movement cancels this recognizer,
       // while a stationary hold reaches the data-consistency check above.
       .parallelGesture(
-        LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+        LongPressGesture({ fingers: 1, repeat: false, duration: 420 })
           .onAction((event: GestureEvent): void => { this.openContextMenuIfCurrent(event); })
           .onActionCancel((): void => { this.endPress(); })
       )

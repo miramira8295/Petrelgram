@@ -86,7 +86,7 @@ import { LegacyTextRow } from './LegacyTextRow';
 import { DrawnTextLayouts } from './DrawnTextLayout';
 import { drawnTextRowEligible } from '../../util/drawnTextRowPolicy';
 import { MessageDragGesture } from '../../util/messageDragGesture';
-import { configureMessageDrag } from '../../services/MessageDragSource';
+import { configureMessageDrag, startMessageTouchDrag } from '../../services/MessageDragSource';
 import { messageDragType } from '../../util/messageDrag';
 import { tableScrollTouched } from '../../util/tableTouchChannel';
 import { LegacyAlbumMessageBubble } from './LegacyAlbumMessageBubble';
@@ -125,10 +125,11 @@ import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { logW } from '../../util/log';
 
 const EMPTY_DRAWN_NATIVE_TILES: DrawnBubbleTile[] = [];
-const LINK_TOUCH_SLOP_X: number = 3;
-const LINK_TOUCH_SLOP_Y: number = 4;
-const LINK_HOLD_SLOP: number = 6;
-const LINK_TAP_MOVE_MAX: number = 8;
+const LINK_TOUCH_SLOP_X: number = 6;
+const LINK_TOUCH_SLOP_Y: number = 6;
+const LINK_HOLD_SLOP: number = 8;
+const HOLD_MENU_MS: number = 420;
+const LINK_TAP_MOVE_MAX: number = 16;
 
 interface DrawnSpoilerOwner { rowId: number; chatId: number; content: string; }
 
@@ -597,7 +598,11 @@ export struct DrawnMessageRow {
   private sameLinkTarget(a: DrawnRichHit | null, b: DrawnRichHit | null): boolean {
     if (a === null || b === null) { return false; }
     if (a === b) { return true; }
-    return a.link !== undefined && b.link !== undefined && (a.link.group ?? a.link) === (b.link.group ?? b.link);
+    if (a.link === undefined || b.link === undefined) { return false; }
+    if ((a.link.group ?? a.link) === (b.link.group ?? b.link)) { return true; }
+    return a.link.url !== '' && a.link.url === b.link.url &&
+      ((a.link.action === undefined && b.link.action === 'web-preview') ||
+        (a.link.action === 'web-preview' && b.link.action === undefined));
   }
   private chromeOrMediaAt(p: DrawnBubblePlan, x: number, y: number): boolean {
     if (p.avatar.width > 0 && albumRectContains(p.avatar, x, y)) { return true; }
@@ -675,18 +680,19 @@ export struct DrawnMessageRow {
       this.actions.onReplyTap(m.replyToMessageId, m.id); return;
     }
     const touchSource = !semantic && event.source === SourceType.TouchScreen;
-    const link = touchSource && this.touchPlan === p && this.touchLink !== null &&
-      Math.hypot(hitX - this.touchX, hitY - this.touchY) <= LINK_TAP_MOVE_MAX
-      ? this.linkAt(hitX, hitY, LINK_HOLD_SLOP, LINK_HOLD_SLOP)
+    const withinTapSlop = Math.hypot(hitX - this.touchX, hitY - this.touchY) <= LINK_TAP_MOVE_MAX;
+    const link = touchSource && this.touchPlan === p && this.touchLink !== null
+      ? this.linkAt(hitX, hitY, withinTapSlop ? LINK_HOLD_SLOP : 0, withinTapSlop ? LINK_HOLD_SLOP : 0)
       : this.linkAt(hitX, hitY);
     if (link !== null) {
       if (!touchSource || (this.touchPlan === p && this.sameLinkTarget(this.touchLink, link))) {
+        const askFromTouch = touchSource && this.touchLink !== null && this.touchLink.link.hidesUrl;
         this.foreground.press(null);
         if (link.link.action === 'rich-task-toggle' && link.link.taskId !== undefined) {
           this.actions.onRichTaskToggle(m.id, link.link.taskId, link.link.taskChecked !== true);
         } else if (link.link.action === 'web-preview') {
           if (m.linkPhotoFailed) { this.actions.onLinkPreviewRetry(m.id); }
-          else if (linkPreviewPresentation(m.linkUrl, m.linkPreviewType, m.linkSiteName).actionable) { this.actions.onLinkTap(m.linkUrl, false); }
+          else if (linkPreviewPresentation(m.linkUrl, m.linkPreviewType, m.linkSiteName).actionable) { this.actions.onLinkTap(m.linkUrl, askFromTouch); }
         }
         else if (link.link.action === 'page-button' && link.link.button !== undefined) {
           const button = link.link.button;
@@ -708,7 +714,7 @@ export struct DrawnMessageRow {
         else if (link.link.action === 'spoiler') { this.revealDrawnSpoilers(); }
         else if (link.link.action === 'copy') { this.actions.onCopyCode(link.link.label); }
         else if (link.link.action === 'quote' && link.link.blockOffset !== undefined) { this.toggleDrawnQuote(link.link.blockOffset); }
-        else if (!this.openDocumentLink(link.link.url)) { this.actions.onLinkTap(link.link.url, link.link.hidesUrl); }
+        else if (!this.openDocumentLink(link.link.url)) { this.actions.onLinkTap(link.link.url, link.link.hidesUrl || askFromTouch); }
       }
       return;
     }
@@ -775,21 +781,25 @@ export struct DrawnMessageRow {
     const reaction = this.reactionAt(x, y);
     if (!this.rowData.selectionActive && reaction !== null && reaction.reaction !== null &&
       this.touchPlan === p && this.touchReaction === reaction) {
+      this.dragGesture.reset();
       this.claimed = true; this.foreground.press(null);
       this.actions.onShowReactors(this.rowGroup.head.id, reaction.key); return;
     }
     if (f !== undefined && p !== null && p.avatar.width > 0 && albumRectContains(p.avatar, x, y)) {
+      this.dragGesture.reset();
       this.claimed = true; this.foreground.press(null);
       const m = this.rowGroup.head;
       if (m.senderIsUser && m.senderId > 0) { this.actions.onAvatarLongPress(m.senderId, m.senderName); }
       return;
     }
-    if (this.canDragMessage() && this.touchOnBody) { return; }
+    if (this.canDragMessage() && this.touchOnBody) {
+      this.dragGesture.markMenuOpened();
+    }
     this.invokeLongPress(x);
   }
   private invokeLongPress(x: number): void {
     if (this.claimed || this.draggingMessage || tableScrollTouched()) { return; }
-    this.claimed = true; this.foreground.press(null);
+    this.claimed = true; this.touchLink = null; this.touchReaction = null; this.foreground.press(null);
     const policy = messageGesturePolicy(this.env.gestureScheme);
     if (this.rowData.selectionActive || policy.longPressSelects) { this.actions.onSelectMessages(this.rowGroup.memberIds); }
     else if (policy.longPressOpensMenu) { this.openMenu(x); }
@@ -831,15 +841,17 @@ export struct DrawnMessageRow {
       this.touchLink = null; this.foreground.press(null);
       this.touchReaction = null;
     } else if (event.type === TouchType.Move || event.type === TouchType.Up) {
-      const moved = t === undefined || Math.hypot(t.x - this.touchX, t.y - this.touchY) > LINK_TAP_MOVE_MAX;
-      if (moved) {
-        this.touchLink = null;
-      } else if (this.touchLink !== null && t !== undefined) {
-        const current = this.linkAt(t.x, t.y, LINK_HOLD_SLOP, LINK_HOLD_SLOP);
-        this.touchLink = this.sameLinkTarget(current, this.touchLink) ? current : null;
+      if (this.touchLink !== null) {
+        if (t === undefined) {
+          this.touchLink = null;
+        } else {
+          const slop = Math.hypot(t.x - this.touchX, t.y - this.touchY) <= LINK_TAP_MOVE_MAX ? LINK_HOLD_SLOP : 0;
+          const current = this.linkAt(t.x, t.y, slop, slop);
+          if (!this.sameLinkTarget(current, this.touchLink)) { this.touchLink = null; }
+        }
       }
       if (t === undefined || this.reactionAt(t.x, t.y) !== this.touchReaction) { this.touchReaction = null; this.foreground.pressReaction(null); }
-      if (event.type === TouchType.Up || moved || this.touchLink === null) {
+      if (event.type === TouchType.Up || this.touchLink === null) {
         this.foreground.press(null);
       }
     }
@@ -847,8 +859,9 @@ export struct DrawnMessageRow {
   private swipe(offset: number): void {
     if (tableScrollTouched() || this.edge || this.rowData.editingActive || this.draggingMessage ||
       (this.touchOnBody && this.canDragMessage() && this.dragGesture.prefersDrag(Date.now()))) { return; }
+    if (this.touchLink !== null && this.swipeX === 0 && Math.abs(offset) < LINK_TAP_MOVE_MAX) { return; }
     this.swipeX = Math.max(this.rowData.canReply ? SWIPE_REPLY_MAX : 0, Math.min(SWIPE_SELECT_MAX, offset));
-    if (this.swipeX !== 0) { this.claimed = true; this.foreground.press(null); }
+    if (this.swipeX !== 0) { this.dragGesture.reset(); this.claimed = true; this.touchLink = null; this.foreground.press(null); }
   }
   private endSwipe(): void {
     const usable = !tableScrollTouched() && !this.edge && !this.rowData.editingActive && !this.draggingMessage &&
@@ -872,15 +885,29 @@ export struct DrawnMessageRow {
       this.touchOnBody = t !== undefined && p !== null && t.x >= p.bubbleX && this.reactionAt(t.x, t.y) === null;
       this.allowBodyDrag = this.touchOnBody;
       if (this.canDragMessage() && this.touchOnBody && t !== undefined) {
-        this.dragGesture.begin(t.windowX, t.windowY, Date.now());
+        this.dragGesture.begin(t.windowX, t.windowY, Date.now(), event.source === SourceType.TouchScreen);
       }
       return;
     }
     if (!this.canDragMessage() || !this.touchOnBody) { return; }
     const now = Date.now();
+    const stale = this.touchRowId !== this.rowGroup.head.rowId || this.touchChatId !== this.rowData.chatId;
+    if (event.type === TouchType.Move && t !== undefined) {
+      if (this.dragGesture.shouldStartTouchDrag(t.windowX, t.windowY, now) && !stale &&
+        (!this.claimed || this.dragGesture.hasOpenedMenu()) && !tableScrollTouched()) {
+        this.dragGesture.claim();
+        if (startMessageTouchDrag(this.getUIContext(), t.id ?? 0, this.rowData.chatId, this.rowGroup.head.id,
+          messageDragType(this.rowGroup.head.contentType), this.deleteNodeKey,
+          (): void => { this.draggingMessage = false; })) {
+          this.draggingMessage = true; this.claimed = true;
+          this.menuShown = false; this.touchLink = null; this.foreground.press(null);
+          return;
+        }
+      }
+      return;
+    }
     if (t !== undefined) { this.dragGesture.move(t.windowX, t.windowY, now); }
     if (event.type === TouchType.Up || event.type === TouchType.Cancel || event.touches.length > 1) {
-      const stale = this.touchRowId !== this.rowGroup.head.rowId || this.touchChatId !== this.rowData.chatId;
       if (this.dragGesture.end(now, event.type !== TouchType.Up || stale || this.claimed)) {
         this.invokeLongPress(t?.x ?? this.touchX);
       }
@@ -1357,7 +1384,8 @@ export struct DrawnMessageRow {
     .onDragStart((event: DragEvent): DragItemInfo => {
       // Reaction holds are handled before the system's 500ms drag recognizer.
       // Never export the message when the initial target was a reaction chip.
-      if (preview || !this.canDragMessage() || !this.touchOnBody || this.claimed ||
+      if (preview || !this.canDragMessage() || !this.touchOnBody ||
+        (this.claimed && !this.dragGesture.hasOpenedMenu()) ||
         !this.dragGesture.canStartDrag() || this.touchRowId !== this.rowGroup.head.rowId ||
         this.touchChatId !== this.rowData.chatId || tableScrollTouched()) {
         event.setResult(DragResult.DRAG_CANCELED); return {};
@@ -1458,8 +1486,7 @@ export struct DrawnMessageRow {
         .parallelGesture(PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 8 })
           .onActionUpdate((e: GestureEvent): void => { this.swipe(e.offsetX); })
           .onActionEnd((): void => { this.endSwipe(); }).onActionCancel((): void => { this.endSwipe(); }))
-        .parallelGesture(LongPressGesture({ fingers: 1, repeat: false,
-          duration: this.rowGroup.head.reactions.length > 0 ? 450 : 500 })
+        .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: HOLD_MENU_MS })
           .onAction((e: GestureEvent): void => { this.longPress(e); }))
         .onTouch((e: TouchEvent): void => { this.rowTouch(e); })
         .onClick((e: ClickEvent): void => {

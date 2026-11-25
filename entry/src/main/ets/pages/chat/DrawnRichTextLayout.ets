@@ -25,7 +25,7 @@ import { ColorMetrics, UIContext } from '@kit.ArkUI';
 import { common2D, drawing, text } from '@kit.ArkGraphics2D';
 import { DrawnPlainLayoutCache } from '../../util/drawnPlainTextPolicy';
 import { DrawnRichHitIndex } from '../../util/drawnRichHitIndex';
-import { appendDrawnRichHits, drawnRichBlockPadding, DrawnRichLink, DrawnRichHit, DrawnRichRect, DrawnRichSourceCache, DrawnRichSource, DrawnRichButton } from '../../util/drawnRichTextPolicy';
+import { appendDrawnRichHits, drawnRichBlockPadding, isWholeBlockSingleLink, DrawnRichLink, DrawnRichHit, DrawnRichRect, DrawnRichSourceCache, DrawnRichSource, DrawnRichButton } from '../../util/drawnRichTextPolicy';
 
 const EMPTY_DRAWN_LABEL_ENTITIES: TdObject[] = [];
 const EMPTY_DRAWN_ANCHORS: ReadonlyMap<string, number> = new Map<string, number>();
@@ -209,7 +209,9 @@ export class DrawnRichTextLayouts {
     let previewTop: number = -1;
     let previewBottom: number = 0;
     let previewAction: 'web-preview' | undefined = undefined;
+    let previewUrl: string = '';
     const previewLabels: string[] = [];
+    const singleLinkHits: DrawnRichHit[] = [];
     const expanded = drawnExpandedBlockSet(spec.expandedBlocks);
     const accent = richColor(spec.accent);
     const background = richColor($r('app.color.code_surface'));
@@ -225,6 +227,7 @@ export class DrawnRichTextLayouts {
       if (block.preview) {
         if (previewTop < 0) { previewTop = y; }
         if (block.action === 'web-preview') { previewAction = 'web-preview'; }
+        if (previewUrl === '' && (block.previewUrl ?? '') !== '') { previewUrl = block.previewUrl!; }
         if ((block.kind === 'preview-site' || block.kind === 'preview-action') && block.source.content !== '') {
           previewLabels.push(block.source.content);
         }
@@ -477,10 +480,13 @@ export class DrawnRichTextLayouts {
       for (const table of body.tables) { tables.push({ key: `${i}:${table.key}`, layout: table.layout,
         x: table.x + padding, y: table.y + y, width: table.width, height: table.height, centered: table.centered }); }
       document.parts.push({ paragraph: body.paragraph, x: padding * density, y: y * density });
+      const expandSingleLink = block.kind === 'text' && !framed && i < lastContentIndex && isWholeBlockSingleLink(block.source);
       for (const hit of body.hits) {
         if (labelBlock || block.preview) { continue; }
-        hits.push({ key: `${generation}:${i}:${hit.key}`, link: hit.link, x: hit.x + padding,
-          y: hit.y + y, widthVp: hit.widthVp, heightVp: hit.heightVp, accessible: hit.accessible });
+        const placed: DrawnRichHit = { key: `${generation}:${i}:${hit.key}`, link: hit.link, x: hit.x + padding,
+          y: hit.y + y, widthVp: hit.widthVp, heightVp: hit.heightVp, accessible: hit.accessible };
+        hits.push(placed);
+        if (expandSingleLink) { singleLinkHits.push(placed); }
       }
       appendDrawnIcons(icons, body.icons, padding, y);
       for (const math of body.maths) {
@@ -529,12 +535,13 @@ export class DrawnRichTextLayouts {
       if (i < lastContentIndex && block.kind !== 'flow') { y += block.preview ? 3 : 6; }
     }
     if (previewTop >= 0) {
+      for (const hit of singleLinkHits) { hit.widthVp = Math.max(hit.widthVp, spec.maxWidthVp - hit.x); }
       document.backgrounds.push(new DrawnRichBlockBackground({ left: 0, top: previewTop * density,
         right: 3 * density, bottom: previewBottom * density }, density, accent, accent, 0));
       if (previewAction !== undefined && previewBottom > previewTop) {
         const label = previewLabels.length > 0 ? previewLabels.join(' · ') : str('mb_web_link');
         const action: DrawnRichLink = { action: previewAction, start: 0, end: 0, label,
-          url: '', hidesUrl: false, accessibilityFirst: true, accessibilityLabel: label };
+          url: previewUrl, hidesUrl: false, accessibilityFirst: true, accessibilityLabel: label };
         hits.push({ key: `${generation}:web-preview`, link: action, x: 0, y: previewTop,
           widthVp: spec.maxWidthVp, heightVp: previewBottom - previewTop, accessible: true });
       }
