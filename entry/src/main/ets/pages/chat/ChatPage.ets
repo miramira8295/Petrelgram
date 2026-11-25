@@ -169,7 +169,7 @@ import {
 import { commandLabel } from './SuggestionPanel';
 import { cancelEdit, draftToRestore } from '../../util/composerMode';
 import {
-  SLOT_ATTACH, SLOT_EMOJI, SLOT_NONE, SLOT_REPLY_KB, claimIfFree, closeAllSlots, closeSlot,
+  SLOT_ATTACH, SLOT_EMOJI, SLOT_COMMANDS, SLOT_NONE, SLOT_REPLY_KB, claimIfFree, closeAllSlots, closeSlot,
   openSlot, slotIsDrawer, toggleSlot
 } from '../../util/bottomSlot';
 import {
@@ -1070,6 +1070,7 @@ export struct ChatPage {
   private drawerTargetHeight: number = 0;
   private drawerClosingToIme: boolean = false;
   private viewportResizeSettleTimer: number = -1;
+  private viewportScrollRemainder: number = 0;
   private lastComposerBottomGap: number = -1;
   // 媒体保存/下载簇（查看器"保存到相册"单槽等待 + 新消息自动保存队列 + 文档
   // 下载后自动打开）整体搬进 MediaSaveState（B15 批），原六个字段
@@ -1999,6 +2000,8 @@ export struct ChatPage {
         if (!show) {
           if (this.showEmojiPanel) {
             this.pendingImeBridgeFromEmoji = true;
+          } else if (this.bottomSlot === SLOT_COMMANDS) {
+            this.closeCommandDrawer(true);
           } else if (this.attachPanelOpen) {
             this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_ATTACH));
             this.startDrawerToImeBridge(SLOT_ATTACH);
@@ -2223,6 +2226,9 @@ export struct ChatPage {
     const ctx: RouteApplyContext = this.resolveRouteAndResetSession();
     this.registerChatLevelSubscriptions();
     const store: MessageStore = this.createMessageStore();
+    this.subscriptions.set('scopedUnread', store.subscribeScopedUnread((count: number): void => {
+      if (this.store === store) { this.unreadBadge = count; }
+    }));
     this.subscriptions.set('messages', store.subscribe((list: MessageEntry[]) => {
       const kind: string = store.getCurrentNotifyKind();
       if (this.remoteDelete.active()) {
@@ -3405,6 +3411,7 @@ export struct ChatPage {
   }
 
   private clearViewportResizeSettleTimer(): void {
+    this.viewportScrollRemainder = 0;
     if (this.viewportResizeSettleTimer !== -1) {
       clearTimeout(this.viewportResizeSettleTimer);
       this.viewportResizeSettleTimer = -1;
@@ -3418,6 +3425,16 @@ export struct ChatPage {
     }
     this.viewportResizeSettleTimer = setTimeout((): void => {
       this.viewportResizeSettleTimer = -1;
+      // Finish after both viewport height and composer safe-area inset settle.
+      // A transient isAtEnd during layout is not proof the final inset is applied.
+      if (!this.viewerOpen() && !this.timeline.listTouchActive) {
+        if (this.imeTailPinned) {
+          this.timeline.glueBottom('viewportResizeSettled');
+        } else if (Math.abs(this.viewportScrollRemainder) > 0.001) {
+          this.timeline.scroller.scrollBy(0, this.viewportScrollRemainder);
+        }
+      }
+      this.viewportScrollRemainder = 0;
       this.timeline.resumeAfterViewportResize();
       if (this.keyboardH <= 0 && this.emojiDrawer.shellHeight <= 0 &&
         !this.drawerClosingToIme && !this.emojiDrawer.closingImeToDrawer) {
@@ -3885,8 +3902,8 @@ export struct ChatPage {
     this.emojiDrawer.closingExpanded = false;
     this.emojiDrawer.cardOffsetY = 0;
     this.emojiDrawer.cardOpacity = 1;
-    if (this.showEmojiPanel || this.attachPanelOpen) {
-      const slot: string = this.showEmojiPanel ? SLOT_EMOJI : SLOT_ATTACH;
+    if (slotIsDrawer(this.bottomSlot)) {
+      const slot: string = this.bottomSlot;
       this.emojiDrawer.shellHeight = this.targetDrawerLiftHeight(slot);
     } else {
       this.emojiDrawer.shellHeight = 0;
@@ -3908,7 +3925,7 @@ export struct ChatPage {
   }
 
   private targetDrawerTotalHeight(slot: string): number {
-    if (slot === SLOT_EMOJI) {
+    if (slot === SLOT_EMOJI || slot === SLOT_COMMANDS) {
       return this.emojiDrawer.totalHeight(this.headerChromeHeight(), this.bottomSafe);
     }
     if (slot === SLOT_ATTACH) {
@@ -3926,9 +3943,9 @@ export struct ChatPage {
   }
 
   private syncOpenDrawerHeight(): void {
-    if ((!this.showEmojiPanel && !this.attachPanelOpen) || this.emojiPanelClosing ||
+    if (!slotIsDrawer(this.bottomSlot) || this.emojiPanelClosing ||
       this.drawerClosingToIme || this.emojiDrawer.closingImeToDrawer) { return; }
-    const slot: string = this.showEmojiPanel ? SLOT_EMOJI : SLOT_ATTACH;
+    const slot: string = this.bottomSlot;
     const target: number = this.targetDrawerLiftHeight(slot);
     // Compare with the animation target, not its current frame. Ordinary
     // composer growth must not prematurely finish an in-flight opening.
@@ -4045,6 +4062,7 @@ export struct ChatPage {
       this.emojiDrawer.closingExpanded = false;
       if (!closingToIme && targetH <= 0) {
         this.emojiDrawer.activeSlot = '';
+        this.syncComposerBottomGap();
       }
       if (onDone !== undefined) {
         onDone();
@@ -4138,34 +4156,26 @@ export struct ChatPage {
       return;
     }
     const deltaH: number = oldH - newH;
-    if (Math.abs(deltaH) < 0.5) {
-      return;
-    }
+    if (deltaH === 0) { return; }
     if (!this.timeline.didInitialScroll || this.timeline.initialTimelineMasked ||
-      this.timeline.groups.length === 0) {
+      this.timeline.groups.length === 0 || this.timeline.listTouchActive) {
+      this.viewportScrollRemainder = 0;
       return;
     }
     this.onViewportResizeFrame();
-    if (deltaH > 0) {
-      // 软键盘或底部抽屉升起、视口高度收缩：把当前可见的聊天记录按相同位移往上顶，避免被直接遮挡。
-      if (this.imeTailPinned || this.timeline.atBottom) {
-        this.imeTailPinned = true;
-        this.timeline.atBottom = true;
-        this.timeline.stayAtUnread = false;
-        this.timeline.glueBottom('imeResizeOpen');
-      } else {
-        this.timeline.scroller.scrollBy(0, deltaH);
-      }
+    if (this.imeTailPinned || this.timeline.atBottom) {
+      this.viewportScrollRemainder = 0;
+      this.imeTailPinned = true;
+      this.timeline.atBottom = true;
+      if (deltaH > 0) { this.timeline.stayAtUnread = false; }
+      this.timeline.glueBottom(deltaH > 0 ? 'imeResizeOpen' : 'imeResizeClose');
     } else {
-      // 软键盘或底部抽屉收起、视口高度恢复：聊天记录随视口平滑下移复位。
-      if (this.imeTailPinned || this.timeline.atBottom) {
-        this.imeTailPinned = true;
-        this.timeline.atBottom = true;
-        if (!this.timeline.scroller.isAtEnd()) {
-          this.timeline.glueBottom('imeResizeClose');
-        }
-      } else if (!this.timeline.scroller.isAtEnd()) {
-        this.timeline.scroller.scrollBy(0, deltaH);
+      // Preserve fractional movement across frames. Dropping every <0.5vp
+      // resize loses the slow tail of the animation and causes round-trip drift.
+      this.viewportScrollRemainder += deltaH;
+      if (Math.abs(this.viewportScrollRemainder) >= 0.5) {
+        this.timeline.scroller.scrollBy(0, this.viewportScrollRemainder);
+        this.viewportScrollRemainder = 0;
       }
     }
   }
@@ -4396,6 +4406,15 @@ export struct ChatPage {
     }
     if (this.overlayState.showReactionSheet) {
       this.overlayState.closeReactionSheet();
+      return true;
+    }
+    if (this.replyKbVisible()) {
+      this.dismissReplyKeyboard();
+      return true;
+    }
+    if (this.command.commandPanelActive() && this.membershipState === 'writable' &&
+      !this.showEmojiPanel && !this.replyKbVisible()) {
+      this.command.dismissPanel();
       return true;
     }
     // 表情/贴纸抽屉、附件抽屉开着：返回先收抽屉，不直接退出会话——和系统键盘弹着时
@@ -5059,8 +5078,11 @@ export struct ChatPage {
 
   // 面板右侧那颗按钮：只填进输入框，末尾补一个空格好接着打参数（issue #183）。
   private fillCommand(item: CommandItem): void {
+    const fromDrawer: boolean = this.bottomSlot === SLOT_COMMANDS;
+    if (fromDrawer) { this.closeCommandDrawer(true); }
     this.draft = `${commandLabel(item)} `;
     this.command.closePanel();
+    if (fromDrawer) { this.inputSwitch.showKeyboard(); }
   }
 
   // B15 批注：saveMediaTo/saveViewerMedia/processAutomaticGallerySave/
@@ -5537,11 +5559,23 @@ export struct ChatPage {
     }
   }
 
+  private dismissReplyKeyboard(): void {
+    if (!this.replyKbVisible()) { return; }
+    // Closing never cancels an in-flight bot action or clears its keyboard.
+    // Suppress a surviving slash draft so closing one panel cannot expose another.
+    this.command.dismissPanel();
+    this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
+    this.composerFocused = false;
+    this.composerController.stopEditing();
+    this.getUIContext().getFocusController().clearFocus();
+  }
+
   private toggleReplyKeyboard(): void {
     if (this.replyKeyboard === null || this.replyKeyboardSendingKey !== '') {
       return;
     }
     const openingCustom: boolean = this.replyKbCollapsed;
+    this.closeCommandDrawer(false, false);
     this.setEmojiPanel(false);
     this.mention.clear();
     this.command.closePanel();
@@ -5675,13 +5709,39 @@ export struct ChatPage {
   }
 
   // 菜单 pill: toggle the full bot-command catalog in the suggestion panel.
+  @Computed
+  private get botCommandDrawerOpen(): boolean { return this.command.commandMenuOpen; }
+
+  @Monitor('botCommandDrawerOpen')
+  private onBotCommandDrawerChanged(): void {
+    // Controller close paths (send, touch, session reset) share this exit.
+    // A replacement panel/IME already owns its geometry; never close that owner.
+    if (!this.botCommandDrawerOpen && this.bottomSlot === SLOT_COMMANDS) {
+      this.closeCommandDrawer();
+    }
+  }
+
+  private closeCommandDrawer(toIme: boolean = false, animate: boolean = true): void {
+    if (this.bottomSlot !== SLOT_COMMANDS) { return; }
+    this.command.dismissPanel();
+    this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_COMMANDS));
+    if (toIme) {
+      this.startDrawerToImeBridge(SLOT_COMMANDS);
+    } else {
+      this.clearImeBridge(true);
+      this.animateDrawerTo(SLOT_COMMANDS, 0, animate ? this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 190) : 0,
+        this.emojiDrawer.shellHeight, this.emojiDrawer.cardOffsetY, 18,
+        this.emojiDrawer.cardOpacity, 0.82);
+    }
+    this.syncComposerBottomGap();
+  }
+
   private toggleBotMenu(): void {
     if (this.command.commandMenuOpen) {
-      this.command.closePanel();
+      this.closeCommandDrawer();
     } else {
       this.mention.clear();
-      this.setEmojiPanel(false);
-      this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
+      this.openBottomDrawer(SLOT_COMMANDS);
       this.command.commandMenuOpen = true;
       this.command.ensureCommandsLoaded();
       this.command.applyCommandFilter();
@@ -6426,7 +6486,7 @@ export struct ChatPage {
   // 那个高度得在内容挂上来之前就确定，否则第一帧会先塌一下再弹开。
 
   private bottomPanelOpen(): boolean {
-    return this.attachPanelOpen || (this.showEmojiPanel && this.membershipState === 'writable');
+    return this.bottomSlot === SLOT_COMMANDS || this.attachPanelOpen || (this.showEmojiPanel && this.membershipState === 'writable');
   }
 
   // 底部那块高度的归属，状态机在 util/bottomSlot（有单测）。所有开关都经过
@@ -6435,12 +6495,14 @@ export struct ChatPage {
   // 表情面板的分帧挂载（panelContentReady / emojiPanelClosing / 那两个
   // setTimeout）留在页面——那是渲染时序，状态机不该知道。
   private applyBottomSlot(next: string): void {
+    if (this.bottomSlot === SLOT_COMMANDS && next !== SLOT_COMMANDS) { this.command.dismissPanel(); }
     this.bottomSlot = next;
     this.attachPanelOpen = next === SLOT_ATTACH;
     this.replyKbCollapsed = next !== SLOT_REPLY_KB;
   }
 
   private closeBottomPanels(): void {
+    if (this.bottomSlot === SLOT_COMMANDS) { this.closeCommandDrawer(); return; }
     this.clearImeBridge(true);
     this.closeAttachPanel(true);
     this.setEmojiPanel(false);
@@ -6453,6 +6515,11 @@ export struct ChatPage {
       this.closeAttachPanel(true);
       return;
     }
+    this.openBottomDrawer(SLOT_ATTACH);
+  }
+
+  // Shared IME handoff and frame-driven lift for the attachment/command drawers.
+  private openBottomDrawer(slot: string): void {
     this.inputSwitch.cancel();
     this.emojiDrawer.collapse();
     this.showEmojiPanel = false;
@@ -6479,11 +6546,11 @@ export struct ChatPage {
     const fromOffsetY: number = wasDrawerOpen ? 8 : (fromIme ? 14 : Math.max(18, topOverlap + 4));
     const fromOpacity: number = wasDrawerOpen ? 0.92 : (fromIme ? 0.86 : 0.88);
     this.composerController.stopEditing();
-    this.applyBottomSlot(next);
-    this.emojiDrawer.activeSlot = SLOT_ATTACH;
+    this.applyBottomSlot(openSlot(this.bottomSlot, slot));
+    this.emojiDrawer.activeSlot = slot;
     this.syncComposerBottomGap();
-    const targetH: number = this.targetDrawerLiftHeight(SLOT_ATTACH);
-    this.animateDrawerTo(SLOT_ATTACH, targetH, settle, startH, fromOffsetY, 0, fromOpacity, 1, false);
+    const targetH: number = this.targetDrawerLiftHeight(slot);
+    this.animateDrawerTo(slot, targetH, settle, startH, fromOffsetY, 0, fromOpacity, 1, false);
   }
 
   private closeAttachPanel(animate: boolean = false): void {
@@ -6707,6 +6774,8 @@ export struct ChatPage {
           this.pendingImeBridgeFromEmoji = true;
           this.setEmojiPanel(false);
           this.pendingImeBridgeFromEmoji = false;
+        } else if (this.bottomSlot === SLOT_COMMANDS) {
+          this.closeCommandDrawer(true);
         } else if (this.attachPanelOpen) {
           this.applyBottomSlot(closeAllSlots());
           this.startDrawerToImeBridge(SLOT_ATTACH);
@@ -6744,6 +6813,10 @@ export struct ChatPage {
   private bottomDrawerDock() {
     if (!this.search.mode && !this.selection.active && this.composerSlot() === 'writable') {
       ChatBottomDrawerHost({
+        command: this.command,
+        appDark: this.appDark,
+        onPickCommand: (item: CommandItem): void => { this.pickCommand(item); },
+        onFillCommand: (item: CommandItem): void => { this.fillCommand(item); },
         emojiDrawer: this.emojiDrawer,
         sendAccess: this.sendAccess,
         attachPanelOpen: this.attachPanelOpen,
@@ -6962,7 +7035,7 @@ export struct ChatPage {
           chatId: this.chatId,
           menuShow: this.headerMenuShow,
           menuAnchorId: this.headerMenuId,
-          onBack: (): void => { this.goBack(); },
+          onBack: (): void => { if (!this.handleBackPressed()) { this.goBack(); } },
           onMenuTap: (): void => { this.openHeaderMenu(); },
           onOpenProfile: (): void => { this.header.openProfile(); },
           onResolveIdentity: (): void => { this.header.resolveIdentity(); },
@@ -7214,6 +7287,7 @@ export struct ChatPage {
         overlayContent: (): void => { this.surfaceOverlays(); },
         mention: this.mention,
         command: this.command,
+        appDark: this.appDark,
         inline: this.inline,
         sticker: this.sticker,
         unreadMentions: this.unreadMentions,
@@ -7222,6 +7296,7 @@ export struct ChatPage {
         showEmojiPanel: this.showEmojiPanel,
         replyKeyboardVisible: this.replyKbVisible(),
         hasReturnTarget: this.returnTarget().kind !== RETURN_NONE,
+        onDismissReplyKeyboard: (): void => { this.dismissReplyKeyboard(); },
         pendingJumpId: this.pendingJumpId,
         unreadBadge: this.unreadBadge,
         scrollToBottomBusy: this.scrollToBottomBusy,

@@ -11,7 +11,7 @@ function run(code){vm.runInContext(ts.transpileModule(code,{compilerOptions:{tar
 function load(path,names){let code=fs.readFileSync(path,'utf8').replace(/^import\s[\s\S]*?;\r?\n/gm,'').replace(/@ObservedV2\s*/g,'').replace(/@Trace\s*/g,'').replace(/\bexport /g,'');run(code+names.map(n=>`\nglobalThis.${n}=${n};`).join(''));}
 function methods(path,cls,names){const ast=ts.createSourceFile(path,fs.readFileSync(path,'utf8'),ts.ScriptTarget.Latest,true);const c=ast.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text===cls);return names.map(k=>c.members.find(n=>ts.isMethodDeclaration(n)&&n.name.getText(ast)===k).getText(ast)).join('\n');}
 load(base+'util/messageTopicScope.ets',['conversationScopeKey','routeScopeKey']);
-load(base+'util/messageLinkRoute.ets',['messageLinkRoute']);
+load(base+'util/messageLinkRoute.ets',['messageLinkRoute','messageLinkRouteDiagnostic']);
 load(base+'util/chatJumpChannel.ets',['subscribeChatJump','requestChatJump','resetChatJumpChannel']);
 const chat=-1002267417810, id=12988*1048576;
 const topics=[null,{'@type':'messageTopicThread',message_thread_id:42},
@@ -27,6 +27,17 @@ assert.equal(ctx.messageLinkRoute({chat_id:0,message:{id}}),null);
 assert.equal(ctx.messageLinkRoute({...makeInfo(null),topic_id:{'@type':'messageTopicUnknown',id:42}}),null);
 assert.equal(ctx.messageLinkRoute({...makeInfo(null),topic_id:{'@type':'messageTopicThread',message_thread_id:0}}),null);
 assert.equal(ctx.routeScopeKey(ctx.messageLinkRoute({...makeInfo(topics[1]),message:null})),'thread:42','topic-only links keep their scope');
+for (const [info, reason] of [
+ [makeInfo(null), 'ok'],
+ [{...makeInfo(null), chat_id:0}, 'invalid-chat-id'],
+ [makeInfo({'@type':'messageTopicUnknown'}), 'unsupported-topic'],
+ [makeInfo({'@type':'messageTopicThread',message_thread_id:0}), 'invalid-topic-id'],
+ [{...makeInfo(null),message:null}, 'no-message']
+]) {
+ const report=ctx.messageLinkRouteDiagnostic({...info,text:'PRIVATE_BODY',url:'PRIVATE_URL'},ctx.messageLinkRoute(info));
+ assert.ok(report.endsWith(`reason=${reason}`), report);
+ assert.ok(!report.includes('PRIVATE_'), 'diagnostics must not serialize message bodies or URLs');
+}
 const receipts=[];const offs=scopes.map(scope=>ctx.subscribeChatJump(chat,msg=>receipts.push([scope,msg]),scope));
 ctx.requestChatJump(chat,id,'thread:42');assert.deepEqual(receipts,[['thread:42',id]]);
 offs[1]();ctx.requestChatJump(chat,id,'thread:42');assert.equal(receipts.length,1);
@@ -36,7 +47,7 @@ const client={send:req=>new Promise((resolve,reject)=>pending.push({req,resolve,
 Object.assign(ctx,{normalizeTelegramLink:url=>url,endLinkNavIf:url=>ended.push(url),
  navigateToChat:(p,o)=>{routes.push([p,o]);return Promise.resolve();},logChatNavFailure:e=>errors.push(e),
  openTelegramLink:()=>errors.push('fallback'),str:key=>key,logE:msg=>errors.push(msg),
- getTdClient:()=>activeClient,onLinkUnresolved:()=>errors.push('unresolved')});
+ getTdClient:()=>activeClient,onLinkUnresolved:()=>errors.push('unresolved'),logW:()=>{}});
 load(base+'pages/chat/ChatMessageActionCoordinator.ets',['ChatMessageActionCoordinator']);
 const coordinator=new ctx.ChatMessageActionCoordinator();let currentScope=0,currentChat=chat;
 coordinator.bind({client:()=>activeClient,chatId:()=>currentChat,threadRootId:()=>currentScope===1?42:0,

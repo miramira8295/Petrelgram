@@ -70,6 +70,7 @@ export class ProfileStore {
   name: string = '';
   initials: string = '?';
   avatarPath: string = '';
+  avatarFileId: number = 0;
   avatarAnimPath: string = ''; // animated profile photo (MPEG4), '' if none
   // Premium emoji status (the animated custom emoji beside the name).
   statusEmojiPath: string = '';
@@ -314,6 +315,7 @@ export class ProfileStore {
     const photo = user['profile_photo'] as TdObject | undefined;
     const big = photo !== undefined ? (photo['big'] as TdObject | undefined) : undefined;
     const fileId = big !== undefined ? ((big['id'] as number | undefined) ?? 0) : 0;
+    this.avatarFileId = fileId;
     const avatarVersion = ++this.avatarVersion;
     if (fileId <= 0) {
       this.avatarPath = '';

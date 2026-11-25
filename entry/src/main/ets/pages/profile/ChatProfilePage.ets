@@ -406,6 +406,7 @@ export struct ChatProfilePage {
   // 只剩 Index 一层，this.getUIContext().getRouter().back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
   // 的现象是「点返回箭头直接退到桌面」。要出的是 Navigation 栈。
   private goBack(): void {
+    if (this.viewerAvatarPath !== '') { this.viewerAvatarPath = ''; return; }
     const stack = this.navStack;
     if (stack === undefined) {
       // navStack 由 onReady(ctx.pathStack) 填，而 onReady 必先于本页可见，所以
@@ -1405,6 +1406,7 @@ export struct ChatProfilePage {
               avatarPath: this.avatarPath, initials: this.initials,
               colorSeed: this.chatId, avatarSize: 116,
               animPath: this.transitionSettled ? this.avatarAnimPath : '',
+              animationPaused: this.viewerAvatarPath !== '',
               // 绘制尺寸逐帧跟手；解码尺寸只在收起/展开两个稳定态切换。
               boxWidth: this.avatarPhotoW(),
               boxHeight: this.avatarPhotoH(),
@@ -2395,17 +2397,23 @@ export struct ChatProfilePage {
     if (this.viewerAvatarPath !== '') {
       AvatarViewer({
         imagePath: this.viewerAvatarPath,
+        videoPath: this.avatarPath === this.viewerAvatarPath ? this.avatarAnimPath : '',
+        imageFileId: this.store?.avatarFileId ?? 0,
+        chatId: this.chatId,
         originX: this.avatarTapX,
         originY: this.avatarTapY,
         onClose: (): void => { this.viewerAvatarPath = ''; }
-      });
+      }).zIndex(20);
     }
     }
     .width('100%').height('100%');
     }
     // 本页自绘标题栏（头图上那一行返回/退出），不要 HDS 的。
     .hideTitleBar(true)
-    .onBackPressed((): boolean => collapseFloatingVideo())
+    .onBackPressed((): boolean => {
+      if (this.viewerAvatarPath !== '') { this.viewerAvatarPath = ''; return true; }
+      return collapseFloatingVideo();
+    })
     .onReady((ctx: NavDestinationContext): void => {
       this.navStack = ctx.pathStack;
       this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;
@@ -2415,6 +2423,7 @@ export struct ChatProfilePage {
     .onWillShow((): void => { markChatDestShown(this.chatDestToken); })
     .onShown((): void => { this.handleShown(); })
     .onHidden((): void => {
+      this.viewerAvatarPath = '';
       markChatDestHidden(this.chatDestToken);
       this.closeQr();
     })

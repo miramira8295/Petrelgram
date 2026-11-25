@@ -370,6 +370,7 @@ export struct ProfilePage {
   }
 
   private goBack(): void {
+    if (this.viewerAvatarPath !== '') { this.viewerAvatarPath = ''; return; }
     const stack = this.navStack;
     if (stack === undefined) {
       // navStack 由 onReady(ctx.pathStack) 填，而 onReady 必先于本页可见，所以
@@ -1087,6 +1088,7 @@ export struct ProfilePage {
               avatarPath: this.avatarPath, initials: this.initials,
               colorSeed: this.userId, avatarSize: 116,
               animPath: this.avatarAnimPath,
+              animationPaused: this.viewerAvatarPath !== '',
               // 绘制尺寸逐帧跟手；解码尺寸只在收起/展开两个稳定态切换。
               boxWidth: this.avatarPhotoW(),
               boxHeight: this.avatarPhotoH(),
@@ -1894,10 +1896,13 @@ export struct ProfilePage {
       if (this.viewerAvatarPath !== '') {
         AvatarViewer({
           imagePath: this.viewerAvatarPath,
+          videoPath: this.avatarPath === this.viewerAvatarPath ? this.avatarAnimPath : '',
+          imageFileId: this.store?.avatarFileId ?? 0,
+          userId: this.userId,
           originX: this.avatarTapX,
           originY: this.avatarTapY,
           onClose: (): void => { this.viewerAvatarPath = ''; }
-        });
+        }).zIndex(20);
       }
       if (this.showGiftPicker) {
         this.giftPicker();
@@ -1926,7 +1931,10 @@ export struct ProfilePage {
     }
     // 本页自绘标题栏（头图上那一行返回/更多），不要 HDS 的。
     .hideTitleBar(true)
-    .onBackPressed((): boolean => collapseFloatingVideo())
+    .onBackPressed((): boolean => {
+      if (this.viewerAvatarPath !== '') { this.viewerAvatarPath = ''; return true; }
+      return collapseFloatingVideo();
+    })
     .onReady((ctx: NavDestinationContext): void => {
       this.navStack = ctx.pathStack;
       this.inChatStack = (ctx.pathStack as Object) === (stackOf('chat') as Object);
@@ -1952,6 +1960,7 @@ export struct ProfilePage {
     })
     .onWillHide((): void => { this.handleWillHide(); })
     .onHidden((): void => {
+      this.viewerAvatarPath = '';
       this.willShowSeen = false;
       markChatDestHidden(this.chatDestToken);
     })

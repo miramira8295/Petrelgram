@@ -13,6 +13,8 @@ import { AttachPanel } from './AttachPanel';
 import { EmojiPanel } from './EmojiPanel';
 import { StickerItem } from './StickerPicker';
 import { GifItem } from './GifPicker';
+import { BotCommandDrawer } from './BotCommandDrawer';
+import { CommandItem } from '../../store/InputSuggestions';
 
 // The writable bottom dock owns the composer tree and its drawers. ChatPage keeps
 // session/store decisions and supplies callbacks, so search and membership docks
@@ -131,6 +133,7 @@ export struct ChatComposerHost {
       });
       if (this.replyKeyboardVisible && this.replyKeyboard !== null) {
         ReplyKeyboardPanel({
+          appDark: this.appDark,
           rows: this.replyKeyboard.rows,
           sendingKey: this.replyKeyboardSendingKey,
           resize: this.replyKeyboard.resize,
@@ -168,6 +171,10 @@ export struct ChatComposerHost {
 
 @ComponentV2
 export struct ChatBottomDrawerHost {
+  @Require @Param command: CommandSuggestionState;
+  @Param appDark: boolean = false;
+  @Event onPickCommand: (item: CommandItem) => void = (_item: CommandItem): void => {};
+  @Event onFillCommand: (item: CommandItem) => void = (_item: CommandItem): void => {};
   @Require @Param emojiDrawer: EmojiDrawerState;
   @Require @Param sendAccess: ChatSendAccess;
   @Param attachPanelOpen: boolean = false;
@@ -234,6 +241,11 @@ export struct ChatBottomDrawerHost {
 
   build() {
     Column() {
+      if (this.emojiDrawer.activeSlot === 'commands' && this.emojiDrawer.shellHeight > 0) {
+        BotCommandDrawer({ command: this.command, drawer: this.emojiDrawer,
+          cardHeight: this.drawerHeight, appDark: this.appDark,
+          onPick: this.onPickCommand, onFill: this.onFillCommand });
+      }
       if (this.emojiDrawer.activeSlot === 'attach' && this.emojiDrawer.shellHeight > 0) {
         BottomDrawerShell({
           bottomSafe: this.bottomSafe,

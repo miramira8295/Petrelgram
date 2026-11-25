@@ -744,6 +744,11 @@ export struct ChatComposerInput {
                 .enterKeyType(this.sendByEnter ? EnterKeyType.Send : EnterKeyType.NEW_LINE)
                 .onSubmit((): void => { this.onSubmit(); })
                 .onFocus((): void => { this.onEditorFocus(); })
+                .onTouch((event: TouchEvent): void => {
+                  if (event.type === TouchType.Down && this.commandSuggestion.commandMenuOpen) {
+                    this.commandSuggestion.dismissPanel();
+                  }
+                })
                 .onBlur((): void => { this.onEditorBlur(); });
             } else {
               Text(this.draft !== '' ? this.draft : this.composerPlaceholder)

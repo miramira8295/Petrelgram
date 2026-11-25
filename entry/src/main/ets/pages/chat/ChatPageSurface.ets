@@ -54,6 +54,8 @@ export struct ChatPageSurface {
   @Param scrollToBottomBusy: boolean = false;
   @Param bottomChromeH: number = 0;
   @Param chromeIconColor: ResourceColor = Color.Transparent;
+  @Param appDark: boolean = false;
+  @Event onDismissReplyKeyboard: () => void = (): void => {};
   @Event onPickCommand: (item: CommandItem) => void = (_item: CommandItem): void => {};
   @Event onFillCommand: (item: CommandItem) => void = (_item: CommandItem): void => {};
   @Event onPickMention: (item: MentionItem) => void = (_item: MentionItem): void => {};
@@ -66,7 +68,7 @@ export struct ChatPageSurface {
     // Optional panels wait for the existing transition gate. The dock stays mounted from frame one.
     if (this.timeline.initialMessageTransitionSettled &&
       this.membershipState === 'writable' && !this.showEmojiPanel) {
-      if (!this.replyKeyboardVisible &&
+      if (!this.replyKeyboardVisible && !this.command.commandMenuOpen && this.emojiDrawer.activeSlot !== 'commands' &&
         (this.mention.mentionItems.length > 0 || this.command.commandPanelActive())) {
         SuggestionPanel({
           commandMode: this.command.commandPanelActive(),
@@ -75,6 +77,7 @@ export struct ChatPageSurface {
           loadState: this.command.commandLoadState,
           loadError: this.command.commandLoadError,
           catalogSize: this.command.catalogSize(),
+          appDark: this.appDark,
           onPickCommand: (it: CommandItem): void => { this.onPickCommand(it); },
           onFillCommand: (it: CommandItem): void => { this.onFillCommand(it); },
           onPickMention: (it: MentionItem): void => { this.onPickMention(it); },
@@ -98,7 +101,23 @@ export struct ChatPageSurface {
   }
 
   private floatingActionsAllowed(): boolean {
-    return !this.search.mode && !this.showEmojiPanel && this.emojiDrawer.shellHeight <= 0;
+    return !this.search.mode && !this.showEmojiPanel && this.emojiDrawer.shellHeight <= 0 &&
+      !this.composerPopupVisible();
+  }
+
+  private composerPopupVisible(): boolean {
+    return this.commandSuggestionsVisible() ||
+      (this.membershipState === 'writable' && !this.showEmojiPanel && this.replyKeyboardVisible);
+  }
+
+  private dismissComposerPopup(): void {
+    if (this.replyKeyboardVisible) { this.onDismissReplyKeyboard(); }
+    else { this.command.dismissPanel(); }
+  }
+
+  private commandSuggestionsVisible(): boolean {
+    return this.timeline.initialMessageTransitionSettled && this.membershipState === 'writable' &&
+      !this.showEmojiPanel && !this.replyKeyboardVisible && this.command.commandPanelActive();
   }
 
   @Builder
@@ -142,6 +161,15 @@ export struct ChatPageSurface {
       Column() {
         Stack() {
           this.timelineContent();
+          if (this.composerPopupVisible()) {
+            // Behind the suggestions/composer but above messages: outside
+            // taps dismiss once and never activate the message underneath.
+            Row()
+              .width('100%').height('100%')
+              .backgroundColor(Color.Transparent)
+              .hitTestBehavior(HitTestMode.Block)
+              .onClick((): void => { this.dismissComposerPopup(); });
+          }
           Column() {
             this.bottomSuggestions();
             this.bottomContent();

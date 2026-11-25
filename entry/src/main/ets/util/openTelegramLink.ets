@@ -1,4 +1,4 @@
-import { messageLinkRoute } from './messageLinkRoute';
+import { messageLinkRoute, messageLinkRouteDiagnostic } from './messageLinkRoute';
 import { pushUrl, showDialog } from './uiContext';
 import { showToast } from '../util/toast';
 import { resolveUserToken } from './userLink';
@@ -18,7 +18,7 @@ import { openMiniAppPage } from './miniAppNav';
 import { logChatNavFailure, navigateToChat } from './chatNav';
 import { navigateToChatProfile, navigateToProfile } from './profileNav';
 import { navigateToSetting } from './settingsNav';
-import { logE } from './log';
+import { logE, logW } from './log';
 import { navigateToSearch } from './searchNav';
 import { endLinkNavIf } from './linkTapGuard';
 
@@ -110,11 +110,14 @@ function resolvePublicChat(context: common.UIAbilityContext, username: string, d
 function openMessageLink(context: common.UIAbilityContext, link: string, original: string,
     allowBrowser: boolean): void {
   const client = getTdClient();
+  const diagnosticId: number = Date.now();
   const req: TdRequest = { '@type': 'getMessageLinkInfo' };
   req['url'] = link;
+  logW(`[MsgLinkResolve] external-request id=${diagnosticId}`);
   client.send(req).then((info: TdObject): void => {
     if (client !== getTdClient()) { return; }
     const params = messageLinkRoute(info);
+    logW(`[MsgLinkResolve] external-result id=${diagnosticId} ${messageLinkRouteDiagnostic(info, params)}`);
     if (params === null) {
       onLinkUnresolved(context, original, allowBrowser);
       return;
@@ -123,6 +126,7 @@ function openMessageLink(context: common.UIAbilityContext, link: string, origina
     endLinkNavIf(original);
   }).catch((error: TdError): void => {
     if (client !== getTdClient()) { return; }
+    logW(`[MsgLinkResolve] external-error id=${diagnosticId} stage=resolve code=${error.code}`);
     logE(`openTelegramLink.getMessageLinkInfo failed: ${error.message}`);
     onLinkUnresolved(context, original, allowBrowser);
   });

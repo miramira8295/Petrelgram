@@ -1,4 +1,5 @@
-import { messageLinkRoute } from '../../util/messageLinkRoute';
+import { messageLinkRoute, messageLinkRouteDiagnostic } from '../../util/messageLinkRoute';
+import { logW } from '../../util/log';
 import { conversationScopeKey, routeScopeKey } from '../../util/messageTopicScope';
 import { common } from '@kit.AbilityKit';
 import { LINK_COMMAND, LINK_COPY, LINK_HASHTAG, LINK_NONE, LINK_USER, LinkAction, linkActionOf } from '../../util/messageLinkAction';
@@ -412,10 +413,12 @@ export class ChatMessageActionCoordinator {
     const client = this.actions.client();
     const req: TdRequest = { '@type': 'getMessageLinkInfo' };
     req['url'] = tgUrl;
+    logW(`[MsgLinkResolve] request seq=${revision} sourceChat=${chatId} sourceScope=${scope}`);
     client.send(req).then((info: TdObject): void => {
       if (!this.isCurrent(epoch, chatId, client) || revision !== this.messageLinkRevision ||
         scope !== this.messageLinkScope()) { return; }
       const params = messageLinkRoute(info);
+      logW(`[MsgLinkResolve] result seq=${revision} ${messageLinkRouteDiagnostic(info, params)}`);
       if (params === null) {
         this.actions.toast({ message: str('cp_cannot_locate'), duration: 1500 });
         endLinkNavIf(url);
@@ -433,6 +436,7 @@ export class ChatMessageActionCoordinator {
     }).catch((error: TdError): void => {
       if (!this.isCurrent(epoch, chatId, client) || revision !== this.messageLinkRevision ||
         scope !== this.messageLinkScope()) { return; }
+      logW(`[MsgLinkResolve] error seq=${revision} stage=resolve code=${error.code}`);
       this.actions.logError(`ChatPage.getMessageLinkInfo failed: ${error.message}`);
       openTelegramLink(this.actions.context(), url, true);
     });

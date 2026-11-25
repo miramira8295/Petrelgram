@@ -17,6 +17,8 @@ import { interactionChanged } from '../util/interactionDelta';
 import { isBackgroundCaching } from './CacheRegistry';
 import { stickerSetIdOf } from '../util/stickerSetItems';
 import { viewMessageSourceType } from '../util/viewMessageSource';
+import { ViewReceiptQueue } from '../util/viewReceiptQueue';
+import { ScopedUnreadState } from './ScopedUnreadState';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { UserStore } from './UserStore';
 import { MessageEntry, cloneMessage, buildMessageEntry, commentInfoFromInteraction, CommentInfo, reactionsFromInteraction, ReactionInfo, parseInlineKeyboard, refreshSystemUserLabel } from './MessageEntry';
@@ -271,6 +273,8 @@ export class MessageStore {
   private lastReadOutboxId: number = 0;
   private unreadCount: number = 0;
   private viewedUpTo: number = 0;
+  private viewReceiptQueue: ViewReceiptQueue | null = null;
+  private scopedUnread: ScopedUnreadState | null = null;
   private viewedMentions: Set<number> = new Set();
   private chatResolved: boolean = false;
   private historyPending: boolean = false;
@@ -391,6 +395,13 @@ export class MessageStore {
     this.forumTopicId = forumTopicId;
     this.directMessagesTopicId = directMessagesTopicId;
     this.historyPageSize = Math.max(1, Math.min(100, historyPageSize));
+    if (this.inTopicScope()) {
+      this.scopedUnread = new ScopedUnreadState({
+        send: (request: TdRequest): Promise<TdObject> => this.client.send(request, 12000),
+        onUpdate: (type: string, listener: (update: TdObject) => void): (() => void) =>
+          this.client.onUpdate(type, listener)
+      }, chatId, threadRootId, forumTopicId, directMessagesTopicId);
+    }
   }
 
   // 论坛话题（forum_topic_id，独立于评论线程的 message_thread_id）。
@@ -571,6 +582,7 @@ export class MessageStore {
     }));
     this.requestedAroundMessageId = aroundMessageId !== undefined ? aroundMessageId : 0;
     this.requestedAroundIsResume = aroundIsResume && this.requestedAroundMessageId > 0;
+    this.scopedUnread?.open();
     this.resolveChat();
     this.resolvePinned();
     if (this.threadRootId > 0) {
@@ -597,6 +609,8 @@ export class MessageStore {
 
   close(): void {
     this.closed = true;
+    this.viewReceiptQueue?.close();
+    this.scopedUnread?.close();
     for (const timer of this.retryTimers) {
       clearTimeout(timer);
     }
@@ -660,6 +674,10 @@ export class MessageStore {
   // Chat unread count snapshot captured at open time (for the scroll-to-bottom badge).
   getUnreadCount(): number {
     return this.unreadCount;
+  }
+
+  subscribeScopedUnread(listener: (count: number) => void): () => void {
+    return this.scopedUnread?.subscribe(listener) ?? ((): void => {});
   }
 
   // True for basic groups / supergroups / channels — drives per-message avatars + sender names.
@@ -6078,7 +6096,11 @@ export class MessageStore {
         this.loadOlder();
       }
       if (onComplete !== undefined) {
-        onComplete(this.indexOf(messageId) >= 0);
+        const found: boolean = this.indexOf(messageId) >= 0;
+        logW(`[MsgLinkHistory] chat=${this.chatId} target=${messageId}` +
+          ` thread=${this.threadRootId} forum=${this.forumTopicId} direct=${this.directMessagesTopicId}` +
+          ` got=${got} found=${found} stage=around-result`);
+        onComplete(found);
       }
     }).catch((e: TdError) => {
       this.hasMoreNewer = hadMoreNewer;
@@ -6095,6 +6117,7 @@ export class MessageStore {
         }
       }
       if (onComplete !== undefined) {
+        logW(`[MsgLinkHistory] chat=${this.chatId} target=${messageId} stage=around-error code=${e.code}`);
         onComplete(false);
       }
     });
@@ -6597,22 +6620,30 @@ export class MessageStore {
   markViewed(maxVisibleId: number): void {
     const traced = drawnStageMetrics.begin(DrawnStage.ReadViewed);
     try {
-      if (maxVisibleId <= this.viewedUpTo) {
+      if (this.closed || maxVisibleId <= this.viewedUpTo) {
         return;
       }
-      this.viewedUpTo = maxVisibleId;
-      this.clearManualUnreadFlag();
-      const req: TdRequest = { '@type': 'viewMessages' };
-      req['chat_id'] = this.chatId;
-      req['message_ids'] = [maxVisibleId];
-      // **source 必须显式给**，四种作用域各自一个值（见 util/viewMessageSource）。
-      // 原来只给私聊话题设，论坛话题和消息话题都留给 TDLib "按会话打开状态去猜"，
-      // 于是话题群组读完退出未读仍在（issue #190）。
-      req['source'] = this.viewSource();
-      req['force_read'] = true;
-      this.client.send(req).catch((e: TdError) => {
-        logE(`MessageStore.viewMessages failed: ${e.message}`);
-      });
+      if (this.viewReceiptQueue === null) {
+        this.viewReceiptQueue = new ViewReceiptQueue({
+          send: (id: number): Promise<void> => {
+            this.clearManualUnreadFlag();
+            const req: TdRequest = { '@type': 'viewMessages' };
+            req['chat_id'] = this.chatId;
+            req['message_ids'] = [id];
+            req['source'] = this.viewSource();
+            req['force_read'] = true;
+            return this.client.send(req).then((): void => {});
+          },
+          confirmed: (id: number): void => {
+            this.viewedUpTo = Math.max(this.viewedUpTo, id);
+            this.scopedUnread?.readConfirmed(id);
+          },
+          failed: (error: Error): void => {
+            logE(`MessageStore.viewMessages failed: ${error.message}; confirmed watermark retained`);
+          }
+        });
+      }
+      this.viewReceiptQueue.mark(maxVisibleId);
     } finally { drawnStageMetrics.end(traced); }
   }
 
