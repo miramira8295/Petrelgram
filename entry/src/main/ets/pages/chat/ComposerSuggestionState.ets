@@ -276,6 +276,7 @@ export class CommandSuggestionState {
   @Trace commandLoadState: string = 'idle'; // idle | loading | ready | error
   @Trace commandLoadError: string = '';
   @Trace commandMenuOpen: boolean = false;
+  @Trace private dismissedDraft: string | null = null;
   // Available only when the current chat has usable bot commands.
   @Trace botMenuAvailable: boolean = false;
 
@@ -324,6 +325,7 @@ export class CommandSuggestionState {
   }
 
   refreshCommands(): void {
+    if (this.dismissedDraft !== this.host.draft()) { this.dismissedDraft = null; }
     this.ensureCommandsLoaded();
     this.applyCommandFilter();
   }
@@ -373,11 +375,20 @@ export class CommandSuggestionState {
 
   commandPanelActive(): boolean {
     return this.commandMenuOpen ||
-      this.host.draft().match(/^\/([a-zA-Z0-9_]*)(?:@([a-zA-Z0-9_]*))?$/) !== null;
+      (this.dismissedDraft !== this.host.draft() &&
+        this.host.draft().match(/^\/([a-zA-Z0-9_]*)(?:@([a-zA-Z0-9_]*))?$/) !== null);
+  }
+
+  // Dismiss the presentation, not the draft/catalog. Late catalog responses
+  // must not reopen it; editing or explicitly pressing '/' can open it again.
+  dismissPanel(): void {
+    this.dismissedDraft = this.host.draft();
+    this.closePanel();
   }
 
   // Filter against the CURRENT draft, so a slow catalog load can't show stale results.
   applyCommandFilter(): void {
+    if (!this.commandPanelActive()) { this.commandItems = []; return; }
     if (this.commandMenuOpen) {
       this.commandItems = this.commandLoadState === 'ready' ? this.allCommands.slice() : [];
       return;
@@ -421,6 +432,7 @@ export class CommandSuggestionState {
     this.allCommands = [];
     this.commandLoadSeq++;
     this.commandLoadState = 'idle';
+    this.dismissedDraft = null;
     this.commandLoadError = '';
     this.commandMenuOpen = false;
     this.botMenuAvailable = false;

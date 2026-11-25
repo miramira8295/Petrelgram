@@ -78,6 +78,7 @@ export interface DrawnDocumentMediaPlacement {
 }
 
 export interface DrawnTablePlacement {
+  centered?: boolean;
   key: string;
   x: number;
   y: number;
@@ -207,6 +208,8 @@ export class DrawnRichTextLayouts {
     let previewImage: DrawnAlbumRect | null = null;
     let previewTop: number = -1;
     let previewBottom: number = 0;
+    let previewAction: 'web-preview' | undefined = undefined;
+    const previewLabels: string[] = [];
     const expanded = drawnExpandedBlockSet(spec.expandedBlocks);
     const accent = richColor(spec.accent);
     const background = richColor($r('app.color.code_surface'));
@@ -219,18 +222,18 @@ export class DrawnRichTextLayouts {
       const block = blocks[i], framed = block.kind === 'pre' || block.kind === 'quote';
       if (block.kind === 'anchor') { anchors.set(block.anchorName ?? '', y); continue; }
       const labelBlock = block.kind === 'translation-label';
-      if (block.preview && previewTop < 0) { previewTop = y; }
+      if (block.preview) {
+        if (previewTop < 0) { previewTop = y; }
+        if (block.action === 'web-preview') { previewAction = 'web-preview'; }
+        if ((block.kind === 'preview-site' || block.kind === 'preview-action') && block.source.content !== '') {
+          previewLabels.push(block.source.content);
+        }
+      }
       const padding = drawnRichBlockPadding(block, spec.maxWidthVp);
       const innerWidth = Math.max(1, spec.maxWidthVp - padding * 2);
       if (block.kind === 'preview-image') {
         const height = Math.max(108, Math.min(188, innerWidth / (block.imageRatio ?? 1.5)));
         previewImage = { x: padding, y, width: innerWidth, height };
-        const action: DrawnRichLink = { action: 'web-preview', start: 0, end: 0, label: '', url: '',
-          hidesUrl: false, accessibilityFirst: true, accessibilityLabel: str('mb_web_link') };
-        if (block.action !== undefined) {
-          hits.push({ key: `${generation}:preview-image`, link: action, x: padding, y,
-            widthVp: innerWidth, heightVp: height, accessible: true });
-        }
         y += height + 6; width = spec.maxWidthVp; previewBottom = y;
         document.lastLine = { left: 0, width: width * density, baseline: y * density, ascent: 0 };
         continue;
@@ -367,12 +370,13 @@ export class DrawnRichTextLayouts {
       if (block.kind === 'table' || block.kind === 'math') {
         if (engineIndex === this.blockLayouts.length) { this.blockLayouts.push(new DrawnRichTextLayouts()); }
         const layout = this.blockLayouts[engineIndex++].prepare(ui, { source: block.source, mathRevision: spec.mathRevision, scrollMath: block.kind === 'math',
-          maxWidthVp: spec.maxWidthVp, minWidthVp: 0, fontSize: 14, reserve: '',
+          maxWidthVp: spec.maxWidthVp, minWidthVp: 0, fontSize: block.kind === 'math' ? spec.fontSize : 14, reserve: '',
           foreground: spec.foreground, accent: spec.accent, environment: spec.environment });
         for (const anchor of layout.anchors) { anchors.set(anchor[0], anchor[1] + y); }
+        const itemWidth = Math.min(spec.maxWidthVp, layout.widthVp);
         tables.push({ key: `${block.kind}:${block.offset}`, layout, x: 0, y,
-          width: Math.min(spec.maxWidthVp, layout.widthVp), height: layout.heightVp });
-        y += layout.heightVp + 6; width = Math.max(width, Math.min(spec.maxWidthVp, layout.widthVp));
+          width: itemWidth, height: layout.heightVp, centered: block.kind === 'math' });
+        y += layout.heightVp + 6; width = Math.max(width, itemWidth);
         if (block.title !== undefined && block.title.content !== '') {
           if (engineIndex === this.blockLayouts.length) { this.blockLayouts.push(new DrawnRichTextLayouts()); }
           const caption = this.blockLayouts[engineIndex++].prepare(ui, { source: block.title, mathRevision: spec.mathRevision,
@@ -471,7 +475,7 @@ export class DrawnRichTextLayouts {
       for (const item of body.media) { media.push({ key: `${i}:${item.key}`, media: item.media, slides: item.slides,
         x: item.x + padding, y: item.y + y, width: item.width, height: item.height }); }
       for (const table of body.tables) { tables.push({ key: `${i}:${table.key}`, layout: table.layout,
-        x: table.x + padding, y: table.y + y, width: table.width, height: table.height }); }
+        x: table.x + padding, y: table.y + y, width: table.width, height: table.height, centered: table.centered }); }
       document.parts.push({ paragraph: body.paragraph, x: padding * density, y: y * density });
       for (const hit of body.hits) {
         if (labelBlock || block.preview) { continue; }
@@ -494,7 +498,7 @@ export class DrawnRichTextLayouts {
       const line = body.paragraph.getLineMetrics(body.paragraph.getLineCount() - 1);
       document.lastLine = line !== undefined ? { left: line.left + padding * density,
         width: line.width, baseline: line.baseline + y * density, ascent: line.ascent } : undefined;
-      if (block.action !== undefined) {
+      if (block.action !== undefined && !block.preview) {
         const action: DrawnRichLink = { action: block.action, start: 0, end: 0, label: block.source.content,
           url: '', hidesUrl: false, accessibilityFirst: true, accessibilityLabel: block.source.content };
         hits.push({ key: `${generation}:translation:${i}`, link: action, x: padding, y,
@@ -527,6 +531,13 @@ export class DrawnRichTextLayouts {
     if (previewTop >= 0) {
       document.backgrounds.push(new DrawnRichBlockBackground({ left: 0, top: previewTop * density,
         right: 3 * density, bottom: previewBottom * density }, density, accent, accent, 0));
+      if (previewAction !== undefined && previewBottom > previewTop) {
+        const label = previewLabels.length > 0 ? previewLabels.join(' · ') : str('mb_web_link');
+        const action: DrawnRichLink = { action: previewAction, start: 0, end: 0, label,
+          url: '', hidesUrl: false, accessibilityFirst: true, accessibilityLabel: label };
+        hits.push({ key: `${generation}:web-preview`, link: action, x: 0, y: previewTop,
+          widthVp: spec.maxWidthVp, heightVp: previewBottom - previewTop, accessible: true });
+      }
     }
     this.blockLayouts.length = engineIndex;
     this.cardLayouts.length = cardIndex;
@@ -534,7 +545,10 @@ export class DrawnRichTextLayouts {
     const result = new DrawnRichTextLayout(document, width, y, spec.source, hits);
     if (anchors.size > 0) { result.anchors = anchors; }
     result.previewImage = previewImage;
-    for (const table of tables) { result.tables.push(table); }
+    for (const table of tables) {
+      if (table.centered && table.x === 0 && table.width < width) { table.x = (width - table.width) / 2; }
+      result.tables.push(table);
+    }
     result.accessibilityText = spoken.join('\n');
     result.density = density; result.emojiSizeVp = spec.fontSize + 3;
     for (const emoji of emojis) { result.emojis.push(emoji); }
@@ -659,8 +673,15 @@ export class DrawnRichTextLayouts {
     // wrapping and mixed-script fallback. Resolve its paint once per layout.
     let codeBackground: text.RectStyle | undefined = undefined;
     let markedBackground: text.RectStyle | undefined = undefined;
+    let hasTallPlaceholder: boolean = spec.source.hasMath === true;
+    if (!hasTallPlaceholder) {
+      for (const run of spec.source.runs) {
+        if (run.math !== undefined || run.icon !== undefined) { hasTallPlaceholder = true; break; }
+      }
+    }
+    const lockLineHeight: boolean = !hasTallPlaceholder;
     const paragraphBuilder = new text.ParagraphBuilder({
-      textStyle: { fontSize: fontPx, color: foreground, heightOnly: true, heightScale: linePx / fontPx,
+      textStyle: { fontSize: fontPx, color: foreground, heightOnly: lockLineHeight, heightScale: linePx / fontPx,
         halfLeading: true, fontWeight: drawnWeightNormal() },
       maxLines: spec.maxLines,
       wordBreak: text.WordBreak.BREAK_WORD, textDirection: rtl ? text.TextDirection.RTL : text.TextDirection.LTR,
@@ -686,7 +707,7 @@ export class DrawnRichTextLayouts {
     let paragraphWidth = maxPx;
     const emojiPx: number = (spec.fontSize + 3) * density;
     for (const run of spec.source.runs) {
-      if (run.code && codeBackground === undefined) {
+      if (run.code && run.math === undefined && codeBackground === undefined) {
         codeBackground = { color: richColor($r('app.color.code_surface')),
           leftTopRadius: 3 * density, rightTopRadius: 3 * density,
           rightBottomRadius: 3 * density, leftBottomRadius: 3 * density };
@@ -697,7 +718,7 @@ export class DrawnRichTextLayouts {
         (run.link || run.url !== '' ? accent : foreground);
       spoken.push(hidden ? str('mb_spoiler') : run.text);
       const runStyle: text.TextStyle = { fontSize: fontPx, color,
-        heightOnly: true, heightScale: linePx / fontPx, halfLeading: true,
+        heightOnly: lockLineHeight, heightScale: linePx / fontPx, halfLeading: true,
         badgeType: run.script === 1 ? text.TextBadgeType.TEXT_SUPERSCRIPT : run.script === -1 ? text.TextBadgeType.TEXT_SUBSCRIPT : undefined,
         fontFamilies: run.code ? ['monospace'] : undefined,
         fontWeight: run.bold ? drawnWeightBold() : drawnWeightNormal(),
@@ -709,7 +730,7 @@ export class DrawnRichTextLayouts {
       // Passing an own property with undefined is not equivalent to omission
       // in every platform TextStyle conversion path.
       if (!hidden && run.marked && markedBackground !== undefined) { runStyle.backgroundRect = markedBackground; }
-      else if (run.code && !hidden && !spec.codeBlock && codeBackground !== undefined) { runStyle.backgroundRect = codeBackground; }
+      else if (run.code && run.math === undefined && !hidden && !spec.codeBlock && codeBackground !== undefined) { runStyle.backgroundRect = codeBackground; }
       paragraphBuilder.pushStyle(runStyle);
       const length: number = run.customEmojiId === '' && run.math === undefined && run.icon === undefined ? run.text.length : 1;
       if (run.url !== '') { linkRanges.push({ start: paragraphOffset, end: paragraphOffset + length }); hiddenLinks.push(hidden); }
@@ -731,7 +752,8 @@ export class DrawnRichTextLayouts {
         const fallbackBuilder = new text.ParagraphBuilder({ textStyle: { fontSize: fontPx,
           fontFamilies: ['monospace'], color, fontWeight: drawnWeightNormal() },
           textDirection: text.TextDirection.LTR }, text.FontCollection.getGlobalInstance());
-        fallbackBuilder.addText(run.text); const fallback = fallbackBuilder.build(); fallback.layoutSync(maxPx);
+        fallbackBuilder.addText(run.text); const fallback = fallbackBuilder.build();
+        fallback.layoutSync(spec.scrollMath ? Math.max(maxPx, (run.text.length + 1) * fontPx * 2) : maxPx);
         let width = bitmap !== undefined ? bitmap.width / 2 : Math.max(1, fallback.getLongestLine());
         let height = bitmap !== undefined ? bitmap.height / 2 : fallback.getHeight();
         if (!spec.scrollMath && width > maxPx) { height *= maxPx / width; width = maxPx; }
@@ -794,7 +816,7 @@ export class DrawnRichTextLayouts {
       if (hiddenLinks[index]) { continue; }
       const link = spec.source.links[index];
       const boxes: DrawnRichRect[] = paragraph.getRectsForRange(linkRanges[index],
-        text.RectWidthStyle.TIGHT, text.RectHeightStyle.TIGHT)
+        text.RectWidthStyle.TIGHT, text.RectHeightStyle.INCLUDE_LINE_SPACE_MIDDLE)
         .map((box: text.TextBox): DrawnRichRect => ({ left: box.rect.left + shiftX, right: box.rect.right + shiftX,
           top: box.rect.top, bottom: box.rect.bottom }));
       if (boxes.length === 0 && spec.maxLines !== undefined) { continue; }
@@ -832,7 +854,7 @@ export class DrawnRichTextLayouts {
         const mathIndex = placeholderMath[index], emojiIndex = placeholderEmoji[index], iconIndex = placeholderIcon[index];
         if (iconIndex >= 0) {
           const icon = inlineIcons[iconIndex], rect = boxes[index].rect;
-          if (rect.bottom <= heightPx && rect.right > rect.left) {
+          if ((spec.maxLines === undefined || rect.top < heightPx) && rect.right > rect.left) {
             result.icons.push({ icon: icon.icon, x: (rect.left + shiftX) / density, y: rect.top / density,
               width: (rect.right - rect.left) / density, height: (rect.bottom - rect.top) / density });
           }
@@ -840,7 +862,7 @@ export class DrawnRichTextLayouts {
         }
         if (mathIndex >= 0) {
           const math = mathPlacements[mathIndex], rect = boxes[index].rect;
-          if (rect.bottom <= heightPx && rect.right > rect.left) {
+          if ((spec.maxLines === undefined || rect.top < heightPx) && rect.right > rect.left) {
             math.rect = { left: rect.left + shiftX, right: rect.right + shiftX, top: rect.top, bottom: rect.bottom };
             math.fallbackY = rect.top + (rect.bottom - rect.top - math.fallback.getHeight()) / 2;
             result.maths.push(math);

@@ -3,6 +3,11 @@ import { CommandItem, MentionItem } from '../../store/InputSuggestions';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { LiveUserAvatar } from '../common/LiveUserAvatar';
+import { systemMaterialState } from '../../util/systemMaterialSetting';
+import { immersiveMaterialAvailable } from '../../util/overlayMaterial';
+import { chromeOutline } from '../../util/chromeOutline';
+import { hdsVisualEffect } from '../../util/hdsPointLight';
+import { NativeGlassHost } from './NativeGlassHost';
 
 // 输入框上方的补全面板：草稿以 '/' 开头时列机器人命令，末尾是 '@' 时列群成员。
 //
@@ -17,24 +22,34 @@ export function commandLabel(item: CommandItem): string {
   return `/${item.command}${item.botUsername !== '' ? `@${item.botUsername}` : ''}`;
 }
 
-@Component
+@ComponentV2
 export struct SuggestionPanel {
   // true = 列命令，false = 列 @ 成员。两者不会同时出现，共用这一块面板。
-  @Prop commandMode: boolean;
-  @Prop commands: CommandItem[];
-  @Prop mentions: MentionItem[];
+  @Param commandMode: boolean = false;
+  @Param commands: CommandItem[] = [];
+  @Param mentions: MentionItem[] = [];
   // 'idle' | 'loading' | 'ready' | 'error'
-  @Prop loadState: string;
-  @Prop loadError: string;
+  @Param loadState: string = 'idle';
+  @Param loadError: string = '';
   // catalog 的总条数，用于右上角那个计数和"没有命令 / 没有匹配"的区分。
-  @Prop catalogSize: number;
+  @Param catalogSize: number = 0;
+  @Param appDark: boolean = false;
+  // A fixed card inside the shared bottom drawer; zero retains typed suggestions.
+  @Param drawerHeight: number = 0;
+  @Local private surfaceWidth: number = 0;
+  @Local private surfaceHeight: number = 0;
 
-  onPickCommand: (item: CommandItem) => void = (): void => {};
+  @Event onPickCommand: (item: CommandItem) => void = (): void => {};
   // 右侧那颗按钮：把命令填进输入框（后跟一个空格）而不是直接发出去，
   // 用户要补参数时用（issue #183）。
-  onFillCommand: (item: CommandItem) => void = (): void => {};
-  onPickMention: (item: MentionItem) => void = (): void => {};
-  onRetryCommands: () => void = (): void => {};
+  @Event onFillCommand: (item: CommandItem) => void = (): void => {};
+  @Event onPickMention: (item: MentionItem) => void = (): void => {};
+  @Event onRetryCommands: () => void = (): void => {};
+
+  private glassHostOn(): boolean {
+    return systemMaterialState.chatEnabled && immersiveMaterialAvailable() &&
+      this.surfaceWidth > 0 && this.surfaceHeight > 0;
+  }
 
   @Styles
   rowNormalStyle() {
@@ -154,7 +169,8 @@ export struct SuggestionPanel {
           }
         }, (it: CommandItem) => `c_${it.command}_${it.botUserId}_${it.botUsername}_${it.avatarFileId ?? 0}`);
       }
-      .width('100%').constraintSize({ maxHeight: 206 })
+      .width('100%').height(this.drawerHeight > 0 ? Math.max(0, this.drawerHeight - 34) : 'auto')
+      .constraintSize({ maxHeight: this.drawerHeight > 0 ? Math.max(0, this.drawerHeight - 34) : 206 })
       .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 54, endMargin: 12 });
     }
   }
@@ -196,23 +212,44 @@ export struct SuggestionPanel {
   }
 
   build() {
-    Column() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      if (this.glassHostOn()) {
+        NativeGlassHost({ surface: 'control', hostWidth: this.surfaceWidth,
+          hostHeight: this.surfaceHeight, hostRadius: 16, dark: this.appDark })
+          .position({ x: 0, y: 0 });
+      }
+      Column() {
       if (this.commandMode) {
         this.commandHeader();
         this.commandList();
       } else {
         this.mentionList();
       }
+      }
+      .width('100%')
+      .height(this.drawerHeight > 0 ? this.drawerHeight : 'auto')
+      .onAreaChange((_old: Area, area: Area): void => {
+        const w: number = area.width as number;
+        const h: number = area.height as number;
+        if (w > 0 && Math.abs(w - this.surfaceWidth) > 0.5) { this.surfaceWidth = w; }
+        if (h > 0 && Math.abs(h - this.surfaceHeight) > 0.5) { this.surfaceHeight = h; }
+      });
     }
-    .width('calc(100% - 28vp)')
-    .backgroundColor($r('app.color.surface'))
-    .border({ width: 0.5, color: $r('app.color.divider') })
+    .width(this.drawerHeight > 0 ? 'calc(100% - 16vp)' : 'calc(100% - 28vp)')
+    .backgroundColor(this.glassHostOn() ? Color.Transparent : $r('app.color.chat_overlay'))
+    .visualEffect(hdsVisualEffect('card', !this.appDark))
+    .border(this.glassHostOn() ? { width: 0 } : chromeOutline(this.appDark))
     .borderRadius(16).clip(true)
-    .margin({ left: 14, right: 14, bottom: 2 })
+    // Default keeps command/list child gestures active. Block here would
+    // suppress children as well as the outside-dismiss layer underneath.
+    .hitTestBehavior(HitTestMode.Default)
+    .onClick((): void => {})
+    .margin({ left: this.drawerHeight > 0 ? 8 : 14, right: this.drawerHeight > 0 ? 8 : 14,
+      bottom: this.drawerHeight > 0 ? 0 : 2 })
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: 8 }))
       .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+        duration: this.drawerHeight > 0 ? 0 : powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
         curve: Curve.EaseOut
       }));
   }

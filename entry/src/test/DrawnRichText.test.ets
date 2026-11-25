@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 import { parseFormattedText, RichSegment } from '../main/ets/util/richText';
-import { drawnRichSegmentSource, appendDrawnRichHits, DrawnRichHit, DrawnRichLink, DrawnRichRect, DrawnRichSourceCache } from '../main/ets/util/drawnRichTextPolicy';
+import { drawnRichSegmentSource, appendDrawnRichHits, sameDrawnRichHitTarget, DrawnRichHit, DrawnRichLink, DrawnRichRect, DrawnRichSourceCache } from '../main/ets/util/drawnRichTextPolicy';
 
 function richEntity(kind: string, offset: number, length: number, url: string = ''): TdObject {
   const type: TdObject = { '@type': `textEntityType${kind}` };
@@ -166,6 +166,13 @@ export default function drawnRichTextTest(): void {
       expect(prepared?.links[0].accessibilityFirst).assertTrue();
       expect(prepared?.links[1].accessibilityFirst).assertFalse();
       expect(prepared?.links[2].accessibilityFirst).assertFalse();
+      const groupHits: DrawnRichHit[] = [];
+      for (const link of prepared!.links) {
+        appendDrawnRichHits(groupHits, [{ left: 0, top: 0, right: 20, bottom: 20 }], link, 2, 100, 100, 1);
+      }
+      expect(sameDrawnRichHitTarget(groupHits[0], groupHits[1])).assertTrue();
+      expect(sameDrawnRichHitTarget(groupHits[1], groupHits[2])).assertTrue();
+      expect(JSON.stringify(prepared).length > 0).assertTrue();
       expect(JSON.stringify(parseFormattedText('abcDEFghi', entities))).assertEqual(before);
     });
     it('separate occurrences of the same URL remain independently accessible', 0, (): void => {
@@ -173,6 +180,10 @@ export default function drawnRichTextTest(): void {
         [richEntity('TextUrl', 0, 3, 'target'), richEntity('TextUrl', 4, 3, 'target')]);
       expect(prepared?.links[0].accessibilityFirst).assertTrue();
       expect(prepared?.links[1].accessibilityFirst).assertTrue();
+      const separateHits: DrawnRichHit[] = [];
+      appendDrawnRichHits(separateHits, [{ left: 0, top: 0, right: 20, bottom: 20 }], prepared!.links[0], 2, 100, 100, 1);
+      appendDrawnRichHits(separateHits, [{ left: 30, top: 0, right: 50, bottom: 20 }], prepared!.links[1], 2, 100, 100, 1);
+      expect(sameDrawnRichHitTarget(separateHits[0], separateHits[1])).assertFalse();
       expect(prepared?.targets.size).assertEqual(1);
     });
     it('hidden targets retain confirmation while ordinary URL does not', 0, (): void => {

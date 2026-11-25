@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 import {
-  RB_DIVIDER, RB_HEADING, RB_LIST_ITEM, RB_PARAGRAPH, RB_PRE, RB_QUOTE, RB_TABLE,
+  RB_DIVIDER, RB_HEADING, RB_LIST_ITEM, RB_MATH, RB_PARAGRAPH, RB_PRE, RB_QUOTE, RB_TABLE,
   RichBlock, RichCell, RichSpan, parseRichMessage
 } from '../main/ets/util/richBlocks';
 
@@ -249,6 +249,16 @@ export default function richBlocksTest() {
       table['caption'] = plain('表一');
       const bs: RichBlock[] = parseRichMessage(message([table]));
       expect(bs[0].spans[0].text).assertEqual('表一');
+    });
+
+    it('独立公式块 pageBlockMathematicalExpression 解析为 RB_MATH，不因缺 text 丢失', 0, () => {
+      const mathBlock: TdObject = { '@type': 'pageBlockMathematicalExpression' };
+      mathBlock['expression'] = 'd = (0.12260 \\pm 0.00023)';
+      const bs: RichBlock[] = parseRichMessage(message([mathBlock]));
+      expect(bs.length).assertEqual(1);
+      expect(bs[0].kind).assertEqual(RB_MATH);
+      expect(bs[0].spans[0].text).assertEqual('d = (0.12260 \\pm 0.00023)');
+      expect(bs[0].spans[0].math).assertTrue();
     });
   });
 }

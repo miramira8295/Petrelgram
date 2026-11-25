@@ -20,8 +20,9 @@ const ctx=vm.createContext({Monitor:()=>()=>{},systemMaterialState:{chatEnabled:
 });
 const run=s=>vm.runInContext(ts.transpileModule(s,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,ctx);
 const init=o=>{o.observeComponentCreation2=cb=>cb(1,true);o.ifElseBranchUpdateFunction=(_,cb)=>cb();return o;};
-run(`class Surface {${method('ChatPageSurface','floatingActionsAllowed')} ${method('ChatPageSurface','floatingActions')}} globalThis.Surface=Surface;`);
+run(`class Surface {${method('ChatPageSurface','commandSuggestionsVisible')} ${method('ChatPageSurface','composerPopupVisible')} ${method('ChatPageSurface','floatingActionsAllowed')} ${method('ChatPageSurface','floatingActions')}} globalThis.Surface=Surface;`);
 const surface=init(new ctx.Surface());Object.assign(surface,{search:{mode:false},emojiDrawer:{shellHeight:0},showEmojiPanel:false,
+ timeline:{initialMessageTransitionSettled:true},membershipState:'writable',replyKeyboardVisible:false,command:{commandPanelActive:()=>false},
  hasReturnTarget:false,unreadMentions:{count:0,busy:false,next(){}},pendingJumpId:0,unreadBadge:3,scrollToBottomBusy:false,bottomChromeH:76,chromeIconColor:'ink',onReturnTap:()=>tapped++});
 for(const [target,mention] of [[false,0],[true,0],[false,2],[true,2]]){
  surface.hasReturnTarget=target;surface.unreadMentions.count=mention;children.length=0;calls.length=0;surface.floatingActions();

@@ -6,7 +6,13 @@ Object.assign(message.head,{linkUrl:'https://preview.test',linkSiteName:'site',l
 const engine=new ctx.DrawnTextLayouts();
 const first=engine.prepare(ui,message,data,style);
 assert.ok(first);assert.ok(first.caption.previewImage);
-assert.ok(first.caption.hits.some(h=>h.link.action==='web-preview'));
+const previewHits=first.caption.hits.filter(h=>h.link.action==='web-preview');
+assert.equal(previewHits.length,1,'entire preview card shares one unified hit rectangle');
+const cardHit=previewHits[0];
+assert.equal(cardHit.x,0);
+assert.equal(cardHit.widthVp,first.caption.widthVp,'right-side blank space inside preview card remains tappable');
+assert.ok(first.caption.hitIndex.find(first.caption.widthVp-2,cardHit.y+2)?.link.action==='web-preview');
+assert.ok(first.caption.hitIndex.find(2,cardHit.y+cardHit.heightVp-2)?.link.action==='web-preview');
 assert.ok(!first.caption.hits.some(h=>h.link.url==='https://unrelated.test'),'description links cannot hijack the card');
 const image=first.caption.previewImage;
 assert.ok(image.x>=0&&image.x+image.width<=first.caption.widthVp);

@@ -249,9 +249,10 @@ export class DrawnStructuredSource {
           blocks.push({ source: child, title, initiallyOpen: node['is_open'] === true, kind: 'details', offset, expandable: false, language: '' }); return true;
         });
     }
-    if (type === 'pageBlockBlockQuote' || type === 'pageBlockPullQuote') {
+    if (type === 'pageBlockBlockQuote' || type === 'pageBlockExpandableBlockQuote' || type === 'pageBlockPullQuote') {
+      const expandable = type === 'pageBlockExpandableBlockQuote';
       const accept = (child: DrawnRichSource): boolean => {
-        blocks.push({ source: child, kind: 'quote', offset, expandable: false, language: '' });
+        blocks.push({ source: child, kind: 'quote', offset, expandable, language: '' });
         const credit = this.inline((node['credit'] ?? node['caption']) as TdObject | undefined);
         if (credit === null) { return false; }
         if (credit.content !== '') { blocks.push({ source: credit, kind: 'text', fontSize: 12, offset: this.serial++, expandable: false, language: '' }); }
@@ -313,19 +314,21 @@ export class DrawnStructuredSource {
         kind: 'buttons', buttons, buttonAlign: align, offset, expandable: false, language: '' });
       return true;
     }
-    if (type === 'pageBlockMath') {
-      const expression = (node['source'] ?? node['expression'] ?? '') as string;
+    if (type === 'pageBlockMathematicalExpression' || type === 'pageBlockMath') {
+      const expression = (node['expression'] ?? node['source'] ?? '') as string;
       const formula: TdObject = { '@type': 'richTextMathematicalExpression' }; formula['expression'] = expression;
       const source = this.inline(formula);
       if (source === null) { return false; }
       blocks.push({ source, kind: 'math', offset, expandable: false, language: '' });
       return true;
     }
-    const heading = type === 'pageBlockTitle' || type === 'pageBlockHeader' ? 20
-      : type === 'pageBlockSubtitle' || type === 'pageBlockSubheader' || type === 'pageBlockSectionHeading' ? 18
-      : type === 'pageBlockKicker' ? 16 : 0;
+    const sectionSize = type === 'pageBlockSectionHeading' ? ((node['size'] as number | undefined) ?? 2) : 0;
+    const heading = type === 'pageBlockTitle' || type === 'pageBlockHeader' || sectionSize === 1 ? 20
+      : type === 'pageBlockSubtitle' || type === 'pageBlockSubheader' || sectionSize === 2 ? 18
+      : sectionSize === 3 ? 17
+      : type === 'pageBlockKicker' || sectionSize >= 4 ? 16 : 0;
     const accepted = heading > 0 || type === 'pageBlockParagraph' || type === 'pageBlockFooter' ||
-      type === 'pageBlockPreformatted' || type === 'pageBlockDivider';
+      type === 'pageBlockThinking' || type === 'pageBlockPreformatted' || type === 'pageBlockDivider';
     // Never publish a partial document that silently swallowed a media/table
     // block. Their dedicated layout engines must be connected before admission.
     if (!accepted) { this.reason = `structured-kind:${type}`; return false; }

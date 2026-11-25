@@ -13,6 +13,7 @@
 export const SLOT_NONE: string = 'none';
 export const SLOT_ATTACH: string = 'attach';
 export const SLOT_EMOJI: string = 'emoji';
+export const SLOT_COMMANDS: string = 'commands';
 export const SLOT_REPLY_KB: string = 'replyKeyboard';
 
 // 打开某个占位者。同一个再打开一次是空操作（不是关闭）——关闭要显式说。
@@ -48,5 +49,5 @@ export function slotOccupied(current: string): boolean {
 // 抽屉（附件/表情）占位时才需要让出系统键盘的高度；机器人键盘是随消息来的
 // 一排按钮，和系统键盘可以并存。
 export function slotIsDrawer(current: string): boolean {
-  return current === SLOT_ATTACH || current === SLOT_EMOJI;
+  return current === SLOT_ATTACH || current === SLOT_EMOJI || current === SLOT_COMMANDS;
 }

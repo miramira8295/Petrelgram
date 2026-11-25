@@ -1,5 +1,6 @@
 import { offsetDocumentWidget } from './DrawnDocumentCardLayout';
 import { common2D } from '@kit.ArkGraphics2D';
+import { DrawnAlbumRect } from '../../util/drawnAlbumPolicy';
 import { drawnExpandedBlockSet } from '../../util/drawnExpandedBlocks';
 import { DrawnRichBlock, DrawnRichSource, DrawnRichHit, DrawnRichLink, DrawnRichButton, drawnRichBlockPadding } from '../../util/drawnRichTextPolicy';
 import { DrawnRichCompositeParagraph, DrawnRichBlockBackground } from './DrawnRichCompositeParagraph';
@@ -83,6 +84,11 @@ class DrawnDeepBlockCompiler {
   private xs: number[] = [];
   private ys: number[] = [];
   private backgrounds: (DrawnRichBlockBackground | null)[] = [];
+  private previewImage: DrawnAlbumRect | null = null;
+  private previewTop: number = -1;
+  private previewBottom: number = 0;
+  private previewAction: 'web-preview' | undefined = undefined;
+  private previewLabels: string[] = [];
   private expanded: ReadonlySet<number>;
   private y: number = 0;
   private order: number = 0;
@@ -120,13 +126,13 @@ class DrawnDeepBlockCompiler {
     const parent = close.parent, block = close.block, framed = deepFramed(block), d = this.density;
     const height = this.y - close.bodyTop;
     if (block.kind === 'translation-label' && height < 24) { this.y += 24 - height; }
-    if (block.action !== undefined && parent.allowHits) {
+    if (block.action !== undefined && !block.preview && parent.allowHits) {
       const action: DrawnRichLink = { action: block.action, start: 0, end: 0, label: block.source.content, url: '',
         hidesUrl: false, accessibilityFirst: true, accessibilityLabel: block.source.content };
       this.hits.push({ key: `deep:action:${this.order++}`, link: action, x: frame.x, y: close.bodyTop,
         widthVp: frame.width, heightVp: Math.max(24, height), accessible: true });
     }
-    parent.width = Math.max(parent.width, framed ? parent.spec.maxWidthVp : frame.width + close.padding);
+    parent.width = Math.max(parent.width, framed || block.preview ? parent.spec.maxWidthVp : frame.width + close.padding);
     if (block.expandable) {
       this.y += 4;
       const content = str(this.expanded.has(block.offset) ? 'mb_collapse_quote' : 'mb_expand_quote');
@@ -144,6 +150,7 @@ class DrawnDeepBlockCompiler {
         this.backgroundColor, this.accentColor, block.kind === 'quote' ? 3 * d : 0);
       this.paragraph.lastLine = { left: parent.x * d, width: parent.spec.maxWidthVp * d, baseline: this.y * d, ascent: 0 };
     }
+    if (block.preview) { this.previewBottom = this.y; }
     this.gap(parent, block, close.index);
   }
   build(): DrawnRichTextLayout {
@@ -158,8 +165,15 @@ class DrawnDeepBlockCompiler {
       if (frame.index >= (blocks?.length ?? 0)) { pending.pop(); this.finish(frame); continue; }
       const index = frame.index++, block = blocks![index];
       if (block.kind === 'anchor') { this.anchors.set(block.anchorName ?? '', this.y); continue; }
+      if (block.preview) {
+        if (this.previewTop < 0) { this.previewTop = this.y; }
+        if (block.action === 'web-preview') { this.previewAction = 'web-preview'; }
+        if ((block.kind === 'preview-site' || block.kind === 'preview-action') && block.source.content !== '') {
+          this.previewLabels.push(block.source.content);
+        }
+      }
       const open = (block.initiallyOpen === true) !== this.expanded.has(block.offset);
-      if (block.source.blocks === undefined || (block.source.nestingDepth ?? 0) <= 8) {
+      if (!block.preview && (block.source.blocks === undefined || (block.source.nestingDepth ?? 0) <= 8)) {
         const spec: DrawnRichTextSpec = { source: deepLeafSource(block), mathRevision: frame.spec.mathRevision,
           expandedBlocks: frame.spec.expandedBlocks, spoilersRevealed: frame.spec.spoilersRevealed,
           maxWidthVp: frame.spec.maxWidthVp, minWidthVp: 0, fontSize: frame.spec.fontSize,
@@ -176,6 +190,13 @@ class DrawnDeepBlockCompiler {
       }
       const framed = deepFramed(block), padding = drawnRichBlockPadding(block, frame.spec.maxWidthVp);
       const innerWidth = Math.max(1, frame.spec.maxWidthVp - padding * 2);
+      if (block.kind === 'preview-image') {
+        const height = Math.max(108, Math.min(188, innerWidth / (block.imageRatio ?? 1.5)));
+        this.previewImage = { x: frame.x + padding, y: this.y, width: innerWidth, height };
+        this.y += height + 6; frame.width = frame.spec.maxWidthVp; this.previewBottom = this.y;
+        this.paragraph.lastLine = { left: frame.x * this.density, width: frame.width * this.density, baseline: this.y * this.density, ascent: 0 };
+        continue;
+      }
       if (block.kind === 'list-item') {
         const marker = this.label(block.marker ?? '•', 22, frame, frame.x, this.y); this.spoken.push(block.marker ?? '•');
         if (block.task !== undefined && padding > 0 && frame.allowHits) {
@@ -226,18 +247,36 @@ class DrawnDeepBlockCompiler {
         frame.allowHits && block.kind !== 'translation-label' && block.preview !== true,
         { parent: frame, block, index, padding, top, bodyTop: this.y, background }));
     }
+    if (this.previewTop >= 0) {
+      const d = this.density;
+      this.paragraph.backgrounds.push(new DrawnRichBlockBackground({ left: 0, top: this.previewTop * d,
+        right: 3 * d, bottom: this.previewBottom * d }, d, this.accentColor, this.accentColor, 0));
+      if (this.previewAction !== undefined && this.previewBottom > this.previewTop) {
+        const label = this.previewLabels.length > 0 ? this.previewLabels.join(' · ') : str('mb_web_link');
+        const action: DrawnRichLink = { action: this.previewAction, start: 0, end: 0, label, url: '',
+          hidesUrl: false, accessibilityFirst: true, accessibilityLabel: label };
+        this.hits.push({ key: `deep:web-preview:${this.order++}`, link: action, x: 0, y: this.previewTop,
+          widthVp: this.rootSpec.maxWidthVp, heightVp: this.previewBottom - this.previewTop, accessible: true });
+      }
+    }
     this.paragraph.height = this.y * this.density;
     for (const background of this.backgrounds) { if (background !== null) { this.paragraph.backgrounds.push(background); } }
     // No intermediate structural ancestor constructs another hit index.
     const result = this.host.create(this.paragraph, root.width, this.y, this.hits);
     result.anchors = this.anchors; result.accessibilityText = this.spoken.join('\n'); result.density = this.density;
     result.emojiSizeVp = this.rootSpec.fontSize + 3;
+    if (this.previewImage !== null) { result.previewImage = this.previewImage; }
     for (let i: number = 0; i < this.plans.length; i++) {
       const plan = this.plans[i], x = this.xs[i], y = this.ys[i], dx = x * this.density, dy = y * this.density;
       appendDrawnIcons(result.icons, plan.icons, x, y);
       for (const item of plan.widgets) { result.widgets.push(offsetDocumentWidget(item, x, y)); result.widgetOwners.add(item.widget); }
       for (const item of plan.media) { result.media.push({ key: `deep:${i}:${item.key}`, media: item.media, slides: item.slides, x: item.x + x, y: item.y + y, width: item.width, height: item.height }); }
-      for (const item of plan.tables) { result.tables.push({ key: `deep:${i}:${item.key}`, layout: item.layout, x: item.x + x, y: item.y + y, width: item.width, height: item.height }); }
+      for (const item of plan.tables) {
+        const tableX = item.centered && item.x === 0 && x === 0 && item.width < root.width
+          ? (root.width - item.width) / 2 : item.x + x;
+        result.tables.push({ key: `deep:${i}:${item.key}`, layout: item.layout, x: tableX, y: item.y + y,
+          width: item.width, height: item.height, centered: item.centered });
+      }
       for (const math of plan.maths) { result.maths.push({ key: math.key, expression: math.expression, renderSize: math.renderSize, color: math.color,
         ready: math.ready, fallback: math.fallback, fallbackY: math.fallbackY + dy,
         rect: { left: math.rect.left + dx, right: math.rect.right + dx, top: math.rect.top + dy, bottom: math.rect.bottom + dy } }); }

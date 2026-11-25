@@ -37,4 +37,14 @@ for(const [input,expected,count] of [[deepInput,'leaf',50000],[blockInput,'last'
   assert.equal(row.contentType,'richMessage');assert.equal(row.text,expected);assert.equal(row.textEntities.length,count);assert.equal(row.richBlocks,input.message.blocks);
   if(input===spoiler)assert.deepEqual(Array.from(row.inlineCustomEmojiIds),['9007199254740993123']);
 }
+const mathMsg=message([
+  para({'@type':'richTexts',texts:[text('inline '),{'@type':'richTextMathematicalExpression',expression:'a^2+b^2=c^2'}]}),
+  {'@type':'pageBlockMathematicalExpression',expression:'d = (0.12260 \\pm 0.00023)'},
+  {'@type':'pageBlockSubtitle',subtitle:text('Sub')},
+  {'@type':'pageBlockFooter',footer:text('Foot')},
+  {'@type':'pageBlockAuthorDate',author:text('Author')},
+  {'@type':'pageBlockChatLink',title:'Channel'}
+]);
+const mathFlat=ctx.flattenRichMessage(mathMsg);
+assert.equal(mathFlat.text,'inline a^2+b^2=c^2\nd = (0.12260 \\pm 0.00023)\nSub\nFoot\nAuthor\nChannel');
 console.log('PASS: 3000 legacy preview/entity differential fixtures, table/caption/alias order, custom emoji UTF16/spoilers, DAG/cycle handling, 50000-deep rich and 10000-deep blocks through actual formatMsgContent + buildMessageEntry without recursive walking or comparison sort.');

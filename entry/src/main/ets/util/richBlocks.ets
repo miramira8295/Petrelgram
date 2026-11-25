@@ -18,6 +18,7 @@ export const RB_PRE: string = 'pre';
 export const RB_LIST_ITEM: string = 'item';
 export const RB_DIVIDER: string = 'divider';
 export const RB_TABLE: string = 'table';
+export const RB_MATH: string = 'math';
 
 // 表格的一格。**空格子也要留着**——列是靠位置对齐的，丢掉一个空单元格
 // 后面整行就错位了。
@@ -120,7 +121,8 @@ export function richSpansOf(node: TdObject | undefined, url: string = '', intern
       }
       continue;
     }
-    if (internalAnchors && type === 'richTextAnchor') {
+    if (internalAnchors && (type === 'richTextAnchor' ||
+      (type === 'richTextReference' && current['name'] !== undefined && current['anchor_name'] === undefined && current['url'] === undefined))) {
       const marker = emptySpan(''); marker.anchor = ((current['name'] as string | undefined) ?? '').toLowerCase();
       out.push(marker);
       const child = current['text'] as TdObject | undefined;
@@ -148,9 +150,10 @@ export function richSpansOf(node: TdObject | undefined, url: string = '', intern
       continue;
     }
     let target: string = '';
-    if (type === 'richTextUrl' || type === 'richTextReference' || type === 'richTextAnchorLink') {
+    if (type === 'richTextUrl' || type === 'richTextReference' || type === 'richTextReferenceLink' || type === 'richTextAnchorLink') {
+      const refName = (current[type === 'richTextReferenceLink' ? 'reference_name' : 'anchor_name'] as string | undefined) ?? '';
       target = internalAnchors && type !== 'richTextUrl'
-        ? `#${encodeURIComponent((current['anchor_name'] as string | undefined) ?? '')}`
+        ? `#${encodeURIComponent(refName)}`
         : (current['url'] as string | undefined) ?? '';
     } else if (type === 'richTextEmailAddress') {
       const address = (current['email_address'] as string | undefined) ?? '';
@@ -158,6 +161,24 @@ export function richSpansOf(node: TdObject | undefined, url: string = '', intern
     } else if (type === 'richTextPhoneNumber') {
       const phone = (current['phone_number'] as string | undefined) ?? '';
       if (phone !== '') { target = `tel:${phone}`; }
+    } else if (type === 'richTextMention') {
+      const username = ((current['username'] as string | undefined) ?? '').replace(/^@/, '');
+      if (username !== '') { target = `https://t.me/${username}`; }
+    } else if (type === 'richTextMentionName') {
+      const userId = (current['user_id'] as number | undefined) ?? 0;
+      if (userId > 0) { target = `tg://user?id=${userId}`; }
+    } else if (type === 'richTextHashtag') {
+      const hashtag = ((current['hashtag'] as string | undefined) ?? '').replace(/^#/, '');
+      if (hashtag !== '') { target = `tg-hashtag:#${hashtag}`; }
+    } else if (type === 'richTextCashtag') {
+      const cashtag = ((current['cashtag'] as string | undefined) ?? '').replace(/^\$/, '');
+      if (cashtag !== '') { target = `tg-hashtag:$${cashtag}`; }
+    } else if (type === 'richTextBotCommand') {
+      const cmd = ((current['bot_command'] as string | undefined) ?? '').replace(/^\//, '');
+      if (cmd !== '') { target = `tg-command:/${cmd}`; }
+    } else if (type === 'richTextBankCardNumber') {
+      const card = (current['bank_card_number'] as string | undefined) ?? '';
+      if (card !== '') { target = `tg-copy:${card}`; }
     }
     const child = current['text'] as TdObject | undefined;
     if (child !== undefined) { pending.push({ node: child, style: styled(frame.style, type, target) }); }
@@ -222,8 +243,19 @@ function parseOne(node: TdObject): RichBlock[] {
 
   const level: number | undefined = HEADING_LEVEL.get(type);
   if (level !== undefined) {
+    const rawSize = type === 'pageBlockSectionHeading' ? (node['size'] as number | undefined) : undefined;
+    const resolvedLevel = rawSize !== undefined && Number.isFinite(rawSize)
+      ? (rawSize <= 1 ? 1 : rawSize === 2 ? 2 : 3) : level;
     const spans: RichSpan[] = richSpansOf((node['text'] ?? node[type.substring(9).toLowerCase()]) as TdObject | undefined, '');
-    return spans.length > 0 ? [block(RB_HEADING, level, spans, [], false, '')] : [];
+    return spans.length > 0 ? [block(RB_HEADING, resolvedLevel, spans, [], false, '')] : [];
+  }
+
+  if (type === 'pageBlockMathematicalExpression' || type === 'pageBlockMath') {
+    const expr: string = ((node['expression'] ?? node['source']) as string | undefined) ?? '';
+    if (expr.trim() === '') { return []; }
+    const mathSpan: RichSpan = emptySpan(expr);
+    mathSpan.code = true; mathSpan.math = true;
+    return [block(RB_MATH, 0, [mathSpan], [], false, '')];
   }
 
   if (type === 'pageBlockBlockQuote' || type === 'pageBlockPullQuote') {

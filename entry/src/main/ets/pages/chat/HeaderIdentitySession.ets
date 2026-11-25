@@ -474,7 +474,12 @@ export class HeaderIdentitySession {
     if (!this.muteUpdating) {
       this.isMuted = e.isMuted;
     }
-    this.host.onUnreadCount(e.unreadCount); // live unread count for the scroll-to-bottom badge
+    // A discussion/topic badge belongs to that scope, not the parent group.
+    // MessageStore's independent scoped channel owns those values.
+    if (this.host.threadRootId() === 0 && this.host.forumTopicId() === 0 &&
+      this.host.directMessagesTopicId() === 0) {
+      this.host.onUnreadCount(e.unreadCount);
+    }
     if (e.title !== '') {
       this.state = 'ready';
       this.loadError = '';

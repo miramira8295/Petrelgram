@@ -6,7 +6,8 @@ const ts=(await import(process.env.TYPESCRIPT_MODULE||'typescript')).default;
 const root='entry/src/main/ets/';
 const read=p=>fs.readFileSync(root+p+'.ets','utf8');
 const c=vm.createContext({Number,Math,ObservedV2:x=>x,Trace:()=>{},COMPOSER_GAP_TIGHT:6,
- SLOT_EMOJI:'emoji',SLOT_ATTACH:'attach',composerDockBottomGap:n=>Math.max(6,Math.round(n*0.7))});
+ SLOT_EMOJI:'emoji',SLOT_ATTACH:'attach',SLOT_COMMANDS:'commands',
+ slotIsDrawer:s=>['emoji','attach','commands'].includes(s),composerDockBottomGap:n=>Math.max(6,Math.round(n*0.7))});
 function run(s){vm.runInContext(ts.transpileModule(s.replace(/^import[\s\S]*?;\n/gm,'').replace(/\bexport /g,'').replace(/@ObservedV2\s*/g,'').replace(/@Trace\s*/g,''),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,c);}
 for(const name of ['util/drawerMetrics','pages/chat/ComposerViewportState','pages/chat/EmojiDrawerState','pages/chat/ComposerInputSwitch'])run(read(name));
 run('globalThis.Viewport=ComposerViewportState;globalThis.Drawer=EmojiDrawerState;globalThis.Input=ComposerInputSwitch;');
@@ -55,7 +56,7 @@ check('1000 resizes and invalid measurements keep bounded state, no history accu
 });
 check('real page publishes one viewport source and clamps existing open panel on resize',()=>{
  const p=new c.Page();Object.assign(p,{composerViewport:model(),emojiDrawer:new c.Drawer(),screenW:390,screenH:844,
- keyboardH:0,showEmojiPanel:true,attachPanelOpen:false,bottomSafe:24,drawerAnimSeq:1,imeBridgeTimer:-1,
+ keyboardH:0,showEmojiPanel:true,attachPanelOpen:false,bottomSlot:'emoji',bottomSafe:24,drawerAnimSeq:1,imeBridgeTimer:-1,
  headerChromeHeight:()=>100,clearImeBridge:()=>{},syncComposerBottomGap:()=>{}});
  p.publishComposerViewport();p.emojiDrawer.shellHeight=336;p.emojiDrawer.activeSlot='emoji';
  p.screenW=600;p.screenH=400;p.handleResizeAreaChange(844,400);
@@ -63,7 +64,7 @@ check('real page publishes one viewport source and clamps existing open panel on
  assert.equal(p.emojiDrawer.shellHeight,216);assert.equal(p.currentImeOverlap(),0);assert.equal(p.drawerAnimSeq,2);
 });
 check('composer reflow preserves in-flight opening unless the target actually changes',()=>{
- const p=new c.Page();Object.assign(p,{emojiDrawer:new c.Drawer(),showEmojiPanel:true,attachPanelOpen:false,
+ const p=new c.Page();Object.assign(p,{emojiDrawer:new c.Drawer(),showEmojiPanel:true,attachPanelOpen:false,bottomSlot:'emoji',
   bottomSafe:24,drawerTargetHeight:336,drawerAnimSeq:5,headerChromeHeight:()=>100});
  p.emojiDrawer.measureViewport(800);p.emojiDrawer.shellHeight=30;p.emojiDrawer.cardOffsetY=10;
  p.emojiDrawer.measureComposer(176);p.syncOpenDrawerHeight();
@@ -121,7 +122,7 @@ check('PR52 short IME/direct entry share settled shell and card, in both callbac
  for(const first of [true,false]){
   const v=model(),p=new c.Page();
   Object.assign(p,{composerViewport:v,emojiDrawer:new c.Drawer(),screenW:390,screenH:844,
-   keyboardH:0,showEmojiPanel:true,attachPanelOpen:false,bottomSafe:28,drawerAnimSeq:0,
+   keyboardH:0,showEmojiPanel:true,attachPanelOpen:false,bottomSlot:'emoji',bottomSafe:28,drawerAnimSeq:0,
    drawerTargetHeight:0,imeBridgeTimer:-1,headerChromeHeight:()=>100,clearImeBridge:()=>{},syncComposerBottomGap:()=>{}});
   p.publishComposerViewport();p.syncOpenDrawerHeight();const direct=p.emojiDrawer.shellHeight;
   assert.equal(direct,340);

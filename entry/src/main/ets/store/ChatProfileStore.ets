@@ -114,6 +114,7 @@ export class ChatProfileStore {
   title: string = '';
   initials: string = '?';
   avatarPath: string = '';
+  avatarFileId: number = 0;
   avatarAnimPath: string = ''; // animated chat photo (MPEG4), '' if none
   subtitle: string = '';      // "N 位成员" / "N 位订阅者"
   description: string = '';
@@ -869,7 +870,8 @@ export class ChatProfileStore {
       this.initials = this.title.length > 0 ? this.title.substring(0, 1).toUpperCase() : '?';
       const photo = chat['photo'] as TdObject | undefined;
       const big = photo !== undefined ? (photo['big'] as TdObject | undefined) : undefined;
-      this.download(big !== undefined ? ((big['id'] as number | undefined) ?? 0) : 0,
+      this.avatarFileId = big !== undefined ? ((big['id'] as number | undefined) ?? 0) : 0;
+      this.download(this.avatarFileId,
         (p: string) => { this.avatarPath = p; });
       this.applyNotificationSettings(chat['notification_settings'] as TdObject | undefined);
       this.applyVideoChat(chat['video_chat'] as TdObject | undefined);

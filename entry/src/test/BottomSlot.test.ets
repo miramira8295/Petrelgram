@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  SLOT_ATTACH, SLOT_EMOJI, SLOT_NONE, SLOT_REPLY_KB,
+  SLOT_ATTACH, SLOT_EMOJI, SLOT_COMMANDS, SLOT_NONE, SLOT_REPLY_KB,
   claimIfFree, closeAllSlots, closeSlot, openSlot, slotIsDrawer, slotOccupied, toggleSlot
 } from '../main/ets/util/bottomSlot';
 
@@ -19,10 +19,12 @@ export default function bottomSlotTest() {
       expect(claimIfFree(SLOT_NONE, SLOT_REPLY_KB)).assertEqual(SLOT_REPLY_KB);
       expect(claimIfFree(SLOT_ATTACH, SLOT_REPLY_KB)).assertEqual(SLOT_ATTACH);
       expect(claimIfFree(SLOT_EMOJI, SLOT_REPLY_KB)).assertEqual(SLOT_EMOJI);
+      expect(claimIfFree(SLOT_COMMANDS, SLOT_REPLY_KB)).assertEqual(SLOT_COMMANDS);
     });
 
     it('点同一个入口第二次是收起', 0, () => {
       expect(toggleSlot(SLOT_ATTACH, SLOT_ATTACH)).assertEqual(SLOT_NONE);
+      expect(toggleSlot(SLOT_COMMANDS, SLOT_COMMANDS)).assertEqual(SLOT_NONE);
       expect(toggleSlot(SLOT_NONE, SLOT_ATTACH)).assertEqual(SLOT_ATTACH);
       expect(toggleSlot(SLOT_EMOJI, SLOT_ATTACH)).assertEqual(SLOT_ATTACH);
     });
@@ -42,6 +44,7 @@ export default function bottomSlotTest() {
     it('只有抽屉需要让出系统键盘的高度', 0, () => {
       expect(slotIsDrawer(SLOT_ATTACH)).assertTrue();
       expect(slotIsDrawer(SLOT_EMOJI)).assertTrue();
+      expect(slotIsDrawer(SLOT_COMMANDS)).assertTrue();
       // 机器人键盘是随消息来的一排按钮，和系统键盘可以并存。
       expect(slotIsDrawer(SLOT_REPLY_KB)).assertFalse();
       expect(slotIsDrawer(SLOT_NONE)).assertFalse();

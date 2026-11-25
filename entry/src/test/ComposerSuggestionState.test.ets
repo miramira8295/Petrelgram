@@ -486,6 +486,48 @@ export default function composerSuggestionStateTest() {
     // CommandSuggestionState
     // ========================================================================
 
+    it('dismissPanel preserves slash draft and closes the catalog', 0, (): void => {
+      const host: CommandFakeHost = new CommandFakeHost();
+      host.draftValue = '/start';
+      const controller = commandControllerOn(host);
+      controller.commandMenuOpen = true;
+      controller.dismissPanel();
+      expect(host.draftValue).assertEqual('/start');
+      expect(controller.commandPanelActive()).assertFalse();
+      expect(controller.commandMenuOpen).assertFalse();
+    });
+
+    it('late command filtering cannot reopen a dismissed slash draft', 0, (): void => {
+      const host: CommandFakeHost = new CommandFakeHost();
+      host.draftValue = '/';
+      const controller = commandControllerOn(host);
+      controller.dismissPanel();
+      controller.commandLoadState = 'ready';
+      controller.applyCommandFilter();
+      expect(controller.commandPanelActive()).assertFalse();
+      expect(controller.commandItems.length).assertEqual(0);
+    });
+
+    it('editing a dismissed command enables suggestions again', 0, (): void => {
+      const host: CommandFakeHost = new CommandFakeHost();
+      host.draftValue = '/';
+      const controller = commandControllerOn(host);
+      controller.dismissPanel();
+      host.draftValue = '/a';
+      expect(controller.commandPanelActive()).assertTrue();
+    });
+
+    it('explicit command menu reopens with an unchanged dismissed draft', 0, (): void => {
+      const host: CommandFakeHost = new CommandFakeHost();
+      host.draftValue = '/';
+      const controller = commandControllerOn(host);
+      controller.dismissPanel();
+      controller.commandMenuOpen = true;
+      expect(controller.commandPanelActive()).assertTrue();
+      controller.clear();
+      expect(controller.commandPanelActive()).assertTrue();
+    });
+
     // 防的回归：commandPanelActive 的正则判据（'/'、'/xxx' 都算触发，纯文字
     // 不算）被削弱或反过来。四种输入各自的期望值逐一钉死。
     it('commandPanelActive：commandMenuOpen 为真时无视草稿内容，恒为真', 0, (): void => {
@@ -677,7 +719,8 @@ export default function composerSuggestionStateTest() {
         controller.refreshCommands(); // 不包 try/catch：这条路径本身不该抛错
 
         expect(host.chatIdCalls).assertEqual(0); // ensureCommandsLoaded 被短路，没碰 host
-        expect(host.draftCalls).assertEqual(1); // applyCommandFilter 确实读了草稿
+        // 关闭抑制状态也会读取草稿；验证结果与网络行为，不绑定 getter 调用次数。
+        expect(host.wired.bridge.sent.length).assertEqual(0);
         expect(controller.commandItems).assertDeepEquals([]); // 目录未 ready，过滤清空
       });
 

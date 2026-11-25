@@ -91,6 +91,10 @@ oldTouch(event(0)); oldTouch(event(1, 30)); oldClick(touchClick);
 oldTouch(event(0)); oldTouch(event(3)); oldClick(touchClick);
 oldTouch(event(0)); oldTouch(event(0, 5, 5, 2)); oldClick(touchClick);
 assert.equal(clicks.length, 2, 'move outside, cancel and multitouch reject clicks');
+// Slight finger roll within tap threshold keeps the tap without changing brushCount or plan state.
+oldTouch(event(0, 11, 5)); oldTouch(event(1, 13, 6)); oldTouch(event(2, 13, 6)); oldClick({ x: 13, y: 6, source: 0 });
+assert.equal(clicks.length, 3, 'finger roll within slop completes link tap');
+clicks.pop();
 oldTouch(event(0));
 view.resetStateVarsOnReuse({ plan: null, onLinkTap: link => clicks.push(link.url) });
 update(root); update(paintRow); update(hitRow);
@@ -131,5 +135,26 @@ for (let i = 0; i < 10000; i++) {
   const x = rand(200), y = rand(500);
   const expected = mixed.findLast(h => x >= h.x && x < h.x + h.widthVp && y >= h.y && y < h.y + h.heightVp) || null;
   assert.equal(index.find(x, y), expected);
+}
+{
+  const sharedRoot = { url: 'https://wrapped.test', accessibilityLabel: 'wrapped', hidesUrl: false };
+  const wrappedHits = [
+    { key: 'w0', link: sharedRoot, widthVp: 40, heightVp: 20, x: 10, y: 0, accessible: true },
+    { key: 'w1', link: { ...sharedRoot, group: sharedRoot }, widthVp: 30, heightVp: 20, x: 0, y: 20, accessible: false }
+  ];
+  const wrappedPlan = { accessibilityText: 'wrapped', emojis: [], maths: [], icons: [], widthVp: 80, heightVp: 40,
+    source: { content: 'wrapped', links: wrappedHits.map(h => h.link), targets: new Set(['https://wrapped.test']) },
+    paragraph: { paint() {} }, hits: wrappedHits, hitIndex: new ctx.DrawnRichHitIndex(wrappedHits) };
+  const wrappedClicks = [], drawnRects = [];
+  const wrappedView = new ctx.DrawnRichTextView(null, { plan: wrappedPlan, onLinkTap: link => wrappedClicks.push(link.url) });
+  render(wrappedView);
+  const wPaint = [...nodes.keys()].find(id => nodes.get(id).drawModifier);
+  const wHit = [...nodes.keys()].find(id => nodes.get(id).onClick);
+  nodes.get(wHit).onTouch(event(0, 12, 18));
+  nodes.get(wPaint).drawModifier.drawBehind({ canvas: { attachBrush() {}, detachBrush() {}, drawRect(r) { drawnRects.push({ ...r }); } } });
+  assert.equal(drawnRects.length, 2, 'multiline/grouped link highlights all its rectangles');
+  nodes.get(wHit).onTouch(event(1, 12, 22)); nodes.get(wHit).onTouch(event(2, 12, 22));
+  nodes.get(wHit).onClick({ x: 12, y: 22, source: 0 });
+  assert.deepEqual(wrappedClicks, ['https://wrapped.test']);
 }
 console.log('PASS: 57/47 hit nodes -> 1; null/stale reuse, gaps, press, cancel/multitouch, a11y toggles, cached regions/painter, 10000 differential hit tests.');

@@ -12,13 +12,20 @@ import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { InviteJoinResolver } from '../../util/inviteJoinResolver';
 import { joinChat as submitChatJoin, ChatJoinOutcome } from '../../util/chatJoin';
 import { pageMarginVp } from '../../util/pageMargin';
+import {
+  AVATAR_PROFILE_BASE, AVATAR_PROFILE_RING, AVATAR_TOP_LIFT, AVATAR_EXPAND_AT, AVATAR_COLLAPSE_AT, AVATAR_SNAP_MS,
+  AVATAR_TEXT_INSET, AVATAR_TEXT_BOTTOM, AVATAR_TEXT_H, AVATAR_HEAD_ROW, AVATAR_HEAD_GAP,
+  AVATAR_BUTTON_INSET, AVATAR_CARD_RADIUS,
+  canExpandAvatar, avatarUsesCardLayout, avatarRatioOf, avatarWidthOf, avatarHeightOf,
+  avatarRadiusOf, avatarRingOf, avatarOffsetYOf, avatarDecodeWidthOf, avatarDecodeHeightOf
+} from '../../util/avatarMorph';
 import { MemberSearchField } from './MemberSearchField';
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, WIDTH_BP_MD, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
 import { ReportTarget, runReportFlow } from '../../util/reportFlow';
 import { reportFlowUiFor } from '../common/ReportPrompts';
-import { PromptAction, router, promptAction } from '@kit.ArkUI';
+import { PromptAction, router, promptAction, curves } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { banMember, deleteMessagesFromSender, removeMember, setMemberTag } from '../../store/ChatAdminApi';
 import {
@@ -55,11 +62,12 @@ import {
   surfaceGlassFill
 } from '../../util/surfaceGlass';
 import { AvatarView } from '../chatlist/AvatarView';
+import { NativeGlassHost } from '../chat/NativeGlassHost';
 import { AvatarViewer } from '../common/AvatarViewer';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
-  COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_TAB_PILL_BG
+  COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_TAB_PILL_BG, KEY_APP_DARK
 } from '../../util/theme';
 import { ExpandableText } from './ExpandableText';
 import {
@@ -164,6 +172,8 @@ export struct ChatProfilePage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('screenWidthVp') screenW: number = 360;
+  // 顶栏圆钮的系统材质要按深浅色换染色，不订阅它切主题后不会重绘。
+  @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
   // 设置里的「强制单栏」（宽屏也当手机用）。
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
   @StorageProp('screenHeightVp') screenH: number = 780;
@@ -249,6 +259,12 @@ export struct ChatProfilePage {
   private contentQueryTimer: number = -1;
   private unsub: (() => void) | null = null;
   private tabScroller: Scroller = new Scroller();
+  // 下拉放大头像：整页 List 的滚动器（越界值驱动形变）、形变进度与展开态。
+  private pageScroller: Scroller = new Scroller();
+  @State avatarPull: number = 0;
+  @State avatarExpanded: boolean = false;
+  @State avatarAvailW: number = 0;
+  private avatarSnapAt: number = 0;
   private detailTabXs: number[] = [];
   private detailTabWs: number[] = [];
   private detailTabViewW: number = 0;
@@ -390,6 +406,7 @@ export struct ChatProfilePage {
   // 只剩 Index 一层，this.getUIContext().getRouter().back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
   // 的现象是「点返回箭头直接退到桌面」。要出的是 Navigation 栈。
   private goBack(): void {
+    if (this.viewerAvatarPath !== '') { this.viewerAvatarPath = ''; return; }
     const stack = this.navStack;
     if (stack === undefined) {
       // navStack 由 onReady(ctx.pathStack) 填，而 onReady 必先于本页可见，所以
@@ -1102,16 +1119,32 @@ export struct ChatProfilePage {
     .border({ width: 0.7, color: $r('app.color.divider') })
   }
 
+  // 顶栏圆钮：玻璃交给系统沉浸材质（与聊天页顶栏那两颗同一副画法），
+  // 原来那块自绘半透明底 + 0.7 描边在纯色底上只是灰白圆盘。
   @Builder
   circleButton(symbol: string, onTap: () => void) {
-    Row() {
-      SymbolGlyph($r(symbol)).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+    Stack() {
+      NativeGlassHost({
+        hostWidth: 44,
+        hostHeight: 44,
+        hostRadius: 22,
+        dark: this.appDark,
+        surface: 'control'
+      });
+      Row() {
+        SymbolGlyph($r(symbol)).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+      }
+      .width(44).height(44)
+      .justifyContent(FlexAlign.Center)
+      .hitTestBehavior(HitTestMode.None);
+      // 材质承载层是 enabled(false) 的 Toggle，收不到触摸：透明圆钮接管点击。
+      Button({ type: ButtonType.Circle })
+        .width(44).height(44)
+        .backgroundColor(Color.Transparent)
+        .stateEffect(false)
+        .onClick(onTap);
     }
-    .width(44).height(44).borderRadius(22)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.cardFill())
-    .border({ width: 0.7, color: $r('app.color.divider') })
-    .onClick(onTap);
+    .width(44).height(44);
   }
 
   @Builder
@@ -1208,9 +1241,144 @@ export struct ChatProfilePage {
     Divider().color($r('app.color.divider')).strokeWidth(0.7);
   }
 
+  // ── 下拉放大头像（与「我的资料」「联系人资料」共用 util/avatarMorph）──────
+  private canMorphAvatar(): boolean {
+    return canExpandAvatar(this.avatarPath, this.avatarAnimPath);
+  }
+
+  private effectiveAvatarPull(): number {
+    return this.canMorphAvatar() ? this.avatarPull : 0;
+  }
+
+  private isAvatarExpanded(): boolean {
+    return this.avatarExpanded && this.canMorphAvatar();
+  }
+
+  private avatarMorphing(): boolean {
+    return this.isAvatarExpanded() || this.effectiveAvatarPull() > 0.5;
+  }
+
+  private avatarRatio(): number {
+    return avatarRatioOf(this.effectiveAvatarPull(), this.isAvatarExpanded());
+  }
+
+  private avatarMaxWidth(): number {
+    return this.avatarAvailW > 0 ? this.avatarAvailW : this.screenW;
+  }
+
+  private avatarCardInset(): number {
+    return avatarUsesCardLayout(this.widthBp, this.heightBp, this.forceSingleColumn)
+      ? this.pageMargin() : 0;
+  }
+
+  private avatarTargetWidth(): number {
+    return Math.max(AVATAR_PROFILE_BASE, this.avatarMaxWidth() - this.avatarCardInset() * 2);
+  }
+
+  private avatarPhotoW(): number {
+    return avatarWidthOf(this.effectiveAvatarPull(), this.isAvatarExpanded(),
+      this.avatarTargetWidth(), AVATAR_PROFILE_BASE);
+  }
+
+  private avatarPhotoH(): number {
+    return avatarHeightOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), AVATAR_PROFILE_BASE);
+  }
+
+  private avatarPhotoRadius(): number {
+    return avatarRadiusOf(this.effectiveAvatarPull(), this.isAvatarExpanded(),
+      this.avatarCardInset() > 0 ? AVATAR_CARD_RADIUS : 0, AVATAR_PROFILE_BASE);
+  }
+
+  private avatarRing(): number {
+    return avatarRingOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), AVATAR_PROFILE_RING);
+  }
+
+  private avatarBoxW(): number {
+    return this.avatarPhotoW() + this.avatarRing() * 2;
+  }
+
+  private avatarBoxH(): number {
+    return this.avatarPhotoH() + this.avatarRing() * 2;
+  }
+
+  private avatarBoxRadius(): number {
+    return this.avatarPhotoRadius() + this.avatarRing();
+  }
+
+  private avatarTopPad(): number {
+    return Math.max(0, this.topSafe + 8 - AVATAR_TOP_LIFT);
+  }
+
+  private avatarTopInset(): number {
+    const align: number = this.avatarCardInset() > 0 ? this.topSafe : 0;
+    return this.avatarTopPad() + AVATAR_HEAD_ROW + AVATAR_HEAD_GAP - align;
+  }
+
+  private avatarOffsetY(): number {
+    return avatarOffsetYOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), this.avatarTopInset());
+  }
+
+  private avatarTextTop(): number {
+    if (this.isAvatarExpanded()) {
+      return this.avatarBoxH() - AVATAR_TEXT_H - AVATAR_TEXT_BOTTOM;
+    }
+    return this.avatarBoxH() + 8;
+  }
+
+  private avatarBlockH(): number {
+    const text: number = this.isAvatarExpanded() ? 0 : 8 + AVATAR_TEXT_H;
+    return Math.max(0, this.avatarBoxH() + this.avatarOffsetY() + text);
+  }
+
+  private avatarDecodeW(): number {
+    return avatarDecodeWidthOf(this.effectiveAvatarPull(), this.isAvatarExpanded(),
+      this.avatarTargetWidth(), AVATAR_PROFILE_BASE);
+  }
+
+  private avatarDecodeH(): number {
+    return avatarDecodeHeightOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), AVATAR_PROFILE_BASE);
+  }
+
+  private handlePageScroll(): void {
+    if (!this.canMorphAvatar()) {
+      if (this.avatarPull !== 0) { this.avatarPull = 0; }
+      if (this.avatarExpanded) { this.avatarExpanded = false; }
+      return;
+    }
+    const y: number = this.pageScroller.currentOffset().yOffset;
+    if (y < 0) {
+      const pull: number = Math.abs(y);
+      if (this.avatarPull !== pull) {
+        this.avatarPull = pull;
+      }
+      if (!this.avatarExpanded && pull > AVATAR_EXPAND_AT) {
+        this.getUIContext().animateTo({
+          duration: AVATAR_SNAP_MS,
+          curve: curves.springMotion(0.36, 0.90)
+        }, (): void => {
+          this.avatarExpanded = true;
+          this.avatarSnapAt = Date.now();
+        });
+      }
+      return;
+    }
+    if (this.avatarPull !== 0) {
+      this.avatarPull = 0;
+    }
+    if (this.avatarExpanded && y > AVATAR_COLLAPSE_AT &&
+      Date.now() - this.avatarSnapAt > AVATAR_SNAP_MS + 120) {
+      this.getUIContext().animateTo({
+        duration: AVATAR_SNAP_MS + 60,
+        curve: curves.springMotion(0.40, 0.78)
+      }, (): void => {
+        this.avatarExpanded = false;
+      });
+    }
+  }
+
   @Builder
   header() {
-    Column({ space: 10 }) {
+    Column({ space: AVATAR_HEAD_GAP }) {
       Row() {
         this.circleButton('sys.symbol.chevron_left', () => { this.goBack(); });
         Blank().layoutWeight(1);
@@ -1219,19 +1387,47 @@ export struct ChatProfilePage {
         this.circleButton('sys.symbol.arrow_right_and_square', () => {
           if (this.chatId !== 0) { this.leaveCurrentChat(); }
         });
-      }.width('100%').padding({ left: this.pageMargin(), right: this.pageMargin() });
-      // 头像外框使用半透明填色：外径 130、内缩 7，不附加模糊或阴影。
-      Column() {
-        AvatarView({
-          avatarPath: this.avatarPath, initials: this.initials,
-          colorSeed: this.chatId, avatarSize: 116,
-          animPath: this.transitionSettled ? this.avatarAnimPath : ''
-        });
       }
-      .width(130).height(130).padding(7).borderRadius(65)
-      .justifyContent(FlexAlign.Center)
-      .backgroundColor(this.cardFill())
-      .border({ width: 0.7, color: $r('app.color.divider') })
+      .width('100%')
+      .height(AVATAR_HEAD_ROW)
+      // 展开态照片顶边在安全区下沿；这一行本身比它高 4vp，所以额外补 4vp，
+      // 让两颗圆钮正好落在照片的两个上角里面、不超出（用户 2026-11-25）。
+      .padding({
+        left: this.pageMargin() + AVATAR_BUTTON_INSET * this.avatarRatio(),
+        right: this.pageMargin() + AVATAR_BUTTON_INSET * this.avatarRatio()
+      })
+      .offset({ x: 0, y: (AVATAR_BUTTON_INSET + 4) * this.avatarRatio() })
+      .zIndex(2);
+      // 最外只挂尺寸与上移 —— 绝对不能加 .animation()，否则下拉会变成橡皮筋。
+      Stack({ alignContent: Alignment.Top }) {
+        Stack({ alignContent: Alignment.Center }) {
+          Stack({ alignContent: Alignment.Center }) {
+            AvatarView({
+              avatarPath: this.avatarPath, initials: this.initials,
+              colorSeed: this.chatId, avatarSize: 116,
+              animPath: this.transitionSettled ? this.avatarAnimPath : '',
+              animationPaused: this.viewerAvatarPath !== '',
+              // 绘制尺寸逐帧跟手；解码尺寸只在收起/展开两个稳定态切换。
+              boxWidth: this.avatarPhotoW(),
+              boxHeight: this.avatarPhotoH(),
+              boxRadius: this.avatarPhotoRadius(),
+              decodeWidth: this.avatarDecodeW(),
+              decodeHeight: this.avatarDecodeH()
+            });
+          }
+          .width(this.avatarPhotoW())
+          .height(this.avatarPhotoH())
+          .borderRadius(this.avatarPhotoRadius())
+          .clip(true);
+        }
+        .width('100%')
+        .height('100%')
+        .padding(this.avatarRing())
+        .backgroundColor(this.cardFill())
+        // 展开态环宽与圆角都收成 0 了，只剩这圈 0.7vp 描边压在照片四边——
+        // 屏幕顶部与左右那条白线就是它。跟着环一起淡掉，别裁照片。
+        .border({ width: 0.7 * (1 - this.avatarRatio()), color: $r('app.color.divider') })
+        .borderRadius(this.avatarBoxRadius())
         // 记下点击处的屏幕坐标，查看器据此决定放大/缩回的中心点。
         .onClick((event: ClickEvent): void => {
           if (this.avatarPath !== '') {
@@ -1239,17 +1435,40 @@ export struct ChatProfilePage {
             this.avatarTapY = event.windowY;
             this.viewerAvatarPath = this.avatarPath;
           }
-        });
-      Text(this.title)
-        .fontSize(24).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
-        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-        .constraintSize({ maxWidth: '86%' });
-      if (this.subtitle !== '') {
-        Text(this.subtitle).fontSize(15).fontColor(COLOR_TEXT_SECONDARY);
+        })
+        .width(this.avatarBoxW())
+        .height(this.avatarBoxH())
+        .offset({ x: 0, y: this.avatarOffsetY() });
+        // 名字 / 副标题：展开态变白、压在照片左下。
+        Column({ space: 8 }) {
+          Text(this.title)
+            .fontSize(24).fontWeight(FontWeight.Bold)
+            .fontColor(this.isAvatarExpanded() ? Color.White : COLOR_TEXT_PRIMARY)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .constraintSize({ maxWidth: '86%' });
+          if (this.subtitle !== '') {
+            Text(this.subtitle).fontSize(15)
+              .fontColor(this.isAvatarExpanded() ? '#E6FFFFFF' : COLOR_TEXT_SECONDARY);
+          }
+        }
+        .width('100%')
+        .height(AVATAR_TEXT_H)
+        .alignItems(this.isAvatarExpanded() ? HorizontalAlign.Start : HorizontalAlign.Center)
+        .padding({
+          left: this.isAvatarExpanded() ? AVATAR_TEXT_INSET + this.avatarCardInset() : 0,
+          right: this.isAvatarExpanded() ? AVATAR_TEXT_INSET + this.avatarCardInset() : 0
+        })
+        .margin({ top: this.avatarTextTop() })
+        .offset({ x: 0, y: this.avatarOffsetY() })
+        .zIndex(1)
+        .hitTestBehavior(HitTestMode.Transparent);
       }
+      .width('100%')
+      .height(this.avatarBlockH())
+      .zIndex(1);
     }
     .width('100%')
-    .padding({ top: this.topSafe + 8 });
+    .padding({ top: this.avatarTopPad() });
   }
 
   @Builder
@@ -2102,7 +2321,7 @@ export struct ChatProfilePage {
     // 整页是一个 List（原来是 Scroll > Column）：头图、操作行、资料卡在第一项，页签条一项，
     // 页签内容按行放进 List——成员、文件/链接走 LazyForEach，媒体网格按 3 格一行走 LazyForEach。
     // 大群的成员、翻了很多页的共享内容都只建可视区附近的行，其余滚动时逐帧补建。
-    List() {
+    List({ scroller: this.pageScroller }) {
       ListItem() {
         Column() {
           this.header();
@@ -2142,18 +2361,24 @@ export struct ChatProfilePage {
     // 头图与大头像就在列表第一项里、随内容滚走，所以顶部虚化不能常开（常开会
     // 糊掉静止状态的头像上沿）。跟着滚动量渐入：静止半径 0 时不挂滤镜节点，一滚再挂。
     .attributeModifier(this.edgeBlur.bind(
-      edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) ? this.blurRadius : 0,
+      !this.avatarMorphing() && edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) ? this.blurRadius : 0,
       this.listViewH,
       edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop),
       edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
     .clip(false)
+    // 下拉放大头像：越界回弹要开 Spring，越界值就是手指行程。
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .onAreaChange((_o: Area, n: Area): void => {
       const h: number = n.height as number;
       if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
+      const w: number = n.width as number;
+      if (w > 0 && Math.abs(w - this.avatarAvailW) > 0.5) { this.avatarAvailW = w; }
     })
     .onDidScroll((offset: number): void => {
       const target: number = Math.max(0, Math.min(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) ? BLUR_MAX_VP : 0, offset * 2));
       if (Math.abs(target - this.blurRadius) > 1) { this.blurRadius = target; }
+      // 下拉放大头像：借用同一次回调读越界值，不另挂一个 onDidScroll。
+      this.handlePageScroll();
     })
     // 壁纸生效时整页底必须透明，否则壁纸被这一层盖死（同 util/theme.mainPageFill
     // 的理由）。卡片自己是毛玻璃（overlayGlassFill），压在壁纸上仍然读得清。
@@ -2172,17 +2397,23 @@ export struct ChatProfilePage {
     if (this.viewerAvatarPath !== '') {
       AvatarViewer({
         imagePath: this.viewerAvatarPath,
+        videoPath: this.avatarPath === this.viewerAvatarPath ? this.avatarAnimPath : '',
+        imageFileId: this.store?.avatarFileId ?? 0,
+        chatId: this.chatId,
         originX: this.avatarTapX,
         originY: this.avatarTapY,
         onClose: (): void => { this.viewerAvatarPath = ''; }
-      });
+      }).zIndex(20);
     }
     }
     .width('100%').height('100%');
     }
     // 本页自绘标题栏（头图上那一行返回/退出），不要 HDS 的。
     .hideTitleBar(true)
-    .onBackPressed((): boolean => collapseFloatingVideo())
+    .onBackPressed((): boolean => {
+      if (this.viewerAvatarPath !== '') { this.viewerAvatarPath = ''; return true; }
+      return collapseFloatingVideo();
+    })
     .onReady((ctx: NavDestinationContext): void => {
       this.navStack = ctx.pathStack;
       this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;
@@ -2192,6 +2423,7 @@ export struct ChatProfilePage {
     .onWillShow((): void => { markChatDestShown(this.chatDestToken); })
     .onShown((): void => { this.handleShown(); })
     .onHidden((): void => {
+      this.viewerAvatarPath = '';
       markChatDestHidden(this.chatDestToken);
       this.closeQr();
     })

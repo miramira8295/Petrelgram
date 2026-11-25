@@ -61,6 +61,8 @@ function hasRichText(value: Object | undefined): boolean {
     const node = item as TdObject, type = node['@type'];
     if (type === 'richTextCustomEmoji') {
       const alt = node['alternative_text']; if (typeof alt === 'string' && alt.length > 0) { return true; }
+    } else if (type === 'richTextMathematicalExpression') {
+      const expr = node['expression']; if (typeof expr === 'string' && expr.length > 0) { return true; }
     }
     if (type === 'richTexts') {
       const children = nodesOf(node['texts']);
@@ -169,6 +171,13 @@ class RichMessageFlattener {
       const text = node['text'];
       if (text !== undefined && typeof text !== 'string') { this.valid = false; return; }
       this.append((text as string | undefined) ?? '');
+    } else if (type === 'richTextMathematicalExpression') {
+      const expression = node['expression'];
+      if (expression !== undefined && typeof expression !== 'string') { this.valid = false; return; }
+      const expr = (expression as string | undefined) ?? '';
+      if (expr !== '') {
+        const entity = this.begin('textEntityTypeCode'); this.append(expr); entity.end = this.offset;
+      }
     } else if (type === 'richTexts') {
       this.frames.push({ kind: 'rich-list', nodes: nodesOf(node['texts']), index: 0, url });
     } else if (type === 'richTextCustomEmoji') {
@@ -232,6 +241,23 @@ class RichMessageFlattener {
       this.rich(node['text']);
     } else if (type === 'pageBlockCollage' || type === 'pageBlockSlideshow') {
       this.caption(node['caption'], start); this.blocks(node['page_blocks'] ?? node['items']); this.rich(node['text']);
+    } else if (type === 'pageBlockMathematicalExpression' || type === 'pageBlockMath') {
+      const rawExpr = node['expression'] ?? node['source'];
+      if (rawExpr !== undefined && typeof rawExpr !== 'string') { this.valid = false; return; }
+      const expr = (rawExpr as string | undefined) ?? '';
+      if (expr !== '') {
+        const entity = this.begin('textEntityTypeCode'); this.append(expr); entity.end = this.offset;
+      }
+    } else if (type === 'pageBlockAuthorDate') {
+      this.rich(node['author']);
+    } else if (type === 'pageBlockChatLink') {
+      this.rich(node['title'] ?? node['text']);
+    } else if (type === 'pageBlockRelatedArticles') {
+      const articles = nodesOf(node['articles']);
+      for (let i = articles.length - 1; i >= 0; i--) {
+        if (articles[i] !== null && typeof articles[i] === 'object') { this.section(articles[i]['title'], start); }
+      }
+      this.section(node['header'], start, true);
     } else if (type === 'pageBlockButtonRow') {
       const buttons = nodesOf(node['buttons']);
       for (let i = buttons.length - 1; i >= 0; i--) { this.section(buttons[i]['text'], start); }
@@ -239,8 +265,9 @@ class RichMessageFlattener {
     } else {
       this.caption(node['caption'], start);
       if (HEADING_BLOCKS.has(type)) {
-        this.frames.push({ kind: 'end', entity: this.begin('textEntityTypeBold') }); this.rich(node['text'] ?? node['title']);
-      } else { this.rich(node['text']); }
+        this.frames.push({ kind: 'end', entity: this.begin('textEntityTypeBold') });
+        this.rich(node['text'] ?? node['title'] ?? node['subtitle'] ?? node['header'] ?? node['subheader'] ?? node['kicker']);
+      } else { this.rich(node['text'] ?? node['footer']); }
     }
   }
 }

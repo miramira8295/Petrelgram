@@ -99,6 +99,7 @@ for (const how of ['recycle', 'timeout', 'flush', 'cancel']) {
   const store = new s.ctx.Store();
   Object.assign(store, { chatId: 7, messages: [{ id: 1 }, { id: 2 }, { id: 3 }], pinnedIds: [],
     getMessages() { return this.messages; }, getCurrentNotifyKind: () => 'update',
+    subscribeScopedUnread() { return () => {}; },
     notifySoon() { this.listener(this.messages); }, subscribe(cb) { this.listener = cb; cb(this.messages); return () => {}; } });
   const names = ['applyRouteParams', 'registerChatLevelSubscriptions', 'animateRemoteDeletion', 'deleteAnimationEnabled'];
   vm.runInContext(compile(`class Page {${names.map(n => method('pages/chat/ChatPage.ets', n)).join('\n')}} globalThis.Page=Page;`), s.ctx);

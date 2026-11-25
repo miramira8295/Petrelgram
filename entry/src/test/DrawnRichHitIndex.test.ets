@@ -57,5 +57,18 @@ export default function drawnRichHitIndexTest(): void {
       expect(index.regions === regions).assertTrue();
       expect(hits[0].key).assertEqual('0');
     });
+    it('findNear prefers exact hits and picks the closest rectangle within slop', 0, (): void => {
+      const first = indexedHit('one', 10, 10, 20, 18);
+      const second = indexedHit('two', 36, 10, 20, 18);
+      const index = new DrawnRichHitIndex([first, second]);
+      expect(index.findNear(15, 15, 4, 4) === first).assertTrue();
+      expect(index.findNear(8, 12, 3, 4) === first).assertTrue();
+      expect(index.findNear(12, 7, 3, 4) === first).assertTrue();
+      expect(index.findNear(32, 14, 4, 4) === first).assertTrue();
+      expect(index.findNear(34, 14, 4, 4) === second).assertTrue();
+      expect(index.findNear(33, 14, 4, 4) === second).assertTrue();
+      expect(index.findNear(4, 14, 3, 4) === null).assertTrue();
+      expect(index.findNear(NaN, 14, 3, 4) === null).assertTrue();
+    });
   });
 }

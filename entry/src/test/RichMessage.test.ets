@@ -105,5 +105,14 @@ export default function richMessageTest() {
       expect(f.text).assertEqual('');
       expect(f.entities.length).assertEqual(0);
     });
+
+    it('行内与独立公式块在摊平时保留 expression 原文', 0, () => {
+      const inlineMath: TdObject = { '@type': 'richTextMathematicalExpression' };
+      inlineMath['expression'] = 'E=mc^2';
+      const blockMath: TdObject = { '@type': 'pageBlockMathematicalExpression' };
+      blockMath['expression'] = 'd = 0.1226';
+      const f: FlatText = flattenRichMessage(message([para(inlineMath), blockMath]));
+      expect(f.text).assertEqual('E=mc^2\nd = 0.1226');
+    });
   });
 }

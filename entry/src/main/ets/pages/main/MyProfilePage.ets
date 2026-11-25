@@ -11,9 +11,9 @@ import {
 import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { pageMarginVp } from '../../util/pageMargin';
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_MD, WIDTH_BP_SM
 } from '../../util/layoutBreakpoint';
-import { promptAction, router } from '@kit.ArkUI';
+import { curves, promptAction, router } from '@kit.ArkUI';
 import { flushPendingNavs } from '../../util/pendingNavFlush';
 import {
   KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT,
@@ -35,11 +35,12 @@ import { StickerPicker, StickerItem } from '../chat/StickerPicker';
 import { getTdClient } from '../../tdkit/Globals';
 import { ProfileStore, StoryItem } from '../../store/ProfileStore';
 import { AvatarView } from '../chatlist/AvatarView';
+import { TopGlassAction } from '../chatlist/TopGlassAction';
 import { QrDialog } from '../common/QrDialog';
 import { TgsStickerView } from '../chat/TgsStickerView';
 import { WebmStickerView } from '../chat/WebmStickerView';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, KEY_APP_DARK } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_FORCE_SINGLE_COLUMN
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
@@ -52,13 +53,19 @@ import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { logE } from '../../util/log';
 import { registerStack, NavStackLike, snapshotOf, stackOf } from '../../util/navStacks';
 import { decidePush, StackAction, StackFrame } from '../../util/splitRouting';
-import { readableContentWidth } from '../../util/contentWidth';
+import { contentSideGutter, readableContentWidth } from '../../util/contentWidth';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { emojiStatusVisible } from '../../util/emojiStatus';
+import {
+  AVATAR_BASE, AVATAR_TOP_LIFT, AVATAR_EXPAND_AT, AVATAR_COLLAPSE_AT, AVATAR_SNAP_MS,
+  AVATAR_TEXT_INSET, AVATAR_TEXT_BOTTOM, AVATAR_TEXT_H, AVATAR_CARD_RADIUS, AVATAR_BUTTON_INSET,
+  canExpandAvatar, avatarUsesCardLayout, avatarRatioOf, avatarWidthOf, avatarHeightOf,
+  avatarRadiusOf, avatarRingOf, avatarOffsetYOf, avatarDecodeWidthOf, avatarDecodeHeightOf
+} from '../../util/avatarMorph';
 
 // 卡片与消息气泡使用同档透明度的颜色填充；关闭整体材质时保持实色。
 const CARD_BG: ResourceColor = $r('app.color.surface');
@@ -66,6 +73,13 @@ const CARD_RADIUS: number = 14;
 const PAGE_BG: ResourceColor = $r('app.color.page_bg');
 const TOP_ACTION_SIZE: number = 44;
 const PROFILE_LOAD_TIMEOUT_MS: number = 8000;
+// ── 个人资料页「下拉放大头像」──────────────────────────────────────────────
+// 数值来源 ArkGram v3.3 设置页的 ProfileHeader（反汇编还原）：HEADER_EXPANDED_HEIGHT=390 /
+//   AVATAR_SIZE=100 / pull>80 提交展开 / y>10 收起。曲线**分轴**走（宽先顶满、高后到），
+//   这是 ArkGram 的真实形态，也是用户认可的展开方式；不要再合并成一个统一进度（会变成方形展开）。
+// 下拉放大头像的几何参数与公式在 util/avatarMorph.ets（三个资料页共用一套数值）。
+// 文字块高度 AVATAR_TEXT_H 必须是常量：它的高度反过来决定自己的 margin，onAreaChange
+// 量出来会形成「量→改 margin→再量」的自激回路，真机上整块被算成 0 高、名字行不建。
 
 // 个人资料页签的 navBar 此刻是否可见。与 CHAT_NAV_BAR_VISIBLE_KEY /
 // SETTINGS_NAV_BAR_VISIBLE_KEY / CONTACTS_NAV_BAR_VISIBLE_KEY 同一个用途、**第四个
@@ -141,9 +155,12 @@ export struct MyProfilePage {
   //   2. 不写页签级的 PROFILE_NAV_BAR_VISIBLE_KEY（理由见 onNavBarStateChange）。
   //   3. 不在这里 flushPendingNavs：待办跳转属于页签壳。
   @Prop paneMode: boolean = false;
+  // 左栏壳实测的内容列宽度：三宫格、限宽都按它算（页签壳下等于 readableContentWidth）。
   @State private profileContentWidth: number = 0;
   onOpenSettings: () => void = (): void => {};
   @StorageProp('topSafeHeight') topSafe: number = 0;
+  // 玻璃按钮的深色染色（只影响材质不可用时的降级路径）。
+  @StorageProp(KEY_APP_DARK) appDark: boolean = false;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // 窗口宽（不是屏幕宽），分屏 / 悬浮窗 / 折叠屏改变窗口时 EntryAbility 的
   // windowSizeChange 会刷新它。平板上用来给内容限宽——见 util/contentWidth。
@@ -184,6 +201,16 @@ export struct MyProfilePage {
   @State avatarPressed: boolean = false;
   @State photoUploading: boolean = false;
   @State openingEditor: boolean = false;
+  // 下拉放大头像：avatarPull = 当前下拉距离（vp，>0 表示拉过头了），
+  // avatarExpanded = 是否已经提交展开。两者都由 handleProfileScroll 驱动。
+  @State private avatarPull: number = 0;
+  @State private avatarExpanded: boolean = false;
+  // 本页实测可用宽度（vp）：平板分栏时这一页可能只占左栏，用 screenW 会让展开态照片比容器宽、
+  // 被裁掉两侧后看上去过度放大，所以按实测宽度铺满。
+  @State private avatarAvailW: number = 0;
+  // 刚提交展开的时刻：Spring 回弹可能瞬时越过 +10，用它开一个不判收起的窗口。
+  private avatarSnapAt: number = 0;
+
   private profileScroller: Scroller = new Scroller();
   // 滚动区实测高度（vp）：linearGradientBlur 的 fractionStops 按实际高度归一化。
   @State private profileViewH: number = 0;
@@ -380,6 +407,7 @@ export struct MyProfilePage {
   // 里刚注册过、此刻必然在树上，所以那一支不该发生；仍然接住，让调用方把连点锁
   // 解掉并给用户一条提示。
   private pushEditor(): boolean {
+    // 左栏壳走右栏那条栈（只有一层，replacePath 不播推栈动画）；页签壳推自己的栈。
     if (this.paneMode) { return navigateToSettingInChat(EDITOR_DEST_NAME); }
     const stack: NavStackLike | undefined = stackOf('profile');
     if (stack === undefined) {
@@ -1379,82 +1407,259 @@ export struct MyProfilePage {
       }));
   }
 
+  // ── 下拉放大头像的计算 ─────────────────────────────────────────────────
+  private canMorphAvatar(): boolean {
+    return !this.profileLoading && this.profileError === '' &&
+      canExpandAvatar(this.avatarPath, this.avatarAnimPath);
+  }
+
+  private effectiveAvatarPull(): number {
+    return this.canMorphAvatar() ? this.avatarPull : 0;
+  }
+
+  private isAvatarExpanded(): boolean {
+    return this.avatarExpanded && this.canMorphAvatar();
+  }
+
+  // 形变进度：圆角、圆环、上移按它走（宽高各走各的直线，见 avatarPhotoW/H）。
+  private avatarRatio(): number {
+    return avatarRatioOf(this.effectiveAvatarPull(), this.isAvatarExpanded());
+  }
+
+  // 内容列限宽：页签壳下 header 位于限宽 readableContentWidth 的内层 Column 中，
+  // 不能拿整窗宽度硬塞进窄容器；左栏壳（paneMode）下则等于该栏实测宽度。
+  private avatarMaxWidth(): number {
+    const avail: number = this.avatarAvailW > 0 ? this.avatarAvailW : this.screenW;
+    return this.paneMode ? avail : Math.min(avail, readableContentWidth(this.screenW));
+  }
+
+  // 平板/大屏展开态按内容卡片排（左右内缩、16vp 圆角、顶边齐安全区）；手机直板（含横屏 #125）及强制单栏整宽铺满。
+  private avatarCardInset(): number {
+    if (!avatarUsesCardLayout(this.widthBp, this.heightBp, this.forceSingleColumn)) {
+      return 0;
+    }
+    return this.paneMode ? 12 : this.pageMargin();
+  }
+
+  // 平板页签壳下卡片顶边落在安全区下沿；左栏壳自身原点已在安全区下沿（ChatListPage 已垫 topSafe），不再重复扣。
+  private avatarTopAlign(): number {
+    return !this.paneMode && this.avatarCardInset() > 0 ? this.topSafe : 0;
+  }
+
+  private avatarTargetWidth(): number {
+    return Math.max(AVATAR_BASE, this.avatarMaxWidth() - this.avatarCardInset() * 2);
+  }
+
+  // 宽度：先顶满目标宽（两边先到边，不改成与高度同步长的正方形）。
+  private avatarPhotoW(): number {
+    return avatarWidthOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), this.avatarTargetWidth(), AVATAR_BASE);
+  }
+
+  // 高度：后到 390。宽先满、高后到，接上顶端贴住屏幕顶后，观感是「两边到边后继续往下长」。
+  private avatarPhotoH(): number {
+    return avatarHeightOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), AVATAR_BASE);
+  }
+
+  // 圆头像 → 目标圆角（平板 16vp，手机 0）。
+  private avatarPhotoRadius(): number {
+    const cardRadius: number = this.avatarCardInset() > 0 ? AVATAR_CARD_RADIUS : 0;
+    return avatarRadiusOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), cardRadius, AVATAR_BASE);
+  }
+
+  // 原来那颗 4vp 的卡底圆环，形变时一起收掉，否则展开后照片边上会留一圈白边。
+  private avatarRing(): number {
+    return avatarRingOf(this.effectiveAvatarPull(), this.isAvatarExpanded());
+  }
+
+  private avatarBoxW(): number {
+    return this.avatarPhotoW() + this.avatarRing() * 2;
+  }
+
+  private avatarBoxH(): number {
+    return this.avatarPhotoH() + this.avatarRing() * 2;
+  }
+
+  private avatarBoxRadius(): number {
+    return this.avatarPhotoRadius() + this.avatarRing();
+  }
+
+  // 收起态照片顶边距页头容器上沿的留白；钳到 >= 0 防止 paneMode 下出现非法负 padding 导致位移差 4vp。
+  private avatarTopPad(): number {
+    return Math.max(0, (this.paneMode ? 0 : this.topSafe) + 8 - AVATAR_TOP_LIFT);
+  }
+
+  private avatarTopInset(): number {
+    return EDGE_OVERLAY_VP + this.avatarTopPad();
+  }
+
+  private avatarOffsetY(): number {
+    const lift: number = this.avatarTopInset() - this.avatarTopAlign();
+    return avatarOffsetYOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), lift);
+  }
+
+  private avatarTextTop(): number {
+    if (this.isAvatarExpanded()) {
+      return this.avatarBoxH() - AVATAR_TEXT_H - AVATAR_TEXT_BOTTOM;
+    }
+    return this.avatarBoxH() + 8;
+  }
+
+  private avatarBlockH(): number {
+    const pad: number = this.avatarTopPad();
+    const text: number = this.isAvatarExpanded() ? 0 : 8 + AVATAR_TEXT_H;
+    return Math.max(0, this.avatarBoxH() + pad + this.avatarOffsetY() + text);
+  }
+
+  // 解码分辨率只在「静止收起」与「下拉/展开」两个状态切换，不跟下拉逐帧走。
+  private avatarDecodeW(): number {
+    return avatarDecodeWidthOf(this.effectiveAvatarPull(), this.isAvatarExpanded(),
+      this.avatarTargetWidth(), AVATAR_BASE);
+  }
+
+  private avatarDecodeH(): number {
+    return avatarDecodeHeightOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), AVATAR_BASE);
+  }
+
+  // 形变中关掉顶部渐变虚化：整页被一张大图占满，糊带只会多付一次全屏模糊。
+  private avatarMorphing(): boolean {
+    return this.isAvatarExpanded() || this.effectiveAvatarPull() > 0.5;
+  }
+
+  // 下拉/回滚的提交判定。无头像图片时跳过形变，避免首字母占位被拉成整屏色块。
+  private handleProfileScroll(): void {
+    if (!this.canMorphAvatar()) {
+      if (this.avatarPull !== 0) { this.avatarPull = 0; }
+      if (this.avatarExpanded) { this.avatarExpanded = false; }
+      return;
+    }
+    const y: number = this.profileScroller.currentOffset().yOffset;
+    if (y < 0) {
+      const pull: number = Math.abs(y);
+      if (this.avatarPull !== pull) {
+        this.avatarPull = pull;
+      }
+      if (!this.avatarExpanded && pull > AVATAR_EXPAND_AT) {
+        this.getUIContext().animateTo({
+          duration: AVATAR_SNAP_MS,
+          curve: curves.springMotion(0.36, 0.90)
+        }, (): void => {
+          this.avatarExpanded = true;
+          this.avatarSnapAt = Date.now();
+        });
+      }
+      return;
+    }
+    if (this.avatarPull !== 0) {
+      this.avatarPull = 0;
+    }
+    if (this.avatarExpanded && y > AVATAR_COLLAPSE_AT &&
+      Date.now() - this.avatarSnapAt > AVATAR_SNAP_MS + 120) {
+      this.getUIContext().animateTo({
+        duration: AVATAR_SNAP_MS + 60,
+        curve: curves.springMotion(0.40, 0.78)
+      }, (): void => {
+        this.avatarExpanded = false;
+      });
+    }
+  }
+
   @Builder
   header() {
     // 二维码和 ⋮ 原来是浮在头像块上方的一行，现在搬进了标题栏（见
     // titleBarContent）——它们本来就是"页面级动作"，放在标题栏才是它们该在的
     // 地方，头像块也因此能一直顶到最上面。
-    Column({ space: 8 }) {
+    Stack({ alignContent: Alignment.Top }) {
+      // ── 下拉放大头像（效果移植自 ArkGram v3.3 设置页 ProfileHeader）──────
+      // 三层嵌套，每层只干一件事：
+      //   最外 尺寸 + 上移 —— **绝对不能挂 .animation()**：隐式动画会把逐帧变化
+      //        的宽高各补间一次，下拉立刻变成拖在手指后面的橡皮筋；
+      //   中层 按压手感 scale + 120ms 动画，尺寸恒为 100%，与形变互不干扰；
+      //   内层 照片本身（圆角/裁剪）与那颗随形变收掉的卡底圆环。
       Stack({ alignContent: Alignment.BottomEnd }) {
-        Stack({ alignContent: Alignment.Center }) {
-          if (this.profileLoading) {
-            Circle({ width: 100, height: 100 })
-              .fill($r('app.color.surface_alt'));
-            LoadingProgress()
-              .width(28)
-              .height(28)
-              .color(this.accent());
-          } else {
-            AvatarView({
-              avatarPath: this.avatarPath, initials: this.initials,
-              colorSeed: this.myId, avatarSize: 100,
-              animPath: this.avatarAnimPath
-            });
+        Stack({ alignContent: Alignment.BottomEnd }) {
+          Stack({ alignContent: Alignment.Center }) {
+            if (this.profileLoading) {
+              Circle({ width: this.avatarPhotoW(), height: this.avatarPhotoH() })
+                .fill($r('app.color.surface_alt'));
+              LoadingProgress()
+                .width(28)
+                .height(28)
+                .color(this.accent());
+            } else {
+              AvatarView({
+                avatarPath: this.avatarPath, initials: this.initials,
+                colorSeed: this.myId, avatarSize: 100,
+                animPath: this.avatarAnimPath,
+                // 绘制尺寸逐帧跟手；解码尺寸只在收起/展开两个稳定态切换。
+                boxWidth: this.avatarPhotoW(),
+                boxHeight: this.avatarPhotoH(),
+                boxRadius: this.avatarPhotoRadius(),
+                decodeWidth: this.avatarDecodeW(),
+                decodeHeight: this.avatarDecodeH()
+              });
+            }
+            if (this.photoUploading) {
+              Circle({ width: this.avatarPhotoW(), height: this.avatarPhotoH() })
+                .fill('#66000000');
+              LoadingProgress()
+                .width(30)
+                .height(30)
+                .color(Color.White);
+            }
           }
-          if (this.photoUploading) {
-            Circle({ width: 100, height: 100 })
-              .fill('#66000000');
-            LoadingProgress()
-              .width(30)
-              .height(30)
-              .color(Color.White);
+          .width(this.avatarPhotoW())
+          .height(this.avatarPhotoH())
+          .borderRadius(this.avatarPhotoRadius())
+          .clip(true);
+
+          // 相机角标只在收起态出现：展开后它悬在大图右下角没有意义。
+          if (!this.profileLoading && !this.photoUploading && !this.isAvatarExpanded()) {
+            Row() {
+              SymbolGlyph(this.profileError !== ''
+                ? $r('sys.symbol.exclamationmark_circle')
+                : $r('sys.symbol.camera'))
+                .fontSize(this.profileError !== '' ? 16 : 15)
+                .fontColor([Color.White]);
+            }
+            .width(31)
+            .height(31)
+            .borderRadius(15.5)
+            .backgroundColor(this.profileError !== '' ? '#E64646' : this.accent())
+            .border({ width: 2.5, color: PAGE_BG })
+            .justifyContent(FlexAlign.Center)
+            .hitTestBehavior(HitTestMode.None)
+            .transition(TransitionEffect.OPACITY
+              .combine(TransitionEffect.scale({ x: 0.7, y: 0.7 }))
+              .animation({
+                duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+                curve: Curve.EaseOut
+              }));
           }
         }
-        .width(108)
-        .height(108)
-        .padding(4)
+        .width('100%')
+        .height('100%')
+        .padding(this.avatarRing())
         .backgroundColor(this.cardFill())
-        .borderRadius(54)
+        .borderRadius(this.avatarBoxRadius())
+        // 投影随形变淡出：展开后照片贴满宽度又顶到状态栏，再留投影就像张浮卡。
         .shadow({
-          radius: this.glassOn() ? 0 : (this.avatarPressed ? 5 : 12),
+          radius: this.glassOn() ? 0 : (this.avatarPressed ? 5 : 12) * (1 - this.avatarRatio()),
           color: this.glassOn() ? Color.Transparent : (this.avatarPressed ? '#1C000000' : '#28000000'),
           offsetX: 0,
-          offsetY: this.avatarPressed ? 1 : 4
+          offsetY: (this.avatarPressed ? 1 : 4) * (1 - this.avatarRatio())
+        })
+        .scale({
+          x: this.avatarPressed ? 0.95 : 1,
+          y: this.avatarPressed ? 0.95 : 1
+        })
+        .animation({
+          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
+          curve: Curve.EaseOut
         });
-
-        if (!this.profileLoading && !this.photoUploading) {
-          Row() {
-            SymbolGlyph(this.profileError !== ''
-              ? $r('sys.symbol.exclamationmark_circle')
-              : $r('sys.symbol.camera'))
-              .fontSize(this.profileError !== '' ? 16 : 15)
-              .fontColor([Color.White]);
-          }
-          .width(31)
-          .height(31)
-          .borderRadius(15.5)
-          .backgroundColor(this.profileError !== '' ? '#E64646' : this.accent())
-          .border({ width: 2.5, color: PAGE_BG })
-          .justifyContent(FlexAlign.Center)
-          .hitTestBehavior(HitTestMode.None)
-          .transition(TransitionEffect.OPACITY
-            .combine(TransitionEffect.scale({ x: 0.7, y: 0.7 }))
-            .animation({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-              curve: Curve.EaseOut
-            }));
-        }
       }
-      .width(112)
-      .height(112)
-      .scale({
-        x: this.avatarPressed ? 0.95 : 1,
-        y: this.avatarPressed ? 0.95 : 1
-      })
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
-        curve: Curve.EaseOut
-      })
+      .width(this.avatarBoxW())
+      .height(this.avatarBoxH())
+      .offset({ x: 0, y: this.avatarOffsetY() })
       .enabled(!this.profileLoading && !this.photoUploading && !this.photoMenuOpen &&
         !this.openingEditor && !this.switchingToSettings)
       .accessibilityText(this.profileError !== ''
@@ -1476,48 +1681,71 @@ export struct MyProfilePage {
         }
       });
 
-      Row({ space: 5 }) {
-        Text(this.profileLoading
-          ? $r('app.string.mp_loading')
-          : (this.profileError !== '' ? $r('app.string.tab_profile') : (this.name !== '' ? this.name : $r('app.string.settings_telegram_account'))))
-          .fontSize(20).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-          .flexShrink(1);
-        if (!this.profileLoading && this.profileError === '' && emojiStatusVisible(this.statusEmojiPath, this.statusEmojiUid)) {
-          this.statusEmoji();
+      // 名字 + 状态整体成块：ArkGram 是让它们跟着 textMoveRatio 从居中滑到左侧，
+      // 我们不做逐帧位移（会抖），只在展开提交的那一刻翻转对齐方式，
+      // 由 animateTo 把 20vp 的缩进和整块文字一起补间过去。
+      Column({ space: 8 }) {
+        Row({ space: 5 }) {
+          Text(this.profileLoading
+            ? $r('app.string.mp_loading')
+            : (this.profileError !== '' ? $r('app.string.tab_profile') : (this.name !== '' ? this.name : $r('app.string.settings_telegram_account'))))
+            .fontSize(20).fontWeight(FontWeight.Bold)
+            .fontColor(this.isAvatarExpanded() ? Color.White : COLOR_TEXT_PRIMARY)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .flexShrink(1);
+          if (!this.profileLoading && this.profileError === '' && emojiStatusVisible(this.statusEmojiPath, this.statusEmojiUid)) {
+            this.statusEmoji();
+          }
         }
-      }
-      .alignItems(VerticalAlign.Center)
-      .constraintSize({ maxWidth: '86%' });
+        .alignItems(VerticalAlign.Center)
+        .constraintSize({ maxWidth: '86%' });
 
-      Row({ space: 6 }) {
-        if (this.profileLoading) {
-          LoadingProgress().width(13).height(13).color(this.accent());
-        } else {
-          Circle({ width: 7, height: 7 })
-            .fill(this.profileError !== ''
-              ? '#E64646'
-              : (this.displayedStatusText() === str('status_online') ? '#34C759' : COLOR_TEXT_SECONDARY));
+        Row({ space: 6 }) {
+          if (this.profileLoading) {
+            LoadingProgress().width(13).height(13).color(this.accent());
+          } else {
+            Circle({ width: 7, height: 7 })
+              .fill(this.profileError !== ''
+                ? '#E64646'
+                : (this.isAvatarExpanded() ? '#EBFFFFFF'
+                : (this.displayedStatusText() === str('status_online') ? '#34C759' : COLOR_TEXT_SECONDARY)));
+          }
+          Text(this.profileLoading
+            ? $r('app.string.mp_syncing')
+            : (this.profileError !== ''
+              ? $r('app.string.mp_tap_photo_reload')
+              : this.displayedStatusText()))
+            .fontSize(13)
+            .fontColor(this.isAvatarExpanded() ? '#E6FFFFFF'
+              : (this.profileError !== '' ? '#E64646' : COLOR_TEXT_SECONDARY));
         }
-        Text(this.profileLoading
-          ? $r('app.string.mp_syncing')
-          : (this.profileError !== ''
-            ? $r('app.string.mp_tap_photo_reload')
-            : this.displayedStatusText()))
-          .fontSize(13)
-          .fontColor(this.profileError !== '' ? '#E64646' : COLOR_TEXT_SECONDARY);
+        .height(22)
+        .alignItems(VerticalAlign.Center);
       }
-      .height(22)
-      .alignItems(VerticalAlign.Center);
+      .width('100%')
+      .alignItems(this.isAvatarExpanded() ? HorizontalAlign.Start : HorizontalAlign.Center)
+      .padding({
+        left: this.isAvatarExpanded() ? AVATAR_TEXT_INSET + this.avatarCardInset() : 0,
+        right: this.isAvatarExpanded() ? AVATAR_TEXT_INSET + this.avatarCardInset() : 0
+      })
+      .height(AVATAR_TEXT_H)
+      .zIndex(1)
+      .margin({ top: this.avatarTextTop() })
+      .offset({ x: 0, y: this.avatarOffsetY() })
+      .hitTestBehavior(HitTestMode.Transparent);
     }
     .width('100%')
-    .padding({ top: (this.paneMode ? 0 : this.topSafe) + 8 })
+    .zIndex(1)
     .opacity(this.headerVisible && this.active ? 1 : 0)
     .translate({ y: this.headerVisible && this.active ? 0 : -8 })
     .animation({
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220),
       curve: Curve.EaseOut
-    });
+    })
+    // 流内块高与留白必须放在 .animation() 之后：回弹时 avatarPull 逐帧归零，若被上面的
+    // 220ms 隐式动画补间，块高会滞后于 Scroll 回弹而让下方按钮卡钻进照片底下。
+    .height(this.avatarBlockH())
+    .padding({ top: this.avatarTopPad() });
   }
 
   @Builder
@@ -2090,24 +2318,10 @@ export struct MyProfilePage {
 
   // 二维码与扫一扫独立入口；编辑与设置使用页面现有操作区。
   private titleBarContent(): TitleBarContentOptions {
-    const qrIcon: HdsNavigationIconOptions = {
-      icon: $r('sys.symbol.qrcode'),
-      label: str('mp_show_profile_qr'),
-      action: (): void => { this.openQr(); }
-    };
-    const scanIcon: HdsNavigationIconOptions = {
-      icon: $r('sys.symbol.line_viewfinder'),
-      label: str('qr_scan'),
-      action: (): void => { this.qrScanner.start(this.getUIContext().getHostContext() as common.UIAbilityContext); }
-    };
+    // 两颗钮改成页面自绘的玻璃按钮（见 headerActions）：HDS 的菜单项由平台绘制，
+    // 挂不上系统材质，只有自绘的 TopGlassAction 才和顶栏/输入栏是同一块玻璃。
     return {
-      title: { mainTitle: $r('app.string.tab_profile') },
-      menu: {
-        value: [
-          { content: qrIcon } as HdsNavigationMenuItemOptions,
-          { content: scanIcon } as HdsNavigationMenuItemOptions
-        ]
-      }
+      title: { mainTitle: $r('app.string.tab_profile') }
     };
   }
 
@@ -2116,8 +2330,52 @@ export struct MyProfilePage {
     return pageMarginVp(this.widthBp);
   }
 
+  // 标题栏右侧两颗圆钮：与聊天列表顶栏、输入栏同一套系统材质
+  // （TopGlassAction → NativeGlassHost，surface='control'，不投材质阴影）。
+  @Builder
+  headerActions() {
+    Row({ space: 8 }) {
+      TopGlassAction({
+        actionSize: TOP_ACTION_SIZE,
+        icon: 'sys.symbol.qrcode',
+        label: $r('app.string.mp_show_profile_qr'),
+        dark: this.appDark,
+        iconColor: COLOR_TEXT_PRIMARY,
+        accentColor: this.accent(),
+        interactive: !this.profileLoading && !this.openingEditor && !this.switchingToSettings,
+        onTap: (): void => { this.openQr(); }
+      });
+      TopGlassAction({
+        actionSize: TOP_ACTION_SIZE,
+        icon: 'sys.symbol.line_viewfinder',
+        label: $r('app.string.qr_scan'),
+        dark: this.appDark,
+        iconColor: COLOR_TEXT_PRIMARY,
+        accentColor: this.accent(),
+        interactive: !this.profileLoading && !this.openingEditor && !this.switchingToSettings,
+        onTap: (): void => {
+          this.qrScanner.start(this.getUIContext().getHostContext() as common.UIAbilityContext);
+        }
+      });
+    }
+    .height(TOP_ACTION_SIZE)
+    .padding({
+      right: (this.paneMode ? 0 : contentSideGutter(this.screenW)) +
+        (this.paneMode ? 12 : this.pageMargin()) + AVATAR_BUTTON_INSET * this.avatarRatio()
+    })
+    // 页签壳原点在窗口左上角（加 topSafe + 6）；左栏壳已被父容器垫过 topSafe。
+    // 平板卡片态展开后顺势下移 6vp，使按钮距卡片顶/右均保持 12vp。
+    .margin({
+      top: (this.paneMode ? 0 : this.topSafe) + 6 +
+        (this.avatarCardInset() > 0 ? 6 * this.avatarRatio() : 0)
+    })
+    .zIndex(99)
+  }
+
   build() {
     HdsNavigation(this.profileStack) {
+      // 外层 Stack 只为把两颗玻璃钮固定浮在标题栏那一行，不跟着列表滚。
+      Stack({ alignContent: Alignment.TopEnd }) {
       Scroll(this.profileScroller) {
         // 两层 Column 是故意的：外层铺满、负责居中，内层才是被限宽的内容。
         // 限宽如果加在 Scroll 上，滚动条和边缘回弹会跟着一起缩进来。
@@ -2142,12 +2400,21 @@ export struct MyProfilePage {
       .align(Alignment.Top)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollBar(BarState.Off)
+      // 下拉放大头像：越界下拉（yOffset<0）由它驱动，见 handleProfileScroll。
+      .onScroll((): void => {
+        this.handleProfileScroll();
+      })
       // 边缘渐变虚化：与首页会话列表同一套参数（顶/底 118vp、峰 22px）。
       // 上沿已贴屏幕顶（见 titleBar 的 enableComponentSafeArea: false）。
-      .attributeModifier(this.edgeBlur.bind(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), this.profileViewH, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
+      // 头像形变期间整片糊带关掉——此时屏幕上半被一张大图占满，糊它只是白付一次全屏模糊。
+      .attributeModifier(this.edgeBlur.bind(this.avatarMorphing() ? 0 : edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), this.profileViewH, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
       .onAreaChange((_old: Area, area: Area): void => {
+        // 同一次回调既喂内容列限宽（三宫格），也喂下拉放大头像的展开宽度。
         const w: number = Number(area.width);
-        if (w > 0 && Math.abs(w - this.profileContentWidth) > 0.5) { this.profileContentWidth = w; }
+        if (w > 0) {
+          if (Math.abs(w - this.profileContentWidth) > 0.5) { this.profileContentWidth = w; }
+          if (Math.abs(w - this.avatarAvailW) > 0.5) { this.avatarAvailW = w; }
+        }
         const h: number = Number(area.height);
         if (h > 0 && Math.abs(h - this.profileViewH) > 0.5) {
           this.profileViewH = h;
@@ -2155,6 +2422,11 @@ export struct MyProfilePage {
       })
       // 不裁剪，头像块才能穿到标题栏底下——渐变模糊模糊的正是这部分。
       .clip(false);
+
+        this.headerActions()
+      }
+      .width('100%')
+      .height('100%')
     }
     .titleBar({
       // 两个都要，各管一头：
@@ -2176,7 +2448,10 @@ export struct MyProfilePage {
       // 原点才落在屏幕最上沿。标题自己仍靠 avoidLayoutSafeArea 避让系统安全区。
       enableComponentSafeArea: false,
       // 顶栏去雾：背板全透明 + 关掉 HDS 滚动渐变模糊，理由见 ChatListPage。
-      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false, false),
+      // 展开态照片一直铺到屏幕顶；ArkGram 那会儿没有标题文字（只有右上角 •••），
+      // 所以形变期间把标题字也隐掉，免得「个人资料」四个字压在照片上。
+      style: titleBarStyle(Color.Transparent,
+        this.avatarMorphing() ? Color.Transparent : $r('app.color.text_primary'), false, false),
       content: this.titleBarContent()
     })
     // 一级页签，没有返回键。

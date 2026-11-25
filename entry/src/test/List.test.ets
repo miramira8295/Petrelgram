@@ -1,5 +1,6 @@
 import drawnRichTextTest from './DrawnRichText.test';
 import drawnRichHitIndexTest from './DrawnRichHitIndex.test';
+import avatarMorphTest from './AvatarMorph.test';
 import inlineCaptionDataTest from './InlineCaptionData.test';
 import messageTextInputTest from './MessageTextInput.test';
 import albumCellRenderDataTest from './AlbumCellRenderData.test';
@@ -820,4 +821,5 @@ export default function testsuite() {
   audioHeaderProbeTest();
   contactAddErrorTest();
   contactAddRequestTest();
+  avatarMorphTest();
 }
