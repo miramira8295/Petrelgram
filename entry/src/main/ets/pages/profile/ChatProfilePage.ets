@@ -12,12 +12,12 @@ import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { InviteJoinResolver } from '../../util/inviteJoinResolver';
 import { joinChat as submitChatJoin, ChatJoinOutcome } from '../../util/chatJoin';
 import { pageMarginVp } from '../../util/pageMargin';
-import { readableContentWidth } from '../../util/contentWidth';
 import {
-  AVATAR_EXPANDED_H, AVATAR_TOP_LIFT, AVATAR_EXPAND_AT, AVATAR_COLLAPSE_AT, AVATAR_SNAP_MS,
+  AVATAR_PROFILE_BASE, AVATAR_PROFILE_RING, AVATAR_TOP_LIFT, AVATAR_EXPAND_AT, AVATAR_COLLAPSE_AT, AVATAR_SNAP_MS,
   AVATAR_TEXT_INSET, AVATAR_TEXT_BOTTOM, AVATAR_TEXT_H, AVATAR_HEAD_ROW, AVATAR_HEAD_GAP,
   AVATAR_BUTTON_INSET, AVATAR_CARD_RADIUS,
-  avatarRatioOf, avatarWidthOf, avatarHeightOf, avatarRadiusOf, avatarRingOf, avatarOffsetYOf
+  canExpandAvatar, avatarUsesCardLayout, avatarRatioOf, avatarWidthOf, avatarHeightOf,
+  avatarRadiusOf, avatarRingOf, avatarOffsetYOf, avatarDecodeWidthOf, avatarDecodeHeightOf
 } from '../../util/avatarMorph';
 import { MemberSearchField } from './MemberSearchField';
 import {
@@ -1241,45 +1241,55 @@ export struct ChatProfilePage {
   }
 
   // ── 下拉放大头像（与「我的资料」「联系人资料」共用 util/avatarMorph）──────
-  // 本页容器也是整页 List，头像上方有 44vp 的返回/更多行，所以抵消量按
-  // 「页头留白 + 返回行 + 行间距」算，不加 EDGE_OVERLAY_VP。
+  private canMorphAvatar(): boolean {
+    return canExpandAvatar(this.avatarPath, this.avatarAnimPath);
+  }
+
+  private effectiveAvatarPull(): number {
+    return this.canMorphAvatar() ? this.avatarPull : 0;
+  }
+
+  private isAvatarExpanded(): boolean {
+    return this.avatarExpanded && this.canMorphAvatar();
+  }
+
+  private avatarMorphing(): boolean {
+    return this.isAvatarExpanded() || this.effectiveAvatarPull() > 0.5;
+  }
+
   private avatarRatio(): number {
-    return avatarRatioOf(this.avatarPull, this.avatarExpanded);
+    return avatarRatioOf(this.effectiveAvatarPull(), this.isAvatarExpanded());
   }
 
   private avatarMaxWidth(): number {
-    // 分栏（平板）下本页只占右栏，可用宽度比 screenW 窄；量到自身宽度就用它，
-    // 否则展开态照片会按整屏宽拉伸后被右栏裁掉两侧。这里不再套 readableContentWidth：
-    // 那张表在 600vp 以上会向内收，展开态照片就会左右各留一条缝（用户明确不要留白）。
     return this.avatarAvailW > 0 ? this.avatarAvailW : this.screenW;
   }
 
-  // 平板（宽屏 ≥600vp）展开态照片按内容卡片宽度内缩、带卡片圆角；手机（窄屏）直接铺满整宽、
-  // 不带圆角（用户 2026-11-25：手机端的图片不需要这样调，直接占满就完事了，平板需要这样子）。
   private avatarCardInset(): number {
-    return this.widthBp >= WIDTH_BP_MD ? this.pageMargin() : 0;
+    return avatarUsesCardLayout(this.widthBp, this.heightBp, this.forceSingleColumn)
+      ? this.pageMargin() : 0;
+  }
+
+  private avatarTargetWidth(): number {
+    return Math.max(AVATAR_PROFILE_BASE, this.avatarMaxWidth() - this.avatarCardInset() * 2);
   }
 
   private avatarPhotoW(): number {
-    // 平板：展开态宽度跟本页内容卡片对齐（左右各让出 pageMargin），高度仍是 390——
-    // 分栏右栏比左栏宽得多，铺满整栏就是一条宽横幅（用户 2026-11-25 说和左栏不搭）。
-    // 手机：不内缩，直接铺满整宽。
-    const cardW: number = Math.max(0, this.avatarMaxWidth() - this.avatarCardInset() * 2);
-    return avatarWidthOf(this.avatarPull, this.avatarExpanded, cardW);
+    return avatarWidthOf(this.effectiveAvatarPull(), this.isAvatarExpanded(),
+      this.avatarTargetWidth(), AVATAR_PROFILE_BASE);
   }
 
   private avatarPhotoH(): number {
-    return avatarHeightOf(this.avatarPull, this.avatarExpanded);
+    return avatarHeightOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), AVATAR_PROFILE_BASE);
   }
 
   private avatarPhotoRadius(): number {
-    // 手机铺满整宽时不带圆角（贴到屏幕边），平板按卡片圆角。
-    return avatarRadiusOf(this.avatarPull, this.avatarExpanded,
-      this.avatarCardInset() > 0 ? AVATAR_CARD_RADIUS : 0);
+    return avatarRadiusOf(this.effectiveAvatarPull(), this.isAvatarExpanded(),
+      this.avatarCardInset() > 0 ? AVATAR_CARD_RADIUS : 0, AVATAR_PROFILE_BASE);
   }
 
   private avatarRing(): number {
-    return avatarRingOf(this.avatarPull, this.avatarExpanded);
+    return avatarRingOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), AVATAR_PROFILE_RING);
   }
 
   private avatarBoxW(): number {
@@ -1295,44 +1305,45 @@ export struct ChatProfilePage {
   }
 
   private avatarTopPad(): number {
-    return this.topSafe + 8 - AVATAR_TOP_LIFT;
+    return Math.max(0, this.topSafe + 8 - AVATAR_TOP_LIFT);
   }
 
-  // 展开态照片顶边**不要钻进状态栏**：落在安全区下沿，与左栏白卡（会话列表那张卡）的上沿齐平
-  // （用户 2026-11-25：顶部高度超了，与左栏白色框对齐）。
   private avatarTopInset(): number {
-    // 平板卡片态：照片顶边停在安全区下沿（与左栏白卡齐平）；手机：直接顶到屏幕 0，不能留白条。
     const align: number = this.avatarCardInset() > 0 ? this.topSafe : 0;
     return this.avatarTopPad() + AVATAR_HEAD_ROW + AVATAR_HEAD_GAP - align;
   }
 
   private avatarOffsetY(): number {
-    return avatarOffsetYOf(this.avatarPull, this.avatarExpanded, this.avatarTopInset());
+    return avatarOffsetYOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), this.avatarTopInset());
   }
 
   private avatarTextTop(): number {
-    if (this.avatarExpanded) {
+    if (this.isAvatarExpanded()) {
       return this.avatarBoxH() - AVATAR_TEXT_H - AVATAR_TEXT_BOTTOM;
     }
     return this.avatarBoxH() + 8;
   }
 
-  // 形变块在流内占的高度（外层 Column 的 padding 不算在这里）。
   private avatarBlockH(): number {
-    const text: number = this.avatarExpanded ? 0 : 8 + AVATAR_TEXT_H;
+    const text: number = this.isAvatarExpanded() ? 0 : 8 + AVATAR_TEXT_H;
     return Math.max(0, this.avatarBoxH() + this.avatarOffsetY() + text);
   }
 
   private avatarDecodeW(): number {
-    return Math.round(this.avatarMaxWidth());
+    return avatarDecodeWidthOf(this.effectiveAvatarPull(), this.isAvatarExpanded(),
+      this.avatarTargetWidth(), AVATAR_PROFILE_BASE);
   }
 
   private avatarDecodeH(): number {
-    return AVATAR_EXPANDED_H;
+    return avatarDecodeHeightOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), AVATAR_PROFILE_BASE);
   }
 
-  // 逐帧驱动：List 的越界回弹（yOffset<0）就是手指行程。
   private handlePageScroll(): void {
+    if (!this.canMorphAvatar()) {
+      if (this.avatarPull !== 0) { this.avatarPull = 0; }
+      if (this.avatarExpanded) { this.avatarExpanded = false; }
+      return;
+    }
     const y: number = this.pageScroller.currentOffset().yOffset;
     if (y < 0) {
       const pull: number = Math.abs(y);
@@ -1342,12 +1353,9 @@ export struct ChatProfilePage {
       if (!this.avatarExpanded && pull > AVATAR_EXPAND_AT) {
         this.getUIContext().animateTo({
           duration: AVATAR_SNAP_MS,
-          // 高阻尼弹簧：块高收掉的那一段要顺滑收尾但不过冲，否则下面那排
-          // 按钮会先弹到照片上再落回去（用户明确说这点很影响观感）。
           curve: curves.springMotion(0.36, 0.90)
         }, (): void => {
           this.avatarExpanded = true;
-          // 不能清 avatarPull：松手后的回弹还在继续，还要靠它抵消越界平移。
           this.avatarSnapAt = Date.now();
         });
       }
@@ -1433,20 +1441,20 @@ export struct ChatProfilePage {
         Column({ space: 8 }) {
           Text(this.title)
             .fontSize(24).fontWeight(FontWeight.Bold)
-            .fontColor(this.avatarExpanded ? Color.White : COLOR_TEXT_PRIMARY)
+            .fontColor(this.isAvatarExpanded() ? Color.White : COLOR_TEXT_PRIMARY)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
             .constraintSize({ maxWidth: '86%' });
           if (this.subtitle !== '') {
             Text(this.subtitle).fontSize(15)
-              .fontColor(this.avatarExpanded ? '#E6FFFFFF' : COLOR_TEXT_SECONDARY);
+              .fontColor(this.isAvatarExpanded() ? '#E6FFFFFF' : COLOR_TEXT_SECONDARY);
           }
         }
         .width('100%')
         .height(AVATAR_TEXT_H)
-        .alignItems(this.avatarExpanded ? HorizontalAlign.Start : HorizontalAlign.Center)
+        .alignItems(this.isAvatarExpanded() ? HorizontalAlign.Start : HorizontalAlign.Center)
         .padding({
-          left: this.avatarExpanded ? AVATAR_TEXT_INSET + this.avatarCardInset() : 0,
-          right: this.avatarExpanded ? AVATAR_TEXT_INSET + this.avatarCardInset() : 0
+          left: this.isAvatarExpanded() ? AVATAR_TEXT_INSET + this.avatarCardInset() : 0,
+          right: this.isAvatarExpanded() ? AVATAR_TEXT_INSET + this.avatarCardInset() : 0
         })
         .margin({ top: this.avatarTextTop() })
         .offset({ x: 0, y: this.avatarOffsetY() })
@@ -2351,7 +2359,7 @@ export struct ChatProfilePage {
     // 头图与大头像就在列表第一项里、随内容滚走，所以顶部虚化不能常开（常开会
     // 糊掉静止状态的头像上沿）。跟着滚动量渐入：静止半径 0 时不挂滤镜节点，一滚再挂。
     .attributeModifier(this.edgeBlur.bind(
-      edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) ? this.blurRadius : 0,
+      !this.avatarMorphing() && edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) ? this.blurRadius : 0,
       this.listViewH,
       edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop),
       edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))

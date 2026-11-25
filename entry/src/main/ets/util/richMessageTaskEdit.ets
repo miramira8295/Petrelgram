@@ -147,7 +147,7 @@ function convertBlocks(nodes: TdObject[], rawTasks: WeakMap<TdObject, RichMessag
       const out: TdObject = { '@type': `input${type.charAt(0).toUpperCase()}${type.substring(1)}` };
       const scalar: string[] = [];
       if (type === 'pageBlockSectionHeading') { scalar.push('text', 'size'); }
-      else if (type === 'pageBlockParagraph') { scalar.push('text'); }
+      else if (type === 'pageBlockParagraph' || type === 'pageBlockThinking') { scalar.push('text'); }
       else if (type === 'pageBlockPreformatted') { scalar.push('text', 'language'); }
       else if (type === 'pageBlockFooter') { scalar.push('footer'); }
       else if (type === 'pageBlockDivider') { /* No fields. */ }

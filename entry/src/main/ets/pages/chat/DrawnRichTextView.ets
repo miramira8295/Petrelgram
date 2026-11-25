@@ -9,6 +9,9 @@ import { DrawnRichTextLayout } from './DrawnRichTextLayout';
 import { DrawnRichTextPainter } from './DrawnRichTextPainter';
 import { a11yRuntimeState } from '../../util/a11yState';
 
+const VIEW_HOLD_SLOP: number = 6;
+const VIEW_TAP_MOVE_MAX: number = 8;
+
 @Styles
 function drawnLinkIdleStyle() { .backgroundColor(Color.Transparent) }
 @Styles
@@ -32,15 +35,30 @@ export struct DrawnRichTextView {
   private touchX: number = 0;
   private touchY: number = 0;
 
+  private sameLinkTarget(a: DrawnRichHit | null, b: DrawnRichHit | null): boolean {
+    if (a === null || b === null) { return false; }
+    if (a === b) { return true; }
+    return a.link !== undefined && b.link !== undefined && (a.link.group ?? a.link) === (b.link.group ?? b.link);
+  }
+
+  private findNear(plan: DrawnRichTextLayout, x: number, y: number, slop: number): DrawnRichHit | null {
+    return slop > 0 && plan.hitIndex.findNear !== undefined
+      ? plan.hitIndex.findNear(x, y, slop, slop)
+      : plan.hitIndex.find(x, y);
+  }
+
   // Capture the plan at registration. Reuse can leave an old recognizer's
   // callback queued after its node has already received a new paragraph.
   private linkClick(plan: DrawnRichTextLayout | null): (event: ClickEvent) => void {
     return (event: ClickEvent): void => {
       if (plan === null || plan !== this.plan) { return; }
-      const hit = plan.hitIndex.find(event.x, event.y);
+      const touchSource = event.source === SourceType.TouchScreen;
+      const hit = touchSource && this.touchPlan === plan && this.touchHit !== null &&
+        Math.hypot(event.x - this.touchX, event.y - this.touchY) <= VIEW_TAP_MOVE_MAX
+        ? this.findNear(plan, event.x, event.y, VIEW_HOLD_SLOP)
+        : plan.hitIndex.find(event.x, event.y);
       if (hit === null) { return; }
-      if (event.source === SourceType.TouchScreen &&
-        (this.touchPlan !== plan || this.touchHit !== hit)) { return; }
+      if (touchSource && (this.touchPlan !== plan || !this.sameLinkTarget(this.touchHit, hit))) { return; }
       this.touchHit = null;
       this.painter.clearPress();
       this.onLinkTap(hit.link);
@@ -62,11 +80,14 @@ export struct DrawnRichTextView {
         this.touchHit = null; this.painter.clearPress();
       } else if (event.type === TouchType.Move || event.type === TouchType.Up) {
         const point = event.changedTouches[0];
-        if (point === undefined || plan?.hitIndex.find(point.x, point.y) !== this.touchHit) {
-          this.touchHit = null; this.painter.clearPress();
+        const moved = point === undefined || Math.hypot(point.x - this.touchX, point.y - this.touchY) > VIEW_TAP_MOVE_MAX;
+        if (moved) {
+          this.touchHit = null;
+        } else if (this.touchHit !== null && plan !== null && point !== undefined) {
+          const current = this.findNear(plan, point.x, point.y, VIEW_HOLD_SLOP);
+          this.touchHit = this.sameLinkTarget(current, this.touchHit) ? current : null;
         }
-        if (event.type === TouchType.Up || (point !== undefined &&
-          Math.hypot(point.x - this.touchX, point.y - this.touchY) > 8)) { this.painter.clearPress(); }
+        if (event.type === TouchType.Up || moved || this.touchHit === null) { this.painter.clearPress(); }
       }
       // Keep propagation/native click arbitration: ancestors still own scrolling,
       // long press and swipe. Touch callbacks only provide press feedback.

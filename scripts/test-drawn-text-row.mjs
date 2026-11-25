@@ -12,32 +12,44 @@ class Paragraph {
     totalLayouts++;if(this.style.wordBreak!==undefined)bodyLayouts++;
     this.max=max;this.boxes=[];this.lines=[];let x=0,y=0,start=0;
     const base=this.style.textStyle, h=base.fontSize*(base.heightScale||1.2);this.h=h;
+    let rowH=h, rowStart=0;
+    const flushRow=()=>{
+      if(rowH>h){
+        for(let i=rowStart;i<this.boxes.length;i++){
+          const b=this.boxes[i], bh=b.rect.bottom-b.rect.top;
+          b.rect.top=y+(rowH-bh)/2; b.rect.bottom=b.rect.top+bh;
+        }
+      }
+      this.lines.push({left:0,width:x,baseline:y+rowH*.8,ascent:rowH*.8});
+      x=0;y+=rowH;rowH=h;rowStart=this.boxes.length;
+    };
     for(const p of this.parts) {
       if(p.width!==undefined){
-        if(x+p.width>max){this.lines.push({left:0,width:x,baseline:y+h*.8,ascent:h*.8});x=0;y+=h;}
+        if(x>0&&x+p.width>max){flushRow();}
+        if(!base.heightOnly&&p.height>rowH){rowH=p.height;}
         this.boxes.push({placeholder:true,start,end:start+1,rect:{left:x,right:x+p.width,top:y+(h-p.height)/2,bottom:y+(h+p.height)/2}});
         start++;x+=p.width;continue;
       }
       for(const ch of p.text) {
         const w=p.style.fontSize*.5;
-        if(ch==='\n'||x+w>max){this.lines.push({left:0,width:x,baseline:y+h*.8,ascent:h*.8});x=0;y+=h;if(ch==='\n'){start++;continue;}}
+        if(ch==='\n'||x+w>max){flushRow();if(ch==='\n'){start++;continue;}}
         this.boxes.push({start,end:start+ch.length,rect:{left:x,right:x+w,top:y,bottom:y+h}});start+=ch.length;x+=w;
       }
     }
-    this.lines.push({left:0,width:x,baseline:y+h*.8,ascent:h*.8});this.height=y+h;
+    flushRow();this.height=y;
     if(this.style.maxLines!==undefined){this.lines=this.lines.slice(0,this.style.maxLines);this.height=this.lines.length*h;this.boxes=this.boxes.filter(b=>b.rect.top<this.height);}
   }
   getHeight(){return this.height;}getLongestLine(){return Math.max(...this.lines.map(l=>l.width));}
   getMaxIntrinsicWidth(){return this.parts.reduce((a,p)=>a+(p.width??p.text.length*p.style.fontSize*.5),0);}
   getLineCount(){return this.lines.length;}getLineMetrics(i){lastReads++;return this.lines[i];}
-  getRectsForRange({start,end}){return this.boxes.filter(b=>b.start>=start&&b.end<=end).map(b=>({rect:b.rect}));}
+  getRectsForRange({start,end},widthStyle,heightStyle){this.lastHeightStyle=heightStyle;return this.boxes.filter(b=>b.start>=start&&b.end<=end).map(b=>({rect:b.rect}));}
   getRectsForPlaceholders(){return this.boxes.filter(b=>b.placeholder).map(b=>({rect:b.rect}));}
   updateColor(){} paint(){}
 }
 class ParagraphBuilder {
   constructor(style){this.style=style;this.stack=[style.textStyle];this.parts=[];}
   pushStyle(s){if(Object.hasOwn(s,'backgroundRect'))assert.ok(s.backgroundRect,'absent background must omit native property');this.stack.push(s);}popStyle(){this.stack.pop();}
-  addText(text){this.parts.push({text,style:this.stack.at(-1)});}addPlaceholder(p){this.parts.push(p);}
+  addText(text){this.parts.push({text,style:this.stack.at(-1)});}addPlaceholder(p){this.parts.push({...p,style:this.stack.at(-1)});}
   build(){return new Paragraph(this.style,this.parts);}
 }
 const enumMock=new Proxy({},{get:(_t,k)=>k});
@@ -147,6 +159,15 @@ row.getUIContext=()=>({animateTo:(_o,fn)=>fn()});p=layouts.prepare(ui,links,data
 const hit=p.caption.hits.find(h=>h.link.url==='https://two.test');const x=p.captionX+hit.x+.1,y=p.captionY+hit.y+.1;
 const touch=(type,x,y)=>({type,touches:[{x,y,windowX:100,windowY:200}],changedTouches:[{x,y,windowX:100,windowY:200}]});
 row.touch(touch(0,x,y));row.rowTouch(touch(0,x,y));row.click({x,y,source:1});assert.equal(events.at(-1)[1],'https://two.test');
+assert.equal(p.caption.paragraph.native.lastHeightStyle,'INCLUDE_LINE_SPACE_MIDDLE','inline links use full line-box height');
+// Slight touch offset and finger roll near link edge still open the link instead of the menu; blank taps still open the menu.
+const nearX=p.captionX+hit.x+1,nearY=p.captionY+hit.y-2;
+row.touch(touch(0,nearX,nearY));row.rowTouch(touch(0,nearX,nearY));row.touch(touch(2,nearX+1,nearY-1));row.click({x:nearX+1,y:nearY-1,source:1});
+assert.equal(events.at(-1)[1],'https://two.test');assert.equal(row.menuShown,false);
+const lastHit=p.caption.hits.filter(h=>h.link.url==='https://two.test').at(-1);
+const blankX=p.captionX+lastHit.x+lastHit.widthVp+10,blankY=p.captionY+lastHit.y+2;
+row.touch(touch(0,blankX,blankY));row.rowTouch(touch(0,blankX,blankY));row.touch(touch(2,blankX-7,blankY));row.click({x:blankX-7,y:blankY,source:1});
+assert.equal(row.menuShown,true,'blank tap rolling near link still opens menu');row.menuShown=false;
 row.group={...links,head:{...links.head,rowId:11}};const before=events.length;row.click({x,y,source:1});assert.equal(events.length,before);
 row.group=links;row.touch(touch(0,x,y));row.rowTouch(touch(0,x,y));ctx.Date.now=()=>1600;row.swipe(-60);assert.equal(row.swipeX,0,'held text favors system drag');
 row.touch(touch(1,x,y));assert.equal(row.menuShown,true,'held unmoved text opens menu on release');

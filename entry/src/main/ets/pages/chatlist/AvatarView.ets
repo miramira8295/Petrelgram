@@ -149,7 +149,7 @@ export struct AvatarView {
     if (this.savedMessages) {
       Row() {
         SymbolGlyph($r('sys.symbol.bookmark_fill'))
-          .fontSize(this.boxW() * 0.5)
+          .fontSize(Math.min(this.boxW(), this.boxH()) * 0.5)
           .fontColor([Color.White]);
       }
       .width(this.boxW()).height(this.boxH())
@@ -203,7 +203,7 @@ export struct AvatarView {
   @Builder
   initialsCircle() {
     Text(this.initials)
-      .fontColor(Color.White).fontSize(this.boxW() * 0.4).fontWeight(FontWeight.Medium)
+      .fontColor(Color.White).fontSize(Math.min(this.boxW(), this.boxH()) * 0.4).fontWeight(FontWeight.Medium)
       .width(this.boxW()).height(this.boxH())
       .align(Alignment.Center).textAlign(TextAlign.Center)
       .backgroundColor(AVATAR_PALETTE[Math.abs(this.colorSeed) % AVATAR_PALETTE.length])

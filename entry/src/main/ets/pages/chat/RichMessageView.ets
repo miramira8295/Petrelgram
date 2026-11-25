@@ -1,6 +1,6 @@
 import { TdObject } from '../../tdkit/TdTypes';
 import {
-  RB_DIVIDER, RB_HEADING, RB_LIST_ITEM, RB_PRE, RB_QUOTE, RB_TABLE,
+  RB_DIVIDER, RB_HEADING, RB_LIST_ITEM, RB_MATH, RB_PRE, RB_QUOTE, RB_TABLE,
   RichBlock, RichCell, RichSpan, parseRichMessage
 } from '../../util/richBlocks';
 import {
@@ -299,6 +299,18 @@ export struct RichMessageView {
     if (b.kind === RB_HEADING) {
       this.spanText(b.spans, HEADING_SIZE[Math.min(3, Math.max(1, b.level))],
         FontWeight.Bold, COLOR_BUBBLE_TEXT);
+    } else if (b.kind === RB_MATH) {
+      Row() {
+        Scroll() {
+          this.spanText(b.spans, BODY_SIZE + 1, FontWeight.Normal, COLOR_BUBBLE_TEXT);
+        }
+        .scrollable(ScrollDirection.Horizontal)
+        .scrollBar(BarState.Off)
+        .constraintSize({ maxWidth: this.maxWidth });
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
+      .padding({ top: 2, bottom: 2 });
     } else if (b.kind === RB_DIVIDER) {
       Divider().color(COLOR_TEXT_SECONDARY).opacity(0.3).strokeWidth(0.6)
         .margin({ top: 2, bottom: 2 });

@@ -10,6 +10,7 @@ import { DrawnSourcePool } from './drawnSourcePool';
 
 
 export interface DrawnRichLink {
+  group?: DrawnRichLink;
   button?: DrawnPageButtonAction;
   action?: 'page-button' | 'copy' | 'quote' | 'spoiler' | 'voice-transcribe' | 'translation-toggle' | 'translation-retry' | 'web-preview' | 'rich-task-toggle';
   blockOffset?: number;
@@ -219,6 +220,8 @@ export function buildDrawnRichSource(content: string, runs: RichRun[],
           spokenFirst.accessibilityLabel = content.substring(spokenStart, previousLink.end);
         }
         spokenStart = position; spokenFirst = link;
+      } else if (spokenFirst !== null) {
+        link.group = spokenFirst;
       }
       links.push(link); targets.add(run.url); previousLink = link;
     } else {
@@ -293,6 +296,12 @@ export interface DrawnRichHit {
   widthVp: number;
   heightVp: number;
   accessible: boolean;
+}
+
+export function sameDrawnRichHitTarget(a: DrawnRichHit | null, b: DrawnRichHit | null): boolean {
+  if (a === null || b === null) { return false; }
+  if (a === b) { return true; }
+  return (a.link.group ?? a.link) === (b.link.group ?? b.link);
 }
 
 // Visits only returned rectangles: across all links this is O(total boxes),

@@ -53,7 +53,7 @@ import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { logE } from '../../util/log';
 import { registerStack, NavStackLike, snapshotOf, stackOf } from '../../util/navStacks';
 import { decidePush, StackAction, StackFrame } from '../../util/splitRouting';
-import { readableContentWidth } from '../../util/contentWidth';
+import { contentSideGutter, readableContentWidth } from '../../util/contentWidth';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 
 import { APPEARANCE_EPOCH } from '../../util/appearance';
@@ -61,9 +61,10 @@ import { mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { emojiStatusVisible } from '../../util/emojiStatus';
 import {
-  AVATAR_BASE, AVATAR_RATIO_SPAN, AVATAR_W_GAIN, AVATAR_H_GAIN, AVATAR_TOP_LIFT,
-  AVATAR_EXPANDED_H, AVATAR_RING, AVATAR_EXPAND_AT, AVATAR_COLLAPSE_AT, AVATAR_SNAP_MS,
-  AVATAR_TEXT_INSET, AVATAR_TEXT_BOTTOM, AVATAR_TEXT_H, AVATAR_CARD_RADIUS
+  AVATAR_BASE, AVATAR_TOP_LIFT, AVATAR_EXPAND_AT, AVATAR_COLLAPSE_AT, AVATAR_SNAP_MS,
+  AVATAR_TEXT_INSET, AVATAR_TEXT_BOTTOM, AVATAR_TEXT_H, AVATAR_CARD_RADIUS, AVATAR_BUTTON_INSET,
+  canExpandAvatar, avatarUsesCardLayout, avatarRatioOf, avatarWidthOf, avatarHeightOf,
+  avatarRadiusOf, avatarRingOf, avatarOffsetYOf, avatarDecodeWidthOf, avatarDecodeHeightOf
 } from '../../util/avatarMorph';
 
 // 卡片与消息气泡使用同档透明度的颜色填充；关闭整体材质时保持实色。
@@ -1407,58 +1408,67 @@ export struct MyProfilePage {
   }
 
   // ── 下拉放大头像的计算 ─────────────────────────────────────────────────
+  private canMorphAvatar(): boolean {
+    return !this.profileLoading && this.profileError === '' &&
+      canExpandAvatar(this.avatarPath, this.avatarAnimPath);
+  }
+
+  private effectiveAvatarPull(): number {
+    return this.canMorphAvatar() ? this.avatarPull : 0;
+  }
+
+  private isAvatarExpanded(): boolean {
+    return this.avatarExpanded && this.canMorphAvatar();
+  }
+
   // 形变进度：圆角、圆环、上移按它走（宽高各走各的直线，见 avatarPhotoW/H）。
   private avatarRatio(): number {
-    return this.avatarExpanded ? 1 : Math.min(this.avatarPull / AVATAR_RATIO_SPAN, 1);
+    return avatarRatioOf(this.effectiveAvatarPull(), this.isAvatarExpanded());
   }
 
-  // 内容列限宽：展开态照片铺满本页实际宽度（分栏下就是这一栏的宽度）。
+  // 内容列限宽：页签壳下 header 位于限宽 readableContentWidth 的内层 Column 中，
+  // 不能拿整窗宽度硬塞进窄容器；左栏壳（paneMode）下则等于该栏实测宽度。
   private avatarMaxWidth(): number {
-    return this.avatarAvailW > 0 ? this.avatarAvailW : this.screenW;
+    const avail: number = this.avatarAvailW > 0 ? this.avatarAvailW : this.screenW;
+    return this.paneMode ? avail : Math.min(avail, readableContentWidth(this.screenW));
   }
 
-  // 平板（宽屏）跟联系人/群组资料页同一套规则：展开态照片按内容卡片来排——左右让出
-  // 页边距、四角 16vp 圆角、顶边落在安全区下沿；手机（窄屏）仍旧整宽铺满、直角、贴屏幕顶。
+  // 平板/大屏展开态按内容卡片排（左右内缩、16vp 圆角、顶边齐安全区）；手机直板（含横屏 #125）及强制单栏整宽铺满。
   private avatarCardInset(): number {
-    return this.widthBp >= WIDTH_BP_MD ? this.pageMargin() : 0;
-  }
-
-  // 平板卡片态照片顶边要让到安全区下沿，跟左栏会话列表白卡上沿齐平；手机仍贴屏幕 0。
-  private avatarTopAlign(): number {
-    return this.avatarCardInset() > 0 ? this.topSafe : 0;
-  }
-
-  // 宽度：先顶满屏宽（用户认可的就是这个形态——两边先到边，不能改成和高度同步长的正方形）。
-  private avatarPhotoW(): number {
-    // 平板上这张图是「内容卡片」，宽度要扣掉左右页边距；手机上不扣（整宽铺满）。
-    const targetW: number = Math.max(0, this.avatarMaxWidth() - this.avatarCardInset() * 2);
-    if (this.avatarExpanded) {
-      return targetW;
+    if (!avatarUsesCardLayout(this.widthBp, this.heightBp, this.forceSingleColumn)) {
+      return 0;
     }
-    return Math.min(AVATAR_BASE + AVATAR_W_GAIN * this.avatarPull, targetW);
+    return this.paneMode ? 12 : this.pageMargin();
+  }
+
+  // 平板页签壳下卡片顶边落在安全区下沿；左栏壳自身原点已在安全区下沿（ChatListPage 已垫 topSafe），不再重复扣。
+  private avatarTopAlign(): number {
+    return !this.paneMode && this.avatarCardInset() > 0 ? this.topSafe : 0;
+  }
+
+  private avatarTargetWidth(): number {
+    return Math.max(AVATAR_BASE, this.avatarMaxWidth() - this.avatarCardInset() * 2);
+  }
+
+  // 宽度：先顶满目标宽（两边先到边，不改成与高度同步长的正方形）。
+  private avatarPhotoW(): number {
+    return avatarWidthOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), this.avatarTargetWidth(), AVATAR_BASE);
   }
 
   // 高度：后到 390。宽先满、高后到，接上顶端贴住屏幕顶后，观感是「两边到边后继续往下长」。
   private avatarPhotoH(): number {
-    if (this.avatarExpanded) {
-      return AVATAR_EXPANDED_H;
-    }
-    return Math.min(AVATAR_BASE + AVATAR_H_GAIN * this.avatarPull, AVATAR_EXPANDED_H);
+    return avatarHeightOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), AVATAR_BASE);
   }
 
-  // 圆头像 → 直角大图：圆角线性收到 0，这是「不是简单放大成方图」的关键一环。
+  // 圆头像 → 目标圆角（平板 16vp，手机 0）。
   private avatarPhotoRadius(): number {
-    // 平板展开后是圆角卡片，手机仍是直角大图（用户 2026-11-25：手机直接占满就完事了）。
     const cardRadius: number = this.avatarCardInset() > 0 ? AVATAR_CARD_RADIUS : 0;
-    if (this.avatarExpanded) {
-      return cardRadius;
-    }
-    return (AVATAR_BASE / 2) * (1 - this.avatarRatio()) + cardRadius * this.avatarRatio();
+    return avatarRadiusOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), cardRadius, AVATAR_BASE);
   }
 
   // 原来那颗 4vp 的卡底圆环，形变时一起收掉，否则展开后照片边上会留一圈白边。
   private avatarRing(): number {
-    return AVATAR_RING * (1 - this.avatarRatio());
+    return avatarRingOf(this.effectiveAvatarPull(), this.isAvatarExpanded());
   }
 
   private avatarBoxW(): number {
@@ -1473,69 +1483,55 @@ export struct MyProfilePage {
     return this.avatarPhotoRadius() + this.avatarRing();
   }
 
-  // 照片顶边要顶到屏幕最上沿（ArkGram 用 expandSafeArea 达到同一效果）：
-  // 收起时 0，展开时抵消「容器上顶 EDGE_OVERLAY_VP + 页头下留白」。
-  // 收起态照片顶边距页头容器上沿的留白。整块比原来上移 AVATAR_TOP_LIFT，
-  // 所以起步位置比照搬 ArkGram 时高一点点，往上走的行程也短一点点。
+  // 收起态照片顶边距页头容器上沿的留白；钳到 >= 0 防止 paneMode 下出现非法负 padding 导致位移差 4vp。
   private avatarTopPad(): number {
-    // 左栏壳里页面不从状态栏下沿开始（与页签壳是两种几何），所以不让状态栏那一条。
-    return (this.paneMode ? 0 : this.topSafe) + 8 - AVATAR_TOP_LIFT;
+    return Math.max(0, (this.paneMode ? 0 : this.topSafe) + 8 - AVATAR_TOP_LIFT);
   }
 
   private avatarTopInset(): number {
-    // 实测（展开态 dumpLayout）：页头 Stack 上沿就在屏幕 95vp，照片再往下让出
-    // 「状态栏 + 8 − AVATAR_TOP_LIFT」这一条留白，所以抵消量就是这两段之和。
-    // **不能再加一次状态栏**：多加 39vp 会让照片顶边跑到屏幕外，上面一截被裁掉
-    //（用户看到「图片被吞了一截」），名字/状态也跟着整体上移 39vp。
     return EDGE_OVERLAY_VP + this.avatarTopPad();
   }
 
-  // 上移量 = 抵消「容器上顶 + 页头留白」× ratio **再加** 抵消 Scroll 越界平移的 avatarPull。
-  // 后半截是上一版顶部不延展的真凶：越界时内容整体被向下平移 |yOffset|（实测峰值 187vp），
-  // 照片顶边 = 130 + pull − 130×ratio − pull，所以 pull≥60 之后恒为 0，一直钉在屏幕最上沿。
   private avatarOffsetY(): number {
-    // 平板卡片态少抬 avatarTopAlign()，照片顶边停在安全区下沿而不是屏幕 0。
     const lift: number = this.avatarTopInset() - this.avatarTopAlign();
-    return -(lift * this.avatarRatio() + this.avatarPull);
+    return avatarOffsetYOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), lift);
   }
 
-  // 文字块的顶点（相对头像块内容起点）：
-  //   收起态 —— 就在照片下方 +8vp（和原来 Column space 8 一致）；
-  //   展开态 —— 覆盖到照片底部内侧，名字/状态压在照片上（ArkGram 就是这么排的）。
   private avatarTextTop(): number {
-    if (this.avatarExpanded) {
+    if (this.isAvatarExpanded()) {
       return this.avatarBoxH() - AVATAR_TEXT_H - AVATAR_TEXT_BOTTOM;
     }
     return this.avatarBoxH() + 8;
   }
 
-  // 头像块要预留的流内高度。照片是 offset 上移的（不参与布局），
-  // 所以预留高度必须把这段位移减掉，否则展开后它与底下的动作条之间会空一大截。
   private avatarBlockH(): number {
     const pad: number = this.avatarTopPad();
-    const text: number = this.avatarExpanded ? 0 : 8 + AVATAR_TEXT_H;
-    // 越界极深时 offsetY 会把这块压成负数，钳到 0，避免流内高度非法。
+    const text: number = this.isAvatarExpanded() ? 0 : 8 + AVATAR_TEXT_H;
     return Math.max(0, this.avatarBoxH() + pad + this.avatarOffsetY() + text);
   }
 
-  // 解码分辨率只在收起/展开两个稳定态之间切换，不跟下拉逐帧走——否则一拖就是
-  // 几十次原图重解码。
+  // 解码分辨率只在「静止收起」与「下拉/展开」两个状态切换，不跟下拉逐帧走。
   private avatarDecodeW(): number {
-    return Math.round(this.avatarMaxWidth());
+    return avatarDecodeWidthOf(this.effectiveAvatarPull(), this.isAvatarExpanded(),
+      this.avatarTargetWidth(), AVATAR_BASE);
   }
 
   private avatarDecodeH(): number {
-    return AVATAR_EXPANDED_H;
+    return avatarDecodeHeightOf(this.effectiveAvatarPull(), this.isAvatarExpanded(), AVATAR_BASE);
   }
 
   // 形变中关掉顶部渐变虚化：整页被一张大图占满，糊带只会多付一次全屏模糊。
   private avatarMorphing(): boolean {
-    return this.avatarExpanded || this.avatarPull > 0.5;
+    return this.isAvatarExpanded() || this.effectiveAvatarPull() > 0.5;
   }
 
-  // 下拉/回滚的提交判定。ArkGram 也是用 Scroll 的 overscroll（yOffset<0）驱动：
-  // 拉过头 → 逐帧形变；拉过 80vp → 350ms EaseInOut 弹到展开；回滚过 +10 → 收起。
+  // 下拉/回滚的提交判定。无头像图片时跳过形变，避免首字母占位被拉成整屏色块。
   private handleProfileScroll(): void {
+    if (!this.canMorphAvatar()) {
+      if (this.avatarPull !== 0) { this.avatarPull = 0; }
+      if (this.avatarExpanded) { this.avatarExpanded = false; }
+      return;
+    }
     const y: number = this.profileScroller.currentOffset().yOffset;
     if (y < 0) {
       const pull: number = Math.abs(y);
@@ -1545,15 +1541,9 @@ export struct MyProfilePage {
       if (!this.avatarExpanded && pull > AVATAR_EXPAND_AT) {
         this.getUIContext().animateTo({
           duration: AVATAR_SNAP_MS,
-          // 这里的曲线只影响「文字归位 + 块高收掉 68vp」这一步，不碰照片尺寸
-          //（照片在 pull=130 时已经满宽满高）。用高阻尼弹簧：让位移顺滑收尾但**不过冲**，
-          // 否则下面那排按钮会先弹到照片上再落回去——用户明确说这一点很影响观感。
           curve: curves.springMotion(0.36, 0.90)
         }, (): void => {
           this.avatarExpanded = true;
-          // 这里**不能**把 avatarPull 清 0：松手后 Scroll 的回弹还在继续，avatarPull 还要
-          // 用来抵消那段越界平移。清 0 会让 offset 瞬间少抵消一截——照片先往下掉一下再被
-          // 回弹顶回去，就是用户说的「拉到最后一下会抖一下」。等 y 回到 >=0 时自然归零。
           this.avatarSnapAt = Date.now();
         });
       }
@@ -1566,7 +1556,6 @@ export struct MyProfilePage {
       Date.now() - this.avatarSnapAt > AVATAR_SNAP_MS + 120) {
       this.getUIContext().animateTo({
         duration: AVATAR_SNAP_MS + 60,
-        // 收起比展开再慢一拍：用户反馈「往上滑一下子就缩回去了」。
         curve: curves.springMotion(0.40, 0.78)
       }, (): void => {
         this.avatarExpanded = false;
@@ -1624,7 +1613,7 @@ export struct MyProfilePage {
           .clip(true);
 
           // 相机角标只在收起态出现：展开后它悬在大图右下角没有意义。
-          if (!this.profileLoading && !this.photoUploading && !this.avatarExpanded) {
+          if (!this.profileLoading && !this.photoUploading && !this.isAvatarExpanded()) {
             Row() {
               SymbolGlyph(this.profileError !== ''
                 ? $r('sys.symbol.exclamationmark_circle')
@@ -1701,7 +1690,7 @@ export struct MyProfilePage {
             ? $r('app.string.mp_loading')
             : (this.profileError !== '' ? $r('app.string.tab_profile') : (this.name !== '' ? this.name : $r('app.string.settings_telegram_account'))))
             .fontSize(20).fontWeight(FontWeight.Bold)
-            .fontColor(this.avatarExpanded ? Color.White : COLOR_TEXT_PRIMARY)
+            .fontColor(this.isAvatarExpanded() ? Color.White : COLOR_TEXT_PRIMARY)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
             .flexShrink(1);
           if (!this.profileLoading && this.profileError === '' && emojiStatusVisible(this.statusEmojiPath, this.statusEmojiUid)) {
@@ -1718,7 +1707,7 @@ export struct MyProfilePage {
             Circle({ width: 7, height: 7 })
               .fill(this.profileError !== ''
                 ? '#E64646'
-                : (this.avatarExpanded ? '#EBFFFFFF'
+                : (this.isAvatarExpanded() ? '#EBFFFFFF'
                 : (this.displayedStatusText() === str('status_online') ? '#34C759' : COLOR_TEXT_SECONDARY)));
           }
           Text(this.profileLoading
@@ -1727,17 +1716,17 @@ export struct MyProfilePage {
               ? $r('app.string.mp_tap_photo_reload')
               : this.displayedStatusText()))
             .fontSize(13)
-            .fontColor(this.avatarExpanded ? '#E6FFFFFF'
+            .fontColor(this.isAvatarExpanded() ? '#E6FFFFFF'
               : (this.profileError !== '' ? '#E64646' : COLOR_TEXT_SECONDARY));
         }
         .height(22)
         .alignItems(VerticalAlign.Center);
       }
       .width('100%')
-      .alignItems(this.avatarExpanded ? HorizontalAlign.Start : HorizontalAlign.Center)
+      .alignItems(this.isAvatarExpanded() ? HorizontalAlign.Start : HorizontalAlign.Center)
       .padding({
-        left: this.avatarExpanded ? AVATAR_TEXT_INSET + this.avatarCardInset() : 0,
-        right: this.avatarExpanded ? AVATAR_TEXT_INSET + this.avatarCardInset() : 0
+        left: this.isAvatarExpanded() ? AVATAR_TEXT_INSET + this.avatarCardInset() : 0,
+        right: this.isAvatarExpanded() ? AVATAR_TEXT_INSET + this.avatarCardInset() : 0
       })
       .height(AVATAR_TEXT_H)
       .zIndex(1)
@@ -1746,17 +1735,17 @@ export struct MyProfilePage {
       .hitTestBehavior(HitTestMode.Transparent);
     }
     .width('100%')
-    .height(this.avatarBlockH())
-    .padding({ top: this.avatarTopPad() })
-    // 抬高一层：形变那一瞬间块高会收掉 68vp，下面的动作卡会往上顶。给页头更高
-    // zIndex，让它永远画在下面内容之上——被大图盖住而不是去盖大图。
     .zIndex(1)
     .opacity(this.headerVisible && this.active ? 1 : 0)
     .translate({ y: this.headerVisible && this.active ? 0 : -8 })
     .animation({
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220),
       curve: Curve.EaseOut
-    });
+    })
+    // 流内块高与留白必须放在 .animation() 之后：回弹时 avatarPull 逐帧归零，若被上面的
+    // 220ms 隐式动画补间，块高会滞后于 Scroll 回弹而让下方按钮卡钻进照片底下。
+    .height(this.avatarBlockH())
+    .padding({ top: this.avatarTopPad() });
   }
 
   @Builder
@@ -2351,6 +2340,8 @@ export struct MyProfilePage {
         icon: 'sys.symbol.qrcode',
         label: $r('app.string.mp_show_profile_qr'),
         dark: this.appDark,
+        iconColor: COLOR_TEXT_PRIMARY,
+        accentColor: this.accent(),
         interactive: !this.profileLoading && !this.openingEditor && !this.switchingToSettings,
         onTap: (): void => { this.openQr(); }
       });
@@ -2359,6 +2350,8 @@ export struct MyProfilePage {
         icon: 'sys.symbol.line_viewfinder',
         label: $r('app.string.qr_scan'),
         dark: this.appDark,
+        iconColor: COLOR_TEXT_PRIMARY,
+        accentColor: this.accent(),
         interactive: !this.profileLoading && !this.openingEditor && !this.switchingToSettings,
         onTap: (): void => {
           this.qrScanner.start(this.getUIContext().getHostContext() as common.UIAbilityContext);
@@ -2366,11 +2359,16 @@ export struct MyProfilePage {
       });
     }
     .height(TOP_ACTION_SIZE)
-    .padding({ right: this.pageMargin() })
-    // 这个浮层的坐标原点是**窗口左上角**（不是 HDS 内容区原点），所以标题栏
-    // 那一行要自己加上状态栏高度：topSafe + 6 正好把 44vp 的圆钮竖立在
-    // 56vp 标题栏的中线上。少加这一截就会跑到状态栏里、被时间电量压住。
-    .margin({ top: this.topSafe + 6 })
+    .padding({
+      right: (this.paneMode ? 0 : contentSideGutter(this.screenW)) +
+        (this.paneMode ? 12 : this.pageMargin()) + AVATAR_BUTTON_INSET * this.avatarRatio()
+    })
+    // 页签壳原点在窗口左上角（加 topSafe + 6）；左栏壳已被父容器垫过 topSafe。
+    // 平板卡片态展开后顺势下移 6vp，使按钮距卡片顶/右均保持 12vp。
+    .margin({
+      top: (this.paneMode ? 0 : this.topSafe) + 6 +
+        (this.avatarCardInset() > 0 ? 6 * this.avatarRatio() : 0)
+    })
     .zIndex(99)
   }
 

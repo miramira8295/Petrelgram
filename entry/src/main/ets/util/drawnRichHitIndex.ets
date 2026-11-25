@@ -66,4 +66,66 @@ export class DrawnRichHitIndex {
     }
     return found;
   }
+
+  // Touch-slop fallback: exact hits always win; otherwise pick the nearest box
+  // within [slopX, slopY] in O(log H + K) without inflating retained regions.
+  findNear(x: number, y: number, slopX: number, slopY: number): DrawnRichHit | null {
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(slopX) || !Number.isFinite(slopY)) {
+      return null;
+    }
+    const exact = this.find(x, y);
+    if (exact !== null || (slopX <= 0 && slopY <= 0) || this.root === null) { return exact; }
+    const maxDistSq = slopX * slopX + slopY * slopY + 1;
+    let best: DrawnRichHit | null = null;
+    let bestDistSq: number = maxDistSq;
+    let bestOrder: number = -1;
+    const pending: DrawnRichIntervalNode[] = [this.root];
+    while (pending.length > 0) {
+      const node = pending.pop()!;
+      if (y + slopY < node.center) {
+        for (const item of node.byTop) {
+          if (item.top > y + slopY) { break; }
+          const hit = item.hit;
+          const dx = x < hit.x ? hit.x - x : x > hit.x + hit.widthVp ? x - (hit.x + hit.widthVp) : 0;
+          if (dx > slopX) { continue; }
+          const dy = y < item.top ? item.top - y : y > item.bottom ? y - item.bottom : 0;
+          if (dy > slopY) { continue; }
+          const distSq = dx * dx + dy * dy;
+          if (distSq < bestDistSq || (distSq === bestDistSq && item.order > bestOrder)) {
+            best = hit; bestDistSq = distSq; bestOrder = item.order;
+          }
+        }
+        if (node.left !== null) { pending.push(node.left); }
+      } else if (y - slopY > node.center) {
+        for (const item of node.byBottom) {
+          if (item.bottom < y - slopY) { break; }
+          const hit = item.hit;
+          const dx = x < hit.x ? hit.x - x : x > hit.x + hit.widthVp ? x - (hit.x + hit.widthVp) : 0;
+          if (dx > slopX) { continue; }
+          const dy = y < item.top ? item.top - y : y > item.bottom ? y - item.bottom : 0;
+          if (dy > slopY) { continue; }
+          const distSq = dx * dx + dy * dy;
+          if (distSq < bestDistSq || (distSq === bestDistSq && item.order > bestOrder)) {
+            best = hit; bestDistSq = distSq; bestOrder = item.order;
+          }
+        }
+        if (node.right !== null) { pending.push(node.right); }
+      } else {
+        for (const item of node.byTop) {
+          const hit = item.hit;
+          const dx = x < hit.x ? hit.x - x : x > hit.x + hit.widthVp ? x - (hit.x + hit.widthVp) : 0;
+          if (dx > slopX) { continue; }
+          const dy = y < item.top ? item.top - y : y > item.bottom ? y - item.bottom : 0;
+          if (dy > slopY) { continue; }
+          const distSq = dx * dx + dy * dy;
+          if (distSq < bestDistSq || (distSq === bestDistSq && item.order > bestOrder)) {
+            best = hit; bestDistSq = distSq; bestOrder = item.order;
+          }
+        }
+        if (node.left !== null) { pending.push(node.left); }
+        if (node.right !== null) { pending.push(node.right); }
+      }
+    }
+    return best;
+  }
 }

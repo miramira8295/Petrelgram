@@ -237,3 +237,45 @@ assert.ok(videoEmbed);assert.equal(videoEmbed.blocks[0].widget.kind,'video-embed
 assert.equal(videoEmbed.blocks[0].widget.url,'https://cdn.test/movie.mp4?signature=abc');assert.equal(videoEmbed.blocks[1].source.content,'Video caption');
 const videoGeometry=engine.prepare(ui,{...spec,source:videoEmbed});assert.equal(videoGeometry.widgets[0].height,280*9/16);
 console.log('PASS: direct video uses the unified media island, preserves signed URL/poster/caption and defaults missing size to 16:9.');
+const mathDoc=new ctx.DrawnStructuredSource().prepare([
+  p('单缝缝宽暂算：'.repeat(5)),
+  {'@type':'pageBlockMathematicalExpression',expression:'d = 0.1226'},
+  {'@type':'pageBlockMathematicalExpression',expression:'d = (0.12260 \\pm 0.00023)\\,\\text{mm}'},
+  {'@type':'pageBlockThinking',text:plain('Thinking...')},
+  p({'@type':'richTexts',texts:[
+    {'@type':'richTextMention',username:'hermes',text:plain('@hermes')},
+    plain(' '),
+    {'@type':'richTextHashtag',hashtag:'physics',text:plain('#physics')},
+    plain(' '),
+    {'@type':'richTextCashtag',cashtag:'TON',text:plain('$TON')},
+    plain(' '),
+    {'@type':'richTextBotCommand',bot_command:'calc',text:plain('/calc')},
+    plain(' '),
+    {'@type':'richTextMentionName',user_id:42,text:plain('Alice')},
+    plain(' '),
+    {'@type':'richTextBankCardNumber',bank_card_number:'4111222233334444',text:plain('card')},
+    plain(' '),
+    {'@type':'richTextReferenceLink',reference_name:'fn1',url:'https://fallback',text:plain('[1]')}
+  ]}),
+  p({'@type':'richTextReference',name:'FN1',text:plain('Footnote body')})
+]);
+assert.ok(mathDoc,'pageBlockMathematicalExpression and pageBlockThinking are accepted');
+assert.equal(mathDoc.hasMath,true);
+assert.equal(mathDoc.footnotes.get('fn1').content,'Footnote body');
+assert.deepEqual(Array.from(mathDoc.blocks[4].source.links,l=>l.url),[
+  'https://t.me/hermes','tg-hashtag:#physics','tg-hashtag:$TON','tg-command:/calc','tg://user?id=42','tg-copy:4111222233334444','#fn1'
+]);
+const mathPlan=engine.prepare(ui,{...spec,source:mathDoc,mathRevision:0});
+assert.equal(mathPlan.tables.length,2);
+assert.ok(mathPlan.tables[0].x>0,'short display formula block is horizontally centered inside wider bubble');
+assert.equal(mathPlan.tables[1].x,0,'wide display formula block fills width and scrolls horizontally');
+assert.equal(mathPlan.tables[1].layout.maths[0].expression,'d = (0.12260 \\pm 0.00023)\\,\\text{mm}');
+assert.equal(Object.hasOwn(mathPlan.tables[0].layout.paragraph.native.parts[0].style,'backgroundRect'),false,'rendered math placeholder must not paint inline code background');
+const prevMathMetrics=ctx.mathMetricsFor;
+ctx.mathMetricsFor=()=>({width:160,height:160});
+const tallMathPlan=engine.prepare(ui,{...spec,source:mathDoc,mathRevision:1});
+ctx.mathMetricsFor=prevMathMetrics;
+assert.equal(tallMathPlan.tables[0].layout.maths.length,1,'tall formula bitmap must expand row height instead of clipping out');
+assert.ok(tallMathPlan.tables[0].layout.maths[0].rect.top>=0);
+assert.ok(tallMathPlan.tables[0].height>=40);
+console.log('PASS: pageBlockMathematicalExpression centered layout, tall formula expansion, pageBlockThinking, richTextReference/ReferenceLink and richText interactive entities.');

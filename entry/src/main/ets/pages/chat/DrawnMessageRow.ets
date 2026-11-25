@@ -125,6 +125,10 @@ import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { logW } from '../../util/log';
 
 const EMPTY_DRAWN_NATIVE_TILES: DrawnBubbleTile[] = [];
+const LINK_TOUCH_SLOP_X: number = 3;
+const LINK_TOUCH_SLOP_Y: number = 4;
+const LINK_HOLD_SLOP: number = 6;
+const LINK_TAP_MOVE_MAX: number = 8;
 
 interface DrawnSpoilerOwner { rowId: number; chatId: number; content: string; }
 
@@ -590,9 +594,27 @@ export struct DrawnMessageRow {
   }
   aboutToDisappear(): void { this.aboutToRecycle(); this.media.dispose(); this.rowUi = null; }
 
-  private linkAt(x: number, y: number): DrawnRichHit | null {
+  private sameLinkTarget(a: DrawnRichHit | null, b: DrawnRichHit | null): boolean {
+    if (a === null || b === null) { return false; }
+    if (a === b) { return true; }
+    return a.link !== undefined && b.link !== undefined && (a.link.group ?? a.link) === (b.link.group ?? b.link);
+  }
+  private chromeOrMediaAt(p: DrawnBubblePlan, x: number, y: number): boolean {
+    if (p.avatar.width > 0 && albumRectContains(p.avatar, x, y)) { return true; }
+    for (const tile of p.tiles) { if (albumRectContains(tile, x, y)) { return true; } }
+    if (this.reactionAt(x, y) !== null) { return true; }
+    const chrome = p.chrome;
+    if (chrome !== null && chrome.content.forward !== null && albumRectContains(chrome.forwardRect, x, y)) { return true; }
+    if (chrome !== null && chrome.content.comments !== null && albumRectContains(chrome.commentsRect, x, y)) { return true; }
+    return p.quote !== null && albumRectContains(p.quoteRect, x, y);
+  }
+  private linkAt(x: number, y: number, slopX: number = 0, slopY: number = 0): DrawnRichHit | null {
     const p = this.plan;
-    return p?.caption?.hitIndex.find(x - p.captionX, y - p.captionY) ?? null;
+    if (p === null || p.caption === null) { return null; }
+    const cx = x - p.captionX, cy = y - p.captionY;
+    return (slopX > 0 || slopY > 0) && p.caption.hitIndex.findNear !== undefined
+      ? p.caption.hitIndex.findNear(cx, cy, slopX, slopY)
+      : p.caption.hitIndex.find(cx, cy);
   }
   private reactionAt(x: number, y: number): DrawnReactionChip | null {
     const c = this.plan?.chrome;
@@ -652,9 +674,13 @@ export struct DrawnMessageRow {
     if (p.quote !== null && albumRectContains(p.quoteRect, hitX, hitY)) {
       this.actions.onReplyTap(m.replyToMessageId, m.id); return;
     }
-    const link = this.linkAt(hitX, hitY);
+    const touchSource = !semantic && event.source === SourceType.TouchScreen;
+    const link = touchSource && this.touchPlan === p && this.touchLink !== null &&
+      Math.hypot(hitX - this.touchX, hitY - this.touchY) <= LINK_TAP_MOVE_MAX
+      ? this.linkAt(hitX, hitY, LINK_HOLD_SLOP, LINK_HOLD_SLOP)
+      : this.linkAt(hitX, hitY);
     if (link !== null) {
-      if (semantic || event.source !== SourceType.TouchScreen || (this.touchPlan === p && this.touchLink === link)) {
+      if (!touchSource || (this.touchPlan === p && this.sameLinkTarget(this.touchLink, link))) {
         this.foreground.press(null);
         if (link.link.action === 'rich-task-toggle' && link.link.taskId !== undefined) {
           this.actions.onRichTaskToggle(m.id, link.link.taskId, link.link.taskChecked !== true);
@@ -793,7 +819,8 @@ export struct DrawnMessageRow {
       // the same Down. Keep the identity guard local; never accept a stale click.
       this.touchRowId = this.rowGroup.head.rowId; this.touchChatId = this.rowData.chatId;
       this.touchPlan = this.plan; this.touchX = t.x; this.touchY = t.y;
-      this.touchLink = this.linkAt(t.x, t.y);
+      this.touchLink = this.plan !== null && !this.chromeOrMediaAt(this.plan, t.x, t.y)
+        ? this.linkAt(t.x, t.y, LINK_TOUCH_SLOP_X, LINK_TOUCH_SLOP_Y) : null;
       this.touchReaction = this.reactionAt(t.x, t.y);
       this.foreground.setPress(this.touchLink, this.plan?.density ?? 1);
       if (!this.rowData.selectionActive) { this.foreground.pressReaction(this.touchReaction); }
@@ -804,9 +831,15 @@ export struct DrawnMessageRow {
       this.touchLink = null; this.foreground.press(null);
       this.touchReaction = null;
     } else if (event.type === TouchType.Move || event.type === TouchType.Up) {
-      if (t === undefined || this.linkAt(t.x, t.y) !== this.touchLink) { this.touchLink = null; }
+      const moved = t === undefined || Math.hypot(t.x - this.touchX, t.y - this.touchY) > LINK_TAP_MOVE_MAX;
+      if (moved) {
+        this.touchLink = null;
+      } else if (this.touchLink !== null && t !== undefined) {
+        const current = this.linkAt(t.x, t.y, LINK_HOLD_SLOP, LINK_HOLD_SLOP);
+        this.touchLink = this.sameLinkTarget(current, this.touchLink) ? current : null;
+      }
       if (t === undefined || this.reactionAt(t.x, t.y) !== this.touchReaction) { this.touchReaction = null; this.foreground.pressReaction(null); }
-      if (event.type === TouchType.Up || t === undefined || Math.hypot(t.x - this.touchX, t.y - this.touchY) > 8) {
+      if (event.type === TouchType.Up || moved || this.touchLink === null) {
         this.foreground.press(null);
       }
     }

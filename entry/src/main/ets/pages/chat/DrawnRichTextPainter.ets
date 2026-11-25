@@ -7,11 +7,12 @@ import { drawnColor } from './DrawnTextLine';
 export class DrawnRichTextPainter extends DrawModifier {
   private plan: DrawnRichTextLayout | null = null;
   private pressRect: common2D.Rect | null = null;
+  private pressRects: common2D.Rect[] | null = null;
   private pressBrush: drawing.Brush | null = null;
 
   bind(plan: DrawnRichTextLayout | null): DrawnRichTextPainter {
     if (this.plan !== plan) {
-      this.plan = plan; this.pressRect = null; this.invalidate();
+      this.plan = plan; this.pressRect = null; this.pressRects = null; this.invalidate();
     }
     return this;
   }
@@ -22,18 +23,37 @@ export class DrawnRichTextPainter extends DrawModifier {
     const density: number = ui.vp2px(1);
     this.pressRect = { left: hit.x * density, top: hit.y * density,
       right: (hit.x + hit.widthVp) * density, bottom: (hit.y + hit.heightVp) * density };
+    let group: common2D.Rect[] | null = null;
+    const hits = this.plan?.hits;
+    if (hits !== undefined && hit.link !== undefined) {
+      const target = hit.link.group ?? hit.link;
+      for (const item of hits) {
+        if (item !== hit && item.link !== undefined && (item.link.group ?? item.link) === target) {
+          if (group === null) { group = [this.pressRect]; }
+          group.push({ left: item.x * density, top: item.y * density,
+            right: (item.x + item.widthVp) * density, bottom: (item.y + item.heightVp) * density });
+        }
+      }
+    }
+    this.pressRects = group;
     this.invalidate();
   }
 
   clearPress(): void {
-    if (this.pressRect !== null) { this.pressRect = null; this.invalidate(); }
+    if (this.pressRect !== null || this.pressRects !== null) {
+      this.pressRect = null; this.pressRects = null; this.invalidate();
+    }
   }
 
   drawBehind(context: DrawContext): void {
     // No parsing, layout, rectangle queries or new native objects per frame.
     if (this.pressRect !== null && this.pressBrush !== null) {
       context.canvas.attachBrush(this.pressBrush);
-      context.canvas.drawRect(this.pressRect);
+      if (this.pressRects !== null) {
+        for (const rect of this.pressRects) { context.canvas.drawRect(rect); }
+      } else {
+        context.canvas.drawRect(this.pressRect);
+      }
       context.canvas.detachBrush();
     }
     this.plan?.paragraph.paint(context.canvas, 0, 0);

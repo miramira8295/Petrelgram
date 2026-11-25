@@ -139,6 +139,7 @@ export class DrawnBubbleForeground extends DrawModifier {
     return this;
   }
   press(hit: DrawnRichHit | null): void {
+    if (hit === null) { this.pressRects = null; }
     const external = this.plan?.chrome?.reactions;
     if (hit === null && external?.external) { external.setPressed(''); }
     const clearReaction = hit === null && this.pressedReaction !== null;
@@ -197,18 +198,47 @@ export class DrawnBubbleForeground extends DrawModifier {
         const h = this.pressed;
         this.brush.setColor({ alpha: 45, red: 51, green: 144, blue: 236 });
         c.attachBrush(this.brush);
-        c.save(); c.translate((p.captionX + h.x) * d, (p.captionY + h.y) * d);
-        // A drawRect is supplied by the cached native hit geometry below.
-        if (this.pressRect !== null) { c.drawRect(this.pressRect); }
-        c.restore(); c.detachBrush();
+        if (this.pressRects !== null && this.pressRects.length > 1) {
+          c.save(); c.translate(p.captionX * d, p.captionY * d);
+          for (const rect of this.pressRects) { c.drawRect(rect); }
+          c.restore();
+        } else {
+          c.save(); c.translate((p.captionX + h.x) * d, (p.captionY + h.y) * d);
+          // A drawRect is supplied by the cached native hit geometry below.
+          if (this.pressRect !== null) { c.drawRect(this.pressRect); }
+          c.restore();
+        }
+        c.detachBrush();
       }
     } finally { drawnStageMetrics.end(traced); }
   }
 
   private pressRect: common2D.Rect | null = null;
+  private pressRects: common2D.Rect[] | null = null;
   setPress(hit: DrawnRichHit | null, density: number): void {
-    this.pressRect = hit === null ? null : { left: 0, top: 0,
+    if (hit === null) {
+      this.pressRect = null; this.pressRects = null;
+      this.press(null);
+      return;
+    }
+    this.pressRect = { left: 0, top: 0,
       right: hit.widthVp * density, bottom: hit.heightVp * density };
+    let group: common2D.Rect[] | null = null;
+    const hits = this.plan?.caption?.hits;
+    if (hits !== undefined && hit.link !== undefined) {
+      const target = hit.link.group ?? hit.link;
+      for (const item of hits) {
+        if (item !== hit && item.link !== undefined && (item.link.group ?? item.link) === target) {
+          if (group === null) {
+            group = [{ left: hit.x * density, top: hit.y * density,
+              right: (hit.x + hit.widthVp) * density, bottom: (hit.y + hit.heightVp) * density }];
+          }
+          group.push({ left: item.x * density, top: item.y * density,
+            right: (item.x + item.widthVp) * density, bottom: (item.y + item.heightVp) * density });
+        }
+      }
+    }
+    this.pressRects = group;
     this.press(hit);
   }
   private eye(c: drawing.Canvas, p: DrawnBubblePlan): void {
