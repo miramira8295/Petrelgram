@@ -31,6 +31,7 @@ export struct SystemGlassSurface {
   // 顶部边缘模糊关闭时仅保留内容，整个标题栏底板透明。
   @Param showBackdrop: boolean = true;
   // 圆角：照抄调用方原来的 borderRadius（材质层要圆角才不会露出方角）。
+  // 同上：默认 true 走材质；只有骨架屏这类明确不要玻璃的才传 false。
   @Param effectsEnabled: boolean = true;
   @Param plainOutline: boolean = false;
   @Param radius: number = 14;

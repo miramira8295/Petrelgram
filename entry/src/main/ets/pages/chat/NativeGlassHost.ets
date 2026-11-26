@@ -18,7 +18,12 @@ import { MaterialEpochSource, materialEpochSource } from '../../util/materialEpo
 
 @ComponentV2
 export struct NativeGlassHost {
-  // Chat surfaces can keep the shared host without re-enabling costly filters/shadows.
+  // 只有「明确不该有玻璃」的场合才传 false（骨架屏占位这类）。默认 true = 走系统材质。
+  // 【不要按性能批量关材质】上游 cb0b4d08（2026-11-19 streamline media and materials）
+  // 曾在 8 处写死 effectsEnabled: false，把输入栏抽屉、搜索栏、搜索上下按钮、计数胶囊、
+  // 加载骨架、连接提示、贴纸搜索钮一起降级成纯色兜底；用户 2026-11-26 报「之前 50 多处
+  // 需要系统玻璃材质的组件，有部分失效了，现在只有兜底的显示」。这些已于 2026-11-26
+  // 全部恢复为默认 true，需要减负请改动效/层级，不要用关材质换性能。
   @Param effectsEnabled: boolean = true;
   @Param hostWidth: number = 100;
   @Param hostHeight: number = 46;

@@ -42,7 +42,7 @@ export struct BottomDrawerShell {
     Stack({ alignContent: Alignment.Top }) {
       // 抽屉保留半透明底和细描边；大面积背景不再采样滚动消息或叠投影。
       Stack() {
-        SystemGlassSurface({ effectsEnabled: false, plainOutline: true, radius: 18, fixedHeight: this.drawerHeight }) {
+        SystemGlassSurface({ plainOutline: true, radius: 18, fixedHeight: this.drawerHeight }) {
           Column() {
             this.content();
           }

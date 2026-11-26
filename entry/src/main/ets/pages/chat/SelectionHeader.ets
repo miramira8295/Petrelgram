@@ -5,6 +5,7 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import { SystemGlassSurface } from './SystemGlassSurface';
+import { systemMaterialState } from '../../util/systemMaterialSetting';
 import { str } from '../../util/strings';
 import { CHAT_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
 import { SelectionSession } from './SelectionSession';
@@ -84,7 +85,10 @@ export struct SelectionHeader {
   capsule(symbol: string, tint: ResourceColor, onTap: () => void) {
     Stack() {
       // 玻璃由系统沉浸材质承载（Toggle 承载层），内容只画图标。
-      SystemGlassSurface({ surface: 'control', effectsEnabled: false, plainOutline: true,
+      // 2026-11-25：这里原先是 effectsEnabled: false（写死关材质），用户看到的就是
+      // 一排没有玻璃的图标——多选栏在聊天页里，跟顶栏那两颗胶囊同一套开关，
+      // 所以改成读 systemMaterialState.chatEnabled；关掉材质时才退回 plainOutline 描边。
+      SystemGlassSurface({ surface: 'control', effectsEnabled: systemMaterialState.chatEnabled, plainOutline: true,
         radius: CHAT_HEADER_RADIUS,
         fixedWidth: CHAT_HEADER_ACTION_SIZE,
         fixedHeight: CHAT_HEADER_ACTION_SIZE
