@@ -49,7 +49,7 @@ import {
 import { logE, logI } from '../../util/log';
 import { contentSideGutter } from '../../util/contentWidth';
 import { edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
-import { ScrollEdgeBlurBinder } from '../../util/scrollEdgeBlurModifier';
+import { ScrollEdgeBlurBinder, ScrollEdgeBlurModifier } from '../../util/scrollEdgeBlurModifier';
 import {
   EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
   KEY_EDGE_BLUR_BOTTOM_ON, KEY_EDGE_BLUR_ON, KEY_EDGE_BLUR_OTHER_BOTTOM, KEY_EDGE_BLUR_OTHER_TOP,
@@ -166,11 +166,8 @@ struct ChatBackgroundPage {
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // 滚动区实测高度（vp）：linearGradientBlur 的 fractionStops 要按实际高度归一化。
   @State private listViewH: number = 0;
-  // 滚动中把整页的线性渐变虚化关掉（半径传 0）。这一页原来是无条件 22vp——
-  // 全仓 20 多个二级页里只有聊天消息列表做了滚动降级，这一页漏了。平板可视
-  // 面积是手机的两三倍，RS 侧要重绘的模糊层（实测 188 个 modifier、单个
-  // ~10ms）随面积线性增长，叠上滑杆/缩略图引起的整页 ExecuteRerender，
-  // 单次停顿能到 100–150ms。真机 hitrace 见 performance/ 归档。
+  // 滚动时缩略图仍可能批量刷新，暂停整页滤镜以减少平板上的重绘开销。
+  @State private scrollActive: boolean = false;
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
   @StorageProp('screenWidthVp') screenW: number = 360;
   // 浓度和遮罩滑杆改成 @State 镜像：它们要按**槽位**读写，而 @StorageProp 的键是写死的。
@@ -1049,6 +1046,13 @@ struct ChatBackgroundPage {
     .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
   }
 
+  private galleryEdgeBlur(): ScrollEdgeBlurModifier {
+    const top = edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop);
+    const bottom = edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom);
+    const radius = edgeBlurRadiusOf(!this.scrollActive && (top || bottom));
+    return this.edgeBlur.bind(radius, this.listViewH, top, bottom);
+  }
+
   build() {
     // header 画在内容层之上、不占布局高度：滚动区从屏幕最上沿开始铺垫，
     // 顶部那条渐变模糊才有东西可糊（内容穿过 header 底下）。
@@ -1143,9 +1147,9 @@ struct ChatBackgroundPage {
           });
         }
         .align(Alignment.Top).width('100%').height('100%').scrollBar(BarState.Off)
-        // 半径恒由「开关」算，滚动中不降级（与设置页等页面同一范式）。
-        // 曾经按 scrollActive 整条置 0，手指一动虚化就消失，是全应用唯一的滚动降级。
-        .attributeModifier(this.edgeBlur.bind(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), this.listViewH, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
+        .onScrollStart((): void => { this.scrollActive = true; })
+        .onScrollStop((): void => { this.scrollActive = false; })
+        .attributeModifier(this.galleryEdgeBlur())
         .clip(false)
         .onAreaChange((_o: Area, n: Area): void => {
           const h: number = n.height as number;

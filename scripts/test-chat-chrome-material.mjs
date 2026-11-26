@@ -23,8 +23,8 @@ function declaration(file, name) {
   const source = fs.readFileSync(file, 'utf8'), ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
   return ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name.text === name).getText(ast);
 }
-function method(file, name) {
-  const path = compiled + 'pages/chat/' + file + '.ts';
+function method(file, name, directory = 'chat') {
+  const path = compiled + 'pages/' + directory + '/' + file + '.ts';
   const source = fs.readFileSync(path, 'utf8'), ast = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
   return ast.statements.find(n => ts.isClassDeclaration(n) && n.name.text === file).members.find(n => n.name?.getText(ast) === name).getText(ast);
 }
@@ -57,13 +57,24 @@ for(const level of [-4,-3,-2,-1,0,1,2,-4,0]) {
     storage.set('appIsDark',dark);
     assert.equal(ctx.systemMaterialThickness(),level===-4?0:level,'both color modes share the selection');
   }
-  assert.equal(ctx.timeline.edgeBlurTopEnabled(),enabled);assert.equal(ctx.timeline.edgeBlurBottomEnabled(),enabled);
+  for (const [global, override, expected] of [
+    [true, 'follow', true], [false, 'follow', false],
+    [true, 'off', false], [false, 'on', true]
+  ]) {
+    Object.assign(ctx.edges, { master: true, top: global, bottom: !global, chatTop: override, chatBottom: 'follow' });
+    assert.equal(ctx.timeline.edgeBlurTopEnabled(), expected);
+    assert.equal(ctx.timeline.edgeBlurBottomEnabled(), !global);
+    Object.assign(ctx.edges, { top: !global, bottom: global, chatTop: 'follow', chatBottom: override });
+    assert.equal(ctx.timeline.edgeBlurTopEnabled(), !global);
+    assert.equal(ctx.timeline.edgeBlurBottomEnabled(), expected);
+    ctx.edges.master = false;
+    assert.equal(ctx.timeline.edgeBlurTopEnabled(), false);
+    assert.equal(ctx.timeline.edgeBlurBottomEnabled(), false);
+  }
   assert.equal(ctx.composer.glassHostOn(),enabled);
   calls.length=0;ctx.dateOverlay.initialRender();assert.equal(calls.find(c=>c[0]==='surface')[1].effectsEnabled,enabled);
   ctx.state.level=-3;ctx.applySystemMaterial(disk.get(ctx.key));assert.equal(ctx.state.level,level);
 }
-ctx.edges.chatTop='off';assert.equal(ctx.timeline.edgeBlurTopEnabled(),false,'opt-in preserves per-edge overrides');
-ctx.edges.master=false;assert.equal(ctx.timeline.edgeBlurBottomEnabled(),false,'opt-in preserves global edge master');
 ctx.immersiveMaterialAvailable=()=>false;assert.equal(ctx.composer.glassHostOn(),false,'old devices retain plain input fallback');
 for(const invalid of [NaN,Infinity,-5,3,0.5]) {
   ctx.setSystemMaterialLevel(invalid);assert.equal(ctx.state.level,-4);assert.equal(ctx.state.chatEnabled,false);
@@ -73,6 +84,17 @@ assert.equal(storage.get('materialThickness'),2);assert.equal(storage.get('edgeB
 assert.equal(storage.get('edgeBlurChatBottom'),'on');assert.equal(disk.size,1,'only the new preference is persisted');
 assert.equal(storage.get('surfaceGlassOn'),true);assert.equal(storage.get('bubbleGlassLevel'),1);
 console.log('PASS: App default + off + five thicknesses; one persisted level for both themes; restart/invalid settings; compiled chat edge/input/date gates; unrelated list/bubble preferences preserved.');
+run(fs.readFileSync(root + 'util/scrollEdgeBlur.ets', 'utf8'));
+run(`class Gallery {${method('ChatBackgroundPage', 'galleryEdgeBlur', 'main')}} globalThis.gallery = new Gallery();`);
+Object.assign(ctx.gallery, { edgeBlur: { bind: (...args) => args }, listViewH: 800,
+  edgeBlurOn: true, edgeBlurTopOn: true, edgeBlurBottomOn: true,
+  edgeBlurOtherTop: 'off', edgeBlurOtherBottom: 'follow' });
+for (const scrolling of [false, true, false]) {
+  ctx.gallery.scrollActive = scrolling;
+  assert.deepEqual(ctx.gallery.galleryEdgeBlur(), [scrolling ? 0 : ctx.edgeBlurRadiusOf(true), 800, false, true]);
+}
+ctx.gallery.edgeBlurOn = false;
+assert.deepEqual(ctx.gallery.galleryEdgeBlur(), [0, 800, false, false]);
 // Real menu values and compiled selection callback: index zero must remain App default.
 const settingsFile = compiled + 'pages/main/ChatSettingsPage.ts';
 const settingsSource = fs.readFileSync(settingsFile,'utf8');
