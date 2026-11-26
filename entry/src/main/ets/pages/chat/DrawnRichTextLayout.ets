@@ -578,18 +578,21 @@ export class DrawnRichTextLayouts {
       columns.raise(position.column, position.column + position.columns, needed);
     }
     columns.finish();
-    const heights: number[] = new Array<number>(grid.rows).fill(30);
+    const padX: number = table.compact === true ? 6 : 10;
+    const padY: number = table.compact === true ? 3 : 6;
+    const minRowH: number = table.compact === true ? 22 : 30;
+    const heights: number[] = new Array<number>(grid.rows).fill(minRowH);
     const bodies: DrawnRichTextLayout[] = [];
     let mergedRows: boolean = false;
     for (let i: number = 0; i < grid.cells.length; i++) {
       const pos = grid.cells[i]; mergedRows = mergedRows || pos.rows > 1;
       if (i === this.blockLayouts.length) { this.blockLayouts.push(new DrawnRichTextLayouts()); }
       const body = this.blockLayouts[i].prepare(ui, { source: pos.cell.source, mathRevision: spec.mathRevision,
-        maxWidthVp: columns.at(pos.column + pos.columns) - columns.at(pos.column) - 20, minWidthVp: 0,
+        maxWidthVp: Math.max(12, columns.at(pos.column + pos.columns) - columns.at(pos.column) - padX * 2), minWidthVp: 0,
         fontSize: spec.fontSize, reserve: '', foreground: spec.foreground, accent: spec.accent,
         environment: spec.environment });
       bodies.push(body);
-      if (pos.rows === 1) { heights[pos.row] = Math.max(heights[pos.row], body.heightVp + 12); }
+      if (pos.rows === 1) { heights[pos.row] = Math.max(heights[pos.row], body.heightVp + padY * 2); }
     }
     // Preserve sequential merged-cell constraints using range operations; no
     // per-cell traversal of every row covered by a tall rowspan.
@@ -600,7 +603,7 @@ export class DrawnRichTextLayouts {
         const pos = grid.cells[i];
         if (pos.rows === 1) { continue; }
         const current = rows.total(pos.row, pos.row + pos.rows);
-        const extra = Math.max(0, bodies[i].heightVp + 12 - current) / pos.rows;
+        const extra = Math.max(0, bodies[i].heightVp + padY * 2 - current) / pos.rows;
         rows.grow(pos.row, pos.row + pos.rows, extra);
       }
       ys = rows.coordinates();
@@ -617,11 +620,11 @@ export class DrawnRichTextLayouts {
       const pos = grid.cells[i], body = bodies[i];
       const left = columns.at(pos.column), right = columns.at(pos.column + pos.columns);
       const top = ys[pos.row], bottom = ys[pos.row + pos.rows];
-      const cellWidth = right - left - 20;
-      const x = left + 10 + (pos.cell.align === 'right' ? cellWidth - body.widthVp
+      const cellWidth = right - left - padX * 2;
+      const x = left + padX + (pos.cell.align === 'right' ? cellWidth - body.widthVp
         : pos.cell.align === 'center' ? (cellWidth - body.widthVp) / 2 : 0);
-      const y = top + 6 + (pos.cell.valign === 'bottom' ? bottom - top - 12 - body.heightVp
-        : pos.cell.valign === 'middle' ? (bottom - top - 12 - body.heightVp) / 2 : 0);
+      const y = top + padY + (pos.cell.valign === 'bottom' ? bottom - top - padY * 2 - body.heightVp
+        : pos.cell.valign === 'middle' ? (bottom - top - padY * 2 - body.heightVp) / 2 : 0);
       if (pos.cell.header || (table.striped && pos.row % 2 === 1)) {
         document.backgrounds.push(new DrawnRichBlockBackground({ left: left * density, top: top * density,
           right: right * density, bottom: bottom * density }, 0, tint, tint, 0));
@@ -810,10 +813,19 @@ export class DrawnRichTextLayouts {
       if (reserveBoxes.length === 0) { throw new Error('missing rich footer reservation'); }
       for (const box of reserveBoxes) { reservedRight = Math.max(reservedRight, rtl ? maxPx - box.rect.left : box.rect.right); }
     }
-    const widthPx: number = Math.min(paragraphWidth, Math.max(Math.ceil(paragraph.getLongestLine()), Math.ceil(reservedRight),
-      Math.min(maxPx, spec.minWidthVp * density)));
+    const longestPx: number = paragraph.getLongestLine();
+    const rawHeightPx: number = paragraph.getHeight();
+    if (!Number.isFinite(longestPx) || !Number.isFinite(rawHeightPx) || !Number.isFinite(reservedRight) || paragraphWidth <= 0) {
+      throw new Error('invalid rich paragraph metrics');
+    }
+    const measuredWidthPx: number = Math.max(Math.ceil(longestPx), Math.ceil(reservedRight),
+      Math.min(maxPx, spec.minWidthVp * density));
+    // Whitespace-only / zero-width-only paragraphs (e.g. blank lines inside quotes or
+    // footer-separated rich messages) report longestLine == 0 even though height is valid.
+    const widthPx: number = Math.min(paragraphWidth, measuredWidthPx > 0 ? measuredWidthPx : 1);
     const shiftX = rtl ? widthPx - maxPx : 0;
-    const heightPx: number = Math.ceil(paragraph.getHeight());
+    const heightPx: number = rawHeightPx > 0 ? Math.ceil(rawHeightPx)
+      : (paragraphOffset > 0 && linePx > 0 ? Math.ceil(linePx) : 0);
     if (!Number.isFinite(widthPx) || !Number.isFinite(heightPx) || widthPx <= 0 || heightPx <= 0) {
       throw new Error('invalid rich paragraph metrics');
     }

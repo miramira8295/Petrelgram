@@ -407,6 +407,7 @@ import targetSelectionTest from './TargetSelection.test';
 import shareFanoutTest from './ShareFanout.test';
 import contactAddErrorTest from './ContactAddError.test';
 import contactAddRequestTest from './ContactAddRequest.test';
+import webProxyConfigTest from './WebProxyConfig.test';
 
 export default function testsuite() {
   // 既有用例验证的是 V1（喂 update → store 怎么变）。V2 的用例在自己内部
@@ -822,4 +823,5 @@ export default function testsuite() {
   contactAddErrorTest();
   contactAddRequestTest();
   avatarMorphTest();
+  webProxyConfigTest();
 }

@@ -40,7 +40,13 @@ export struct ProfileMediaRow {
             .width('100%').height('100%').justifyContent(FlexAlign.Center)
             .backgroundColor($r('app.color.surface_alt'));
           }
-          if (item.isVideo) {
+          if (item.contentType === 'messageAnimation') {
+            Text('GIF')
+              .fontSize(10.5).fontWeight(FontWeight.Medium).fontColor(Color.White)
+              .padding({ left: 5, right: 5, top: 2, bottom: 2 })
+              .margin({ right: 5, bottom: 5 })
+              .backgroundColor('#70000000').borderRadius(8);
+          } else if (item.isVideo) {
             Row({ space: 3 }) {
               SymbolGlyph($r('sys.symbol.play_fill')).fontSize(10).fontColor([Color.White]);
               if (item.duration !== '') {

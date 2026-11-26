@@ -1,6 +1,6 @@
 import { str } from './strings';
 import {
-  PROXY_HTTP, PROXY_MTPROTO, ProxyEntry
+  PROXY_HTTP, PROXY_MTPROTO, PROXY_WEB, ProxyEntry
 } from '../store/ProxyApi';
 import { logE } from './log';
 
@@ -16,8 +16,8 @@ export function proxyFormError(
   server: string, rawPort: string, type: string, secret: string
 ): string {
   if (server.trim() === '') { return str('proxy_server_required'); }
-  if (parseProxyPort(rawPort) === 0) { return str('proxy_port_invalid'); }
-  if (type === PROXY_MTPROTO && secret.trim() === '') {
+  if (type !== PROXY_WEB && parseProxyPort(rawPort) === 0) { return str('proxy_port_invalid'); }
+  if ((type === PROXY_MTPROTO || type === PROXY_WEB) && secret.trim() === '') {
     return str('proxy_secret_required');
   }
   return '';
@@ -29,6 +29,9 @@ export function sameProxyConfiguration(left: ProxyEntry, right: ProxyEntry): boo
     return false;
   }
   if (left.type === PROXY_MTPROTO) { return left.secret === right.secret; }
+  if (left.type === PROXY_WEB) {
+    return left.secret === right.secret && (left.path ?? '') === (right.path ?? '');
+  }
   if (left.type === PROXY_HTTP && left.httpOnly !== right.httpOnly) { return false; }
   return left.username === right.username && left.password === right.password;
 }

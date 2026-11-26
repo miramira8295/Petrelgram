@@ -19,7 +19,6 @@ import {
   applyEdgeBlurPageValue, seedEdgeBlurOn, seedEdgeBlurPages, setEdgeBlurBottom, setEdgeBlurMaster, setEdgeBlurTop
 } from '../util/edgeBlurSetting';
 import { setCrashUploadOptOut } from '../services/crashRecordStore';
-import { sealWebProxySecret, unsealWebProxySecret } from '../services/WebProxySecretVault';
 import { LIGHT_DEFAULT } from '../util/materialTuning';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { batteryInfo, commonEventManager } from '@kit.BasicServicesKit';
@@ -124,14 +123,6 @@ export const KEY_PROXY_AUTO_SWITCH: string = 'proxyAutoSwitch';
 // 代理列表的手动排序（代理 id 的逗号串）。TDLib 不保存顺序，排序只能本地存。
 export const KEY_PROXY_ORDER: string = 'proxyOrder';
 export const KEY_PROXY_SWITCH_DELAY_SEC: string = 'proxySwitchDelaySec';
-// WEB 代理（tproxy）的两个持久键。定义放在这里而不是 services/WebProxyService，
-// 是为了让 initSettings 能恢复它们（那个模块反过来 import 本文件，会成环）。
-export const KEY_WEB_PROXY_ENABLED: string = 'webProxyEnabled';
-export const KEY_WEB_PROXY_CONFIG: string = 'webProxyConfig';
-// WEB 代理 secret 的密文（HUKS AES-GCM，见 services/WebProxySecretVault）。
-// 明文只允许出现在内存键 KEY_WEB_PROXY_SECRET_PLAIN 里，永不 persist。
-export const KEY_WEB_PROXY_SECRET_BLOB: string = 'webProxySecretSealed';
-export const KEY_WEB_PROXY_SECRET_PLAIN: string = 'webProxySecretPlain';
 export const KEY_AUTOSAVE_PRIVATE: string = 'autosavePrivate';
 export const KEY_AUTOSAVE_GROUP: string = 'autosaveGroup';
 export const KEY_AUTOSAVE_CHANNEL: string = 'autosaveChannel';
@@ -603,16 +594,6 @@ export async function initSettings(context: common.Context): Promise<void> {
     AppStorage.setOrCreate(KEY_CACHE_LIMIT, await s.get(KEY_CACHE_LIMIT, CACHE_LIMIT_DEFAULT) as number);
     AppStorage.setOrCreate(KEY_PROXY_SWITCH_DELAY_SEC, normalizeProxySwitchDelay(
       await s.get(KEY_PROXY_SWITCH_DELAY_SEC, PROXY_SWITCH_DELAY_DEFAULT) as number));
-    // WEB 代理：这两个键原来只在 setString/setBoolean 里写进 preferences，从来没有
-    // 读回来过。结果是重启后 AppStorage 里没有配置，WebProxyService.bootstrap()
-    // 走「用户没启用」分支、顺手把侧车条目清掉，界面上代理列表变空、整个客户端
-    // 一直「连接中…」——真机 2026-11-25 就是这个现象。
-    AppStorage.setOrCreate(KEY_WEB_PROXY_ENABLED, await s.get(KEY_WEB_PROXY_ENABLED, false) as boolean);
-    AppStorage.setOrCreate(KEY_WEB_PROXY_CONFIG, await s.get(KEY_WEB_PROXY_CONFIG, '') as string);
-    // secret 在 preferences 里只有密文：这一步把旧版明文迁进 HUKS，或把密文解到内存键。
-    // 必须在 settingsReady 之前完成，否则 WebProxyService.bootstrap() 拿到空 secret 会
-    // 判定配置不可用、把整条代理关掉。
-    await restoreWebProxySecret(s);
     AppStorage.setOrCreate(KEY_PROXY_ORDER, await s.get(KEY_PROXY_ORDER, '') as string);
     // ⚠️ 临时（P6 标定）：走 normalize 而不是直接信落盘值——档位表将来收窄时，
     // 旧值会变成野值，而 cachedCount 收到野值不报错，只是行为不可解释。
@@ -723,9 +704,6 @@ export async function initSettings(context: common.Context): Promise<void> {
     AppStorage.setOrCreate(KEY_DEBUG_DRAWN_TRACE, false); drawnStageMetrics.setEnabled(false);
     AppStorage.setOrCreate(KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT); // ⚠️ 临时（P6 标定）
     AppStorage.setOrCreate(KEY_PROXY_SWITCH_DELAY_SEC, PROXY_SWITCH_DELAY_DEFAULT);
-    AppStorage.setOrCreate(KEY_WEB_PROXY_ENABLED, false);
-    AppStorage.setOrCreate(KEY_WEB_PROXY_CONFIG, '');
-    AppStorage.setOrCreate(KEY_WEB_PROXY_SECRET_PLAIN, '');
     AppStorage.setOrCreate(KEY_PROXY_ORDER, '');
     AppStorage.setOrCreate(KEY_POWER_THRESHOLD, POWER_THRESHOLD_DEFAULT);
     for (const key of POWER_BOOLEAN_DEFAULTS) {
@@ -771,60 +749,6 @@ export async function initSettings(context: common.Context): Promise<void> {
 }
 
 // WEB 代理配置的落盘形状：secret 字段只可能是空串（正常）或旧版的明文（待迁移）。
-interface StoredWebProxyConfigJson {
-  host?: string;
-  path?: string;
-  secret?: string;
-  allowInvalidCert?: boolean;
-}
-
-// preferences 里只放 HUKS 密文，明文只活在 AppStorage 的 KEY_WEB_PROXY_SECRET_PLAIN。
-// 两条路径：①旧版把 secret 明文塞在 config JSON 里 → 封一次再抹掉明文；
-// ②没有明文可迁 → 把密文解到内存键。任何一步失败都只降级、不抛异常：
-// initSettings 抛错会让 settingsReady 永不 resolve，整个启动流程卡死。
-async function restoreWebProxySecret(s: preferences.Preferences): Promise<void> {
-  const raw: string = AppStorage.get<string>(KEY_WEB_PROXY_CONFIG) ?? '';
-  let sealed: string = '';
-  try {
-    sealed = await s.get(KEY_WEB_PROXY_SECRET_BLOB, '') as string;
-  } catch (err) {
-    logE(`AppSettings.restoreWebProxySecret(get blob) failed: ${JSON.stringify(err)}`);
-  }
-  let plain: string = '';
-  if (raw.length > 0) {
-    try {
-      const legacy: StoredWebProxyConfigJson = JSON.parse(raw) as StoredWebProxyConfigJson;
-      const legacySecret: string = legacy.secret ?? '';
-      if (legacySecret.length > 0) {
-        const migrated: string = await sealWebProxySecret(legacySecret);
-        if (migrated.length > 0) {
-          legacy.secret = '';
-          const rewritten: string = JSON.stringify(legacy);
-          AppStorage.setOrCreate(KEY_WEB_PROXY_CONFIG, rewritten);
-          await s.put(KEY_WEB_PROXY_SECRET_BLOB, migrated);
-          await s.put(KEY_WEB_PROXY_CONFIG, rewritten);
-          await s.flush();
-          sealed = migrated;
-          plain = legacySecret;
-          logE('[WebProxy] plaintext secret migrated into keystore');
-        } else {
-          // 封不起来（HUKS 不可用）：保留明文，宁可这次不安全也不要让用户直接断网。
-          plain = legacySecret;
-          logE('[WebProxy] keystore unavailable, web proxy secret stays plaintext');
-        }
-      }
-    } catch (err) {
-      logE(`AppSettings.restoreWebProxySecret(parse config) failed: ${JSON.stringify(err)}`);
-    }
-  }
-  if (plain.length === 0 && sealed.length > 0) {
-    plain = await unsealWebProxySecret(sealed);
-    if (plain.length === 0) {
-      logE('[WebProxy] sealed secret cannot be opened, web proxy needs re-configuring');
-    }
-  }
-  AppStorage.setOrCreate(KEY_WEB_PROXY_SECRET_PLAIN, plain);
-}
 // Write-through: AppStorage first (instant UI), Preferences after (durable).
 function persist(key: string, value: preferences.ValueType): void {
   if (store === null) {

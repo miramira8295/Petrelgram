@@ -2816,16 +2816,16 @@ export class MessageStore {
 
   // Send a sticker the user picked from an installed set (already on Telegram
   // servers — reference it by TDLib file id).
-  // 注意：捆绑的 td 快照是"半新" schema —— photo/video/audio/document 用
-  // 包装对象，但 sticker/animation/voiceNote 仍是旧的裸 InputFile
-  // （真机验证：inputSticker 包装报 Unknown class）。升级 tdlib 时重查。
+  // TDLib 1.8.71+ 将 sticker/width/height/thumbnail 收进 inputSticker 包装对象。
   sendSticker(fileId: number, width: number, height: number): Promise<boolean> {
     const inputFile: TdObject = { '@type': 'inputFileId' };
     inputFile['id'] = fileId;
+    const wrapper: TdObject = { '@type': 'inputSticker' };
+    wrapper['sticker'] = inputFile;
+    wrapper['width'] = width;
+    wrapper['height'] = height;
     const content: TdObject = { '@type': 'inputMessageSticker' };
-    content['sticker'] = inputFile;
-    content['width'] = width;
-    content['height'] = height;
+    content['sticker'] = wrapper;
     return this.sendContent(content, 'sendSticker').then((id: number): boolean => id !== 0);
   }
 
@@ -2891,23 +2891,25 @@ export class MessageStore {
     });
   }
 
+  // TDLib 1.8.71+ 将 voice_note/duration/waveform 收进 inputVoiceNote 包装对象。
   sendVoiceNoteAsync(path: string, durationSec: number): Promise<void> {
+    const wrapper: TdObject = { '@type': 'inputVoiceNote' };
+    wrapper['voice_note'] = MessageStore.localFile(path);
+    wrapper['duration'] = durationSec;
     const content: TdObject = { '@type': 'inputMessageVoiceNote' };
-    content['voice_note'] = MessageStore.localFile(path);
-    content['duration'] = durationSec;
+    content['voice_note'] = wrapper;
     return this.sendContent(content, 'sendVoiceNote', 0, true).then((): void => {});
   }
 
   // 圆形视频消息。length 是正方形边长（圆形视频宽高相等）。
-  // video_note 是裸 InputFile，和 voiceNote/sticker/animation 一族一致 —— 捆绑的
-  // libtdjson.so 里根本没有 inputVideoNote 这个类（`strings libtdjson.so` 只有
-  // inputMessageVideoNote），包装对象会被判为未知类型而整条消息发不出去。
-  // 对应地 duration/length 直接挂在 inputMessageVideoNote 外层。
+  // TDLib 1.8.71+ 将 video_note/duration/length/thumbnail 收进 inputVideoNote 包装对象。
   sendVideoNote(path: string, durationSec: number, length: number): void {
+    const wrapper: TdObject = { '@type': 'inputVideoNote' };
+    wrapper['video_note'] = MessageStore.localFile(path);
+    wrapper['duration'] = durationSec;
+    wrapper['length'] = length;
     const content: TdObject = { '@type': 'inputMessageVideoNote' };
-    content['video_note'] = MessageStore.localFile(path);
-    content['duration'] = durationSec;
-    content['length'] = length;
+    content['video_note'] = wrapper;
     this.sendContent(content, 'sendVideoNote');
   }
 

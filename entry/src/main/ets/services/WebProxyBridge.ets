@@ -43,7 +43,7 @@ const HEAD_LIMIT: number = 8192;
 const DIAL_TIMEOUT_MS: number = 8000;
 const MAX_PEERS: number = 96;
 const IDLE_TIMEOUT_MS: number = 120000;
-const DIAL_FAILURE_LIMIT: number = 2;
+const DIAL_FAILURE_LIMIT: number = 3;
 // 字节泵的节流参数。每条 socket 消息都单独 send 一次会把 UI 线程排满——
 // 实测一个图片多的页面能把它堵到 6 秒，系统 watchdog 直接杀进程
 // （THREAD_BLOCK_6S）。所以攒一小会儿再一次性发。
@@ -640,6 +640,24 @@ async function dialHttpProxy(target: WebProxyTarget, host: string, port: number,
   return tunnel;
 }
 
+async function dialDirect(host: string, port: number): Promise<BridgeTunnel> {
+  const tcp: socket.TCPSocket = socket.constructTCPSocketInstance();
+  const options: socket.TCPConnectOptions = {
+    address: addrOf(host, port),
+    timeout: DIAL_TIMEOUT_MS
+  };
+  await tcp.connect(options);
+  return new TcpTunnel(tcp);
+}
+
+// 仅当上游代理已经完成握手、明确拒绝某一个目标站点时（例如只放行 Telegram 的
+// SOCKS5 返回 0x02/0x04），说明代理本身还活着，只是不转发该目标。对这类情况
+// 单连接回落直连、不把整座桥熔断停掉。
+function isTargetRejection(message: string): boolean {
+  return message.indexOf('socks5: connect rejected') >= 0
+    || message.indexOf('proxy refused:') >= 0;
+}
+
 function dialUpstream(target: WebProxyTarget, host: string, port: number): Promise<BridgeTunnel> {
   if (target.kind === WEB_PROXY_KIND_SOCKS5) {
     return dialSocks5(target, host, port);
@@ -798,7 +816,7 @@ function handleClient(client: socket.TCPSocketConnection, target: WebProxyTarget
       sawFirstRequest = true;
       logW(`[WebBridge] first request -> ${request.host}:${request.port} (${request.isConnect ? 'CONNECT' : 'http'})`);
     }
-    dialUpstream(target, request.host, request.port).then((tunnel: BridgeTunnel): void => {
+    const attachTunnel = (tunnel: BridgeTunnel): void => {
       if (peer.closed) {
         tunnel.close();
         return;
@@ -822,10 +840,27 @@ function handleClient(client: socket.TCPSocketConnection, target: WebProxyTarget
           closePeer(peer);
         });
       }
-    }).catch((e: Error): void => {
-      logW(`[WebBridge] dial ${request.host}:${request.port} failed: ${e.message}`);
+    };
+    const sendBadGateway = (): void => {
       const fail: socket.TCPSendOptions = { data: 'HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n' };
       client.send(fail).catch((): void => {}).then((): void => { closePeer(peer); });
+    };
+    dialUpstream(target, request.host, request.port).then((tunnel: BridgeTunnel): void => {
+      attachTunnel(tunnel);
+    }).catch((e: Error): void => {
+      logW(`[WebBridge] dial ${request.host}:${request.port} failed: ${e.message}`);
+      if (isTargetRejection(e.message)) {
+        // 上游代理拒绝了该目标主机（代理本身正常）：仅对当前连接回落直连，
+        // 不累加 dialFailures，也不熔断整座代理桥。
+        dialDirect(request.host, request.port).then((direct: BridgeTunnel): void => {
+          attachTunnel(direct);
+        }).catch((directErr: Error): void => {
+          logW(`[WebBridge] direct fallback ${request.host}:${request.port} failed: ${directErr.message}`);
+          sendBadGateway();
+        });
+        return;
+      }
+      sendBadGateway();
       dialFailures++;
       if (dialFailures >= DIAL_FAILURE_LIMIT && running) {
         logW(`[WebBridge] ${dialFailures} consecutive failures, falling back to direct`);
@@ -859,6 +894,8 @@ export async function startWebBridge(target: WebProxyTarget): Promise<boolean> {
     stopWebBridge();
   }
   configured = target;
+  dialFailures = 0;
+  sawFirstRequest = false;
   try {
     const srv: socket.TCPSocketServer = socket.constructTCPSocketServerInstance();
     srv.on('connect', (client: socket.TCPSocketConnection): void => {
@@ -896,6 +933,8 @@ export function stopWebBridge(): void {
   }
   running = false;
   configured = null;
+  dialFailures = 0;
+  sawFirstRequest = false;
   if (reaper >= 0) {
     clearInterval(reaper);
     reaper = -1;

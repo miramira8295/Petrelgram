@@ -38,6 +38,7 @@ import {
 import { resetShareTargets } from '../services/ShareTargetService';
 import { clearRecentOutgoing } from '../util/recentOutgoing';
 import { WebProxyCarrierView } from './common/WebProxyCarrierView';
+import { parseWebProxyLink } from '../util/webProxyConfig';
 import { closeForumDrawer } from '../util/forumDrawerState';
 import { stackOf, TabKind } from '../util/navStacks';
 import { SharedPayload, previewOf } from '../util/sharedContent';
@@ -308,7 +309,7 @@ struct Index {
     // WEB 代理链接只是打开本地表单，一次网络请求都不需要。原来的实现在这类
     // 链接上跟着「连接就绪」一起等（最长 8 秒）——而代理本身没连上时恰恰就是
     // 用户最需要打开这个表单的时刻，表现成"点了没反应"。所以本地链接直接放行。
-    const localOnly: boolean = this.pendingDeepLink.toLowerCase().indexOf('webproxy') >= 0;
+    const localOnly: boolean = parseWebProxyLink(this.pendingDeepLink) !== null;
     if (!this.connReady && !localOnly) {
       if (this.deepLinkTimer === -1) {
         this.deepLinkTimer = setTimeout((): void => {

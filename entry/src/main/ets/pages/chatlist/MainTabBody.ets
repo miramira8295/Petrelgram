@@ -1,3 +1,4 @@
+import { navigationHaptics } from '../../services/NavigationHaptics';
 import { OneShotFrameCallback } from '../../util/oneShotFrameCallback';
 import { ChatListRowState, ChatRowFlags } from './ChatListRowState';
 import { FOLDER_TAGS_ENABLED, FolderInfo } from '../../store/FolderStore';
@@ -670,24 +671,40 @@ export struct MainTabBody {
         this.archiveHintTimer = setTimeout((): void => {
           this.archiveHintTimer = -1;
           if (this.archiveGesture.touching) {
-            this.archiveReady = this.archiveGesture.ready(this.archiveOffset(), this.archiveExtent(), Date.now());
+            const nextReady = this.archiveGesture.ready(this.archiveOffset(), this.archiveExtent(), Date.now());
+            if (!this.archiveReady && nextReady) {
+              navigationHaptics.play('folder');
+            }
+            this.archiveReady = nextReady;
           }
         }, 220);
       }
     }
     const ready = pulling && gesture.ready(y, this.archiveExtent(), Date.now());
-    if (this.archiveReady !== ready) { this.archiveReady = ready; }
+    if (this.archiveReady !== ready) {
+      if (!this.archiveReady && ready) {
+        navigationHaptics.play('folder');
+      }
+      this.archiveReady = ready;
+    }
   }
 
   private finishArchivePull(cancelled: boolean): void {
     this.clearArchiveHint();
+    const wasRevealed: boolean = this.archiveRevealed;
+    const wasReady: boolean = this.archiveReady;
     const target = this.archiveGesture.release(this.archiveOffset(), this.archiveExtent(),
       Date.now(), this.archiveRowShown(), cancelled);
     if (this.archiveRevealed !== this.archiveGesture.revealed) { this.archiveRevealed = this.archiveGesture.revealed; }
     if (this.archivePulling) { this.archivePulling = false; }
     if (this.archiveReady) { this.archiveReady = false; }
     if (target === null) { return; }
-    if (this.archiveRevealed) { this.refreshArchiveTop(); }
+    if (this.archiveRevealed) {
+      if (!wasRevealed && !wasReady) {
+        navigationHaptics.play('folder');
+      }
+      this.refreshArchiveTop();
+    }
     this.archiveSnapTarget = target;
     const duration = powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 250);
     this.listScroller.scrollTo({ xOffset: 0, yOffset: target - this.listStartInset(),

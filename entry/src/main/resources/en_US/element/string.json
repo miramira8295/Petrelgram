@@ -5253,6 +5253,58 @@
       "value": "You will need to enter the domain and secret again."
     },
     {
+      "name": "px_web_secret_hint",
+      "value": "dd… or 16-byte hex"
+    },
+    {
+      "name": "px_web_err_secret_empty",
+      "value": "Secret cannot be empty"
+    },
+    {
+      "name": "px_web_err_secret_ee",
+      "value": "Secrets starting with ee are for fake-TLS and are not supported by WEB proxy"
+    },
+    {
+      "name": "px_web_err_secret_format",
+      "value": "Secret must be valid hex or base64url"
+    },
+    {
+      "name": "px_web_err_secret_len",
+      "value": "Secret must be 16 bytes (or dd + 16 bytes)"
+    },
+    {
+      "name": "px_web_err_path_len",
+      "value": "Deployment path cannot exceed 128 characters"
+    },
+    {
+      "name": "px_web_err_path_empty_seg",
+      "value": "Deployment path cannot contain empty segments (//)"
+    },
+    {
+      "name": "px_web_err_path_chars",
+      "value": "Deployment path can only use letters, digits, underscores, and hyphens"
+    },
+    {
+      "name": "px_web_err_path_start",
+      "value": "Each deployment path segment must start with a letter or digit"
+    },
+    {
+      "name": "px_web_err_host_empty",
+      "value": "Proxy domain cannot be empty"
+    },
+    {
+      "name": "px_web_err_host_space",
+      "value": "Proxy domain cannot contain spaces"
+    },
+    {
+      "name": "px_web_err_host_query",
+      "value": "Proxy domain cannot contain query or fragment"
+    },
+    {
+      "name": "px_web_err_host_is_secret",
+      "value": "Enter the proxy domain here (e.g. proxy.example.com) and put the secret in the field below"
+    },
+    {
       "name": "px_refresh",
       "value": "Refresh proxy status"
     },
@@ -13679,6 +13731,86 @@
     {
       "name": "mv_forward_video_only",
       "value": "Video only"
+    },
+    {
+      "name": "preview_widget",
+      "value": "Widget"
+    },
+    {
+      "name": "preview_ton_transfer",
+      "value": "TON Transfer"
+    },
+    {
+      "name": "preview_ton_connect",
+      "value": "TON Connect"
+    },
+    {
+      "name": "preview_gift_offer",
+      "value": "Gift Offer"
+    },
+    {
+      "name": "service_bot_invite",
+      "value": "Invited to use this bot"
+    },
+    {
+      "name": "service_chat_added_to_community",
+      "value": "Added to a community"
+    },
+    {
+      "name": "service_chat_join_from_community",
+      "value": "Joined from a community"
+    },
+    {
+      "name": "service_chat_removed_from_community",
+      "value": "Removed from the community"
+    },
+    {
+      "name": "service_unpaid_messages_allowed",
+      "value": "Free messages allowed via link"
+    },
+    {
+      "name": "ton_transfer_encrypted_comment",
+      "value": "Encrypted comment"
+    },
+    {
+      "name": "ton_connect_pending",
+      "value": "Pending"
+    },
+    {
+      "name": "ton_connect_accepted",
+      "value": "Connected"
+    },
+    {
+      "name": "ton_connect_rejected",
+      "value": "Rejected"
+    },
+    {
+      "name": "gift_offer_pending",
+      "value": "Offer pending"
+    },
+    {
+      "name": "gift_offer_accepted",
+      "value": "Offer accepted"
+    },
+    {
+      "name": "gift_offer_declined",
+      "value": "Offer declined"
+    },
+    {
+      "name": "gift_offer_canceled",
+      "value": "Offer canceled"
+    },
+    {
+      "name": "gift_offer_expired",
+      "value": "Offer expired"
+    },
+    {
+      "name": "gift_offer_settled",
+      "value": "Purchase completed"
+    },
+    {
+      "name": "tglink_kind_bot_invite",
+      "value": "Bot invite"
     }
   ]
 }

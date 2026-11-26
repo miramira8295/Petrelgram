@@ -1,8 +1,8 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 import {
-  PROXY_HTTP, PROXY_MTPROTO, PROXY_SOCKS5, ProxyEntry,
-  proxyEntryFromAddedObject, proxyObjectOf
+  PROXY_HTTP, PROXY_MTPROTO, PROXY_SOCKS5, PROXY_WEB, ProxyEntry,
+  proxyEntryFromAddedObject, proxyObjectOf, proxyTypeLabel
 } from '../main/ets/store/ProxyApi';
 import {
   parseProxyPort, proxyActionErrorText, proxyConnectionText,
@@ -93,6 +93,42 @@ export default function proxyLogicTest() {
       expect(isIpLiteral('2001:db8::1')).assertTrue();
       expect(isIpLiteral('proxy.example.com')).assertFalse();
       expect(isIpLiteral('1.2.3')).assertFalse();
+    });
+
+    it('encodes_and_decodes_native_proxyTypeWeb', 0, (): void => {
+      const webType: TdObject = {
+        '@type': PROXY_WEB, 'path': 'edge/v1', 'secret': 'dd0123456789abcdef0123456789abcdef'
+      };
+      const proxy: TdObject = {
+        '@type': 'proxy', 'server': 'web.example.com', 'port': 443, 'type': webType
+      };
+      const added: TdObject = {
+        '@type': 'addedProxy', 'id': 21, 'last_used_date': 55,
+        'is_enabled': true, 'proxy': proxy
+      };
+      const parsed = proxyEntryFromAddedObject(added);
+      expect(parsed.type).assertEqual(PROXY_WEB);
+      expect(parsed.server).assertEqual('web.example.com');
+      expect(parsed.port).assertEqual(443);
+      expect(parsed.path ?? '').assertEqual('edge/v1');
+      expect(parsed.secret).assertEqual('dd0123456789abcdef0123456789abcdef');
+      expect(proxyTypeLabel(PROXY_WEB)).assertEqual('WEB');
+
+      const encoded = proxyObjectOf(parsed);
+      expect(encoded['port'] as number).assertEqual(443);
+      const encodedType = encoded['type'] as TdObject;
+      expect(encodedType['@type'] as string).assertEqual(PROXY_WEB);
+      expect(encodedType['path'] as string).assertEqual('edge/v1');
+      expect(encodedType['secret'] as string).assertEqual('dd0123456789abcdef0123456789abcdef');
+
+      const other: ProxyEntry = {
+        id: 22, server: 'web.example.com', port: 443, type: PROXY_WEB,
+        username: '', password: '', secret: 'dd0123456789abcdef0123456789abcdef',
+        path: 'edge/v2', httpOnly: false, lastUsedDate: 0, isEnabled: false
+      };
+      expect(sameProxyConfiguration(parsed, other)).assertFalse();
+      other.path = 'edge/v1';
+      expect(sameProxyConfiguration(parsed, other)).assertTrue();
     });
   });
 }

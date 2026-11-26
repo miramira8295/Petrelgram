@@ -22,7 +22,7 @@ import { logE, logW } from './log';
 import { navigateToSearch } from './searchNav';
 import { postWebProxyDraft } from './webProxyImport';
 import { endLinkNavIf } from './linkTapGuard';
-import { parseWebProxyLink, WebProxyLinkInfo } from '../services/WebProxyHost';
+import { parseWebProxyLink, WebProxyLinkInfo } from './webProxyConfig';
 
 // **一律 'content'。** 这条路上的每一次跳转，用户都是"在内容里点了什么"——
 // 消息里的链接、资料页简介里的链接、内置浏览器里的链接。navigateToChat 的默认
@@ -147,13 +147,20 @@ function openProxyLink(type: TdObject): void {
     showToast(str('tglink_proxy_incomplete'), 1800);
     return;
   }
+  const proxyTypeName: string = (proxyType['@type'] as string | undefined) ?? 'proxyTypeSocks5';
+  const proxyPath: string = (proxyType['path'] as string | undefined) ?? '';
+  const proxySecret: string = (proxyType['secret'] as string | undefined) ?? '';
+  if (proxyTypeName === 'proxyTypeWeb') {
+    postWebProxyDraft(server, proxyPath, proxySecret);
+  }
   const params: Record<string, Object> = {
     'proxyServer': server,
     'proxyPort': port,
-    'proxyType': (proxyType['@type'] as string | undefined) ?? 'proxyTypeSocks5',
+    'proxyType': proxyTypeName,
     'proxyUsername': (proxyType['username'] as string | undefined) ?? '',
     'proxyPassword': (proxyType['password'] as string | undefined) ?? '',
-    'proxySecret': (proxyType['secret'] as string | undefined) ?? '',
+    'proxySecret': proxySecret,
+    'proxyPath': proxyPath,
     'proxyHttpOnly': (proxyType['http_only'] as boolean | undefined) ?? false
   };
   // 代理页已迁成 HdsNavDestination、从 main_pages.json 摘掉，router.pushUrl 对它
@@ -355,19 +362,36 @@ function unsupportedLinkLabel(typeName: string): string {
   }
   if (typeName === 'internalLinkTypeBotStartInGroup') { return str('tglink_kind_bot_to_group'); }
   if (typeName === 'internalLinkTypeBotAddToChannel') { return str('tglink_kind_bot_to_channel'); }
+  if (typeName === 'internalLinkTypeBotInvite') { return str('tglink_kind_bot_invite'); }
   if (typeName === 'internalLinkTypeUnknownDeepLink') { return str('tglink_kind_generic'); }
   return str('tglink_kind_generic');
+}
+
+function applyUnpaidTokenIfPresent(type: TdObject): void {
+  const token = ((type['unpaid_messages_token'] as string | undefined) ?? '').trim();
+  if (token === '') {
+    return;
+  }
+  const req: TdRequest = { '@type': 'applyUnpaidMessagesToken' };
+  req['token'] = token;
+  getTdClient().send(req).catch((): void => {});
 }
 
 function handleInternalLinkType(context: common.UIAbilityContext, type: TdObject, original: string,
     allowBrowser: boolean): void {
   const typeName = (type['@type'] as string | undefined) ?? '';
   if (typeName === 'internalLinkTypePublicChat') {
+    applyUnpaidTokenIfPresent(type);
     resolvePublicChat(context,
       (type['chat_username'] as string | undefined) ?? '',
       (type['draft_text'] as string | undefined) ?? '',
       (type['open_profile'] as boolean | undefined) ?? false,
       original, allowBrowser);
+    return;
+  }
+  if (typeName === 'internalLinkTypeBotInvite') {
+    const botUsername = (type['bot_username'] as string | undefined) ?? '';
+    resolvePublicChat(context, botUsername, '', false, original, allowBrowser);
     return;
   }
   if (typeName === 'internalLinkTypeBotStart') {
@@ -410,6 +434,7 @@ function handleInternalLinkType(context: common.UIAbilityContext, type: TdObject
     return;
   }
   if (typeName === 'internalLinkTypeUserToken') {
+    applyUnpaidTokenIfPresent(type);
     resolveUserToken(getTdClient(), (type['token'] as string | undefined) ?? '')
       .then((chatId: number): void => { openChatPage(chatId); })
       .catch((): void => {
@@ -419,6 +444,7 @@ function handleInternalLinkType(context: common.UIAbilityContext, type: TdObject
     return;
   }
   if (typeName === 'internalLinkTypeUserPhoneNumber') {
+    applyUnpaidTokenIfPresent(type);
     openPhoneNumberUser(context, type, original, allowBrowser);
     return;
   }

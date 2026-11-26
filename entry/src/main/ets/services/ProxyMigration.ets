@@ -18,8 +18,11 @@ const RELAY_MARKER: string = 'petrel_tls_';
 const PROXY_HTTPS: string = 'proxyTypeHttps';
 const PROXY_SOCKS5: string = 'proxyTypeSocks5';
 const PROXY_HTTP: string = 'proxyTypeHttp';
+const PROXY_MTPROTO: string = 'proxyTypeMtproto';
 const REGISTRY_FILE: string = 'https-proxies.json';
 const REQUEST_TIMEOUT_MS: number = 20000;
+const LEGACY_WEB_SIDECAR_PORT_MIN: number = 47810;
+const LEGACY_WEB_SIDECAR_PORT_MAX: number = 47879;
 
 interface LegacyRecord {
   key: string;
@@ -29,6 +32,14 @@ interface LegacyRecord {
   port: number;
   username: string;
   password: string;
+}
+
+function isLegacyWebSidecar(proxy: TdObject): boolean {
+  const type = proxy['type'] as TdObject | undefined;
+  const port: number = (proxy['port'] as number | undefined) ?? 0;
+  return proxy['server'] === '127.0.0.1'
+    && type !== undefined && type['@type'] === PROXY_MTPROTO
+    && port >= LEGACY_WEB_SIDECAR_PORT_MIN && port <= LEGACY_WEB_SIDECAR_PORT_MAX;
 }
 
 function isOurs(proxy: TdObject): boolean {
@@ -123,11 +134,24 @@ export class ProxyMigration {
     let dropped = 0;
     for (const row of rows) {
       const proxy = row['proxy'] as TdObject | undefined;
-      if (proxy === undefined || !isOurs(proxy)) {
+      if (proxy === undefined) {
         continue;
       }
       const id = (row['id'] as number | undefined) ?? 0;
       const enabled = row['is_enabled'] === true;
+      // 清理旧版 WEB 代理本地回环侧车残留（127.0.0.1:47810-47879）：
+      // 已迁至 TDLib 1.8.71 原生 proxyTypeWeb，旧回环端口不再监听。
+      if (isLegacyWebSidecar(proxy)) {
+        if (enabled) {
+          await this.send(client, { '@type': 'disableProxy' } as TdRequest);
+        }
+        await this.send(client, this.removeRequest(id));
+        dropped++;
+        continue;
+      }
+      if (!isOurs(proxy)) {
+        continue;
+      }
       const key = relayKey(proxy);
       // 隐藏入口：先关掉再删，否则删除的瞬间 TDLib 还指着它。
       if (key === ACTIVE_ROUTE_KEY) {

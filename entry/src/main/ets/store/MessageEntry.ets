@@ -112,6 +112,7 @@ export interface MessageEntry {
   linkUrl: string;              // tap target to open the preview's link/message
   reactions: ReactionInfo[];    // emoji reaction pills (empty = none)
   inlineButtons: InlineBtn[][]; // bot inline keyboard rows (empty = none)
+  forceReply?: boolean;         // replyMarkupForceReply or *.force_reply (TDLib 1.8.71+)
   photoFullFileId: number;      // full-resolution photo file id (0 = no upgrade available)
   photoFullPath: string;        // local path once the full-resolution photo is downloaded (on tap)
   photoFullProgress: number;    // 0-100 download progress of the full-resolution photo
@@ -254,7 +255,20 @@ export interface InlineBtn {
   webAppUrl?: string; // inlineKeyboardButtonTypeWebApp; optional for cached/older entries
   callbackData: string; // base64 payload for inlineKeyboardButtonTypeCallback
   isGame: boolean;      // inlineKeyboardButtonTypeCallbackGame
-  style: string;        // 'primary' | 'success' | 'danger' | '' (default look)
+  disabled?: boolean;   // inlineKeyboardButtonTypeDisabled (TDLib 1.8.71+)
+  style: string;        // 'primary' | 'success' | 'danger' | 'link' | '' (default look)
+}
+
+export function parseForceReply(replyMarkup: TdObject | undefined): boolean {
+  if (replyMarkup === undefined) {
+    return false;
+  }
+  const type = (replyMarkup['@type'] as string | undefined) ?? '';
+  if (type === 'replyMarkupForceReply') {
+    return true;
+  }
+  return (type === 'replyMarkupInlineKeyboard' || type === 'replyMarkupShowKeyboard') &&
+    ((replyMarkup['force_reply'] as boolean | undefined) ?? false);
 }
 
 // Parse message.reply_markup (replyMarkupInlineKeyboard) into button rows.
@@ -275,6 +289,7 @@ export function parseInlineKeyboard(replyMarkup: TdObject | undefined): InlineBt
         webAppUrl: tt === 'inlineKeyboardButtonTypeWebApp' ? webAppUrlOf(t!['url']) : '',
         callbackData: tt === 'inlineKeyboardButtonTypeCallback' ? ((t!['data'] as string | undefined) ?? '') : '',
         isGame: tt === 'inlineKeyboardButtonTypeCallbackGame',
+        disabled: tt === 'inlineKeyboardButtonTypeDisabled',
         style: buttonStyleOf(b)
       });
     }
@@ -323,6 +338,7 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     linkPreviewType: m.linkPreviewType, linkUrl: m.linkUrl,
     reactions: m.reactions,
     inlineButtons: m.inlineButtons,
+    forceReply: m.forceReply,
     photoFullFileId: m.photoFullFileId, photoFullPath: m.photoFullPath,
     photoFullProgress: m.photoFullProgress, photoFullFailed: m.photoFullFailed,
     videoFileId: m.videoFileId, videoFileSize: m.videoFileSize, videoMimeType: m.videoMimeType,
@@ -672,9 +688,10 @@ function systemMessageInfo(message: TdObject, users: UserStore): SystemMessageIn
   // instead of collapsing their actionable state into a generic system pill.
   const richSpecialTypes: string[] = [
     'messagePaidMedia', 'messageGiftedPremium', 'messageGiftedStars',
-    'messageGiftedTon', 'messagePremiumGiftCode', 'messageGift',
-    'messageUpgradedGift', 'messageGiveaway',
-    'messageGiveawayWinners', 'messageGiveawayCompleted',
+    'messageGiftedGrams', 'messageGiftedTon', 'messagePremiumGiftCode', 'messageGift',
+    'messageUpgradedGift', 'messageUpgradedGiftOnChainPurchaseOffer',
+    'messageTonWalletTransfer', 'messageTonConnectRequest', 'messageWidget',
+    'messageGiveaway', 'messageGiveawayWinners', 'messageGiveawayCompleted',
     'messageGiveawayPrizeStars'
   ];
   if (richSpecialTypes.indexOf(type) >= 0) {
@@ -1159,6 +1176,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore, publishVi
     linkUrl: c.linkUrl,
     reactions: reactions(message),
     inlineButtons: parseInlineKeyboard(message['reply_markup'] as TdObject | undefined),
+    forceReply: parseForceReply(message['reply_markup'] as TdObject | undefined),
     photoFullFileId: c.photoFullFileId,
     photoFullPath: c.photoFullLocalPath ?? '',
     photoFullProgress: c.photoFullLocalPath !== undefined && c.photoFullLocalPath !== ''

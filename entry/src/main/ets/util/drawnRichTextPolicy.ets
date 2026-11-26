@@ -78,6 +78,7 @@ export interface DrawnRichTable {
   rows: DrawnRichTableCell[][];
   bordered: boolean;
   striped: boolean;
+  compact?: boolean;
 }
 
 export interface DrawnAnchorBranch { offset: number; initiallyOpen: boolean; parent: DrawnAnchorBranch | null; }

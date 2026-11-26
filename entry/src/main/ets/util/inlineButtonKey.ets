@@ -11,7 +11,7 @@ function field(value: string): string {
 
 function signature(button: InlineBtn): string {
   return `${field(button.text)}${field(button.url)}${field(button.callbackData)}${field(button.webAppUrl ?? '')}` +
-    `${button.isGame ? 'g' : '-'}${field(button.style)}`;
+    `${button.isGame ? 'g' : '-'}${button.disabled ? 'd' : '-'}${field(button.style)}`;
 }
 
 export function inlineButtonKey(rowIndex: number, buttonIndex: number, button: InlineBtn): string {

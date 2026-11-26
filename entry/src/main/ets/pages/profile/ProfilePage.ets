@@ -15,7 +15,7 @@ import {
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, WIDTH_BP_MD, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
-import { router, promptAction, curves } from '@kit.ArkUI';
+import { router, promptAction, curves, RectShape } from '@kit.ArkUI';
 import { profileMenuItems } from '../../util/profileMenu';
 import { showProfileMoreMenu } from './ProfileMoreMenu';
 import {
@@ -218,6 +218,15 @@ export struct ProfilePage {
   @State sharedPagingError: boolean = false;
   @State tabIndicatorX: number = 8;
   @State tabIndicatorW: number = 0;
+  @State private tabsPinned: boolean = false;
+  @State private listViewH: number = 0;
+  @State private pinnedTabIndicatorX: number = 8;
+  @State private pinnedTabIndicatorW: number = 0;
+  @State private tabSlideX: number = 0;
+  @State private tabSlideOpacity: number = 1;
+  private profileHeadH: number = 0;
+  private pinLockUntil: number = 0;
+  private tabScrollRestoreTimer: number = -1;
   @State availGifts: AvailGift[] = [];
   @State showGiftPicker: boolean = false;
   @State private profileContentReady: boolean = false;
@@ -240,6 +249,7 @@ export struct ProfilePage {
   private sharedStore: ChatProfileStore | null = null;
   private sharedUnsub: (() => void) | null = null;
   private tabScroller: Scroller = new Scroller();
+  private pinnedTabScroller: Scroller = new Scroller();
   // 下拉放大头像：整页 List 的滚动器（越界值驱动形变）、形变进度与展开态。
   private pageScroller: Scroller = new Scroller();
   @State avatarPull: number = 0;
@@ -249,6 +259,9 @@ export struct ProfilePage {
   private tabXs: number[] = [];
   private tabWs: number[] = [];
   private tabViewW: number = 0;
+  private pinnedTabXs: number[] = [];
+  private pinnedTabWs: number[] = [];
+  private pinnedTabViewW: number = 0;
 
   @Styles
   tabNormalStyle() {
@@ -350,6 +363,10 @@ export struct ProfilePage {
       clearTimeout(this.profileEffectsTimer);
       this.profileEffectsTimer = -1;
     }
+    if (this.tabScrollRestoreTimer !== -1) {
+      clearTimeout(this.tabScrollRestoreTimer);
+      this.tabScrollRestoreTimer = -1;
+    }
   }
 
   // 返回上一层。**不能用 this.getUIContext().getRouter().back()**：本页是 HdsNavDestination，router 页栈里
@@ -397,6 +414,10 @@ export struct ProfilePage {
     if (this.profileEffectsTimer !== -1) {
       clearTimeout(this.profileEffectsTimer);
       this.profileEffectsTimer = -1;
+    }
+    if (this.tabScrollRestoreTimer !== -1) {
+      clearTimeout(this.tabScrollRestoreTimer);
+      this.tabScrollRestoreTimer = -1;
     }
     this.profileShown = false;
     if (this.unsub !== null) { this.unsub(); this.unsub = null; }
@@ -726,7 +747,11 @@ export struct ProfilePage {
     if (width <= 0 || this.tabViewW <= 0) {
       return;
     }
-    const offset = this.tabScroller.currentOffset().xOffset;
+    const cur = this.tabScroller.currentOffset();
+    if (cur === undefined) {
+      return;
+    }
+    const offset = cur.xOffset;
     let target = -1;
     if (x < offset + 8) {
       target = Math.max(0, x - 8);
@@ -742,31 +767,171 @@ export struct ProfilePage {
     }
   }
 
-  private selectProfileTab(index: number): void {
-    const tabs = this.visibleProfileTabs();
-    if (index < 0 || index >= tabs.length || index === this.profTab) {
+  private movePinnedProfileTabIndicator(index: number): void {
+    const width = this.pinnedTabWs[index] ?? 0;
+    if (width <= 0) {
       return;
     }
-    const key = tabs[index].key;
-    this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseOut }, (): void => {
-      this.profTab = index;
-      this.moveProfileTabIndicator(index);
-    });
-    this.ensureProfileTabVisible(index);
-    if (this.isSharedProfileTab(key) && this.sharedStore !== null) {
-      this.sharedStore.selectContentTab(key);
+    this.pinnedTabIndicatorX = this.pinnedTabXs[index] ?? 8;
+    this.pinnedTabIndicatorW = width;
+  }
+
+  private ensurePinnedProfileTabVisible(index: number): void {
+    if (!this.tabsPinned) {
+      return;
+    }
+    const x = this.pinnedTabXs[index] ?? 0;
+    const width = this.pinnedTabWs[index] ?? 0;
+    if (width <= 0 || this.pinnedTabViewW <= 0) {
+      return;
+    }
+    const cur = this.pinnedTabScroller.currentOffset();
+    if (cur === undefined) {
+      return;
+    }
+    const offset = cur.xOffset;
+    let target = -1;
+    if (x < offset + 8) {
+      target = Math.max(0, x - 8);
+    } else if (x + width > offset + this.pinnedTabViewW - 8) {
+      target = x + width - this.pinnedTabViewW + 8;
+    }
+    if (target >= 0) {
+      this.pinnedTabScroller.scrollTo({
+        xOffset: target,
+        yOffset: 0,
+        animation: { duration: 200, curve: Curve.EaseOut }
+      });
     }
   }
 
-  private handleProfileTabPan(offsetX: number): void {
-    if (Math.abs(offsetX) < 42) {
+  private pinThresholdY(): number {
+    return Math.max(0, this.profileHeadH + GLASS_GAP - (this.topSafe + 58));
+  }
+
+  private pinnedClipTopY(): number {
+    return this.topSafe + 58 + PROFILE_TAB_BAR_HEIGHT;
+  }
+
+  private pinnedTailSpacerH(): number {
+    if (!this.tabsPinned || this.listViewH <= 0) {
+      return 0;
+    }
+    const key: string = this.currentProfileTabKey();
+    let estBodyH: number = 168;
+    if (key === PROFILE_TAB_STORIES) {
+      estBodyH = this.stories.length > 0 ? Math.ceil(this.stories.length / 3) * (this.storyCell() * 1.33) : 100;
+    } else if (key === PROFILE_TAB_RECEIVED_GIFTS) {
+      estBodyH = this.gifts.length > 0 ? Math.ceil(this.gifts.length / 3) * this.storyCell() : 100;
+    } else if (key === PROFILE_TAB_GROUPS) {
+      estBodyH = this.groups.length > 0 ? this.groups.length * 58 : 100;
+    } else if (this.sharedState === 'ready' && this.sharedItems.length > 0) {
+      estBodyH = (key === PROFILE_TAB_MEDIA || key === PROFILE_TAB_GIFS)
+        ? Math.ceil(this.sharedItems.length / 3) * this.sharedMediaCell()
+        : this.sharedItems.length * 68;
+    }
+    const needed: number = this.listViewH - (this.topSafe + 8) - PROFILE_TAB_BAR_HEIGHT;
+    return Math.max(0, Math.ceil(needed - estBodyH));
+  }
+
+  private restoreScrollAfterTabSwitch(targetY: number): void {
+    if (this.tabScrollRestoreTimer !== -1) {
+      clearTimeout(this.tabScrollRestoreTimer);
+    }
+    this.tabScrollRestoreTimer = setTimeout((): void => {
+      this.tabScrollRestoreTimer = -1;
+      this.pageScroller.scrollTo({ xOffset: 0, yOffset: targetY, animation: false });
+    }, 16);
+  }
+
+  private updateTabsPinned(y: number): void {
+    const threshold: number = this.pinThresholdY();
+    const shouldPin: boolean = this.profileHeadH > 0 &&
+      this.profileContentReady && this.visibleProfileTabs().length > 0 &&
+      y >= threshold;
+    if (!shouldPin && Date.now() < this.pinLockUntil) {
       return;
     }
-    if (offsetX < 0) {
-      this.selectProfileTab(this.profTab + 1);
-    } else {
-      this.selectProfileTab(this.profTab - 1);
+    if (this.tabsPinned !== shouldPin) {
+      this.tabsPinned = shouldPin;
+      if (!shouldPin) {
+        this.pinnedTabViewW = 0;
+      }
     }
+  }
+
+  private selectProfileTab(index: number): void {
+    const tabs = this.visibleProfileTabs();
+    if (index < 0 || index >= tabs.length || index === this.profTab) {
+      this.resetProfileTabSlide();
+      return;
+    }
+    const prevY: number = this.pageScroller.currentOffset()?.yOffset ?? 0;
+    const wasPinned: boolean = this.tabsPinned;
+    if (wasPinned) {
+      this.pinLockUntil = Date.now() + 260;
+    }
+    const dir: number = index > this.profTab ? 1 : -1;
+    const key = tabs[index].key;
+    // 切换内容不参与布局补间，仅对指示器和列表内容做纯 GPU translate/opacity 滑入过渡。
+    this.profTab = index;
+    this.tabSlideX = dir * 28;
+    this.tabSlideOpacity = 0.35;
+    this.getUIContext().animateTo({ duration: 210, curve: Curve.EaseOut }, (): void => {
+      this.tabSlideX = 0;
+      this.tabSlideOpacity = 1;
+      this.moveProfileTabIndicator(index);
+      this.movePinnedProfileTabIndicator(index);
+    });
+    this.ensureProfileTabVisible(index);
+    this.ensurePinnedProfileTabVisible(index);
+    if (this.isSharedProfileTab(key) && this.sharedStore !== null) {
+      this.sharedStore.selectContentTab(key);
+    }
+    const targetY: number = wasPinned ? this.pinThresholdY() : prevY;
+    if (targetY > 0) {
+      this.restoreScrollAfterTabSwitch(targetY);
+    }
+  }
+
+  private handleProfileTabPanUpdate(offsetX: number): void {
+    const tabs = this.visibleProfileTabs();
+    if (tabs.length <= 1) {
+      return;
+    }
+    const atEdge: boolean = (offsetX > 0 && this.profTab <= 0) ||
+      (offsetX < 0 && this.profTab >= tabs.length - 1);
+    const clamped: number = Math.max(-44, Math.min(44, offsetX * (atEdge ? 0.12 : 0.28)));
+    if (Math.abs(clamped - this.tabSlideX) > 0.5) {
+      this.tabSlideX = clamped;
+    }
+  }
+
+  private resetProfileTabSlide(): void {
+    if (this.tabSlideX === 0 && this.tabSlideOpacity === 1) {
+      return;
+    }
+    this.getUIContext().animateTo({
+      duration: 180,
+      curve: curves.springMotion(0.32, 0.92)
+    }, (): void => {
+      this.tabSlideX = 0;
+      this.tabSlideOpacity = 1;
+    });
+  }
+
+  private handleProfileTabPan(offsetX: number): void {
+    const tabs = this.visibleProfileTabs();
+    if (Math.abs(offsetX) < 42) {
+      this.resetProfileTabSlide();
+      return;
+    }
+    const next: number = offsetX < 0 ? this.profTab + 1 : this.profTab - 1;
+    if (next < 0 || next >= tabs.length) {
+      this.resetProfileTabSlide();
+      return;
+    }
+    this.selectProfileTab(next);
   }
 
   private openSharedMessage(messageId: number): void {
@@ -823,7 +988,10 @@ export struct ProfilePage {
   }
 
   private storyCell(): number {
-    return (this.screenW - 4) / 3;
+    const innerW: number = this.sharedRowW > 0
+      ? this.sharedRowW
+      : Math.max(120, this.screenW - this.pageMargin() * 2 - 2);
+    return Math.floor((innerW - 4) / 3);
   }
 
   private formatDuration(totalSeconds: number): string {
@@ -1039,12 +1207,13 @@ export struct ProfilePage {
   }
 
   private handlePageScroll(): void {
+    const y: number = this.pageScroller.currentOffset().yOffset;
+    this.updateTabsPinned(y);
     if (!this.canMorphAvatar()) {
       if (this.avatarPull !== 0) { this.avatarPull = 0; }
       if (this.avatarExpanded) { this.avatarExpanded = false; }
       return;
     }
-    const y: number = this.pageScroller.currentOffset().yOffset;
     if (y < 0) {
       const pull: number = Math.abs(y);
       if (this.avatarPull !== pull) {
@@ -1382,16 +1551,17 @@ export struct ProfilePage {
   }
 
   @Builder
-  tabsBar() {
+  tabsBar(pinned: boolean) {
     Column() {
-      Scroll(this.tabScroller) {
+      Scroll(pinned ? this.pinnedTabScroller : this.tabScroller) {
         Stack({ alignContent: Alignment.TopStart }) {
           Row()
-            .width(this.tabIndicatorW).height(PROFILE_TAB_INDICATOR_HEIGHT)
+            .width(pinned ? this.pinnedTabIndicatorW : this.tabIndicatorW)
+            .height(PROFILE_TAB_INDICATOR_HEIGHT)
             .borderRadius(PROFILE_TAB_INDICATOR_HEIGHT / 2)
             .backgroundColor(COLOR_TAB_PILL_BG)
             .position({
-              x: this.tabIndicatorX,
+              x: pinned ? this.pinnedTabIndicatorX : this.tabIndicatorX,
               y: (PROFILE_TAB_BAR_HEIGHT - PROFILE_TAB_INDICATOR_HEIGHT) / 2
             });
           Row() {
@@ -1407,11 +1577,28 @@ export struct ProfilePage {
               .borderRadius(PROFILE_TAB_BAR_HEIGHT / 2)
               .stateStyles({ normal: this.tabNormalStyle, pressed: this.tabPressedStyle })
               .onAreaChange((_old: Area, area: Area): void => {
-                this.tabXs[index] = area.position.x as number;
-                this.tabWs[index] = area.width as number;
-                if (index === this.profTab) {
-                  this.moveProfileTabIndicator(index);
-                  this.ensureProfileTabVisible(index);
+                const nextX: number = area.position.x as number;
+                const nextW: number = area.width as number;
+                if (pinned) {
+                  const changed: boolean = Math.abs((this.pinnedTabXs[index] ?? -1) - nextX) > 0.5 ||
+                    Math.abs((this.pinnedTabWs[index] ?? -1) - nextW) > 0.5;
+                  if (!changed) { return; }
+                  this.pinnedTabXs[index] = nextX;
+                  this.pinnedTabWs[index] = nextW;
+                  if (index === this.profTab) {
+                    this.movePinnedProfileTabIndicator(index);
+                    this.ensurePinnedProfileTabVisible(index);
+                  }
+                } else {
+                  const changed: boolean = Math.abs((this.tabXs[index] ?? -1) - nextX) > 0.5 ||
+                    Math.abs((this.tabWs[index] ?? -1) - nextW) > 0.5;
+                  if (!changed) { return; }
+                  this.tabXs[index] = nextX;
+                  this.tabWs[index] = nextW;
+                  if (index === this.profTab) {
+                    this.moveProfileTabIndicator(index);
+                    this.ensureProfileTabVisible(index);
+                  }
                 }
               })
               .onClick((): void => { this.selectProfileTab(index); });
@@ -1422,18 +1609,25 @@ export struct ProfilePage {
       }
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
       .align(Alignment.Start).width('100%')
+      .height(PROFILE_TAB_BAR_HEIGHT)
+      .clip(true)
       .onAreaChange((_old: Area, area: Area): void => {
-        this.tabViewW = area.width as number;
-        this.ensureProfileTabVisible(this.profTab);
+        const nextW: number = area.width as number;
+        if (pinned) {
+          if (Math.abs(this.pinnedTabViewW - nextW) <= 0.5) { return; }
+          this.pinnedTabViewW = nextW;
+          this.ensurePinnedProfileTabVisible(this.profTab);
+        } else {
+          if (Math.abs(this.tabViewW - nextW) <= 0.5) { return; }
+          this.tabViewW = nextW;
+          this.ensureProfileTabVisible(this.profTab);
+        }
       });
+      Divider().strokeWidth(0.5).color($r('app.color.divider'));
     }
-    .height(PROFILE_TAB_BAR_HEIGHT)
-    .backgroundColor(this.profileGlassFill())
-    .borderRadius(PROFILE_TAB_BAR_HEIGHT / 2)
-    .border({ width: 0.7, color: $r('app.color.divider') })
-    .clip(true)
-    .margin({ left: 8, right: 8, top: 14, bottom: 8 });
+    .width('100%');
   }
 
   @Builder
@@ -1472,76 +1666,103 @@ export struct ProfilePage {
     }
   }
 
-  // 收到的礼物：原来是 Flex 折行 + ForEach，一次建全部格子；现在按三格一行走 LazyForEach。
+  // 收到的礼物：按三格一行走 LazyForEach，直接嵌在合并后的大玻璃卡内。
   @Builder
-  giftsItems() {
+  giftsBodyItems() {
     if (this.gifts.length === 0) {
       ListItem() {
         this.emptyHint(str('pp_no_gifts'));
       }
+      .translate({ x: this.tabSlideX })
+      .opacity(this.tabSlideOpacity)
       .priorityGesture(
         PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.handleProfileTabPanUpdate(event.offsetX);
+          })
           .onActionEnd((event: GestureEvent): void => {
             this.handleProfileTabPan(event.offsetX);
+          })
+          .onActionCancel((): void => {
+            this.resetProfileTabSlide();
           })
       )
     } else {
-      ListItemGroup() {
-        LazyForEach(this.giftRowsData, (row: GiftItem[], index: number) => {
-          ListItem() {
-            ProfileGiftRow({ gifts: row, cellSize: this.storyCell() });
-          }
-        }, (row: GiftItem[], index: number): string =>
-          guardKey(this.giftRowsData.keyTableId, index, this.giftRowKey(row, index)));
-      }
-      .width('100%')
-      .priorityGesture(
-        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
-          .onActionEnd((event: GestureEvent): void => {
-            this.handleProfileTabPan(event.offsetX);
-          })
-      );
+      LazyForEach(this.giftRowsData, (row: GiftItem[], index: number) => {
+        ListItem() {
+          ProfileGiftRow({ gifts: row, cellSize: this.storyCell() });
+        }
+        .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+          this.noteSharedRowWidth(Number(size.width));
+        })
+        .translate({ x: this.tabSlideX })
+        .opacity(this.tabSlideOpacity)
+        .priorityGesture(
+          PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+            .onActionUpdate((event: GestureEvent): void => {
+              this.handleProfileTabPanUpdate(event.offsetX);
+            })
+            .onActionEnd((event: GestureEvent): void => {
+              this.handleProfileTabPan(event.offsetX);
+            })
+            .onActionCancel((): void => {
+              this.resetProfileTabSlide();
+            })
+        )
+      }, (row: GiftItem[], index: number): string =>
+        guardKey(this.giftRowsData.keyTableId, index, this.giftRowKey(row, index)));
     }
   }
 
-  // 共同群组：玻璃卡（ListItemGroup）+ LazyForEach + 复用行 CommonGroupRow。分隔线交给 group 的
-  // divider（原来按 index > 0 在行前插 Divider）。
+  // 共同群组：LazyForEach + 复用行 CommonGroupRow，嵌在合并后的大玻璃卡内。
   @Builder
-  groupsItems() {
+  groupsBodyItems() {
     if (this.groups.length === 0) {
       ListItem() {
-        Column() {
-          this.emptyHint(str('pp_no_common_groups'));
-        }
-        .margin({ left: 12, right: 12 });
+        this.emptyHint(str('pp_no_common_groups'));
       }
+      .translate({ x: this.tabSlideX })
+      .opacity(this.tabSlideOpacity)
       .priorityGesture(
         PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.handleProfileTabPanUpdate(event.offsetX);
+          })
           .onActionEnd((event: GestureEvent): void => {
             this.handleProfileTabPan(event.offsetX);
+          })
+          .onActionCancel((): void => {
+            this.resetProfileTabSlide();
           })
       )
     } else {
-      ListItemGroup() {
-        LazyForEach(this.groupsData, (g: CommonGroup) => {
-          ListItem() {
+      LazyForEach(this.groupsData, (g: CommonGroup, index: number) => {
+        ListItem() {
+          Column() {
             CommonGroupRow({ group: g });
+            if (index < this.groups.length - 1) {
+              Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 68 });
+            }
           }
-          .onClick(() => { this.openChat(g.id); });
-        }, (g: CommonGroup, index: number): string =>
-          guardKey(this.groupsData.keyTableId, index, `${g.id}_${g.title}_${g.avatarPath}`));
-      }
-      .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 68 })
-      .width('calc(100% - 24vp)')
-      .margin({ left: 12, right: 12 })
-      .glassCard()
-      .padding({ top: 4, bottom: 4 })
-      .priorityGesture(
-        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
-          .onActionEnd((event: GestureEvent): void => {
-            this.handleProfileTabPan(event.offsetX);
-          })
-      );
+          .width('100%');
+        }
+        .onClick(() => { this.openChat(g.id); })
+        .translate({ x: this.tabSlideX })
+        .opacity(this.tabSlideOpacity)
+        .priorityGesture(
+          PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+            .onActionUpdate((event: GestureEvent): void => {
+              this.handleProfileTabPanUpdate(event.offsetX);
+            })
+            .onActionEnd((event: GestureEvent): void => {
+              this.handleProfileTabPan(event.offsetX);
+            })
+            .onActionCancel((): void => {
+              this.resetProfileTabSlide();
+            })
+        );
+      }, (g: CommonGroup, index: number): string =>
+        guardKey(this.groupsData.keyTableId, index, `${g.id}_${g.title}_${g.avatarPath}`));
     }
   }
 
@@ -1598,87 +1819,77 @@ export struct ProfilePage {
         Text($r('app.string.pp_no_shared')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
       }
     }
-    .width('calc(100% - 24vp)').height(178)
-    .margin({ left: 12, right: 12, bottom: 18 })
-    .padding({ left: 24, right: 24 }).justifyContent(FlexAlign.Center)
-    .glassCard();
+    .width('100%').height(168)
+    .padding({ left: 24, right: 24 }).justifyContent(FlexAlign.Center);
   }
 
-  // 共享媒体网格：玻璃卡（ListItemGroup），按三格一行走 LazyForEach（ProfileMediaRow，与群资料页
-  // 共用）。格子边长按行的实际宽算（onSizeChange 量行宽，理由见 util/mediaGrid）。
+  // 共享媒体网格：按三格一行走 LazyForEach（ProfileMediaRow，与群资料页共用），嵌在合并大卡内。
   @Builder
-  sharedMediaItems() {
-    ListItemGroup() {
-      LazyForEach(this.sharedRowsData, (row: ProfileContentItem[], index: number) => {
-        ListItem() {
-          ProfileMediaRow({
-            items: row,
-            cellSize: this.sharedMediaCell(),
-            pressedOpacity: 0.62,
-            onOpen: (messageId: number): void => { this.openSharedMessage(messageId); }
-          });
-        }
-        .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
-          this.noteSharedRowWidth(Number(size.width));
+  sharedMediaBodyItems() {
+    LazyForEach(this.sharedRowsData, (row: ProfileContentItem[], index: number) => {
+      ListItem() {
+        ProfileMediaRow({
+          items: row,
+          cellSize: this.sharedMediaCell(),
+          pressedOpacity: 0.62,
+          onOpen: (messageId: number): void => { this.openSharedMessage(messageId); }
         });
-      }, (row: ProfileContentItem[], index: number): string =>
-        guardKey(this.sharedRowsData.keyTableId, index, this.sharedRowKey(row, index)));
-    }
-    .width('calc(100% - 24vp)')
-    .margin({ left: 12, right: 12 })
-    .glassCard().clip(true)
-    .priorityGesture(
-      PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
-        .onActionEnd((event: GestureEvent): void => {
-          this.handleProfileTabPan(event.offsetX);
-        })
-    );
-    ListItem() {
-      this.sharedPaginationFooter();
-    }
-    .priorityGesture(
-      PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
-        .onActionEnd((event: GestureEvent): void => {
-          this.handleProfileTabPan(event.offsetX);
-        })
-    )
+      }
+      .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+        this.noteSharedRowWidth(Number(size.width));
+      })
+      .translate({ x: this.tabSlideX })
+      .opacity(this.tabSlideOpacity)
+      .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.handleProfileTabPanUpdate(event.offsetX);
+          })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleProfileTabPan(event.offsetX);
+          })
+          .onActionCancel((): void => {
+            this.resetProfileTabSlide();
+          })
+      );
+    }, (row: ProfileContentItem[], index: number): string =>
+      guardKey(this.sharedRowsData.keyTableId, index, this.sharedRowKey(row, index)));
   }
 
-  // 共享内容列表：玻璃卡（ListItemGroup）+ LazyForEach（ProfileContentRow，与群资料页共用；
-  // 这一页没有就地下载按钮）。
+  // 共享内容列表：LazyForEach（ProfileContentRow，与群资料页共用），嵌在合并大卡内。
   @Builder
-  sharedContentItems() {
-    ListItemGroup() {
-      LazyForEach(this.sharedData, (item: ProfileContentItem, index: number) => {
-        ListItem() {
+  sharedContentBodyItems() {
+    LazyForEach(this.sharedData, (item: ProfileContentItem, index: number) => {
+      ListItem() {
+        Column() {
           ProfileContentRow({
             item: item,
             icon: this.sharedContentIcon(item),
             fileActions: false,
             onOpen: (messageId: number): void => { this.openSharedMessage(messageId); }
           });
+          if (index < this.sharedItems.length - 1) {
+            Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 69 });
+          }
         }
-      }, (item: ProfileContentItem, index: number): string =>
-        guardKey(this.sharedData.keyTableId, index, profileContentKey(item)));
-    }
-    .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 69 })
-    .width('calc(100% - 24vp)').margin({ left: 12, right: 12 })
-    .glassCard().clip(true)
-    .priorityGesture(
-      PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
-        .onActionEnd((event: GestureEvent): void => {
-          this.handleProfileTabPan(event.offsetX);
-        })
-    );
-    ListItem() {
-      this.sharedPaginationFooter();
-    }
-    .priorityGesture(
-      PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
-        .onActionEnd((event: GestureEvent): void => {
-          this.handleProfileTabPan(event.offsetX);
-        })
-    )
+        .width('100%');
+      }
+      .translate({ x: this.tabSlideX })
+      .opacity(this.tabSlideOpacity)
+      .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.handleProfileTabPanUpdate(event.offsetX);
+          })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleProfileTabPan(event.offsetX);
+          })
+          .onActionCancel((): void => {
+            this.resetProfileTabSlide();
+          })
+      );
+    }, (item: ProfileContentItem, index: number): string =>
+      guardKey(this.sharedData.keyTableId, index, profileContentKey(item)));
   }
 
   @Builder
@@ -1703,40 +1914,106 @@ export struct ProfilePage {
     });
   }
 
-  // 页签内容，全部是 List 的直接子项。左右滑切页签的手势挂在这些项上，不挂整个 List——
-  // 那会抢走页签条自己的横向滚动。
+  // 页签横条 + 页签内容合并为同一张玻璃大卡（ListItemGroup）。左右滑切页签的手势只挂在内容行上，
+  // 不挂在页签横条上，避免抢占横向 Scroll；滚到顶部后由浮层 tabsBar(true) 无缝接管吸顶。
   @Builder
-  profileTabItems() {
-    if (this.currentProfileTabKey() === PROFILE_TAB_STORIES) {
-      // 动态一般不多，整块留在一项里。
+  unifiedProfileTabSection() {
+    ListItemGroup() {
       ListItem() {
-        this.storiesGrid();
+        this.tabsBar(false);
       }
+      .opacity(this.tabsPinned ? 0 : 1);
+      if (this.currentProfileTabKey() === PROFILE_TAB_STORIES) {
+        ListItem() {
+          this.storiesGrid();
+        }
+        .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+          this.noteSharedRowWidth(Number(size.width));
+        })
+        .translate({ x: this.tabSlideX })
+        .opacity(this.tabSlideOpacity)
+        .priorityGesture(
+          PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+            .onActionUpdate((event: GestureEvent): void => {
+              this.handleProfileTabPanUpdate(event.offsetX);
+            })
+            .onActionEnd((event: GestureEvent): void => {
+              this.handleProfileTabPan(event.offsetX);
+            })
+            .onActionCancel((): void => {
+              this.resetProfileTabSlide();
+            })
+        )
+      } else if (this.currentProfileTabKey() === PROFILE_TAB_RECEIVED_GIFTS) {
+        this.giftsBodyItems();
+      } else if (this.currentProfileTabKey() === PROFILE_TAB_GROUPS) {
+        this.groupsBodyItems();
+      } else if (this.sharedState === 'loading' || this.sharedState === 'idle' ||
+        this.sharedState === 'error' || this.sharedItems.length === 0) {
+        ListItem() {
+          this.sharedPlaceholder();
+        }
+        .translate({ x: this.tabSlideX })
+        .opacity(this.tabSlideOpacity)
+        .priorityGesture(
+          PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+            .onActionUpdate((event: GestureEvent): void => {
+              this.handleProfileTabPanUpdate(event.offsetX);
+            })
+            .onActionEnd((event: GestureEvent): void => {
+              this.handleProfileTabPan(event.offsetX);
+            })
+            .onActionCancel((): void => {
+              this.resetProfileTabSlide();
+            })
+        )
+      } else if (this.currentProfileTabKey() === PROFILE_TAB_MEDIA ||
+        this.currentProfileTabKey() === PROFILE_TAB_GIFS) {
+        this.sharedMediaBodyItems();
+      } else {
+        this.sharedContentBodyItems();
+      }
+    }
+    .width(`calc(100% - ${this.pageMargin() * 2}vp)`)
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: GLASS_GAP })
+    .glassCard().clip(true);
+    if (this.isSharedProfileTab(this.currentProfileTabKey()) && this.sharedItems.length > 0) {
+      ListItem() {
+        this.sharedPaginationFooter();
+      }
+      .translate({ x: this.tabSlideX })
+      .opacity(this.tabSlideOpacity)
       .priorityGesture(
         PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.handleProfileTabPanUpdate(event.offsetX);
+          })
           .onActionEnd((event: GestureEvent): void => {
             this.handleProfileTabPan(event.offsetX);
           })
+          .onActionCancel((): void => {
+            this.resetProfileTabSlide();
+          })
       )
-    } else if (this.currentProfileTabKey() === PROFILE_TAB_RECEIVED_GIFTS) {
-      this.giftsItems();
-    } else if (this.currentProfileTabKey() === PROFILE_TAB_GROUPS) {
-      this.groupsItems();
-    } else if (this.sharedState === 'loading' || this.sharedState === 'idle' ||
-      this.sharedState === 'error' || this.sharedItems.length === 0) {
+    }
+    if (this.pinnedTailSpacerH() > 0) {
       ListItem() {
-        this.sharedPlaceholder();
+        Column().width('100%').height(this.pinnedTailSpacerH());
       }
+      .translate({ x: this.tabSlideX })
+      .opacity(this.tabSlideOpacity)
       .priorityGesture(
         PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.handleProfileTabPanUpdate(event.offsetX);
+          })
           .onActionEnd((event: GestureEvent): void => {
             this.handleProfileTabPan(event.offsetX);
           })
+          .onActionCancel((): void => {
+            this.resetProfileTabSlide();
+          })
       )
-    } else if (this.currentProfileTabKey() === PROFILE_TAB_MEDIA) {
-      this.sharedMediaItems();
-    } else {
-      this.sharedContentItems();
     }
   }
 
@@ -1843,8 +2120,9 @@ export struct ProfilePage {
       // 壁纸在最底，其余内容画在它之上。分栏下 AppBackdrop 自己什么都不画
       // （见 util/localWallpaper.appWallpaperActive），与主界面同一条规则。
       AppBackdrop({ split: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) });
-      // 整页是一个 List（原来是 Scroll > Column）：资料部分在第一项、页签条一项，页签内容按行放进
-      // List——共同群组、礼物、共享内容/媒体都走 LazyForEach（见 profileTabItems）。
+      // 整页是一个 List（原来是 Scroll > Column）：资料部分在第一项、页签条与页签内容合并进
+      // 同一个 ListItemGroup。外层 Column 仅在吸顶态裁剪 List 顶边，避免列表内容穿过吸顶栏。
+      Column() {
       List({ scroller: this.pageScroller }) {
         ListItem() {
           Column() {
@@ -1859,16 +2137,17 @@ export struct ProfilePage {
               this.infoCard();
             }
           }
-          .width('100%');
+          .width('100%')
+          .onAreaChange((_old: Area, area: Area): void => {
+            const h: number = Number(area.height);
+            if (h > 0 && Math.abs(h - this.profileHeadH) > 0.5) {
+              this.profileHeadH = h;
+              this.updateTabsPinned(this.pageScroller.currentOffset().yOffset);
+            }
+          });
         }
         if (this.profileContentReady && this.visibleProfileTabs().length > 0) {
-          ListItem() {
-            Column() {
-              this.tabsBar();
-            }
-            .width('100%');
-          }
-          this.profileTabItems();
+          this.unifiedProfileTabSection();
         }
       }
       .width('100%').height('100%')
@@ -1878,6 +2157,8 @@ export struct ProfilePage {
       // 下拉放大头像：越界回弹 + 逐帧回调（与「我的资料」同一套判定）。
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .onAreaChange((_o: Area, n: Area): void => {
+        const h: number = n.height as number;
+        if (h > 0 && Math.abs(h - this.listViewH) > 0.5) { this.listViewH = h; }
         const w: number = n.width as number;
         if (w > 0 && Math.abs(w - this.avatarAvailW) > 0.5) { this.avatarAvailW = w; }
       })
@@ -1892,6 +2173,35 @@ export struct ProfilePage {
         }
       })
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+      }
+      .width('100%').height('100%')
+      .clipShape(this.tabsPinned && this.listViewH > 0
+        ? new RectShape({
+          width: '100%',
+          height: Math.max(100, this.listViewH - this.pinnedClipTopY())
+        }).position({ x: 0, y: this.pinnedClipTopY() })
+        : undefined)
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+
+      if (this.tabsPinned) {
+        Column() {
+          this.tabsBar(true);
+        }
+        .width(`calc(100% - ${this.pageMargin() * 2}vp)`)
+        .margin({
+          left: this.pageMargin(),
+          right: this.pageMargin(),
+          top: this.topSafe + 58
+        })
+        .backgroundColor(this.profileGlassFill())
+        .borderRadius({ topLeft: GLASS_RADIUS_CARD, topRight: GLASS_RADIUS_CARD, bottomLeft: 0, bottomRight: 0 })
+        .border({
+          width: { top: 0.7, left: 0.7, right: 0.7, bottom: 0 },
+          color: $r('app.color.divider')
+        })
+        .clip(true)
+        .zIndex(8);
+      }
 
       if (this.viewerAvatarPath !== '') {
         AvatarViewer({

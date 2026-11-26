@@ -126,6 +126,13 @@ function computeLinkPreviewPresentation(url: string, previewType: string,
       isTelegram: false, actionable: true
     };
   }
+  if (previewType === 'linkPreviewTypeBotInvite') {
+    return {
+      kind: 'telegramChat', actionLabel: str('tglink_kind_bot_invite'),
+      siteLabel: explicitSite !== '' ? explicitSite : 'Telegram',
+      isTelegram: true, actionable: true
+    };
+  }
   if (chatFolderInviteLinkOf(raw) !== '') {
     return {
       kind: 'telegramResource', actionLabel: str('link_preview_open_folder'),

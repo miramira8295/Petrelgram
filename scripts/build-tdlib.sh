@@ -18,7 +18,7 @@ DEST_LIB_DIR="$PROJECT_ROOT/entry/libs/arm64-v8a"
 # Pin versions this script was validated against
 # (must match tdlib-ohos-build/download/deps-version.sh)
 PIN_OPENSSL="OpenSSL_1_1_1w"
-PIN_TDLIB="a17f87c4cff7b90b278d12b91ba0614383aaee82"   # TDLib 1.8.65
+PIN_TDLIB="1b9efe84d6e9a2e2f6eadeeea32b0726d2b8c25d"   # TDLib 1.8.71
 
 # Overridable workspace locations (kept outside the repo on purpose: these
 # hold multi-GB source/build trees that should never be committed).
@@ -219,10 +219,11 @@ log "Pre-generating TDLib sources on the host toolchain (FIX #5) ..."
 # is TDLib's officially supported way to pre-generate these for a
 # cross-compiling build; the output is written into the source tree under
 # td/generate/auto/td/telegram/ where the cross build picks it up.
+rm -rf "$WORK_DIR/td/native-build"
 mkdir -p "$WORK_DIR/td/native-build"
 (
   cd "$WORK_DIR/td/native-build"
-  cmake -GNinja -DTD_GENERATE_SOURCE_FILES=ON ..
+  cmake -GNinja -DTD_GENERATE_SOURCE_FILES=ON -DPHP_EXECUTABLE=PHP_EXECUTABLE-NOTFOUND ..
   ninja prepare_cross_compiling
 )
 

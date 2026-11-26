@@ -85,6 +85,11 @@ export const SERVICE_LABEL_KEYS: Record<string, string> = {
   'messageDirectMessagePriceChanged': 'service_direct_message_price_changed',
   'messagePaidMessagePriceChanged': 'service_paid_message_price_changed',
   'messagePaidMessagesRefunded': 'service_paid_messages_refunded',
+  'messageBotInvite': 'service_bot_invite',
+  'messageChatAddedToCommunity': 'service_chat_added_to_community',
+  'messageChatJoinFromCommunity': 'service_chat_join_from_community',
+  'messageChatRemovedFromCommunity': 'service_chat_removed_from_community',
+  'messageUnpaidMessagesAllowedByLink': 'service_unpaid_messages_allowed',
   'messageCustomServiceAction': 'service_custom_service_action',
   'messageCall': 'service_call'
 };
@@ -114,7 +119,8 @@ const defaultLabel: LabelResolver = (key: string, arg?: string | number): string
 
 // 预览路径会用到哪些 key：worker 启动时按这份清单同步译文。
 export const PREVIEW_LABEL_KEYS: string[] = [
-  'checklist_title', 'preview_rich_message', 'preview_photo', 'preview_video', 'preview_voice', 'preview_file', 'preview_sticker',
+  'checklist_title', 'preview_rich_message', 'preview_widget', 'preview_ton_transfer', 'preview_ton_connect', 'preview_gift_offer',
+  'preview_photo', 'preview_video', 'preview_voice', 'preview_file', 'preview_sticker',
   'preview_sticker_emoji', 'preview_music', 'preview_location', 'preview_live_location',
   'preview_venue', 'preview_contact', 'preview_poll', 'preview_poll_question',
   'preview_video_note', 'preview_call', 'preview_photo_expired', 'preview_video_expired',
@@ -243,7 +249,7 @@ export function formatPreview(message: TdObject | null, label: LabelResolver = d
     const stars = Math.max(0, (content['star_count'] as number | undefined) ?? 0);
     return stars > 0 ? label('preview_gift_stars_n', stars) : label('preview_gift_stars');
   }
-  if (type === 'messageGiftedTon') {
+  if (type === 'messageGiftedGrams' || type === 'messageGiftedTon') {
     return label('preview_gift_ton');
   }
   if (type === 'messageGiftedPremium') {
@@ -261,6 +267,22 @@ export function formatPreview(message: TdObject | null, label: LabelResolver = d
     const gift = content['gift'] as TdObject | undefined;
     const title = gift !== undefined ? ((gift['title'] as string | undefined) ?? '') : '';
     return title !== '' ? label('preview_gift_titled', title) : label('preview_gift_collectible');
+  }
+  if (type === 'messageUpgradedGiftOnChainPurchaseOffer') {
+    const gift = content['gift'] as TdObject | undefined;
+    const title = gift !== undefined ? ((gift['title'] as string | undefined) ?? '') : '';
+    return title !== '' ? label('preview_gift_titled', title) : label('preview_gift_offer');
+  }
+  if (type === 'messageWidget') {
+    const cap = embeddedText(content);
+    return cap !== '' ? cap.replace(/\n+/g, ' ') : label('preview_widget');
+  }
+  if (type === 'messageTonWalletTransfer') {
+    return label('preview_ton_transfer');
+  }
+  if (type === 'messageTonConnectRequest') {
+    const dapp = ((content['dapp_name'] as string | undefined) ?? '').trim();
+    return dapp !== '' ? `${label('preview_ton_connect')}: ${dapp}` : label('preview_ton_connect');
   }
   if (type === 'messageGiveaway') {
     return label('preview_giveaway');

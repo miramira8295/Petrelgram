@@ -24,6 +24,7 @@ export interface AdminRights {
   deleteStories: boolean;
   manageDirectMessages: boolean;
   manageTags: boolean;
+  sendWelcomeMessages: boolean;
   isAnonymous: boolean;
 }
 
@@ -53,7 +54,7 @@ export function allAdminRights(value: boolean): AdminRights {
     restrictMembers: value, pinMessages: value, manageTopics: value,
     promoteMembers: value, manageVideoChats: value, postStories: value,
     editStories: value, deleteStories: value, manageDirectMessages: value,
-    manageTags: value,
+    manageTags: value, sendWelcomeMessages: value,
     isAnonymous: value
   };
 }
@@ -66,7 +67,7 @@ export function defaultAdminRights(): AdminRights {
     restrictMembers: true, pinMessages: true, manageTopics: false,
     promoteMembers: false, manageVideoChats: true, postStories: false,
     editStories: false, deleteStories: false, manageDirectMessages: false,
-    manageTags: false,
+    manageTags: false, sendWelcomeMessages: false,
     isAnonymous: false
   };
 }
@@ -93,6 +94,7 @@ export function adminRightsFromTd(raw: TdObject | undefined): AdminRights {
     deleteStories: flag('can_delete_stories'),
     manageDirectMessages: flag('can_manage_direct_messages'),
     manageTags: flag('can_manage_tags'),
+    sendWelcomeMessages: flag('can_send_welcome_messages'),
     isAnonymous: flag('is_anonymous')
   };
 }
@@ -117,6 +119,7 @@ export function adminRightsToTd(r: AdminRights): TdObject {
   out['can_delete_stories'] = r.deleteStories;
   out['can_manage_direct_messages'] = r.manageDirectMessages;
   out['can_manage_tags'] = r.manageTags;
+  out['can_send_welcome_messages'] = r.sendWelcomeMessages;
   out['is_anonymous'] = r.isAnonymous;
   return out;
 }
@@ -168,6 +171,7 @@ export function withAdminRight(r: AdminRights, key: string, value: boolean): Adm
     deleteStories: key === RIGHT_DELETE_STORIES ? value : r.deleteStories,
     manageDirectMessages: r.manageDirectMessages,
     manageTags: r.manageTags,
+    sendWelcomeMessages: r.sendWelcomeMessages,
     isAnonymous: key === RIGHT_IS_ANONYMOUS ? value : r.isAnonymous
   };
 }
@@ -176,7 +180,7 @@ export function anyAdminRight(r: AdminRights): boolean {
   return r.changeInfo || r.postMessages || r.editMessages || r.deleteMessages ||
     r.inviteUsers || r.restrictMembers || r.pinMessages || r.manageTopics ||
     r.promoteMembers || r.manageVideoChats || r.postStories || r.editStories ||
-    r.deleteStories || r.manageDirectMessages || r.manageTags || r.isAnonymous;
+    r.deleteStories || r.manageDirectMessages || r.manageTags || r.sendWelcomeMessages || r.isAnonymous;
 }
 
 // 「管理动态 3/3」左边那个数。
@@ -210,6 +214,7 @@ export function limitAdminRights(desired: AdminRights, allowed: AdminRights): Ad
     deleteStories: desired.deleteStories && allowed.deleteStories,
     manageDirectMessages: desired.manageDirectMessages && allowed.manageDirectMessages,
     manageTags: desired.manageTags && allowed.manageTags,
+    sendWelcomeMessages: desired.sendWelcomeMessages && allowed.sendWelcomeMessages,
     isAnonymous: desired.isAnonymous && allowed.isAnonymous
   };
 }

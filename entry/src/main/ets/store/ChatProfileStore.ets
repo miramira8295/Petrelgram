@@ -102,13 +102,24 @@ function formattedText(value: TdObject | undefined): string {
 
 function isGiftMessage(type: string): boolean {
   return type === 'messageGiftedPremium' || type === 'messageGiftedStars' ||
-    type === 'messageGiftedTon' || type === 'messagePremiumGiftCode' ||
-    type === 'messageGift' || type === 'messageUpgradedGift';
+    type === 'messageGiftedGrams' || type === 'messageGiftedTon' ||
+    type === 'messagePremiumGiftCode' || type === 'messageGift' ||
+    type === 'messageUpgradedGift';
+}
+
+interface TabContentSnapshot {
+  items: ProfileContentItem[];
+  hasMore: boolean;
+  totalCount: number;
+  nextMessageId: number;
+  query: string;
+  mediaKind: string;
 }
 
 // Data assembly for the group/channel detail page (ChatProfilePage) — mirrors
 // ProfileStore's subscribe/notify + download patterns.
 export class ChatProfileStore {
+  private tabCache: Map<string, TabContentSnapshot> = new Map<string, TabContentSnapshot>();
   loadState: string = 'loading'; // loading | ready | error
   errorText: string = '';
   title: string = '';
@@ -252,6 +263,7 @@ export class ChatProfileStore {
       this.notifyBatchTimer = -1;
     }
     this.membersDirty = false;
+    this.tabCache.clear();
     for (const un of this.unsubs) {
       un();
     }
@@ -361,6 +373,38 @@ export class ChatProfileStore {
     this.tabAvailability.clear();
     this.rebuildAvailableTabs();
     this.notify();
+    // TDLib 1.8.71+: 一次 getChatMessageCounts 批量拿所有内容页签计数，省掉 8 次串/并发往返。
+    // 失败时（如旧测试桩）自动回退逐项 getChatMessageCount。
+    const batchReq: TdRequest = { '@type': 'getChatMessageCounts' };
+    batchReq['chat_id'] = this.chatId;
+    batchReq['filters'] = tabs.map((tab: string): TdObject => ({ '@type': this.contentFilter(tab) } as TdObject));
+    batchReq['return_local'] = false;
+    this.client.send(batchReq).then((res: TdObject): void => {
+      if (seq !== this.tabProbeSeq) {
+        return;
+      }
+      const counts = (res['counts'] as number[] | undefined) ?? [];
+      if (counts.length >= tabs.length) {
+        for (let i: number = 0; i < tabs.length; i++) {
+          this.tabAvailability.set(tabs[i], (counts[i] ?? 0) > 0);
+        }
+        this.tabProbePending = 0;
+        this.tabsState = 'ready';
+        this.rebuildAvailableTabs();
+        this.notify();
+        return;
+      }
+      this.probeContentTabsIndividually(tabs, seq);
+    }).catch((): void => {
+      if (seq !== this.tabProbeSeq) {
+        return;
+      }
+      this.probeContentTabsIndividually(tabs, seq);
+    });
+    this.probeGiftPage(seq, 0, 0);
+  }
+
+  private probeContentTabsIndividually(tabs: string[], seq: number): void {
     for (const tab of tabs) {
       const req: TdRequest = { '@type': 'getChatMessageCount' };
       req['chat_id'] = this.chatId;
@@ -382,7 +426,6 @@ export class ChatProfileStore {
         this.finishTabProbe(tab, false);
       });
     }
-    this.probeGiftPage(seq, 0, 0);
   }
 
   private finishTabProbe(tab: string, available: boolean): void {
@@ -448,20 +491,45 @@ export class ChatProfileStore {
       (tab === PROFILE_TAB_MEMBERS || this.contentState !== 'idle')) {
       return;
     }
+    if (this.contentTab !== PROFILE_TAB_MEMBERS && this.contentState === 'ready') {
+      this.tabCache.set(this.contentTab, {
+        items: this.contentItems,
+        hasMore: this.contentHasMore,
+        totalCount: this.contentTotalCount,
+        nextMessageId: this.contentNextMessageId,
+        query: this.contentQuery,
+        mediaKind: this.mediaKind
+      });
+    }
     this.contentSeq++;
     this.contentTab = tab;
-    this.contentItems = [];
     this.contentErrorText = '';
-    this.contentHasMore = false;
     this.contentPaging = false;
     this.contentPagingError = false;
-    this.contentTotalCount = 0;
-    this.contentNextMessageId = 0;
     if (tab === PROFILE_TAB_MEMBERS) {
+      this.contentItems = [];
+      this.contentHasMore = false;
+      this.contentTotalCount = 0;
+      this.contentNextMessageId = 0;
       this.contentState = 'idle';
       this.notify();
       return;
     }
+    const cached: TabContentSnapshot | undefined = this.tabCache.get(tab);
+    if (cached !== undefined && cached.query === this.contentQuery &&
+      (tab !== PROFILE_TAB_MEDIA || cached.mediaKind === this.mediaKind)) {
+      this.contentItems = cached.items;
+      this.contentHasMore = cached.hasMore;
+      this.contentTotalCount = cached.totalCount;
+      this.contentNextMessageId = cached.nextMessageId;
+      this.contentState = 'ready';
+      this.notify();
+      return;
+    }
+    this.contentItems = [];
+    this.contentHasMore = false;
+    this.contentTotalCount = 0;
+    this.contentNextMessageId = 0;
     this.contentState = 'loading';
     this.notify();
     this.fetchContentPage(0, true, 0);
@@ -481,6 +549,7 @@ export class ChatProfileStore {
     if (this.contentTab !== PROFILE_TAB_MEDIA) {
       return;
     }
+    this.tabCache.delete(PROFILE_TAB_MEDIA);
     this.contentSeq++;
     this.contentItems = [];
     this.contentState = 'loading';
@@ -501,6 +570,7 @@ export class ChatProfileStore {
       return;
     }
     this.contentQuery = next;
+    this.tabCache.clear();
     if (this.contentTab === PROFILE_TAB_MEMBERS) {
       return;
     }
@@ -545,6 +615,7 @@ export class ChatProfileStore {
     if (this.contentTab === PROFILE_TAB_MEMBERS || this.contentState === 'loading') {
       return;
     }
+    this.tabCache.delete(this.contentTab);
     this.contentSeq++;
     this.contentItems = [];
     this.contentState = 'loading';

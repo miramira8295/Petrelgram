@@ -47,7 +47,7 @@ export struct BubbleInlineKeyboard {
     return (): void => {
       const current = this.msg.inlineButtons[row]?.[column];
       if (!this.active || generation !== this.generation || this.context.gestureClaimed || current === undefined ||
-        inlineButtonKey(row, column, current) !== key) { return; }
+        current.disabled === true || inlineButtonKey(row, column, current) !== key) { return; }
       if ((current.webAppUrl ?? '') !== '') { this.actions.onMiniApp(this.msg.id, current.webAppUrl!); }
       else if (current.url !== '') { this.actions.onLinkTap(current.url, true); }
       else if (current.callbackData !== '') { this.actions.onBotCallback(this.msg.id, current.callbackData); }
@@ -69,6 +69,8 @@ export struct BubbleInlineKeyboard {
                 .layoutWeight(1).height(36)
                 .backgroundColor(botButtonBg(btn.style, '#4d000000'))
                 .borderRadius(8)
+                .opacity(btn.disabled === true ? 0.55 : 1)
+                .enabled(btn.disabled !== true)
                 .stateStyles({ normal: contentButtonNormal, pressed: contentButtonPressed })
                 .animation({ duration: this.effectDuration(100), curve: Curve.EaseOut })
                 .onClick(this.clickCallback(btn, rowIdx, btnIdx));

@@ -5,7 +5,7 @@
 // 一个还没有代理的账号时补回去。
 //
 // 镜像里有服务器地址和凭据，**只落本机 Preferences，任何日志都不许打**。
-import { ProxyEntry, PROXY_SOCKS5 } from '../store/ProxyApi';
+import { ProxyEntry, PROXY_SOCKS5, PROXY_WEB } from '../store/ProxyApi';
 
 export const KEY_PROXY_MIRROR: string = 'proxyMirror';
 // 不参与同步的代理（按 proxyKeyOf 记）。存"排除表"而不是"允许表"：默认同步，
@@ -19,6 +19,7 @@ interface MirrorRow {
   username: string;
   password: string;
   secret: string;
+  path?: string;
   httpOnly: boolean;
 }
 
@@ -26,13 +27,16 @@ function rowOf(entry: ProxyEntry): MirrorRow {
   return {
     server: entry.server, port: entry.port, type: entry.type,
     username: entry.username, password: entry.password,
-    secret: entry.secret, httpOnly: entry.httpOnly
+    secret: entry.secret, path: entry.path ?? '', httpOnly: entry.httpOnly
   };
 }
 
 // 同一台服务器的同一端口同一协议算同一条：id 是 TDLib 给的，换账号就变了，
-// 不能拿来判重。
+// 不能拿来判重。WEB 代理允许同域名不同部署路径，键里把 path 带上。
 export function proxyKeyOf(entry: ProxyEntry): string {
+  if (entry.type === PROXY_WEB && (entry.path ?? '') !== '') {
+    return `${entry.type}|${entry.server}|${entry.port}|${entry.path ?? ''}`;
+  }
   return `${entry.type}|${entry.server}|${entry.port}`;
 }
 
@@ -70,6 +74,7 @@ export function parseProxyMirror(raw: string): ProxyEntry[] {
         username: (r.username ?? '').toString(),
         password: (r.password ?? '').toString(),
         secret: (r.secret ?? '').toString(),
+        path: (r.path ?? '').toString(),
         httpOnly: r.httpOnly === true,
         lastUsedDate: 0, isEnabled: false
       });

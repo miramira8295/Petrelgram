@@ -179,6 +179,31 @@ export function richSpansOf(node: TdObject | undefined, url: string = '', intern
     } else if (type === 'richTextBankCardNumber') {
       const card = (current['bank_card_number'] as string | undefined) ?? '';
       if (card !== '') { target = `tg-copy:${card}`; }
+    } else if (type === 'richTextTonAddress') {
+      const addr = (current['address'] as string | undefined) ?? '';
+      if (addr !== '') { target = `tg-copy:${addr}`; }
+    } else if (type === 'richTextButton') {
+      const btn = current['button'] as TdObject | undefined;
+      const btnType = btn?.['type'] as TdObject | undefined;
+      const btnUrl = btnType?.['@type'] === 'inlineKeyboardButtonTypeUrl'
+        ? ((btnType['url'] as string | undefined) ?? '') : '';
+      const rawText = btn?.['text'];
+      if (typeof rawText === 'string' && rawText !== '') {
+        const leaf = styled(frame.style, 'richTextBold', btnUrl);
+        leaf.text = rawText;
+        out.push(leaf);
+        continue;
+      }
+      if (rawText !== undefined && typeof rawText === 'object') {
+        pending.push({ node: rawText as TdObject, style: styled(frame.style, 'richTextBold', btnUrl) });
+        continue;
+      }
+    } else if (type === 'richTextDiff') {
+      const removed = current['is_removed'] === true;
+      const diffStyle = styled(frame.style, removed ? 'richTextStrikethrough' : 'richTextMarked', '');
+      const diffChild = current['text'] as TdObject | undefined;
+      if (diffChild !== undefined) { pending.push({ node: diffChild, style: diffStyle }); }
+      continue;
     }
     const child = current['text'] as TdObject | undefined;
     if (child !== undefined) { pending.push({ node: child, style: styled(frame.style, type, target) }); }
@@ -258,12 +283,16 @@ function parseOne(node: TdObject): RichBlock[] {
     return [block(RB_MATH, 0, [mathSpan], [], false, '')];
   }
 
-  if (type === 'pageBlockBlockQuote' || type === 'pageBlockPullQuote') {
+  if (type === 'pageBlockBlockQuote' || type === 'pageBlockExpandableBlockQuote' || type === 'pageBlockPullQuote') {
     const inner = (node['blocks'] as TdObject[] | undefined) ?? [];
     const children: RichBlock[] = inner.length > 0
       ? parseBlocks(inner)
       : parseTextOnly(node);
     return children.length > 0 ? [block(RB_QUOTE, 0, [], children, false, '')] : [];
+  }
+
+  if (type === 'pageBlockUnsupported') {
+    return [];
   }
 
   if (type === 'pageBlockPreformatted') {

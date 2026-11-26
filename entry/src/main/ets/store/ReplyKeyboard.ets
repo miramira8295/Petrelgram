@@ -30,6 +30,9 @@ export function buttonStyleOf(btn: TdObject): string {
   if (t === 'buttonStyleDanger') {
     return 'danger';
   }
+  if (t === 'buttonStyleLink') {
+    return 'link';
+  }
   return '';
 }
 
@@ -40,6 +43,7 @@ export interface ReplyKeyboard {
   oneTime: boolean;   // hide the keyboard again after one button is tapped
   resize: boolean;
   placeholder: string;
+  forceReply?: boolean;
 }
 
 // A message's reply_markup as a reply keyboard, or null when the message
@@ -82,6 +86,7 @@ export function parseReplyKeyboard(msg: TdObject): ReplyKeyboard | null {
     isPersistent: (markup['is_persistent'] as boolean | undefined) ?? false,
     oneTime: (markup['one_time'] as boolean | undefined) ?? false,
     resize: (markup['resize_keyboard'] as boolean | undefined) ?? false,
-    placeholder: (markup['input_field_placeholder'] as string | undefined) ?? ''
+    placeholder: (markup['input_field_placeholder'] as string | undefined) ?? '',
+    forceReply: (markup['force_reply'] as boolean | undefined) ?? false
   };
 }

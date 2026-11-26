@@ -44,6 +44,11 @@ export function actionBarButtons(kind: string, canUnarchive: boolean): ActionBar
     body = [button(ACTION_ADD_CONTACT, 'ct_add_contact', false)];
   } else if (kind === 'chatActionBarSharePhoneNumber') {
     body = [button(ACTION_SHARE_PHONE, 'ab_share_phone', false)];
+  } else if (kind === 'chatActionBarBotInvite') {
+    body = [
+      button(ACTION_REPORT, 'ab_report_spam', true),
+      button(ACTION_BLOCK, 'ab_block', true)
+    ];
   }
   if (body.length === 0) {
     return out;

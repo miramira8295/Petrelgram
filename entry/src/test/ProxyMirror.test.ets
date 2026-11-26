@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { ProxyEntry, PROXY_MTPROTO, PROXY_SOCKS5 } from '../main/ets/store/ProxyApi';
+import { ProxyEntry, PROXY_MTPROTO, PROXY_SOCKS5, PROXY_WEB } from '../main/ets/store/ProxyApi';
 import {
   missingFromAccount, parseProxyMirror, parseSyncOff, proxyKeyOf, serializeProxyMirror,
   serializeSyncOff, syncEnabledFor, syncableOf, toggledSyncOff
@@ -91,6 +91,23 @@ export default function proxyMirrorTest() {
       const missing: ProxyEntry[] = missingFromAccount(mirrorAfter, []);
       expect(missing.length).assertEqual(1);
       expect(missing[0].server).assertEqual('a.test');
+    });
+
+    it('WEB 代理镜像保留 path 且按 path 区分键', 0, (): void => {
+      const a: ProxyEntry = {
+        id: 1, server: 'relay.test', port: 443, type: PROXY_WEB, username: '', password: '',
+        secret: 'dd0123456789abcdef0123456789abcdef', path: 'a', httpOnly: false, lastUsedDate: 0, isEnabled: true
+      };
+      const b: ProxyEntry = {
+        id: 2, server: 'relay.test', port: 443, type: PROXY_WEB, username: '', password: '',
+        secret: 'dd0123456789abcdef0123456789abcdef', path: 'b', httpOnly: false, lastUsedDate: 0, isEnabled: false
+      };
+      expect(proxyKeyOf(a) === proxyKeyOf(b)).assertFalse();
+      const back = parseProxyMirror(serializeProxyMirror([a, b]));
+      expect(back.length).assertEqual(2);
+      expect(back[0].type).assertEqual(PROXY_WEB);
+      expect(back[0].path ?? '').assertEqual('a');
+      expect(back[1].path ?? '').assertEqual('b');
     });
 
   });

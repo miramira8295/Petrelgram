@@ -49,7 +49,7 @@ import {
 import { str } from '../util/strings';
 import { logE, logI, logW } from '../util/log';
 import { proxyAutoSwitchService } from '../services/ProxyAutoSwitchService';
-import { webProxyService } from '../services/WebProxyService';
+import { attachWebProxyCarrier, detachWebProxyCarrier } from '../services/WebProxyHost';
 
 let client: TdClient | undefined = undefined;
 let auth: AuthService | undefined = undefined;
@@ -255,12 +255,12 @@ function createRuntime(slotId: string): void {
       applyDesiredOnlineState(runtimeClient);
       refreshActiveAccountSummary(runtimeClient);
       proxyAutoSwitchService.runtimeReady(runtimeClient);
-      webProxyService.bootstrap();
     } else if (client === runtimeClient && auth === runtimeAuth && stage !== AuthStage.Init) {
       runtimeReady = false;
     }
   });
   try {
+    attachWebProxyCarrier(client);
     client.start();
     attachTdLanguage(client);
   } catch (caught) {
@@ -268,6 +268,7 @@ function createRuntime(slotId: string): void {
     // A native receiver-thread allocation failure is reported as an ArkTS
     // exception. Tear down the half-built runtime so account switching can
     // retry or restore the previous slot instead of retaining unusable stores.
+    detachWebProxyCarrier(client);
     detachTdLanguage();
     notifications?.close();
     notifications = undefined;
@@ -429,12 +430,12 @@ async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
   const currentClient = client;
   const currentReady = runtimeReady;
   runtimeReady = false;
-  webProxyService.suspend();
   files?.close();
   // 通话中切账号/退登：必须真正 stop 原生媒体（麦克风/摄像头）并解绑 callId。
   callSession?.close();
   callSession = undefined;
   if (currentClient !== undefined) {
+    detachWebProxyCarrier(currentClient);
     proxyAutoSwitchService.detach(currentClient);
     detachProxyMigration(currentClient);
     detachRecentChatHistory(currentClient);

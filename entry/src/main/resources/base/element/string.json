@@ -5313,6 +5313,58 @@
       "value": "删除后需要重新填写域名与 Secret。"
     },
     {
+      "name": "px_web_secret_hint",
+      "value": "dd… 或 16 字节 hex"
+    },
+    {
+      "name": "px_web_err_secret_empty",
+      "value": "Secret 不能为空"
+    },
+    {
+      "name": "px_web_err_secret_ee",
+      "value": "ee 开头的 Secret 只用于 fake-TLS，WEB 代理不支持"
+    },
+    {
+      "name": "px_web_err_secret_format",
+      "value": "Secret 不是合法的 hex 或 base64url"
+    },
+    {
+      "name": "px_web_err_secret_len",
+      "value": "Secret 必须是 16 字节（或 dd + 16 字节）"
+    },
+    {
+      "name": "px_web_err_path_len",
+      "value": "部署路径不能超过 128 个字符"
+    },
+    {
+      "name": "px_web_err_path_empty_seg",
+      "value": "部署路径里不能有空段（不能出现 //）"
+    },
+    {
+      "name": "px_web_err_path_chars",
+      "value": "部署路径只能用字母、数字、下划线和连字符"
+    },
+    {
+      "name": "px_web_err_path_start",
+      "value": "部署路径的每一段都要以字母或数字开头"
+    },
+    {
+      "name": "px_web_err_host_empty",
+      "value": "代理域名不能为空"
+    },
+    {
+      "name": "px_web_err_host_space",
+      "value": "代理域名里不能有空格"
+    },
+    {
+      "name": "px_web_err_host_query",
+      "value": "代理域名里不能带查询串或片段"
+    },
+    {
+      "name": "px_web_err_host_is_secret",
+      "value": "这里要填代理域名（如 proxy.example.com），密钥请填到下面的密钥框"
+    },
+    {
       "name": "px_refresh",
       "value": "刷新代理状态"
     },
@@ -13739,6 +13791,86 @@
     {
       "name": "mv_forward_video_only",
       "value": "仅视频"
+    },
+    {
+      "name": "preview_widget",
+      "value": "小组件"
+    },
+    {
+      "name": "preview_ton_transfer",
+      "value": "TON 转账"
+    },
+    {
+      "name": "preview_ton_connect",
+      "value": "TON Connect"
+    },
+    {
+      "name": "preview_gift_offer",
+      "value": "礼物出价"
+    },
+    {
+      "name": "service_bot_invite",
+      "value": "已邀请使用此机器人"
+    },
+    {
+      "name": "service_chat_added_to_community",
+      "value": "已添加到社区"
+    },
+    {
+      "name": "service_chat_join_from_community",
+      "value": "通过社区加入了群组"
+    },
+    {
+      "name": "service_chat_removed_from_community",
+      "value": "已移出社区"
+    },
+    {
+      "name": "service_unpaid_messages_allowed",
+      "value": "已通过链接免除消息费用"
+    },
+    {
+      "name": "ton_transfer_encrypted_comment",
+      "value": "加密备注"
+    },
+    {
+      "name": "ton_connect_pending",
+      "value": "待确认"
+    },
+    {
+      "name": "ton_connect_accepted",
+      "value": "已连接"
+    },
+    {
+      "name": "ton_connect_rejected",
+      "value": "已拒绝"
+    },
+    {
+      "name": "gift_offer_pending",
+      "value": "出价待确认"
+    },
+    {
+      "name": "gift_offer_accepted",
+      "value": "出价已接受"
+    },
+    {
+      "name": "gift_offer_declined",
+      "value": "出价已拒绝"
+    },
+    {
+      "name": "gift_offer_canceled",
+      "value": "出价已取消"
+    },
+    {
+      "name": "gift_offer_expired",
+      "value": "出价已过期"
+    },
+    {
+      "name": "gift_offer_settled",
+      "value": "交易已完成"
+    },
+    {
+      "name": "tglink_kind_bot_invite",
+      "value": "机器人邀请"
     }
   ]
 }

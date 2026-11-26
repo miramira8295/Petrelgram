@@ -5,6 +5,7 @@ import { DrawnDocumentWidget, drawnDocumentWidget } from '../../util/drawnDocume
 import { DrawnDocumentMedia, drawnDocumentMedia } from '../../util/drawnDocumentMedia';
 import { drawnPageButtonAction, drawnPageButtonStyle } from '../../util/drawnPageButton';
 import { TdObject } from '../../tdkit/TdTypes';
+import { str } from '../../util/strings';
 import { RichRun } from '../../util/richText';
 import { richSpansOf, RichSpan } from '../../util/richBlocks';
 import { DrawnRichBlock, DrawnRichSource, DrawnRichLink, DrawnRichTableCell, DrawnRichButton, buildDrawnRichSource } from '../../util/drawnRichTextPolicy';
@@ -291,7 +292,12 @@ export class DrawnStructuredSource {
       if (caption === null) { return false; }
       blocks.push({ source: { content: '', runs: [], links: tableLinks, targets: tableTargets,
         hasMath: rows.some((row: DrawnRichTableCell[]): boolean => row.some((cell: DrawnRichTableCell): boolean => cell.source.hasMath === true)),
-        table: { rows, bordered: node['is_bordered'] === true, striped: node['is_striped'] === true } },
+        table: {
+          rows,
+          bordered: node['is_bordered'] === true,
+          striped: node['is_striped'] === true,
+          compact: node['is_compact'] === true
+        } },
         title: caption, kind: 'table', offset, expandable: false, language: '' });
       return true;
     }
@@ -312,6 +318,15 @@ export class DrawnStructuredSource {
         : node['align_center'] === true ? 'center' : 'fill';
       blocks.push({ source: { content: '', runs: [], links: [], targets: new Set<string>() },
         kind: 'buttons', buttons, buttonAlign: align, offset, expandable: false, language: '' });
+      return true;
+    }
+    if (type === 'pageBlockUnsupported') {
+      const placeholder: TdObject = { '@type': 'richTextPlain' };
+      placeholder['text'] = str('mb_unsupported');
+      const source = this.inline(placeholder);
+      if (source !== null) {
+        blocks.push({ source, kind: 'text', fontSize: 13, offset, expandable: false, language: '' });
+      }
       return true;
     }
     if (type === 'pageBlockMathematicalExpression' || type === 'pageBlockMath') {

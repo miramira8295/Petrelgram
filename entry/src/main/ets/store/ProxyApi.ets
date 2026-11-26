@@ -8,6 +8,7 @@ import { stopWebBridge, syncWebBridgeFromTd } from '../services/WebProxyBridge';
 export const PROXY_SOCKS5: string = 'proxyTypeSocks5';
 export const PROXY_MTPROTO: string = 'proxyTypeMtproto';
 export const PROXY_HTTP: string = 'proxyTypeHttp';
+export const PROXY_WEB: string = 'proxyTypeWeb';
 
 export interface ProxyEntry {
   id: number;
@@ -17,6 +18,7 @@ export interface ProxyEntry {
   username: string;
   password: string;
   secret: string;
+  path?: string;
   httpOnly: boolean;
   lastUsedDate: number;
   isEnabled: boolean;
@@ -25,12 +27,16 @@ export interface ProxyEntry {
 export function proxyTypeLabel(type: string): string {
   if (type === PROXY_MTPROTO) { return 'MTProto'; }
   if (type === PROXY_HTTP) { return 'HTTP'; }
+  if (type === PROXY_WEB) { return 'WEB'; }
   return 'SOCKS5';
 }
 
 export function proxyObjectOf(entry: ProxyEntry): TdObject {
   const type: TdObject = { '@type': entry.type };
   if (entry.type === PROXY_MTPROTO) {
+    type['secret'] = entry.secret;
+  } else if (entry.type === PROXY_WEB) {
+    type['path'] = entry.path ?? '';
     type['secret'] = entry.secret;
   } else {
     type['username'] = entry.username;
@@ -43,7 +49,7 @@ export function proxyObjectOf(entry: ProxyEntry): TdObject {
   // TDLib 的 proxy.server 要**裸地址**。用户粘 IPv6 时常带方括号（从 URL 抄的
   // `[2001:db8::1]:443`），带着括号会被当主机名去做 DNS 然后解析失败（issue #133）。
   proxy['server'] = stripIpv6Brackets(entry.server);
-  proxy['port'] = entry.port;
+  proxy['port'] = entry.type === PROXY_WEB ? 443 : entry.port;
   proxy['type'] = type;
   return proxy;
 }
@@ -59,6 +65,7 @@ export function proxyEntryFromAddedObject(added: TdObject): ProxyEntry {
     username: (type['username'] as string | undefined) ?? '',
     password: (type['password'] as string | undefined) ?? '',
     secret: (type['secret'] as string | undefined) ?? '',
+    path: (type['path'] as string | undefined) ?? '',
     httpOnly: (type['http_only'] as boolean | undefined) ?? false,
     lastUsedDate: (added['last_used_date'] as number | undefined) ?? 0,
     isEnabled: (added['is_enabled'] as boolean | undefined) ?? false
@@ -118,13 +125,14 @@ export async function removeProxy(id: number): Promise<void> {
   await getTdClient().send(request, 20000);
 }
 
-// Computes Telegram round-trip time through a SAVED proxy. TDLib's pingProxy
-// takes proxy_id only — passing a proxy object is silently ignored and the
-// request degrades to a direct-connection ping. proxyId 0 measures the direct
-// connection on purpose.
-export async function pingProxy(proxyId: number): Promise<number> {
+// Computes Telegram round-trip time through a proxy. In our TDLib 1.8.65 build
+// `pingProxy` takes `proxy:proxy` (passing `proxy_id` is ignored as null/direct).
+// Pass null to measure the direct connection without a proxy.
+export async function pingProxy(entry: ProxyEntry | null): Promise<number> {
   const request: TdRequest = { '@type': 'pingProxy' };
-  request['proxy_id'] = proxyId;
+  if (entry !== null) {
+    request['proxy'] = proxyObjectOf(entry);
+  }
   const result = await getTdClient().send(request, 12000);
   const seconds = (result['seconds'] as number | undefined) ?? -1;
   if (!Number.isFinite(seconds) || seconds < 0) {

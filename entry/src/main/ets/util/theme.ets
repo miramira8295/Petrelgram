@@ -235,5 +235,8 @@ export function botButtonBg(style: string, fallback: ResourceColor): ResourceCol
   if (style === 'danger') {
     return '#FF3B30';
   }
+  if (style === 'link') {
+    return '#263390EC';
+  }
   return fallback;
 }

@@ -19,13 +19,12 @@ import {
   canExpandAvatar, avatarUsesCardLayout, avatarRatioOf, avatarWidthOf, avatarHeightOf,
   avatarRadiusOf, avatarRingOf, avatarOffsetYOf, avatarDecodeWidthOf, avatarDecodeHeightOf
 } from '../../util/avatarMorph';
-import { MemberSearchField } from './MemberSearchField';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, WIDTH_BP_MD, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
 import { ReportTarget, runReportFlow } from '../../util/reportFlow';
 import { reportFlowUiFor } from '../common/ReportPrompts';
-import { PromptAction, router, promptAction, curves } from '@kit.ArkUI';
+import { PromptAction, router, promptAction, curves, RectShape } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { banMember, deleteMessagesFromSender, removeMember, setMemberTag } from '../../store/ChatAdminApi';
 import {
@@ -256,8 +255,21 @@ export struct ChatProfilePage {
   // 250ms——每敲一个字就重拉一页会把 searchChatMessages 打满，也会让列表闪。
   @State private contentQuery: string = '';
   private contentQueryTimer: number = -1;
+  @State private memberQuery: string = '';
+  private memberQueryTimer: number = -1;
+  @State private tabSearchOpen: boolean = false;
+  @State private tabsPinned: boolean = false;
+  @State private pinnedHeaderH: number = DETAIL_TAB_BAR_HEIGHT;
+  @State private pinnedIndicatorX: number = 8;
+  @State private pinnedIndicatorW: number = 0;
+  @State private tabSlideX: number = 0;
+  @State private tabSlideOpacity: number = 1;
+  private profileHeadH: number = 0;
+  private pinLockUntil: number = 0;
+  private tabScrollRestoreTimer: number = -1;
   private unsub: (() => void) | null = null;
   private tabScroller: Scroller = new Scroller();
+  private pinnedTabScroller: Scroller = new Scroller();
   // 下拉放大头像：整页 List 的滚动器（越界值驱动形变）、形变进度与展开态。
   private pageScroller: Scroller = new Scroller();
   @State avatarPull: number = 0;
@@ -267,6 +279,9 @@ export struct ChatProfilePage {
   private detailTabXs: number[] = [];
   private detailTabWs: number[] = [];
   private detailTabViewW: number = 0;
+  private pinnedTabXs: number[] = [];
+  private pinnedTabWs: number[] = [];
+  private pinnedTabViewW: number = 0;
 
   @Styles
   tabNormalStyle() {
@@ -476,6 +491,18 @@ export struct ChatProfilePage {
 
   aboutToDisappear(): void {
     this.clearTransitionSettleTimer();
+    if (this.contentQueryTimer !== -1) {
+      clearTimeout(this.contentQueryTimer);
+      this.contentQueryTimer = -1;
+    }
+    if (this.memberQueryTimer !== -1) {
+      clearTimeout(this.memberQueryTimer);
+      this.memberQueryTimer = -1;
+    }
+    if (this.tabScrollRestoreTimer !== -1) {
+      clearTimeout(this.tabScrollRestoreTimer);
+      this.tabScrollRestoreTimer = -1;
+    }
     markChatDestHidden(this.chatDestToken, true);
     this.qrScanner.cancel();
     this.closeQr();
@@ -837,7 +864,11 @@ export struct ChatProfilePage {
     if (width <= 0 || this.detailTabViewW <= 0) {
       return;
     }
-    const offset = this.tabScroller.currentOffset().xOffset;
+    const cur = this.tabScroller.currentOffset();
+    if (cur === undefined) {
+      return;
+    }
+    const offset = cur.xOffset;
     let target = -1;
     if (x < offset + 8) {
       target = Math.max(0, x - 8);
@@ -856,35 +887,183 @@ export struct ChatProfilePage {
     }
   }
 
-  private detailTabLabelWidth(label: string): number {
-    let width = 0;
-    for (let i = 0; i < label.length; i++) {
-      width += label.charCodeAt(i) > 127 ? 14 : 8;
+  private movePinnedDetailIndicator(index: number): void {
+    const width = this.pinnedTabWs[index] ?? 0;
+    if (width <= 0) {
+      return;
     }
-    return Math.max(14, width);
+    this.pinnedIndicatorX = this.pinnedTabXs[index] ?? 8;
+    this.pinnedIndicatorW = width;
   }
 
-  private detailTabBarWidth(): number {
-    let width = 16; // inner Row's left/right padding
-    for (const tab of this.visibleTabs()) {
-      width += this.detailTabLabelWidth(tab.label) + 26; // pill padding + 2vp gap
+  private ensurePinnedDetailTabVisible(index: number): void {
+    if (!this.tabsPinned) {
+      return;
     }
-    return Math.min(Math.max(58, width), Math.max(58, this.screenW - 16));
+    const x = this.pinnedTabXs[index] ?? 0;
+    const width = this.pinnedTabWs[index] ?? 0;
+    if (width <= 0 || this.pinnedTabViewW <= 0) {
+      return;
+    }
+    const cur = this.pinnedTabScroller.currentOffset();
+    if (cur === undefined) {
+      return;
+    }
+    const offset = cur.xOffset;
+    let target = -1;
+    if (x < offset + 8) {
+      target = Math.max(0, x - 8);
+    } else if (x + width > offset + this.pinnedTabViewW - 8) {
+      target = x + width - this.pinnedTabViewW + 8;
+    }
+    if (target >= 0 && Math.abs(target - offset) > 1) {
+      this.pinnedTabScroller.scrollTo({
+        xOffset: target,
+        yOffset: 0,
+        animation: {
+          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200),
+          curve: Curve.EaseOut
+        }
+      });
+    }
+  }
+
+  private canSearchCurrentTab(): boolean {
+    return this.currentTabKey() !== PROFILE_TAB_MEMBERS || this.membersState !== 'restricted';
+  }
+
+  private activeTabQuery(): string {
+    return this.currentTabKey() === PROFILE_TAB_MEMBERS ? this.memberQuery : this.contentQuery;
+  }
+
+  private isTabSearchVisible(): boolean {
+    return this.canSearchCurrentTab() && (this.tabSearchOpen || this.activeTabQuery() !== '');
+  }
+
+  private applyMemberQuery(next: string): void {
+    this.memberQuery = next;
+    if (this.memberQueryTimer !== -1) {
+      clearTimeout(this.memberQueryTimer);
+      this.memberQueryTimer = -1;
+    }
+    if (this.tabScrollRestoreTimer !== -1) {
+      clearTimeout(this.tabScrollRestoreTimer);
+      this.tabScrollRestoreTimer = -1;
+    }
+    if (next === '') {
+      this.store?.searchMembers('');
+      return;
+    }
+    this.memberQueryTimer = setTimeout((): void => {
+      this.memberQueryTimer = -1;
+      this.store?.searchMembers(next);
+    }, 300);
+  }
+
+  private toggleTabSearch(): void {
+    if (this.isTabSearchVisible()) {
+      if (this.currentTabKey() === PROFILE_TAB_MEMBERS) {
+        if (this.memberQuery !== '') {
+          this.applyMemberQuery('');
+        }
+      } else if (this.contentQuery !== '') {
+        this.applyContentQuery('');
+      }
+      this.tabSearchOpen = false;
+    } else {
+      this.tabSearchOpen = true;
+    }
+  }
+
+  private pinThresholdY(): number {
+    return Math.max(0, this.profileHeadH + GLASS_GAP - (this.topSafe + 4));
+  }
+
+  private pinnedClipTopY(): number {
+    return this.topSafe + 4 + Math.max(DETAIL_TAB_BAR_HEIGHT, this.pinnedHeaderH);
+  }
+
+  private pinnedTailSpacerH(): number {
+    if (!this.tabsPinned || this.listViewH <= 0) {
+      return 0;
+    }
+    let estBodyH: number = 176;
+    if (this.currentTabKey() === PROFILE_TAB_MEMBERS) {
+      estBodyH = this.members.length > 0 ? this.members.length * 64 : 176;
+    } else if (this.contentState === 'ready' && this.contentItems.length > 0) {
+      estBodyH = (this.currentTabKey() === PROFILE_TAB_MEDIA || this.currentTabKey() === PROFILE_TAB_GIFS)
+        ? Math.ceil(this.contentItems.length / 3) * this.mediaCellSize()
+        : this.contentItems.length * 68;
+    }
+    const needed: number = this.listViewH - (this.topSafe + 4) - this.pinnedHeaderH;
+    return Math.max(0, Math.ceil(needed - estBodyH));
+  }
+
+  private restoreScrollAfterTabSwitch(targetY: number): void {
+    if (this.tabScrollRestoreTimer !== -1) {
+      clearTimeout(this.tabScrollRestoreTimer);
+    }
+    this.tabScrollRestoreTimer = setTimeout((): void => {
+      this.tabScrollRestoreTimer = -1;
+      this.pageScroller.scrollTo({ xOffset: 0, yOffset: targetY, animation: false });
+    }, 16);
+  }
+
+  private updateTabsPinned(y: number): void {
+    const threshold: number = this.pinThresholdY();
+    const shouldPin: boolean = this.profileHeadH > 0 &&
+      this.transitionSettled && this.pageState === 'ready' &&
+      this.tabsState !== 'loading' && this.visibleTabs().length > 0 &&
+      y >= threshold;
+    if (!shouldPin && Date.now() < this.pinLockUntil) {
+      return;
+    }
+    if (this.tabsPinned !== shouldPin) {
+      this.tabsPinned = shouldPin;
+      if (!shouldPin) {
+        this.pinnedTabViewW = 0;
+      }
+    }
   }
 
   private selectTab(index: number): void {
     const tabs = this.visibleTabs();
     if (index < 0 || index >= tabs.length || index === this.selectedTab) {
+      this.resetTabSlide();
       return;
     }
-    this.getUIContext().animateTo({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-      curve: Curve.EaseOut
-    }, (): void => {
-      this.selectedTab = index;
+    const prevY: number = this.pageScroller.currentOffset()?.yOffset ?? 0;
+    const wasPinned: boolean = this.tabsPinned;
+    if (wasPinned) {
+      this.pinLockUntil = Date.now() + 260;
+    }
+    const dir: number = index > this.selectedTab ? 1 : -1;
+    const dur: number = powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 210);
+    // 切换内容不参与布局补间，仅对指示器和列表内容做纯 GPU translate/opacity 滑入过渡。
+    this.selectedTab = index;
+    if (dur > 0) {
+      this.tabSlideX = dir * 28;
+      this.tabSlideOpacity = 0.35;
+      this.getUIContext().animateTo({
+        duration: dur,
+        curve: Curve.EaseOut
+      }, (): void => {
+        this.tabSlideX = 0;
+        this.tabSlideOpacity = 1;
+        this.moveDetailIndicator(index);
+        this.movePinnedDetailIndicator(index);
+      });
+    } else {
+      this.tabSlideX = 0;
+      this.tabSlideOpacity = 1;
       this.moveDetailIndicator(index);
-    });
+      this.movePinnedDetailIndicator(index);
+    }
     this.ensureDetailTabVisible(index);
+    this.ensurePinnedDetailTabVisible(index);
+    if (!this.canSearchCurrentTab()) {
+      this.tabSearchOpen = false;
+    }
     if (this.store !== null) {
       this.store.selectContentTab(tabs[index].key);
     } else if (index > 0) {
@@ -892,17 +1071,56 @@ export struct ChatProfilePage {
       this.contentState = 'ready';
       this.contentHasMore = false;
     }
+    const targetY: number = wasPinned ? this.pinThresholdY() : prevY;
+    if (targetY > 0) {
+      this.restoreScrollAfterTabSwitch(targetY);
+    }
+  }
+
+  private handleDetailTabPanUpdate(offsetX: number): void {
+    const tabs = this.visibleTabs();
+    if (tabs.length <= 1) {
+      return;
+    }
+    const atEdge: boolean = (offsetX > 0 && this.selectedTab <= 0) ||
+      (offsetX < 0 && this.selectedTab >= tabs.length - 1);
+    const clamped: number = Math.max(-44, Math.min(44, offsetX * (atEdge ? 0.12 : 0.28)));
+    if (Math.abs(clamped - this.tabSlideX) > 0.5) {
+      this.tabSlideX = clamped;
+    }
+  }
+
+  private resetTabSlide(): void {
+    if (this.tabSlideX === 0 && this.tabSlideOpacity === 1) {
+      return;
+    }
+    const dur: number = powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180);
+    if (dur <= 0) {
+      this.tabSlideX = 0;
+      this.tabSlideOpacity = 1;
+      return;
+    }
+    this.getUIContext().animateTo({
+      duration: dur,
+      curve: curves.springMotion(0.32, 0.92)
+    }, (): void => {
+      this.tabSlideX = 0;
+      this.tabSlideOpacity = 1;
+    });
   }
 
   private handleDetailTabPan(offsetX: number): void {
+    const tabs = this.visibleTabs();
     if (Math.abs(offsetX) < 42) {
+      this.resetTabSlide();
       return;
     }
-    if (offsetX < 0) {
-      this.selectTab(this.selectedTab + 1);
-    } else {
-      this.selectTab(this.selectedTab - 1);
+    const next: number = offsetX < 0 ? this.selectedTab + 1 : this.selectedTab - 1;
+    if (next < 0 || next >= tabs.length) {
+      this.resetTabSlide();
+      return;
     }
+    this.selectTab(next);
   }
 
   private applyContentQuery(next: string): void {
@@ -1339,12 +1557,13 @@ export struct ChatProfilePage {
   }
 
   private handlePageScroll(): void {
+    const y: number = this.pageScroller.currentOffset().yOffset;
+    this.updateTabsPinned(y);
     if (!this.canMorphAvatar()) {
       if (this.avatarPull !== 0) { this.avatarPull = 0; }
       if (this.avatarExpanded) { this.avatarExpanded = false; }
       return;
     }
-    const y: number = this.pageScroller.currentOffset().yOffset;
     if (y < 0) {
       const pull: number = Math.abs(y);
       if (this.avatarPull !== pull) {
@@ -1849,67 +2068,190 @@ export struct ChatProfilePage {
   }
 
   @Builder
-  detailTabBar() {
-    Column() {
-      Scroll(this.tabScroller) {
-        Stack({ alignContent: Alignment.TopStart }) {
-          Row()
-            .width(this.detailIndicatorW)
-            .height(DETAIL_TAB_INDICATOR_HEIGHT)
-            .borderRadius(DETAIL_TAB_INDICATOR_HEIGHT / 2)
-            .backgroundColor(COLOR_TAB_PILL_BG)
-            .position({
-              x: this.detailIndicatorX,
-              y: (DETAIL_TAB_BAR_HEIGHT - DETAIL_TAB_INDICATOR_HEIGHT) / 2
-            });
-          Row() {
-            ForEach(this.visibleTabs(), (tab: ProfileTabItem, index: number) => {
-              Row() {
-                Text(tab.label)
-                  .fontSize(14.5)
-                  .fontWeight(index === this.selectedTab ? FontWeight.Medium : FontWeight.Normal)
-                  .fontColor(index === this.selectedTab
-                    ? COLOR_TAB_SELECTED : COLOR_TAB_UNSELECTED)
-                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-              }
-              .height(DETAIL_TAB_BAR_HEIGHT)
-              .padding({ left: 12, right: 12 })
-              .margin({ right: 2 })
-              .borderRadius(DETAIL_TAB_BAR_HEIGHT / 2)
-              .stateStyles({ normal: this.tabNormalStyle, pressed: this.tabPressedStyle })
-              .onAreaChange((_old: Area, area: Area): void => {
-                this.detailTabXs[index] = area.position.x as number;
-                this.detailTabWs[index] = area.width as number;
+  detailTabStrip(pinned: boolean) {
+    Scroll(pinned ? this.pinnedTabScroller : this.tabScroller) {
+      Stack({ alignContent: Alignment.TopStart }) {
+        Row()
+          .width(pinned ? this.pinnedIndicatorW : this.detailIndicatorW)
+          .height(DETAIL_TAB_INDICATOR_HEIGHT)
+          .borderRadius(DETAIL_TAB_INDICATOR_HEIGHT / 2)
+          .backgroundColor(COLOR_TAB_PILL_BG)
+          .position({
+            x: pinned ? this.pinnedIndicatorX : this.detailIndicatorX,
+            y: (DETAIL_TAB_BAR_HEIGHT - DETAIL_TAB_INDICATOR_HEIGHT) / 2
+          });
+        Row() {
+          ForEach(this.visibleTabs(), (tab: ProfileTabItem, index: number) => {
+            Row() {
+              Text(tab.label)
+                .fontSize(14.5)
+                .fontWeight(index === this.selectedTab ? FontWeight.Medium : FontWeight.Normal)
+                .fontColor(index === this.selectedTab
+                  ? COLOR_TAB_SELECTED : COLOR_TAB_UNSELECTED)
+                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+            }
+            .height(DETAIL_TAB_BAR_HEIGHT)
+            .padding({ left: 12, right: 12 })
+            .margin({ right: 2 })
+            .borderRadius(DETAIL_TAB_BAR_HEIGHT / 2)
+            .stateStyles({ normal: this.tabNormalStyle, pressed: this.tabPressedStyle })
+            .onAreaChange((_old: Area, area: Area): void => {
+              const nextX: number = area.position.x as number;
+              const nextW: number = area.width as number;
+              if (pinned) {
+                const changed: boolean = Math.abs((this.pinnedTabXs[index] ?? -1) - nextX) > 0.5 ||
+                  Math.abs((this.pinnedTabWs[index] ?? -1) - nextW) > 0.5;
+                if (!changed) { return; }
+                this.pinnedTabXs[index] = nextX;
+                this.pinnedTabWs[index] = nextW;
+                if (index === this.selectedTab) {
+                  this.movePinnedDetailIndicator(index);
+                  this.ensurePinnedDetailTabVisible(index);
+                }
+              } else {
+                const changed: boolean = Math.abs((this.detailTabXs[index] ?? -1) - nextX) > 0.5 ||
+                  Math.abs((this.detailTabWs[index] ?? -1) - nextW) > 0.5;
+                if (!changed) { return; }
+                this.detailTabXs[index] = nextX;
+                this.detailTabWs[index] = nextW;
                 if (index === this.selectedTab) {
                   this.moveDetailIndicator(index);
                   this.ensureDetailTabVisible(index);
                 }
-              })
-              .onClick((): void => { this.selectTab(index); });
-            }, (tab: ProfileTabItem) => tab.key);
-          }
-          .padding({ left: 8, right: 8 })
-          .height(DETAIL_TAB_BAR_HEIGHT);
+              }
+            })
+            .onClick((): void => { this.selectTab(index); });
+          }, (tab: ProfileTabItem) => tab.key);
+        }
+        .padding({ left: 8, right: 8 })
+        .height(DETAIL_TAB_BAR_HEIGHT);
+      }
+    }
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.Spring)
+    .align(Alignment.Start)
+    .layoutWeight(1)
+    .height(DETAIL_TAB_BAR_HEIGHT)
+    .clip(true)
+    .onAreaChange((_old: Area, area: Area): void => {
+      const nextW: number = area.width as number;
+      if (pinned) {
+        if (Math.abs(this.pinnedTabViewW - nextW) <= 0.5) { return; }
+        this.pinnedTabViewW = nextW;
+        this.ensurePinnedDetailTabVisible(this.selectedTab);
+      } else {
+        if (Math.abs(this.detailTabViewW - nextW) <= 0.5) { return; }
+        this.detailTabViewW = nextW;
+        this.ensureDetailTabVisible(this.selectedTab);
+      }
+    });
+  }
+
+  @Builder
+  inlineSearchBar() {
+    Row({ space: 6 }) {
+      SymbolGlyph($r('sys.symbol.magnifyingglass'))
+        .fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
+      if (this.currentTabKey() === PROFILE_TAB_MEMBERS) {
+        TextInput({ text: this.memberQuery, placeholder: $r('app.string.cpp_search_members') })
+          .layoutWeight(1).height(38).fontSize(15)
+          .backgroundColor(Color.Transparent).padding(0).borderRadius(0)
+          .fontColor(COLOR_TEXT_PRIMARY)
+          .placeholderColor(COLOR_TEXT_SECONDARY)
+          .caretColor(COLOR_PRIMARY)
+          .enterKeyType(EnterKeyType.Search)
+          .onChange((v: string): void => { this.applyMemberQuery(v); });
+        if (this.memberQuery !== '') {
+          SymbolGlyph($r('sys.symbol.xmark_circle_fill'))
+            .fontSize(16).fontColor([COLOR_ICON_SECONDARY])
+            .onClick((): void => { this.applyMemberQuery(''); })
+            .accessibilityText($r('app.string.clear_search'));
+        }
+      } else {
+        TextInput({ text: this.contentQuery, placeholder: $r('app.string.cp_search') })
+          .layoutWeight(1).height(38).fontSize(15)
+          .backgroundColor(Color.Transparent).padding(0).borderRadius(0)
+          .fontColor(COLOR_TEXT_PRIMARY)
+          .placeholderColor(COLOR_TEXT_SECONDARY)
+          .caretColor(COLOR_PRIMARY)
+          .enterKeyType(EnterKeyType.Search)
+          .onChange((v: string): void => { this.applyContentQuery(v); });
+        if (this.contentQuery !== '') {
+          SymbolGlyph($r('sys.symbol.xmark_circle_fill'))
+            .fontSize(16).fontColor([COLOR_ICON_SECONDARY])
+            .onClick((): void => { this.applyContentQuery(''); })
+            .accessibilityText($r('app.string.clear_search'));
         }
       }
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      .align(Alignment.Start)
-      .width('100%')
-      .onAreaChange((_old: Area, area: Area): void => {
-        this.detailTabViewW = area.width as number;
-        this.ensureDetailTabVisible(this.selectedTab);
-      });
     }
-    .height(DETAIL_TAB_BAR_HEIGHT)
-    .width(this.detailTabBarWidth())
-    // 药丸形的玻璃条。clip 必须在圆角之后，否则里面的指示器会溢出圆角。
-    .backgroundColor(this.cardFill())
-    .borderRadius(DETAIL_TAB_BAR_HEIGHT / 2)
-    .border({ width: 0.7, color: $r('app.color.divider') })
-    .clip(true)
-    .alignSelf(ItemAlign.Center)
-    .margin({ left: this.pageMargin(), right: this.pageMargin(), bottom: 6 });
+    .width('100%').height(38)
+    .padding({ left: 12, right: 12 })
+    .borderRadius(19)
+    .backgroundColor($r('app.color.reaction_chip'))
+    .alignItems(VerticalAlign.Center);
+  }
+
+  @Builder
+  inlineMediaKindBar() {
+    Row({ space: 4 }) {
+      ForEach(MEDIA_KINDS, (kind: string) => {
+        Text(this.mediaKindLabel(kind))
+          .fontSize(13).fontWeight(FontWeight.Medium)
+          .fontColor(this.mediaKind === kind ? Color.White : COLOR_TEXT_SECONDARY)
+          .layoutWeight(1).height(30).textAlign(TextAlign.Center)
+          .backgroundColor(this.mediaKind === kind ? COLOR_PRIMARY : Color.Transparent)
+          .borderRadius(15)
+          .onClick((): void => { this.applyMediaKind(kind); });
+      }, (kind: string): string => `mediaKind_${kind}_${this.mediaKind === kind}`);
+    }
+    .width('100%')
+    .padding(3)
+    .borderRadius(18)
+    .backgroundColor($r('app.color.reaction_chip'));
+  }
+
+  @Builder
+  detailTabHeader(pinned: boolean) {
+    Column() {
+      Row({ space: 4 }) {
+        this.detailTabStrip(pinned);
+        if (this.canSearchCurrentTab()) {
+          Row() {
+            SymbolGlyph($r(this.isTabSearchVisible()
+              ? 'sys.symbol.xmark' : 'sys.symbol.magnifyingglass'))
+              .fontSize(17)
+              .fontColor([this.isTabSearchVisible() ? COLOR_PRIMARY : COLOR_ICON_SECONDARY]);
+          }
+          .width(36).height(36).borderRadius(18)
+          .flexShrink(0)
+          .justifyContent(FlexAlign.Center)
+          .backgroundColor(this.isTabSearchVisible() ? COLOR_TAB_PILL_BG : Color.Transparent)
+          .onClick((): void => { this.toggleTabSearch(); })
+          .accessibilityText($r('app.string.cp_search'));
+        }
+      }
+      .width('100%')
+      .height(DETAIL_TAB_BAR_HEIGHT)
+      .padding({ left: 4, right: 8 })
+      .alignItems(VerticalAlign.Center);
+      if (this.isTabSearchVisible()) {
+        Column() {
+          this.inlineSearchBar();
+        }
+        .width('100%')
+        .padding({ left: 12, right: 12, top: 2, bottom: 8 });
+      }
+      if (this.currentTabKey() === PROFILE_TAB_MEDIA) {
+        Column() {
+          this.inlineMediaKindBar();
+        }
+        .width('100%')
+        .padding({ left: 12, right: 12, top: 2, bottom: 8 });
+      }
+      Divider().strokeWidth(0.5).color($r('app.color.divider'));
+    }
+    .width('100%');
   }
 
   @Builder
@@ -1939,10 +2281,10 @@ export struct ChatProfilePage {
   }
 
   @Builder
-  membersItems() {
-    ListItemGroup() {
-      if (this.canInviteMembers && this.chatId !== 0) {
-        ListItem() {
+  membersBodyItems() {
+    if (this.canInviteMembers && this.chatId !== 0) {
+      ListItem() {
+        Column() {
           Row({ space: 12 }) {
             SymbolGlyph($r('sys.symbol.person_badge_plus')).fontSize(24).fontColor([COLOR_PRIMARY]);
             Text($r('app.string.ng_add_members')).fontSize(16).fontColor(COLOR_PRIMARY).layoutWeight(1);
@@ -1950,70 +2292,153 @@ export struct ChatProfilePage {
           }
           .width('100%').height(56).padding({ left: 16, right: 16 })
           .onClick((): void => this.openAddMembers());
+          if (this.members.length > 0) {
+            Divider().strokeWidth(0.5).color($r('app.color.divider')).margin({ left: 52 });
+          }
         }
+        .width('100%');
       }
-      // 成员搜索（名字、用户名都匹配，服务端做；见 ChatProfileStore.searchMembers）。
-      // 看不到名单（频道普通订阅者）时不挂：搜也搜不到。
-      if (this.membersState !== 'restricted') {
-        ListItem() {
-          MemberSearchField({
-            onQuery: (q: string): void => { this.store?.searchMembers(q); }
+      .translate({ x: this.tabSlideX })
+      .opacity(this.tabSlideOpacity)
+      .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.handleDetailTabPanUpdate(event.offsetX);
           })
-            .padding({ left: 12, right: 12, top: 10, bottom: 6 });
-        }
-      }
-      if (this.members.length > 0) {
-        LazyForEach(this.membersData, (m: MemberItem, idx: number) => {
-          ListItem() {
-            MemberRow({
-              member: m,
-              options: this.menuOptionsFor(m),
-              showDivider: idx < this.members.length - 1,
-              onOpenProfile: (userId: number): void => { this.openMemberProfile(userId); },
-              onAction: (userId: number, action: string): void => { this.handleMemberActionById(userId, action); }
-            });
-          }
-        }, (m: MemberItem, idx: number): string =>
-          guardKey(this.membersData.keyTableId, idx, this.memberKey(m)));
-        if (this.store !== null && this.store.hasMoreMembers) {
-          ListItem() {
-            Row({ space: 8 }) {
-              LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
-              Text($r('app.string.cpp_loading_more_members')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-            }.height(52).justifyContent(FlexAlign.Center).width('100%');
-          }
-        }
-      } else if (this.membersState === 'loading') {
-        ListItem() {
-          this.inlineState('loading', str('cpp_loading_members'));
-        }
-      } else if (this.membersState === 'restricted') {
-        ListItem() {
-          this.inlineState('restricted', this.isChannel
-            ? str('cpp_no_full_subscribers')
-            : str('cpp_no_member_access'));
-        }
-      } else if (this.membersState === 'error') {
-        ListItem() {
-          this.inlineState('error', str('cpp_members_failed'));
-        }
-      } else {
-        ListItem() {
-          // 搜索没结果和群本来就没人是两回事，别都说「没有成员」。
-          this.inlineState('empty', (this.store?.memberQuery ?? '') !== ''
-            ? str('ct_no_results') : str('cpp_no_members'));
-        }
-      }
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleDetailTabPan(event.offsetX);
+          })
+          .onActionCancel((): void => {
+            this.resetTabSlide();
+          })
+      )
     }
-    .width('calc(100% - 28vp)')
-    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: GLASS_GAP, bottom: 24 })
-    .glassCard().clip(true)
+    if (this.members.length > 0) {
+      LazyForEach(this.membersData, (m: MemberItem, idx: number) => {
+        ListItem() {
+          MemberRow({
+            member: m,
+            options: this.menuOptionsFor(m),
+            showDivider: idx < this.members.length - 1,
+            onOpenProfile: (userId: number): void => { this.openMemberProfile(userId); },
+            onAction: (userId: number, action: string): void => { this.handleMemberActionById(userId, action); }
+          });
+        }
+        .translate({ x: this.tabSlideX })
+        .opacity(this.tabSlideOpacity)
         .priorityGesture(
-      PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
-        .onActionEnd((event: GestureEvent): void => {
-          this.handleDetailTabPan(event.offsetX);
-        })
-    );
+          PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+            .onActionUpdate((event: GestureEvent): void => {
+              this.handleDetailTabPanUpdate(event.offsetX);
+            })
+            .onActionEnd((event: GestureEvent): void => {
+              this.handleDetailTabPan(event.offsetX);
+            })
+            .onActionCancel((): void => {
+              this.resetTabSlide();
+            })
+        )
+      }, (m: MemberItem, idx: number): string =>
+        guardKey(this.membersData.keyTableId, idx, this.memberKey(m)));
+      if (this.store !== null && this.store.hasMoreMembers) {
+        ListItem() {
+          Row({ space: 8 }) {
+            LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
+            Text($r('app.string.cpp_loading_more_members')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
+          }.height(52).justifyContent(FlexAlign.Center).width('100%');
+        }
+        .translate({ x: this.tabSlideX })
+        .opacity(this.tabSlideOpacity)
+        .priorityGesture(
+          PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+            .onActionUpdate((event: GestureEvent): void => {
+              this.handleDetailTabPanUpdate(event.offsetX);
+            })
+            .onActionEnd((event: GestureEvent): void => {
+              this.handleDetailTabPan(event.offsetX);
+            })
+            .onActionCancel((): void => {
+              this.resetTabSlide();
+            })
+        )
+      }
+    } else if (this.membersState === 'loading') {
+      ListItem() {
+        this.inlineState('loading', str('cpp_loading_members'));
+      }
+      .translate({ x: this.tabSlideX })
+      .opacity(this.tabSlideOpacity)
+      .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.handleDetailTabPanUpdate(event.offsetX);
+          })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleDetailTabPan(event.offsetX);
+          })
+          .onActionCancel((): void => {
+            this.resetTabSlide();
+          })
+      )
+    } else if (this.membersState === 'restricted') {
+      ListItem() {
+        this.inlineState('restricted', this.isChannel
+          ? str('cpp_no_full_subscribers')
+          : str('cpp_no_member_access'));
+      }
+      .translate({ x: this.tabSlideX })
+      .opacity(this.tabSlideOpacity)
+      .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.handleDetailTabPanUpdate(event.offsetX);
+          })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleDetailTabPan(event.offsetX);
+          })
+          .onActionCancel((): void => {
+            this.resetTabSlide();
+          })
+      )
+    } else if (this.membersState === 'error') {
+      ListItem() {
+        this.inlineState('error', str('cpp_members_failed'));
+      }
+      .translate({ x: this.tabSlideX })
+      .opacity(this.tabSlideOpacity)
+      .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.handleDetailTabPanUpdate(event.offsetX);
+          })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleDetailTabPan(event.offsetX);
+          })
+          .onActionCancel((): void => {
+            this.resetTabSlide();
+          })
+      )
+    } else {
+      ListItem() {
+        // 搜索没结果和群本来就没人是两回事，别都说「没有成员」。
+        this.inlineState('empty', (this.store?.memberQuery ?? '') !== ''
+          ? str('ct_no_results') : str('cpp_no_members'));
+      }
+      .translate({ x: this.tabSlideX })
+      .opacity(this.tabSlideOpacity)
+      .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.handleDetailTabPanUpdate(event.offsetX);
+          })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleDetailTabPan(event.offsetX);
+          })
+          .onActionCancel((): void => {
+            this.resetTabSlide();
+          })
+      )
+    }
   }
 
   @Builder
@@ -2067,11 +2492,9 @@ export struct ChatProfilePage {
         }
       }
     }
-    .width('calc(100% - 24vp)').height(188)
-    .margin({ left: 12, right: 12, top: 10, bottom: 24 })
+    .width('100%').height(176)
     .padding({ left: 24, right: 24 })
-    .justifyContent(FlexAlign.Center)
-    .glassCard();
+    .justifyContent(FlexAlign.Center);
   }
 
   private mediaCellSize(): number {
@@ -2118,138 +2541,62 @@ export struct ChatProfilePage {
     return str('cpp_media_all');
   }
 
-  // 媒体页的子筛选条（issue #214）。**不在客户端筛已加载的那批**——分页游标是
-  // from_message_id，客户端过滤会让一页里可能一张都不剩，翻页看上去就是卡住；
-  // 换档一律重新向服务端要（ChatProfileStore.setMediaKind）。
+  // 内容页签主体（媒体 / 文件 / 链接…），直接嵌在合并后的大玻璃卡 ListItemGroup 内。
   @Builder
-  mediaKindBar() {
-    Row({ space: 4 }) {
-      ForEach(MEDIA_KINDS, (kind: string) => {
-        Text(this.mediaKindLabel(kind))
-          .fontSize(13).fontWeight(FontWeight.Medium)
-          .fontColor(this.mediaKind === kind ? Color.White : COLOR_TEXT_SECONDARY)
-          .layoutWeight(1).height(32).textAlign(TextAlign.Center)
-          .backgroundColor(this.mediaKind === kind ? COLOR_PRIMARY : Color.Transparent)
-          .borderRadius(16).padding({ top: 6 })
-          .onClick((): void => { this.applyMediaKind(kind); });
-      }, (kind: string): string => `mediaKind_${kind}_${this.mediaKind === kind}`);
-    }
-    .width('calc(100% - 24vp)')
-    .margin({ left: 12, right: 12, top: 10 })
-    .padding(3)
-    .glassCard().clip(true);
-  }
-
-  @Builder
-  contentSearchBar() {
-    Row({ space: 8 }) {
-      SymbolGlyph($r('sys.symbol.magnifyingglass'))
-        .fontSize(17).fontColor([COLOR_ICON_SECONDARY]);
-      TextInput({ text: this.contentQuery, placeholder: $r('app.string.cp_search') })
-        .layoutWeight(1).height(40).fontSize(15)
-        .backgroundColor(Color.Transparent).padding(0).borderRadius(0)
-        .placeholderColor(COLOR_TEXT_SECONDARY)
-        .caretColor(COLOR_PRIMARY)
-        .enterKeyType(EnterKeyType.Search)
-        .onChange((v: string): void => { this.applyContentQuery(v); });
-      if (this.contentQuery !== '') {
-        Row() {
-          SymbolGlyph($r('sys.symbol.xmark_circle'))
-            .fontSize(17).fontColor([COLOR_ICON_SECONDARY]);
-        }
-        .width(30).height(30).borderRadius(15)
-        .justifyContent(FlexAlign.Center)
-        .onClick((): void => { this.applyContentQuery(''); })
-        .accessibilityText($r('app.string.clear_search'));
-      }
-    }
-    .width('calc(100% - 24vp)')
-    .height(46)
-    .margin({ left: 12, right: 12, top: 10 })
-    .padding({ left: 12, right: 8 })
-    .alignItems(VerticalAlign.Center)
-    .glassCard().clip(true);
-  }
-
-  // 内容页签（媒体 / 文件 / 链接…）。搜索条、占位、分页脚各占一项；媒体网格按 3 格一行走
-  // LazyForEach（ProfileMediaRow），其余类型走 LazyForEach 的内容行（ProfileContentRow）。
-  @Builder
-  contentTabItems() {
-    // 搜索条画在分支**外面**：搜不到结果时下面是空态，搜索条要是跟着一起消失，用户就没地方
-    // 清空关键词了，只能退出去重进。
-    ListItem() {
-      this.contentSearchBar();
-    }
-        .priorityGesture(
-      PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
-        .onActionEnd((event: GestureEvent): void => {
-          this.handleDetailTabPan(event.offsetX);
-        })
-    )
-    // 子筛选条同样画在分支**外面**，理由和搜索条一模一样：筛到空结果时下面是
-    // 空态，筛选条要是跟着消失，用户就没地方切回「全部」了。
-    if (this.currentTabKey() === PROFILE_TAB_MEDIA) {
-      ListItem() {
-        this.mediaKindBar();
-      }
-          .priorityGesture(
-        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
-          .onActionEnd((event: GestureEvent): void => {
-            this.handleDetailTabPan(event.offsetX);
-          })
-      )
-    }
+  contentBodyItems() {
     if (this.contentState === 'loading' || this.contentState === 'error' ||
       (this.contentState === 'ready' && this.contentItems.length === 0)) {
       ListItem() {
         this.contentPlaceholder();
       }
-            .priorityGesture(
+      .translate({ x: this.tabSlideX })
+      .opacity(this.tabSlideOpacity)
+      .priorityGesture(
         PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.handleDetailTabPanUpdate(event.offsetX);
+          })
           .onActionEnd((event: GestureEvent): void => {
             this.handleDetailTabPan(event.offsetX);
           })
+          .onActionCancel((): void => {
+            this.resetTabSlide();
+          })
       )
-    } else if (this.currentTabKey() === PROFILE_TAB_MEDIA) {
-      // 玻璃卡在 group 上；格子边长按行的实际宽算（onSizeChange 量行宽，理由见 util/mediaGrid）。
-      ListItemGroup() {
-        LazyForEach(this.mediaRowsData, (row: ProfileContentItem[], index: number) => {
-          ListItem() {
-            ProfileMediaRow({
-              items: row,
-              cellSize: this.mediaCellSize(),
-              pressedOpacity: 0.58,
-              onOpen: (messageId: number): void => { this.openContentMessage(messageId); }
-            });
-          }
-          .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
-            this.noteMediaRowWidth(Number(size.width));
+    } else if (this.currentTabKey() === PROFILE_TAB_MEDIA || this.currentTabKey() === PROFILE_TAB_GIFS) {
+      // 格子边长按行的实际宽算（onSizeChange 量行宽，理由见 util/mediaGrid）。
+      LazyForEach(this.mediaRowsData, (row: ProfileContentItem[], index: number) => {
+        ListItem() {
+          ProfileMediaRow({
+            items: row,
+            cellSize: this.mediaCellSize(),
+            pressedOpacity: 0.58,
+            onOpen: (messageId: number): void => { this.openContentMessage(messageId); }
           });
-        }, (row: ProfileContentItem[], index: number): string =>
-          guardKey(this.mediaRowsData.keyTableId, index, this.mediaRowKey(row, index)));
-      }
-      .width('calc(100% - 24vp)')
-      .margin({ left: 12, right: 12, top: 10 })
-      .glassCard().clip(true)
-            .priorityGesture(
-        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
-          .onActionEnd((event: GestureEvent): void => {
-            this.handleDetailTabPan(event.offsetX);
-          })
-      );
-      ListItem() {
-        this.paginationFooter();
-      }
-            .priorityGesture(
-        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
-          .onActionEnd((event: GestureEvent): void => {
-            this.handleDetailTabPan(event.offsetX);
-          })
-      )
+        }
+        .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+          this.noteMediaRowWidth(Number(size.width));
+        })
+        .translate({ x: this.tabSlideX })
+        .opacity(this.tabSlideOpacity)
+        .priorityGesture(
+          PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+            .onActionUpdate((event: GestureEvent): void => {
+              this.handleDetailTabPanUpdate(event.offsetX);
+            })
+            .onActionEnd((event: GestureEvent): void => {
+              this.handleDetailTabPan(event.offsetX);
+            })
+            .onActionCancel((): void => {
+              this.resetTabSlide();
+            })
+        );
+      }, (row: ProfileContentItem[], index: number): string =>
+        guardKey(this.mediaRowsData.keyTableId, index, this.mediaRowKey(row, index)));
     } else {
-      ListItemGroup() {
-        LazyForEach(this.contentData, (item: ProfileContentItem, index: number) => {
-          ListItem() {
+      LazyForEach(this.contentData, (item: ProfileContentItem, index: number) => {
+        ListItem() {
+          Column() {
             ProfileContentRow({
               item: item,
               icon: this.contentIcon(item),
@@ -2257,27 +2604,89 @@ export struct ChatProfilePage {
               onOpen: (messageId: number): void => { this.openContentMessage(messageId); },
               onFileAction: (messageId: number): void => { this.onContentFileActionById(messageId); }
             });
+            if (index < this.contentItems.length - 1) {
+              Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 69 });
+            }
           }
-        }, (item: ProfileContentItem, index: number): string =>
-          guardKey(this.contentData.keyTableId, index, profileContentKey(item)));
+          .width('100%');
+        }
+        .translate({ x: this.tabSlideX })
+        .opacity(this.tabSlideOpacity)
+        .priorityGesture(
+          PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+            .onActionUpdate((event: GestureEvent): void => {
+              this.handleDetailTabPanUpdate(event.offsetX);
+            })
+            .onActionEnd((event: GestureEvent): void => {
+              this.handleDetailTabPan(event.offsetX);
+            })
+            .onActionCancel((): void => {
+              this.resetTabSlide();
+            })
+        );
+      }, (item: ProfileContentItem, index: number): string =>
+        guardKey(this.contentData.keyTableId, index, profileContentKey(item)));
+    }
+  }
+
+  // 页签横条 + 搜索/筛选 + 底下内容列表合并为同一张玻璃大卡（ListItemGroup），
+  // 滚到顶部后由浮层 detailTabHeader(true) 无缝接管吸顶。
+  @Builder
+  unifiedTabSection() {
+    ListItemGroup() {
+      ListItem() {
+        this.detailTabHeader(false);
       }
-      .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 69 })
-      .width('calc(100% - 24vp)')
-      .margin({ left: 12, right: 12, top: 10 })
-      .glassCard().clip(true)
-            .priorityGesture(
-        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
-          .onActionEnd((event: GestureEvent): void => {
-            this.handleDetailTabPan(event.offsetX);
-          })
-      );
+      .opacity(this.tabsPinned ? 0 : 1);
+      if (this.currentTabKey() === PROFILE_TAB_MEMBERS) {
+        this.membersBodyItems();
+      } else {
+        this.contentBodyItems();
+      }
+    }
+    .width(`calc(100% - ${this.pageMargin() * 2}vp)`)
+    .margin({
+      left: this.pageMargin(),
+      right: this.pageMargin(),
+      top: GLASS_GAP,
+      bottom: this.currentTabKey() !== PROFILE_TAB_MEMBERS && this.contentItems.length > 0 ? 4 : 24
+    })
+    .glassCard().clip(true);
+    if (this.currentTabKey() !== PROFILE_TAB_MEMBERS && this.contentItems.length > 0) {
       ListItem() {
         this.paginationFooter();
       }
-            .priorityGesture(
+      .translate({ x: this.tabSlideX })
+      .opacity(this.tabSlideOpacity)
+      .priorityGesture(
         PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.handleDetailTabPanUpdate(event.offsetX);
+          })
           .onActionEnd((event: GestureEvent): void => {
             this.handleDetailTabPan(event.offsetX);
+          })
+          .onActionCancel((): void => {
+            this.resetTabSlide();
+          })
+      )
+    }
+    if (this.pinnedTailSpacerH() > 0) {
+      ListItem() {
+        Column().width('100%').height(this.pinnedTailSpacerH());
+      }
+      .translate({ x: this.tabSlideX })
+      .opacity(this.tabSlideOpacity)
+      .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.handleDetailTabPanUpdate(event.offsetX);
+          })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleDetailTabPan(event.offsetX);
+          })
+          .onActionCancel((): void => {
+            this.resetTabSlide();
           })
       )
     }
@@ -2313,13 +2722,16 @@ export struct ChatProfilePage {
   build() {
     HdsNavDestination() {
     // 查看器需覆盖整页，故在滚动容器外再包一层 Stack。
-    Stack() {
+    Stack({ alignContent: Alignment.TopStart }) {
     // 壁纸在最底，其余内容画在它之上。分栏下 AppBackdrop 自己什么都不画
     // （见 util/localWallpaper.appWallpaperActive），与主界面同一条规则。
     AppBackdrop({ split: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) });
-    // 整页是一个 List（原来是 Scroll > Column）：头图、操作行、资料卡在第一项，页签条一项，
-    // 页签内容按行放进 List——成员、文件/链接走 LazyForEach，媒体网格按 3 格一行走 LazyForEach。
+    // 整页是一个 List（原来是 Scroll > Column）：头图、操作行、资料卡在第一项，页签条与页签内容
+    // 合并进同一张玻璃大卡 ListItemGroup——成员、文件/链接走 LazyForEach，媒体网格按 3 格一行走 LazyForEach。
     // 大群的成员、翻了很多页的共享内容都只建可视区附近的行，其余滚动时逐帧补建。
+    // 外层 Column 仅在吸顶态裁剪 List 顶边，避免列表内容穿过吸顶头栏或漏到状态栏区，
+    // 同时不改动 List 自己的坐标系和壁纸透显。
+    Column() {
     List({ scroller: this.pageScroller }) {
       ListItem() {
         Column() {
@@ -2336,22 +2748,18 @@ export struct ChatProfilePage {
             this.pageStateCard();
           }
         }
-        .width('100%');
+        .width('100%')
+        .onAreaChange((_old: Area, area: Area): void => {
+          const h: number = Number(area.height);
+          if (h > 0 && Math.abs(h - this.profileHeadH) > 0.5) {
+            this.profileHeadH = h;
+            this.updateTabsPinned(this.pageScroller.currentOffset().yOffset);
+          }
+        });
       }
       if (this.transitionSettled && this.pageState === 'ready' && this.tabsState !== 'loading' &&
         this.visibleTabs().length > 0) {
-        ListItem() {
-          Column() {
-            this.detailTabBar();
-          }
-          .width('100%')
-          .margin({ top: 12 });
-        }
-        if (this.currentTabKey() === PROFILE_TAB_MEMBERS) {
-          this.membersItems();
-        } else {
-          this.contentTabItems();
-        }
+        this.unifiedTabSection();
       }
     }
     .width('100%').height('100%')
@@ -2393,6 +2801,36 @@ export struct ChatProfilePage {
       }
     })
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+    }
+    .width('100%').height('100%')
+    .clipShape(this.tabsPinned && this.listViewH > 0
+      ? new RectShape({
+        width: '100%',
+        height: Math.max(100, this.listViewH - this.pinnedClipTopY())
+      }).position({ x: 0, y: this.pinnedClipTopY() })
+      : undefined)
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+    if (this.tabsPinned) {
+      Column() {
+        this.detailTabHeader(true);
+      }
+      .width(`calc(100% - ${this.pageMargin() * 2}vp)`)
+      .margin({ left: this.pageMargin(), right: this.pageMargin(), top: this.topSafe + 4 })
+      .backgroundColor(this.cardFill())
+      .borderRadius({ topLeft: GLASS_RADIUS_CARD, topRight: GLASS_RADIUS_CARD, bottomLeft: 0, bottomRight: 0 })
+      .border({
+        width: { top: 0.7, left: 0.7, right: 0.7, bottom: 0 },
+        color: $r('app.color.divider')
+      })
+      .clip(true)
+      .onAreaChange((_old: Area, area: Area): void => {
+        const h: number = Number(area.height);
+        if (h > 0 && Math.abs(h - this.pinnedHeaderH) > 0.5) {
+          this.pinnedHeaderH = h;
+        }
+      })
+      .zIndex(8);
+    }
     if (this.viewerAvatarPath !== '') {
       AvatarViewer({
         imagePath: this.viewerAvatarPath,

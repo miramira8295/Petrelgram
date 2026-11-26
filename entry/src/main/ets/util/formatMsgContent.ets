@@ -1048,12 +1048,68 @@ export function formatMsgContent(message: TdObject, previousChecklist?: Checklis
       str('gift_status_credited'), '', content!['sticker'] as TdObject | undefined
     );
   }
-  if (type === 'messageGiftedTon') {
-    const amount = Math.max(0, (content!['ton_amount'] as number | undefined) ?? 0);
+  if (type === 'messageGiftedGrams' || type === 'messageGiftedTon') {
+    const rawAmount = (content!['gram_amount'] as number | undefined) ??
+      (content!['ton_amount'] as number | undefined) ?? 0;
+    const amount = Math.max(0, rawAmount);
     return giftBase(
       'ton', str('gift_ton_title'), formatTonAmount(amount),
       str('gift_status_credited'), '', content!['sticker'] as TdObject | undefined
     );
+  }
+  if (type === 'messageTonWalletTransfer') {
+    const amount = Math.max(0, (content!['amount'] as number | undefined) ?? 0);
+    const encrypted = (content!['is_comment_encrypted'] as boolean | undefined) ?? false;
+    const rawComment = ((content!['comment'] as string | undefined) ?? '').trim();
+    const note = encrypted ? str('ton_transfer_encrypted_comment') : rawComment;
+    const provider = ((content!['on_ramp_provider_name'] as string | undefined) ?? '').trim();
+    return giftBase(
+      'ton', str('preview_ton_transfer'), formatTonAmount(amount),
+      provider !== '' ? provider : str('gift_status_credited'), note, undefined
+    );
+  }
+  if (type === 'messageTonConnectRequest') {
+    const dapp = ((content!['dapp_name'] as string | undefined) ?? '').trim();
+    const stateObj = content!['state'] as TdObject | undefined;
+    const st = stateObj !== undefined ? ((stateObj['@type'] as string | undefined) ?? '') : '';
+    const status = st === 'tonConnectRequestStateAccepted' ? str('ton_connect_accepted')
+      : (st === 'tonConnectRequestStateRejected' ? str('ton_connect_rejected') : str('ton_connect_pending'));
+    return giftBase(
+      'ton', str('preview_ton_connect'), dapp !== '' ? dapp : str('preview_ton_connect'),
+      status, '', undefined
+    );
+  }
+  if (type === 'messageUpgradedGiftOnChainPurchaseOffer') {
+    const gift = content!['gift'] as TdObject | undefined;
+    const model = gift !== undefined ? (gift['model'] as TdObject | undefined) : undefined;
+    const title = gift !== undefined ? ((gift['title'] as string | undefined) ?? '') : '';
+    const gramAmount = Math.max(0, (content!['gram_amount'] as number | undefined) ?? 0);
+    const stateObj = content!['state'] as TdObject | undefined;
+    const st = stateObj !== undefined ? ((stateObj['@type'] as string | undefined) ?? '') : '';
+    let status = str('gift_offer_pending');
+    if (st === 'giftOnChainPurchaseOfferStateAccepted') { status = str('gift_offer_accepted'); }
+    else if (st === 'giftOnChainPurchaseOfferStateDeclined') { status = str('gift_offer_declined'); }
+    else if (st === 'giftOnChainPurchaseOfferStateCanceled' || st === 'giftOnChainPurchaseOfferStateCanceling') { status = str('gift_offer_canceled'); }
+    else if (st === 'giftOnChainPurchaseOfferStateExpired') { status = str('gift_offer_expired'); }
+    else if (st === 'giftOnChainPurchaseOfferStateSettled') { status = str('gift_offer_settled'); }
+    return giftBase(
+      'upgraded', title !== '' ? title : str('preview_gift_offer'),
+      formatTonAmount(gramAmount), status, '',
+      model !== undefined ? (model['sticker'] as TdObject | undefined) : undefined
+    );
+  }
+  if (type === 'messageWidget') {
+    const captionObj = content!['caption'] as TdObject | undefined;
+    const capText = formattedTextValue(captionObj);
+    return {
+      contentType: 'text',
+      text: capText !== '' ? capText : str('preview_widget'),
+      photoFileId: 0, photoWidth: 0, photoHeight: 0, placeholderLabel: '',
+      entities: textEntities(captionObj),
+      linkSiteName: '', linkTitle: '', linkDescription: '', linkDescriptionEntities: [],
+      linkPhotoFileId: 0, linkUrl: '',
+      videoDuration: 0, videoFileId: 0, videoFileSize: 0, videoMimeType: '', videoFileName: '', photoFullFileId: 0
+    };
   }
   if (type === 'messagePremiumGiftCode') {
     const months = Math.max(0, (content!['month_count'] as number | undefined) ?? 0);
@@ -1127,6 +1183,10 @@ export function formatMsgContent(message: TdObject, previousChecklist?: Checklis
       status = str('gift_status_burned');
     }
     const collectible = str('gift_collectible_title');
+    const giftTextObj = content!['text'] as TdObject | undefined;
+    const giftNote = formattedTextValue(giftTextObj);
+    const modelNote = model !== undefined && ((model['name'] as string | undefined) ?? '') !== ''
+      ? str('gift_model', (model['name'] as string | undefined) ?? '') : '';
     return giftBase(
       'collectible',
       gift !== undefined && ((gift['title'] as string | undefined) ?? '') !== ''
@@ -1134,9 +1194,9 @@ export function formatMsgContent(message: TdObject, previousChecklist?: Checklis
       usdCents > 0 ? str('gift_valued_at', usd(usdCents))
         : (number > 0 ? str('gift_collectible_number', number) : str('gift_unique')),
       status,
-      model !== undefined && ((model['name'] as string | undefined) ?? '') !== ''
-        ? str('gift_model', (model['name'] as string | undefined) ?? '') : '',
-      model !== undefined ? (model['sticker'] as TdObject | undefined) : undefined
+      giftNote !== '' ? giftNote : modelNote,
+      model !== undefined ? (model['sticker'] as TdObject | undefined) : undefined,
+      giftNote !== '' ? textEntities(giftTextObj) : []
     );
   }
   if (type === 'messageGiveaway') {
