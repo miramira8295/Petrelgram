@@ -1029,8 +1029,6 @@ export struct ChatListPage {
     // 触发整页重渲染（交接文档实测峰值 14.8ms），必须关在小里。
     TopGlassAction({
       actionSize: TOP_ACTION_SIZE,
-      embedded: true,
-      plainFill: this.homeChromeFill(this.surfaceGlassEpoch, this.appDark),
       icon: icon,
       dark: this.appDark,
       iconColor: COLOR_ICON_SECONDARY,
@@ -1044,8 +1042,6 @@ export struct ChatListPage {
   searchAction() {
     TopGlassAction({
       actionSize: TOP_ACTION_SIZE,
-      embedded: true,
-      plainFill: this.homeChromeFill(this.surfaceGlassEpoch, this.appDark),
       icon: 'sys.symbol.magnifyingglass',
       busy: this.searchOpening,
       dark: this.appDark,

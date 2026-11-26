@@ -1553,14 +1553,14 @@ export struct ContactsPage {
       .alignItems(HorizontalAlign.Start).justifyContent(FlexAlign.Center)
       .height(56).layoutWeight(1);
       TopGlassAction({
-        actionSize: 40, embedded: true, plainFill: this.cardFill(),
+        actionSize: 40,
         icon: 'sys.symbol.person_badge_plus', dark: this.appDark,
         iconColor: COLOR_ICON_SECONDARY, accentColor: this.accent(),
         label: $r('app.string.ct_new_contact'),
         onTap: (): void => { this.openAddContactSheet(); }
       });
       TopGlassAction({
-        actionSize: 40, embedded: true, plainFill: this.cardFill(),
+        actionSize: 40,
         icon: 'sys.symbol.phone_arrow_up_right_fill', dark: this.appDark,
         iconColor: COLOR_ICON_SECONDARY, accentColor: this.accent(),
         label: $r('app.string.ct_recent_calls'),

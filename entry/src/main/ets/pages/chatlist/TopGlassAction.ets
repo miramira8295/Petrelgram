@@ -10,6 +10,9 @@ import { NativeGlassHost } from '../chat/NativeGlassHost';
 
 @Component
 export struct TopGlassAction {
+  // 默认走系统材质玻璃。embedded: true 会整块跳过 NativeGlassHost、只剩一层纯色
+  // （上游 04760051 曾用它把聊天列表与联系人页顶栏四颗圆钮降级成纯色，用户
+  // 2026-11-26 报「只剩兜底」，已恢复默认玻璃）。除非确实要一块实心底板，否则别传。
   @Prop embedded: boolean = false;
   @Prop plainFill: ResourceColor = Color.Transparent;
   @Prop actionSize: number = 42;
