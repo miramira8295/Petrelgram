@@ -160,9 +160,10 @@
           },
           {
             // tg:// deep links (Deep Linking, no domain verification needed).
-            // https://t.me links can't auto-open a third-party client: HarmonyOS
-            // App Linking requires hosting a verification file on t.me, which
-            // only Telegram controls. scheme MUST be lowercase or the match fails.
+            // https://t.me links: HarmonyOS App Linking 的域名校验只影响「不弹选择框、
+            // 直接进应用」这种强绑定；只声明 scheme+host、不做 domain 校验时，系统仍会
+            // 把链接列进「用哪个应用打开」的候选里。OpenGram 0.6.0 实测就是这么拿到
+            // 浏览器一键导入能力的，见下面 uris 的注释。scheme MUST be lowercase.
             "entities": [
               "entity.system.browsable"
             ],
@@ -172,7 +173,25 @@
             "uris": [
               {
                 "scheme": "tg"
-              }
+              },
+              {
+                "scheme": "telegram"
+              },
+              // 浏览器里点 https://t.me/... 时，系统要能把这串 URL 交给本应用。
+              // OpenGram 0.6.0（open.gram.me，用户实测可从浏览器一键导入代理）在
+              // module.json 里就是这么声明的：https/http × t.me / www.t.me /
+              // telegram.me / www.telegram.me / telegram.dog，且**不写 path**。
+              // 不声明 host 的话，浏览器只会自己打开网页，应用连候选都不出现。
+              { "scheme": "https", "host": "t.me" },
+              { "scheme": "https", "host": "www.t.me" },
+              { "scheme": "https", "host": "telegram.me" },
+              { "scheme": "https", "host": "www.telegram.me" },
+              { "scheme": "https", "host": "telegram.dog" },
+              { "scheme": "http", "host": "t.me" },
+              { "scheme": "http", "host": "www.t.me" },
+              { "scheme": "http", "host": "telegram.me" },
+              { "scheme": "http", "host": "www.telegram.me" },
+              { "scheme": "http", "host": "telegram.dog" }
             ]
           },
           {

@@ -5193,6 +5193,66 @@
       "value": "Proxy"
     },
     {
+      "name": "px_web_section",
+      "value": "WEB proxy"
+    },
+    {
+      "name": "px_web_badge",
+      "value": "Web bridge"
+    },
+    {
+      "name": "px_web_none",
+      "value": "Not configured"
+    },
+    {
+      "name": "px_web_root",
+      "value": "root path"
+    },
+    {
+      "name": "px_web_host",
+      "value": "Proxy domain"
+    },
+    {
+      "name": "px_web_path",
+      "value": "Path (optional)"
+    },
+    {
+      "name": "px_web_note",
+      "value": "The WEB proxy connects through a hidden web bridge and needs your own tproxy-server deployment."
+    },
+    {
+      "name": "px_web_saved",
+      "value": "WEB proxy enabled"
+    },
+    {
+      "name": "px_web_state_loading",
+      "value": "Connecting…"
+    },
+    {
+      "name": "px_web_state_ready",
+      "value": "Ready"
+    },
+    {
+      "name": "px_web_state_retry",
+      "value": "Retrying"
+    },
+    {
+      "name": "px_web_off_toast",
+      "value": "WEB proxy disabled"
+    },
+    {
+      "name": "px_web_first",
+      "value": "Enter the domain and secret first"
+    },
+    {
+      "name": "px_web_delete_title",
+      "value": "Delete WEB proxy"
+    },
+    {
+      "name": "px_web_delete_body",
+      "value": "You will need to enter the domain and secret again."
+    },
+    {
       "name": "px_refresh",
       "value": "Refresh proxy status"
     },
