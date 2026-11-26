@@ -110,6 +110,18 @@ export function edgeBlurRadiusOf(on: boolean, maxVp: number = BLUR_MAX_VP): numb
 }
 
 /**
+ * 头像下拉放大（形变）期间专用的半径。
+ *
+ * 形变时屏幕上半被一张铺满的大图占住，118vp 的顶部带只会把它上沿糊掉一截，
+ * 视觉上没有意义、却要白付一次全屏模糊。所以这是全应用唯一允许「开关为真、
+ * 半径临时取 0」的场景；两处资料页（个人资料 / 聊天资料）共用这一处判断，
+ * 不要再各自写三元表达式。
+ */
+export function edgeBlurRadiusWhileMorphing(morphing: boolean, topOn: boolean, bottomOn: boolean): number {
+  return morphing ? 0 : edgeBlurRadiusOf(topOn || bottomOn);
+}
+
+/**
  * 顶部带的上边界分数（与 edgeBlurStops 内部同一公式，Ex 版本要用它判断哪一段属顶部）。
  */
 function topCutFrac(vh: number, topOffsetVp: number): number {

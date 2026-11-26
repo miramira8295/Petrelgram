@@ -1595,7 +1595,8 @@ export struct ContactsPage {
       const h: number = Number(area.height);
       if (h > 0 && Math.abs(h - this.contactsViewH) > 0.5) { this.contactsViewH = h; }
     })
-    // 与首页一致：顶部保持清晰，仅列表底部响应已有边缘模糊设置；关闭时不挂滤镜节点。
+    // 单边（只底部）：contactsTitle 常驻在列表之上、列表上沿不在屏幕顶，顶部没有内容
+    // 穿到状态栏下，开了只会把标题栏本身糊掉。其余页面都是双边，这里是布局决定的例外。
     .attributeModifier(this.edgeBlur.bind(
       edgeBlurRadiusOf(edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
       this.contactsViewH, false,

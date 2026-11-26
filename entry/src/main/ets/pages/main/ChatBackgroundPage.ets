@@ -48,7 +48,7 @@ import {
 } from '../../util/wallpaperSlot';
 import { logE, logI } from '../../util/log';
 import { contentSideGutter } from '../../util/contentWidth';
-import { BLUR_MAX_VP } from '../../util/scrollEdgeBlur';
+import { edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
 import { ScrollEdgeBlurBinder } from '../../util/scrollEdgeBlurModifier';
 import {
   EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
@@ -171,7 +171,6 @@ struct ChatBackgroundPage {
   // 面积是手机的两三倍，RS 侧要重绘的模糊层（实测 188 个 modifier、单个
   // ~10ms）随面积线性增长，叠上滑杆/缩略图引起的整页 ExecuteRerender，
   // 单次停顿能到 100–150ms。真机 hitrace 见 performance/ 归档。
-  @State private scrollActive: boolean = false;
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
   @StorageProp('screenWidthVp') screenW: number = 360;
   // 浓度和遮罩滑杆改成 @State 镜像：它们要按**槽位**读写，而 @StorageProp 的键是写死的。
@@ -1144,11 +1143,9 @@ struct ChatBackgroundPage {
           });
         }
         .align(Alignment.Top).width('100%').height('100%').scrollBar(BarState.Off)
-        .onScrollStart((): void => { this.scrollActive = true; })
-        .onScrollStop((): void => { this.scrollActive = false; })
-        // 半径传 0 = 不模糊（stops 仍然生效，只是没有半径）。滚动中关掉这一层，
-        // 静止时恢复——和聊天消息列表同一套降级方式，静止画面像素不变。
-        .attributeModifier(this.edgeBlur.bind((this.scrollActive || !(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom))) ? 0 : BLUR_MAX_VP, this.listViewH, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
+        // 半径恒由「开关」算，滚动中不降级（与设置页等页面同一范式）。
+        // 曾经按 scrollActive 整条置 0，手指一动虚化就消失，是全应用唯一的滚动降级。
+        .attributeModifier(this.edgeBlur.bind(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), this.listViewH, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
         .clip(false)
         .onAreaChange((_o: Area, n: Area): void => {
           const h: number = n.height as number;

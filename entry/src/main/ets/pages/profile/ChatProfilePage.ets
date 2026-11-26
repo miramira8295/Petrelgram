@@ -1,7 +1,7 @@
 import { showToast } from '../../util/toast';
 import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { QrDialog } from '../common/QrDialog';
-import { BLUR_MAX_VP } from '../../util/scrollEdgeBlur';
+import { edgeBlurRadiusWhileMorphing } from '../../util/scrollEdgeBlur';
 import { ScrollEdgeBlurBinder } from '../../util/scrollEdgeBlurModifier';
 import {
   EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
@@ -145,9 +145,8 @@ export struct ChatProfilePage {
   // router 页，this.getUIContext().getRouter().back() 弹不到自己。
   private navStack: NavPathStack | undefined = undefined;
   private readonly chatDestToken: number = allocChatDestToken();
-  // 顶/底虚化四件套：半径随滚动量渐入，静止时 0（头图在列表里，常开会糊头像）。
+  // 顶/底虚化四件套：半径由开关算，只有头像形变期间例外（见 edgeBlurRadiusWhileMorphing）。
   @State private listViewH: number = 0;
-  @State private blurRadius: number = 0;
   private edgeBlur: ScrollEdgeBlurBinder = new ScrollEdgeBlurBinder();
   // 路由参数。router 时代靠 this.getUIContext().getRouter().getParams() 现取，NavDestination 要在
   // onReady 里从 NavDestinationContext 拿，而 onReady 实测晚于 aboutToAppear
@@ -2358,10 +2357,12 @@ export struct ChatProfilePage {
     .width('100%').height('100%')
     .scrollBar(BarState.Off)
     .cachedCount(PROFILE_LIST_CACHED_COUNT)
-    // 头图与大头像就在列表第一项里、随内容滚走，所以顶部虚化不能常开（常开会
-    // 糊掉静止状态的头像上沿）。跟着滚动量渐入：静止半径 0 时不挂滤镜节点，一滚再挂。
+    // 与设置页等页面同一范式：半径只由开关决定，滚动中不降级；
+    // 唯一的例外是头像下拉放大形变期间（整屏大图，糊它无意义），判断收在 edgeBlurRadiusWhileMorphing。
     .attributeModifier(this.edgeBlur.bind(
-      !this.avatarMorphing() && edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) ? this.blurRadius : 0,
+      edgeBlurRadiusWhileMorphing(this.avatarMorphing(),
+        edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop),
+        edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)),
       this.listViewH,
       edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop),
       edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
@@ -2374,10 +2375,8 @@ export struct ChatProfilePage {
       const w: number = n.width as number;
       if (w > 0 && Math.abs(w - this.avatarAvailW) > 0.5) { this.avatarAvailW = w; }
     })
-    .onDidScroll((offset: number): void => {
-      const target: number = Math.max(0, Math.min(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) ? BLUR_MAX_VP : 0, offset * 2));
-      if (Math.abs(target - this.blurRadius) > 1) { this.blurRadius = target; }
-      // 下拉放大头像：借用同一次回调读越界值，不另挂一个 onDidScroll。
+    .onDidScroll((_offset: number): void => {
+      // 下拉放大头像：读越界值，不另挂一个 onDidScroll。
       this.handlePageScroll();
     })
     // 壁纸生效时整页底必须透明，否则壁纸被这一层盖死（同 util/theme.mainPageFill

@@ -69,6 +69,15 @@ const CLEAR_EDGE_BLUR_MODIFIER: ScrollEdgeBlurModifier =
  * - 未开启过时稳定返回 NOOP 单例（零分配、零 linearGradientBlur 调用）；
  * - 开启且参数未变时复用同一修饰器实例；
  * - 开启→关闭时返回 CLEAR 单例清除先前挂载的滤镜。
+ *
+ * 【全应用唯一范式（2026-11-26 统一）】
+ * 第一个参数（半径）必须由开关算出来，不要在页面里另外写三元：
+ *   · 常规页面：edgeBlurRadiusOf(topOn || bottomOn)
+ *   · 两处资料页：edgeBlurRadiusWhileMorphing(avatarMorphing, topOn, bottomOn)
+ * 顶/底带宽（118vp）、峰值半径（22vp）、曲线、fallbackH（780）、topOffsetVp（0）全在
+ * util/scrollEdgeBlur.ets 的常量里，页面只传「开关」与「容器高度」。
+ * 禁止按滚动状态（onScrollStart/onScrollStop）或滚动量去改半径：那会让手指一动虚化消失、
+ * 或者静止不糊一动才糊，与其他页面观感不一致（最后两处这种写法已于 2026-11-26 清掉）。
  */
 export class ScrollEdgeBlurBinder {
   private hasApplied: boolean = false;

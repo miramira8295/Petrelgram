@@ -1940,6 +1940,8 @@ export struct GlobalSearchPage {
     .cachedCount(4)
     .maintainVisibleContentPosition(true)
     .contentStartOffset(0)
+    // 单边（只底部）：搜索框与分类条由 panelHeader 常驻在列表之上，列表上沿不在屏幕顶，
+    // 顶部带只会糊掉搜索框。布局决定的例外，不是参数没统一。
     .attributeModifier(this.edgeBlur.bind(edgeBlurRadiusOf(edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), this.listViewH, false, edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
     .clip(true)
     .onAreaChange((_o: Area, n: Area): void => {

@@ -1,7 +1,7 @@
 import { navigateToSettingInChat } from '../../util/settingsNav';
 import { showToast } from '../../util/toast';
 import { showProfileStoryActions } from '../../services/ProfileStoryActions';
-import { BLUR_MAX_VP, EDGE_OVERLAY_VP, edgeBlurRadiusOf } from '../../util/scrollEdgeBlur';
+import { EDGE_OVERLAY_VP, edgeBlurRadiusWhileMorphing } from '../../util/scrollEdgeBlur';
 import { ScrollEdgeBlurBinder } from '../../util/scrollEdgeBlurModifier';
 import {
   EDGE_BLUR_BOTTOM_ON_DEFAULT, EDGE_BLUR_FOLLOW, EDGE_BLUR_ON_DEFAULT, EDGE_BLUR_TOP_ON_DEFAULT,
@@ -2404,10 +2404,10 @@ export struct MyProfilePage {
       .onScroll((): void => {
         this.handleProfileScroll();
       })
-      // 边缘渐变虚化：与首页会话列表同一套参数（顶/底 118vp、峰 22px）。
+      // 边缘渐变虚化：全应用同一套参数（顶/底 118vp、峰 22px），半径只由开关算。
       // 上沿已贴屏幕顶（见 titleBar 的 enableComponentSafeArea: false）。
-      // 头像形变期间整片糊带关掉——此时屏幕上半被一张大图占满，糊它只是白付一次全屏模糊。
-      .attributeModifier(this.edgeBlur.bind(this.avatarMorphing() ? 0 : edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), this.profileViewH, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
+      // 唯一例外是头像形变期间，判断收在 edgeBlurRadiusWhileMorphing（与聊天资料页共用）。
+      .attributeModifier(this.edgeBlur.bind(edgeBlurRadiusWhileMorphing(this.avatarMorphing(), edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), this.profileViewH, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
       .onAreaChange((_old: Area, area: Area): void => {
         // 同一次回调既喂内容列限宽（三宫格），也喂下拉放大头像的展开宽度。
         const w: number = Number(area.width);
