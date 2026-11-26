@@ -69,6 +69,8 @@ const CLEAR_EDGE_BLUR_MODIFIER: ScrollEdgeBlurModifier =
  * - 未开启过时稳定返回 NOOP 单例（零分配、零 linearGradientBlur 调用）；
  * - 开启且参数未变时复用同一修饰器实例；
  * - 开启→关闭时返回 CLEAR 单例清除先前挂载的滤镜。
+ *
+ * 页面使用 edgeBlurRadiusOf 计算半径。壁纸图库滚动和资料页头像形变期间暂停滤镜。
  */
 export class ScrollEdgeBlurBinder {
   private hasApplied: boolean = false;

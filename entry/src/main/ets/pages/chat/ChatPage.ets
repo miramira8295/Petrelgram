@@ -1,5 +1,4 @@
 import { shatterWarm } from 'libentry.so';
-import { systemMaterialState } from '../../util/systemMaterialSetting';
 import { openMessageSender } from '../../util/messageSenderNavigation';
 import { ChannelDirectMessagesSession } from './ChannelDirectMessagesSession';
 import { PlaySlotChannel } from './PlaySlotChannel';
@@ -112,8 +111,6 @@ import {
 } from './AlbumGroupDataSource';
 import { IReusePool, LengthMetrics, UIUtils } from '@kit.ArkUI';
 import { ChatPageSurface } from './ChatPageSurface';
-import { SystemGlassSurface } from './SystemGlassSurface';
-import { edgeBlurPageTopOn, edgeBlurSwitch } from '../../util/edgeBlurSetting';
 import { ChatHeader } from './ChatHeader';
 import { HeaderIdentitySession, ResolvedChatKind } from './HeaderIdentitySession';
 import {
@@ -7319,15 +7316,15 @@ export struct ChatPage {
       // 自绘顶栏与顶部横幅（ChatHeader / SearchHeader / SelectionHeader + ChatTopicBar + TopBanners）。
       // 移出 HdsNavDestination.titleBar() 后，无论置顶条/话题条/搜索条如何展开收起，
       // 都不再触发 HDS Navigation-Measure 销毁重建整条顶栏（单次省去 5~6ms 测量 + 2.6ms 节点重建）。
+      // 顶栏不再铺整条材质底板（2026-11-26）：原来这里是一层 radius:0 的 SystemGlassSurface，
+      // 材质开着时就是「一整条没有渐变的玻璃」，和设置页那种「内容穿到顶、边缘自己渐变虚化」
+      // 完全是两种观感。现在跟设置页保持同一套：标题栏自身透明，消息列表滚到标题栏底下，
+      // 由 ChatTimelineHost 挂在 List 上的两端渐变虚化（linearGradientBlur）负责淡化。
+      // 三颗圆钮/身份胶囊仍是各自的浮层玻璃，不受影响。
       Column() {
-        SystemGlassSurface({
-          radius: 0, surface: 'bar', dark: this.appDark,
-          showBackdrop: systemMaterialState.chatEnabled && edgeBlurPageTopOn(edgeBlurSwitch.master, edgeBlurSwitch.top, edgeBlurSwitch.chatTop)
-        }) {
-          Column() {
-            this.chatTitleBar();
-          }.width('100%').padding({ top: this.topSafe });
-        }
+        Column() {
+          this.chatTitleBar();
+        }.width('100%').padding({ top: this.topSafe });
         if (this.timeline.initialMessageTransitionSettled) {
           this.chatTitleBarBottom();
         }

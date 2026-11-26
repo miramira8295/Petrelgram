@@ -110,6 +110,15 @@ export function edgeBlurRadiusOf(on: boolean, maxVp: number = BLUR_MAX_VP): numb
 }
 
 /**
+ * 头像下拉放大（形变）期间专用的半径。
+ *
+ * 两处资料页下拉放大头像时暂停整屏模糊，结束后恢复顶、底边缘设置。
+ */
+export function edgeBlurRadiusWhileMorphing(morphing: boolean, topOn: boolean, bottomOn: boolean): number {
+  return morphing ? 0 : edgeBlurRadiusOf(topOn || bottomOn);
+}
+
+/**
  * 顶部带的上边界分数（与 edgeBlurStops 内部同一公式，Ex 版本要用它判断哪一段属顶部）。
  */
 function topCutFrac(vh: number, topOffsetVp: number): number {

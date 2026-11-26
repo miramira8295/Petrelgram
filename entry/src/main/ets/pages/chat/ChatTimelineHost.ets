@@ -1,4 +1,3 @@
-import { systemMaterialState } from '../../util/systemMaterialSetting';
 import { MessageRowClock } from '../../util/messageRowClock';
 import { TimelineLazyEntry } from './TimelineLazyDataSource';
 import { MessageListStateCard } from './MessageListState';
@@ -399,13 +398,16 @@ export struct ChatTimelineHost {
   }
 
   // 聊天页顶部：总开关最高，其次是「聊天页」的顶部开关，没单独设过用全局顶部。
+  // 2026-11-26：这里不再叠加「系统材质」总开关。材质管的是浮层玻璃（NativeGlassHost），
+  // 边缘虚化是另一条效果，普通页面（设置页等）从来只看边缘虚化开关；聊天页跟着材质一起
+  // 开关的结果是「材质一关，聊天页顶部就再没有渐变，只剩一块不透明的标题底板」。
   private edgeBlurTopEnabled(): boolean {
-    return systemMaterialState.chatEnabled && edgeBlurPageTopOn(edgeBlurSwitch.master, edgeBlurSwitch.top, edgeBlurSwitch.chatTop);
+    return edgeBlurPageTopOn(edgeBlurSwitch.master, edgeBlurSwitch.top, edgeBlurSwitch.chatTop);
   }
 
-  // 聊天页底部。
+  // 聊天页底部。判据同上，只跟边缘虚化的底部开关走。
   private edgeBlurBottomEnabled(): boolean {
-    return systemMaterialState.chatEnabled && edgeBlurPageBottomOn(edgeBlurSwitch.master, edgeBlurSwitch.bottom, edgeBlurSwitch.chatBottom);
+    return edgeBlurPageBottomOn(edgeBlurSwitch.master, edgeBlurSwitch.bottom, edgeBlurSwitch.chatBottom);
   }
 
   // 两侧都关时半径取 0：滤镜不参与渲染，不做离屏合成，也不做每帧背景采样。
