@@ -431,9 +431,9 @@ export class MessageStore {
     this.pendingTopicCreator = creator;
   }
 
-  private ensureTopicForSend(hint: string): Promise<boolean> {
+  private pendingTopicForSend(hint: string): Promise<boolean> | null {
     if (this.forumTopicId >= 0) {
-      return Promise.resolve(true);
+      return null;
     }
     if (this.pendingTopicPromise !== null) {
       return this.pendingTopicPromise;
@@ -2001,7 +2001,8 @@ export class MessageStore {
   // entities 目前只用于按 user_id 提及没有用户名的成员（见 mentionEntities）。
   // 其余实体仍由服务器扫文本自行识别，这里不接管。
   async sendAsync(text: string, replyToId: number = 0, entities: TdObject[] = [], parseMarkdown: boolean = false): Promise<void> {
-    if (!(await this.ensureTopicForSend(text))) {
+    const pendingTopic = this.pendingTopicForSend(text);
+    if (pendingTopic !== null && !(await pendingTopic)) {
       throw new TdError(-1, 'failed to create bot topic');
     }
     // 记一笔"我主动发过"，系统分享的目标名单按它排（util/recentOutgoing）。
@@ -2130,7 +2131,8 @@ export class MessageStore {
   async sendScheduledAsync(
     text: string, replyToId: number, sendDate: number, silent: boolean
   ): Promise<void> {
-    if (!(await this.ensureTopicForSend(text))) {
+    const pendingTopic = this.pendingTopicForSend(text);
+    if (pendingTopic !== null && !(await pendingTopic)) {
       throw new TdError(-1, 'failed to create bot topic');
     }
     const ft: TdObject = { '@type': 'formattedText' };
@@ -2368,7 +2370,8 @@ export class MessageStore {
   }
 
   async sendDocumentAsync(path: string, caption: string): Promise<void> {
-    if (!(await this.ensureTopicForSend(caption))) {
+    const pendingTopic = this.pendingTopicForSend(caption);
+    if (pendingTopic !== null && !(await pendingTopic)) {
       throw new TdError(-1, 'failed to create bot topic');
     }
     const content: TdObject = { '@type': 'inputMessageDocument' };
@@ -2398,7 +2401,8 @@ export class MessageStore {
   private async sendContent(content: TdObject, tag: string, replyToId: number = 0, strict: boolean = false): Promise<number> {
     const captionObj = content['caption'] as TdObject | undefined;
     const hint: string = (captionObj?.['text'] as string | undefined) ?? '';
-    if (!(await this.ensureTopicForSend(hint))) {
+    const pendingTopic = this.pendingTopicForSend(hint);
+    if (pendingTopic !== null && !(await pendingTopic)) {
       const err = new TdError(-1, 'failed to create bot topic');
       return strict ? Promise.reject(err) : 0;
     }
@@ -2878,7 +2882,7 @@ export class MessageStore {
     return this.sendMediaChecked(items, caption, replyToId);
   }
 
-  private sendMediaChecked(items: MediaSendItem[], caption: string, replyToId: number): Promise<void> {
+  private async sendMediaChecked(items: MediaSendItem[], caption: string, replyToId: number): Promise<void> {
     if (items.length === 0) {
       return Promise.resolve();
     }
@@ -2915,30 +2919,29 @@ export class MessageStore {
       replyTo['message_id'] = replyToId;
       req['reply_to'] = replyTo;
     }
-    return this.ensureTopicForSend(caption).then((ok: boolean): Promise<void> => {
-      if (!ok) {
-        return Promise.reject(new TdError(-1, 'failed to create bot topic'));
-      }
-      this.applyTopicScope(req);
-      return sendWithChatPermissions(this.client, req).then((result: TdObject): void => {
-        const sent: TdObject[] = items.length > 1
-          ? ((result['messages'] as TdObject[] | undefined) ?? [])
-          : [result];
-        for (let i = 0; i < sent.length; i++) {
-          const source = items[Math.min(i, items.length - 1)];
-          const rawEntry = buildMessageEntry(sent[i], this.users);
-          const existing = this.messages.find((e: MessageEntry): boolean => e.id === rawEntry.id) ??
-            this.deferredOutgoing.find((e: MessageEntry): boolean => e.id === rawEntry.id);
-          if (existing !== undefined && existing.rowId !== 0) {
-            rawEntry.rowId = existing.rowId;
-          }
-          const entry = this.rememberLocalMedia(rawEntry, source);
-          this.publishOutgoing(entry);
+    const pendingTopic = this.pendingTopicForSend(caption);
+    if (pendingTopic !== null && !(await pendingTopic)) {
+      throw new TdError(-1, 'failed to create bot topic');
+    }
+    this.applyTopicScope(req);
+    return sendWithChatPermissions(this.client, req).then((result: TdObject): void => {
+      const sent: TdObject[] = items.length > 1
+        ? ((result['messages'] as TdObject[] | undefined) ?? [])
+        : [result];
+      for (let i = 0; i < sent.length; i++) {
+        const source = items[Math.min(i, items.length - 1)];
+        const rawEntry = buildMessageEntry(sent[i], this.users);
+        const existing = this.messages.find((e: MessageEntry): boolean => e.id === rawEntry.id) ??
+          this.deferredOutgoing.find((e: MessageEntry): boolean => e.id === rawEntry.id);
+        if (existing !== undefined && existing.rowId !== 0) {
+          rawEntry.rowId = existing.rowId;
         }
-        this.resolveReplies();
-        this.requestPhotos();
-        this.notifySoon();
-      });
+        const entry = this.rememberLocalMedia(rawEntry, source);
+        this.publishOutgoing(entry);
+      }
+      this.resolveReplies();
+      this.requestPhotos();
+      this.notifySoon();
     }).catch((e: TdError): Promise<void> => {
       logE(`MessageStore.sendMedia failed: ${e.message}`);
       return Promise.reject(e);
@@ -2964,7 +2967,8 @@ export class MessageStore {
   // wrapped=true 发包装形状，被库拒了（旧 schema 不认 inputAnimation）再裸发一次。
   private async sendOneAnimation(item: MediaSendItem, caption: string, replyToId: number,
     wrapped: boolean): Promise<void> {
-    if (!(await this.ensureTopicForSend(caption))) {
+    const pendingTopic = this.pendingTopicForSend(caption);
+    if (pendingTopic !== null && !(await pendingTopic)) {
       throw new TdError(-1, 'failed to create bot topic');
     }
     // 记一笔"我主动发过"，系统分享的目标名单按它排（util/recentOutgoing）。
@@ -3020,36 +3024,35 @@ export class MessageStore {
     this.sendSavedAnimation(fileId, width, height, durationSec, true);
   }
 
-  private sendSavedAnimation(fileId: number, width: number, height: number,
-    durationSec: number, wrapped: boolean): void {
-    this.ensureTopicForSend('').then((ok: boolean): void => {
-      if (!ok) {
+  private async sendSavedAnimation(fileId: number, width: number, height: number,
+    durationSec: number, wrapped: boolean): Promise<void> {
+    const pendingTopic = this.pendingTopicForSend('');
+    if (pendingTopic !== null && !(await pendingTopic)) {
+      return;
+    }
+    const inputFile: TdObject = { '@type': 'inputFileId' };
+    inputFile['id'] = fileId;
+    const content: TdObject = { '@type': 'inputMessageAnimation' };
+    content['animation'] = wrapped
+      ? MessageStore.wrapInputFile('inputAnimation', 'animation', inputFile) : inputFile;
+    content['width'] = width;
+    content['height'] = height;
+    content['duration'] = durationSec;
+    const req: TdRequest = { '@type': 'sendMessage' };
+    req['chat_id'] = this.chatId;
+    req['input_message_content'] = content;
+    this.applyTopicScope(req);
+    sendWithChatPermissions(this.client, req).then((m: TdObject): void => {
+      this.upsert(buildMessageEntry(m, this.users));
+      this.requestPhotos();
+      this.notifySoon();
+    }).catch((e: TdError): void => {
+      if (wrapped && animationShapeRejected(e.message)) {
+        logW(`MessageStore.sendAnimation wrapped rejected (${e.message}), retrying bare`);
+        this.sendSavedAnimation(fileId, width, height, durationSec, false);
         return;
       }
-      const inputFile: TdObject = { '@type': 'inputFileId' };
-      inputFile['id'] = fileId;
-      const content: TdObject = { '@type': 'inputMessageAnimation' };
-      content['animation'] = wrapped
-        ? MessageStore.wrapInputFile('inputAnimation', 'animation', inputFile) : inputFile;
-      content['width'] = width;
-      content['height'] = height;
-      content['duration'] = durationSec;
-      const req: TdRequest = { '@type': 'sendMessage' };
-      req['chat_id'] = this.chatId;
-      req['input_message_content'] = content;
-      this.applyTopicScope(req);
-      sendWithChatPermissions(this.client, req).then((m: TdObject): void => {
-        this.upsert(buildMessageEntry(m, this.users));
-        this.requestPhotos();
-        this.notifySoon();
-      }).catch((e: TdError): void => {
-        if (wrapped && animationShapeRejected(e.message)) {
-          logW(`MessageStore.sendAnimation wrapped rejected (${e.message}), retrying bare`);
-          this.sendSavedAnimation(fileId, width, height, durationSec, false);
-          return;
-        }
-        logE(`MessageStore.sendAnimation failed: ${e.message}`);
-      });
+      logE(`MessageStore.sendAnimation failed: ${e.message}`);
     });
   }
 
