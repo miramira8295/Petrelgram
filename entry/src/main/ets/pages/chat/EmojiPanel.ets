@@ -99,8 +99,10 @@ export struct EmojiPanel {
   @Prop chatId: number;
   @Prop @Watch('onActiveChanged') active: boolean = true;
   @Prop panelHeight: number = EMOJI_DRAWER_HEIGHT;
+  @Prop keyboardInset: number = 0;
   @Prop expanded: boolean = false;
   onExpanded: (expanded: boolean) => void = (): void => {};
+  private autoExpandedForSearch: boolean = false;
   @Prop @Watch('onMediaPermissionChanged') mediaAllowed: boolean = true;
   // 单向入 + 回调出，而不是 @Link：@Link 只能被 V1 状态变量初始化，页面迁到
   // 状态管理 V2 之后就接不上了。这里的写回照旧先改本地副本（@Prop 允许），
@@ -192,10 +194,16 @@ export struct EmojiPanel {
         Blank();
       }.width('100%').height(36)
       .accessibilityText(this.expanded ? str('collapse') : str('expand'))
-      .onClick((): void => { this.onExpanded(!this.expanded); })
+      .onClick((): void => {
+        this.autoExpandedForSearch = false;
+        this.onExpanded(!this.expanded);
+      })
       .gesture(PanGesture({ direction: PanDirection.Vertical, distance: 12 })
         .onActionEnd((event: GestureEvent): void => {
-          if (Math.abs(event.offsetY) >= 24) { this.onExpanded(event.offsetY < 0); }
+          if (Math.abs(event.offsetY) >= 24) {
+            this.autoExpandedForSearch = false;
+            this.onExpanded(event.offsetY < 0);
+          }
         }))
       Row({ space: 6 }) {
         this.modeTab($r('sys.symbol.face_smiling'), str('emoji_tab'), 0);
@@ -212,6 +220,18 @@ export struct EmojiPanel {
             stickerType: 'custom_emoji',
             includeTrending: true,
             classicPacks: CLASSIC_PACKS,
+            onSearchFocus: (): void => {
+              if (!this.expanded) {
+                this.autoExpandedForSearch = true;
+                this.onExpanded(true);
+              }
+            },
+            onSearchClose: (): void => {
+              if (this.autoExpandedForSearch && this.expanded) {
+                this.autoExpandedForSearch = false;
+                this.onExpanded(false);
+              }
+            },
             onPick: (s: StickerItem): void => {
               if (s.customEmojiId !== '') {
                 this.onPickCustomEmoji(s.emoji, s.customEmojiId);
@@ -227,6 +247,18 @@ export struct EmojiPanel {
           Column() {
             StickerPicker({
               active: this.active && this.tab === 1,
+              onSearchFocus: (): void => {
+                if (!this.expanded) {
+                  this.autoExpandedForSearch = true;
+                  this.onExpanded(true);
+                }
+              },
+              onSearchClose: (): void => {
+                if (this.autoExpandedForSearch && this.expanded) {
+                  this.autoExpandedForSearch = false;
+                  this.onExpanded(false);
+                }
+              },
               onPick: (s: StickerItem, x: number, y: number): void => { this.onPickSticker(s, x, y); }
             });
           }
@@ -238,6 +270,12 @@ export struct EmojiPanel {
             GifPicker({
               active: this.active && this.tab === 2,
               chatId: this.chatId,
+              onSearchFocus: (): void => {
+                if (!this.expanded) {
+                  this.autoExpandedForSearch = true;
+                  this.onExpanded(true);
+                }
+              },
               onPick: (g: GifItem): void => { this.onPickGif(g); }
             });
           }
@@ -249,6 +287,7 @@ export struct EmojiPanel {
       // empty-GIF state could otherwise propagate through Stack and make the
       // overlay consume the whole chat page after switching tabs.
       .width('100%').height(Math.max(0, this.panelHeight - EMOJI_TAB_BAR_HEIGHT - 36))
+      .padding({ bottom: this.keyboardInset })
       // 记落点。PanGesture 的 event 只给位移，给不了起点在哪一条带子上。
       .onTouch((event: TouchEvent): void => {
         if (event.type === TouchType.Down && event.touches.length > 0) {

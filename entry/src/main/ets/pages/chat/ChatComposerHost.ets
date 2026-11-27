@@ -3,6 +3,7 @@ import { PendingMediaItem } from '../../util/pendingMedia';
 import { attachActions } from '../../util/attachActions';
 import { ChatSendAccess } from './ChatSendAccess';
 import { EmojiDrawerState } from './EmojiDrawerState';
+import { drawerBottomInset } from '../../util/drawerMetrics';
 import { ComposerSession } from './ComposerSession';
 import { CommandSuggestionState } from './ComposerSuggestionState';
 import { VoiceRecordingState } from './VoiceRecordingState';
@@ -183,6 +184,7 @@ export struct ChatBottomDrawerHost {
   @Param emojiPanelClosing: boolean = false;
   @Param emojiPanelTab: number = 0;
   @Param bottomSafe: number = 0;
+  @Param keyboardH: number = 0;
   @Param drawerHeight: number = 260;
   @Param accentColor: ResourceColor = Color.Transparent;
   @Param chatId: number = 0;
@@ -217,6 +219,9 @@ export struct ChatBottomDrawerHost {
       EmojiPanel({
         active: this.showEmojiPanel,
         panelHeight: this.drawerHeight,
+        keyboardInset: this.emojiDrawer.expanded && this.keyboardH > 0
+          ? Math.max(0, this.keyboardH - drawerBottomInset(this.bottomSafe))
+          : 0,
         expanded: this.emojiDrawer.expanded,
         onExpanded: (expanded: boolean): void => { this.onEmojiExpanded(expanded); },
         tab: this.emojiPanelTab,

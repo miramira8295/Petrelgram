@@ -7192,6 +7192,7 @@ export struct ChatPage {
         emojiPanelClosing: this.emojiPanelClosing,
         emojiPanelTab: this.emojiPanelTab,
         bottomSafe: this.bottomSafe,
+        keyboardH: this.keyboardH,
         drawerHeight: this.emojiDrawer.cardHeight(this.headerChromeHeight(), this.bottomSafe),
         accentColor: this.accent(),
         chatId: this.chatId,

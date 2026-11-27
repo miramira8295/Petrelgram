@@ -114,6 +114,7 @@ class GifDataSource implements IDataSource {
 export struct GifPicker {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   onPick: (g: GifItem) => void = (): void => {};
+  onSearchFocus: () => void = (): void => {};
   @Prop @Watch('onPlaybackSettingChanged') active: boolean = true;
   @StorageProp(KEY_POWER_AUTOPLAY_GIF) @Watch('onPlaybackSettingChanged') autoplayGif: boolean = true;
   @StorageProp(KEY_POWER_ACTIVE) @Watch('onPlaybackSettingChanged') powerSaving: boolean = false;
@@ -518,6 +519,7 @@ export struct GifPicker {
         .placeholderColor(COLOR_TEXT_SECONDARY)
         .caretColor(COLOR_PRIMARY)
         .enterKeyType(EnterKeyType.Search)
+        .onFocus((): void => { this.onSearchFocus(); })
         .onChange((v: string): void => { this.onSearchChanged(v); });
       if (this.searchText !== '') {
         SymbolGlyph($r('sys.symbol.xmark_circle')).fontSize(17).fontColor([COLOR_ICON_SECONDARY])

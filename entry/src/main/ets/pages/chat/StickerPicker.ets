@@ -318,6 +318,8 @@ export struct StickerPicker {
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
+  onSearchFocus: () => void = (): void => {};
+  onSearchClose: () => void = (): void => {};
   // 正在被按住的格子（setIdx_pos）。空串表示没有。
   @State private pressedCell: string = '';
   @State @Watch('syncPickerAnimate') private previewOpen: boolean = false;
@@ -786,9 +788,11 @@ export struct StickerPicker {
       this.searchLoading = false;
       this.searchError = '';
       this.refreshGrid();
+      this.onSearchClose();
       return;
     }
     this.searchOpen = true;
+    this.onSearchFocus();
   }
 
   private onSearchChanged(v: string): void {
@@ -1556,6 +1560,7 @@ export struct StickerPicker {
                 .backgroundColor(Color.Transparent).padding(0)
                 .placeholderColor(COLOR_TEXT_SECONDARY)
                 .defaultFocus(true)
+                .onFocus((): void => { this.onSearchFocus(); })
                 .onChange((v: string) => { this.onSearchChanged(v); });
             }
             // 宽度得把两边的外边距一起扣掉。写 100% 再挂 margin，父容器是
