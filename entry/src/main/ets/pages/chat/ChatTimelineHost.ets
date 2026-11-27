@@ -13,6 +13,7 @@ import { stackFromEndWanted } from '../../util/stackFromEnd';
 import { MESSAGE_SELECTION_GUTTER_VP, rowSelectable } from '../../util/messageSelection';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { COLOR_PRIMARY } from '../../util/theme';
+import { str } from '../../util/strings';
 import { SelectionSession } from './SelectionSession';
 import { RowPageInputs } from '../../util/rowPageInputs';
 import { canRenderLightweightPlainTextRow } from '../../util/messageBubbleReuse';
@@ -67,6 +68,7 @@ export struct ChatTimelineHost {
   @Param langEpoch: number = 0;
   @Param materialEpoch: number = 0;
   @Param timelineTopMargin: number = 0;
+  @Param filterFillCapped: boolean = false;
 
   // 顶/底边缘虚化条带的归一化高度（vp）：底部条带的 y 靠它算。只在尺寸变化时写。
   @Local private bandViewH: number = 780;
@@ -88,6 +90,7 @@ export struct ChatTimelineHost {
   // 页面算出来已经不是 error，三个分支一个都不进，按钮点了没反应。
   // 现在由本组件把**它显示时算出的那个 mode** 一起传上去，页面直接用。
   @Event onTimelinePillRetry: (mode: string) => void = (): void => {};
+  @Event onContinuePastFilter: () => void = (): void => {};
 
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   private accent(): ResourceColor {
@@ -472,6 +475,31 @@ export struct ChatTimelineHost {
         materialEpoch: this.materialEpoch,
         topMargin: this.timelineTopMargin
       });
+
+      if (this.filterFillCapped && !this.session.initialTimelineMasked &&
+        this.session.timelineSnapshot.messageLoadState !== 'loading') {
+        Row() {
+          Row({ space: 6 }) {
+            SymbolGlyph($r('sys.symbol.arrow_clockwise'))
+              .fontSize(15).fontColor([this.accent()]);
+            Text(this.langEpoch < 0 ? '' : str('mf_capped_load_more'))
+              .fontSize(13).fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+          }
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .borderRadius(18)
+          .backgroundColor($r('app.color.surface'))
+          .border({ width: 0.7, color: $r('app.color.divider') })
+          .shadow({ radius: 10, color: '#1A000000', offsetX: 0, offsetY: 2 })
+          .onClick((): void => { this.onContinuePastFilter(); });
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .padding({ left: 16, right: 16 })
+        .margin({ top: this.headerStartOffset + 10 })
+        .hitTestBehavior(HitTestMode.Transparent);
+      }
     }
     .width('100%').height('100%');
   }

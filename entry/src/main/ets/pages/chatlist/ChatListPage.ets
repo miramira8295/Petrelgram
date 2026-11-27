@@ -1166,13 +1166,14 @@ export struct ChatListPage {
     Row({ space: 5 }) {
       Text(spec.title).fontSize(14)
         .fontWeight(this.selectedIndex === index ? FontWeight.Medium : FontWeight.Normal)
-        .fontColor(this.selectedIndex === index ? COLOR_TAB_SELECTED : COLOR_TAB_UNSELECTED)
+        .fontColor(this.selectedIndex === index ? this.tabSelectedColor() : COLOR_TAB_UNSELECTED)
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
         .constraintSize({ maxWidth: this.folderTitleMaxWidth() });
       FolderChipBadge({
         badge: folderBadge(spec.key),
         selected: this.selectedIndex === index,
-        plainTitle: spec.plainTitle
+        plainTitle: spec.plainTitle,
+        accent: this.tabSelectedColor()
       });
     }
     .height(FOLDER_CHIP_HEIGHT)
@@ -1233,13 +1234,13 @@ export struct ChatListPage {
             Stack({ alignContent: Alignment.TopEnd }) {
               Row() {
                 SymbolGlyph(folderSymbol(spec.iconName)).fontSize(22)
-                  .fontColor([this.selectedIndex === index ? COLOR_TAB_SELECTED : COLOR_ICON_SECONDARY]);
+                  .fontColor([this.selectedIndex === index ? this.tabSelectedColor() : COLOR_ICON_SECONDARY]);
               }.width('100%').height(30).justifyContent(FlexAlign.Center);
               FolderChipBadge({ badge: folderBadge(spec.key), selected: this.selectedIndex === index,
-                plainTitle: spec.plainTitle });
+                plainTitle: spec.plainTitle, accent: this.tabSelectedColor() });
             }.width('100%').height(30);
             Text(spec.title).fontSize(11).maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
-              .textAlign(TextAlign.Center).fontColor(this.selectedIndex === index ? COLOR_TAB_SELECTED : COLOR_TAB_UNSELECTED);
+              .textAlign(TextAlign.Center).fontColor(this.selectedIndex === index ? this.tabSelectedColor() : COLOR_TAB_UNSELECTED);
           }
           .width('100%').height(66).justifyContent(FlexAlign.Center)
           .backgroundColor(this.selectedIndex === index ? COLOR_TAB_PILL_BG : Color.Transparent)
@@ -1421,6 +1422,10 @@ export struct ChatListPage {
 
   private accent(): ResourceColor {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
+  private tabSelectedColor(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_TAB_SELECTED;
   }
 
   private isSplitLayout(): boolean {
@@ -1754,6 +1759,7 @@ struct FolderChipBadge {
   @ObjectLink badge: FolderBadge;
   @Prop selected: boolean = false;
   @Prop plainTitle: string = '';
+  @Prop accent: ResourceColor = COLOR_TAB_SELECTED;
 
   build() {
     if (this.badge.count > 0) {
@@ -1764,7 +1770,7 @@ struct FolderChipBadge {
         .height(16).padding({ left: 4, right: 4 })
         .align(Alignment.Center).textAlign(TextAlign.Center)
         // 全静音的角标压暗一档（COLOR_BADGE_BG 本就是灰底，靠透明度区分）。
-        .backgroundColor(this.selected ? COLOR_TAB_SELECTED : COLOR_BADGE_BG)
+        .backgroundColor(this.selected ? this.accent : COLOR_BADGE_BG)
         .opacity(this.badge.hasUnmuted ? 1 : 0.55)
         .borderRadius(8)
         .accessibilityText(str('cl_tab_unread_a11y', this.plainTitle,

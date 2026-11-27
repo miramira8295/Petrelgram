@@ -1,4 +1,4 @@
-import { systemMaterialState } from '../../util/systemMaterialSetting';
+import { chatPlainFill, systemMaterialState } from '../../util/systemMaterialSetting';
 // Background blur is disabled by chatOverlayBackdropBlur for the scroll comparison; translucent fills remain.
 import {
   caretAfterExternalEdit, pasteFitsLimit
@@ -555,6 +555,7 @@ export struct ChatComposerInput {
           .height(46)
           .borderRadius(23)
           .backgroundColor(Color.Transparent)
+          .hitTestBehavior(HitTestMode.Transparent)
           .onClick((): void => { this.onToggleAttach(); });
         }
         .width(46)
@@ -562,7 +563,7 @@ export struct ChatComposerInput {
         .borderRadius(23)
         .alignSelf(ItemAlign.End)
         .margin({ bottom: 1 })
-        .backgroundColor(this.glassHostOn() ? Color.Transparent : $r('app.color.chat_overlay'))
+        .backgroundColor(this.glassHostOn() ? Color.Transparent : chatPlainFill(systemMaterialState.level))
         .visualEffect(hdsVisualEffect('control', !this.appDark))
         // 玻璃模式去掉自绘描边：画布比内容小几像素，这圈 1px 白线会露在玻璃下面变成一条横线。
         .border(this.glassHostOn() ? { width: 0 } : chromeOutline(this.appDark))
@@ -742,7 +743,13 @@ export struct ChatComposerInput {
                   this.scheduleLinesRefresh();
                 })
                 .enterKeyType(this.sendByEnter ? EnterKeyType.Send : EnterKeyType.NEW_LINE)
-                .onSubmit((): void => { this.onSubmit(); })
+                .onSubmit((_enterKey: EnterKeyType, event?: SubmitEvent): void => {
+                  // 发送后保持编辑态与虚拟键盘开启，方便连续输入发送。
+                  if (this.sendByEnter) {
+                    event?.keepEditableState();
+                  }
+                  this.onSubmit();
+                })
                 .onFocus((): void => { this.onEditorFocus(); })
                 .onTouch((event: TouchEvent): void => {
                   if (event.type === TouchType.Down && this.commandSuggestion.commandMenuOpen) {
@@ -934,6 +941,7 @@ export struct ChatComposerInput {
       }
         .width('100%')
         .backgroundColor(Color.Transparent)
+        .hitTestBehavior(HitTestMode.Transparent)
         .onAreaChange((_old: Area, area: Area): void => {
           const measuredH: number = area.height as number;
           const measuredW: number = area.width as number;
@@ -946,7 +954,7 @@ export struct ChatComposerInput {
         })
       }
       .layoutWeight(1)
-      .backgroundColor(this.glassHostOn() ? Color.Transparent : $r('app.color.chat_overlay'))
+      .backgroundColor(this.glassHostOn() ? Color.Transparent : chatPlainFill(systemMaterialState.level))
       .borderRadius(24)
       // 'card' 档：给点光源、不给按压阴影——整块面板跟着手指变形很怪，
       // 这条判据在 overlayMaterial.interactionBase 里，和材质那条路共用。
@@ -980,7 +988,7 @@ export struct ChatComposerInput {
         .borderRadius(23)
         .alignSelf(ItemAlign.End)
         .margin({ bottom: 1 })
-        .backgroundColor(this.glassHostOn() ? Color.Transparent : $r('app.color.chat_overlay'))
+        .backgroundColor(this.glassHostOn() ? Color.Transparent : chatPlainFill(systemMaterialState.level))
         .visualEffect(hdsVisualEffect('control', !this.appDark))
         .border(this.glassHostOn() ? { width: 0 } : chromeOutline(this.appDark))
         .clip(true)

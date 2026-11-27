@@ -186,6 +186,7 @@ export struct LegacyTextMessageBubble {
       this.openingTimer = -1;
       this.linkPreviewOpening = false;
     }, 650);
+    this.context.gestureClaimed = true;
     this.actions.onLinkTap(this.msg.linkUrl, false); // 预览卡片本身就展示了站点，直接开
   }
 
@@ -405,6 +406,7 @@ export struct LegacyTextMessageBubble {
           maxWidth: this.inlineMaxW(),
           onOpenUrl: (url: string): void => {
             if (this.context.gestureClaimed) { return; }
+            this.context.gestureClaimed = true;
             // 块渲染这条路拿不到链接显示的文字，保留先确认。
             this.actions.onLinkTap(url, true);
           }

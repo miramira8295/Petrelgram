@@ -53,6 +53,8 @@ for(const level of [-4,-3,-2,-1,0,1,2,-4,0]) {
   assert.equal(storage.get(ctx.key),level);assert.equal(disk.get(ctx.key),level);
   assert.equal(ctx.systemMaterialThickness(),level===-4?0:level);
   assert.equal(ctx.materialOff(),level===-3);
+  assert.equal(ctx.systemMaterialOff(level),level===-3);
+  assert.equal(ctx.chatPlainFill(level),level===-3?'app.color.surface':'app.color.chat_overlay');
   for(const dark of [false,true]) {
     storage.set('appIsDark',dark);
     assert.equal(ctx.systemMaterialThickness(),level===-4?0:level,'both color modes share the selection');

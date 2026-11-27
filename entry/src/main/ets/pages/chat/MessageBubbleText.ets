@@ -108,6 +108,7 @@ export struct MessageBubbleText {
 
   private tapDrawnLink(link: DrawnRichLink): void {
     if (this.context.gestureClaimed) { return; }
+    this.context.gestureClaimed = true;
     if (link.action === 'spoiler') { this.drawnSpoilersRevealed = true; return; }
     if (link.action === 'copy') { this.actions.onCopyCode(link.label); return; }
     if (link.action === 'quote' && link.blockOffset !== undefined) {
@@ -300,6 +301,7 @@ export struct MessageBubbleText {
         .animation({ duration: this.persistentEffectDuration(90), curve: Curve.EaseOut })
         .onClick(() => {
           if (this.context.gestureClaimed) { return; }
+          this.context.gestureClaimed = true;
           this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url)); });
     } else if (run.url !== '' && !run.bold && !run.italic && !run.code && !run.underline && !run.strike) {
       // This branch owns its Span; styled/busy/spoiler branches cannot donate
@@ -309,6 +311,7 @@ export struct MessageBubbleText {
         .stateStyles({ normal: msgLinkRunNormalStyle, pressed: msgLinkRunPressedStyle })
         .onClick(() => {
           if (this.context.gestureClaimed) { return; }
+          this.context.gestureClaimed = true;
           this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url)); });
     } else if (run.url !== '' && !run.code && !run.underline && !run.strike) {
       // Idle links without decoration/code use Span's None/transparent defaults.
@@ -322,6 +325,7 @@ export struct MessageBubbleText {
         .stateStyles({ normal: msgLinkRunNormalStyle, pressed: msgLinkRunPressedStyle })
         .onClick(() => {
           if (this.context.gestureClaimed) { return; }
+          this.context.gestureClaimed = true;
           this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url)); });
     } else if (run.url !== '') {
       // **闲着的链接：一个 .animation() 都不写。**
@@ -347,6 +351,7 @@ export struct MessageBubbleText {
         .stateStyles({ normal: msgLinkRunNormalStyle, pressed: msgLinkRunPressedStyle })
         .onClick(() => {
           if (this.context.gestureClaimed) { return; }
+          this.context.gestureClaimed = true;
           this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url)); });
     } else if (!run.bold && !run.italic && !run.code && !run.underline && !run.strike) {
       // A separate branch owns an ordinary Span. None of its three owning Text

@@ -21,7 +21,7 @@ import { navigateToSetting } from './settingsNav';
 import { logE, logW } from './log';
 import { navigateToSearch } from './searchNav';
 import { postWebProxyDraft } from './webProxyImport';
-import { endLinkNavIf } from './linkTapGuard';
+import { endLinkNav, endLinkNavIf } from './linkTapGuard';
 import { parseWebProxyLink, WebProxyLinkInfo } from './webProxyConfig';
 
 // **一律 'content'。** 这条路上的每一次跳转，用户都是"在内容里点了什么"——
@@ -168,6 +168,7 @@ function openProxyLink(type: TdObject): void {
   // 原封不动交给 pushPath 的 param，页面在 onRouteParams 里取。
   // 这是唯一一条**带参数**的设置深链，settingsNav.settingFrameKey 为它开了按
   // 「服务器:端口」区分实例的口子，见那里的注释。
+  endLinkNav();
   if (!navigateToSetting('ProxyPage', params)) {
     showToast(str('tglink_use_bottom_bar'), 1700);
   }
@@ -784,6 +785,7 @@ export function openTelegramLink(context: common.UIAbilityContext, url: string,
         'proxyPath': info.path,
         'proxySecret': info.secret
       };
+      endLinkNavIf(url);
       if (!navigateToSetting('ProxyPage', proxyParams)) {
         showToast(str('tglink_use_bottom_bar'), 1700);
       }

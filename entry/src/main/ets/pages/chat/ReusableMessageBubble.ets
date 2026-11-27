@@ -41,7 +41,7 @@ export interface MessageBubbleActions {
   onMiniApp: (messageId: number, url: string) => void;
   onBotCallback: (messageId: number, data: string) => void;
   onAvatarTap: (senderId: number, senderIsUser?: boolean) => void;
-  onAvatarLongPress: (userId: number, name: string) => void;
+  onAvatarLongPress: (userId: number, name: string, anchorY?: number) => void;
   onReplyTap: (messageId: number, fromId: number) => void;
   onFileTap: (messageId: number) => void;
   onFileSave: (messageId: number) => void;

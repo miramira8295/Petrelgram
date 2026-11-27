@@ -81,6 +81,11 @@
       "buildFunction": "ChatSettingsPageBuilder"
     },
     {
+      "name": "MessageFilterPage",
+      "pageSourceFile": "src/main/ets/pages/main/MessageFilterPage.ets",
+      "buildFunction": "MessageFilterPageBuilder"
+    },
+    {
       "name": "MediaSettingsPage",
       "pageSourceFile": "src/main/ets/pages/main/MediaSettingsPage.ets",
       "buildFunction": "MediaSettingsPageBuilder"

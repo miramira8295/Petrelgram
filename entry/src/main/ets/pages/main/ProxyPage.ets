@@ -49,8 +49,8 @@ import {
   KEY_WEB_PROXY_IMPORT_EPOCH, takeWebProxyDraft, WebProxyDraft
 } from '../../util/webProxyImport';
 import {
-  normalizeWebProxyHost, normalizeWebProxyPath, parseWebProxyLink, WebProxyLinkInfo,
-  webProxyConfigProblem
+  normalizeWebProxyHost, normalizeWebProxyPath, normalizeWebProxySecret,
+  parseWebProxyLink, WebProxyLinkInfo, webProxyConfigProblem
 } from '../../util/webProxyConfig';
 
 // 回落的 TCP 握手计时上限。5s 内连不上代理服务器，就按不通处理。
@@ -957,7 +957,8 @@ export struct ProxyPage {
       type: this.fType,
       username: isSecretType ? '' : this.fUser.trim(),
       password: isSecretType ? '' : this.fPass,
-      secret: isSecretType ? this.fSecret.trim() : '',
+      secret: isWeb ? normalizeWebProxySecret(this.fSecret)
+        : (this.fType === PROXY_MTPROTO ? this.fSecret.trim() : ''),
       path: isWeb ? normalizeWebProxyPath(this.fPath) : '',
       httpOnly: this.fType === PROXY_HTTP && this.fHttpOnly,
       lastUsedDate: existing !== undefined ? existing.lastUsedDate : 0,

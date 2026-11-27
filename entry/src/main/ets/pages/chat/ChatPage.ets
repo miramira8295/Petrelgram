@@ -30,7 +30,8 @@ import { SendPermissionError } from '../../store/SendPermissionApi';
 import {
   HEIGHT_BP_LG, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
-import { bumpDraftEpoch, localDraft, rememberLocalDraft } from '../../store/DraftStore';
+import { bumpDraftEpoch, localDraft, localDraftDate, rememberLocalDraft } from '../../store/DraftStore';
+import { ParsedTdDraft, parseTdDraftMessage, shouldAdoptServerDraft } from '../../util/draftCache';
 import { initialAvatarPaths, warmSenderAvatars } from '../../util/avatarWarm';
 import { dismissTopSheet, pushSheetDismiss } from '../../util/sheetDismissStack';
 import { StickerSetSheet } from './StickerSetSheet';
@@ -49,7 +50,7 @@ import { ActionBarContext, dismissActionBar, handleActionBar } from './ChatActio
 import { actionBarButtons } from '../../util/chatActionBar';
 import { ReportTarget, runReportFlow } from '../../util/reportFlow';
 import { reportFlowUiFor } from '../common/ReportPrompts';
-import { promptAction, UIContext } from '@kit.ArkUI';
+import { curves, promptAction, UIContext } from '@kit.ArkUI';
 import { MessageDeleteSession } from './MessageDeleteSession';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { setScrollActive } from '../../util/scrollEffects';
@@ -68,6 +69,12 @@ import { parkSenderAnimations } from '../../util/senderAnimationPark';
 import { AudioSource, getVoicePlayback, streamAudioSource } from '../../services/VoicePlayback';
 import { openLocalFile } from '../../util/openLocalFile';
 import { getTdClient, getUserStore, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
+import { getMessageFilterStore } from '../../store/MessageFilterStore';
+import { AvatarView } from '../chatlist/AvatarView';
+import { SystemGlassSurface } from './SystemGlassSurface';
+import { systemMaterialState } from '../../util/systemMaterialSetting';
+import { senderAvatarFor, senderChannelKey } from '../../util/senderAvatarChannel';
+import { avatarInitialOf } from '../../util/avatarInitial';
 import { TdClient } from '../../tdkit/TdClient';
 import { MessageStore, MediaSendItem, MESSAGE_WINDOW_CAP
 } from '../../store/MessageStore';
@@ -281,7 +288,10 @@ import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { ForumTopicsStore } from '../../store/ForumTopicsStore';
 import { ForumTopicRow, topicAfterDelete, topicBarShown } from '../../util/forumTopicModel';
 import { ChatTopicBar } from './ChatTopicBar';
-import { CreatedTopic, createTopicFlow, deleteTopicFlow } from './TopicManageFlow';
+import {
+  CreatedTopic, createBotImplicitTopic, createTopicFlow, deleteTopicFlow
+} from './TopicManageFlow';
+import { PENDING_BOT_TOPIC_ID } from '../../util/forumTopicRequests';
 import {
   initialMessageViewportRows, nextInitialMessageRevealCount, stageInitialMessageGroups,
   initialTailRevealTarget
@@ -447,6 +457,16 @@ export struct ChatPage {
   // 而不是把 visibleGroupCount 本身变成 @Local：后者每次发布都会变，等于每翻一页
   // 就重绘一次输入区。
   @Local private composerSlotKey: string = '';
+  @Local private filterFillCapped: boolean = false;
+  @Local private avatarMenuOpen: boolean = false;
+  @Local private avatarMenuName: string = '';
+  @Local private avatarMenuUsername: string = '';
+  @Local private avatarMenuAvatarPath: string = '';
+  @Local private avatarMenuInitials: string = '?';
+  @Local private avatarMenuY: number = 0;
+  @Local private avatarMenuPlaceAbove: boolean = false;
+  private avatarMenuUserId: number = 0;
+  private avatarMenuFallbackName: string = '';
 
   private syncComposerSlot(): void {
     const key: string = `${this.timeline.messageLoadState}|${this.timeline.visibleGroupCount > 0 ? 1 : 0}`;
@@ -529,8 +549,8 @@ export struct ChatPage {
         onAvatarTap: (senderId: number, senderIsUser: boolean = true): void => {
           openMessageSender(senderId, senderIsUser, this.chatId);
         },
-        onAvatarLongPress: (userId: number, name: string): void => {
-          this.mentionSender(userId, name);
+        onAvatarLongPress: (userId: number, name: string, anchorY?: number): void => {
+          this.onGroupAvatarLongPress(userId, name, anchorY);
         },
         onLinkTap: (url: string, askFirst: boolean): void => { this.messageActionsState.onLinkTap(url, askFirst); },
         onCommentTap: (messageId: number): void => { this.onCommentTap(messageId); },
@@ -906,7 +926,7 @@ export struct ChatPage {
   // >0: comment-thread view over the linked discussion group (see onCommentTap)
   private threadRootId: number = 0;
   private topicName: string = '';
-  private forumTopicId: number = 0;
+  @Local private forumTopicId: number = 0;
   private directMessagesTopicId: number = 0;
   // 私聊对方是机器人。空会话时输入框让位给「开始」，见 util/botStart。
   @Local isBotChat: boolean = false;
@@ -1182,6 +1202,8 @@ export struct ChatPage {
   private composerMountScheduled: boolean = false;
   private composerMountSeq: number = 0;
   private composerController: TextAreaController = new TextAreaController();
+  private draftSyncTimer: number = -1;
+  private lastLocalDraftEditMs: number = 0;
   // 选好但还没发出去的媒体。和 composer.replyToId 正交——回复某条 + 附图 +
   // 配文是一次完整操作，所以不进 ComposerSession 那个互斥状态机（B9 批搬迁
   // 前叫 composerMode，见 util/pendingMedia）。
@@ -1356,6 +1378,7 @@ export struct ChatPage {
     clearDeletableCache();
     this.timeline.messageLoadError = '';
     this.timeline.olderLoadState = 'idle';
+    this.filterFillCapped = false;
     this.timeline.newerLoadState = 'idle';
     this.timeline.visibleGroupCount = 0;
     this.syncComposerSlot();
@@ -2298,11 +2321,13 @@ export struct ChatPage {
     if (route.draftText !== '') {
       this.draft = route.draftText;
     } else {
-      // 本地那份先顶上（同步、无往返），服务端的再回来补（restoreServerDraft
-      // 里本来就有"本地非空就不覆盖"的判断）。
-      const local: string = localDraft(this.chatId);
-      if (local !== '') {
-        this.draft = local;
+      // 本地那份先顶上（同步、无往返），服务端的再回来补；仅主会话复用本地缓存，
+      // 话题草稿由服务端 getForumTopic 独立恢复，避免与主会话串草稿。
+      if (this.forumTopicId === 0) {
+        const local: string = localDraft(this.chatId);
+        if (local !== '') {
+          this.draft = local;
+        }
       }
       this.restoreServerDraft();
     }
@@ -2499,6 +2524,8 @@ export struct ChatPage {
       (u: TdObject): void => this.typing.onNewMessage(u)));
     this.subscriptions.set('chatAutoDelete', getTdClient().onUpdate('updateChatMessageAutoDeleteTime',
       (u: TdObject): void => this.header.onAutoDeleteUpdate(u)));
+    this.subscriptions.set('chatDraft', getTdClient().onUpdate('updateChatDraftMessage',
+      (u: TdObject): void => this.onCloudDraftUpdate(u)));
     // 会话已经开着时，navigateToChat 只出栈不传参，跳转目标走旁路送进来
     // （issue #80、#102，见 util/chatJumpChannel 的说明）。
     this.subscriptions.set('jump', subscribeChatJump(this.chatId,
@@ -2614,6 +2641,25 @@ export struct ChatPage {
     const store = new MessageStore(
       getTdClient(), getUserStore(), this.chatId, this.threadRootId, 30,
       this.forumTopicId, this.directMessagesTopicId);
+    if (this.forumTopicId === PENDING_BOT_TOPIC_ID) {
+      const chatId: number = this.chatId;
+      store.setPendingTopicCreator((hint: string): Promise<number> => {
+        return createBotImplicitTopic(chatId, hint).then((created: CreatedTopic | null): number => {
+          if (created === null || chatId !== this.chatId || this.store !== store) {
+            return 0;
+          }
+          this.forumTopicId = created.threadId;
+          this.topicName = created.name;
+          if (this.navParams !== undefined) {
+            this.navParams['forumTopicId'] = created.threadId;
+            this.navParams['topicName'] = created.name;
+          }
+          this.header.refresh();
+          this.topicsStore.reload();
+          return created.threadId;
+        });
+      });
+    }
     // 预取在手时**不下围栏**：那道围栏防的是"页面滑到一半才闪出内容"，
     // 而预取意味着首帧就已经有行了——页面是带着内容滑进来的，没有可闪的东西。
     // 见 util/chatPrefetch。
@@ -2634,6 +2680,7 @@ export struct ChatPage {
     const historyState: string = store.getInitialHistoryState();
     this.timeline.olderLoadState = store.getOlderLoadState();
     this.timeline.newerLoadState = store.getNewerLoadState();
+    this.filterFillCapped = store.isFilterFillCapped();
     if (!(this.routeResumeWaiting && this.timeline.groups.length > 0 && historyState === 'loading')) {
       this.timeline.messageLoadState = historyState;
       this.syncComposerSlot();
@@ -3631,6 +3678,7 @@ export struct ChatPage {
   }
 
   private persistDraftAndViewport(): void {
+    this.clearDraftSyncTimer();
     // Sync the composer draft to the account (other devices see it). While an
     // edit is in progress the real draft is the stashed pre-edit text.
     const draftText: string = this.composer.draftToPersist(this.draft);
@@ -3638,11 +3686,12 @@ export struct ChatPage {
     // 抢在草稿落地之前（真机日志 1.4.7.2：save len=3 → 同一会话 restore serverLen=0）。
     // 仅当草稿文本真发生改变时才递增 DRAFT_EPOCH，避免退出会话（aboutToDisappear）
     // 最后一帧无条件唤醒会话列表全部 ChatRow 同步重绘导致退场尾帧掉帧。
-    const draftChanged: boolean = rememberLocalDraft(this.chatId, draftText);
+    const draftChanged: boolean = this.forumTopicId === 0
+      ? rememberLocalDraft(this.chatId, draftText) : false;
     if (draftChanged) {
       bumpDraftEpoch();
     }
-    if (draftChanged || draftText.trim() !== '' || this.composer.replyToId !== 0) {
+    if (draftChanged || draftText.trim() !== '' || this.composer.replyToId !== 0 || this.forumTopicId > 0) {
       this.store?.saveDraft(draftText, this.composer.replyToId);
     }
     this.exitViewerLandscape();
@@ -3652,6 +3701,7 @@ export struct ChatPage {
   }
 
   private disposeTimersAndSeqGuards(): void {
+    this.clearDraftSyncTimer();
     const markdown = this.markdownResolver; this.markdownResolver = null;
     if (markdown !== null) { markdown.cancel().catch((error: Error): void => { logE(`Markdown cleanup failed: ${error.message}`); }); }
     this.inputSwitch.dispose();
@@ -5067,6 +5117,198 @@ export struct ChatPage {
     this.mention.mentionSender(userId, fallbackName);
   }
 
+  private onGroupAvatarLongPress(userId: number, fallbackName: string, anchorY?: number): void {
+    if ((!this.isGroup && !this.isChannel) || userId <= 0 || this.chatId === 0) {
+      this.mentionSender(userId, fallbackName);
+      return;
+    }
+    const displayName: string = getUserStore().displayName(userId) || fallbackName;
+    const username: string = getUserStore().primaryUsername(userId);
+    const avatarPath: string = senderAvatarFor(senderChannelKey(userId, true));
+    const initials: string = avatarInitialOf(displayName);
+    const rawY: number = anchorY !== undefined && Number.isFinite(anchorY) ? anchorY : this.screenH * 0.5;
+    const minTop: number = this.headerChromeHeight() + 8;
+    const totalEstH: number = 296;
+    const placeAbove: boolean = rawY + totalEstH > this.screenH - this.bottomSafe - 16;
+    const maxTop: number = Math.max(minTop, this.screenH - this.bottomSafe - totalEstH - 12);
+    const targetTop: number = placeAbove ? rawY - totalEstH + 22 : rawY - 22;
+    this.avatarMenuUserId = userId;
+    this.avatarMenuFallbackName = fallbackName;
+    this.avatarMenuName = displayName;
+    this.avatarMenuUsername = username;
+    this.avatarMenuAvatarPath = avatarPath;
+    this.avatarMenuInitials = initials;
+    this.avatarMenuPlaceAbove = placeAbove;
+    this.avatarMenuY = Math.max(minTop, Math.min(targetTop, maxTop));
+    this.avatarMenuOpen = true;
+  }
+
+  private dismissAvatarMenu(): void {
+    this.avatarMenuOpen = false;
+  }
+
+  private openPrivateChatWithUser(userId: number): void {
+    if (userId <= 0) {
+      return;
+    }
+    const req: TdRequest = { '@type': 'createPrivateChat' };
+    req['user_id'] = userId;
+    req['force'] = false;
+    getTdClient().send(req).then((chat: TdObject): void => {
+      const id: number | undefined = chat['id'] as number | undefined;
+      if (id !== undefined && id !== 0) {
+        const params: Record<string, Object> = { 'chatId': id };
+        navigateToChat(params, 'content').catch(logChatNavFailure);
+      }
+    }).catch((e: TdError): void => {
+      logE(`ChatPage.openPrivateChatWithUser failed: ${e.message}`);
+    });
+  }
+
+  @Builder
+  private avatarFloatingBadge() {
+    Row({ space: 10 }) {
+      AvatarView({
+        avatarPath: this.avatarMenuAvatarPath,
+        animPath: '',
+        animationPaused: true,
+        initials: this.avatarMenuInitials,
+        colorSeed: this.avatarMenuUserId,
+        avatarSize: 44
+      })
+        .shadow({ radius: 16, color: '#40000000', offsetX: 0, offsetY: 4 });
+
+      if (this.avatarMenuName !== '') {
+        SystemGlassSurface({
+          effectsEnabled: systemMaterialState.chatEnabled,
+          radius: 14,
+          dark: this.appDark,
+          surface: 'menu'
+        }) {
+          Column({ space: 1 }) {
+            Text(this.avatarMenuName)
+              .fontSize(14).fontWeight(FontWeight.Medium)
+              .fontColor(COLOR_TEXT_PRIMARY)
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+            if (this.avatarMenuUsername !== '') {
+              Text(`@${this.avatarMenuUsername}`)
+                .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+            }
+          }
+          .alignItems(HorizontalAlign.Start)
+          .constraintSize({ maxWidth: 160 })
+          .padding({ left: 12, right: 12, top: 7, bottom: 7 });
+        }
+      }
+    }
+    .alignItems(VerticalAlign.Center);
+  }
+
+  @Builder
+  private avatarMenuRow(icon: Resource, label: string, color: ResourceColor, iconColor: ResourceColor, action: () => void) {
+    Row({ space: 11 }) {
+      SymbolGlyph(icon)
+        .fontSize(18).fontColor([iconColor]);
+      Text(label)
+        .fontSize(15).fontColor(color)
+        .layoutWeight(1);
+    }
+    .width('100%').padding({ left: 14, right: 14, top: 11, bottom: 11 })
+    .alignItems(VerticalAlign.Center)
+    .onClick(action);
+  }
+
+  @Builder
+  private avatarMenuCard() {
+    SystemGlassSurface({
+      effectsEnabled: systemMaterialState.chatEnabled,
+      radius: 16,
+      fixedWidth: 212,
+      dark: this.appDark,
+      surface: 'menu'
+    }) {
+      Column() {
+        this.avatarMenuRow($r('sys.symbol.at'), str('mf_avatar_mention'),
+          COLOR_TEXT_PRIMARY, COLOR_PRIMARY, (): void => {
+            const uid: number = this.avatarMenuUserId;
+            const fb: string = this.avatarMenuFallbackName;
+            this.dismissAvatarMenu();
+            this.mentionSender(uid, fb);
+          });
+        Divider().color($r('app.color.divider')).strokeWidth(0.6).margin({ left: 14, right: 14 });
+        this.avatarMenuRow($r('sys.symbol.magnifyingglass'), str('mf_avatar_search_messages'),
+          COLOR_TEXT_PRIMARY, COLOR_TEXT_PRIMARY, (): void => {
+            const uid: number = this.avatarMenuUserId;
+            const name: string = this.avatarMenuName;
+            const uname: string = this.avatarMenuUsername;
+            this.dismissAvatarMenu();
+            this.search.enterForSender(uid, name, uname);
+          });
+        Divider().color($r('app.color.divider')).strokeWidth(0.6).margin({ left: 14, right: 14 });
+        this.avatarMenuRow($r('sys.symbol.message'), str('mf_avatar_send_message'),
+          COLOR_TEXT_PRIMARY, COLOR_TEXT_PRIMARY, (): void => {
+            const uid: number = this.avatarMenuUserId;
+            this.dismissAvatarMenu();
+            this.openPrivateChatWithUser(uid);
+          });
+        Divider().color($r('app.color.divider')).strokeWidth(0.6).margin({ left: 14, right: 14 });
+        this.avatarMenuRow($r('sys.symbol.person'), str('mf_avatar_view_profile'),
+          COLOR_TEXT_PRIMARY, COLOR_TEXT_PRIMARY, (): void => {
+            const uid: number = this.avatarMenuUserId;
+            this.dismissAvatarMenu();
+            openMessageSender(uid, true, this.chatId);
+          });
+        Divider().color($r('app.color.divider')).strokeWidth(0.6).margin({ left: 14, right: 14 });
+        this.avatarMenuRow($r('sys.symbol.nosign'), str('mf_avatar_block_user'),
+          '#E53935', '#E53935', (): void => {
+            const uid: number = this.avatarMenuUserId;
+            const name: string = this.avatarMenuName;
+            this.dismissAvatarMenu();
+            const username: string = getUserStore().primaryUsername(uid);
+            const ok: boolean = getMessageFilterStore().quickBlockUserInChat(
+              this.chatId, uid, username, name);
+            if (ok) {
+              showToast(str('mf_user_blocked_toast', name !== '' ? name : String(uid)), 1800);
+            }
+          });
+      }
+      .width(212);
+    }
+  }
+
+  @Builder
+  private avatarContextMenuOverlay() {
+    if (this.avatarMenuOpen) {
+      Stack({ alignContent: Alignment.TopStart }) {
+        Column()
+          .width('100%').height('100%')
+          .backgroundColor('#28000000')
+          .backdropBlur(containerBlur('dialog'))
+          .onClick((): void => { this.dismissAvatarMenu(); });
+
+        Column({ space: 10 }) {
+          if (this.avatarMenuPlaceAbove) {
+            this.avatarMenuCard();
+            this.avatarFloatingBadge();
+          } else {
+            this.avatarFloatingBadge();
+            this.avatarMenuCard();
+          }
+        }
+        .alignItems(HorizontalAlign.Start)
+        .margin({ left: 14, top: this.avatarMenuY })
+        .transition(
+          TransitionEffect.scale({ x: 0.88, y: 0.88 })
+            .combine(TransitionEffect.OPACITY)
+            .animation({ curve: curves.springMotion(0.32, 0.82) })
+        );
+      }
+      .width('100%').height('100%')
+      .transition(TransitionEffect.OPACITY.animation({ duration: 140, curve: Curve.EaseOut }));
+    }
+  }
+
   private pickCommand(item: CommandItem): void {
     this.draft = commandLabel(item);
     this.command.closePanel();
@@ -5363,6 +5605,17 @@ export struct ChatPage {
     if (this.topicBarCount !== rows.length) {
       this.topicBarCount = rows.length;
     }
+    if (this.forumTopicId > 0) {
+      const current: ForumTopicRow | undefined =
+        rows.find((row: ForumTopicRow): boolean => row.threadId === this.forumTopicId);
+      if (current !== undefined && current.name !== '' && current.name !== this.topicName) {
+        this.topicName = current.name;
+        if (this.navParams !== undefined) {
+          this.navParams['topicName'] = current.name;
+        }
+        this.header.refresh();
+      }
+    }
     if (this.forumTopicId === 0 && rows.length > 0 && store.isForum(this.chatId)) {
       this.switchTopic(rows[0].threadId, rows[0].name);
     }
@@ -5397,9 +5650,17 @@ export struct ChatPage {
     this.switchTopic(threadId, hit !== undefined ? hit.name : '');
   }
 
-  // 横条「+」：流程在 TopicManageFlow，建好后刷新横条并切过去。
+  // 横条「+」：Bot 私聊直接切进本地「新话题」占位，不弹命名框、不提前调 createForumTopic，
+  // 等发出首条消息时再按 is_name_implicit=true 创建；取消或切走不留空话题。
   private onTopicCreate(): void {
     const chatId: number = this.chatId;
+    if (this.topicCreateAllowed && !getChatStore().isForumSupergroup(chatId)) {
+      if (this.forumTopicId === PENDING_BOT_TOPIC_ID) {
+        return;
+      }
+      this.switchTopic(PENDING_BOT_TOPIC_ID, str('ft_new_topic'));
+      return;
+    }
     createTopicFlow(this.getUIContext(), chatId).then((created: CreatedTopic | null): void => {
       if (created === null || chatId !== this.chatId) {
         return;
@@ -5469,7 +5730,8 @@ export struct ChatPage {
       membershipState: this.membershipState,
       loadState: loadState,
       visibleGroupCount: hasRows ? 1 : 0,
-      threadRootId: this.threadRootId
+      // Bot 私聊新建/空白话题直接给正常输入框，不退回「开始」按钮。
+      threadRootId: this.threadRootId !== 0 ? this.threadRootId : (this.forumTopicId !== 0 ? 1 : 0)
     });
   }
 
@@ -5973,7 +6235,11 @@ export struct ChatPage {
     // 清空放在**发送之前**，不等应答。消息本身不用我们伪造回显：TDLib 会先
     // 发 updateNewMessage（自己发的消息在 onNewMessage 里是放行的），列表那边
     // 立刻就有一条 pending 的气泡。
+    this.clearDraftSyncTimer();
     this.draft = '';
+    if (this.forumTopicId === 0 && rememberLocalDraft(this.chatId, '')) {
+      bumpDraftEpoch();
+    }
     store.resetTypingThrottle();
     this.mention.clearPendingNameMentions();
     if (this.composer.replyToId === replyId) {
@@ -6266,6 +6532,7 @@ export struct ChatPage {
   // 跳到指定消息：已在当前页就直接滚动并高亮，否则围绕它重新拉一页。
   // 定位后让目标气泡轻轻呼吸一次；「↓」返回与引用跳转共用这个反馈。
   private jumpToMessageId(targetId: number): void {
+    this.store?.revealFilteredMessage(targetId);
     this.jumpLandingUntil = Date.now() + JUMP_LANDING_GRACE_MS;
     this.beginJumpLanding();
     const gidx: number = groupIndexOf(this.timeline.groups, targetId);
@@ -6373,28 +6640,125 @@ export struct ChatPage {
   // updateChatAction 给 this.typing.onChatAction(u)，composerPlaceholder 改读
   // this.typing.label（详见 TypingIndicatorState.ets）。
 
-  // Pick up the draft synced from other devices (chat.draft_message). Only
-  // fills an empty composer — never overwrites what the user is typing.
-  private restoreServerDraft(): void {
-    const req: TdRequest = { '@type': 'getChat' };
-    req['chat_id'] = this.chatId;
-    getTdClient().send(req).then((chat: TdObject): void => {
-      const draft = chat['draft_message'] as TdObject | undefined;
-      const content = draft !== undefined
-        ? (draft['input_message_text'] as TdObject | undefined) : undefined;
-      const ft = content !== undefined ? (content['text'] as TdObject | undefined) : undefined;
-      const text = ft !== undefined ? ((ft['text'] as string | undefined) ?? '') : '';
-      // [Draft] 探针：serverLen 是服务端记的草稿长度，localLen 是此刻输入框里的。
-      logW(`[Draft] restore chat=${this.chatId} serverLen=${text.length} localLen=${this.draft.length}`);
-      if (this.draft !== '') { return; }
-      if (text !== '') {
-        this.draft = text;
-        // 服务端那份（别的端写的）也进本地缓存，列表跟着显示。
-        rememberLocalDraft(this.chatId, text);
+  private clearDraftSyncTimer(): void {
+    if (this.draftSyncTimer !== -1) {
+      clearTimeout(this.draftSyncTimer);
+      this.draftSyncTimer = -1;
+    }
+  }
+
+  // 输入或修改回复目标时防抖 1.2s 自动同步草稿到云端与本地缓存，
+  // 停留在聊天页或直接杀进程时其他端也能看到草稿。
+  private scheduleDraftSync(): void {
+    if (this.composer.editingId !== 0 || this.forumTopicId < 0) {
+      return;
+    }
+    this.lastLocalDraftEditMs = Date.now();
+    this.clearDraftSyncTimer();
+    const targetChatId: number = this.chatId;
+    const targetTopicId: number = this.forumTopicId;
+    this.draftSyncTimer = setTimeout((): void => {
+      this.draftSyncTimer = -1;
+      if (this.chatId !== targetChatId || this.forumTopicId !== targetTopicId || this.composer.editingId !== 0) {
+        return;
+      }
+      const draftText: string = this.composer.draftToPersist(this.draft);
+      if (this.forumTopicId === 0 && rememberLocalDraft(this.chatId, draftText)) {
         bumpDraftEpoch();
       }
+      this.store?.saveDraft(draftText, this.composer.replyToId);
+    }, 1200);
+  }
+
+  private restoreReplyDraft(replyToId: number): void {
+    if (this.composer.editingId !== 0) {
+      return;
+    }
+    if (replyToId <= 0) {
+      if (this.composer.replyToId !== 0) {
+        this.composer.clearReply();
+      }
+      return;
+    }
+    if (this.composer.replyToId === replyToId) {
+      return;
+    }
+    if (this.findMsg(replyToId) !== null) {
+      this.composer.restoreReply(replyToId, '', '');
+      return;
+    }
+    const targetChatId: number = this.chatId;
+    const targetTopicId: number = this.forumTopicId;
+    const req: TdRequest = { '@type': 'getMessage' };
+    req['chat_id'] = targetChatId;
+    req['message_id'] = replyToId;
+    getTdClient().send(req).then((msg: TdObject): void => {
+      if (this.chatId !== targetChatId || this.forumTopicId !== targetTopicId || this.composer.editingId !== 0) {
+        return;
+      }
+      const content = msg['content'] as TdObject | undefined;
+      const ft = content !== undefined ? (content['text'] as TdObject | undefined) : undefined;
+      const caption = content !== undefined ? (content['caption'] as TdObject | undefined) : undefined;
+      const preview: string = ft !== undefined ? ((ft['text'] as string | undefined) ?? '')
+        : (caption !== undefined ? ((caption['text'] as string | undefined) ?? '') : '');
+      this.composer.restoreReply(replyToId, '', preview);
+    }).catch((): void => {
+      if (this.chatId === targetChatId && this.forumTopicId === targetTopicId && this.composer.editingId === 0) {
+        this.composer.restoreReply(replyToId, '', '');
+      }
+    });
+  }
+
+  // 停留在聊天页内时实时响应其他端推送的 updateChatDraftMessage。
+  private onCloudDraftUpdate(update: TdObject): void {
+    if (((update['chat_id'] as number | undefined) ?? 0) !== this.chatId ||
+      this.forumTopicId !== 0 || this.composer.editingId !== 0) {
+      return;
+    }
+    const parsed: ParsedTdDraft = parseTdDraftMessage(update['draft_message'] as TdObject | undefined);
+    if (parsed.text === this.draft && parsed.replyToId === this.composer.replyToId) {
+      return;
+    }
+    // 用户正在连续按键的 2 秒窗口内不打断当前输入，避免回声覆盖光标。
+    if (this.composerFocused && Date.now() - this.lastLocalDraftEditMs < 2000) {
+      return;
+    }
+    this.draft = parsed.text;
+    this.restoreReplyDraft(parsed.replyToId);
+  }
+
+  // Pick up the draft synced from other devices (chat.draft_message / forumTopic.draft_message).
+  private restoreServerDraft(): void {
+    if (this.forumTopicId < 0) {
+      return;
+    }
+    const targetChatId: number = this.chatId;
+    const targetTopicId: number = this.forumTopicId;
+    const isForumTopic: boolean = targetTopicId > 0;
+    const req: TdRequest = { '@type': isForumTopic ? 'getForumTopic' : 'getChat' };
+    req['chat_id'] = targetChatId;
+    if (isForumTopic) {
+      req['forum_topic_id'] = targetTopicId;
+    }
+    getTdClient().send(req).then((obj: TdObject): void => {
+      if (this.chatId !== targetChatId || this.forumTopicId !== targetTopicId || this.composer.editingId !== 0) {
+        return;
+      }
+      const parsed: ParsedTdDraft = parseTdDraftMessage(obj['draft_message'] as TdObject | undefined);
+      const localDate: number = isForumTopic ? 0 : localDraftDate(targetChatId);
+      // [Draft] 探针：serverLen 是服务端记的草稿长度，localLen 是此刻输入框里的。
+      logW(`[Draft] restore chat=${targetChatId} topic=${targetTopicId} serverLen=${parsed.text.length} serverDate=${parsed.date} reply=${parsed.replyToId} localLen=${this.draft.length} localDate=${localDate}`);
+      if (shouldAdoptServerDraft(this.draft, localDate, parsed.text, parsed.date)) {
+        this.draft = parsed.text;
+        if (!isForumTopic && rememberLocalDraft(targetChatId, parsed.text, parsed.date)) {
+          bumpDraftEpoch();
+        }
+      }
+      if (parsed.replyToId > 0 && (this.composer.replyToId === 0 || parsed.date > localDate)) {
+        this.restoreReplyDraft(parsed.replyToId);
+      }
     }).catch((e: TdError): void => {
-      logW(`[Draft] restore chat=${this.chatId} failed: ${e.message}`);
+      logW(`[Draft] restore chat=${targetChatId} topic=${targetTopicId} failed: ${e.message}`);
     });
   }
 
@@ -6737,7 +7101,10 @@ export struct ChatPage {
       onClearMedia: (): void => { this.pendingMedia = clearPendingMedia(); },
       onCancelEdit: (): void => { this.composer.cancelEdit(); },
       onReplyTap: (messageId: number): void => { this.onReplyTap(messageId); },
-      onClearReply: (): void => { this.composer.clearReply(); },
+      onClearReply: (): void => {
+        this.composer.clearReply();
+        this.scheduleDraftSync();
+      },
       onCancelRecording: (): void => { this.recording.cancel(); },
       onFinishRecording: (): void => { this.recording.finish(); },
       onToggleBotMenu: (): void => { this.toggleBotMenu(); },
@@ -6751,6 +7118,9 @@ export struct ChatPage {
         this.composer.draftChanged(value);
         this.draft = value;
         this.updateSuggestions(value);
+        if (value !== prev && this.composer.editingId === 0) {
+          this.scheduleDraftSync();
+        }
         if (!this.composerFocused || value === prev || this.composer.editingId !== 0) {
           return;
         }
@@ -7151,7 +7521,12 @@ export struct ChatPage {
       langEpoch: this.langEpoch,
       materialEpoch: this.materialEpoch,
       timelineTopMargin: this.headerChromeHeight() + 8,
+      filterFillCapped: this.filterFillCapped,
       onEmptyRetry: (): void => { this.store?.retryInitialHistory(); },
+      onContinuePastFilter: (): void => {
+        this.filterFillCapped = false;
+        this.store?.continueLoadOlderPastFilter();
+      },
       // mode 由宿主传上来——它是**用户实际看到的那枚 pill** 算出来的。
       // 页面自己重算过一版，读的是活字段而不是发布出去的快照，两者会分叉
       // （见 timelineStateRetry 上方的说明），分叉时这个按钮点了没反应。
@@ -7189,6 +7564,7 @@ export struct ChatPage {
       bottomSafe: this.bottomSafe,
       onClose: (): void => { this.favoriteAudioId = 0; }
     });
+    this.avatarContextMenuOverlay();
     ChatOverlayHost({
       selection: this.selection,
       overlayState: this.overlayState,

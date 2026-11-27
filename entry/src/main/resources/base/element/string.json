@@ -5,6 +5,58 @@
       "value": "App 默认"
     },
     {
+      "name": "chat_settings_material_section",
+      "value": "材质与光感"
+    },
+    {
+      "name": "material_mode_solid",
+      "value": "纯色"
+    },
+    {
+      "name": "material_mode_balanced",
+      "value": "平衡"
+    },
+    {
+      "name": "material_mode_immersive",
+      "value": "沉浸玻璃"
+    },
+    {
+      "name": "material_mode_solid_sub",
+      "value": "所有浮层使用不透明纯色，关闭玻璃与光感，最省电。"
+    },
+    {
+      "name": "material_mode_balanced_sub",
+      "value": "首页保留系统玻璃，聊天页浮层保持轻量半透明（默认）。"
+    },
+    {
+      "name": "material_mode_immersive_sub",
+      "value": "首页与聊天页全面启用系统玻璃，可自由调节厚度。"
+    },
+    {
+      "name": "chat_settings_glass_thickness",
+      "value": "玻璃厚度"
+    },
+    {
+      "name": "chat_settings_message_appearance",
+      "value": "消息外观"
+    },
+    {
+      "name": "chat_settings_tab_messages",
+      "value": "消息"
+    },
+    {
+      "name": "chat_settings_tab_material",
+      "value": "材质与光感"
+    },
+    {
+      "name": "chat_settings_tab_wallpaper",
+      "value": "壁纸与主题"
+    },
+    {
+      "name": "chat_settings_preview_input",
+      "value": "输入消息..."
+    },
+    {
       "name": "a11y_message_reactions",
       "value": "查看反应"
     },
@@ -13871,6 +13923,186 @@
     {
       "name": "tglink_kind_bot_invite",
       "value": "机器人邀请"
+    },
+    {
+      "name": "mf_title",
+      "value": "消息拦截"
+    },
+    {
+      "name": "mf_chat_title",
+      "value": "本群消息拦截"
+    },
+    {
+      "name": "mf_settings_sub",
+      "value": "按用户名、昵称或关键字本地拦截群组与频道消息"
+    },
+    {
+      "name": "mf_chat_profile_sub",
+      "value": "配置此群组或频道的专属拦截规则"
+    },
+    {
+      "name": "mf_status_off",
+      "value": "已关闭"
+    },
+    {
+      "name": "mf_status_none",
+      "value": "未设置"
+    },
+    {
+      "name": "mf_rule_count",
+      "value": "%s 条规则"
+    },
+    {
+      "name": "mf_enable_global",
+      "value": "启用消息拦截"
+    },
+    {
+      "name": "mf_enable_global_sub",
+      "value": "仅作用于群组与频道，不影响私聊、自己发送的消息和系统通知"
+    },
+    {
+      "name": "mf_apply_global",
+      "value": "使用全局规则"
+    },
+    {
+      "name": "mf_apply_global_sub",
+      "value": "开启后全局设置里的规则也会在本会话生效，关闭则仅使用本会话专属规则"
+    },
+    {
+      "name": "mf_promote_global",
+      "value": "设为全局"
+    },
+    {
+      "name": "mf_promoted_global_toast",
+      "value": "已设为全局规则，对所有群组和频道生效"
+    },
+    {
+      "name": "mf_global_off_hint",
+      "value": "全局消息拦截总开关当前已关闭，规则暂不生效"
+    },
+    {
+      "name": "mf_rules_title",
+      "value": "全局规则"
+    },
+    {
+      "name": "mf_chat_rules_title",
+      "value": "本会话专属规则"
+    },
+    {
+      "name": "mf_empty_hint",
+      "value": "暂无拦截规则，点击右上角或下方按钮添加"
+    },
+    {
+      "name": "mf_add_rule",
+      "value": "添加规则"
+    },
+    {
+      "name": "mf_add_confirm",
+      "value": "添加"
+    },
+    {
+      "name": "mf_rule_added",
+      "value": "已添加拦截规则"
+    },
+    {
+      "name": "mf_field_user",
+      "value": "用户名"
+    },
+    {
+      "name": "mf_field_nickname",
+      "value": "昵称"
+    },
+    {
+      "name": "mf_field_keyword",
+      "value": "关键字"
+    },
+    {
+      "name": "mf_mode_contains",
+      "value": "包含"
+    },
+    {
+      "name": "mf_mode_exact",
+      "value": "精确"
+    },
+    {
+      "name": "mf_mode_regex",
+      "value": "正则"
+    },
+    {
+      "name": "mf_placeholder_user",
+      "value": "输入用户名（如 @username）"
+    },
+    {
+      "name": "mf_placeholder_nickname",
+      "value": "输入发送者昵称"
+    },
+    {
+      "name": "mf_placeholder_keyword",
+      "value": "输入要拦截的关键字或正则"
+    },
+    {
+      "name": "mf_err_empty_pattern",
+      "value": "请输入拦截内容"
+    },
+    {
+      "name": "mf_err_invalid_regex",
+      "value": "正则表达式格式无效"
+    },
+    {
+      "name": "mf_per_chat_section",
+      "value": "已单独配置的群组与频道"
+    },
+    {
+      "name": "mf_chat_rule_summary",
+      "value": "%s 条专属规则 · %s"
+    },
+    {
+      "name": "mf_global_applied",
+      "value": "应用全局规则"
+    },
+    {
+      "name": "mf_global_skipped",
+      "value": "已跳过全局规则"
+    },
+    {
+      "name": "mf_avatar_mention",
+      "value": "@提及"
+    },
+    {
+      "name": "mf_avatar_search_messages",
+      "value": "搜索此人消息"
+    },
+    {
+      "name": "mf_avatar_send_message",
+      "value": "发送消息"
+    },
+    {
+      "name": "mf_avatar_view_profile",
+      "value": "查看个人资料"
+    },
+    {
+      "name": "mf_avatar_block_user",
+      "value": "拦截此人消息"
+    },
+    {
+      "name": "mf_user_blocked_toast",
+      "value": "已在本会话拦截 %s 的消息"
+    },
+    {
+      "name": "mf_capped_load_more",
+      "value": "本段消息均已被拦截 · 点击继续加载更早消息"
+    },
+    {
+      "name": "mf_inherited_global_title",
+      "value": "来自全局的生效规则"
+    },
+    {
+      "name": "mf_manage_global",
+      "value": "管理全局"
+    },
+    {
+      "name": "mf_global_badge",
+      "value": "全局"
     }
   ]
 }

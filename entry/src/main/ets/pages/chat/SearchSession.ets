@@ -442,13 +442,21 @@ export class SearchSession {
   // （结果计数、上/下一条、跳转高亮），只是把 sender_id 填上、query 留空——
   // TDLib 支持这种组合。搬之前是 ChatPage.viewSenderHistory() 的方法体（页面
   // 侧原来是"摆好三字段再调 runSearch"，现在收成一个入口）。
-  enterForSender(senderId: number): void {
+  enterForSender(senderId: number, displayName: string = '', username: string = ''): void {
     if (senderId <= 0) {
       return;
     }
     this.enter();
     this.senderId = senderId;
-    this.query = '';
+    if (displayName.trim() !== '' || username.trim() !== '') {
+      const token: string = senderSearchToken(displayName, username, senderId);
+      this.query = `${token} `;
+      this.senderToken = token;
+      this.senderTokenStart = 0;
+      this.completionRevision++;
+    } else {
+      this.query = '';
+    }
     this.mode = true;
     this.run(0, 0);
   }

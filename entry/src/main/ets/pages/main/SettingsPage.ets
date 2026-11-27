@@ -155,6 +155,9 @@ function settingGroups(): SettingGroup[] {
       { icon: 'sys.symbol.lock_fill', bg: '#34C759', title: str('settings_privacy'),
         subtitle: str('settings_privacy_sub'), page: 'pages/main/PrivacySecurityPage',
         dest: 'PrivacySecurityPage' },
+      { icon: 'sys.symbol.nosign', bg: '#FF3B30', title: str('mf_title'),
+        subtitle: str('mf_settings_sub'), page: 'pages/main/MessageFilterPage',
+        dest: 'MessageFilterPage' },
       { icon: 'sys.symbol.computer', bg: '#5AC8FA', title: str('settings_devices'),
         subtitle: str('settings_devices_sub'), page: 'pages/main/ActiveSessionsPage',
         dest: 'ActiveSessionsPage' }

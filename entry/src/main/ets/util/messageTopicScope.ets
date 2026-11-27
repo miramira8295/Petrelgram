@@ -40,6 +40,10 @@ export function messageOutsideTopicScope(
     return topic === undefined ||
       ((topic['direct_messages_chat_topic_id'] as number | undefined) ?? 0) !== directMessagesTopicId;
   }
+  if (forumTopicId < 0) {
+    // 本地占位的新建 Bot 话题（尚未在服务端创建）：隔离其余话题的新消息，避免串入空会话。
+    return true;
+  }
   if (forumTopicId > 0) {
     const topic = message['topic_id'] as TdObject | undefined;
     return topic === undefined ||
@@ -65,7 +69,7 @@ export function conversationScopeId(
   if (directMessagesTopicId > 0) {
     return directMessagesTopicId;
   }
-  if (forumTopicId > 0) {
+  if (forumTopicId !== 0) {
     return forumTopicId;
   }
   return threadRootId;
@@ -77,7 +81,7 @@ export function conversationScopeKey(
   threadRootId: number = 0, forumTopicId: number = 0, directMessagesTopicId: number = 0
 ): string {
   if (directMessagesTopicId > 0) { return `direct:${directMessagesTopicId}`; }
-  if (forumTopicId > 0) { return `forum:${forumTopicId}`; }
+  if (forumTopicId !== 0) { return `forum:${forumTopicId}`; }
   if (threadRootId > 0) { return `thread:${threadRootId}`; }
   return 'chat';
 }

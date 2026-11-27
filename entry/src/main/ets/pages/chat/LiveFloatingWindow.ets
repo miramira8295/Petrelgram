@@ -1073,7 +1073,7 @@ struct FloatingLiveOverlay {
         .backgroundColor(FLOAT_BACKGROUND)
         .borderRadius(13).clip(true)
         .border({ width: 1, color: '#3DFFFFFF' })
-        .shadow({ radius: 22, color: '#78000000', offsetX: 0, offsetY: 8 })
+        .shadow(ShadowStyle.OUTER_DEFAULT_SM)
         .animation({
           duration: powerAnimationDuration(KEY_POWER_CALL_ANIMATIONS, 240), curve: Curve.Friction
         })

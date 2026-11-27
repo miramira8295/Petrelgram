@@ -13,7 +13,10 @@ import { invalidateSenderAnimation } from '../util/senderAnimationChannel';
 export class UserStore {
   private client: TdClient;
   private deleted: Set<number> = new Set<number>();
+  private bots: Set<number> = new Set<number>();
+  private onlineUsers: Set<number> = new Set<number>();
   private names: Map<number, string> = new Map();
+  private usernames: Map<number, string[]> = new Map();
   private photos: Map<number, number> = new Map();
   private accents: Map<number, number> = new Map(); // accent_color_id per user
   // profile_photo.has_animation：群聊气泡左侧要不要去取动态头像（issue #140）。
@@ -26,13 +29,27 @@ export class UserStore {
   constructor(client: TdClient) {
     this.client = client;
     client.onUpdate('updateUser', (u: TdObject) => this.onUser(u));
+    client.onUpdate('updateUserStatus', (u: TdObject) => this.onUserStatus(u));
   }
 
   displayName(userId: number): string {
     return this.deleted.has(userId) ? str('deleted_account') : this.names.get(userId) ?? '';
   }
 
+  usernamesOf(userId: number): string[] {
+    return this.usernames.get(userId) ?? [];
+  }
+
+  primaryUsername(userId: number): string {
+    const list: string[] = this.usernames.get(userId) ?? [];
+    return list.length > 0 ? list[0] : '';
+  }
+
   isDeleted(userId: number): boolean { return this.deleted.has(userId); }
+
+  isOnline(userId: number): boolean {
+    return !this.deleted.has(userId) && !this.bots.has(userId) && this.onlineUsers.has(userId);
+  }
 
   // Small profile-photo file id for a user (0 if none / not yet known).
   photoFileId(userId: number): number {
@@ -101,9 +118,38 @@ export class UserStore {
       return;
     }
     if (isDeletedUser(user)) { this.deleted.add(id); } else { this.deleted.delete(id); }
+    const userType = user['type'] as TdObject | undefined;
+    if ((userType?.['@type'] as string | undefined) === 'userTypeBot') {
+      this.bots.add(id);
+    } else {
+      this.bots.delete(id);
+    }
+    this.applyUserStatus(id, user['status'] as TdObject | undefined);
     const first = (user['first_name'] as string | undefined) ?? '';
     const last = (user['last_name'] as string | undefined) ?? '';
     this.names.set(id, `${first} ${last}`.trim());
+    const unameObj = user['usernames'] as TdObject | undefined;
+    const collected: string[] = [];
+    if (unameObj !== undefined) {
+      const editable: string = (unameObj['editable_username'] as string | undefined) ?? '';
+      if (editable !== '') {
+        collected.push(editable.toLowerCase());
+      }
+      const active = unameObj['active_usernames'] as string[] | undefined;
+      if (active !== undefined) {
+        for (const u of active) {
+          const low: string = u.toLowerCase();
+          if (low !== '' && collected.indexOf(low) < 0) {
+            collected.push(low);
+          }
+        }
+      }
+    }
+    if (collected.length > 0) {
+      this.usernames.set(id, collected);
+    } else {
+      this.usernames.delete(id);
+    }
     const profilePhoto = this.deleted.has(id) ? undefined : user['profile_photo'] as TdObject | undefined;
     const photoId: number = this.smallFileId(profilePhoto);
     const previousPhotoId: number | undefined = this.photos.get(id);
@@ -128,6 +174,22 @@ export class UserStore {
       this.userTopicBots.add(id);
     } else {
       this.userTopicBots.delete(id);
+    }
+  }
+
+  private onUserStatus(update: TdObject): void {
+    const id = (update['user_id'] as number | undefined) ?? 0;
+    if (id <= 0) {
+      return;
+    }
+    this.applyUserStatus(id, update['status'] as TdObject | undefined);
+  }
+
+  private applyUserStatus(userId: number, status: TdObject | undefined): void {
+    if ((status?.['@type'] as string | undefined) === 'userStatusOnline') {
+      this.onlineUsers.add(userId);
+    } else {
+      this.onlineUsers.delete(userId);
     }
   }
 }

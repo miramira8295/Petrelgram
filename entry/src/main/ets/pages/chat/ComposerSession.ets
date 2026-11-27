@@ -266,6 +266,26 @@ export class ComposerSession {
     }, 0);
   }
 
+  // 从云端草稿恢复回复预览：不弹出键盘，也不主动关闭其它面板。
+  restoreReply(messageId: number, fallbackSender: string, fallbackSnippet: string): void {
+    if (messageId <= 0 || this.editingId !== 0) {
+      return;
+    }
+    const m = this.host.findMsg(messageId);
+    if (m !== null) {
+      this.apply(enterReply(this.mode, messageId,
+        m.senderName !== '' ? m.senderName : this.host.headerTitle(), this.replySnippet(m),
+        replyThumbOf({
+          contentType: m.contentType, photoPath: m.photoPath,
+          paidMediaLocked: m.paidMediaLocked
+        }),
+        replyThumbIsSticker(m.contentType)));
+      return;
+    }
+    const sender: string = fallbackSender !== '' ? fallbackSender : this.host.headerTitle();
+    this.apply(enterReply(this.mode, messageId, sender, fallbackSnippet, '', false));
+  }
+
   startEdit(messageId: number): void {
     // 编辑改的是旧消息，发媒体是发新消息，发送键做哪件事说不清。宁可拒绝，
     // 也不静默丢掉用户刚挑好的九张图（对照 enterEdit 会清掉待回复——那里

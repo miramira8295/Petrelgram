@@ -3,6 +3,7 @@ import { ensureProxyMigration } from '../services/ProxyMigration';
 import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
 import { stripIpv6Brackets } from '../util/ipFamily';
 import { stopWebBridge, syncWebBridgeFromTd } from '../services/WebProxyBridge';
+import { normalizeWebProxySecret } from '../util/webProxyConfig';
 
 // 代理直接交给 TDLib：本机中继层已删除，代理配置就是 TDLib 自己的配置。
 export const PROXY_SOCKS5: string = 'proxyTypeSocks5';
@@ -37,7 +38,7 @@ export function proxyObjectOf(entry: ProxyEntry): TdObject {
     type['secret'] = entry.secret;
   } else if (entry.type === PROXY_WEB) {
     type['path'] = entry.path ?? '';
-    type['secret'] = entry.secret;
+    type['secret'] = normalizeWebProxySecret(entry.secret);
   } else {
     type['username'] = entry.username;
     type['password'] = entry.password;

@@ -93,7 +93,7 @@ const REPLY_QUOTE_LINE_H: number = 16;
 export interface LightweightPlainTextActions {
   rowLeave: RowLeaveChannel;
   onAvatarTap: (senderId: number, senderIsUser?: boolean) => void;
-  onAvatarLongPress: (userId: number, name: string) => void;
+  onAvatarLongPress: (userId: number, name: string, anchorY?: number) => void;
   onReplyTap: (messageId: number, fromId: number) => void;
   onSetReaction: (messageId: number, emoji: string, chosen: boolean) => void;
   onReplyTo: (messageId: number) => void;
@@ -1366,9 +1366,10 @@ export struct LightweightPlainTextBubble {
                   this.actions.onAvatarTap(this.msg.senderId, this.msg.senderIsUser);
                 }
               })
-              .gesture(LongPressGesture().onAction((): void => {
+              .gesture(LongPressGesture().onAction((event: GestureEvent): void => {
                 if (this.msg.senderIsUser && this.msg.senderId > 0) {
-                  this.actions.onAvatarLongPress(this.msg.senderId, this.msg.senderName);
+                  const y: number | undefined = event.fingerList.length > 0 ? event.fingerList[0].globalY : undefined;
+                  this.actions.onAvatarLongPress(this.msg.senderId, this.msg.senderName, y);
                 }
               }));
           }

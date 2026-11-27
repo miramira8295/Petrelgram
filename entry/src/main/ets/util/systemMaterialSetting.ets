@@ -17,12 +17,27 @@ export function chatMaterialEnabled(level: number): boolean {
   return normalized !== SYSTEM_MATERIAL_APP_DEFAULT && normalized !== THICKNESS_OFF;
 }
 
+export function systemMaterialOff(level: number): boolean {
+  return normalizeSystemMaterial(level) === THICKNESS_OFF;
+}
+
+// 聊天浮层在未启用系统材质时的兜底底色：
+//   · 关闭档（THICKNESS_OFF）→ 纯色不透明 surface（无透明度实体）；
+//   · APP 默认档（SYSTEM_MATERIAL_APP_DEFAULT）→ 原有的半透明 chat_overlay。
+export function chatPlainFill(level: number): Resource {
+  return systemMaterialOff(level) ? $r('app.color.surface') : $r('app.color.chat_overlay');
+}
+
 @ObservedV2
 export class SystemMaterialState {
   @Trace level: number = SYSTEM_MATERIAL_DEFAULT;
 
   get chatEnabled(): boolean {
     return chatMaterialEnabled(this.level);
+  }
+
+  get isOff(): boolean {
+    return systemMaterialOff(this.level);
   }
 }
 

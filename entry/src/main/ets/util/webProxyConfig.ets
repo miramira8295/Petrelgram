@@ -168,6 +168,22 @@ export function webProxySecretBytes(raw: string): Uint8Array {
   return bytes;
 }
 
+// TDLib 1.8.71 原生 proxyTypeWeb.secret 只接受十六进制（32 位 hex 或 dd+32 位 hex）。
+// tproxy-server / tg://webproxy 分享链接经常给 base64url（含 0x70 旧前缀），
+// 交给 TDLib 前统一转成小写十六进制。
+export function normalizeWebProxySecret(raw: string): string {
+  const bytes: Uint8Array = webProxySecretBytes(raw);
+  if (bytes.length === 0) {
+    return raw.trim();
+  }
+  let hex: string = '';
+  for (let i = 0; i < bytes.length; i++) {
+    const part: string = bytes[i].toString(16);
+    hex += part.length === 1 ? '0' + part : part;
+  }
+  return hex;
+}
+
 // 返回空串表示可用；否则是给用户看的错误提示。
 export function webProxySecretProblem(raw: string): string {
   const text: string = raw.trim();

@@ -727,6 +727,8 @@ export struct ChatRow {
               autoDeleteTime: this.row.snapshot.chat.autoDeleteTime,
               isLive: this.row.snapshot.chat.isLive,
               livePulseExpanded: this.livePulseExpanded,
+              isOnline: this.row.snapshot.chat.isOnline === true,
+              onlineColor: this.accent(),
               savedMessages: this.row.snapshot.chat.isSavedMessages,
               loadImage: this.loadImages
             });

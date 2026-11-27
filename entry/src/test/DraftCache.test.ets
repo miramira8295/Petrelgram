@@ -1,5 +1,8 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { DraftCache, draftPreviewOf } from '../main/ets/util/draftCache';
+import {
+  DraftCache, ParsedTdDraft, draftPreviewOf, parseTdDraftMessage, shouldAdoptServerDraft
+} from '../main/ets/util/draftCache';
+import { TdObject } from '../main/ets/tdkit/TdTypes';
 
 // 用户报：输入一堆文字后返回再进来直接被清空了；且列表该显示已输入的内容。
 // 真机日志（1.4.7.2）：`[Draft] save len=3` 之后同一会话 `restore serverLen=0`
@@ -38,6 +41,34 @@ export default function draftCacheTest(): void {
       expect(draftPreviewOf('第一行\n第二行', 20)).assertEqual('第一行 第二行');
       expect(draftPreviewOf('abcdefghij', 4)).assertEqual('abcd…');
       expect(draftPreviewOf('   ', 20)).assertEqual('');
+    });
+    it('解析 TDLib 1.8.71 draftMessage：正文、时间与 reply_to', 0, (): void => {
+      const ft: TdObject = { '@type': 'formattedText' };
+      ft['text'] = 'pc draft';
+      const content: TdObject = { '@type': 'draftMessageContentText' };
+      content['text'] = ft;
+      const replyTo: TdObject = { '@type': 'inputMessageReplyToMessage' };
+      replyTo['message_id'] = 1048576;
+      const draft: TdObject = { '@type': 'draftMessage' };
+      draft['date'] = 1764225000;
+      draft['content'] = content;
+      draft['reply_to'] = replyTo;
+
+      const parsed: ParsedTdDraft = parseTdDraftMessage(draft);
+      expect(parsed.text).assertEqual('pc draft');
+      expect(parsed.date).assertEqual(1764225000);
+      expect(parsed.replyToId).assertEqual(1048576);
+
+      const empty: ParsedTdDraft = parseTdDraftMessage(undefined);
+      expect(empty.text).assertEqual('');
+      expect(empty.date).assertEqual(0);
+      expect(empty.replyToId).assertEqual(0);
+    });
+    it('草稿冲突裁决：云端时间更新时覆盖本地，本地更新时保留本地', 0, (): void => {
+      expect(shouldAdoptServerDraft('old', 100, 'new from pc', 200)).assertTrue();
+      expect(shouldAdoptServerDraft('newer local', 200, 'old pc', 100)).assertFalse();
+      expect(shouldAdoptServerDraft('', 0, 'from pc', 0)).assertTrue();
+      expect(shouldAdoptServerDraft('local', 200, '', 0)).assertFalse();
     });
   });
 }

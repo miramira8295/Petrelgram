@@ -462,6 +462,12 @@ export function pointLightOn(surface: OverlaySurface): boolean {
   return !materialOff() && usesLightEffect(surface);
 }
 
+// 系统沉浸材质当前是否启用了触摸反馈（流光或按压形变）。
+// 供 NativeGlassHost 决定 Toggle 承载层是否透传接收触摸，平滑档返回 false。
+export function materialFeedbackOn(surface: OverlaySurface): boolean {
+  return !materialOff() && (usesLightEffect(surface) || usesInteraction(surface));
+}
+
 export function pressShadowOn(_surface: OverlaySurface): boolean {
   // 玻璃的独立 visualEffect 路径也不叠加按压阴影。
   return false;

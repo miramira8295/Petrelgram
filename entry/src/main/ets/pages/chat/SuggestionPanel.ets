@@ -3,7 +3,7 @@ import { CommandItem, MentionItem } from '../../store/InputSuggestions';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { LiveUserAvatar } from '../common/LiveUserAvatar';
-import { systemMaterialState } from '../../util/systemMaterialSetting';
+import { chatPlainFill, systemMaterialState } from '../../util/systemMaterialSetting';
 import { immersiveMaterialAvailable } from '../../util/overlayMaterial';
 import { chromeOutline } from '../../util/chromeOutline';
 import { hdsVisualEffect } from '../../util/hdsPointLight';
@@ -236,7 +236,7 @@ export struct SuggestionPanel {
       });
     }
     .width(this.drawerHeight > 0 ? 'calc(100% - 16vp)' : 'calc(100% - 28vp)')
-    .backgroundColor(this.glassHostOn() ? Color.Transparent : $r('app.color.chat_overlay'))
+    .backgroundColor(this.glassHostOn() ? Color.Transparent : chatPlainFill(systemMaterialState.level))
     .visualEffect(hdsVisualEffect('card', !this.appDark))
     .border(this.glassHostOn() ? { width: 0 } : chromeOutline(this.appDark))
     .borderRadius(16).clip(true)

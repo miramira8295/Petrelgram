@@ -1,6 +1,7 @@
 // 整体卡片与气泡共用透明度档位；气泡保留自己的底色，不创建滤镜。
 // 两面的开关与档位独立保存，首页卡片和聊天气泡可以分别调节。
 import { normalizeThickness } from './materialTuning';
+import { KEY_SYSTEM_MATERIAL, SYSTEM_MATERIAL_DEFAULT, systemMaterialOff } from './systemMaterialSetting';
 import {
   appIsDark, BUBBLE_IN_DEFAULT_LIGHT, BUBBLE_IN_DEFAULT_DARK,
   BUBBLE_OUT_DEFAULT_LIGHT, BUBBLE_OUT_DEFAULT_DARK
@@ -18,11 +19,17 @@ export const BUBBLE_GLASS_ON_DEFAULT: boolean = false;
 export const SURFACE_GLASS_LEVEL_VEIL: number = -4;
 export const SURFACE_GLASS_LEVEL_DEFAULT: number = 0;
 
+function solidOnlyMode(): boolean {
+  return systemMaterialOff(AppStorage.get<number>(KEY_SYSTEM_MATERIAL) ?? SYSTEM_MATERIAL_DEFAULT);
+}
+
 export function surfaceGlassOn(): boolean {
+  if (solidOnlyMode()) { return false; }
   return AppStorage.get<boolean>(KEY_SURFACE_GLASS_ON) ?? SURFACE_GLASS_ON_DEFAULT;
 }
 
 export function bubbleGlassOn(): boolean {
+  if (solidOnlyMode()) { return false; }
   return AppStorage.get<boolean>(KEY_BUBBLE_GLASS_ON) ?? BUBBLE_GLASS_ON_DEFAULT;
 }
 
@@ -60,6 +67,11 @@ export function surfaceGlassFillHex(): string {
 
 export function surfaceGlassFill(solid: ResourceColor): ResourceColor {
   return surfaceGlassOn() ? surfaceGlassFillHex() : solid;
+}
+
+export function bubbleGlassFillFor(hex: string, level: number): string {
+  const rgb: string = hex.length === 7 || hex.length === 9 ? toRgbHex(hex) : '';
+  return rgb === '' ? hex : `#${BUBBLE_TINT_ALPHA[bubbleTintLevel(level) + 2]}${rgb.substring(1)}`;
 }
 
 export function bubbleGlassFill(solid: ResourceColor): ResourceColor {

@@ -5,6 +5,9 @@ import {
   fallbackBlurRadius, interactiveOn, isThicknessOff, lightEffectOn, normalizeLightLevel,
   normalizeThickness, shiftedStyleIndex
 } from '../main/ets/util/materialTuning';
+import {
+  SYSTEM_MATERIAL_APP_DEFAULT, chatMaterialEnabled, systemMaterialOff
+} from '../main/ets/util/systemMaterialSetting';
 
 // 各个面调好的基准档位，和 overlayMaterial 的 styleOf 对齐。
 const BAR: number = 0;      // ULTRA_THIN
@@ -109,6 +112,14 @@ export default function materialTuningTest() {
       expect(isThicknessOff(THICKNESS_OFF)).assertTrue();
       expect(isThicknessOff(THICKNESS_REGULAR)).assertFalse();
       expect(normalizeThickness(-4)).assertEqual(THICKNESS_DEFAULT);
+    });
+    it('系统材质关闭档与 APP 默认档区分：关闭档走实色、APP 默认档走半透明', 0, (): void => {
+      expect(systemMaterialOff(THICKNESS_OFF)).assertTrue();
+      expect(systemMaterialOff(SYSTEM_MATERIAL_APP_DEFAULT)).assertFalse();
+      expect(systemMaterialOff(THICKNESS_DEFAULT)).assertFalse();
+      expect(chatMaterialEnabled(THICKNESS_OFF)).assertFalse();
+      expect(chatMaterialEnabled(SYSTEM_MATERIAL_APP_DEFAULT)).assertFalse();
+      expect(chatMaterialEnabled(THICKNESS_DEFAULT)).assertTrue();
     });
   });
 }

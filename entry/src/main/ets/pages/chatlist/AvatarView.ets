@@ -16,6 +16,8 @@ export struct AvatarView {
   @StorageProp(LANGUAGE_EPOCH) private languageEpoch: number = 0;
   @Prop isLive: boolean = false;
   @Prop livePulseExpanded: boolean = false;
+  @Prop isOnline: boolean = false;
+  @Prop onlineColor: ResourceColor = COLOR_PRIMARY;
   // Animated profile photo (MPEG4 loop). Only profile pages pass this —
   // list rows stay static (one looping player per row would be too heavy).
   @Prop @Watch('onAvatarInputChanged') animPath: string = '';
@@ -225,6 +227,15 @@ export struct AvatarView {
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
       this.base();
+      if (this.isOnline && !this.isLive && this.autoDeleteTime <= 0 && !this.savedMessages) {
+        Row()
+          .width(this.avatarSize < 42 ? 12 : 14)
+          .height(this.avatarSize < 42 ? 12 : 14)
+          .backgroundColor(this.onlineColor)
+          .border({ width: 2, color: $r('app.color.surface') })
+          .borderRadius(this.avatarSize < 42 ? 6 : 7)
+          .translate({ x: 1, y: 1 });
+      }
       if (this.autoDeleteTime > 0 && !this.isLive) {
         Stack({ alignContent: Alignment.Center }) {
           Image($r('app.media.ic_auto_delete_ring'))
@@ -256,7 +267,7 @@ export struct AvatarView {
             });
           Circle({ width: 18, height: 18 })
             .fill('#F8FCFF')
-            .shadow({ radius: 3, color: '#292A88C9', offsetX: 0, offsetY: 1 })
+            .border({ width: 0.8, color: '#382A88C9' })
             .scale({
               x: this.livePulseExpanded ? 1.03 : 0.98,
               y: this.livePulseExpanded ? 1.03 : 0.98

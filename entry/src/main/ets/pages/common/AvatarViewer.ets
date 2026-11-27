@@ -132,17 +132,22 @@ export struct AvatarViewer {
           this.filmstrip();
         }
         Row({ space: 12 }) {
-        Text(`${this.index + 1} / ${this.count}${this.hasMore ? '+' : ''}`)
-          .fontColor(Color.White).fontSize(14);
-        if (this.loading) {
-          LoadingProgress().width(20).height(20).color(Color.White);
-        } else if (this.loadError || (this.hasMore && this.index === this.count - 1)) {
-          Button(this.loadError ? $r('app.string.settings_reload') : $r('app.string.load_more'))
-            .fontColor(Color.White).backgroundColor('#4D000000')
-            .onClick((): void => { this.source?.loadMore(); });
+          Text(`${this.index + 1} / ${this.count}${this.hasMore ? '+' : ''}`)
+            .fontColor(Color.White).fontSize(14);
+          if (this.loading) {
+            LoadingProgress().width(20).height(20).color(Color.White);
+          } else if (this.loadError || (this.hasMore && this.index === this.count - 1)) {
+            Button(this.loadError ? $r('app.string.settings_reload') : $r('app.string.load_more'))
+              .fontColor(Color.White).backgroundColor('#4D000000')
+              .onClick((): void => { this.source?.loadMore(); });
+          }
         }
-        }
-      }.width('100%').align(Alignment.Bottom).margin({ bottom: this.bottomSafe + 24 });
+      }
+      .width('100%').height('100%')
+      .justifyContent(FlexAlign.End)
+      .alignItems(HorizontalAlign.Center)
+      .padding({ bottom: this.bottomSafe + 24 })
+      .hitTestBehavior(HitTestMode.Transparent);
     }
     .width('100%').height('100%').backgroundColor(Color.Black)
     .onAreaChange((_old: Area, area: Area): void => {

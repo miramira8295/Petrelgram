@@ -1934,9 +1934,10 @@ export struct MessageBubbleShell {
             if (this.context.gestureClaimed) { return; }
             this.actions.onAvatarTap(this.msg.senderId, this.msg.senderIsUser);
           })
-          .gesture(LongPressGesture().onAction(() => {
+          .gesture(LongPressGesture().onAction((event: GestureEvent) => {
             if (this.msg.senderIsUser && this.msg.senderId > 0) {
-              this.actions.onAvatarLongPress(this.msg.senderId, this.msg.senderName);
+              const y: number | undefined = event.fingerList.length > 0 ? event.fingerList[0].globalY : undefined;
+              this.actions.onAvatarLongPress(this.msg.senderId, this.msg.senderName, y);
             }
           }));
       }

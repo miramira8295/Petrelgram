@@ -4,7 +4,9 @@ import { ComponentContent, promptAction, UIContext } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { ForumTopicRow } from '../../util/forumTopicModel';
-import { forumTopicCreateRequest, forumTopicDeleteRequest } from '../../util/forumTopicRequests';
+import {
+  botImplicitTopicCreateRequest, forumTopicCreateRequest, forumTopicDeleteRequest
+} from '../../util/forumTopicRequests';
 import { logE } from '../../util/log';
 import { str } from '../../util/strings';
 import { COLOR_ON_PRIMARY, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
@@ -118,6 +120,25 @@ function askTopicName(ui: UIContext): Promise<string | null> {
       logE(`askTopicName open failed: ${e}`);
       resolve(null);
     });
+  });
+}
+
+// Bot 私聊隐式新建话题：不弹命名框，发首条消息时按消息文本/兜底名调用
+// createForumTopic(is_name_implicit = true)，允许 Bot 后续自动改名。
+export function createBotImplicitTopic(chatId: number, hint: string = ''): Promise<CreatedTopic | null> {
+  const req: TdRequest | null = botImplicitTopicCreateRequest(chatId, hint, str('ft_new_topic'));
+  if (req === null) {
+    return Promise.resolve(null);
+  }
+  const sentName: string = (req['name'] as string | undefined) ?? '';
+  return getTdClient().send(req).then((info: TdObject): CreatedTopic | null => {
+    const threadId: number = (info['forum_topic_id'] as number | undefined) ?? 0;
+    const serverName: string = ((info['name'] as string | undefined) ?? '').trim();
+    return threadId > 0 ? { threadId: threadId, name: serverName !== '' ? serverName : sentName } : null;
+  }).catch((e: TdError): CreatedTopic | null => {
+    logE(`TopicManageFlow.createBotImplicitTopic failed: ${e.message}`);
+    showToast(str('ga_failed'), 2000);
+    return null;
   });
 }
 

@@ -1,4 +1,5 @@
 import { showToast } from '../../util/toast';
+import { avatarInitialOf } from '../../util/avatarInitial';
 import { collapseFloatingVideo } from '../../util/floatingVideoRuntime';
 import { QrDialog } from '../common/QrDialog';
 import { edgeBlurRadiusWhileMorphing } from '../../util/scrollEdgeBlur';
@@ -63,6 +64,8 @@ import {
 import { AvatarView } from '../chatlist/AvatarView';
 import { NativeGlassHost } from '../chat/NativeGlassHost';
 import { AvatarViewer } from '../common/AvatarViewer';
+import { getMessageFilterStore, MESSAGE_FILTER_EPOCH } from '../../store/MessageFilterStore';
+import { MessageFilterRouteParam } from '../main/MessageFilterPage';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
@@ -164,6 +167,7 @@ export struct ChatProfilePage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  @StorageProp(MESSAGE_FILTER_EPOCH) private filterEpoch: number = 0;
   // 整体玻璃开关与档位（联系人页同一套）。开关变一次所有读它的面都要重算。
   @StorageProp(KEY_SURFACE_GLASS_ON) private surfaceGlassOn: boolean = SURFACE_GLASS_ON_DEFAULT;
   @StorageProp(SURFACE_GLASS_EPOCH) private surfaceGlassEpoch: number = 0;
@@ -341,7 +345,7 @@ export struct ChatProfilePage {
       this.hasPrefill = true;
       this.title = prefillTitle;
       const prefillInitials: string = (params?.['prefillInitials'] as string | undefined) ?? '';
-      this.initials = prefillInitials !== '' ? prefillInitials : prefillTitle.substring(0, 1).toUpperCase();
+      this.initials = prefillInitials !== '' ? prefillInitials : avatarInitialOf(prefillTitle);
       this.avatarPath = (params?.['prefillAvatarPath'] as string | undefined) ?? '';
       this.avatarAnimPath = (params?.['prefillAvatarAnimPath'] as string | undefined) ?? '';
       this.subtitle = (params?.['prefillSubtitle'] as string | undefined) ?? '';
@@ -732,7 +736,7 @@ export struct ChatProfilePage {
         return;
       }
       this.title = (info['title'] as string | undefined) ?? str('cpp_telegram_group');
-      this.initials = this.title !== '' ? this.title.substring(0, 1).toUpperCase() : '?';
+      this.initials = avatarInitialOf(this.title);
       this.description = (info['description'] as string | undefined) ?? '';
       const count = (info['member_count'] as number | undefined) ?? 0;
       const inviteType = (info['type'] as TdObject | undefined)
@@ -1710,15 +1714,6 @@ export struct ChatProfilePage {
       }.width('100%');
       if (this.chatId !== 0) {
         Row({ space: 10 }) {
-          if (!this.isChannel) {
-            this.actionButton('sys.symbol.paintpalette', str('chat_theme_title'), () => {
-              const params: Record<string, Object> = { 'chatId': this.chatId };
-              this.getUIContext().getRouter().pushUrl({ url: 'pages/main/ChatThemePage', params })
-                .catch((error: Error): void => {
-                  logE(`ChatProfilePage.openTheme failed: ${error.message}`);
-                });
-            });
-          }
           // Only creators / admins with real rights see the management entry.
           if (this.canManageChat) {
             this.actionButton('sys.symbol.gearshape', str('lv_manage_short'), () => {
@@ -1822,6 +1817,32 @@ export struct ChatProfilePage {
         if (this.description === '' && this.chatUsername === '') {
           Text($r('app.string.cpp_no_profile')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY)
             .padding({ top: 10, bottom: 10 });
+        }
+        if (this.chatId !== 0) {
+          this.sectionDivider();
+          Row({ space: 10 }) {
+            Column({ space: 2 }) {
+              Text($r('app.string.mf_chat_title')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
+              Text($r('app.string.mf_chat_profile_sub')).fontSize(12.5).fontColor(COLOR_TEXT_SECONDARY);
+            }.alignItems(HorizontalAlign.Start).layoutWeight(1);
+            Text(this.filterEpoch < 0 ? '' : (
+              getMessageFilterStore().activeRuleCountForChat(this.chatId) > 0
+                ? str('mf_rule_count', String(getMessageFilterStore().activeRuleCountForChat(this.chatId)))
+                : str('mf_status_none')
+            ))
+              .fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
+            SymbolGlyph($r('sys.symbol.chevron_right'))
+              .fontSize(15).fontColor([COLOR_TEXT_SECONDARY]);
+          }
+          .width('100%').padding({ top: 10, bottom: 10 })
+          .alignItems(VerticalAlign.Center)
+          .onClick((): void => {
+            const param: MessageFilterRouteParam = {
+              chatId: this.chatId,
+              chatTitle: this.title
+            };
+            this.navStack?.pushPath({ name: 'MessageFilterPage', param });
+          });
         }
       }
       .width('100%').padding({ left: 12, right: 12, top: 4, bottom: 4 })

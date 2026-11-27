@@ -1,4 +1,5 @@
 import { ReactionSender, parseReactionSenders } from '../util/reactionSenders';
+import { avatarInitialOf } from '../util/avatarInitial';
 import { ChecklistModel } from '../util/checklistModel';
 import { GiveawayAudience } from '../util/giveawayAudience';
 import { webAppUrlOf } from '../util/webAppUrl';
@@ -1118,7 +1119,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore, publishVi
     senderTag: (message['sender_tag'] as string | undefined) ?? '',
     senderId: senderIdOf(message),
     senderIsUser: senderIsUserOf(message),
-    senderInitials: name.length > 0 ? name.substring(0, 1).toUpperCase() : '?',
+    senderInitials: avatarInitialOf(name),
     senderAvatarPath: '',
     date: (message['date'] as number | undefined) ?? 0,
     editDate: (message['edit_date'] as number | undefined) ?? 0,

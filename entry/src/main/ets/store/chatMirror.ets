@@ -80,6 +80,17 @@ export class ChatMirror {
     this.entries.set(chatId, next);
   }
 
+  setOnline(chatId: number, online: boolean): boolean {
+    const entry: ChatEntry | undefined = this.entries.get(chatId);
+    if (entry === undefined || entry.kind !== 'private' || entry.isSavedMessages || (entry.isOnline === true) === online) {
+      return false;
+    }
+    const next: ChatEntry = cloneEntry(entry);
+    next.isOnline = online;
+    this.entries.set(chatId, next);
+    return true;
+  }
+
   // 合并一批 worker 实体，返回**真正变化**的会话 id（按 B4b 的可比字段口径，
   // revision 不计）。没变化的条目保持原对象身份，避免下游白刷。
   apply(remote: ChatEntry[], normalize?: (entry: ChatEntry) => void): number[] {
@@ -92,12 +103,14 @@ export class ChatMirror {
         merged.avatarPath = previous.photoFileId === incoming.photoFileId
           ? previous.avatarPath : '';
         merged.typingText = previous.typingText;
+        merged.isOnline = previous.isOnline;
         if (previous.liveGroupCallId === incoming.liveGroupCallId) {
           merged.isLive = previous.isLive;
           merged.isRtmpLive = previous.isRtmpLive;
         }
         normalize?.(merged);
-        if (compareChatEntries(previous, merged) === '' && previous.lastSenderName === merged.lastSenderName) {
+        if (compareChatEntries(previous, merged) === '' && previous.lastSenderName === merged.lastSenderName
+          && (previous.isOnline === true) === (merged.isOnline === true)) {
           continue;
         }
         merged.revision = previous.revision + 1;

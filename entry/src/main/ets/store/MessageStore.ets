@@ -70,6 +70,11 @@ import {
 } from '../util/messageTopicScope';
 import { stickerFramesCached, warmStickerFrameIndex } from '../services/stickerFrameIndex';
 import { ALPHA_MAX_BUCKET } from '../util/webm/alphaCacheKey';
+import { getMessageFilterStore } from './MessageFilterStore';
+import {
+  CompiledChatFilter, FilterableMessage, MAX_FILTER_AUTO_BACKFILL, MIN_VISIBLE_INITIAL_MESSAGES,
+  messageMatchesFilter, shouldAutoBackfillFilteredPage
+} from '../util/messageFilter';
 
 const PAGE: number = 30;
 // 首屏填充最多续追几次。三次足以把 14 + 2 + 30 这种序列填过一页，又不至于在
@@ -382,6 +387,13 @@ export class MessageStore {
   // history comes from getMessageThreadHistory and sends target the thread.
   private threadRootId: number = 0;
   private historyPageSize: number = PAGE;
+  // 本地群组/频道消息拦截投影缓存：仅作用于发布边界，不改原始 messages 与分页游标。
+  private filterCache: Map<number, boolean> = new Map<number, boolean>();
+  private filterCacheVersion: number = -1;
+  private temporarilyRevealedIds: Set<number> = new Set<number>();
+  private filterAutoBackfillStreak: number = 0;
+  private lastHiddenCount: number = 0;
+  private filterFillCapped: boolean = false;
 
   constructor(client: TdClient, users: UserStore, chatId: number,
     threadRootId: number = 0, historyPageSize: number = PAGE, forumTopicId: number = 0,
@@ -406,10 +418,45 @@ export class MessageStore {
 
   // 论坛话题（forum_topic_id，独立于评论线程的 message_thread_id）。
   // 历史走 getForumTopicHistory，发送带 topic_id: messageTopicForum。
+  // < 0（PENDING_BOT_TOPIC_ID）表示 Bot 私聊本地新建占位：发首条消息时才按
+  // is_name_implicit=true 创建真实话题并回填 forumTopicId。
   private forumTopicId: number = 0;
+  private pendingTopicCreator: ((hint: string) => Promise<number>) | null = null;
+  private pendingTopicPromise: Promise<boolean> | null = null;
   // 管理员侧频道私信按来信者拆成独立 topic。这个 id 只属于
   // is_administered_direct_messages_group，不能拿普通 chat history 读取。
   private directMessagesTopicId: number = 0;
+
+  setPendingTopicCreator(creator: ((hint: string) => Promise<number>) | null): void {
+    this.pendingTopicCreator = creator;
+  }
+
+  private ensureTopicForSend(hint: string): Promise<boolean> {
+    if (this.forumTopicId >= 0) {
+      return Promise.resolve(true);
+    }
+    if (this.pendingTopicPromise !== null) {
+      return this.pendingTopicPromise;
+    }
+    const creator = this.pendingTopicCreator;
+    if (creator === null) {
+      return Promise.resolve(false);
+    }
+    const task: Promise<boolean> = creator(hint).then((threadId: number): boolean => {
+      if (threadId <= 0) {
+        return false;
+      }
+      this.forumTopicId = threadId;
+      this.pendingTopicCreator = null;
+      return true;
+    }).catch((): boolean => false).finally((): void => {
+      if (this.pendingTopicPromise === task) {
+        this.pendingTopicPromise = null;
+      }
+    });
+    this.pendingTopicPromise = task;
+    return task;
+  }
 
   private topicIdObject(): TdObject {
     return messageTopicObject(
@@ -561,6 +608,7 @@ export class MessageStore {
     this.unsubs.push(this.client.onUpdate('updateMessageEdited', (u: TdObject) => this.onEdited(u)));
     // Bot showed/removed its custom reply keyboard.
     this.unsubs.push(this.client.onUpdate('updateChatReplyMarkup', (u: TdObject) => this.onChatReplyMarkup(u)));
+    this.unsubs.push(getMessageFilterStore().subscribe((): void => { this.onFilterRulesChanged(); }));
     // 会话最后一条变了：可能因此已经追到尾部，重新判一次。
     this.unsubs.push(this.client.onUpdate('updateChatLastMessage', (u: TdObject) => {
       // 【话题作用域下必须整条忽略】chat.last_message 是**会话级**的，在论坛话题 /
@@ -651,6 +699,11 @@ export class MessageStore {
       un();
     }
     this.unsubs = [];
+    this.filterCache.clear();
+    this.temporarilyRevealedIds.clear();
+    this.filterAutoBackfillStreak = 0;
+    this.lastHiddenCount = 0;
+    this.filterFillCapped = false;
     if (this.statusRefreshTimer !== -1) {
       clearInterval(this.statusRefreshTimer);
       this.statusRefreshTimer = -1;
@@ -658,7 +711,97 @@ export class MessageStore {
   }
 
   getMessages(): MessageEntry[] {
-    return this.messages;
+    return this.visibleMessages();
+  }
+
+  getFilteredHiddenCount(): number {
+    return this.lastHiddenCount;
+  }
+
+  isFilterFillCapped(): boolean {
+    return this.filterFillCapped;
+  }
+
+  revealFilteredMessage(messageId: number): void {
+    if (messageId <= 0) {
+      return;
+    }
+    const wasBlocked: boolean = this.filterCache.get(messageId) === true;
+    this.temporarilyRevealedIds.add(messageId);
+    this.filterCache.delete(messageId);
+    if (wasBlocked && this.initialHistoryState === 'ready') {
+      this.notify('update');
+    }
+  }
+
+  continueLoadOlderPastFilter(): boolean {
+    this.filterAutoBackfillStreak = 0;
+    this.filterFillCapped = false;
+    return this.loadOlder();
+  }
+
+  private onFilterRulesChanged(): void {
+    this.filterCache.clear();
+    this.filterCacheVersion = -1;
+    this.filterAutoBackfillStreak = 0;
+    this.filterFillCapped = false;
+    if (this.initialHistoryState === 'ready') {
+      this.notify('update');
+    }
+  }
+
+  private isEntryBlocked(entry: MessageEntry, compiled: CompiledChatFilter): boolean {
+    if (this.temporarilyRevealedIds.has(entry.id)) {
+      return false;
+    }
+    const cached: boolean | undefined = this.filterCache.get(entry.id);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const senderUserId: number = entry.senderIsUser ? entry.senderId : 0;
+    const item: FilterableMessage = {
+      isOutgoing: entry.isOutgoing,
+      isService: entry.contentType === 'system',
+      senderUserId,
+      senderName: entry.senderName,
+      senderUsernames: senderUserId > 0 ? this.users.usernamesOf(senderUserId) : [],
+      text: entry.text,
+      caption: entry.placeholderLabel,
+      forwardFrom: entry.forwardFrom,
+      linkPreviewTitle: entry.linkTitle
+    };
+    const blocked: boolean = messageMatchesFilter(item, compiled);
+    this.filterCache.set(entry.id, blocked);
+    return blocked;
+  }
+
+  private visibleMessages(): MessageEntry[] {
+    if (!this.isGroupFlag && !this.isChannel) {
+      this.lastHiddenCount = 0;
+      return this.messages;
+    }
+    const filterStore = getMessageFilterStore();
+    const compiled: CompiledChatFilter | null = filterStore.compiledForChat(this.chatId);
+    if (compiled === null) {
+      this.lastHiddenCount = 0;
+      return this.messages;
+    }
+    const ver: number = filterStore.getVersion();
+    if (this.filterCacheVersion !== ver) {
+      this.filterCache.clear();
+      this.filterCacheVersion = ver;
+    }
+    const out: MessageEntry[] = [];
+    let hidden: number = 0;
+    for (const entry of this.messages) {
+      if (this.isEntryBlocked(entry, compiled)) {
+        hidden++;
+      } else {
+        out.push(entry);
+      }
+    }
+    this.lastHiddenCount = hidden;
+    return out;
   }
 
   consumeLiveIncomingMediaIds(): number[] {
@@ -895,7 +1038,7 @@ export class MessageStore {
 
   subscribe(l: MsgListener): () => void {
     this.msgSubs = [...this.msgSubs, l];
-    l(this.messages);
+    l(this.visibleMessages());
     return (): void => { this.msgSubs = this.msgSubs.filter((x: MsgListener) => x !== l); };
   }
 
@@ -1322,7 +1465,11 @@ export class MessageStore {
     return true;
   }
 
-  loadOlder(): boolean {
+  loadOlder(isFilterAutoBackfill: boolean = false): boolean {
+    if (!isFilterAutoBackfill) {
+      this.filterAutoBackfillStreak = 0;
+      this.filterFillCapped = false;
+    }
     if (this.olderPrefetchAnchorId !== 0 &&
       this.olderPrefetchAnchorId !== this.oldestId) {
       this.clearOlderPrefetch();
@@ -1854,6 +2001,9 @@ export class MessageStore {
   // entities 目前只用于按 user_id 提及没有用户名的成员（见 mentionEntities）。
   // 其余实体仍由服务器扫文本自行识别，这里不接管。
   async sendAsync(text: string, replyToId: number = 0, entities: TdObject[] = [], parseMarkdown: boolean = false): Promise<void> {
+    if (!(await this.ensureTopicForSend(text))) {
+      throw new TdError(-1, 'failed to create bot topic');
+    }
     // 记一笔"我主动发过"，系统分享的目标名单按它排（util/recentOutgoing）。
     noteOutgoingChat(this.chatId);
     const ft = parseMarkdown ? await parseComposeMarkdown(this.client, text, entities) : composeFormattedText(text, entities);
@@ -1918,6 +2068,7 @@ export class MessageStore {
   // "typing…" indicator for the peer. Throttled: Telegram clients resend the
   // action at most every few seconds while input continues.
   notifyTyping(): void {
+    if (this.forumTopicId < 0) { return; }
     const now = Date.now();
     if (now - this.lastTypingAtMs < 4000) { return; }
     this.lastTypingAtMs = now;
@@ -1929,7 +2080,7 @@ export class MessageStore {
   }
 
   cancelTyping(): void {
-    if (this.lastTypingAtMs === 0) { return; }
+    if (this.forumTopicId < 0 || this.lastTypingAtMs === 0) { return; }
     this.lastTypingAtMs = 0;
     const req: TdRequest = { '@type': 'sendChatAction' };
     req['chat_id'] = this.chatId;
@@ -1945,18 +2096,24 @@ export class MessageStore {
   // Persist (or clear, when text is empty) the chat draft so it syncs to the
   // account's other devices. TDLib clears the draft itself on send.
   saveDraft(text: string, replyToId: number): void {
+    if (this.forumTopicId < 0) { return; }
     // [Draft] 探针：真机上「退出后草稿没保存」，保存/恢复两步原本都没留痕。
     logW(`[Draft] save chat=${this.chatId} len=${text.trim().length} reply=${replyToId}`);
     const req: TdRequest = { '@type': 'setChatDraftMessage' };
     req['chat_id'] = this.chatId;
     this.applyTopicScope(req);
-    if (text.trim() !== '') {
-      const ft: TdObject = { '@type': 'formattedText' };
-      ft['text'] = text;
-      const content: TdObject = { '@type': 'inputMessageText' };
-      content['text'] = ft;
+    if (text.trim() !== '' || replyToId !== 0) {
+      // TDLib 1.8.71 schema（已核对 libtdjson.so）：
+      // draftMessage { reply_to, date, content: draftMessageContentText { text, link_preview_options }, ... }
       const draft: TdObject = { '@type': 'draftMessage' };
-      draft['input_message_text'] = content;
+      draft['date'] = Math.floor(Date.now() / 1000);
+      if (text.trim() !== '') {
+        const ft: TdObject = { '@type': 'formattedText' };
+        ft['text'] = text;
+        const content: TdObject = { '@type': 'draftMessageContentText' };
+        content['text'] = ft;
+        draft['content'] = content;
+      }
       if (replyToId !== 0) {
         const rt: TdObject = { '@type': 'inputMessageReplyToMessage' };
         rt['message_id'] = replyToId;
@@ -1970,9 +2127,12 @@ export class MessageStore {
   }
 
   // Send a text message at a future time (scheduling_state), or silently.
-  sendScheduledAsync(
+  async sendScheduledAsync(
     text: string, replyToId: number, sendDate: number, silent: boolean
   ): Promise<void> {
+    if (!(await this.ensureTopicForSend(text))) {
+      throw new TdError(-1, 'failed to create bot topic');
+    }
     const ft: TdObject = { '@type': 'formattedText' };
     ft['text'] = text;
     const content: TdObject = { '@type': 'inputMessageText' };
@@ -2207,7 +2367,10 @@ export class MessageStore {
     });
   }
 
-  sendDocumentAsync(path: string, caption: string): Promise<void> {
+  async sendDocumentAsync(path: string, caption: string): Promise<void> {
+    if (!(await this.ensureTopicForSend(caption))) {
+      throw new TdError(-1, 'failed to create bot topic');
+    }
     const content: TdObject = { '@type': 'inputMessageDocument' };
     content['document'] = MessageStore.wrapInputFile(
       'inputDocument', 'document', MessageStore.localFile(path));
@@ -2232,7 +2395,13 @@ export class MessageStore {
   }
 
   // Shared sendMessage plumbing for media content types.
-  private sendContent(content: TdObject, tag: string, replyToId: number = 0, strict: boolean = false): Promise<number> {
+  private async sendContent(content: TdObject, tag: string, replyToId: number = 0, strict: boolean = false): Promise<number> {
+    const captionObj = content['caption'] as TdObject | undefined;
+    const hint: string = (captionObj?.['text'] as string | undefined) ?? '';
+    if (!(await this.ensureTopicForSend(hint))) {
+      const err = new TdError(-1, 'failed to create bot topic');
+      return strict ? Promise.reject(err) : 0;
+    }
     // 记一笔"我主动发过"，系统分享的目标名单按它排（util/recentOutgoing）。
     noteOutgoingChat(this.chatId);
     const req: TdRequest = { '@type': 'sendMessage' };
@@ -2746,25 +2915,30 @@ export class MessageStore {
       replyTo['message_id'] = replyToId;
       req['reply_to'] = replyTo;
     }
-    this.applyTopicScope(req);
-    return sendWithChatPermissions(this.client, req).then((result: TdObject): void => {
-      const sent: TdObject[] = items.length > 1
-        ? ((result['messages'] as TdObject[] | undefined) ?? [])
-        : [result];
-      for (let i = 0; i < sent.length; i++) {
-        const source = items[Math.min(i, items.length - 1)];
-        const rawEntry = buildMessageEntry(sent[i], this.users);
-        const existing = this.messages.find((e: MessageEntry): boolean => e.id === rawEntry.id) ??
-          this.deferredOutgoing.find((e: MessageEntry): boolean => e.id === rawEntry.id);
-        if (existing !== undefined && existing.rowId !== 0) {
-          rawEntry.rowId = existing.rowId;
-        }
-        const entry = this.rememberLocalMedia(rawEntry, source);
-        this.publishOutgoing(entry);
+    return this.ensureTopicForSend(caption).then((ok: boolean): Promise<void> => {
+      if (!ok) {
+        return Promise.reject(new TdError(-1, 'failed to create bot topic'));
       }
-      this.resolveReplies();
-      this.requestPhotos();
-      this.notifySoon();
+      this.applyTopicScope(req);
+      return sendWithChatPermissions(this.client, req).then((result: TdObject): void => {
+        const sent: TdObject[] = items.length > 1
+          ? ((result['messages'] as TdObject[] | undefined) ?? [])
+          : [result];
+        for (let i = 0; i < sent.length; i++) {
+          const source = items[Math.min(i, items.length - 1)];
+          const rawEntry = buildMessageEntry(sent[i], this.users);
+          const existing = this.messages.find((e: MessageEntry): boolean => e.id === rawEntry.id) ??
+            this.deferredOutgoing.find((e: MessageEntry): boolean => e.id === rawEntry.id);
+          if (existing !== undefined && existing.rowId !== 0) {
+            rawEntry.rowId = existing.rowId;
+          }
+          const entry = this.rememberLocalMedia(rawEntry, source);
+          this.publishOutgoing(entry);
+        }
+        this.resolveReplies();
+        this.requestPhotos();
+        this.notifySoon();
+      });
     }).catch((e: TdError): Promise<void> => {
       logE(`MessageStore.sendMedia failed: ${e.message}`);
       return Promise.reject(e);
@@ -2788,8 +2962,11 @@ export class MessageStore {
   }
 
   // wrapped=true 发包装形状，被库拒了（旧 schema 不认 inputAnimation）再裸发一次。
-  private sendOneAnimation(item: MediaSendItem, caption: string, replyToId: number,
+  private async sendOneAnimation(item: MediaSendItem, caption: string, replyToId: number,
     wrapped: boolean): Promise<void> {
+    if (!(await this.ensureTopicForSend(caption))) {
+      throw new TdError(-1, 'failed to create bot topic');
+    }
     // 记一笔"我主动发过"，系统分享的目标名单按它排（util/recentOutgoing）。
     noteOutgoingChat(this.chatId);
     const req: TdRequest = { '@type': 'sendMessage' };
@@ -2845,29 +3022,34 @@ export class MessageStore {
 
   private sendSavedAnimation(fileId: number, width: number, height: number,
     durationSec: number, wrapped: boolean): void {
-    const inputFile: TdObject = { '@type': 'inputFileId' };
-    inputFile['id'] = fileId;
-    const content: TdObject = { '@type': 'inputMessageAnimation' };
-    content['animation'] = wrapped
-      ? MessageStore.wrapInputFile('inputAnimation', 'animation', inputFile) : inputFile;
-    content['width'] = width;
-    content['height'] = height;
-    content['duration'] = durationSec;
-    const req: TdRequest = { '@type': 'sendMessage' };
-    req['chat_id'] = this.chatId;
-    req['input_message_content'] = content;
-    this.applyTopicScope(req);
-    sendWithChatPermissions(this.client, req).then((m: TdObject): void => {
-      this.upsert(buildMessageEntry(m, this.users));
-      this.requestPhotos();
-      this.notifySoon();
-    }).catch((e: TdError): void => {
-      if (wrapped && animationShapeRejected(e.message)) {
-        logW(`MessageStore.sendAnimation wrapped rejected (${e.message}), retrying bare`);
-        this.sendSavedAnimation(fileId, width, height, durationSec, false);
+    this.ensureTopicForSend('').then((ok: boolean): void => {
+      if (!ok) {
         return;
       }
-      logE(`MessageStore.sendAnimation failed: ${e.message}`);
+      const inputFile: TdObject = { '@type': 'inputFileId' };
+      inputFile['id'] = fileId;
+      const content: TdObject = { '@type': 'inputMessageAnimation' };
+      content['animation'] = wrapped
+        ? MessageStore.wrapInputFile('inputAnimation', 'animation', inputFile) : inputFile;
+      content['width'] = width;
+      content['height'] = height;
+      content['duration'] = durationSec;
+      const req: TdRequest = { '@type': 'sendMessage' };
+      req['chat_id'] = this.chatId;
+      req['input_message_content'] = content;
+      this.applyTopicScope(req);
+      sendWithChatPermissions(this.client, req).then((m: TdObject): void => {
+        this.upsert(buildMessageEntry(m, this.users));
+        this.requestPhotos();
+        this.notifySoon();
+      }).catch((e: TdError): void => {
+        if (wrapped && animationShapeRejected(e.message)) {
+          logW(`MessageStore.sendAnimation wrapped rejected (${e.message}), retrying bare`);
+          this.sendSavedAnimation(fileId, width, height, durationSec, false);
+          return;
+        }
+        logE(`MessageStore.sendAnimation failed: ${e.message}`);
+      });
     });
   }
 
@@ -3128,6 +3310,45 @@ export class MessageStore {
         this.loadOlder();
       } else {
         this.initialFillTries = 0;
+      }
+    }
+    // 拦截规则导致单页被全部过滤或首屏过少时，按原始游标自动补拉更早一页（受上限保护）。
+    if ((this.isGroupFlag || this.isChannel) && entries.length > 0 && this.hasMoreOlder) {
+      const compiled: CompiledChatFilter | null = getMessageFilterStore().compiledForChat(this.chatId);
+      if (compiled !== null) {
+        if (kind === 'older') {
+          let visibleInPage: number = 0;
+          for (const e of entries) {
+            if (!this.isEntryBlocked(e, compiled)) {
+              visibleInPage++;
+            }
+          }
+          if (shouldAutoBackfillFilteredPage(
+            false, entries.length, 0, visibleInPage, this.hasMoreOlder, this.filterAutoBackfillStreak)) {
+            this.filterAutoBackfillStreak++;
+            this.filterFillCapped = false;
+            this.loadOlder(true);
+          } else if (visibleInPage === 0 && this.filterAutoBackfillStreak >= MAX_FILTER_AUTO_BACKFILL) {
+            this.filterFillCapped = true;
+          } else if (visibleInPage > 0) {
+            this.filterAutoBackfillStreak = 0;
+            this.filterFillCapped = false;
+          }
+        } else if (kind === 'latest' || kind === 'around') {
+          const visibleNow: number = this.visibleMessages().length;
+          if (visibleNow < MIN_VISIBLE_INITIAL_MESSAGES) {
+            if (this.filterAutoBackfillStreak < MAX_FILTER_AUTO_BACKFILL) {
+              this.filterAutoBackfillStreak++;
+              this.filterFillCapped = false;
+              this.loadOlder(true);
+            } else {
+              this.filterFillCapped = true;
+            }
+          } else {
+            this.filterAutoBackfillStreak = 0;
+            this.filterFillCapped = false;
+          }
+        }
       }
     }
     this.injectLastMessageAtTail();
@@ -3532,6 +3753,7 @@ export class MessageStore {
     if (idx < 0) {
       return;
     }
+    this.filterCache.delete(id);
     // rebuild content by wrapping the new content into a message-like object
     const fake: TdObject = { '@type': 'message' };
     fake['content'] = u['new_content'];
@@ -5789,6 +6011,25 @@ export class MessageStore {
     if (this.senderUserIds.has(userId) || this.systemLabelUserIds.has(userId)) {
       this.refreshUserDependentMessages(new Set<number>([userId]));
     }
+    if (this.senderUserIds.has(userId) && this.filterCache.size > 0) {
+      const compiled: CompiledChatFilter | null = getMessageFilterStore().compiledForChat(this.chatId);
+      if (compiled !== null) {
+        let visibilityChanged: boolean = false;
+        for (const e of this.messages) {
+          if (e.senderIsUser && e.senderId === userId) {
+            const prev: boolean | undefined = this.filterCache.get(e.id);
+            this.filterCache.delete(e.id);
+            const next: boolean = this.isEntryBlocked(e, compiled);
+            if (prev !== undefined && prev !== next) {
+              visibilityChanged = true;
+            }
+          }
+        }
+        if (visibilityChanged) {
+          this.notifySoon();
+        }
+      }
+    }
     if (this.commentUserIds.has(userId)) {
       this.requestCommentAvatar(userId);
     }
@@ -6401,6 +6642,18 @@ export class MessageStore {
   }
 
   private requestInitialPage(): void {
+    if (this.forumTopicId < 0) {
+      // Bot 私聊新建话题占位：尚未在服务端创建真实话题，不拉全会话历史，直接就绪空会话。
+      this.hasMoreOlder = false;
+      this.hasMoreNewer = false;
+      this.olderLoadState = 'end';
+      this.newerLoadState = 'end';
+      this.initialHistoryState = 'ready';
+      this.initialHistoryError = '';
+      this.messages = [];
+      this.notifySoon();
+      return;
+    }
     // ⚠️ 临时探针 [InitialPage]（判读完连同 loadAround 里那两条一起删）：
     // "读到底了再进去还是落在中间"要能只看日志就分因——是 unreadCount 陈了
     // （route=around-unread 而 readCoversLast=true），还是窗口本身没够到尾部
@@ -7104,6 +7357,7 @@ export class MessageStore {
     if (idx < 0) {
       return;
     }
+    this.filterCache.delete(id);
     const c = cloneMessage(this.messages[idx]);
     fn(c);
     this.rememberMessageUsers(c);
@@ -7311,11 +7565,12 @@ export class MessageStore {
     }
     this.scrollDeferredUpdate = false;
     this.currentNotifyKind = kind;
+    const published: MessageEntry[] = this.visibleMessages();
     try {
       for (const l of this.msgSubs) {
         // 一个订阅者抛错不能让同轮其余订阅者丢快照：逐个隔离，记日志继续。
         try {
-          l(this.messages);
+          l(published);
         } catch (e) {
           logE(`MessageStore.notify listener failed: ${e}`);
         }

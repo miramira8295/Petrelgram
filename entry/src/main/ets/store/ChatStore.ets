@@ -19,6 +19,8 @@ import {
 import { SCOPE_MUTE_EPOCH, scopeMutedForKind } from './ScopeMuteStore';
 import { listKeyOf, chatListOf } from './ListKey';
 import { formatPreview, previewThumbOf } from '../util/formatPreview';
+import { parseTdDraftMessage } from '../util/draftCache';
+import { seedCloudDraft, syncCloudDraft } from './DraftStore';
 import { str } from '../util/strings';
 import { logE, logI, logW } from '../util/log';
 import { photoHasAnimation } from '../util/photoAnimation';
@@ -194,8 +196,10 @@ export class ChatStore {
       //   · updateGroupCall —— 直播位（手机上没有别的来源）
     client.onUpdate('updateChatAction', (u: TdObject) => this.onChatAction(u));
     client.onUpdate('updateUser', (u: TdObject) => this.onChatActionUser(u));
+    client.onUpdate('updateUserStatus', (u: TdObject) => this.onUserStatus(u));
     client.onUpdate('updateOption', (u: TdObject) => this.onOption(u));
     client.onUpdate('updateNewChat', (u: TdObject) => this.onNewChat(u));
+    client.onUpdate('updateChatDraftMessage', (u: TdObject) => this.onChatDraftMessage(u));
     client.onUpdate('updateSupergroup', (u: TdObject) => this.onSupergroup(u));
     client.onUpdate('updateGroupCall', (u: TdObject) => this.onGroupCall(u));
     // 默认背景也是元数据：ChatBackgroundStore 靠它决定"没自定义背景时画什么"。
@@ -309,6 +313,20 @@ export class ChatStore {
         this.chatPrivateUserIds.set(id, userId);
       }
     }
+    const draft = chat['draft_message'] as TdObject | undefined;
+    if (draft !== undefined) {
+      const parsed = parseTdDraftMessage(draft);
+      seedCloudDraft(id, parsed.text, parsed.date);
+    }
+  }
+
+  private onChatDraftMessage(update: TdObject): void {
+    const chatId = update['chat_id'] as number | undefined;
+    if (chatId === undefined || chatId === 0) {
+      return;
+    }
+    const parsed = parseTdDraftMessage(update['draft_message'] as TdObject | undefined);
+    syncCloudDraft(chatId, parsed.text, parsed.date);
   }
 
   // my_id：Saved Messages 判定与"自己"过滤都要它。
@@ -460,9 +478,13 @@ export class ChatStore {
       entry.lastSenderName = entry.lastSenderIsUser === false ? this.mirror.get(senderId)?.title ?? '' :
         this.users.displayName(senderId);
     }
-    if (entry.kind !== 'private' || !this.users.knows(entry.id)) { return; }
+    if (entry.kind !== 'private' || !this.users.knows(entry.id)) {
+      entry.isOnline = false;
+      return;
+    }
     const wasDeleted = entry.isDeletedUser === true;
     entry.isDeletedUser = this.users.isDeleted(entry.id);
+    entry.isOnline = !entry.isSavedMessages && entry.id !== this.selfId && this.users.isOnline(entry.id);
     if (entry.isDeletedUser) {
       entry.title = this.users.displayName(entry.id);
       entry.initials = '👻'; entry.photoFileId = 0; entry.avatarPath = ''; entry.typingText = '';
@@ -1052,6 +1074,24 @@ export class ChatStore {
         this.publishTypingText(chatId);
       }
     });
+    this.syncUserOnline(uid);
+  }
+
+  private onUserStatus(update: TdObject): void {
+    const uid = (update['user_id'] as number | undefined) ?? 0;
+    if (uid <= 0) {
+      return;
+    }
+    this.syncUserOnline(uid);
+  }
+
+  private syncUserOnline(uid: number): void {
+    if (uid <= 0 || uid === this.selfId) {
+      return;
+    }
+    if (this.mirror.setOnline(uid, this.users.isOnline(uid))) {
+      this.notifySoon(uid, true);
+    }
   }
 
 

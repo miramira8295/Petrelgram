@@ -1,4 +1,5 @@
 import { canInviteChatMembers } from '../util/chatMemberInvite';
+import { avatarInitialOf } from '../util/avatarInitial';
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { MemberRole, memberRoleOf, memberRoleRank } from '../util/memberRole';
@@ -938,7 +939,7 @@ export class ChatProfileStore {
     req['chat_id'] = this.chatId;
     this.client.send(req).then((chat: TdObject): void => {
       this.title = (chat['title'] as string | undefined) ?? '';
-      this.initials = this.title.length > 0 ? this.title.substring(0, 1).toUpperCase() : '?';
+      this.initials = avatarInitialOf(this.title);
       const photo = chat['photo'] as TdObject | undefined;
       const big = photo !== undefined ? (photo['big'] as TdObject | undefined) : undefined;
       this.avatarFileId = big !== undefined ? ((big['id'] as number | undefined) ?? 0) : 0;
@@ -1302,7 +1303,7 @@ export class ChatProfileStore {
         const item: MemberItem = {
           userId: uid,
           name,
-          initials: name.substring(0, 1).toUpperCase(),
+          initials: avatarInitialOf(name),
           avatarPath: '',
           status: formatUserStatus(user['status'] as TdObject | undefined, Math.floor(Date.now() / 1000)),
           role: role.kind,

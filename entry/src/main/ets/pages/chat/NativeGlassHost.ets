@@ -12,7 +12,8 @@
 //      所以出来的就是菜单那块玻璃。材质不可用时退回 backgroundEffect 自绘。
 //
 // 尺寸一律用调用方量出来的绝对 vp，不用 '100%'（百分比在这一层解析不可靠，实测会偏）。
-import { immersiveMaterialAvailable, materialOff, OverlaySurface } from '../../util/overlayMaterial';
+import { immersiveMaterialAvailable, materialFeedbackOn, materialOff, OverlaySurface } from '../../util/overlayMaterial';
+import { chatPlainFill, systemMaterialState } from '../../util/systemMaterialSetting';
 import { materialModifierWhen } from '../../util/materialModifier';
 import { MaterialEpochSource, materialEpochSource } from '../../util/materialEpoch';
 
@@ -56,6 +57,10 @@ export struct NativeGlassHost {
     return this.epoch.epoch >= 0 && immersiveMaterialAvailable() && !materialOff();
   }
 
+  private materialFeedbackActive(): boolean {
+    return this.epoch.epoch >= 0 && this.effectsEnabled && this.materialOn() && materialFeedbackOn(this.surface);
+  }
+
   private fill(): ResourceColor {
     return this.dark ? '#B32F3F52' : '#B3F8F8F8';
   }
@@ -65,7 +70,7 @@ export struct NativeGlassHost {
       if (!this.effectsEnabled) {
         Row()
           .width(this.hostWidth).height(this.hostHeight).borderRadius(this.hostRadius)
-          .backgroundColor($r('app.color.chat_overlay'))
+          .backgroundColor(chatPlainFill(systemMaterialState.level))
           .focusable(false)
           .hitTestBehavior(this.tapHost ? HitTestMode.Default : HitTestMode.None)
           .onClick((): void => { if (this.tapHost) { this.onHostTap(); } })
@@ -80,13 +85,16 @@ export struct NativeGlassHost {
           .height(this.hostHeight)
           .borderRadius(this.hostRadius)
           .backgroundColor(Color.Transparent)
-          .enabled(this.tapHost)
+          .selectedColor(Color.Transparent)
+          .enabled(this.tapHost || this.materialFeedbackActive())
           .focusable(false)
-          .hitTestBehavior(this.tapHost ? HitTestMode.Default : HitTestMode.None)
+          .hitTestBehavior(this.tapHost ? HitTestMode.Default
+            : (this.materialFeedbackActive() ? HitTestMode.Transparent : HitTestMode.None))
           .onClick((): void => { if (this.tapHost) { this.onHostTap(); } })
           .accessibilityLevel('no-hide-descendants')
-          // 公共材质入口统一关闭外投阴影，保留当前面的厚度与光感设置。
-          .attributeModifier(materialModifierWhen(this.surface, true, false));
+          // 必须在本节点属性里直接读取 epoch.epoch：V2 细粒度观察只按节点登记依赖，
+          // 仅在外层 if 条件读 epoch 时，切换光感/厚度不会重跑 Toggle 的 attributeModifier。
+          .attributeModifier(materialModifierWhen(this.surface, this.epoch.epoch >= 0, false));
       } else if (materialOff()) {
         // 用户把厚度调到「关闭」：按 materialTuning 文件头的约定，不挂材质、不模糊、
         // **纯色兜底**。这一层就是那个兜底——上面的内容全是透明底，没有它就什么都不显示。
@@ -113,7 +121,8 @@ export struct NativeGlassHost {
     .width(this.hostWidth)
     .height(this.hostHeight)
     .position({ x: 0, y: 0 })
-    .hitTestBehavior(this.tapHost ? HitTestMode.Default : HitTestMode.None)
+    .hitTestBehavior(this.tapHost ? HitTestMode.Default
+      : (this.materialFeedbackActive() ? HitTestMode.Transparent : HitTestMode.None))
     .accessibilityLevel(this.tapHost ? 'auto' : 'no-hide-descendants');
   }
 }

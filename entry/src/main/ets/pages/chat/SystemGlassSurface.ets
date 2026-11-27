@@ -24,6 +24,7 @@
 // 第一版就吃过这个 6px 的亏）。外层 Stack 的尺寸 = 内容的尺寸，直接量它即可。
 
 import { OverlaySurface } from '../../util/overlayMaterial';
+import { chatPlainFill, systemMaterialState } from '../../util/systemMaterialSetting';
 import { NativeGlassHost } from './NativeGlassHost';
 
 @ComponentV2
@@ -92,7 +93,8 @@ export struct SystemGlassSurface {
     // fill：铺满父容器；否则按 fixed* / 自量尺寸（'auto' 与不写等价）。
     .width(this.fill ? '100%' : (this.fixedWidth > 0 ? this.fixedWidth : 'auto'))
     .height(this.fill ? '100%' : (this.fixedHeight > 0 ? this.fixedHeight : 'auto'))
-    .backgroundColor(this.showBackdrop && !this.effectsEnabled ? $r('app.color.chat_overlay') : Color.Transparent)
+    .backgroundColor(this.showBackdrop && !this.effectsEnabled
+      ? chatPlainFill(systemMaterialState.level) : Color.Transparent)
     .borderRadius(this.radius)
     .border({ width: this.showBackdrop && !this.effectsEnabled && this.plainOutline ? 0.5 : 0, color: $r('app.color.divider') })
     .onAreaChange((_old: Area, area: Area): void => {

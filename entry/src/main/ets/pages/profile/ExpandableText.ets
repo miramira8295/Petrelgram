@@ -40,10 +40,9 @@ export struct ExpandableText {
   }
 
   build() {
-    // 展开/收起 floats over the text's bottom-right corner (card background
-    // color covers the tail of the last visible line) — no extra row, so it
-    // never shares a line with the gray section label below.
-    Stack({ alignContent: Alignment.BottomEnd }) {
+    // 展开/收起独立排在正文下方且透明底，不再叠一块不透明 surface 色块在正文右下角，
+    // 确保半透明玻璃卡片与纯色卡片下材质完全统一，也不遮挡末行文字。
+    Column({ space: 4 }) {
       // Spans instead of a plain string so links/@mentions are tappable.
       Text() {
         ForEach(linkifyRuns(this.content, this.entities), (r: RichRun) => {
@@ -69,17 +68,21 @@ export struct ExpandableText {
         }
       });
       if (this.needsExpand) {
-        Text(this.expanded ? $r('app.string.et_collapse') : $r('app.string.et_expand'))
-          .fontSize(13).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
-          .backgroundColor($r('app.color.surface'))
-          .padding({ left: 8, top: 2 })
-          .onClick(() => {
-            this.getUIContext().animateTo({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 250), curve: Curve.EaseInOut
-            }, () => {
-              this.expanded = !this.expanded;
+        Row() {
+          Text(this.expanded ? $r('app.string.et_collapse') : $r('app.string.et_expand'))
+            .fontSize(13).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
+            .backgroundColor(Color.Transparent)
+            .padding({ top: 2, bottom: 2 })
+            .onClick(() => {
+              this.getUIContext().animateTo({
+                duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 250), curve: Curve.EaseInOut
+              }, () => {
+                this.expanded = !this.expanded;
+              });
             });
-          });
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.End);
       }
     }
     .width('100%');

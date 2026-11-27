@@ -348,6 +348,7 @@ export struct ChatHeader {
         .height(CHAT_HEADER_ACTION_SIZE)
         .backgroundColor(Color.Transparent)
         .stateEffect(false)
+        .hitTestBehavior(HitTestMode.Transparent)
         .onTouch((event: TouchEvent): void => {
           this.trackGrab(event, 0);
           const edge: number = this.pressEdge(event);
@@ -406,6 +407,7 @@ export struct ChatHeader {
     .width(CHAT_HEADER_ACTION_SIZE)
     .height(CHAT_HEADER_ACTION_SIZE)
     .justifyContent(FlexAlign.Center)
+    .hitTestBehavior(HitTestMode.Transparent)
     .enabled(this.chatId !== 0)
     .onTouch((event: TouchEvent): void => {
       this.trackGrab(event, 2);
@@ -554,6 +556,7 @@ export struct ChatHeader {
           }
           .width('100%')
           .height('100%')
+          .hitTestBehavior(HitTestMode.Transparent)
           // 有箭头时右内边距收窄：箭头自己占了 30vp 的命中区，再留 12 会把图标
           // 顶到离胶囊边缘太远的地方，视觉上像浮在半空。
           .padding({ left: 7, right: this.pinnedAvailable ? 4 : 12 })

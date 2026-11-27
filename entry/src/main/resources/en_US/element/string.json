@@ -5,6 +5,58 @@
       "value": "App default"
     },
     {
+      "name": "chat_settings_material_section",
+      "value": "Material & Light"
+    },
+    {
+      "name": "material_mode_solid",
+      "value": "Solid"
+    },
+    {
+      "name": "material_mode_balanced",
+      "value": "Balanced"
+    },
+    {
+      "name": "material_mode_immersive",
+      "value": "Glass"
+    },
+    {
+      "name": "material_mode_solid_sub",
+      "value": "Opaque solid surfaces everywhere without glass or light effects."
+    },
+    {
+      "name": "material_mode_balanced_sub",
+      "value": "System glass on home screens, lightweight translucent overlays in chats (default)."
+    },
+    {
+      "name": "material_mode_immersive_sub",
+      "value": "System glass across both home screens and chats with adjustable thickness."
+    },
+    {
+      "name": "chat_settings_glass_thickness",
+      "value": "Glass thickness"
+    },
+    {
+      "name": "chat_settings_message_appearance",
+      "value": "Message appearance"
+    },
+    {
+      "name": "chat_settings_tab_messages",
+      "value": "Messages"
+    },
+    {
+      "name": "chat_settings_tab_material",
+      "value": "Material"
+    },
+    {
+      "name": "chat_settings_tab_wallpaper",
+      "value": "Wallpaper"
+    },
+    {
+      "name": "chat_settings_preview_input",
+      "value": "Message..."
+    },
+    {
       "name": "a11y_message_reactions",
       "value": "View reactions"
     },
@@ -13811,6 +13863,186 @@
     {
       "name": "tglink_kind_bot_invite",
       "value": "Bot invite"
+    },
+    {
+      "name": "mf_title",
+      "value": "Message Filtering"
+    },
+    {
+      "name": "mf_chat_title",
+      "value": "Chat Message Filtering"
+    },
+    {
+      "name": "mf_settings_sub",
+      "value": "Locally filter group & channel messages by username, nickname, or keyword"
+    },
+    {
+      "name": "mf_chat_profile_sub",
+      "value": "Configure custom filter rules for this group or channel"
+    },
+    {
+      "name": "mf_status_off",
+      "value": "Off"
+    },
+    {
+      "name": "mf_status_none",
+      "value": "None"
+    },
+    {
+      "name": "mf_rule_count",
+      "value": "%s rules"
+    },
+    {
+      "name": "mf_enable_global",
+      "value": "Enable Message Filtering"
+    },
+    {
+      "name": "mf_enable_global_sub",
+      "value": "Applies to groups and channels only; never hides private chats, your own messages, or system notices"
+    },
+    {
+      "name": "mf_apply_global",
+      "value": "Use Global Rules"
+    },
+    {
+      "name": "mf_apply_global_sub",
+      "value": "When on, global rules also apply here; when off, only chat-specific rules apply"
+    },
+    {
+      "name": "mf_promote_global",
+      "value": "Global"
+    },
+    {
+      "name": "mf_promoted_global_toast",
+      "value": "Promoted to global rule for all groups & channels"
+    },
+    {
+      "name": "mf_global_off_hint",
+      "value": "Global message filtering is currently off; rules are inactive"
+    },
+    {
+      "name": "mf_rules_title",
+      "value": "Global Rules"
+    },
+    {
+      "name": "mf_chat_rules_title",
+      "value": "Chat-Specific Rules"
+    },
+    {
+      "name": "mf_empty_hint",
+      "value": "No filter rules yet. Tap below or + to add one"
+    },
+    {
+      "name": "mf_add_rule",
+      "value": "Add Rule"
+    },
+    {
+      "name": "mf_add_confirm",
+      "value": "Add"
+    },
+    {
+      "name": "mf_rule_added",
+      "value": "Filter rule added"
+    },
+    {
+      "name": "mf_field_user",
+      "value": "Username"
+    },
+    {
+      "name": "mf_field_nickname",
+      "value": "Nickname"
+    },
+    {
+      "name": "mf_field_keyword",
+      "value": "Keyword"
+    },
+    {
+      "name": "mf_mode_contains",
+      "value": "Contains"
+    },
+    {
+      "name": "mf_mode_exact",
+      "value": "Exact"
+    },
+    {
+      "name": "mf_mode_regex",
+      "value": "Regex"
+    },
+    {
+      "name": "mf_placeholder_user",
+      "value": "Enter username (e.g. @username)"
+    },
+    {
+      "name": "mf_placeholder_nickname",
+      "value": "Enter sender nickname"
+    },
+    {
+      "name": "mf_placeholder_keyword",
+      "value": "Enter keyword or regex"
+    },
+    {
+      "name": "mf_err_empty_pattern",
+      "value": "Please enter a pattern"
+    },
+    {
+      "name": "mf_err_invalid_regex",
+      "value": "Invalid regular expression"
+    },
+    {
+      "name": "mf_per_chat_section",
+      "value": "Custom Per-Chat Rules"
+    },
+    {
+      "name": "mf_chat_rule_summary",
+      "value": "%s custom rules · %s"
+    },
+    {
+      "name": "mf_global_applied",
+      "value": "Global rules on"
+    },
+    {
+      "name": "mf_global_skipped",
+      "value": "Global rules skipped"
+    },
+    {
+      "name": "mf_avatar_mention",
+      "value": "@Mention"
+    },
+    {
+      "name": "mf_avatar_search_messages",
+      "value": "Search Messages"
+    },
+    {
+      "name": "mf_avatar_send_message",
+      "value": "Send Message"
+    },
+    {
+      "name": "mf_avatar_view_profile",
+      "value": "View Profile"
+    },
+    {
+      "name": "mf_avatar_block_user",
+      "value": "Filter Messages from User"
+    },
+    {
+      "name": "mf_user_blocked_toast",
+      "value": "Filtered messages from %s in this chat"
+    },
+    {
+      "name": "mf_capped_load_more",
+      "value": "Messages in this range were filtered · Tap to load older"
+    },
+    {
+      "name": "mf_inherited_global_title",
+      "value": "Active Global Rules"
+    },
+    {
+      "name": "mf_manage_global",
+      "value": "Manage Global"
+    },
+    {
+      "name": "mf_global_badge",
+      "value": "Global"
     }
   ]
 }

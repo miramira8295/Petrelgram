@@ -1,3 +1,5 @@
+import { TdObject } from '../tdkit/TdTypes';
+
 // 本地草稿缓存（用户报：输入一堆文字后返回再进来被清空）。
 //
 // 【为什么服务端那条不够】保存走 setChatDraftMessage、恢复走 getChat().draft_message，
@@ -68,4 +70,48 @@ export function draftPreviewOf(text: string, maxChars: number): string {
     return '';
   }
   return flat.length > maxChars ? `${flat.substring(0, maxChars)}…` : flat;
+}
+
+export interface ParsedTdDraft {
+  text: string;
+  date: number;
+  replyToId: number;
+}
+
+// 解析 TDLib 1.8.71 的 draftMessage 对象（兼容旧版 input_message_content / input_message_text 字段）。
+export function parseTdDraftMessage(draft: TdObject | undefined): ParsedTdDraft {
+  if (draft === undefined) {
+    return { text: '', date: 0, replyToId: 0 };
+  }
+  const date: number = (draft['date'] as number | undefined) ?? 0;
+  const content = (draft['content'] ?? draft['input_message_content'] ?? draft['input_message_text']) as TdObject | undefined;
+  const contentType: string = content !== undefined ? ((content['@type'] as string | undefined) ?? '') : '';
+  const ft = (contentType === 'draftMessageContentText' || contentType === 'inputMessageText')
+    ? (content?.['text'] as TdObject | undefined) : undefined;
+  const text: string = ft !== undefined ? ((ft['text'] as string | undefined) ?? '') : '';
+  let replyToId: number = 0;
+  const replyTo = draft['reply_to'] as TdObject | undefined;
+  if (replyTo !== undefined && (replyTo['@type'] as string | undefined) === 'inputMessageReplyToMessage') {
+    replyToId = (replyTo['message_id'] as number | undefined) ?? 0;
+  }
+  return {
+    text,
+    date: Number.isFinite(date) && date > 0 ? Math.floor(date) : 0,
+    replyToId: Number.isFinite(replyToId) && replyToId > 0 ? replyToId : 0
+  };
+}
+
+// 决定打开会话时是否用云端草稿覆盖本地草稿：
+//   · 云端时间戳严格更新（含其他端清空草稿 date=0 但本地已有旧草稿的情况不盲目清，除非云端明确给新时间戳）；
+//   · 或本地为空而云端非空。
+export function shouldAdoptServerDraft(
+  localText: string, localDate: number, serverText: string, serverDate: number
+): boolean {
+  if (serverDate > localDate && (serverText !== localText || serverText !== '')) {
+    return true;
+  }
+  if (localText === '' && serverText !== '') {
+    return true;
+  }
+  return false;
 }

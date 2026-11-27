@@ -5,7 +5,13 @@ import {
   startsWithEmojiSymbol, topicAfterDelete, topicBarShown, topicIconColor
 } from '../main/ets/util/forumTopicModel';
 import { BotTopicFlags, botTopicFlagsOf } from '../main/ets/util/botTopicMode';
-import { forumTopicCreateRequest, forumTopicDeleteRequest } from '../main/ets/util/forumTopicRequests';
+import {
+  PENDING_BOT_TOPIC_ID, botImplicitTopicCreateRequest, forumTopicCreateRequest,
+  forumTopicDeleteRequest, implicitBotTopicName
+} from '../main/ets/util/forumTopicRequests';
+import {
+  conversationScopeId, conversationScopeKey, messageOutsideTopicScope
+} from '../main/ets/util/messageTopicScope';
 
 // 话题模型（2026-09-16）。原来这三件事（配色表、解析、排序）长在
 // pages/chat/ForumTopicsPage 里，只有那一个页面能用。
@@ -192,6 +198,7 @@ export default function forumTopicModelTest() {
       expect(create!['@type'] as string).assertEqual('createForumTopic');
       expect(create!['chat_id'] as number).assertEqual(42);
       expect(create!['name'] as string).assertEqual('新会话');
+      expect(create!['is_name_implicit'] === undefined).assertTrue();
       expect(forumTopicCreateRequest(42, '   ') === null).assertTrue();
       expect(forumTopicCreateRequest(0, 'x') === null).assertTrue();
       const del: TdRequest | null = forumTopicDeleteRequest(42, 9);
@@ -199,6 +206,33 @@ export default function forumTopicModelTest() {
       expect(del!['@type'] as string).assertEqual('deleteForumTopic');
       expect(del!['forum_topic_id'] as number).assertEqual(9);
       expect(forumTopicDeleteRequest(42, 0) === null).assertTrue();
+    });
+
+    it('builds_implicit_bot_topic_request_and_isolates_pending_scope', 0, () => {
+      // 有消息文本时压缩空白并截断至 <=128 字符
+      const implicit: TdRequest | null = botImplicitTopicCreateRequest(88, '  帮我总结\n一下这篇文章  ', '新建话题');
+      expect(implicit !== null).assertTrue();
+      expect(implicit!['@type'] as string).assertEqual('createForumTopic');
+      expect(implicit!['chat_id'] as number).assertEqual(88);
+      expect(implicit!['name'] as string).assertEqual('帮我总结 一下这篇文章');
+      expect(implicit!['is_name_implicit'] as boolean).assertTrue();
+
+      // 无文本（如贴纸/图片）回退本地化兜底名，且超长文本截断到 <=128 字符
+      const fallbackReq: TdRequest | null = botImplicitTopicCreateRequest(88, '   ', '新建话题');
+      expect(fallbackReq !== null).assertTrue();
+      expect(fallbackReq!['name'] as string).assertEqual('新建话题');
+      expect(fallbackReq!['is_name_implicit'] as boolean).assertTrue();
+      expect(implicitBotTopicName('', '')).assertEqual('New Topic');
+      const longText: string = 'a'.repeat(200);
+      expect(implicitBotTopicName(longText, '新建话题').length).assertEqual(128);
+      expect(botImplicitTopicCreateRequest(0, 'hi', '新建话题') === null).assertTrue();
+
+      // 占位话题作用域：隔离其它话题消息，且与整段会话/真实话题区分
+      expect(conversationScopeId(0, PENDING_BOT_TOPIC_ID, 0)).assertEqual(PENDING_BOT_TOPIC_ID);
+      expect(conversationScopeKey(0, PENDING_BOT_TOPIC_ID, 0)).assertEqual(`forum:${PENDING_BOT_TOPIC_ID}`);
+      const incomingTopic: TdObject = { '@type': 'messageTopicForum', 'forum_topic_id': 9 };
+      const incoming: TdObject = { '@type': 'message', 'topic_id': incomingTopic };
+      expect(messageOutsideTopicScope(incoming, 0, PENDING_BOT_TOPIC_ID, 0)).assertTrue();
     });
 
     // 删掉的是正在看的那个话题：落到剩下的第一个；都删光了回到整段会话（0）。

@@ -56,6 +56,8 @@ export struct ComposerSendButton {
           }
         }
         .width(46).height(46).borderRadius(23)
+        .focusable(false)
+        .hitTestBehavior(HitTestMode.Transparent)
         .backgroundColor(Color.Transparent)
         .stateStyles({ normal: this.iconNormalStyle, pressed: this.iconPressedStyle })
         .animation({
@@ -82,6 +84,8 @@ export struct ComposerSendButton {
           }
         }
         .width(46).height(46).borderRadius(23)
+        .focusable(false)
+        .hitTestBehavior(HitTestMode.Transparent)
         .backgroundColor(Color.Transparent)
         .stateStyles({ normal: this.iconNormalStyle, pressed: this.iconPressedStyle })
         .animation({
@@ -99,6 +103,6 @@ export struct ComposerSendButton {
         .onClick((): void => { this.onSend(); })
         .gesture(LongPressGesture().onAction((): void => { this.onSendOptions(); }));
       }
-    }.width(46).height(46);
+    }.width(46).height(46).hitTestBehavior(HitTestMode.Transparent);
   }
 }

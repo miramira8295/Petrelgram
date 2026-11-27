@@ -420,10 +420,11 @@ export struct DrawnContentRow {
                     this.actions.onAvatarTap(this.msg.senderId, this.msg.senderIsUser);
                   }
                 })
-                .gesture(LongPressGesture().onAction((): void => {
+                .gesture(LongPressGesture().onAction((event: GestureEvent): void => {
                   if (this.msg.senderIsUser && this.msg.senderId > 0) {
                     this.context.gestureClaimed = true;
-                    this.actions.onAvatarLongPress(this.msg.senderId, this.msg.senderName);
+                    const y: number | undefined = event.fingerList.length > 0 ? event.fingerList[0].globalY : undefined;
+                    this.actions.onAvatarLongPress(this.msg.senderId, this.msg.senderName, y);
                   }
                 }));
             }

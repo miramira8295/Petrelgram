@@ -65,6 +65,8 @@ export interface ChatEntry {
   liveGroupCallId: number; // current video chat/group call bound to this chat
   isLive: boolean;        // true only after groupCall.is_active is confirmed
   isRtmpLive: boolean;
+  // 私聊对方当前是否在线（来自 UserStore 的 updateUser / updateUserStatus）。
+  isOnline?: boolean;
 }
 
 export function cloneEntry(e: ChatEntry): ChatEntry {
@@ -89,7 +91,8 @@ export function cloneEntry(e: ChatEntry): ChatEntry {
     canDeleteForAllUsers: e.canDeleteForAllUsers,
     isSavedMessages: e.isSavedMessages,
     background: e.background, themeName: e.themeName,
-    liveGroupCallId: e.liveGroupCallId, isLive: e.isLive, isRtmpLive: e.isRtmpLive
+    liveGroupCallId: e.liveGroupCallId, isLive: e.isLive, isRtmpLive: e.isRtmpLive,
+    isOnline: e.isOnline ?? false
   };
 }
 

@@ -1,4 +1,5 @@
 import { botHasMainApp } from '../util/botMainApp';
+import { avatarInitialOf } from '../util/avatarInitial';
 import { TdClient } from '../tdkit/TdClient';
 import { isBlockedFromFullInfo } from '../util/profileMenu';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
@@ -305,7 +306,7 @@ export class ProfileStore {
     const first = (user['first_name'] as string | undefined) ?? '';
     const last = (user['last_name'] as string | undefined) ?? '';
     this.name = `${first}${last !== '' ? ' ' + last : ''}`;
-    this.initials = this.name.length > 0 ? this.name.substring(0, 1).toUpperCase() : '?';
+    this.initials = avatarInitialOf(this.name);
     this.phone = (user['phone_number'] as string | undefined) ?? '';
     this.isContact = (user['is_contact'] as boolean | undefined) ?? false;
     this.hasMainApp = botHasMainApp(user);
@@ -473,7 +474,7 @@ export class ProfileStore {
     req['chat_id'] = chatId;
     this.send(req, 'getChat(channel)', (chat: TdObject) => {
       this.chTitle = (chat['title'] as string | undefined) ?? '';
-      this.chInitials = this.chTitle.length > 0 ? this.chTitle.substring(0, 1).toUpperCase() : '?';
+      this.chInitials = avatarInitialOf(this.chTitle);
       this.chPreview = formatPreview(chat['last_message'] as TdObject | undefined ?? null);
       const photo = chat['photo'] as TdObject | undefined;
       const small = photo !== undefined ? (photo['small'] as TdObject | undefined) : undefined;
@@ -517,7 +518,7 @@ export class ProfileStore {
           const g: CommonGroup = {
             id,
             title,
-            initials: title.length > 0 ? title.substring(0, 1).toUpperCase() : '?',
+            initials: avatarInitialOf(title),
             avatarPath: ''
           };
           this.groups = [...this.groups, g];

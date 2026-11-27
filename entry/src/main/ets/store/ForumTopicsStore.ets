@@ -130,6 +130,18 @@ export class ForumTopicsStore {
     // 实时刷新：名称/关闭状态（updateForumTopicInfo）与置顶（updateForumTopic）。
     // 判据与就地改行都在 util/forumTopicModel，两个消费者共用同一套。
     this.unsubs.push(this.client.onUpdate('updateForumTopicInfo', (u: TdObject): void => {
+      const info = u['info'] as TdObject | undefined;
+      const chatId: number = info !== undefined ? ((info['chat_id'] as number | undefined) ?? 0) : 0;
+      if (chatId !== this.chatId) {
+        return;
+      }
+      const topicId: number = info !== undefined ? ((info['forum_topic_id'] as number | undefined) ?? 0) : 0;
+      const exists: boolean = this.rows.some((row: ForumTopicRow): boolean => row.threadId === topicId);
+      if (!exists && topicId > 0) {
+        // 新建的 Bot 话题（或 Bot/其他端刚创建的话题）尚未在当前列表中：补拉一次列表。
+        this.reload();
+        return;
+      }
       this.applyUpdate(applyTopicInfoUpdate(this.rows, this.chatId, u));
     }));
     this.unsubs.push(this.client.onUpdate('updateForumTopic', (u: TdObject): void => {

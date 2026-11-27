@@ -685,6 +685,7 @@ export struct DrawnMessageRow {
       ? this.linkAt(hitX, hitY, withinTapSlop ? LINK_HOLD_SLOP : 0, withinTapSlop ? LINK_HOLD_SLOP : 0)
       : this.linkAt(hitX, hitY);
     if (link !== null) {
+      this.claimed = true;
       if (!touchSource || (this.touchPlan === p && this.sameLinkTarget(this.touchLink, link))) {
         const askFromTouch = touchSource && this.touchLink !== null && this.touchLink.link.hidesUrl;
         this.foreground.press(null);
@@ -789,7 +790,7 @@ export struct DrawnMessageRow {
       this.dragGesture.reset();
       this.claimed = true; this.foreground.press(null);
       const m = this.rowGroup.head;
-      if (m.senderIsUser && m.senderId > 0) { this.actions.onAvatarLongPress(m.senderId, m.senderName); }
+      if (m.senderIsUser && m.senderId > 0) { this.actions.onAvatarLongPress(m.senderId, m.senderName, f.globalY); }
       return;
     }
     if (this.canDragMessage() && this.touchOnBody) {

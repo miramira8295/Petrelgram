@@ -4,7 +4,7 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../u
 import { str } from '../../util/strings';
 import { NativeGlassHost } from './NativeGlassHost';
 import { DropHoverState } from './DropHoverState';
-import { systemMaterialState } from '../../util/systemMaterialSetting';
+import { chatPlainFill, systemMaterialState } from '../../util/systemMaterialSetting';
 import { immersiveMaterialAvailable } from '../../util/overlayMaterial';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 
@@ -124,7 +124,7 @@ export struct DropHoverOverlay {
       .constraintSize({ maxWidth: 340 })
       // 玻璃还没量到尺寸的那一帧先垫一层近似的玻璃色，避免白字直接压在压暗层上闪一下。
       .backgroundColor(this.glassOn() && this.cardW > 0 && this.cardH > 0
-        ? Color.Transparent : $r('app.color.chat_overlay'))
+        ? Color.Transparent : chatPlainFill(systemMaterialState.level))
       .borderRadius(26)
       .onAreaChange((_oldArea: Area, newArea: Area): void => {
         const w = Number(newArea.width);

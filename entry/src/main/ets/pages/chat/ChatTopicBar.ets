@@ -3,6 +3,7 @@ import { systemMaterialState } from '../../util/systemMaterialSetting';
 // Background blur is disabled by chatOverlayBackdropBlur for the scroll comparison; translucent fills remain.
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { ForumTopicRow } from '../../util/forumTopicModel';
+import { PENDING_BOT_TOPIC_ID } from '../../util/forumTopicRequests';
 import { guardKey } from '../../util/keyGuard';
 import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { chatOverlayBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
@@ -162,7 +163,12 @@ export struct ChatTopicBar {
           }
           .width(CHIP_HEIGHT).height(CHIP_HEIGHT)
           .borderRadius(CHIP_HEIGHT / 2)
-          .backgroundColor($r('app.color.material_tint'))
+          .backgroundColor(this.selectedThreadId === PENDING_BOT_TOPIC_ID
+            ? Color.Transparent : $r('app.color.material_tint'))
+          .border({
+            width: this.selectedThreadId === PENDING_BOT_TOPIC_ID ? 1.5 : 0,
+            color: COLOR_PRIMARY
+          })
           .justifyContent(FlexAlign.Center)
           .accessibilityText($r('app.string.ft_new_topic'))
           .onClick((): void => { this.onCreate(); });

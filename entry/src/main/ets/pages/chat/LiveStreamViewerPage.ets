@@ -2559,7 +2559,7 @@ struct LiveStreamViewerPage {
       .width('100%').height('68%').constraintSize({ minHeight: 390, maxHeight: 640 })
       .backgroundColor(CALL_PANEL)
       .borderRadius({ topLeft: 24, topRight: 24 })
-      .shadow({ radius: 28, color: '#90000000', offsetX: 0, offsetY: -8 })
+      .border({ width: { top: 0.8 }, color: '#26FFFFFF' })
       .transition(
         TransitionEffect.translate({ y: 80 }).combine(TransitionEffect.OPACITY).animation({
           duration: powerAnimationDuration(KEY_POWER_CALL_ANIMATIONS, 220), curve: Curve.EaseOut
@@ -2796,7 +2796,7 @@ struct LiveStreamViewerPage {
       }
       .width('82%').height('100%').constraintSize({ maxWidth: 430 })
       .backgroundColor('#F2131D25')
-      .shadow({ radius: 24, color: '#80000000', offsetX: -8, offsetY: 0 })
+      .border({ width: { left: 0.8 }, color: '#26FFFFFF' })
       .transition(
         TransitionEffect.translate({ x: 26 }).combine(TransitionEffect.OPACITY).animation({
           duration: powerAnimationDuration(KEY_POWER_CALL_ANIMATIONS, 210), curve: Curve.EaseOut

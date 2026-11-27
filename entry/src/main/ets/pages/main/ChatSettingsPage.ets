@@ -1,4 +1,8 @@
-import { SYSTEM_MATERIAL_DEFAULT, KEY_SYSTEM_MATERIAL, SYSTEM_MATERIAL_APP_DEFAULT, normalizeSystemMaterial, chatMaterialEnabled } from '../../util/systemMaterialSetting';
+import { getTdClient } from '../../tdkit/Globals';
+import { TdObject } from '../../tdkit/TdTypes';
+import { SYSTEM_MATERIAL_DEFAULT, KEY_SYSTEM_MATERIAL, SYSTEM_MATERIAL_APP_DEFAULT, normalizeSystemMaterial, chatMaterialEnabled, systemMaterialOff, systemMaterialState } from '../../util/systemMaterialSetting';
+import { NativeGlassHost } from '../chat/NativeGlassHost';
+import { SystemGlassSurface } from '../chat/SystemGlassSurface';
 import { setSystemMaterialLevel } from '../../store/AppSettings';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
@@ -40,20 +44,24 @@ import {
   THICKNESS_ULTRA_THICK, THICKNESS_ULTRA_THIN
 } from '../../util/materialTuning';
 import {
-  APPEARANCE_EPOCH, KEY_MATERIAL_LIGHT_DARK, recomputeAppearance
+  APPEARANCE_EPOCH, BUBBLE_HEX_KEYS, KEY_BUBBLE_IN_HEX, KEY_BUBBLE_IN_HEX_DARK,
+  KEY_BUBBLE_OUT_HEX, KEY_BUBBLE_OUT_HEX_DARK, KEY_MATERIAL_LIGHT_DARK,
+  defaultHexFor, hexOrDefault, recomputeAppearance
 } from '../../util/appearance';
 import { bumpMaterialEpoch } from '../../util/overlayMaterial';
 import {
   KEY_SURFACE_GLASS_LEVEL, KEY_BUBBLE_GLASS_LEVEL, KEY_SURFACE_GLASS_ON, KEY_BUBBLE_GLASS_ON,
   BUBBLE_GLASS_ON_DEFAULT, SURFACE_GLASS_LEVEL_DEFAULT,
-  SURFACE_GLASS_ON_DEFAULT, bumpSurfaceGlassEpoch, bubbleTintLevel, bubbleTintFillHex
+  SURFACE_GLASS_ON_DEFAULT, bumpSurfaceGlassEpoch, bubbleTintLevel, bubbleGlassFillFor
 } from '../../util/surfaceGlass';
 import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT, bubbleTextFor
 } from '../../util/theme';
 import {
-  AccentColorCard, AccountColorsCard, BubbleColorsCard
+  AccentColorCard, AccountColorsCard
 } from './AppearanceCards';
+import { ColorPickerSheet } from '../common/ColorPickerSheet';
+import { SteppedCapsuleSlider } from '../common/SteppedCapsuleSlider';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
@@ -119,6 +127,19 @@ const TINT_OPTIONS: SelectOption[] = THICKNESS_OPTIONS.map(
 // Seven fixed options; no per-build array mapping.
 const SYSTEM_MATERIAL_OPTIONS: SelectOption[] = [
   { value: str('material_app_default') }, ...TINT_OPTIONS
+];
+
+const GLASS_THICKNESS_LEVELS: MaterialThicknessOption[] = [
+  { label: str('material_thickness_ultra_thin'), value: THICKNESS_ULTRA_THIN },
+  { label: str('material_thickness_thin'), value: THICKNESS_THIN },
+  { label: str('material_thickness_regular'), value: THICKNESS_REGULAR },
+  { label: str('material_thickness_thick'), value: THICKNESS_THICK },
+  { label: str('material_thickness_ultra_thick'), value: THICKNESS_ULTRA_THICK }
+];
+const TEXT_SIZE_STEPS: number[] = [12, 14, 16, 18, 20, 22, 24];
+const BUBBLE_RADIUS_STEPS: number[] = [0, 3, 6, 10, 14, 17, 20];
+const GLASS_THICKNESS_STEPS: number[] = [
+  THICKNESS_ULTRA_THIN, THICKNESS_THIN, THICKNESS_REGULAR, THICKNESS_THICK, THICKNESS_ULTRA_THICK
 ];
 
 // 从省到满，四档单调包含（单测钉着）。默认自适应。
@@ -200,6 +221,19 @@ export struct ChatSettingsPage {
   // 气泡色/文字色是 theme 里的活绑定，不是状态；预览读一次 epoch 让 ArkUI 记下依赖。
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
   @StorageLink(KEY_MATERIAL_LIGHT_DARK) materialLightDark: string = LIGHT_DEFAULT;
+  // 记住用户上次在「沉浸玻璃」下选择的厚度，切去纯色/平衡再切回时不丢失。
+  @State private lastImmersiveThickness: number = THICKNESS_REGULAR;
+  // 顶部预览舞台与下方气泡取色的主题模式（默认跟随当前主题，可在预览右上角独立切换）。
+  @State private previewDark: boolean = false;
+  // 0=消息 1=材质与光感 2=壁纸与主题
+  @State private appearanceTab: number = 0;
+  @StorageProp(KEY_BUBBLE_OUT_HEX) private bubbleOutLight: string = '';
+  @StorageProp(KEY_BUBBLE_OUT_HEX_DARK) private bubbleOutDark: string = '';
+  @StorageProp(KEY_BUBBLE_IN_HEX) private bubbleInLight: string = '';
+  @StorageProp(KEY_BUBBLE_IN_HEX_DARK) private bubbleInDark: string = '';
+  @State bubblePickerOpen: boolean = false;
+  @State bubblePickerKey: string = '';
+  private bubblePickerBefore: string = '';
   // 迁移前这里还有 leavingPage/leaveTimer 两个字段、一个 aboutToDisappear 清理，
   // 和一个 leavePage()：500ms 防抖 + this.getUIContext().getRouter().back()，防的是连点两下返回箭头弹掉
   // 两页。三者随迁移一起失效，理由与试点 PowerUsagePage 逐字相同：
@@ -276,54 +310,477 @@ export struct ChatSettingsPage {
       .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 4 });
   }
 
-  // Live sample of what the sliders above do — same colours, size and radius as
-  // a real bubble.
-  @Builder
-  preview() {
-    Column({ space: 8 }) {
-      Row() {
-        Text($r('app.string.chat_settings_preview_in'))
-          .fontSize(this.textSize).fontColor(this.previewText(false))
-          .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-          .backgroundColor(this.previewBubble(false))
-          .borderRadius(this.bubbleRadius);
-      }.width('100%').justifyContent(FlexAlign.Start);
-      Row() {
-        Text($r('app.string.chat_settings_preview_out'))
-          .fontSize(this.textSize).fontColor(this.previewText(true))
-          .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-          .backgroundColor(this.previewBubble(true))
-          .borderRadius(this.bubbleRadius);
-      }.width('100%').justifyContent(FlexAlign.End);
+  private bubbleKeyFor(outgoing: boolean, dark: boolean): string {
+    if (outgoing) {
+      return dark ? KEY_BUBBLE_OUT_HEX_DARK : KEY_BUBBLE_OUT_HEX;
     }
-    .width('100%').padding(14);
+    return dark ? KEY_BUBBLE_IN_HEX_DARK : KEY_BUBBLE_IN_HEX;
   }
 
-  private previewBubble(outgoing: boolean): ResourceColor {
+  private bubbleHexFor(outgoing: boolean, dark: boolean): string {
+    const key: string = this.bubbleKeyFor(outgoing, dark);
+    let raw: string = '';
+    if (key === KEY_BUBBLE_OUT_HEX) { raw = this.bubbleOutLight; }
+    else if (key === KEY_BUBBLE_OUT_HEX_DARK) { raw = this.bubbleOutDark; }
+    else if (key === KEY_BUBBLE_IN_HEX) { raw = this.bubbleInLight; }
+    else { raw = this.bubbleInDark; }
+    return hexOrDefault(raw, defaultHexFor(key));
+  }
+
+  private hasCustomBubbleColor(): boolean {
+    return this.bubbleOutLight !== '' || this.bubbleOutDark !== '' ||
+      this.bubbleInLight !== '' || this.bubbleInDark !== '';
+  }
+
+  private openBubblePicker(outgoing: boolean): void {
+    const key: string = this.bubbleKeyFor(outgoing, this.previewDark);
+    this.bubblePickerKey = key;
+    this.bubblePickerBefore = this.bubbleHexFor(outgoing, this.previewDark);
+    this.bubblePickerOpen = true;
+  }
+
+  private applyBubbleHex(key: string, hex: string): void {
+    setString(key, hex);
+    recomputeAppearance();
+  }
+
+  private resetBubbleColors(): void {
+    for (const key of BUBBLE_HEX_KEYS) {
+      setString(key, '');
+    }
+    recomputeAppearance();
+  }
+
+  private previewBubbleFill(outgoing: boolean): ResourceColor {
     if (this.appearanceEpoch < 0) {
       return Color.Transparent;
     }
-    return this.bubbleGlass ? bubbleTintFillHex(this.appDark, this.bubbleGlassLevel) :
-      (outgoing ? COLOR_BUBBLE_OUT : COLOR_BUBBLE_IN);
+    const baseHex: string = this.bubbleHexFor(outgoing, this.previewDark);
+    if (systemMaterialOff(this.systemMaterialLevel) || !this.bubbleGlass) {
+      return baseHex;
+    }
+    return bubbleGlassFillFor(baseHex, this.bubbleGlassLevel);
+  }
+
+  private previewBubbleDarkBg(outgoing: boolean): boolean {
+    const hex: string = this.bubbleHexFor(outgoing, this.previewDark).replace('#', '');
+    if (hex.length < 6) {
+      return this.previewDark;
+    }
+    const offset: number = hex.length === 8 ? 2 : 0;
+    const r: number = Number.parseInt(hex.substring(offset, offset + 2), 16);
+    const g: number = Number.parseInt(hex.substring(offset + 2, offset + 4), 16);
+    const b: number = Number.parseInt(hex.substring(offset + 4, offset + 6), 16);
+    return (0.299 * r + 0.587 * g + 0.114 * b) < 145;
   }
 
   private previewText(outgoing: boolean): ResourceColor {
-    return this.appearanceEpoch < 0 ? Color.Transparent : bubbleTextFor(outgoing);
+    if (this.appearanceEpoch < 0) {
+      return Color.Transparent;
+    }
+    if (this.previewDark === this.appDark && !this.bubbleGlass) {
+      return bubbleTextFor(outgoing);
+    }
+    return this.previewBubbleDarkBg(outgoing) ? '#FFFFFF' : '#111111';
+  }
+
+  private previewMetaText(outgoing: boolean): ResourceColor {
+    return this.previewBubbleDarkBg(outgoing) ? '#B3FFFFFF' : '#80000000';
   }
 
   @Builder
-  sliderRow(title: string, key: string, min: number, max: number) {
-    Column() {
-      this.cardTitle(title);
-      Row({ space: 12 }) {
-        Slider({ value: this.numberValue(key), min: min, max: max, step: 1 })
-          .layoutWeight(1)
-          .trackColor($r('app.color.divider')).selectedColor(this.accent()).blockColor(this.accent())
-          .onChange((value: number): void => { setNumber(key, Math.round(value)); });
+  private previewThemeChip(label: Resource, dark: boolean) {
+    Text(label)
+      .fontSize(11)
+      .fontWeight(this.previewDark === dark ? FontWeight.Medium : FontWeight.Normal)
+      .fontColor(this.previewDark === dark ? Color.White : '#CCFFFFFF')
+      .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+      .borderRadius(12)
+      .backgroundColor(this.previewDark === dark ? this.accent() : Color.Transparent)
+      .onClick((): void => { this.previewDark = dark; });
+  }
+
+  private previewChromeFg(): ResourceColor {
+    return this.previewDark ? '#F2FFFFFF' : '#E6111111';
+  }
+
+  private previewChromeMuted(): ResourceColor {
+    return this.previewDark ? '#99FFFFFF' : '#73111111';
+  }
+
+  private previewUseAppSlot(): boolean {
+    return this.unifiedBg && isSplitByBreakpoint(
+      this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait);
+  }
+
+  // 顶部固定真实微缩聊天舞台：
+  // 铺当前浅/深聊天壁纸 + 真实 NativeGlassHost 顶栏/输入栏 + 实时气泡，
+  // 字号、圆角、气泡颜色、气泡玻璃、系统材质模式/厚度/光感与壁纸全部所见即所得。
+  @Builder
+  previewStage() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      // 底层壁纸：显式按 previewDark 与分栏统一背景分支，避免 V1 @Builder 值参数冻结导致切浅/深时不刷新。
+      Stack() {
+        if (this.previewUseAppSlot()) {
+          if (this.previewDark) {
+            if (this.thumbOf(SLOT_APP_DARK).has) {
+              this.wallpaperCanvas(SLOT_APP_DARK);
+            } else {
+              Column().width('100%').height('100%').backgroundColor(systemSlotColor(true, true));
+            }
+          } else {
+            if (this.thumbOf(SLOT_APP_LIGHT).has) {
+              this.wallpaperCanvas(SLOT_APP_LIGHT);
+            } else {
+              Column().width('100%').height('100%').backgroundColor(systemSlotColor(false, true));
+            }
+          }
+        } else if (this.previewDark) {
+          if (this.thumbOf(SLOT_CHAT_DARK).has) {
+            this.wallpaperCanvas(SLOT_CHAT_DARK);
+          } else {
+            Column().width('100%').height('100%').backgroundColor(systemSlotColor(true, false));
+          }
+        } else {
+          if (this.thumbOf(SLOT_CHAT_LIGHT).has) {
+            this.wallpaperCanvas(SLOT_CHAT_LIGHT);
+          } else {
+            Column().width('100%').height('100%').backgroundColor(systemSlotColor(false, false));
+          }
+        }
+      }
+      .width('100%').height('100%');
+
+      Column() {
+        // 1. 迷你顶栏（走真实 NativeGlassHost / SystemGlassSurface，可直接触摸试光感与厚度）
+        Row({ space: 6 }) {
+          Stack() {
+            NativeGlassHost({
+              effectsEnabled: systemMaterialState.chatEnabled,
+              surface: 'control',
+              hostWidth: 30,
+              hostHeight: 30,
+              hostRadius: 15,
+              dark: this.previewDark
+            });
+            Row() {
+              SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(15).fontColor([this.previewChromeFg()]);
+            }
+            .width(30).height(30).justifyContent(FlexAlign.Center)
+            .hitTestBehavior(HitTestMode.Transparent);
+          }
+          .width(30).height(30).borderRadius(15).clip(true);
+
+          SystemGlassSurface({
+            effectsEnabled: systemMaterialState.chatEnabled,
+            surface: 'control',
+            radius: 15,
+            fixedHeight: 30,
+            dark: this.previewDark
+          }) {
+            Row({ space: 6 }) {
+              Column()
+                .width(18).height(18).borderRadius(9)
+                .backgroundColor(this.accent());
+              Text($r('app.string.app_name'))
+                .fontSize(12).fontWeight(FontWeight.Medium).fontColor(this.previewChromeFg())
+                .maxLines(1);
+            }
+            .height(30)
+            .padding({ left: 6, right: 10 })
+            .alignItems(VerticalAlign.Center)
+            .hitTestBehavior(HitTestMode.Transparent);
+          }
+
+          Blank();
+
+          // 浅色/深色预览切换胶囊：仅切换预览与下方气泡取色目标，不改动系统夜间模式。
+          Row({ space: 2 }) {
+            this.previewThemeChip($r('app.string.appearance_mode_light'), false);
+            this.previewThemeChip($r('app.string.appearance_mode_dark'), true);
+          }
+          .padding(2)
+          .borderRadius(14)
+          .backgroundColor('#73000000');
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center);
+
+        // 2. 中间两条真实气泡（实时反映字号、圆角、气泡颜色、气泡材质）
+        Column({ space: 8 }) {
+          Row() {
+            Row({ space: 6 }) {
+              Text($r('app.string.chat_settings_preview_in'))
+                .fontSize(this.textSize)
+                .fontColor(this.previewText(false));
+              Text('12:00')
+                .fontSize(11)
+                .fontColor(this.previewMetaText(false))
+                .alignSelf(ItemAlign.End)
+                .margin({ bottom: 1 });
+            }
+            .padding({ left: 11, right: 9, top: 6, bottom: 6 })
+            .backgroundColor(this.previewBubbleFill(false))
+            .borderRadius(this.bubbleRadius);
+          }.width('100%').justifyContent(FlexAlign.Start);
+
+          Row() {
+            Row({ space: 6 }) {
+              Text($r('app.string.chat_settings_preview_out'))
+                .fontSize(this.textSize)
+                .fontColor(this.previewText(true));
+              Row({ space: 2 }) {
+                Text('12:01')
+                  .fontSize(11)
+                  .fontColor(this.previewMetaText(true));
+                SymbolGlyph($r('sys.symbol.checkmark'))
+                  .fontSize(11)
+                  .fontColor([this.previewMetaText(true)]);
+              }
+              .alignSelf(ItemAlign.End)
+              .margin({ bottom: 1 });
+            }
+            .padding({ left: 11, right: 9, top: 6, bottom: 6 })
+            .backgroundColor(this.previewBubbleFill(true))
+            .borderRadius(this.bubbleRadius);
+          }.width('100%').justifyContent(FlexAlign.End);
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center);
+
+        // 3. 底部迷你输入栏（展示纯色 / 平衡 / 沉浸玻璃 + 应用强调色发送键）
+        Row({ space: 6 }) {
+          Stack() {
+            NativeGlassHost({
+              effectsEnabled: systemMaterialState.chatEnabled,
+              surface: 'control',
+              hostWidth: 30,
+              hostHeight: 30,
+              hostRadius: 15,
+              dark: this.previewDark
+            });
+            Row() {
+              SymbolGlyph($r('sys.symbol.paperclip')).fontSize(15).fontColor([this.previewChromeFg()]);
+            }
+            .width(30).height(30).justifyContent(FlexAlign.Center)
+            .hitTestBehavior(HitTestMode.Transparent);
+          }
+          .width(30).height(30).borderRadius(15).clip(true);
+
+          Stack() {
+            SystemGlassSurface({
+              effectsEnabled: systemMaterialState.chatEnabled,
+              surface: 'control',
+              radius: 15,
+              fill: true,
+              dark: this.previewDark
+            }) {
+              Row() {
+                Text($r('app.string.chat_settings_preview_input'))
+                  .fontSize(12)
+                  .fontColor(this.previewChromeMuted())
+                  .maxLines(1);
+              }
+              .width('100%').height('100%')
+              .padding({ left: 12, right: 12 })
+              .alignItems(VerticalAlign.Center)
+              .hitTestBehavior(HitTestMode.Transparent);
+            }
+          }
+          .layoutWeight(1).height(30).borderRadius(15).clip(true);
+
+          Stack() {
+            NativeGlassHost({
+              effectsEnabled: systemMaterialState.chatEnabled,
+              surface: 'control',
+              hostWidth: 30,
+              hostHeight: 30,
+              hostRadius: 15,
+              dark: this.previewDark
+            });
+            Row() {
+              SymbolGlyph($r('sys.symbol.paperplane')).fontSize(15).fontColor([this.accent()]);
+            }
+            .width(30).height(30).justifyContent(FlexAlign.Center)
+            .hitTestBehavior(HitTestMode.Transparent);
+          }
+          .width(30).height(30).borderRadius(15).clip(true);
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center);
+      }
+      .width('100%').height('100%')
+      .padding({ left: 10, right: 10, top: 8, bottom: 8 });
+    }
+    .width('100%')
+    // 显式高度：Scroll 外固定展示，兼顾微缩顶栏/双气泡/输入栏与下方设置区视野。
+    .height(210 + Math.max(0, this.textSize - 15) * 4)
+    .borderRadius(18)
+    .clip(true)
+    .border({ width: 0.7, color: $r('app.color.divider') });
+  }
+
+  @Builder
+  private appearanceTabChip(label: Resource, idx: number) {
+    Text(label)
+      .fontSize(14)
+      .fontWeight(this.appearanceTab === idx ? FontWeight.Medium : FontWeight.Normal)
+      .fontColor(this.appearanceTab === idx ? Color.White : COLOR_TEXT_PRIMARY)
+      .textAlign(TextAlign.Center)
+      .maxLines(1)
+      .layoutWeight(1)
+      .height(34)
+      .borderRadius(17)
+      .backgroundColor(this.appearanceTab === idx ? this.accent() : Color.Transparent)
+      .onClick((): void => {
+        if (this.appearanceTab !== idx) {
+          this.appearanceTab = idx;
+          this.hdsScroller.scrollTo({ xOffset: 0, yOffset: 0 });
+        }
+      });
+  }
+
+  @Builder
+  appearanceTabBar() {
+    Row({ space: 4 }) {
+      this.appearanceTabChip($r('app.string.chat_settings_tab_messages'), 0);
+      this.appearanceTabChip($r('app.string.chat_settings_tab_material'), 1);
+      this.appearanceTabChip($r('app.string.chat_settings_tab_wallpaper'), 2);
+    }
+    .width('100%')
+    .padding(3)
+    .borderRadius(20)
+    .backgroundColor(CARD_BG)
+    .border({ width: 0.5, color: $r('app.color.divider') });
+  }
+
+  @Builder
+  private bubbleColorChip(label: Resource, outgoing: boolean) {
+    Row({ space: 8 }) {
+      Column()
+        .width(22).height(22).borderRadius(11)
+        .backgroundColor(this.bubbleHexFor(outgoing, this.previewDark))
+        .border({ width: 1, color: '#26000000' });
+      Text(label)
+        .fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+    }
+    .layoutWeight(1)
+    .height(42)
+    .justifyContent(FlexAlign.Center)
+    .padding({ left: 10, right: 10 })
+    .borderRadius(12)
+    .backgroundColor($r('app.color.surface_alt'))
+    .onClick((): void => { this.openBubblePicker(outgoing); });
+  }
+
+  @Builder
+  private bubblePickerSheet() {
+    ColorPickerSheet({
+      initialHex: this.bubblePickerBefore,
+      onChange: (hex: string): void => this.applyBubbleHex(this.bubblePickerKey, hex),
+      onPick: (hex: string): void => {
+        this.bubblePickerBefore = hex;
+        this.applyBubbleHex(this.bubblePickerKey, hex);
+      },
+      onCancel: (): void => this.applyBubbleHex(this.bubblePickerKey, this.bubblePickerBefore),
+      onClose: (): void => { this.bubblePickerOpen = false; }
+    });
+  }
+
+  @Builder
+  compactSliderRow(title: string, key: string, min: number, max: number) {
+    Column({ space: 2 }) {
+      Row() {
+        Text(title).fontSize(15).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
         Text(`${this.numberValue(key)}`)
-          .fontSize(15).fontColor(this.accent()).width(28).textAlign(TextAlign.End);
-      }.width('100%').padding({ left: 16, right: 16, bottom: 6 });
+          .fontSize(14).fontWeight(FontWeight.Medium).fontColor(this.accent());
+      }.width('100%').padding({ left: 16, right: 16, top: 8 });
+      Slider({ value: this.numberValue(key), min: min, max: max, step: 1 })
+        .width('100%')
+        .padding({ left: 12, right: 12 })
+        .trackColor($r('app.color.divider')).selectedColor(this.accent()).blockColor(this.accent())
+        .onChange((value: number): void => { setNumber(key, Math.round(value)); });
     }.width('100%');
+  }
+
+  // 消息字号 + 消息圆角 + 气泡颜色合一卡片，紧贴上方实时预览舞台。
+  @Builder
+  messageAppearanceCard() {
+    Column() {
+      Row() {
+        Text($r('app.string.chat_settings_message_appearance'))
+          .fontSize(15).fontWeight(FontWeight.Medium).fontColor(this.accent())
+          .layoutWeight(1);
+        if (this.hasCustomBubbleColor()) {
+          Text($r('app.string.appearance_reset'))
+            .fontSize(13).fontColor(this.accent())
+            .padding({ left: 8, right: 4, top: 4, bottom: 4 })
+            .onClick((): void => { this.resetBubbleColors(); });
+        }
+      }
+      .width('100%').padding({ left: 16, right: 12, top: 12, bottom: 2 });
+
+      // 消息字号（分段刻度胶囊滑杆）
+      Column({ space: 6 }) {
+        Row() {
+          Text(str('chat_settings_text_size')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+          Text(`${this.textSize}`).fontSize(14).fontWeight(FontWeight.Medium).fontColor(this.accent());
+        }.width('100%');
+        SteppedCapsuleSlider({
+          values: TEXT_SIZE_STEPS,
+          currentValue: this.textSize,
+          accentColor: this.accent(),
+          endKind: 'text',
+          leftText: 'A',
+          rightText: 'A',
+          leftFontSize: 13,
+          rightFontSize: 20,
+          onSelect: (value: number): void => { setNumber(KEY_TEXT_SIZE, value); }
+        });
+      }.width('100%').padding({ left: 16, right: 16, top: 8, bottom: 4 });
+
+      // 消息圆角（分段刻度胶囊滑杆）
+      Column({ space: 6 }) {
+        Row() {
+          Text(str('chat_settings_corner')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+          Text(`${this.bubbleRadius}`).fontSize(14).fontWeight(FontWeight.Medium).fontColor(this.accent());
+        }.width('100%');
+        SteppedCapsuleSlider({
+          values: BUBBLE_RADIUS_STEPS,
+          currentValue: this.bubbleRadius,
+          accentColor: this.accent(),
+          endKind: 'corner',
+          onSelect: (value: number): void => { setNumber(KEY_BUBBLE_RADIUS, value); }
+        });
+      }.width('100%').padding({ left: 16, right: 16, top: 6, bottom: 8 });
+
+      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16, right: 16, top: 4 });
+
+      Column({ space: 8 }) {
+        Text(`${str('appearance_bubbles')} · ${this.previewDark ? str('appearance_mode_dark') : str('appearance_mode_light')}`)
+          .fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
+          .width('100%');
+        Row({ space: 10 }) {
+          this.bubbleColorChip($r('app.string.appearance_bubble_out'), true);
+          this.bubbleColorChip($r('app.string.appearance_bubble_in'), false);
+        }.width('100%');
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 10, bottom: 14 });
+    }
+    .width('100%')
+    .backgroundColor(CARD_BG)
+    .borderRadius(CARD_RADIUS)
+    .bindSheet($$this.bubblePickerOpen, this.bubblePickerSheet(), {
+      height: SheetSize.FIT_CONTENT, showClose: false, dragBar: true,
+      backgroundColor: CARD_BG,
+      onDisappear: (): void => {
+        this.bubblePickerOpen = false;
+        this.applyBubbleHex(this.bubblePickerKey, this.bubblePickerBefore);
+      }
+    });
   }
 
   @Builder
@@ -472,23 +929,36 @@ export struct ChatSettingsPage {
     .alignItems(VerticalAlign.Center);
   }
 
-  // System material shares one selection across light and dark modes.
+  // 材质与光感统一收拢到一张卡片：
+  //   1. 三段式模式：纯色（关闭）/ 平衡（App 默认）/ 沉浸玻璃（全开）；
+  //   2. 仅「沉浸玻璃」下展示 5 档厚度胶囊；
+  //   3. 非「纯色」下展示单行「沉浸光感」（浅深共用，同步写双键）；
+  //   4. 列表材质与气泡材质保留在同一张卡片底部。
   @Builder
   materialThicknessCard() {
     Column() {
-      this.systemMaterialSelectRow();
-      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
-      this.surfaceGlassCard();
+      this.cardTitle(str('chat_settings_material_section'));
+      this.materialModePicker();
+      if (chatMaterialEnabled(this.systemMaterialLevel)) {
+        Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+        this.glassThicknessRow();
+      }
+      if (!systemMaterialOff(this.systemMaterialLevel)) {
+        Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+        this.unifiedLightRow();
+        Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+        this.surfaceGlassCard();
+      }
     }.width('100%');
   }
 
-  // 列表与气泡的底色浓度独立保存，统一使用含「关闭」的六档菜单。
+  // 气泡与列表的底色浓度独立保存，统一使用含「关闭」的六档菜单（气泡材质在上方）。
   @Builder
   surfaceGlassCard() {
     Column() {
-      this.surfaceTintSelectRow();
-      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
       this.bubbleTintSelectRow();
+      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+      this.surfaceTintSelectRow();
     }.width('100%');
   }
 
@@ -558,6 +1028,144 @@ export struct ChatSettingsPage {
     return idx < 0 ? 0 : idx;
   }
 
+  private materialModeKind(): number {
+    const level: number = normalizeSystemMaterial(this.systemMaterialLevel);
+    if (level === THICKNESS_OFF) { return 0; }
+    if (level === SYSTEM_MATERIAL_APP_DEFAULT) { return 1; }
+    return 2;
+  }
+
+  private materialModeSubtitle(): string {
+    const mode: number = this.materialModeKind();
+    if (mode === 0) { return str('material_mode_solid_sub'); }
+    if (mode === 1) { return str('material_mode_balanced_sub'); }
+    return str('material_mode_immersive_sub');
+  }
+
+  private selectMaterialMode(mode: number): void {
+    if (chatMaterialEnabled(this.systemMaterialLevel)) {
+      this.lastImmersiveThickness = normalizeSystemMaterial(this.systemMaterialLevel);
+    }
+    let next: number = SYSTEM_MATERIAL_APP_DEFAULT;
+    if (mode === 0) {
+      next = THICKNESS_OFF;
+    } else if (mode === 2) {
+      next = chatMaterialEnabled(this.lastImmersiveThickness)
+        ? this.lastImmersiveThickness : THICKNESS_REGULAR;
+    }
+    if (next !== this.systemMaterialLevel) {
+      setSystemMaterialLevel(next);
+      bumpSurfaceGlassEpoch();
+    }
+  }
+
+  private selectImmersiveThickness(level: number): void {
+    this.lastImmersiveThickness = level;
+    if (level !== this.systemMaterialLevel) {
+      setSystemMaterialLevel(level);
+    }
+  }
+
+  @Builder
+  private materialModeSegment(label: string, mode: number) {
+    Text(label)
+      .fontSize(14)
+      .fontWeight(this.materialModeKind() === mode ? FontWeight.Medium : FontWeight.Normal)
+      .fontColor(this.materialModeKind() === mode ? Color.White : COLOR_TEXT_PRIMARY)
+      .textAlign(TextAlign.Center)
+      .maxLines(1)
+      .layoutWeight(1)
+      .height(34)
+      .borderRadius(17)
+      .backgroundColor(this.materialModeKind() === mode ? this.accent() : Color.Transparent)
+      .onClick((): void => { this.selectMaterialMode(mode); });
+  }
+
+  @Builder
+  materialModePicker() {
+    Column({ space: 8 }) {
+      Row({ space: 4 }) {
+        this.materialModeSegment(str('material_mode_solid'), 0);
+        this.materialModeSegment(str('material_mode_balanced'), 1);
+        this.materialModeSegment(str('material_mode_immersive'), 2);
+      }
+      .width('100%')
+      .padding(3)
+      .borderRadius(20)
+      .backgroundColor($r('app.color.surface_alt'));
+
+      Text(this.materialModeSubtitle())
+        .fontSize(13)
+        .fontColor(COLOR_TEXT_SECONDARY)
+        .width('100%');
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 4, bottom: 12 });
+  }
+
+  private glassThicknessLabel(): string {
+    const hit: MaterialThicknessOption | undefined =
+      GLASS_THICKNESS_LEVELS.find((o: MaterialThicknessOption): boolean => o.value === this.systemMaterialLevel);
+    return hit !== undefined ? hit.label : str('material_thickness_regular');
+  }
+
+  @Builder
+  glassThicknessRow() {
+    Column({ space: 6 }) {
+      Row() {
+        Text(str('chat_settings_glass_thickness'))
+          .fontSize(15)
+          .fontColor(COLOR_TEXT_PRIMARY)
+          .layoutWeight(1);
+        Text(this.glassThicknessLabel())
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.accent());
+      }
+      .width('100%');
+      SteppedCapsuleSlider({
+        values: GLASS_THICKNESS_STEPS,
+        currentValue: this.systemMaterialLevel,
+        accentColor: this.accent(),
+        endKind: 'text',
+        leftText: str('material_thickness_thin'),
+        rightText: str('material_thickness_thick'),
+        leftFontSize: 12,
+        rightFontSize: 14,
+        onSelect: (value: number): void => { this.selectImmersiveThickness(value); }
+      });
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 10, bottom: 12 });
+  }
+
+  @Builder
+  unifiedLightRow() {
+    Row({ space: 12 }) {
+      Column({ space: 2 }) {
+        Text($r('app.string.chat_settings_material_light')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
+        Text($r('app.string.chat_settings_material_light_sub')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
+      }.alignItems(HorizontalAlign.Start).layoutWeight(1);
+      Select(LIGHT_OPTIONS.map((o: MaterialLightOption): SelectOption => ({ value: o.label } as SelectOption)))
+        .selected(this.lightIndex(this.appDark))
+        .value(LIGHT_OPTIONS[this.lightIndex(this.appDark)].label)
+        .font({ size: 15 }).fontColor(this.accent())
+        .onSelect((index: number): void => {
+          if (index < 0 || index >= LIGHT_OPTIONS.length) { return; }
+          const v: string = LIGHT_OPTIONS[index].value;
+          if (this.materialLight !== v || this.materialLightDark !== v) {
+            setString(KEY_MATERIAL_LIGHT, v);
+            setString(KEY_MATERIAL_LIGHT_DARK, v);
+            bumpMaterialEpoch();
+            recomputeAppearance();
+          }
+        });
+    }
+    .width('100%')
+    .padding({ left: 16, right: 8, top: 10, bottom: 10 })
+    .alignItems(VerticalAlign.Center);
+  }
+
   @Builder
   systemMaterialSelectRow() {
     Row({ space: 12 }) {
@@ -575,42 +1183,6 @@ export struct ChatSettingsPage {
         });
     }.width('100%').padding({ left: 16, right: 8, top: 10, bottom: 10 })
       .alignItems(VerticalAlign.Center);
-  }
-
-  // 光感等级。lightEffect / interactive 是 ImmersiveOptions 的字段，没有材质
-  // 就没有它们——低于 API 26 时整张卡片不显示。挂个调了没反应的开关比没有更糟。
-  @Builder
-  materialLightCard() {
-    Column() {
-      this.cardTitle($r('app.string.chat_settings_material_light'));
-      Text($r('app.string.chat_settings_material_light_sub'))
-        .fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-        .width('100%').padding({ left: 16, right: 16, bottom: 4 });
-      this.lightSelectRow(false);
-      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
-      this.lightSelectRow(true);
-    }.width('100%');
-  }
-
-  @Builder
-  lightSelectRow(forDark: boolean) {
-    Row({ space: 12 }) {
-      Text(forDark ? $r('app.string.appearance_mode_dark') : $r('app.string.appearance_mode_light'))
-        .fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-      Select(LIGHT_OPTIONS.map((o: MaterialLightOption): SelectOption => ({ value: o.label } as SelectOption)))
-        .selected(this.lightIndex(forDark))
-        .value(LIGHT_OPTIONS[this.lightIndex(forDark)].label)
-        .font({ size: 15 }).fontColor(this.accent())
-        .onSelect((index: number): void => {
-          const v = LIGHT_OPTIONS[index].value;
-          if (this.lightOf(forDark) !== v) {
-            setString(forDark ? KEY_MATERIAL_LIGHT_DARK : KEY_MATERIAL_LIGHT, v);
-            bumpMaterialEpoch();
-            recomputeAppearance();
-          }
-        });
-    }
-    .width('100%').height(52).padding({ left: 16, right: 8 }).alignItems(VerticalAlign.Center);
   }
 
   @Builder
@@ -651,18 +1223,36 @@ export struct ChatSettingsPage {
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
   @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
-  @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
+  @StorageProp(KEY_APP_DARK) @Watch('onAppDarkSync') private appDark: boolean = false;
   @StorageProp(KEY_APP_BG_STATE_LIGHT) @Watch('rebuildSlotStates') private appBgLight: string = '';
   @StorageProp(KEY_APP_BG_STATE_DARK) @Watch('rebuildSlotStates') private appBgDark: string = '';
   // 聊天槽位换图不会动上面两个键，得盯本机壁纸的代次。本页是 router 页，从背景
   // 编辑页**弹回来不会再走 aboutToAppear**，没有这一条缩略图就一直是进来时那份。
   @StorageProp(KEY_LOCAL_BG_EPOCH) @Watch('rebuildSlotStates') private localBgEpoch: number = 0;
   private pickingAppBg: boolean = false;
+  private offDefaultBg: (() => void) | null = null;
 
   aboutToAppear(): void {
     // 四个槽位的壁纸状态算一次存下来，别在 build() 的热路径上反复解析——
     // 见 slotStates 那段说明。
+    this.previewDark = this.appDark;
     this.rebuildSlotStates();
+    // 原生云端聊天壁纸通过 updateDefaultBackground 更新到 ChatStore，不走 KEY_LOCAL_BG_EPOCH，
+    // 监听后从壁纸选择页返回时即可即时刷新缩略图与顶部预览。
+    this.offDefaultBg = getTdClient().onUpdate('updateDefaultBackground', (_u: TdObject): void => {
+      this.rebuildSlotStates();
+    });
+  }
+
+  aboutToDisappear(): void {
+    if (this.offDefaultBg !== null) {
+      this.offDefaultBg();
+      this.offDefaultBg = null;
+    }
+  }
+
+  private onAppDarkSync(): void {
+    this.previewDark = this.appDark;
   }
   // 非空 = 正在放大看这个槽位的壁纸。
   @State enlargedSlot: string = '';
@@ -975,109 +1565,107 @@ export struct ChatSettingsPage {
     // 放大预览要盖住整页（含标题栏），所以在最外面再包一层 Stack。
     Stack() {
     Column() {
-      HdsSubDestination({ title: $r('app.string.settings_chat'), scroller: this.hdsScroller }) {
-      Scroll(this.hdsScroller) {
-        Column({ space: 14 }) {
-          // 字号 + 圆角, with the preview they drive.
-          Column() {
-            this.sliderRow(str('chat_settings_text_size'), KEY_TEXT_SIZE, TEXT_SIZE_MIN, TEXT_SIZE_MAX);
-            this.preview();
-            Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16, right: 16 });
-            this.sliderRow(str('chat_settings_corner'), KEY_BUBBLE_RADIUS, RADIUS_MIN, RADIUS_MAX);
-          }
-          .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
-
-          // 气泡颜色紧贴预览——上面那两个气泡就是它的效果。
-          BubbleColorsCard();
-
-          // 分栏统一背景时，与 ChatBackdrop.suppressedByUnifiedBg 使用同一判据：
-          // 整窗只画 APP 壁纸，因此不展示当前不会生效的聊天背景入口。
-          // 单栏（含强制单栏）恢复四个槽位；这里只控制入口，不修改已保存的背景。
-          Column() {
-            this.cardTitle(str('cs_wallpaper_settings'));
-            this.wallpaperSlotRow(SLOT_APP_LIGHT, str('cs_slot_app_light'));
-            this.wallpaperSlotRow(SLOT_APP_DARK, str('cs_slot_app_dark'));
-            if (!this.unifiedBg || !isSplitByBreakpoint(
-              this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait)) {
-              this.wallpaperSlotRow(SLOT_CHAT_LIGHT, str('cs_slot_chat_light'));
-              this.wallpaperSlotRow(SLOT_CHAT_DARK, str('cs_slot_chat_dark'));
-            }
-          }
-          .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
-
-          AccentColorCard();
-
-          // 桌面图标自选。整块在 API 26 以下不渲染——getAlternateIcons/
-          // setAlternateIcon 是 @since 26.0.0，而本应用 compatibleSdkVersion 是
-          // 6.0.0(20)，低版本上那两个函数根本不存在。判据在 util/appIcon。
-          if (appIconAvailable(deviceInfo.sdkApiVersion)) {
-            Column() {
-              AppIconPicker();
-            }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
-          }
-
-          Column() {
-            this.chatListView();
-          }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
-
-          Column() {
-            this.nightModeCard();
-          }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
-
-
-          Column() {
-            this.materialThicknessCard();
-          }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
-
-          // 光感等级任何 API 上都有东西可管：API 20 起的 hdsEffect 点光 / 按压阴影（util/hdsPointLight）读的
-          // 就是它。以前按材质可用与否藏起来，老设备（和没报沉浸材质的设备）上档位照样生效却调不了。
-          Column() {
-            this.materialLightCard();
-          }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
-
-          Column() {
-            this.edgeBlurCard();
-          }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
-
-          Column() {
-            this.toggleRow(str('chat_settings_hide_pinned'), str('chat_settings_hide_pinned_sub'), KEY_HIDE_PINNED_DEFAULT);
-            Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
-            this.toggleRow(str('chat_settings_reduce_anim'), str('chat_settings_reduce_anim_sub'), KEY_REDUCE_ANIM);
-            Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
-            this.toggleRow(str('chat_settings_send_by_enter'), str('chat_settings_send_by_enter_sub'), KEY_SEND_BY_ENTER);
-            Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
-            this.toggleRow(str('chat_settings_in_app_browser'),
-              str('chat_settings_in_app_browser_sub'), KEY_IN_APP_BROWSER);
-            // 只有真能分栏的窗口才给这个开关——手机上它永远没作用，摆着是噪音。
-            // 判据传 false：问的是"这个窗口够不够宽"，不是"现在分没分栏"，否则
-            // 开关一打开自己就消失了。
-            if (isSplitByBreakpoint(this.widthBp, this.heightBp, false, this.windowPortrait)) {
-              Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
-              this.toggleRow(str('chat_settings_force_single'),
-                str('chat_settings_force_single_sub'), KEY_FORCE_SINGLE_COLUMN);
-            }
-          }
-          .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
-          .padding({ top: 4, bottom: 4 });
-
-          AccountColorsCard();
+      HdsSubDestination({
+        title: $r('app.string.settings_chat'),
+        scroller: this.hdsScroller,
+        onShown: (): void => { this.rebuildSlotStates(); }
+      }) {
+      Column() {
+        // 顶部固定实时预览舞台 + 三标签导航（不随下方设置滚动离开视野）。
+        Column({ space: 10 }) {
+          this.previewStage();
+          this.appearanceTabBar();
         }
         .width('100%')
-        .padding({ left: 12, right: 12, top: EDGE_OVERLAY_VP, bottom: this.bottomSafe + 24 });
-      }
-      .layoutWeight(1).width('100%')
-      .align(Alignment.Top)
-      .scrollBar(BarState.Off)
-      // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
-      .clip(false)
-      // 边缘渐变虚化：与设置页/首页同一套参数（顶/底 118vp、峰 22px）。
-      .attributeModifier(this.edgeBlur.bind(edgeBlurRadiusOf(edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop) || edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)), this.blurViewH, edgeBlurOtherTopOn(this.edgeBlurOn, this.edgeBlurTopOn, this.edgeBlurOtherTop), edgeBlurOtherBottomOn(this.edgeBlurOn, this.edgeBlurBottomOn, this.edgeBlurOtherBottom)))
-      .onAreaChange((_old: Area, area: Area): void => {
-        const h: number = Number(area.height);
-        if (h > 0 && Math.abs(h - this.blurViewH) > 0.5) {
-          this.blurViewH = h;
+        .padding({ left: 12, right: 12, top: EDGE_OVERLAY_VP, bottom: 8 });
+
+        Scroll(this.hdsScroller) {
+          Column({ space: 14 }) {
+            if (this.appearanceTab === 0) {
+              // 标签 0 · 消息：字号 / 圆角 / 气泡颜色 / 强调色 / 列表行数 / 常用开关 / 账号颜色
+              this.messageAppearanceCard();
+              AccentColorCard();
+              Column() {
+                this.chatListView();
+              }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
+
+              Column() {
+                this.toggleRow(str('chat_settings_hide_pinned'), str('chat_settings_hide_pinned_sub'), KEY_HIDE_PINNED_DEFAULT);
+                Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+                this.toggleRow(str('chat_settings_reduce_anim'), str('chat_settings_reduce_anim_sub'), KEY_REDUCE_ANIM);
+                Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+                this.toggleRow(str('chat_settings_send_by_enter'), str('chat_settings_send_by_enter_sub'), KEY_SEND_BY_ENTER);
+                Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+                this.toggleRow(str('chat_settings_in_app_browser'),
+                  str('chat_settings_in_app_browser_sub'), KEY_IN_APP_BROWSER);
+                if (isSplitByBreakpoint(this.widthBp, this.heightBp, false, this.windowPortrait)) {
+                  Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+                  this.toggleRow(str('chat_settings_force_single'),
+                    str('chat_settings_force_single_sub'), KEY_FORCE_SINGLE_COLUMN);
+                }
+              }
+              .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
+              .padding({ top: 4, bottom: 4 });
+
+              AccountColorsCard();
+            } else if (this.appearanceTab === 1) {
+              // 标签 1 · 材质与光感：纯色/平衡/沉浸玻璃 + 厚度 + 光感 + 列表/气泡材质 + 边缘虚化
+              Column() {
+                this.materialThicknessCard();
+              }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
+
+              Column() {
+                this.edgeBlurCard();
+              }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
+            } else {
+              // 标签 2 · 壁纸与主题：APP 背景在聊天背景上方，分栏统一背景时不展示聊天背景；
+              // 用显式分支避免 V1 @Builder 值参数冻结。
+              Column() {
+                Text(`${str('cs_wallpaper_settings')} · ${this.previewDark ? str('appearance_mode_dark') : str('appearance_mode_light')}`)
+                  .fontSize(15).fontWeight(FontWeight.Medium).fontColor(this.accent())
+                  .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 4 });
+                if (this.previewDark) {
+                  this.wallpaperSlotRow(SLOT_APP_DARK, str('cs_slot_app_dark'));
+                  if (!this.previewUseAppSlot()) {
+                    Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+                    this.wallpaperSlotRow(SLOT_CHAT_DARK, str('cs_slot_chat_dark'));
+                  }
+                } else {
+                  this.wallpaperSlotRow(SLOT_APP_LIGHT, str('cs_slot_app_light'));
+                  if (!this.previewUseAppSlot()) {
+                    Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+                    this.wallpaperSlotRow(SLOT_CHAT_LIGHT, str('cs_slot_chat_light'));
+                  }
+                }
+              }
+              .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
+
+              Column() {
+                this.nightModeCard();
+              }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
+
+              if (appIconAvailable(deviceInfo.sdkApiVersion)) {
+                Column() {
+                  AppIconPicker();
+                }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
+              }
+            }
+          }
+          .width('100%')
+          .padding({ left: 12, right: 12, top: 4, bottom: this.bottomSafe + 24 });
         }
-      });
+        .layoutWeight(1).width('100%')
+        .align(Alignment.Top)
+        .scrollBar(BarState.Off)
+        .clip(true)
+        .onAreaChange((_old: Area, area: Area): void => {
+          const h: number = Number(area.height);
+          if (h > 0 && Math.abs(h - this.blurViewH) > 0.5) {
+            this.blurViewH = h;
+          }
+        });
+      }
+      .width('100%').height('100%');
     }
     }
     .width('100%').height('100%')
